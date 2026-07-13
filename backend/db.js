@@ -1,169 +1,209 @@
-const Database = require("better-sqlite3");
-const bcrypt = require("bcryptjs");
-const path = require("path");
+// ════════════════════════════════════════════════════════════════════════════════
+// db.js: CLIENTE SUPABASE (REST) - SEM JOINS AMBÍGUOS
+// ════════════════════════════════════════════════════════════════════════════════
 
-const DB_PATH = process.env.DB_PATH || path.join(__dirname, "quotaflow.db");
-const db = new Database(DB_PATH);
+require("dotenv").config();
+const { createClient } = require("@supabase/supabase-js");
 
-// Habilitar WAL para melhor performance
-db.pragma("journal_mode = WAL");
-db.pragma("foreign_keys = ON");
+const supabase = createClient(
+  process.env.SUPABASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
 
-// ── Criar tabelas ─────────────────────────────
-db.exec(`
-  CREATE TABLE IF NOT EXISTS empresa (
-    id INTEGER PRIMARY KEY DEFAULT 1,
-    nome TEXT NOT NULL DEFAULT 'Minha Empresa',
-    cnpj TEXT,
-    participaBenchmark INTEGER DEFAULT 1,
-    regiao TEXT DEFAULT 'SP',
-    criado_em DATETIME DEFAULT (datetime('now'))
-  );
+// ─────────────────────────────────────────────────────────────────────────────
+// WRAPPER
+// ─────────────────────────────────────────────────────────────────────────────
 
-  -- Garantir que existe 1 registro de empresa
-  INSERT OR IGNORE INTO empresa (id, nome) VALUES (1, 'Minha Empresa Ltda');
+class DB {
+  static async select(table, where = {}, tenant_id = null) {
+    let query = supabase.from(table).select("*");
+    if (tenant_id) query = query.eq("tenant_id", tenant_id);
+    for (const [key, value] of Object.entries(where)) {
+      if (value !== undefined && value !== null) {
+        query = query.eq(key, value);
+      }
+    }
+    const { data, error } = await query;
+    if (error) throw new Error(`SELECT ${table} failed: ${error.message}`);
+    return data || [];
+  }
 
-  CREATE TABLE IF NOT EXISTS usuarios (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nome TEXT NOT NULL,
-    email TEXT UNIQUE NOT NULL,
-    senha_hash TEXT NOT NULL,
-    perfil TEXT NOT NULL CHECK(perfil IN ('tecnico','comprador','gestor','admin')),
-    ativo INTEGER DEFAULT 1,
-    criado_em DATETIME DEFAULT (datetime('now'))
-  );
+  static async selectOne(table, where = {}, tenant_id = null) {
+    const rows = await this.select(table, where, tenant_id);
+    return rows.length > 0 ? rows[0] : null;
+  }
 
-  CREATE TABLE IF NOT EXISTS equipamentos (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    tag TEXT NOT NULL,
-    nome TEXT NOT NULL,
-    local TEXT,
-    fabricante TEXT,
-    modelo TEXT,
-    serie TEXT,
-    ativo INTEGER DEFAULT 1,
-    criado_em DATETIME DEFAULT (datetime('now'))
-  );
+  static async insert(table, values, tenant_id = null) {
+    const data = { ...values };
+    if (tenant_id && !data.tenant_id) data.tenant_id = tenant_id;
+    const { data: result, error } = await supabase
+      .from(table)
+      .insert([data])
+      .select();
+    if (error) throw new Error(`INSERT ${table} failed: ${error.message}`);
+    return result?.[0] || null;
+  }
 
-  CREATE TABLE IF NOT EXISTS fornecedores (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    nome TEXT NOT NULL,
-    razao_social TEXT,
-    cnpj TEXT,
-    situacao_cnpj TEXT,
-    dados_cnpj TEXT,  -- JSON com dados completos da Receita
-    ultima_consulta_cnpj DATETIME,
-    endereco TEXT,
-    cidade TEXT,
-    estado TEXT,
-    cep TEXT,
-    contatos TEXT,    -- JSON: [{nome,papel,email,telefone,whatsapp}]
-    categorias TEXT,  -- JSON: ["cat1","cat2"]
-    obs TEXT,
-    ativo INTEGER DEFAULT 1,
-    criado_em DATETIME DEFAULT (datetime('now'))
-  );
+  static async update(table, id, values, tenant_id = null) {
+    let query = supabase.from(table).update(values).eq("id", id);
+    if (tenant_id) query = query.eq("tenant_id", tenant_id);
+    const { data, error } = await query.select();
+    if (error) throw new Error(`UPDATE ${table} failed: ${error.message}`);
+    return data?.[0] || null;
+  }
 
-  CREATE TABLE IF NOT EXISTS chamados (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    numero TEXT UNIQUE NOT NULL,
-    peca TEXT NOT NULL,
-    codigo TEXT,
-    equipamento_id INTEGER REFERENCES equipamentos(id),
-    urgencia TEXT DEFAULT 'media',
-    categoria TEXT DEFAULT 'corretiva',
-    categoria_item TEXT,
-    tipo_disponib TEXT DEFAULT 'prateleira',
-    tecnico_id INTEGER REFERENCES usuarios(id),
-    tecnico_nome TEXT,
-    descricao TEXT,
-    status TEXT DEFAULT 'aguardando_cotacao',
-    valor_aprovado REAL,
-    valor_negociado REAL,
-    custo_total_real REAL,
-    fornecedor_aprovado TEXT,
-    aprovado_por TEXT,
-    aprovado_por_id INTEGER REFERENCES usuarios(id),
-    lead_time INTEGER,
-    participa_benchmark INTEGER DEFAULT 1,
-    regiao TEXT DEFAULT 'SP',
-    aberto_em DATETIME DEFAULT (datetime('now')),
-    finalizado_em DATETIME
-  );
+  static async delete(table, id, tenant_id = null) {
+    let query = supabase.from(table).delete().eq("id", id);
+    if (tenant_id) query = query.eq("tenant_id", tenant_id);
+    const { error } = await query;
+    if (error) throw new Error(`DELETE ${table} failed: ${error.message}`);
+    return true;
+  }
 
-  CREATE TABLE IF NOT EXISTS cotacoes (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    chamado_id INTEGER NOT NULL REFERENCES chamados(id),
-    status TEXT DEFAULT 'em_curso',
-    enviado_em DATETIME DEFAULT (datetime('now'))
-  );
+  // ─────────────────────────────────────────────────────────────────────────
+  // RAW: suporte para as consultas usadas nas rotas (SEM JOINS)
+  // ─────────────────────────────────────────────────────────────────────────
+  static async raw(sql, params = []) {
+    // 1. Listar chamados com equipamentos e usuários
+    if (sql.includes("FROM chamados c") && sql.includes("LEFT JOIN equipamentos")) {
+      const tenantId = params[0];
 
-  CREATE TABLE IF NOT EXISTS cotacao_fornecedores (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    cotacao_id INTEGER NOT NULL REFERENCES cotacoes(id),
-    fornecedor_id INTEGER REFERENCES fornecedores(id),
-    fornecedor_nome TEXT NOT NULL,
-    fornecedor_email TEXT NOT NULL,
-    token TEXT UNIQUE NOT NULL,
-    status TEXT DEFAULT 'pendente',
-    valor REAL,
-    prazo INTEGER,
-    frete TEXT DEFAULT 'CIF',
-    valor_frete REAL DEFAULT 0,
-    obs TEXT,
-    data_resposta DATETIME,
-    enviado_em DATETIME DEFAULT (datetime('now'))
-  );
+      // Buscar chamados
+      const { data: chamados, error: e1 } = await supabase
+        .from("chamados")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .order("aberto_em", { ascending: false });
+      if (e1) throw new Error(`Raw chamados failed: ${e1.message}`);
 
-  CREATE TABLE IF NOT EXISTS tarefas (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    titulo TEXT NOT NULL,
-    detalhe TEXT,
-    responsavel TEXT,
-    responsavel_id INTEGER REFERENCES usuarios(id),
-    prazo DATE,
-    prioridade TEXT DEFAULT 'media',
-    status TEXT DEFAULT 'pendente',
-    origem TEXT,  -- 'relatorio' | 'manual'
-    origem_periodo TEXT,
-    criado_por_id INTEGER REFERENCES usuarios(id),
-    criado_em DATETIME DEFAULT (datetime('now'))
-  );
+      // Buscar equipamentos do tenant
+      const { data: equipamentos, error: e2 } = await supabase
+        .from("equipamentos")
+        .select("id, tag, nome")
+        .eq("tenant_id", tenantId);
+      if (e2) throw new Error(`Raw chamados equipamentos failed: ${e2.message}`);
 
-  CREATE TABLE IF NOT EXISTS tarefa_comentarios (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    tarefa_id INTEGER NOT NULL REFERENCES tarefas(id),
-    autor_id INTEGER REFERENCES usuarios(id),
-    autor_nome TEXT NOT NULL,
-    texto TEXT NOT NULL,
-    criado_em DATETIME DEFAULT (datetime('now'))
-  );
+      // Buscar usuários do tenant
+      const { data: usuarios, error: e3 } = await supabase
+        .from("usuarios")
+        .select("id, nome")
+        .eq("tenant_id", tenantId);
+      if (e3) throw new Error(`Raw chamados usuarios failed: ${e3.message}`);
 
-  CREATE TABLE IF NOT EXISTS notas_periodo (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    chave TEXT UNIQUE NOT NULL,  -- ex: '2026-03'
-    texto TEXT NOT NULL,
-    criado_por_id INTEGER REFERENCES usuarios(id),
-    atualizado_em DATETIME DEFAULT (datetime('now'))
-  );
+      // Montar resultado
+      const resultado = chamados.map(ch => {
+        const eq = equipamentos.find(e => e.id === ch.equipamento_id);
+        const usuario = usuarios.find(u => u.id === ch.tecnico_id);
+        return {
+          ...ch,
+          equipamento_tag: eq?.tag || null,
+          equipamento_nome: eq?.nome || null,
+          tecnico_nome_usuario: usuario?.nome || null,
+        };
+      });
 
-  CREATE TABLE IF NOT EXISTS cnpj_alertas (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    fornecedor_id INTEGER NOT NULL REFERENCES fornecedores(id),
-    situacao_anterior TEXT,
-    situacao_nova TEXT,
-    detectado_em DATETIME DEFAULT (datetime('now')),
-    lido INTEGER DEFAULT 0
-  );
-`);
+      return resultado;
+    }
 
-// ── Seed: criar admin padrão se não existir ───
-const adminExiste = db.prepare("SELECT id FROM usuarios WHERE email = ?").get("admin@empresa.com");
-if (!adminExiste) {
-  const hash = bcrypt.hashSync("admin123", 10);
-  db.prepare("INSERT INTO usuarios (nome, email, senha_hash, perfil) VALUES (?, ?, ?, ?)").run("Admin Sistema", "admin@empresa.com", hash, "admin");
-  console.log("✅ Usuário admin criado: admin@empresa.com / admin123");
-  console.log("   ⚠️  TROQUE A SENHA após o primeiro login!");
+    // 2. Listar cotações com chamados
+    if (sql.includes("FROM cotacoes c") && sql.includes("JOIN chamados ch")) {
+      const tenantId = params[0];
+
+      // Buscar cotações
+      const { data: cotacoes, error: e1 } = await supabase
+        .from("cotacoes")
+        .select("*")
+        .eq("tenant_id", tenantId)
+        .order("enviado_em", { ascending: false });
+      if (e1) throw new Error(`Raw cotacoes failed: ${e1.message}`);
+
+      // Buscar chamados relacionados
+      const chamadoIds = [...new Set(cotacoes.map(c => c.chamado_id))];
+      const { data: chamados, error: e2 } = await supabase
+        .from("chamados")
+        .select("id, numero, peca, categoria_item")
+        .in("id", chamadoIds.length > 0 ? chamadoIds : [0]);
+      if (e2) throw new Error(`Raw cotacoes chamados failed: ${e2.message}`);
+
+      // Juntar
+      const resultado = cotacoes.map(cot => {
+        const ch = chamados.find(c => c.id === cot.chamado_id);
+        return {
+          ...cot,
+          chamado_numero: ch?.numero || null,
+          peca: ch?.peca || null,
+          categoria_item: ch?.categoria_item || null,
+        };
+      });
+
+      return resultado;
+    }
+
+    // 3. Fornecedores de uma cotação
+    if (sql.includes("FROM cotacao_fornecedores")) {
+      const cotacaoId = params[0];
+      const tenantId = params[1];
+
+      const { data, error } = await supabase
+        .from("cotacao_fornecedores")
+        .select("id, fornecedor_nome, fornecedor_email, status, valor, prazo, frete, valor_frete, obs, data_resposta")
+        .eq("cotacao_id", cotacaoId)
+        .eq("tenant_id", tenantId)
+        .order("data_resposta", { ascending: false, nullsFirst: false });
+      if (error) throw new Error(`Raw cotacao_fornecedores failed: ${error.message}`);
+      return data;
+    }
+
+    // 4. Listar usuários
+    if (sql.includes("FROM usuarios")) {
+      const tenantId = params[0];
+
+      const { data, error } = await supabase
+        .from("usuarios")
+        .select("id, nome, email, perfil, ativo, criado_em")
+        .eq("tenant_id", tenantId)
+        .order("criado_em", { ascending: false });
+      if (error) throw new Error(`Raw usuarios failed: ${error.message}`);
+      return data;
+    }
+
+    // Fallback genérico (tenta extrair tabela e tenant_id)
+    const tableMatch = sql.match(/FROM\s+(\w+)/i);
+    if (tableMatch) {
+      const table = tableMatch[1];
+      let query = supabase.from(table).select("*");
+      const tenantMatch = sql.match(/tenant_id\s*=\s*\$(\d+)/);
+      if (tenantMatch) {
+        const idx = parseInt(tenantMatch[1]) - 1;
+        if (params[idx] !== undefined) {
+          query = query.eq("tenant_id", params[idx]);
+        }
+      }
+      const { data, error } = await query;
+      if (error) throw new Error(`Raw fallback failed: ${error.message}`);
+      return data;
+    }
+
+    throw new Error(`Raw query não suportada: ${sql}`);
+  }
 }
 
-module.exports = db;
+// ─────────────────────────────────────────────────────────────────────────────
+// INICIALIZAÇÃO
+// ─────────────────────────────────────────────────────────────────────────────
+
+async function initializeDB() {
+  try {
+    console.log("🔌 Conectando ao Supabase via REST...");
+    const { data, error } = await supabase.from("tenants").select("count");
+    if (error) throw error;
+    console.log("✅ Conectado!");
+    const tenants = await DB.select("tenants");
+    console.log(`Tenants encontrados: ${tenants.length}`);
+  } catch (err) {
+    console.error("❌ Erro ao inicializar DB:", err.message);
+    process.exit(1);
+  }
+}
+
+module.exports = { supabase, DB, initializeDB };

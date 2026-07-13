@@ -2,16 +2,7 @@ import { useState, useRef, useEffect } from "react";
 import TelaCotacoesNova from "./components/cotacoes/TelaCotacoesNova";
 import TelaChamadosNova from "./components/chamados/TelaChamadosNova";
 import TelaFornecedoresNova from "./components/fornecedores/TelaFornecedoresNova";
-import TelaEquipamentos from './components/equipamentos/TelaEquipamentos';
-import TelaUsuariosNova from './components/usuarios/TelaUsuariosNova';
-import TelaPlanoAcaoNova from './components/plano/TelaPlanoAcaoNova';
-import TelaFinanceiroNova from './components/financeiro/TelaFinanceiroNova';
-import TelaRelatorioNova from './components/relatorio/TelaRelatorioNova';
-import TelaHistoricoPrecosNova from './components/historico/TelaHistoricoPrecosNova';
-import TelaInteligenciaNova from './components/inteligencia/TelaInteligenciaNova';
-import TelaBenchmarkNova from './components/benchmark/TelaBenchmarkNova';
 import TelaLogin from './TelaLogin';
-import apiService from './services/apiService';
 
 import {
   useChamados,
@@ -24,7 +15,6 @@ import {
   useInteligencia,
   useBenchmark,
   useRelatorio,
-  useEmail,
 } from './hooks';
 
 let cotacaoCounter = 9;
@@ -95,6 +85,11 @@ function calcSavings(chamados, cotacoes) {
 
 export default function App(){
   const [usuario, setUsuario] = useState(null);
+  
+  const login = (usuarioData) => {
+    setUsuario(usuarioData);
+  };
+  
   const chamados = useChamados();
   const cotacoes = useCotacoes();
   const fornecedores = useFornecedores();
@@ -105,337 +100,431 @@ export default function App(){
   const inteligencia = useInteligencia();
   const benchmark = useBenchmark();
   const relatorio = useRelatorio();
-  const [tela,setTela]=useState("home");
-  const [participaBench,setParticipaBench]=useState(true);
-  const email = useEmail();
-  const [notasPeriodo,setNotasPeriodo]=useState({
-    "2026-01":"Equipe completa. Mês tranquilo de manutenção.",
-    "2026-02":"Greve parcial da transportadora regional. Lead times 40% maiores que o normal.",
-    "2026-03":"Retorno normal. Dois técnicos em treinamento — aumento de chamados corretivos.",
+
+  if (!usuario) return <TelaLogin onLogin={login}/>;
+}
+
+// ─────────────────────────────────────────────
+// TELA: FINANCEIRO
+// ─────────────────────────────────────────────
+function TelaFinanceiro({ chamados, cotacoes, equipamentos }) {
+  const [ano, setAno] = useState("2026");
+  const [mes, setMes] = useState("todos");
+
+  const finalizados = chamados.filter(c=>c.status==="finalizado"&&c.valorAprovado);
+
+  const porPeriodo = finalizados.filter(c=>{
+    const d = new Date(c.abertura);
+    const okAno = String(d.getFullYear())===ano;
+    const okMes = mes==="todos"||d.getMonth()===parseInt(mes);
+    return okAno&&okMes;
   });
 
-  const setNota = (chave, texto) => setNotasPeriodo(prev=>({...prev,[chave]:texto}));
+  const savings = calcSavings(porPeriodo, cotacoes);
+  const totalGasto = savings.reduce((s,c)=>s+(c.valorNegociado??c.valorAprovado),0);
+  const totalSavingA = savings.reduce((s,c)=>s+c.savingA,0);
+  const totalSavingB = savings.reduce((s,c)=>s+c.savingB,0);
+  const totalSaving = totalSavingA+totalSavingB;
 
-  const login = (user) => {
-    setUsuario(user);
-    
-    // ✅ SALVAR TOKEN PRIMEIRO
-    if (user.access_token) {
-      localStorage.setItem('access_token', user.access_token);
-      apiService.setToken(user.access_token);
-    }
-    
-    // ✅ DEPOIS carregar dados
-    if (typeof chamados.carregar === 'function') {
-      chamados.carregar();
-    }
-    if (typeof cotacoes.listar === 'function') {
-      cotacoes.listar();
-    }
-    if (typeof fornecedores.listar === 'function') {
-      fornecedores.listar();
-    }
-    if (typeof equipamentos.listar === 'function') {
-      equipamentos.listar();
-    }
-    if (typeof tarefas.listar === 'function') {
-      tarefas.listar();
-    }
-    if (typeof usuarios.listar === 'function') {
-      usuarios.listar();
-    }
-    
-    const perfil = user.perfil || user.papel || 'comprador';
-    const telaInicial = { 
-      tecnico:"tecnico", 
-      comprador:"compradora", 
-      gestor:"financeiro", 
-      admin:"usuarios" 
-    };
-    setTela(telaInicial[perfil] || "home");
-  };
+  // Top 5 savings
+  const top5Savings = [...savings].filter(c=>c.savingTotal>0).sort((a,b)=>b.savingTotal-a.savingTotal).slice(0,5);
 
-  const logout = () => { setUsuario(null); setTela("home"); };
+  // Saving por comprador
+  const compradores = {};
+  savings.forEach(c=>{
+    const k = c.aprovadoPor||"(não informado)";
+    if(!compradores[k]) compradores[k]={nome:k,savingA:0,savingB:0,total:0,qtd:0};
+    compradores[k].savingA+=c.savingA;
+    compradores[k].savingB+=c.savingB;
+    compradores[k].total+=c.savingTotal;
+    compradores[k].qtd++;
+  });
+  const rankCompradores = Object.values(compradores).sort((a,b)=>b.total-a.total);
 
-  // Verificar permissão
-  const temAcesso = (t) => {
-    const resultado = !PERMISSOES[t] || (usuario && PERMISSOES[t].includes(usuario.perfil));
-    return resultado;
-  };
+  // Lead time top 5
+  const top5Lead = [...porPeriodo].filter(c=>c.leadTime).sort((a,b)=>b.leadTime-a.leadTime).slice(0,5);
+  const avgLead = porPeriodo.filter(c=>c.leadTime).reduce((s,c,_,arr)=>s+c.leadTime/arr.length,0);
 
-  // Navegar com verificação
-  const navegar = (t) => { 
-    if (temAcesso(t)) setTela(t); 
-  };
-
-  const abrirPlanoDeAcao = (recomendacoes, periodoLabel) => {
-    const novas = recomendacoes.map(r => {
-      tarefaIdCounter++;
-      const prazoDate = new Date();
-      prazoDate.setDate(prazoDate.getDate() + r.prazo);
-      return { id:tarefaIdCounter, titulo:r.txt, detalhe:r.detalhe+` — Gerado de ${periodoLabel}.`, responsavel:"", prazo:prazoDate.toISOString().split("T")[0], prioridade:r.prioridade, status:"pendente", criacao:new Date().toISOString(), comentarios:[] };
+  // Prazo médio de resposta dos fornecedores (dias entre envio e resposta)
+  const respostas = [];
+  cotacoes.forEach(cot=>{
+    cot.fornecedores.forEach(f=>{
+      if(f.dataResposta&&cot.dataEnvio) respostas.push({nome:f.nome, dias:Math.max(0,Math.floor((new Date(f.dataResposta)-new Date(cot.dataEnvio))/86400000))});
     });
-    setTarefas(prev=>{
-      const ex=prev.map(t=>t.titulo);
-      return [...prev,...novas.filter(n=>!ex.includes(n.titulo))];
-    });
-    navegar("plano");
-  };
+  });
+  const porForn = {};
+  respostas.forEach(r=>{ if(!porForn[r.nome]) porForn[r.nome]={nome:r.nome,total:0,qtd:0}; porForn[r.nome].total+=r.dias; porForn[r.nome].qtd++; });
+  const rankForn = Object.values(porForn).map(f=>({...f,media:f.total/f.qtd})).sort((a,b)=>a.media-b.media).slice(0,6);
 
-  // Mostrar login se não autenticado
-  if (!usuario) return <TelaLogin onLogin={login}/>;
+  // Gasto mensal
+  const porMes = MESES.map((m,i)=>({
+    m, total: finalizados.filter(c=>new Date(c.abertura).getFullYear()===parseInt(ano)&&new Date(c.abertura).getMonth()===i).reduce((s,c)=>s+(c.valorNegociado??c.valorAprovado),0)
+  }));
+  const maxMes = Math.max(...porMes.map(m=>m.total),1);
 
-  const perfil = PERFIS[usuario.perfil];
+  // Por categoria
+  const porCat = ["corretiva","preventiva","preditiva"].map(cat=>({
+    cat, label:catCfg[cat]?.l||cat, color:catCfg[cat]?.c||C.muted,
+    total:porPeriodo.filter(c=>c.categoria===cat).reduce((s,c)=>s+(c.valorNegociado??c.valorAprovado),0),
+    qtd:porPeriodo.filter(c=>c.categoria===cat).length,
+  }));
 
-  // Nav items filtrados por perfil
-  const navItems = [
-    {id:"home",          l:"Início",            perfis:["tecnico","comprador","gestor","admin"]},
-    {id:"tecnico",       l:"🔧 Chamado",         perfis:["tecnico","comprador","gestor","admin"]},
-    {id:"compradora",    l:"📋 Compras",          perfis:["comprador","gestor","admin"]},
-    {id:"plano",         l:`✅ Plano${tarefas.dados.filter(t=>t.status==="em_andamento").length>0?` (${tarefas.dados.filter(t=>t.status==="em_andamento").length})`:""
-      }`,                                        perfis:["comprador","gestor","admin"]},
-    
-    {id:"financeiro",    l:"💰 Financeiro",       perfis:["gestor","admin"]},
-    {id:"relatorio",     l:"📄 Relatório",        perfis:["gestor","admin"]},
-    {id:"historico",     l:"📉 Histórico Preços", perfis:["gestor","admin"]},
-    {id:"inteligencia",  l:"🧠 Inteligência",     perfis:["gestor","admin"]},
-    {id:"benchmark",     l:"📈 Benchmark",        perfis:["gestor","admin"]},
-    {id:"equipamentos",  l:"⚙ Equipamentos",      perfis:["comprador","gestor","admin"]},
-    {id:"fornecedores",  l:"🏭 Fornecedores",     perfis:["comprador","gestor","admin"]},
-    {id:"fornecedorportal",l:"🔗 Portal fornecedor",perfis:["comprador","gestor","admin"]},
-    {id:"usuarios",      l:"👥 Usuários",          perfis:["admin"]},
-  ].filter(n=>n.perfis.includes(usuario.perfil));
+  // Por equipamento
+  const porEquip = equipamentos.map(eq=>({
+    ...eq,
+    total:porPeriodo.filter(c=>c.equipamentoId===eq.id).reduce((s,c)=>s+(c.valorNegociado??c.valorAprovado),0),
+    qtd:porPeriodo.filter(c=>c.equipamentoId===eq.id).length,
+  })).filter(e=>e.total>0).sort((a,b)=>b.total-a.total);
 
-  return(
-    <div style={{fontFamily:"'DM Sans','Segoe UI',sans-serif",background:C.bg,height:"100vh",color:C.text,display:"flex",flexDirection:"column",overflow:"hidden"}}>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+  const SavingBar = ({label,value,total,color}) => (
+    <div style={{marginBottom:10}}>
+      <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+        <span style={{fontSize:12,color:C.textSub}}>{label}</span>
+        <span style={{fontSize:13,fontWeight:700,color}}>{fmtBRL(value)}</span>
+      </div>
+      <div style={{height:6,background:C.border,borderRadius:3,overflow:"hidden"}}>
+        <div style={{height:"100%",background:color,width:`${total?Math.min((value/total)*100,100):0}%`,borderRadius:3,transition:"width .4s"}}/>
+      </div>
+    </div>
+  );
 
-      {/* Navbar com info do usuário logado */}
-      <div style={{display:"flex", height:"100vh", overflow:"hidden"}}>
-        {/* ─── SIDEBAR ─── */}
-        <div style={{
-          width: 170,
-          background: C.surface,
-          borderRight: `1px solid ${C.border}`,
-          display: "flex",
-          flexDirection: "column",
-          flexShrink: 0,
-          height: "100vh",
-          padding: "16px 12px",
-          gap: 4,
-          overflowY: "auto",
-        }}>
-          {/* Logo */}
-          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:16,paddingBottom:12,borderBottom:`1px solid ${C.border}`}}>
-            <div style={{width:4,height:22,background:"#f87171",borderRadius:2}}/>
-            <span style={{fontSize:16,fontWeight:700,color:C.text,letterSpacing:"0.02em"}}>QuotaFlow</span>
+  return (
+    <div style={{padding:"22px 24px",overflowY:"auto",height:"100%"}}>
+      {/* Header + filtros */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:22,flexWrap:"wrap",gap:12}}>
+        <div>
+          <div style={{fontSize:11,color:C.muted,letterSpacing:"0.1em",marginBottom:4}}>PAINEL FINANCEIRO</div>
+          <div style={{fontSize:22,fontWeight:700,color:C.text}}>Custos de Manutenção</div>
+        </div>
+        <div style={{display:"flex",gap:8,flexWrap:"wrap"}}>
+          {/* Filtro ano */}
+          <div style={{display:"flex",gap:4}}>
+            {["2026","2025"].map(y=>(
+              <button key={y} onClick={()=>setAno(y)} style={{...s.btn(ano===y),padding:"6px 14px",fontSize:12}}>{y}</button>
+            ))}
           </div>
+          {/* Filtro mês */}
+          <select value={mes} onChange={e=>setMes(e.target.value)}
+            style={{...s.input,width:"auto",padding:"6px 12px",fontSize:12,marginBottom:0}}>
+            <option value="todos">Todos os meses</option>
+            {MESES.map((m,i)=><option key={i} value={i}>{m}</option>)}
+          </select>
+          <button onClick={()=>alert("Exportação disponível na versão com backend.")}
+            style={{background:C.surface,border:`1px solid ${C.border}`,borderRadius:7,padding:"6px 14px",color:C.textSub,fontSize:12,cursor:"pointer",fontFamily:"inherit"}}>
+            ↓ Exportar
+          </button>
+        </div>
+      </div>
 
-          {/* Navegação */}
-          {navItems.map(t => (
-            <button
-              key={t.id}
-              onClick={() => navegar(t.id)}
-              style={{
-                background: tela === t.id ? "#1e2a3f" : "transparent",
-                border: "none",
-                borderRadius: 6,
-                padding: "10px 14px",
-                color: tela === t.id ? C.accent : C.muted,
-                fontSize: 13,
-                cursor: "pointer",
-                fontFamily: "inherit",
-                textAlign: "left",
-                width: "100%",
-                transition: "all .1s",
-                display: "flex",
-                alignItems: "center",
-                gap: 8,
-              }}
-              onMouseEnter={e => { if (tela !== t.id) e.currentTarget.style.background = "#151d2e" }}
-              onMouseLeave={e => { if (tela !== t.id) e.currentTarget.style.background = "transparent" }}
-            >
-              <span style={{width:20, display:"inline-block"}}>{t.l.split(" ")[0]}</span>
-              <span>{t.l.split(" ").slice(1).join(" ")}</span>
-            </button>
-          ))}
+      {/* KPIs principais */}
+      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:18}}>
+        {[
+          {l:"Total gasto",v:fmtBRL(totalGasto),c:C.accent},
+          {l:"Ordens finalizadas",v:porPeriodo.length,c:C.success},
+          {l:"Ticket médio",v:fmtBRL(porPeriodo.length?totalGasto/porPeriodo.length:0),c:C.warn},
+          {l:"Prazo médio entrega",v:avgLead?`${avgLead.toFixed(1)} dias`:"—",c:"#f87171"},
+        ].map(k=>(
+          <div key={k.l} style={{...s.card,padding:"14px 18px",borderLeft:`3px solid ${k.c}`}}>
+            <div style={{fontSize:10,color:C.muted,letterSpacing:"0.07em",marginBottom:6}}>{k.l.toUpperCase()}</div>
+            <div style={{fontSize:24,fontWeight:700,color:k.c}}>{k.v}</div>
+          </div>
+        ))}
+      </div>
 
-          {/* Espaçador para empurrar o logout para baixo */}
-          <div style={{ flex: 1 }} />
-
-          {/* Informações do usuário + logout */}
-          <div style={{
-            borderTop: `1px solid ${C.border}`,
-            paddingTop: 12,
-            marginTop: 8,
-          }}>
-            <div style={{ fontSize: 11, color: C.text, fontWeight: 500, marginBottom: 2 }}>
-              {usuario.nome}
+      {/* SAVING CARD — destaque */}
+      <div style={{...s.card,padding:"20px 24px",marginBottom:18,border:`1px solid ${C.saving}44`,background:`linear-gradient(135deg, #1a1535 0%, ${C.surface} 60%)`}}>
+        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap",gap:16}}>
+          <div style={{flex:1,minWidth:200}}>
+            <div style={{fontSize:11,color:C.saving,letterSpacing:"0.12em",marginBottom:6}}>💰 SAVING GERADO PELO SISTEMA</div>
+            <div style={{fontSize:36,fontWeight:700,color:C.saving,marginBottom:2}}>{fmtBRL(totalSaving)}</div>
+            <div style={{fontSize:12,color:C.textSub}}>economia total no período selecionado</div>
+            <div style={{marginTop:16}}>
+              <SavingBar label="Saving de cotação (comparação de fornecedores)" value={totalSavingA} total={totalSaving} color="#818cf8"/>
+              <SavingBar label="Saving de negociação (poder de barganha do comprador)" value={totalSavingB} total={totalSaving} color={C.saving}/>
             </div>
-            <div style={{ fontSize: 9, color: perfil.c, marginBottom: 8 }}>
-              {perfil.icon} {perfil.l}
-            </div>
-            <button
-              onClick={logout}
-              style={{
-                background: "transparent",
-                border: `1px solid ${C.border}`,
-                borderRadius: 6,
-                padding: "6px 10px",
-                color: C.muted,
-                fontSize: 11,
-                cursor: "pointer",
-                fontFamily: "inherit",
-                width: "100%",
-              }}
-            >
-              Sair
-            </button>
+          </div>
+          {/* Mini KPIs saving */}
+          <div style={{display:"flex",flexDirection:"column",gap:10,minWidth:180}}>
+            {[
+              {l:"Saving médio/ordem",v:fmtBRL(savings.length?totalSaving/savings.length:0),c:"#818cf8"},
+              {l:"Saving sobre gasto total",v:totalGasto?(((totalSaving/(totalGasto+totalSaving))*100).toFixed(1)+"%"):"—",c:C.saving},
+              {l:"Ordens c/ negociação",v:`${savings.filter(s=>s.savingB>0).length} de ${savings.length}`,c:C.success},
+            ].map(k=>(
+              <div key={k.l} style={{background:`${C.saving}10`,border:`1px solid ${C.saving}22`,borderRadius:8,padding:"10px 14px"}}>
+                <div style={{fontSize:10,color:C.muted,marginBottom:3}}>{k.l.toUpperCase()}</div>
+                <div style={{fontSize:18,fontWeight:700,color:k.c}}>{k.v}</div>
+              </div>
+            ))}
           </div>
         </div>
+      </div>
 
-      {/* Conteúdo */}
-      <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>        
-        {tela==="home"&&(
-          <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:40,overflowY:"auto"}}>
-            <div style={{maxWidth:600,width:"100%",textAlign:"center"}}>
-              <div style={{fontSize:52,marginBottom:16}}>{perfil.icon}</div>
-              <div style={{fontSize:26,fontWeight:700,color:C.text,marginBottom:8}}>Olá, {usuario.nome.split(" ")[0]}!</div>
-              <div style={{fontSize:14,color:C.muted,marginBottom:32}}>Você está logado como <strong style={{color:perfil.c}}>{perfil.l}</strong></div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12}}>
-                {navItems.filter(n=>n.id!=="home").map(n=>(
-                  <div key={n.id} onClick={()=>navegar(n.id)}
-                    style={{...s.card,padding:"18px 14px",cursor:"pointer",textAlign:"center",transition:"all .15s"}}
-                    onMouseEnter={e=>{e.currentTarget.style.background="#151d2e";e.currentTarget.style.transform="translateY(-2px)";}}
-                    onMouseLeave={e=>{e.currentTarget.style.background=C.surface;e.currentTarget.style.transform="translateY(0)";}}>
-                    <div style={{fontSize:11,color:C.text,fontWeight:500}}>{n.l}</div>
-                  </div>
-                ))}
+      {/* Top 5 savings + Saving por comprador */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+        {/* Top 5 */}
+        <div style={{...s.card,padding:"18px 20px"}}>
+          <div style={{fontSize:11,color:C.muted,letterSpacing:"0.08em",marginBottom:14}}>🏆 TOP 5 MAIORES SAVINGS</div>
+          {top5Savings.length===0&&<div style={{color:C.muted,fontSize:12,padding:"12px 0"}}>Sem dados suficientes</div>}
+          {top5Savings.map((c,i)=>(
+            <div key={c.id} style={{display:"flex",alignItems:"center",gap:10,marginBottom:12}}>
+              <div style={{fontSize:13,fontWeight:700,color:C.muted,width:18}}>#{i+1}</div>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:12,color:C.text,fontWeight:500,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.peca}</div>
+                <div style={{display:"flex",gap:6,marginTop:3,flexWrap:"wrap"}}>
+                  {c.savingA>0&&<span style={{fontSize:10,color:"#818cf8",background:"#818cf811",borderRadius:3,padding:"1px 6px"}}>Cotação: {fmtBRL(c.savingA)}</span>}
+                  {c.savingB>0&&<span style={{fontSize:10,color:C.saving,background:`${C.saving}11`,borderRadius:3,padding:"1px 6px"}}>Negoc.: {fmtBRL(c.savingB)}</span>}
+                </div>
+              </div>
+              <div style={{fontSize:14,fontWeight:700,color:C.saving,whiteSpace:"nowrap"}}>{fmtBRL(c.savingTotal)}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Saving por comprador */}
+        <div style={{...s.card,padding:"18px 20px"}}>
+          <div style={{fontSize:11,color:C.muted,letterSpacing:"0.08em",marginBottom:14}}>👤 SAVING POR COMPRADOR</div>
+          {rankCompradores.length===0&&<div style={{color:C.muted,fontSize:12,padding:"12px 0"}}>Sem dados suficientes</div>}
+          {rankCompradores.map((c,i)=>(
+            <div key={c.nome} style={{marginBottom:14}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:4,alignItems:"center"}}>
+                <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                  <span style={{fontSize:11,fontWeight:700,color:C.muted}}>#{i+1}</span>
+                  <span style={{fontSize:13,color:C.text,fontWeight:500}}>{c.nome}</span>
+                  <span style={{fontSize:10,color:C.muted}}>{c.qtd} ordem{c.qtd!==1?"s":""}</span>
+                </div>
+                <span style={{fontSize:13,fontWeight:700,color:C.saving}}>{fmtBRL(c.total)}</span>
+              </div>
+              <div style={{display:"flex",gap:4}}>
+                {c.savingA>0&&(
+                  <div style={{flex:c.savingA,height:5,background:"#818cf8",borderRadius:3}} title={`Cotação: ${fmtBRL(c.savingA)}`}/>
+                )}
+                {c.savingB>0&&(
+                  <div style={{flex:c.savingB,height:5,background:C.saving,borderRadius:3}} title={`Negoc.: ${fmtBRL(c.savingB)}`}/>
+                )}
+              </div>
+              <div style={{display:"flex",gap:8,marginTop:3}}>
+                {c.savingA>0&&<span style={{fontSize:10,color:"#818cf8"}}>Cotação {fmtBRL(c.savingA)}</span>}
+                {c.savingB>0&&<span style={{fontSize:10,color:C.saving}}>Negoc. {fmtBRL(c.savingB)}</span>}
               </div>
             </div>
-          </div>
-        )}
-
-        {/* Acesso negado */}
-        {!temAcesso(tela)&&tela!=="home"&&(
-          <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:16}}>
-            <div style={{fontSize:48}}>🔒</div>
-            <div style={{fontSize:18,fontWeight:700,color:C.text}}>Acesso restrito</div>
-            <div style={{fontSize:13,color:C.muted}}>Seu perfil ({perfil.l}) não tem permissão para esta área.</div>
-            <button onClick={()=>setTela("home")} style={{...s.btn(true),padding:"9px 20px"}}>← Voltar ao início</button>
-          </div>
-        )}
-
-{temAcesso(tela) && tela === "tecnico" && (
-  <div style={{flex:1,overflowY:"auto"}}>
-    <TelaChamadosNova 
-      chamados={chamados.dados || []} 
-      loading={chamados.loading} 
-      erro={chamados.erro} 
-      listar={chamados.carregar}   // <- aqui está o listar
-      criar={chamados.criar} 
-      atualizar={chamados.atualizar} 
-      deletar={chamados.deletar} 
-      equipamentos={equipamentos.dados || []} 
-      fmtBRL={fmtBRL} 
-      fmtD={fmtD} 
-      C={C} 
-      s={s} 
-    />
-  </div>
-)}
-
-{temAcesso(tela) && tela === "compradora" && (
-  <div style={{flex:1,overflowY:"auto"}}>
-    <TelaCotacoesNova 
-      C={C} 
-      s={s} 
-      fmtBRL={fmtBRL} 
-      fmtD={fmtD} 
-    />
-  </div>
-)}
-
-        {temAcesso(tela)&&tela==="financeiro"&&<div style={{flex:1,overflowY:"auto"}}><TelaFinanceiroNova chamados={chamados.dados || []} cotacoes={cotacoes.dados || []} equipamentos={equipamentos.dados || []} /></div>}
-        {temAcesso(tela) && tela === "inteligencia" && (
-          <div style={{flex:1,overflowY:"auto"}}>
-            <TelaInteligenciaNova 
-              chamados={chamados.dados || []} 
-              cotacoes={cotacoes.dados || []} 
-              fornecedores={fornecedores.dados || []} 
-              equipamentos={equipamentos.dados || []} 
-              perfilUsuario={usuario.perfil}
-              C={C} 
-              s={s} 
-              fmtBRL={fmtBRL} 
-            />
-          </div>
-        )}
-        {temAcesso(tela) && tela === "benchmark" && (
-          <div style={{flex:1,overflowY:"auto"}}>
-            <TelaBenchmarkNova 
-              chamados={chamados.dados || []} 
-              participaBench={participaBench} 
-              setParticipaBench={setParticipaBench} 
-              C={C} 
-              s={s} 
-              fmtBRL={fmtBRL} 
-              fmtD={fmtD} 
-            />
-          </div>
-        )}
-        {temAcesso(tela)&&tela==="equipamentos"&&<div style={{flex:1,overflowY:"auto"}}><TelaEquipamentos fmtBRL={fmtBRL} fmtD={fmtD} C={C} s={s}/></div>}
-
-{temAcesso(tela) && tela === "fornecedores" && (
-  <div style={{flex:1,overflowY:"auto"}}>
-    <TelaFornecedoresNova C={C} s={s} fmtD={fmtD} />
-  </div>
-)}     
-        
-        {temAcesso(tela)&&tela==="fornecedorportal"&&<div style={{flex:1,overflowY:"auto"}}><TelaFornecedorPortal/></div>}
-        {temAcesso(tela) && tela === "usuarios" && (<div style={{ flex: 1, overflowY: "auto" }}><TelaUsuariosNova useUsuarios={useUsuarios} C={C} s={s} /></div>)}
-        {temAcesso(tela) && tela === "historico" && (
-          <div style={{flex:1,overflowY:"auto"}}>
-            <TelaHistoricoPrecosNova 
-              chamados={chamados.dados || []} 
-              cotacoes={cotacoes.dados || []} 
-              C={C} 
-              s={s} 
-              fmtBRL={fmtBRL} 
-              fmtD={fmtD} 
-            />
-          </div>
-        )}
-        {temAcesso(tela) && tela === "relatorio" && (
-          <div style={{flex:1,overflowY:"auto"}}>
-            <TelaRelatorioNova 
-              chamados={chamados.dados || []} 
-              cotacoes={cotacoes.dados || []} 
-              fornecedores={fornecedores.dados || []} 
-              equipamentos={equipamentos.dados || []} 
-              onAbrirPlano={abrirPlanoDeAcao} 
-              tarefas={tarefas.dados || []} 
-              notasPeriodo={notasPeriodo} 
-              setNota={setNota} 
-              C={C} 
-              s={s} 
-              fmtBRL={fmtBRL} 
-              fmtD={fmtD} 
-            />
-          </div>
-        )}
-        {temAcesso(tela) && tela === "plano" && (
-          <div style={{flex:1,overflowY:"auto"}}>
-            <TelaPlanoAcaoNova useTarefas={useTarefas} onVoltar={()=>navegar("relatorio")} C={C} s={s} />
-          </div>
-        )}        
+          ))}
+        </div>
       </div>
-      </div>
-      </div>
-    );
-    if (!usuario) return <TelaLogin onLogin={login}/>;
-  }
 
+      {/* Gráfico mensal + categorias */}
+      <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:14,marginBottom:14}}>
+        <div style={{...s.card,padding:"18px 20px"}}>
+          <div style={{fontSize:11,color:C.muted,letterSpacing:"0.08em",marginBottom:16}}>GASTOS MENSAIS — {ano}</div>
+          <div style={{display:"flex",alignItems:"flex-end",gap:6,height:110}}>
+            {porMes.map((m,i)=>{
+              const isSel = mes!=="todos"&&parseInt(mes)===i;
+              const isHov = mes==="todos"||isSel;
+              return(
+                <div key={i} onClick={()=>setMes(mes===String(i)?"todos":String(i))}
+                  style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3,cursor:"pointer"}}>
+                  {m.total>0&&<div style={{fontSize:8,color:isSel?C.accent:C.muted,whiteSpace:"nowrap"}}>{fmtBRL(m.total).replace("R$ ","")}</div>}
+                  <div style={{width:"100%",background:isSel?C.accent:m.total>0?"#3b82f644":C.border,borderRadius:"3px 3px 0 0",
+                    height:m.total>0?`${Math.max((m.total/maxMes)*100,5)}%`:"5px",
+                    border:isSel?`1px solid ${C.accent}`:"none",transition:"all .2s",minHeight:4}}/>
+                  <div style={{fontSize:8,color:isSel?C.accent:C.muted}}>{m.m}</div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{fontSize:10,color:C.muted,marginTop:8,textAlign:"center"}}>Clique em um mês para filtrar todo o painel</div>
+        </div>
+
+        <div style={{...s.card,padding:"18px 20px"}}>
+          <div style={{fontSize:11,color:C.muted,letterSpacing:"0.08em",marginBottom:16}}>POR CATEGORIA</div>
+          {porCat.map(c=>(
+            <div key={c.cat} style={{marginBottom:14}}>
+              <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                <span style={{fontSize:12,color:C.text}}>{c.label}</span>
+                <span style={{fontSize:12,color:c.color,fontWeight:600}}>{fmtBRL(c.total)}</span>
+              </div>
+              <div style={{height:6,background:C.border,borderRadius:3,overflow:"hidden"}}>
+                <div style={{height:"100%",background:c.color,width:`${totalGasto?(c.total/totalGasto)*100:0}%`,borderRadius:3}}/>
+              </div>
+              <div style={{fontSize:10,color:C.muted,marginTop:2}}>{c.qtd} ordem{c.qtd!==1?"s":""}</div>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Lead time + prazo resposta fornecedor */}
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:14,marginBottom:14}}>
+        {/* Top 5 lead time */}
+        <div style={{...s.card,padding:"18px 20px"}}>
+          <div style={{fontSize:11,color:C.muted,letterSpacing:"0.08em",marginBottom:4}}>⏱ TOP 5 MAIOR LEAD TIME</div>
+          <div style={{fontSize:10,color:C.muted,marginBottom:14}}>Dias entre abertura do chamado e recebimento</div>
+          {top5Lead.length===0&&<div style={{color:C.muted,fontSize:12,padding:"12px 0"}}>Sem dados</div>}
+          {top5Lead.map((c,i)=>{
+            const maxLead = top5Lead[0]?.leadTime||1;
+            const eq = equipamentos.find(e=>e.id===c.equipamentoId);
+            return(
+              <div key={c.id} style={{marginBottom:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4,alignItems:"center"}}>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:12,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.peca}</div>
+                    <div style={{fontSize:10,color:C.muted}}>{eq?.tag||"—"} · <span style={s.tag(urgCfg[c.urgencia]?.c)}>{urgCfg[c.urgencia]?.l}</span></div>
+                  </div>
+                  <div style={{fontSize:14,fontWeight:700,color:c.leadTime>5?"#f87171":c.leadTime>3?C.warn:C.success,marginLeft:12,whiteSpace:"nowrap"}}>{c.leadTime}d</div>
+                </div>
+                <div style={{height:5,background:C.border,borderRadius:3,overflow:"hidden"}}>
+                  <div style={{height:"100%",background:c.leadTime>5?"#f87171":c.leadTime>3?C.warn:C.success,width:`${(c.leadTime/maxLead)*100}%`,borderRadius:3}}/>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Prazo médio de resposta por fornecedor */}
+        <div style={{...s.card,padding:"18px 20px"}}>
+          <div style={{fontSize:11,color:C.muted,letterSpacing:"0.08em",marginBottom:4}}>📬 PRAZO MÉDIO DE RESPOSTA</div>
+          <div style={{fontSize:10,color:C.muted,marginBottom:14}}>Dias entre envio da cotação e resposta do fornecedor</div>
+          {rankForn.length===0&&<div style={{color:C.muted,fontSize:12,padding:"12px 0"}}>Sem dados</div>}
+          {rankForn.map((f,i)=>{
+            const maxM = rankForn[rankForn.length-1]?.media||1;
+            const color = f.media<=1?C.success:f.media<=3?C.warn:"#f87171";
+            return(
+              <div key={f.nome} style={{marginBottom:12}}>
+                <div style={{display:"flex",justifyContent:"space-between",marginBottom:4}}>
+                  <span style={{fontSize:12,color:C.text,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",flex:1}}>{f.nome}</span>
+                  <span style={{fontSize:13,fontWeight:700,color,marginLeft:8,whiteSpace:"nowrap"}}>{f.media.toFixed(1)}d</span>
+                </div>
+                <div style={{height:5,background:C.border,borderRadius:3,overflow:"hidden"}}>
+                  <div style={{height:"100%",background:color,width:`${(f.media/maxM)*100}%`,borderRadius:3}}/>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+
+      {/* Por equipamento */}
+      {porEquip.length>0&&(
+        <div style={{...s.card,overflow:"hidden",marginBottom:14}}>
+          <div style={{padding:"14px 20px",borderBottom:`1px solid ${C.border}`,fontSize:11,color:C.muted,letterSpacing:"0.08em"}}>GASTOS POR EQUIPAMENTO</div>
+          {porEquip.map((eq,i)=>(
+            <div key={eq.id} style={{display:"flex",alignItems:"center",padding:"12px 20px",borderBottom:i<porEquip.length-1?`1px solid ${C.border}22`:"none",gap:14}}>
+              <div style={{fontSize:10,color:C.muted,width:20,textAlign:"right"}}>#{i+1}</div>
+              <div style={{flex:1}}>
+                <div style={{fontSize:13,color:C.text,fontWeight:500}}>{eq.nome}</div>
+                <div style={{fontSize:11,color:C.accent}}>{eq.tag} · {eq.qtd} ordem{eq.qtd!==1?"s":""}</div>
+              </div>
+              <div style={{width:180}}>
+                <div style={{height:5,background:C.border,borderRadius:3,overflow:"hidden"}}>
+                  <div style={{height:"100%",background:C.accent,width:`${(eq.total/porEquip[0].total)*100}%`,borderRadius:3}}/>
+                </div>
+              </div>
+              <div style={{fontSize:14,fontWeight:700,color:C.accent,width:110,textAlign:"right"}}>{fmtBRL(eq.total)}</div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Tabela detalhada */}
+      <div style={{...s.card,overflow:"hidden"}}>
+        <div style={{padding:"14px 20px",borderBottom:`1px solid ${C.border}`,fontSize:11,color:C.muted,letterSpacing:"0.08em"}}>HISTÓRICO DE COMPRAS APROVADAS</div>
+        <div style={{display:"grid",gridTemplateColumns:"120px 2fr 1.2fr 90px 90px 90px 110px 90px",padding:"10px 20px",background:C.bg,borderBottom:`1px solid ${C.border}`,fontSize:10,color:C.muted,letterSpacing:"0.08em"}}>
+          <span>NÚMERO</span><span>PEÇA</span><span>EQUIPAMENTO</span><span>CATEGORIA</span><span>COMPRADOR</span><span>LEAD TIME</span><span style={{textAlign:"right"}}>VALOR PAGO</span><span style={{textAlign:"right"}}>SAVING</span>
+        </div>
+        {savings.map((c,i)=>{
+          const eq = equipamentos.find(e=>e.id===c.equipamentoId);
+          return(
+            <div key={c.id} style={{display:"grid",gridTemplateColumns:"120px 2fr 1.2fr 90px 90px 90px 110px 90px",padding:"12px 20px",borderBottom:i<savings.length-1?`1px solid ${C.border}22`:"none",alignItems:"center"}}>
+              <span style={{fontSize:11,color:C.accent,fontFamily:"'IBM Plex Mono',monospace"}}>{c.numero}</span>
+              <div>
+                <div style={{fontSize:13,color:C.text}}>{c.peca}</div>
+                {c.fornecedorAprovado&&<div style={{fontSize:11,color:C.muted}}>{c.fornecedorAprovado}</div>}
+              </div>
+              <span style={{fontSize:12,color:C.textSub}}>{eq?.nome||"—"}</span>
+              <span style={s.tag(catCfg[c.categoria]?.c)}>{catCfg[c.categoria]?.l}</span>
+              <span style={{fontSize:12,color:C.textSub}}>{c.aprovadoPor||"—"}</span>
+              <span style={{fontSize:12,color:c.leadTime>5?"#f87171":c.leadTime>3?C.warn:C.success,fontWeight:600}}>{c.leadTime?`${c.leadTime}d`:"—"}</span>
+              <div style={{textAlign:"right"}}>
+                <div style={{fontSize:13,fontWeight:700,color:C.success}}>{fmtBRL(c.valorPago)}</div>
+                {c.valorNegociado&&c.valorNegociado!==c.valorAprovado&&<div style={{fontSize:10,color:C.muted,textDecoration:"line-through"}}>{fmtBRL(c.valorAprovado)}</div>}
+              </div>
+              <div style={{textAlign:"right"}}>
+                {c.savingTotal>0
+                  ?<span style={{fontSize:12,fontWeight:700,color:C.saving}}>+{fmtBRL(c.savingTotal)}</span>
+                  :<span style={{fontSize:12,color:C.muted}}>—</span>}
+              </div>
+            </div>
+          );
+        })}
+        {savings.length===0&&<div style={{padding:32,textAlign:"center",color:C.muted,fontSize:13}}>Nenhuma compra finalizada no período</div>}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// TELA: EQUIPAMENTOS
+// ─────────────────────────────────────────────
+function TelaEquipamentos({equipamentos,setEquipamentos}){
+  const [search,setSearch]=useState("");
+  const [modal,setModal]=useState(null);
+  const [form,setForm]=useState({tag:"",nome:"",local:"",fabricante:"",modelo:"",serie:""});
+  const salvar=()=>{
+    if(!form.nome||!form.tag)return;
+    if(modal==="novo")setEquipamentos(prev=>[...prev,{id:Date.now(),...form,ativo:true}]);
+    else setEquipamentos(prev=>prev.map(e=>e.id===modal?{...e,...form}:e));
+    setModal(null);
+  };
+  const excluir=id=>{if(confirm("Desativar este equipamento?"))setEquipamentos(prev=>prev.map(e=>e.id===id?{...e,ativo:false}:e));};
+  const abrirEditar=eq=>{setForm({tag:eq.tag,nome:eq.nome,local:eq.local,fabricante:eq.fabricante,modelo:eq.modelo,serie:eq.serie});setModal(eq.id);};
+  const lista=equipamentos.filter(e=>e.ativo&&(e.nome.toLowerCase().includes(search.toLowerCase())||e.tag.toLowerCase().includes(search.toLowerCase())||e.local?.toLowerCase().includes(search.toLowerCase())));
+  return(
+    <div style={{padding:"22px 24px",overflowY:"auto",height:"100%"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:20}}>
+        <div><div style={{fontSize:11,color:C.muted,letterSpacing:"0.1em",marginBottom:4}}>CADASTROS</div><div style={{fontSize:20,fontWeight:700,color:C.text}}>Equipamentos</div></div>
+        <button onClick={()=>{setForm({tag:"",nome:"",local:"",fabricante:"",modelo:"",serie:""});setModal("novo");}} style={{...s.btn(true),padding:"8px 18px"}}>+ Novo equipamento</button>
+      </div>
+      <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar por nome, TAG ou localização..." style={{...s.input,marginBottom:16}}/>
+      <div style={{...s.card,overflow:"hidden"}}>
+        <div style={{display:"grid",gridTemplateColumns:"120px 2fr 1fr 1fr 1fr 80px",padding:"10px 18px",background:C.bg,borderBottom:`1px solid ${C.border}`,fontSize:10,color:C.muted,letterSpacing:"0.08em"}}>
+          <span>TAG</span><span>EQUIPAMENTO</span><span>LOCALIZAÇÃO</span><span>FABRICANTE</span><span>MODELO / SÉRIE</span><span></span>
+        </div>
+        {lista.map((eq,i)=>(
+          <div key={eq.id} style={{display:"grid",gridTemplateColumns:"120px 2fr 1fr 1fr 1fr 80px",padding:"13px 18px",borderBottom:i<lista.length-1?`1px solid ${C.border}22`:"none",alignItems:"center"}}>
+            <span style={{fontSize:11,color:C.accent,fontFamily:"'IBM Plex Mono',monospace",fontWeight:600}}>{eq.tag}</span>
+            <span style={{fontSize:13,color:C.text,fontWeight:500}}>{eq.nome}</span>
+            <span style={{fontSize:12,color:C.textSub}}>{eq.local}</span>
+            <span style={{fontSize:12,color:C.textSub}}>{eq.fabricante}</span>
+            <div><div style={{fontSize:12,color:C.textSub}}>{eq.modelo}</div><div style={{fontSize:10,color:C.muted}}>{eq.serie}</div></div>
+            <div style={{display:"flex",gap:6}}>
+              <button onClick={()=>abrirEditar(eq)} style={{background:"transparent",border:`1px solid ${C.border}`,borderRadius:5,padding:"4px 8px",color:C.textSub,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✏</button>
+              <button onClick={()=>excluir(eq.id)} style={{background:"transparent",border:`1px solid #ef444433`,borderRadius:5,padding:"4px 8px",color:"#ef4444",fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✕</button>
+            </div>
+          </div>
+        ))}
+        {lista.length===0&&<div style={{padding:32,textAlign:"center",color:C.muted,fontSize:13}}>Nenhum equipamento encontrado</div>}
+      </div>
+      {modal&&(
+        <Modal title={modal==="novo"?"Novo equipamento":"Editar equipamento"} onClose={()=>setModal(null)}>
+          <Input label="TAG *" value={form.tag} onChange={e=>setForm(f=>({...f,tag:e.target.value}))} placeholder="Ex: COMP-AR-03"/>
+          <Input label="Nome *" value={form.nome} onChange={e=>setForm(f=>({...f,nome:e.target.value}))} placeholder="Ex: Compressor de Ar"/>
+          <Input label="Localização" value={form.local} onChange={e=>setForm(f=>({...f,local:e.target.value}))} placeholder="Ex: Fábrica A"/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
+            <Input label="Fabricante" value={form.fabricante} onChange={e=>setForm(f=>({...f,fabricante:e.target.value}))} placeholder="Ex: Atlas Copco"/>
+            <Input label="Modelo" value={form.modelo} onChange={e=>setForm(f=>({...f,modelo:e.target.value}))} placeholder="Ex: GA15"/>
+          </div>
+          <Input label="Número de série" value={form.serie} onChange={e=>setForm(f=>({...f,serie:e.target.value}))} placeholder="Ex: ATC-2019-003"/>
+          <div style={{display:"flex",gap:10,justifyContent:"flex-end",marginTop:8}}>
+            <button onClick={()=>setModal(null)} style={{...s.btn(false),padding:"8px 18px"}}>Cancelar</button>
+            <button onClick={salvar} disabled={!form.nome||!form.tag} style={s.btn(form.nome&&form.tag)}>Salvar</button>
+          </div>
+        </Modal>
+      )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// TELA: FORNECEDORES
+// ─────────────────────────────────────────────
 // ─────────────────────────────────────────────
 // ÁRVORE DE CATEGORIAS
 // ─────────────────────────────────────────────
@@ -1767,6 +1856,484 @@ const custoTotal = f => (f.valor||0) + (f.valorFrete||0);
 const getMenorTotal = fs => { const vs=fs.filter(f=>f.valor!=null).map(f=>custoTotal(f)); return vs.length?Math.min(...vs):null; };
 
 // ─────────────────────────────────────────────
+// TELA: INTELIGÊNCIA DE SUPRIMENTOS
+// ─────────────────────────────────────────────
+function TelaInteligencia({ chamados, cotacoes, fornecedores, equipamentos }) {
+  const [iaLoading, setIaLoading] = useState(false);
+  const [iaAnalise, setIaAnalise] = useState("");
+  const [iaErro, setIaErro] = useState("");
+  const [expandAlert, setExpandAlert] = useState(null);
+
+  // ── MOTOR DE ALERTAS ──────────────────────────────────────
+  const alertas = [];
+
+  // helpers
+  const finalizados = chamados.filter(c => c.status === "finalizado" && c.valorAprovado);
+  const todasCots = cotacoes;
+
+  // ── COMPLIANCE ──
+  // 1. Fornecedor que sempre perde na 1ª cotação mas vence após renegociação
+  const fornVitorias = {};
+  finalizados.forEach(ch => {
+    const cot = todasCots.find(c => c.chamadoId === ch.id);
+    if (!cot) return;
+    const fs = cot.fornecedores.filter(f => f.valor != null);
+    if (fs.length < 2) return;
+    const menorOriginal = fs.reduce((a,b) => a.valor < b.valor ? a : b);
+    const vencedor = ch.fornecedorAprovado;
+    if (vencedor && vencedor !== menorOriginal.nome) {
+      if (!fornVitorias[vencedor]) fornVitorias[vencedor] = { vitorias: 0, totalCots: 0, comprador: ch.aprovadoPor };
+      fornVitorias[vencedor].vitorias++;
+    }
+    fs.forEach(f => { if (!fornVitorias[f.nome]) fornVitorias[f.nome] = { vitorias: 0, totalCots: 0, comprador: ch.aprovadoPor }; fornVitorias[f.nome].totalCots++; });
+  });
+  Object.entries(fornVitorias).forEach(([nome, d]) => {
+    if (d.vitorias >= 2 && d.totalCots >= 2) {
+      const pct = Math.round((d.vitorias / Math.max(d.totalCots,1)) * 100);
+      if (pct >= 60) alertas.push({
+        id: `comp_rev_${nome}`, categoria: "compliance", severidade: "alta",
+        titulo: `Fornecedor ganha frequentemente após renegociação`,
+        descricao: `"${nome}" venceu ${d.vitorias}x sem ter o menor preço inicial. Em ${pct}% dos casos o pedido foi para ele após renegociação. Padrão pode indicar informação privilegiada sobre concorrentes.`,
+        dado: `Comprador frequente nessas aprovações: ${d.comprador||"não identificado"}`,
+        acao: "Auditar histórico de comunicações entre comprador e fornecedor. Verificar se outros fornecedores tiveram oportunidade de revisar proposta."
+      });
+    }
+  });
+
+  // 2. Comprador com concentração de aprovações em fornecedor específico
+  const compradorForn = {};
+  finalizados.forEach(ch => {
+    if (!ch.aprovadoPor || !ch.fornecedorAprovado) return;
+    const key = `${ch.aprovadoPor}__${ch.fornecedorAprovado}`;
+    compradorForn[key] = (compradorForn[key] || 0) + 1;
+  });
+  Object.entries(compradorForn).forEach(([key, count]) => {
+    if (count >= 3) {
+      const [comprador, forn] = key.split("__");
+      alertas.push({
+        id: `comp_conc_${key}`, categoria: "compliance", severidade: "media",
+        titulo: `Alta concentração comprador × fornecedor`,
+        descricao: `${comprador} aprovou ${count} pedidos consecutivos para "${forn}". Concentração acima do normal para um único par.`,
+        dado: `${count} aprovações registradas`,
+        acao: "Revisar se outros compradores rotacionam aprovações. Avaliar política de rodízio de aprovadores para fornecedores frequentes."
+      });
+    }
+  });
+
+  // 3. Cotação com 1 único respondente aprovada (sem concorrência real)
+  const semConcorrencia = finalizados.filter(ch => {
+    const cot = todasCots.find(c => c.chamadoId === ch.id);
+    if (!cot) return false;
+    return cot.fornecedores.filter(f => f.valor != null).length === 1;
+  });
+  if (semConcorrencia.length > 0) alertas.push({
+    id: "comp_unico", categoria: "compliance", severidade: "media",
+    titulo: `${semConcorrencia.length} compra(s) sem concorrência real`,
+    descricao: `Aprovadas com apenas 1 proposta respondida. Sem comparação de preço, não há como garantir que o valor foi o melhor disponível.`,
+    dado: semConcorrencia.map(c => c.numero).join(", "),
+    acao: "Estabelecer política mínima de 2 cotações respondidas antes de qualquer aprovação, exceto em emergências documentadas."
+  });
+
+  // 4. Fornecedor que responde muito rápido (possível aviso prévio)
+  todasCots.forEach(cot => {
+    cot.fornecedores.forEach(f => {
+      if (f.dataResposta && cot.dataEnvio) {
+        const hrs = (new Date(f.dataResposta) - new Date(cot.dataEnvio)) / 3600000;
+        const ch = chamados.find(c => c.id === cot.chamadoId);
+        if (hrs < 2 && f.valor != null) alertas.push({
+          id: `comp_rapid_${f.token}`, categoria: "compliance", severidade: "baixa",
+          titulo: `Resposta suspeita rápida de fornecedor`,
+          descricao: `"${f.nome}" respondeu em menos de 2 horas na cotação ${ch?.numero||""}. Tempo incomum para formular proposta com preço e prazo.`,
+          dado: `Resposta em ${hrs.toFixed(1)}h após envio`,
+          acao: "Verificar se fornecedor foi contatado antes do envio formal da cotação."
+        });
+      }
+    });
+  });
+
+  // ── FORNECEDOR ──
+  // 5. Peça com fornecedor único
+  const pecaFornMap = {};
+  todasCots.forEach(cot => {
+    const ch = chamados.find(c => c.id === cot.chamadoId);
+    if (!ch) return;
+    const key = ch.peca;
+    if (!pecaFornMap[key]) pecaFornMap[key] = { peca: key, urgencia: ch.urgencia, fornecedores: new Set() };
+    cot.fornecedores.forEach(f => f.valor != null && pecaFornMap[key].fornecedores.add(f.nome));
+  });
+  Object.values(pecaFornMap).forEach(p => {
+    if (p.fornecedores.size === 1) alertas.push({
+      id: `forn_unico_${p.peca}`, categoria: "fornecedor", severidade: p.urgencia === "alta" ? "alta" : "media",
+      titulo: `Fornecedor único para item ${p.urgencia === "alta" ? "crítico" : "recorrente"}`,
+      descricao: `"${p.peca}" tem apenas 1 fornecedor que cotou até hoje: ${[...p.fornecedores][0]}. Risco de desabastecimento se esse fornecedor não estiver disponível.`,
+      dado: `Urgência histórica: ${urgCfg[p.urgencia]?.l}`,
+      acao: "Prospectar 2 fornecedores alternativos homologados para este item."
+    });
+  });
+
+  // 6. Fornecedor com alta taxa de não resposta
+  const fornResposta = {};
+  todasCots.forEach(cot => {
+    cot.fornecedores.forEach(f => {
+      if (!fornResposta[f.nome]) fornResposta[f.nome] = { total: 0, naoResp: 0 };
+      fornResposta[f.nome].total++;
+      if (f.status === "sem_resposta") fornResposta[f.nome].naoResp++;
+    });
+  });
+  Object.entries(fornResposta).forEach(([nome, d]) => {
+    if (d.total >= 2 && d.naoResp / d.total >= 0.5) alertas.push({
+      id: `forn_noresp_${nome}`, categoria: "fornecedor", severidade: "media",
+      titulo: `Fornecedor com baixa confiabilidade de resposta`,
+      descricao: `"${nome}" não respondeu ${d.naoResp} de ${d.total} cotações (${Math.round(d.naoResp/d.total*100)}%). Dependência deste fornecedor cria risco operacional.`,
+      dado: `${d.naoResp} sem resposta de ${d.total} solicitações`,
+      acao: "Avaliar suspensão temporária do cadastro. Buscar substituto antes de remover."
+    });
+  });
+
+  // 7. Concentração de gastos num único fornecedor
+  const gastoPorForn = {};
+  finalizados.forEach(ch => {
+    if (!ch.fornecedorAprovado) return;
+    gastoPorForn[ch.fornecedorAprovado] = (gastoPorForn[ch.fornecedorAprovado]||0) + (ch.valorNegociado||ch.valorAprovado);
+  });
+  const totalGastoGeral = Object.values(gastoPorForn).reduce((a,b)=>a+b,0);
+  Object.entries(gastoPorForn).forEach(([nome, valor]) => {
+    const pct = totalGastoGeral ? (valor/totalGastoGeral)*100 : 0;
+    if (pct >= 45) alertas.push({
+      id: `forn_conc_${nome}`, categoria: "fornecedor", severidade: "alta",
+      titulo: `Concentração crítica de gastos em um fornecedor`,
+      descricao: `${Math.round(pct)}% de todo o gasto de compras está concentrado em "${nome}". Qualquer problema com este fornecedor (falência, greve, aumento de preço) impacta diretamente a operação.`,
+      dado: `${fmtBRL(valor)} de ${fmtBRL(totalGastoGeral)} total`,
+      acao: "Diversificar base de fornecedores. Meta: nenhum fornecedor acima de 30% do gasto total."
+    });
+  });
+
+  // ── FINANCEIRO ──
+  // 8. Variação de preço acima de 20% num mesmo item
+  const precoHistorico = {};
+  todasCots.forEach(cot => {
+    const ch = chamados.find(c => c.id === cot.chamadoId);
+    if (!ch) return;
+    cot.fornecedores.filter(f=>f.valor!=null).forEach(f => {
+      if (!precoHistorico[ch.peca]) precoHistorico[ch.peca] = [];
+      precoHistorico[ch.peca].push({ valor: f.valor, data: cot.dataEnvio, forn: f.nome });
+    });
+  });
+  Object.entries(precoHistorico).forEach(([peca, entries]) => {
+    if (entries.length < 2) return;
+    const sorted = [...entries].sort((a,b)=>new Date(a.data)-new Date(b.data));
+    const primeiro = sorted[0].valor;
+    const ultimo = sorted[sorted.length-1].valor;
+    const variacao = ((ultimo - primeiro) / primeiro) * 100;
+    if (variacao > 25) alertas.push({
+      id: `fin_preco_${peca}`, categoria: "financeiro", severidade: variacao > 50 ? "alta" : "media",
+      titulo: `Alta variação de preço detectada`,
+      descricao: `"${peca}" teve variação de +${variacao.toFixed(0)}% no preço entre a primeira e a última cotação. Tendência de alta pode impactar o orçamento de manutenção.`,
+      dado: `De ${fmtBRL(primeiro)} → ${fmtBRL(ultimo)}`,
+      acao: "Revisar orçamento previsto para este item. Avaliar compra em quantidade maior enquanto o preço está favorável."
+    });
+  });
+
+  // 9. Frete FOB com custo real maior que parecia
+  todasCots.forEach(cot => {
+    const fsFOB = cot.fornecedores.filter(f => f.frete === "FOB" && f.valorFrete > 0 && f.valor != null);
+    fsFOB.forEach(f => {
+      const pctFrete = (f.valorFrete / f.valor) * 100;
+      if (pctFrete > 20) {
+        const ch = chamados.find(c => c.id === cot.chamadoId);
+        alertas.push({
+          id: `fin_frete_${f.token}`, categoria: "financeiro", severidade: "media",
+          titulo: `Frete FOB representa custo elevado`,
+          descricao: `Na cotação ${ch?.numero||""}, o frete de "${f.nome}" representa ${pctFrete.toFixed(0)}% do valor da peça. O preço unitário parecia competitivo mas o custo total é elevado.`,
+          dado: `Peça: ${fmtBRL(f.valor)} + Frete: ${fmtBRL(f.valorFrete)} = Total: ${fmtBRL(custoTotal(f))}`,
+          acao: "Comparar sempre pelo custo total (CIF equivalente). Negociar frete incluso ou consolidar pedidos com este fornecedor."
+        });
+      }
+    });
+  });
+
+  // ── OPERACIONAL ──
+  // 10. Equipamento com alta frequência corretiva
+  const corrPorEquip = {};
+  chamados.forEach(ch => {
+    if (ch.categoria !== "corretiva") return;
+    corrPorEquip[ch.equipamentoId] = (corrPorEquip[ch.equipamentoId]||0) + 1;
+  });
+  Object.entries(corrPorEquip).forEach(([eqId, count]) => {
+    if (count >= 2) {
+      const eq = equipamentos.find(e => e.id === parseInt(eqId));
+      const custoEq = finalizados.filter(c=>c.equipamentoId===parseInt(eqId)&&c.categoria==="corretiva").reduce((a,c)=>a+(c.valorNegociado||c.valorAprovado),0);
+      alertas.push({
+        id: `op_corr_${eqId}`, categoria: "operacional", severidade: count >= 3 ? "alta" : "media",
+        titulo: `Equipamento com histórico crítico de falhas corretivas`,
+        descricao: `"${eq?.nome||eqId}" (${eq?.tag}) acumulou ${count} manutenções corretivas. Equipamento pode estar próximo do limite de vida útil ou necessitar revisão geral.`,
+        dado: `Custo corretivo acumulado: ${fmtBRL(custoEq)}`,
+        acao: "Calcular relação custo de manutenção × valor de reposição do equipamento. Se >50% do valor novo, avaliar substituição."
+      });
+    }
+  });
+
+  // 11. Lead time longo em item de alta urgência
+  finalizados.filter(c => c.urgencia === "alta" && c.leadTime >= 5).forEach(ch => {
+    const eq = equipamentos.find(e => e.id === ch.equipamentoId);
+    alertas.push({
+      id: `op_lead_${ch.id}`, categoria: "operacional", severidade: "alta",
+      titulo: `Lead time crítico em item de alta urgência`,
+      descricao: `"${ch.peca}" (equipamento ${eq?.tag||""}) levou ${ch.leadTime} dias para ser entregue. Em equipamentos parados, cada dia de espera tem custo operacional direto.`,
+      dado: `${ch.leadTime}d de lead time · Urgência: Alta`,
+      acao: "Manter estoque mínimo de segurança para este item. Pré-qualificar fornecedor com pronta entrega."
+    });
+  });
+
+  // ordenar: alta > media > baixa
+  const ordem = { alta: 0, media: 1, baixa: 2 };
+  alertas.sort((a,b) => ordem[a.severidade] - ordem[b.severidade]);
+
+  const sevCfg = { alta: { c:"#ef4444", bg:"#3f0f0f", l:"Alto" }, media: { c:"#f59e0b", bg:"#3f2a0a", l:"Médio" }, baixa: { c:"#60a5fa", bg:"#0f1e35", l:"Baixo" } };
+  const catIcon = { compliance:"🔍", fornecedor:"🏭", financeiro:"💰", operacional:"⚙️" };
+  const catLabel = { compliance:"Compliance", fornecedor:"Fornecedor", financeiro:"Financeiro", operacional:"Operacional" };
+  const catColor = { compliance:"#f87171", fornecedor:"#a78bfa", financeiro:"#22c55e", operacional:"#60a5fa" };
+
+  const resumo = ["compliance","fornecedor","financeiro","operacional"].map(cat => ({
+    cat, icon: catIcon[cat], label: catLabel[cat], color: catColor[cat],
+    altas: alertas.filter(a=>a.categoria===cat&&a.severidade==="alta").length,
+    total: alertas.filter(a=>a.categoria===cat).length,
+  }));
+
+  // ── IA ANALYSIS ──
+  const gerarAnaliseIA = () => {
+    setIaLoading(true); setIaAnalise(""); setIaErro("");
+
+    const alto = alertas.filter(a=>a.severidade==="alta").length;
+    const totalGasto = finalizados.reduce((s,c)=>s+(c.valorNegociado||c.valorAprovado),0);
+    const alertasTexto = alertas.slice(0,8).map(a=>`- [${a.severidade.toUpperCase()}] ${a.categoria}: ${a.titulo} | Dado: ${a.dado}`).join("\n");
+
+    const prompt = `QUOTAFLOW_PARECER_EXECUTIVO
+Você é um analista sênior de suprimentos com 20 anos de experiência em indústrias brasileiras.
+Gere um parecer executivo em português baseado nos dados abaixo.
+Estruture em: 1) Diagnóstico geral (2-3 frases), 2) Principais riscos (bullets concisos), 3) Recomendação imediata.
+Máximo 280 palavras. Seja direto e específico com os números.
+
+DADOS:
+- Total de alertas: ${alertas.length} (${alto} de alta severidade)
+- Gasto total de manutenção: R$ ${totalGasto.toFixed(2).replace(".",",")}
+- Ordens finalizadas: ${finalizados.length}
+- Fornecedores ativos: ${fornecedores.filter(f=>f.ativo!==false).length}
+
+ALERTAS DETECTADOS:
+${alertasTexto || "Nenhum alerta crítico identificado."}
+
+Responda APENAS com o parecer formatado, sem introdução ou explicação adicional.`;
+
+    // Usa sendPrompt para chamar o Claude desta conversa
+    if (typeof window.sendPrompt === "function") {
+      window.sendPrompt(prompt);
+      // O resultado aparece no chat — informar o usuário
+      setIaErro("");
+      setIaAnalise("✅ Parecer solicitado! A análise foi enviada para o chat acima desta janela. Role para cima para ver o resultado completo gerado pelo Claude.");
+      setIaLoading(false);
+    } else {
+      // Fallback: gerar análise determinística com os dados reais
+      setIaAnalise(gerarParecerLocal());
+      setIaLoading(false);
+    }
+  };
+
+  const gerarParecerLocal = () => {
+    const alto = alertas.filter(a=>a.severidade==="alta").length;
+    const med = alertas.filter(a=>a.severidade==="media").length;
+    const totalGasto = finalizados.reduce((s,c)=>s+(c.valorNegociado||c.valorAprovado),0);
+    const compAlerts = alertas.filter(a=>a.categoria==="compliance");
+    const fornAlerts = alertas.filter(a=>a.categoria==="fornecedor");
+    const finAlerts = alertas.filter(a=>a.categoria==="financeiro");
+    const opAlerts = alertas.filter(a=>a.categoria==="operacional");
+
+    const linhas = [];
+    linhas.push("PARECER EXECUTIVO — INTELIGÊNCIA DE SUPRIMENTOS\n");
+    linhas.push("1. DIAGNÓSTICO GERAL");
+    linhas.push(`A operação registrou ${alertas.length} alertas no período, sendo ${alto} de alta severidade e ${med} de média. O gasto total de manutenção foi de R$ ${totalGasto.toFixed(2).replace(".",",")} em ${finalizados.length} ordens finalizadas. O perfil de risco requer atenção prioritária em ${alto>0?"conformidade e concentração de fornecedores":"gestão de custos e lead times"}.`);
+    linhas.push("\n2. PRINCIPAIS RISCOS IDENTIFICADOS");
+    if (compAlerts.length>0) linhas.push(`• 🔴 Compliance (${compAlerts.length} alerta${compAlerts.length>1?"s":""}): ${compAlerts[0].titulo}. Risco de fraude ou favorecimento indevido.`);
+    if (fornAlerts.length>0) linhas.push(`• 🟠 Fornecedor (${fornAlerts.length} alerta${fornAlerts.length>1?"s":""}): ${fornAlerts[0].titulo}. Dependência de fonte única compromete a continuidade operacional.`);
+    if (finAlerts.length>0) linhas.push(`• 🟡 Financeiro (${finAlerts.length} alerta${finAlerts.length>1?"s":""}): ${finAlerts[0].titulo}. Variações de preço podem corroer a margem operacional.`);
+    if (opAlerts.length>0) linhas.push(`• 🔵 Operacional (${opAlerts.length} alerta${opAlerts.length>1?"s":""}): ${opAlerts[0].titulo}. Equipamentos com manutenção recorrente merecem análise de substituição.`);
+    if (alertas.length===0) linhas.push("• ✅ Nenhum risco crítico identificado com os dados atuais. Manter monitoramento contínuo.");
+    linhas.push("\n3. RECOMENDAÇÃO PRIORITÁRIA IMEDIATA");
+    if (compAlerts.length>0) {
+      linhas.push("Iniciar auditoria nos processos de aprovação — analisar histórico de comunicações entre compradores e fornecedores com padrão suspeito. Implementar política de rodízio de aprovadores. Prazo: 15 dias.");
+    } else if (fornAlerts.length>0) {
+      linhas.push("Prospectar ao menos um fornecedor alternativo homologado para cada item com fonte única identificada. Priorizar itens de alta urgência. Prazo: 30 dias.");
+    } else {
+      linhas.push("Manter a cadência de monitoramento atual. Revisar os benchmarks de preço trimestralmente e atualizar a base de fornecedores homologados.");
+    }
+    return linhas.join("\n");
+  };
+
+  return (
+    <div style={{padding:"22px 24px", overflowY:"auto", height:"100%"}}>
+      {/* Header */}
+      <div style={{display:"flex", alignItems:"flex-start", justifyContent:"space-between", marginBottom:22, flexWrap:"wrap", gap:12}}>
+        <div>
+          <div style={{fontSize:11, color:C.muted, letterSpacing:"0.1em", marginBottom:4}}>MÓDULO ESTRATÉGICO</div>
+          <div style={{fontSize:22, fontWeight:700, color:C.text}}>Inteligência de Suprimentos</div>
+          <div style={{fontSize:13, color:C.muted, marginTop:4}}>Análise automática de riscos baseada nos dados históricos do sistema</div>
+        </div>
+        <button onClick={gerarAnaliseIA} disabled={iaLoading}
+          style={{...s.btn(true, "#7c3aed"), padding:"10px 20px", display:"flex", alignItems:"center", gap:8, flexShrink:0, opacity: iaLoading?0.7:1}}>
+          {iaLoading ? <span style={{display:"inline-block", animation:"spin 1s linear infinite"}}>⟳</span> : "🤖"}
+          {iaLoading ? "Analisando..." : "Gerar parecer com IA"}
+        </button>
+      </div>
+
+      {/* Resumo por categoria */}
+      <div style={{display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10, marginBottom:20}}>
+        {resumo.map(r=>(
+          <div key={r.cat} style={{...s.card, padding:"14px 18px", borderLeft:`3px solid ${r.color}`}}>
+            <div style={{fontSize:11, color:C.muted, letterSpacing:"0.07em", marginBottom:8}}>{r.icon} {r.label.toUpperCase()}</div>
+            <div style={{display:"flex", alignItems:"baseline", gap:8}}>
+              <div style={{fontSize:26, fontWeight:700, color: r.altas>0?"#ef4444":r.total>0?C.warn:C.success}}>{r.total}</div>
+              {r.altas>0&&<div style={{fontSize:12, color:"#ef4444", fontWeight:600}}>{r.altas} crítico{r.altas>1?"s":""}</div>}
+              {r.total===0&&<div style={{fontSize:11, color:C.success}}>✓ OK</div>}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* Parecer IA */}
+      {(iaAnalise||iaErro||iaLoading) && (
+        <div style={{...s.card, padding:"20px 22px", marginBottom:20, border:`1px solid #7c3aed44`, background:"linear-gradient(135deg,#1e1035,#111722)"}}>
+          <div style={{fontSize:11, color:"#a78bfa", letterSpacing:"0.1em", marginBottom:12}}>🤖 PARECER EXECUTIVO — ANÁLISE DE IA</div>
+          {iaLoading && (
+            <div style={{display:"flex", alignItems:"center", gap:10, color:C.muted, fontSize:13}}>
+              <div style={{width:16, height:16, border:"2px solid #7c3aed", borderTopColor:"transparent", borderRadius:"50%", animation:"spin 0.8s linear infinite"}}/>
+              Consultando o analista de suprimentos...
+            </div>
+          )}
+          {iaErro && <div style={{color:"#ef4444", fontSize:13}}>{iaErro}</div>}
+          {iaAnalise && (
+            <div style={{fontSize:13, color:C.text, lineHeight:1.8, whiteSpace:"pre-wrap"}}>{iaAnalise}</div>
+          )}
+        </div>
+      )}
+
+      <style>{`@keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }`}</style>
+
+      {/* Lista de alertas */}
+      {alertas.length === 0 && (
+        <div style={{...s.card, padding:48, textAlign:"center"}}>
+          <div style={{fontSize:40, marginBottom:12}}>✅</div>
+          <div style={{fontSize:16, fontWeight:700, color:C.success, marginBottom:6}}>Nenhum risco identificado</div>
+          <div style={{fontSize:13, color:C.muted}}>O sistema não detectou padrões de risco com os dados atuais. Continue monitorando.</div>
+        </div>
+      )}
+
+      <div style={{display:"flex", flexDirection:"column", gap:8}}>
+        {alertas.map(a => {
+          const sev = sevCfg[a.severidade];
+          const exp = expandAlert === a.id;
+          return (
+            <div key={a.id} style={{...s.card, border:`1px solid ${sev.c}33`, overflow:"hidden", transition:"all .2s"}}>
+              <div onClick={()=>setExpandAlert(exp?null:a.id)}
+                style={{display:"flex", alignItems:"center", gap:14, padding:"14px 18px", cursor:"pointer"}}
+                onMouseEnter={e=>e.currentTarget.style.background="#151d2e"}
+                onMouseLeave={e=>e.currentTarget.style.background="transparent"}>
+
+                {/* Severidade dot */}
+                <div style={{width:10, height:10, borderRadius:"50%", background:sev.c, flexShrink:0, boxShadow:`0 0 6px ${sev.c}`}}/>
+
+                {/* Categoria badge */}
+                <span style={{...s.tag(catColor[a.categoria]), flexShrink:0}}>
+                  {catIcon[a.categoria]} {catLabel[a.categoria].toUpperCase()}
+                </span>
+
+                {/* Título */}
+                <div style={{flex:1, fontSize:13, fontWeight:500, color:C.text}}>{a.titulo}</div>
+
+                {/* Severidade badge */}
+                <span style={{fontSize:10, background:sev.bg, color:sev.c, border:`1px solid ${sev.c}44`, borderRadius:4, padding:"2px 8px", fontWeight:700, letterSpacing:"0.06em", flexShrink:0}}>
+                  RISCO {sev.l.toUpperCase()}
+                </span>
+
+                <span style={{color:C.muted, fontSize:12, flexShrink:0}}>{exp?"▲":"▼"}</span>
+              </div>
+
+              {exp && (
+                <div style={{borderTop:`1px solid ${C.border}`, padding:"16px 18px 18px 42px", background:"#0d1320"}}>
+                  <div style={{fontSize:13, color:C.textSub, lineHeight:1.7, marginBottom:12}}>{a.descricao}</div>
+
+                  <div style={{display:"flex", gap:16, flexWrap:"wrap", marginBottom:14}}>
+                    <div style={{background:`${sev.c}11`, border:`1px solid ${sev.c}33`, borderRadius:6, padding:"8px 14px", flex:1, minWidth:200}}>
+                      <div style={{fontSize:10, color:C.muted, letterSpacing:"0.07em", marginBottom:4}}>DADO QUE GEROU O ALERTA</div>
+                      <div style={{fontSize:12, color:sev.c, fontWeight:600}}>{a.dado}</div>
+                    </div>
+                    <div style={{background:"#1e3a5f22", border:`1px solid #3b82f633`, borderRadius:6, padding:"8px 14px", flex:2, minWidth:240}}>
+                      <div style={{fontSize:10, color:C.muted, letterSpacing:"0.07em", marginBottom:4}}>AÇÃO RECOMENDADA</div>
+                      <div style={{fontSize:12, color:"#93c5fd"}}>{a.acao}</div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Frete CIF/FOB breakdown */}
+      <div style={{...s.card, overflow:"hidden", marginTop:20}}>
+        <div style={{padding:"14px 20px", borderBottom:`1px solid ${C.border}`, display:"flex", justifyContent:"space-between", alignItems:"center"}}>
+          <div style={{fontSize:11, color:C.muted, letterSpacing:"0.08em"}}>🚚 ANÁLISE DE CUSTOS DE FRETE (CIF × FOB)</div>
+          <div style={{fontSize:11, color:C.muted}}>Custo real = Peça + Frete</div>
+        </div>
+        <div style={{display:"grid", gridTemplateColumns:"repeat(3,1fr)", padding:"16px 20px", gap:16, borderBottom:`1px solid ${C.border}`}}>
+          {(() => {
+            const todas = cotacoes.flatMap(c=>c.fornecedores.filter(f=>f.valor!=null));
+            const cif = todas.filter(f=>f.frete==="CIF");
+            const fob = todas.filter(f=>f.frete==="FOB");
+            const totalFrete = fob.reduce((s,f)=>s+(f.valorFrete||0),0);
+            const totalPecas = todas.reduce((s,f)=>s+f.valor,0);
+            const pctFrete = totalPecas ? (totalFrete/totalPecas)*100 : 0;
+            return [
+              {l:"Cotações CIF (frete incluso)", v:cif.length, c:C.success},
+              {l:"Cotações FOB (frete separado)", v:fob.length, c:C.warn},
+              {l:"Frete s/ custo total de peças", v:`${pctFrete.toFixed(1)}%`, c:pctFrete>15?"#ef4444":C.warn},
+            ].map(k=>(
+              <div key={k.l} style={{textAlign:"center"}}>
+                <div style={{fontSize:24, fontWeight:700, color:k.c}}>{k.v}</div>
+                <div style={{fontSize:11, color:C.muted, marginTop:4}}>{k.l}</div>
+              </div>
+            ));
+          })()}
+        </div>
+        <div style={{display:"grid", gridTemplateColumns:"120px 2fr 80px 80px 80px 100px 110px", padding:"10px 20px", background:C.bg, borderBottom:`1px solid ${C.border}`, fontSize:10, color:C.muted, letterSpacing:"0.08em"}}>
+          <span>Nº COT.</span><span>FORNECEDOR</span><span>MODALIDADE</span><span>VL PEÇA</span><span>FRETE</span><span>CUSTO TOTAL</span><span>% FRETE</span>
+        </div>
+        {cotacoes.flatMap(cot => {
+          const ch = chamados.find(c=>c.id===cot.chamadoId);
+          return cot.fornecedores.filter(f=>f.valor!=null&&f.frete).map(f=>({...f, numero:ch?.numero, peca:ch?.peca}));
+        }).slice(0,10).map((f,i)=>{
+          const pct = f.valor ? ((f.valorFrete||0)/f.valor)*100 : 0;
+          const total = custoTotal(f);
+          return(
+            <div key={i} style={{display:"grid", gridTemplateColumns:"120px 2fr 80px 80px 80px 100px 110px", padding:"11px 20px", borderBottom:`1px solid ${C.border}22`, alignItems:"center"}}>
+              <span style={{fontSize:11, color:C.accent, fontFamily:"'IBM Plex Mono',monospace"}}>{f.numero}</span>
+              <div>
+                <div style={{fontSize:12, color:C.text}}>{f.nome}</div>
+                <div style={{fontSize:10, color:C.muted}}>{f.peca}</div>
+              </div>
+              <span style={{...s.tag(f.frete==="CIF"?C.success:C.warn)}}>{f.frete}</span>
+              <span style={{fontSize:12, color:C.textSub}}>{fmtBRL(f.valor)}</span>
+              <span style={{fontSize:12, color:f.valorFrete>0?C.warn:C.muted}}>{f.valorFrete>0?fmtBRL(f.valorFrete):"—"}</span>
+              <span style={{fontSize:13, fontWeight:700, color:C.text}}>{fmtBRL(total)}</span>
+              <span style={{fontSize:12, color:pct>20?"#ef4444":pct>10?C.warn:C.success, fontWeight:pct>20?700:400}}>{pct>0?`${pct.toFixed(0)}%`:"—"}</span>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // TELA: BENCHMARK DE MERCADO
 // ─────────────────────────────────────────────
 
@@ -2050,6 +2617,937 @@ function TelaBenchmark({ chamados, participaBench, setParticipaBench }) {
 }
 
 // ─────────────────────────────────────────────
+// TELA: HISTÓRICO DE PREÇOS
+// ─────────────────────────────────────────────
+function TelaHistoricoPrecos({ chamados, cotacoes }) {
+  const [itemSel, setItemSel] = useState(null);
+  const [search, setSearch] = useState("");
+  const [alertaSomente, setAlertaSomente] = useState(false);
+
+  // Agrupar todas as compras finalizadas por código de peça
+  const finalizados = chamados.filter(c => c.status === "finalizado" && c.valorAprovado);
+
+  const porCodigo = {};
+  finalizados.forEach(c => {
+    const key = c.codigo || c.peca;
+    if (!porCodigo[key]) porCodigo[key] = { codigo: c.codigo, peca: c.peca, categoriaItem: c.categoriaItem, tipoDisponib: c.tipoDisponib, compras: [] };
+    porCodigo[key].compras.push({
+      data: c.abertura,
+      valor: c.custoTotalReal ?? c.valorNegociado ?? c.valorAprovado,
+      fornecedor: c.fornecedorAprovado,
+      numero: c.numero,
+    });
+  });
+
+  // Calcular médias móveis e tendência por item
+  const now = new Date();
+  const ms6m = 6 * 30 * 24 * 3600000;
+  const ms12m = 12 * 30 * 24 * 3600000;
+
+  const itens = Object.values(porCodigo).map(item => {
+    const sorted = [...item.compras].sort((a,b) => new Date(a.data)-new Date(b.data));
+    const ultimos6m = sorted.filter(c => now - new Date(c.data) <= ms6m);
+    const ultimos12m = sorted.filter(c => now - new Date(c.data) <= ms12m);
+    const media6m = ultimos6m.length ? ultimos6m.reduce((s,c)=>s+c.valor,0)/ultimos6m.length : null;
+    const media12m = ultimos12m.length ? ultimos12m.reduce((s,c)=>s+c.valor,0)/ultimos12m.length : null;
+    const ultimo = sorted[sorted.length-1]?.valor;
+    const tendencia = (media6m && media12m && media12m > 0) ? ((media6m - media12m) / media12m) * 100 : null;
+    const varVsMedia6m = (ultimo && media6m) ? ((ultimo - media6m) / media6m) * 100 : null;
+    const alerta = varVsMedia6m !== null && Math.abs(varVsMedia6m) > 15;
+    return { ...item, sorted, media6m, media12m, ultimo, tendencia, varVsMedia6m, alerta, qtdCompras: sorted.length };
+  }).sort((a,b) => (b.alerta?1:0)-(a.alerta?1:0) || b.qtdCompras - a.qtdCompras);
+
+  const filtrados = itens.filter(i => {
+    const matchSearch = !search || i.peca.toLowerCase().includes(search.toLowerCase()) || i.codigo?.toLowerCase().includes(search.toLowerCase());
+    const matchAlerta = !alertaSomente || i.alerta;
+    return matchSearch && matchAlerta;
+  });
+
+  const itemAtual = itemSel ? itens.find(i => (i.codigo||i.peca) === itemSel) : null;
+
+  // Mini sparkline SVG
+  const Sparkline = ({ compras, width=80, height=28, color=C.accent }) => {
+    if (compras.length < 2) return <span style={{fontSize:11,color:C.muted}}>—</span>;
+    const vals = compras.map(c=>c.valor);
+    const min = Math.min(...vals), max = Math.max(...vals);
+    const range = max - min || 1;
+    const pts = compras.map((c,i) => {
+      const x = (i/(compras.length-1))*(width-4)+2;
+      const y = height-2 - ((c.valor-min)/range)*(height-4);
+      return `${x},${y}`;
+    }).join(" ");
+    const isUp = vals[vals.length-1] > vals[0];
+    const lineColor = isUp ? "#ef4444" : "#22c55e";
+    return (
+      <svg width={width} height={height} style={{display:"block"}}>
+        <polyline points={pts} fill="none" stroke={lineColor} strokeWidth={1.5} strokeLinejoin="round"/>
+        {compras.map((c,i)=>{
+          const x=(i/(compras.length-1))*(width-4)+2;
+          const y=height-2-((c.valor-min)/range)*(height-4);
+          return i===compras.length-1?<circle key={i} cx={x} cy={y} r={3} fill={lineColor}/>:null;
+        })}
+      </svg>
+    );
+  };
+
+  // Gráfico de linha completo para item selecionado
+  const GraficoItem = ({ item }) => {
+    if (!item || item.sorted.length < 1) return null;
+    const W=500, H=180, PL=50, PR=20, PT=20, PB=30;
+    const vals = item.sorted.map(c=>c.valor);
+    const minV = Math.min(...vals)*0.92, maxV = Math.max(...vals)*1.08;
+    const rangeV = maxV - minV;
+    const dates = item.sorted.map(c=>new Date(c.data));
+    const minD = Math.min(...dates), maxD = Math.max(...dates);
+    const rangeD = maxD - minD || 1;
+    const toX = d => PL + ((new Date(d)-minD)/rangeD)*(W-PL-PR);
+    const toY = v => PT + (1-(v-minV)/rangeV)*(H-PT-PB);
+
+    const pts = item.sorted.map(c=>`${toX(c.data).toFixed(1)},${toY(c.valor).toFixed(1)}`).join(" ");
+
+    // Média 6m e 12m como linhas horizontais
+    const y6m = item.media6m ? toY(item.media6m) : null;
+    const y12m = item.media12m ? toY(item.media12m) : null;
+
+    // Grid Y
+    const steps = 4;
+    const gridYs = Array.from({length:steps+1},(_,i)=>minV+(rangeV/steps)*i);
+
+    return (
+      <svg width="100%" viewBox={`0 0 ${W} ${H}`} style={{display:"block"}}>
+        {/* Grid */}
+        {gridYs.map((v,i)=>(
+          <g key={i}>
+            <line x1={PL} y1={toY(v)} x2={W-PR} y2={toY(v)} stroke={C.border} strokeWidth={0.5}/>
+            <text x={PL-6} y={toY(v)+4} textAnchor="end" fontSize={9} fill={C.muted}>{fmtBRL(v).replace("R$ ","")}</text>
+          </g>
+        ))}
+        {/* Médias móveis */}
+        {y12m&&<line x1={PL} y1={y12m} x2={W-PR} y2={y12m} stroke="#818cf8" strokeWidth={1} strokeDasharray="4,3"/>}
+        {y6m&&<line x1={PL} y1={y6m} x2={W-PR} y2={y6m} stroke={C.warn} strokeWidth={1} strokeDasharray="4,3"/>}
+        {/* Legenda médias */}
+        {y12m&&<><rect x={W-PR-90} y={PT} width={8} height={3} fill="#818cf8"/><text x={W-PR-78} y={PT+5} fontSize={8} fill="#818cf8">MM 12m {fmtBRL(item.media12m)}</text></>}
+        {y6m&&<><rect x={W-PR-90} y={PT+12} width={8} height={3} fill={C.warn}/><text x={W-PR-78} y={PT+17} fontSize={8} fill={C.warn}>MM 6m {fmtBRL(item.media6m)}</text></>}
+        {/* Área sob a linha */}
+        <polyline points={`${PL},${H-PB} ${pts} ${W-PR},${H-PB}`} fill={`${C.accent}18`} stroke="none"/>
+        {/* Linha principal */}
+        <polyline points={pts} fill="none" stroke={C.accent} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round"/>
+        {/* Pontos */}
+        {item.sorted.map((c,i)=>(
+          <g key={i}>
+            <circle cx={toX(c.data)} cy={toY(c.valor)} r={4} fill={C.accent} stroke={C.bg} strokeWidth={1.5}/>
+            <text x={toX(c.data)} y={toY(c.valor)-8} textAnchor="middle" fontSize={8} fill={C.textSub}>{fmtBRL(c.valor)}</text>
+          </g>
+        ))}
+        {/* Eixo X — datas */}
+        {item.sorted.map((c,i)=>(
+          <text key={i} x={toX(c.data)} y={H-6} textAnchor="middle" fontSize={8} fill={C.muted}>
+            {new Date(c.data).toLocaleDateString("pt-BR",{month:"short",year:"2-digit"})}
+          </text>
+        ))}
+      </svg>
+    );
+  };
+
+  const tendenciaCfg = t => t === null ? null
+    : t > 10 ? { c:"#ef4444", icon:"↑↑", l:`Alta acelerada +${t.toFixed(0)}%` }
+    : t > 3  ? { c:C.warn,    icon:"↑",  l:`Tendência de alta +${t.toFixed(0)}%` }
+    : t < -10? { c:C.success, icon:"↓↓", l:`Queda acelerada ${t.toFixed(0)}%` }
+    : t < -3 ? { c:C.success, icon:"↓",  l:`Tendência de queda ${t.toFixed(0)}%` }
+    :          { c:C.muted,   icon:"→",  l:"Preço estável" };
+
+  return (
+    <div style={{padding:"22px 24px", overflowY:"auto", height:"100%"}}>
+      {/* Header */}
+      <div style={{marginBottom:22}}>
+        <div style={{fontSize:11, color:C.muted, letterSpacing:"0.1em", marginBottom:4}}>ANÁLISE DE PREÇOS</div>
+        <div style={{fontSize:22, fontWeight:700, color:C.text}}>Histórico de Preços</div>
+        <div style={{fontSize:13, color:C.muted, marginTop:4}}>Médias móveis de 6 e 12 meses · Alertas de variação atípica</div>
+      </div>
+
+      {/* KPIs */}
+      {(()=>{
+        const comAlerta = itens.filter(i=>i.alerta).length;
+        const tendAlta = itens.filter(i=>i.tendencia!==null&&i.tendencia>3).length;
+        const tendQueda = itens.filter(i=>i.tendencia!==null&&i.tendencia<-3).length;
+        return(
+          <div style={{display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:10, marginBottom:20}}>
+            {[
+              {l:"Itens rastreados", v:itens.length, c:C.accent},
+              {l:"Com alerta de variação", v:comAlerta, c:"#ef4444"},
+              {l:"Tendência de alta", v:tendAlta, c:C.warn},
+              {l:"Tendência de queda", v:tendQueda, c:C.success},
+            ].map(k=>(
+              <div key={k.l} style={{...s.card, padding:"14px 18px", borderLeft:`3px solid ${k.c}`}}>
+                <div style={{fontSize:10, color:C.muted, letterSpacing:"0.07em", marginBottom:6}}>{k.l.toUpperCase()}</div>
+                <div style={{fontSize:26, fontWeight:700, color:k.c}}>{k.v}</div>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
+
+      <div style={{display:"grid", gridTemplateColumns: itemAtual ? "1fr 1.6fr" : "1fr", gap:16}}>
+        {/* Lista de itens */}
+        <div>
+          <div style={{display:"flex", gap:10, marginBottom:12, flexWrap:"wrap"}}>
+            <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar item ou código..."
+              style={{...s.input, flex:1, marginBottom:0, minWidth:160}}/>
+            <button onClick={()=>setAlertaSomente(!alertaSomente)}
+              style={{...s.btn(alertaSomente,"#ef4444"), padding:"7px 14px", fontSize:12, whiteSpace:"nowrap"}}>
+              {alertaSomente ? "⚠ Só alertas" : "⚠ Todos"}
+            </button>
+          </div>
+
+          <div style={{...s.card, overflow:"hidden"}}>
+            <div style={{display:"grid", gridTemplateColumns:"2fr 70px 85px 85px 70px 60px", padding:"10px 14px", background:C.bg, borderBottom:`1px solid ${C.border}`, fontSize:10, color:C.muted, letterSpacing:"0.07em"}}>
+              <span>ITEM</span><span>ÚLTIMO</span><span>MM 6M</span><span>MM 12M</span><span>TEND.</span><span>SPARK</span>
+            </div>
+            {filtrados.map((item,i)=>{
+              const key = item.codigo||item.peca;
+              const isActive = itemSel===key;
+              const tend = tendenciaCfg(item.tendencia);
+              const catI = catItemCfg[item.categoriaItem]||{c:C.muted};
+              return(
+                <div key={key} onClick={()=>setItemSel(isActive?null:key)}
+                  style={{display:"grid", gridTemplateColumns:"2fr 70px 85px 85px 70px 60px", padding:"11px 14px", cursor:"pointer", background: isActive?"#151d2e":"transparent", borderBottom:i<filtrados.length-1?`1px solid ${C.border}22`:"none", alignItems:"center", borderLeft: item.alerta?`3px solid #ef4444`:"3px solid transparent"}}
+                  onMouseEnter={e=>!isActive&&(e.currentTarget.style.background="#0f1520")}
+                  onMouseLeave={e=>!isActive&&(e.currentTarget.style.background="transparent")}>
+                  <div>
+                    <div style={{fontSize:12, color:C.text, fontWeight:500}}>{item.peca}</div>
+                    <div style={{display:"flex", gap:6, marginTop:2}}>
+                      {item.codigo&&<span style={{fontSize:10, color:C.accent, fontFamily:"'IBM Plex Mono',monospace"}}>{item.codigo}</span>}
+                      {item.categoriaItem&&<span style={{...s.tag(catI.c), fontSize:9}}>{item.categoriaItem}</span>}
+                    </div>
+                  </div>
+                  <span style={{fontSize:12, fontWeight:600, color:C.text}}>{fmtBRL(item.ultimo)}</span>
+                  <div>
+                    <div style={{fontSize:12, color:C.warn}}>{item.media6m?fmtBRL(item.media6m):"—"}</div>
+                    {item.varVsMedia6m!==null&&<div style={{fontSize:10, color:Math.abs(item.varVsMedia6m)>15?"#ef4444":C.muted}}>{item.varVsMedia6m>0?"+":""}{item.varVsMedia6m.toFixed(0)}%</div>}
+                  </div>
+                  <span style={{fontSize:12, color:"#818cf8"}}>{item.media12m?fmtBRL(item.media12m):"—"}</span>
+                  {tend?<span style={{fontSize:11, color:tend.c, fontWeight:700}}>{tend.icon}</span>:<span style={{color:C.muted}}>—</span>}
+                  <Sparkline compras={item.sorted}/>
+                </div>
+              );
+            })}
+            {filtrados.length===0&&<div style={{padding:28, textAlign:"center", color:C.muted, fontSize:13}}>Nenhum item encontrado</div>}
+          </div>
+
+          {/* Legenda */}
+          <div style={{marginTop:10, display:"flex", gap:16, flexWrap:"wrap"}}>
+            {[
+              {c:"#ef4444", l:"Alta acelerada (>10%)"},
+              {c:C.warn,    l:"Tendência de alta (3-10%)"},
+              {c:C.success, l:"Queda / estável"},
+              {c:"#818cf8", l:"MM 12 meses"},
+              {c:C.warn,    l:"MM 6 meses"},
+            ].map(lg=>(
+              <div key={lg.l} style={{display:"flex", alignItems:"center", gap:5}}>
+                <div style={{width:10, height:3, background:lg.c, borderRadius:2}}/>
+                <span style={{fontSize:10, color:C.muted}}>{lg.l}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Painel de detalhe — aparece quando item selecionado */}
+        {itemAtual&&(
+          <div style={{...s.card, padding:"18px 20px", position:"sticky", top:0, alignSelf:"flex-start"}}>
+            <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", marginBottom:14}}>
+              <div>
+                <div style={{fontSize:15, fontWeight:700, color:C.text}}>{itemAtual.peca}</div>
+                <div style={{fontSize:11, color:C.accent, fontFamily:"'IBM Plex Mono',monospace", marginTop:2}}>{itemAtual.codigo}</div>
+              </div>
+              <button onClick={()=>setItemSel(null)} style={{background:"transparent", border:"none", color:C.muted, fontSize:18, cursor:"pointer"}}>×</button>
+            </div>
+
+            {/* KPIs do item */}
+            <div style={{display:"grid", gridTemplateColumns:"repeat(3,1fr)", gap:8, marginBottom:14}}>
+              {[
+                {l:"Último preço", v:fmtBRL(itemAtual.ultimo), c:C.text},
+                {l:"MM 6 meses", v:itemAtual.media6m?fmtBRL(itemAtual.media6m):"—", c:C.warn},
+                {l:"MM 12 meses", v:itemAtual.media12m?fmtBRL(itemAtual.media12m):"—", c:"#818cf8"},
+              ].map(k=>(
+                <div key={k.l} style={{background:C.bg, borderRadius:6, padding:"8px 10px", textAlign:"center"}}>
+                  <div style={{fontSize:9, color:C.muted, marginBottom:4}}>{k.l.toUpperCase()}</div>
+                  <div style={{fontSize:14, fontWeight:700, color:k.c}}>{k.v}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* Tendência */}
+            {(()=>{
+              const tend = tendenciaCfg(itemAtual.tendencia);
+              if(!tend) return null;
+              return(
+                <div style={{background:`${tend.c}15`, border:`1px solid ${tend.c}33`, borderRadius:7, padding:"8px 14px", marginBottom:14, display:"flex", alignItems:"center", gap:8}}>
+                  <span style={{fontSize:18}}>{tend.icon}</span>
+                  <div>
+                    <div style={{fontSize:12, color:tend.c, fontWeight:600}}>{tend.l}</div>
+                    {itemAtual.tendencia!==null&&<div style={{fontSize:11, color:C.muted}}>MM 6m vs MM 12m</div>}
+                  </div>
+                </div>
+              );
+            })()}
+
+            {/* Gráfico */}
+            <div style={{marginBottom:14}}>
+              <div style={{fontSize:10, color:C.muted, letterSpacing:"0.07em", marginBottom:8}}>EVOLUÇÃO DE PREÇO</div>
+              <div style={{background:C.bg, borderRadius:6, padding:"10px 6px"}}>
+                <GraficoItem item={itemAtual}/>
+              </div>
+            </div>
+
+            {/* Histórico tabela */}
+            <div style={{fontSize:10, color:C.muted, letterSpacing:"0.07em", marginBottom:8}}>COMPRAS REGISTRADAS</div>
+            <div style={{display:"flex", flexDirection:"column", gap:4}}>
+              {itemAtual.sorted.slice().reverse().map((c,i)=>(
+                <div key={i} style={{display:"flex", justifyContent:"space-between", padding:"7px 10px", background:C.bg, borderRadius:5, fontSize:12}}>
+                  <div>
+                    <span style={{color:C.textSub}}>{fmtD(c.data)}</span>
+                    <span style={{color:C.muted, marginLeft:8, fontSize:11}}>{c.fornecedor}</span>
+                  </div>
+                  <span style={{color:C.text, fontWeight:600}}>{fmtBRL(c.valor)}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Aviso se alerta */}
+            {itemAtual.alerta&&(
+              <div style={{marginTop:12, background:"#3f0f0f", border:"1px solid #ef444444", borderRadius:7, padding:"10px 14px", fontSize:12, color:"#ef4444"}}>
+                ⚠ Variação de {itemAtual.varVsMedia6m?.toFixed(0)}% vs média móvel de 6 meses — investigar causas antes da próxima compra.
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// TELA: RELATÓRIO EXECUTIVO MENSAL
+// ─────────────────────────────────────────────
+function TelaRelatorio({ chamados, cotacoes, fornecedores, equipamentos, onAbrirPlano, tarefas=[], notasPeriodo={}, setNota=()=>{} }) {
+  const MESES_PT = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
+  const now = new Date();
+  const [periodo, setPeriodo] = useState("mes");  // mes | t1 | t2 | t3 | t4 | ano
+  const [mesSel, setMesSel] = useState(now.getMonth());
+  const [anoSel, setAnoSel] = useState(now.getFullYear());
+  const [swotIA, setSwotIA] = useState(null);
+  const [loadingSwot, setLoadingSwot] = useState(false);
+  const [gerandoRelatorio, setGerandoRelatorio] = useState(false);
+  const [editandoNota, setEditandoNota] = useState(null);
+  const [textoNota, setTextoNota] = useState("");
+
+  // Meses que entram no período selecionado
+  const mesesDoPeriodo = () => {
+    if (periodo==="mes") return [mesSel];
+    if (periodo==="t1") return [0,1,2];
+    if (periodo==="t2") return [3,4,5];
+    if (periodo==="t3") return [6,7,8];
+    if (periodo==="t4") return [9,10,11];
+    if (periodo==="ano") return [0,1,2,3,4,5,6,7,8,9,10,11];
+    return [mesSel];
+  };
+
+  const labelPeriodo = () => {
+    if (periodo==="mes") return `${MESES_PT[mesSel]} ${anoSel}`;
+    if (periodo==="t1") return `1º Trimestre ${anoSel}`;
+    if (periodo==="t2") return `2º Trimestre ${anoSel}`;
+    if (periodo==="t3") return `3º Trimestre ${anoSel}`;
+    if (periodo==="t4") return `4º Trimestre ${anoSel}`;
+    if (periodo==="ano") return `Ano ${anoSel}`;
+    return "";
+  };
+
+  // ── DADOS DO PERÍODO ──
+  const finalizados = chamados.filter(c => {
+    const d = new Date(c.abertura);
+    return c.status==="finalizado" && c.valorAprovado &&
+      mesesDoPeriodo().includes(d.getMonth()) && d.getFullYear()===anoSel;
+  });
+  const totalGasto = finalizados.reduce((s,c)=>s+(c.valorNegociado??c.valorAprovado),0);
+
+  // Saving
+  const savings = calcSavings(finalizados, cotacoes);
+  const savingA = savings.reduce((s,c)=>s+c.savingA,0);
+  const savingB = savings.reduce((s,c)=>s+c.savingB,0);
+  const savingTotal = savingA+savingB;
+
+  // Performance compradores
+  const compradores = {};
+  finalizados.forEach(c=>{
+    const k=c.aprovadoPor||"Não informado";
+    if(!compradores[k]) compradores[k]={nome:k,ordens:0,savingB:0,leadTotal:0,leadQtd:0};
+    compradores[k].ordens++;
+    compradores[k].savingB+=savings.find(s=>s.id===c.id)?.savingB||0;
+    if(c.leadTime){compradores[k].leadTotal+=c.leadTime;compradores[k].leadQtd++;}
+  });
+  const rankCompradores = Object.values(compradores).sort((a,b)=>b.savingB-a.savingB);
+
+  // Fornecedores do período
+  const fornPeriodo = {};
+  cotacoes.forEach(cot=>{
+    const ch=chamados.find(c=>c.id===cot.chamadoId);
+    if(!ch) return;
+    const d=new Date(ch.abertura);
+    if(!mesesDoPeriodo().includes(d.getMonth())||d.getFullYear()!==anoSel) return;
+    cot.fornecedores.forEach(f=>{
+      if(!fornPeriodo[f.nome]) fornPeriodo[f.nome]={nome:f.nome,cotacoes:0,respostas:0,vitorias:0};
+      fornPeriodo[f.nome].cotacoes++;
+      if(f.status==="respondido") fornPeriodo[f.nome].respostas++;
+      if(ch.fornecedorAprovado===f.nome) fornPeriodo[f.nome].vitorias++;
+    });
+  });
+  const rankForn = Object.values(fornPeriodo).sort((a,b)=>b.respostas-a.respostas).slice(0,5);
+
+  // Alertas do período
+  const alertasPeriodo = [
+    finalizados.filter(c=>c.urgencia==="alta").length > 2
+      ? {sev:"alta",txt:`${finalizados.filter(c=>c.urgencia==="alta").length} compras de emergência no período — avaliar planejamento de manutenção preventiva`} : null,
+    savingTotal < totalGasto*0.05 && finalizados.length>2
+      ? {sev:"media",txt:"Saving abaixo de 5% do gasto — aumentar número de fornecedores por cotação"} : null,
+    rankForn.some(f=>f.respostas/f.cotacoes<0.5)
+      ? {sev:"media",txt:`Fornecedores com baixa taxa de resposta no período — revisar cadastro`} : null,
+  ].filter(Boolean);
+
+  // Score de saúde (0-100)
+  const score = Math.min(100, Math.max(0,
+    70
+    + (savingTotal > totalGasto*0.08 ? 15 : savingTotal > totalGasto*0.04 ? 8 : 0)
+    - (alertasPeriodo.filter(a=>a.sev==="alta").length * 12)
+    - (alertasPeriodo.filter(a=>a.sev==="media").length * 6)
+    + (rankForn.filter(f=>f.respostas/f.cotacoes>=0.8).length * 3)
+  ));
+  const scoreCfg = score>=80?{c:C.success,l:"Excelente"}:score>=60?{c:C.warn,l:"Atenção"}:{c:"#ef4444",l:"Crítico"};
+
+  // ── SWOT VIA IA ──
+  const gerarSWOT = () => {
+    setLoadingSwot(true);
+    const dados = {
+      mes: MESES_PT[mesSel], ano: anoSel,
+      totalGasto, totalOrdens: finalizados.length,
+      savingTotal, savingA, savingB,
+      score, alertas: alertasPeriodo.map(a=>a.txt),
+      fornecedores: rankForn.map(f=>({nome:f.nome,taxa:`${Math.round(f.respostas/Math.max(f.cotacoes,1)*100)}%`})),
+      compradores: rankCompradores.map(c=>({nome:c.nome,ordens:c.ordens,saving:c.savingB.toFixed(2)})),
+    };
+    const prompt = `QUOTAFLOW_SWOT_SUPRIMENTOS
+Gere uma Matriz SWOT de suprimentos em português para ${dados.mes}/${dados.ano}.
+Dados: gasto R$${totalGasto.toFixed(0)}, saving R$${savingTotal.toFixed(0)}, ${finalizados.length} ordens, score ${score}/100, alertas: ${alertasPeriodo.map(a=>a.txt).join("; ")||"nenhum"}.
+Responda APENAS com JSON neste formato exato (sem markdown, sem texto extra):
+{"forcas":["f1","f2","f3"],"fraquezas":["f1","f2","f3"],"oportunidades":["o1","o2","o3"],"ameacas":["a1","a2","a3"]}`;
+
+    if (typeof window.sendPrompt === "function") {
+      window.sendPrompt(prompt);
+      // Mock SWOT para demonstração enquanto aguarda resposta do chat
+      setTimeout(()=>{
+        setSwotIA({
+          forcas:[
+            `Saving total de ${fmtBRL(savingTotal)} gerado no período (${savingTotal>0?((savingTotal/Math.max(totalGasto+savingTotal,1))*100).toFixed(1):0}% de economia)`,
+            `${finalizados.length} ordens finalizadas com rastreabilidade completa`,
+            `${rankForn.filter(f=>f.respostas/f.cotacoes>=0.8).length} fornecedores com alta taxa de resposta`
+          ],
+          fraquezas:[
+            finalizados.filter(c=>c.urgencia==="alta").length>1?`${finalizados.filter(c=>c.urgencia==="alta").length} compras de emergência indicam gargalo em planejamento preventivo`:"Histórico de compras ainda em construção — dados insuficientes para benchmarks precisos",
+            savingB<savingTotal*0.3?"Baixo aproveitamento da negociação — saving B representa menos de 30% do total":"Concentração de saving em poucos compradores — distribuição de competência desigual",
+            rankForn.length<3?"Poucos fornecedores avaliados no período — base de comparação limitada":"Alguns fornecedores com taxa de resposta abaixo do ideal"
+          ],
+          oportunidades:[
+            "Benchmark de rede QuotaFlow indica potencial de redução em itens de prateleira",
+            "Expansão da base de fornecedores para itens com fonte única reduz risco e cria competição",
+            "Automatização do disparo de cotações recorrentes para itens de reposição regular"
+          ],
+          ameacas:[
+            "Variação de preço em insumos industriais acima da inflação geral no período",
+            "Concentração de gasto em poucos fornecedores aumenta exposição a riscos externos",
+            alertasPeriodo.length>0?alertasPeriodo[0].txt:"Sazonalidade de demanda pode pressionar lead times nos próximos meses"
+          ]
+        });
+        setLoadingSwot(false);
+      }, 1200);
+    } else {
+      setSwotIA({
+        forcas:[`Saving de ${fmtBRL(savingTotal)} no período`,`${finalizados.length} ordens com rastreabilidade completa`,"Processo de cotação estruturado e auditável"],
+        fraquezas:["Base histórica em construção","Benchmark de rede aguarda mais participantes","Alguns fornecedores com baixa responsividade"],
+        oportunidades:["Ampliar base de fornecedores homologados","Automatizar cotações recorrentes","Negociar contratos anuais com fornecedores frequentes"],
+        ameacas:["Inflação de insumos industriais","Concentração de fornecedores","Dependência de itens importados com lead time longo"]
+      });
+      setLoadingSwot(false);
+    }
+  };
+
+  // ── EXPORTAR PDF via print ──
+  const exportarPDF = () => {
+    setGerandoRelatorio(true);
+    setTimeout(()=>{ window.print(); setGerandoRelatorio(false); }, 300);
+  };
+
+  const recomendacoes = [
+    savingB < savingTotal*0.3
+      ? { txt:"Treinar compradores em técnicas de negociação", detalhe:"Saving de negociação abaixo de 30% do total — realizar workshop de negociação com equipe de compras", prazo:30, prioridade:"alta" }
+      : { txt:"Documentar boas práticas de negociação", detalhe:"Registrar casos de maior saving para replicar abordagem em outras compras", prazo:45, prioridade:"media" },
+    rankForn.some(f=>f.respostas/f.cotacoes<0.6)
+      ? { txt:"Remover fornecedores com baixa taxa de resposta", detalhe:"Identificar fornecedores com taxa <60% e prospectar ao menos 2 substitutos por categoria afetada", prazo:21, prioridade:"alta" }
+      : { txt:"Expandir base de fornecedores homologados", detalhe:"Prospectar 1 fornecedor alternativo para cada item com apenas 1 cotação recebida no período", prazo:30, prioridade:"media" },
+    finalizados.filter(c=>c.urgencia==="alta").length > 1
+      ? { txt:"Revisar calendário de manutenção preventiva", detalhe:`${finalizados.filter(c=>c.urgencia==="alta").length} compras de emergência no período indicam falha em preventiva — revisar plano de manutenção`, prazo:14, prioridade:"alta" }
+      : { txt:"Avaliar contratos de fornecimento recorrente", detalhe:"Identificar itens comprados 3+ vezes ao ano e negociar contrato de fornecimento com preço fixo", prazo:60, prioridade:"baixa" },
+  ];
+
+  const fmtMes = labelPeriodo();
+  const corScore = scoreCfg.c;
+
+  return (
+    <div style={{padding:"22px 24px", overflowY:"auto", height:"100%"}}>
+      <style>{`
+        @media print {
+          body * { visibility: hidden; }
+          #relatorio-executivo, #relatorio-executivo * { visibility: visible; }
+          #relatorio-executivo { position: fixed; top:0; left:0; width:100%; background:white !important; color:#111 !important; padding:32px; }
+          .no-print { display: none !important; }
+          @page { margin: 1.5cm; }
+        }
+        @keyframes spin { from{transform:rotate(0deg)} to{transform:rotate(360deg)} }
+      `}</style>
+
+      {/* Header controles — não imprime */}
+      <div className="no-print" style={{display:"flex", alignItems:"center", justifyContent:"space-between", marginBottom:22, flexWrap:"wrap", gap:12}}>
+        <div>
+          <div style={{fontSize:11, color:C.muted, letterSpacing:"0.1em", marginBottom:4}}>GESTÃO ESTRATÉGICA</div>
+          <div style={{fontSize:22, fontWeight:700, color:C.text}}>Relatório Executivo de Suprimentos</div>
+        </div>
+        <div style={{display:"flex", gap:8, flexWrap:"wrap", alignItems:"center"}}>
+
+          {/* Seletor de período — tipo */}
+          <div style={{display:"flex", gap:4, background:C.surface, border:`1px solid ${C.border}`, borderRadius:8, padding:4}}>
+            {[
+              {id:"mes", l:"Mês"},
+              {id:"t1", l:"T1"}, {id:"t2", l:"T2"}, {id:"t3", l:"T3"}, {id:"t4", l:"T4"},
+              {id:"ano", l:"Anual"},
+            ].map(p=>(
+              <button key={p.id} onClick={()=>setPeriodo(p.id)}
+                style={{background:periodo===p.id?C.accent:"transparent", border:"none", borderRadius:5, padding:"5px 10px", color:periodo===p.id?"#fff":C.muted, fontSize:12, cursor:"pointer", fontFamily:"inherit", fontWeight:periodo===p.id?600:400, transition:"all .1s"}}>
+                {p.l}
+              </button>
+            ))}
+          </div>
+
+          {/* Mês — só aparece quando período=mes */}
+          {periodo==="mes"&&(
+            <select value={mesSel} onChange={e=>setMesSel(parseInt(e.target.value))}
+              style={{...s.input, width:"auto", padding:"7px 12px", fontSize:13, marginBottom:0}}>
+              {MESES_PT.map((m,i)=><option key={i} value={i}>{m}</option>)}
+            </select>
+          )}
+
+          {/* Ano */}
+          <select value={anoSel} onChange={e=>setAnoSel(parseInt(e.target.value))}
+            style={{...s.input, width:90, padding:"7px 12px", fontSize:13, marginBottom:0}}>
+            {[2024,2025,2026].map(y=><option key={y} value={y}>{y}</option>)}
+          </select>
+
+          <button onClick={gerarSWOT} disabled={loadingSwot}
+            style={{...s.btn(true,"#7c3aed"), padding:"8px 14px", fontSize:12, display:"flex", alignItems:"center", gap:6}}>
+            {loadingSwot?<span style={{animation:"spin 0.8s linear infinite",display:"inline-block"}}>⟳</span>:"🤖"}
+            {loadingSwot?"Gerando...":"SWOT com IA"}
+          </button>
+
+          <button onClick={()=>onAbrirPlano(recomendacoes, fmtMes)}
+            style={{...s.btn(true,"#0891b2"), padding:"8px 14px", fontSize:12, display:"flex", alignItems:"center", gap:6}}>
+            📋 Gerar plano de ação
+          </button>
+
+          <button onClick={exportarPDF} disabled={gerandoRelatorio}
+            style={{...s.btn(true,"#238636"), padding:"8px 14px", fontSize:12}}>
+            {gerandoRelatorio?"Preparando...":"⬇ PDF"}
+          </button>
+        </div>
+      </div>
+
+      {/* ═══════════════════════════════════════════════ */}
+      {/* RELATÓRIO — este div é o que vai para o PDF   */}
+      {/* ═══════════════════════════════════════════════ */}
+      <div id="relatorio-executivo">
+
+        {/* Capa */}
+        <div style={{...s.card, padding:"28px 32px", marginBottom:16, background:"linear-gradient(135deg,#0f1e35,#111722)", borderLeft:`4px solid ${C.accent}`}}>
+          <div style={{display:"flex", justifyContent:"space-between", alignItems:"flex-start", flexWrap:"wrap", gap:16}}>
+            <div>
+              <div style={{fontSize:11, color:C.accent, letterSpacing:"0.12em", marginBottom:8}}>QUOTAFLOW · RELATÓRIO EXECUTIVO</div>
+              <div style={{fontSize:26, fontWeight:700, color:C.text, marginBottom:4}}>Suprimentos & Manutenção</div>
+              <div style={{fontSize:16, color:C.textSub}}>{fmtMes}</div>
+            </div>
+            {/* Score */}
+            <div style={{textAlign:"center", background:`${corScore}15`, border:`2px solid ${corScore}`, borderRadius:12, padding:"16px 24px"}}>
+              <div style={{fontSize:11, color:C.muted, letterSpacing:"0.08em", marginBottom:4}}>SCORE DE SAÚDE</div>
+              <div style={{fontSize:42, fontWeight:700, color:corScore, lineHeight:1}}>{score}</div>
+              <div style={{fontSize:13, color:corScore, fontWeight:600, marginTop:4}}>{scoreCfg.l}</div>
+            </div>
+          </div>
+        </div>
+
+        {/* 1. RESUMO EXECUTIVO */}
+        <div style={{...s.card, padding:"20px 24px", marginBottom:12}}>
+          <div style={{fontSize:11, color:C.muted, letterSpacing:"0.1em", marginBottom:12}}>1. RESUMO EXECUTIVO</div>
+          <div style={{display:"grid", gridTemplateColumns:"repeat(4,1fr)", gap:12, marginBottom:16}}>
+            {[
+              {l:"Gasto total", v:fmtBRL(totalGasto), c:C.accent},
+              {l:"Saving gerado", v:fmtBRL(savingTotal), c:C.saving},
+              {l:"Ordens finalizadas", v:finalizados.length, c:C.success},
+              {l:"Ticket médio", v:fmtBRL(finalizados.length?totalGasto/finalizados.length:0), c:C.warn},
+            ].map(k=>(
+              <div key={k.l} style={{background:C.bg, borderRadius:8, padding:"12px 14px", borderLeft:`3px solid ${k.c}`}}>
+                <div style={{fontSize:10, color:C.muted, marginBottom:4}}>{k.l.toUpperCase()}</div>
+                <div style={{fontSize:20, fontWeight:700, color:k.c}}>{k.v}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{fontSize:13, color:C.textSub, lineHeight:1.8, background:C.bg, borderRadius:8, padding:"12px 16px"}}>
+            Em {fmtMes}, a operação de suprimentos registrou <strong style={{color:C.text}}>{finalizados.length} ordens finalizadas</strong> com gasto total de <strong style={{color:C.text}}>{fmtBRL(totalGasto)}</strong>. O sistema gerou <strong style={{color:C.saving}}>{fmtBRL(savingTotal)} de economia</strong> — sendo {fmtBRL(savingA)} via comparação de cotações e {fmtBRL(savingB)} via negociação direta dos compradores. {alertasPeriodo.length>0?`Foram identificados ${alertasPeriodo.length} ponto${alertasPeriodo.length>1?"s":""} de atenção que requerem ação.`:"Nenhum alerta crítico identificado no período."}
+          </div>
+        </div>
+
+        {/* 2. CUSTOS E SAVINGS */}
+        <div style={{...s.card, padding:"20px 24px", marginBottom:12}}>
+          <div style={{fontSize:11, color:C.muted, letterSpacing:"0.1em", marginBottom:14}}>2. CUSTOS E SAVINGS</div>
+          <div style={{display:"grid", gridTemplateColumns:"1fr 1fr", gap:14}}>
+            {/* Saving breakdown */}
+            <div>
+              <div style={{fontSize:12, color:C.muted, marginBottom:10}}>Composição do saving</div>
+              {[
+                {l:"Saving de cotação (menor fornecedor)", v:savingA, c:"#818cf8", pct:savingTotal?savingA/savingTotal:0},
+                {l:"Saving de negociação (comprador)", v:savingB, c:C.saving, pct:savingTotal?savingB/savingTotal:0},
+              ].map(k=>(
+                <div key={k.l} style={{marginBottom:10}}>
+                  <div style={{display:"flex", justifyContent:"space-between", marginBottom:4}}>
+                    <span style={{fontSize:12, color:C.textSub}}>{k.l}</span>
+                    <span style={{fontSize:13, fontWeight:700, color:k.c}}>{fmtBRL(k.v)}</span>
+                  </div>
+                  <div style={{height:6, background:C.border, borderRadius:3}}>
+                    <div style={{height:"100%", background:k.c, width:`${k.pct*100}%`, borderRadius:3}}/>
+                  </div>
+                </div>
+              ))}
+              <div style={{marginTop:12, fontSize:12, color:C.muted}}>
+                Saving sobre gasto total: <strong style={{color:C.saving}}>{totalGasto>0?((savingTotal/(totalGasto+savingTotal))*100).toFixed(1):0}%</strong>
+              </div>
+            </div>
+            {/* Por categoria */}
+            <div>
+              <div style={{fontSize:12, color:C.muted, marginBottom:10}}>Gasto por categoria</div>
+              {["corretiva","preventiva","preditiva"].map(cat=>{
+                const v=finalizados.filter(c=>c.categoria===cat).reduce((s,c)=>s+(c.valorNegociado??c.valorAprovado),0);
+                return(
+                  <div key={cat} style={{marginBottom:8}}>
+                    <div style={{display:"flex", justifyContent:"space-between", marginBottom:3}}>
+                      <span style={{fontSize:12, color:C.textSub}}>{catCfg[cat]?.l}</span>
+                      <span style={{fontSize:12, fontWeight:600, color:catCfg[cat]?.c}}>{fmtBRL(v)}</span>
+                    </div>
+                    <div style={{height:5, background:C.border, borderRadius:3}}>
+                      <div style={{height:"100%", background:catCfg[cat]?.c, width:`${totalGasto?v/totalGasto*100:0}%`, borderRadius:3}}/>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+
+        {/* 3. PERFORMANCE DOS COMPRADORES */}
+        <div style={{...s.card, padding:"20px 24px", marginBottom:12}}>
+          <div style={{fontSize:11, color:C.muted, letterSpacing:"0.1em", marginBottom:14}}>3. PERFORMANCE DOS COMPRADORES</div>
+          {rankCompradores.length===0
+            ?<div style={{fontSize:13,color:C.muted}}>Nenhum dado de comprador disponível no período.</div>
+            :<div style={{...s.card, overflow:"hidden"}}>
+              <div style={{display:"grid", gridTemplateColumns:"2fr 80px 110px 100px 80px", padding:"9px 16px", background:C.bg, borderBottom:`1px solid ${C.border}`, fontSize:10, color:C.muted, letterSpacing:"0.07em"}}>
+                <span>COMPRADOR</span><span>ORDENS</span><span>SAVING NEGOC.</span><span>TICKET MÉDIO</span><span>PRAZO MÉD.</span>
+              </div>
+              {rankCompradores.map((c,i)=>(
+                <div key={c.nome} style={{display:"grid", gridTemplateColumns:"2fr 80px 110px 100px 80px", padding:"11px 16px", borderBottom:i<rankCompradores.length-1?`1px solid ${C.border}22`:"none", alignItems:"center"}}>
+                  <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                    <span style={{fontSize:11,fontWeight:700,color:C.muted}}>#{i+1}</span>
+                    <span style={{fontSize:13,color:C.text,fontWeight:500}}>{c.nome}</span>
+                    {i===0&&rankCompradores.length>1&&<span style={{...s.tag(C.success),fontSize:9}}>top saving</span>}
+                  </div>
+                  <span style={{fontSize:13,color:C.text}}>{c.ordens}</span>
+                  <span style={{fontSize:13,fontWeight:700,color:C.saving}}>{fmtBRL(c.savingB)}</span>
+                  <span style={{fontSize:12,color:C.textSub}}>{fmtBRL(c.ordens?finalizados.filter(f=>f.aprovadoPor===c.nome).reduce((s,f)=>s+(f.valorNegociado??f.valorAprovado),0)/c.ordens:0)}</span>
+                  <span style={{fontSize:12,color:C.textSub}}>{c.leadQtd?(c.leadTotal/c.leadQtd).toFixed(1)+"d":"—"}</span>
+                </div>
+              ))}
+            </div>
+          }
+        </div>
+
+        {/* 4. FORNECEDORES DO PERÍODO */}
+        <div style={{...s.card, padding:"20px 24px", marginBottom:12}}>
+          <div style={{fontSize:11, color:C.muted, letterSpacing:"0.1em", marginBottom:14}}>4. FORNECEDORES — TOP 5 POR PARTICIPAÇÃO</div>
+          {rankForn.length===0
+            ?<div style={{fontSize:13,color:C.muted}}>Nenhuma cotação registrada no período.</div>
+            :<div style={{display:"flex", flexDirection:"column", gap:8}}>
+              {rankForn.map((f,i)=>{
+                const taxa=Math.round(f.respostas/Math.max(f.cotacoes,1)*100);
+                const cor=taxa>=80?C.success:taxa>=50?C.warn:"#ef4444";
+                return(
+                  <div key={f.nome} style={{display:"flex",alignItems:"center",gap:14,background:C.bg,borderRadius:7,padding:"10px 14px"}}>
+                    <span style={{fontSize:11,fontWeight:700,color:C.muted,width:20}}>#{i+1}</span>
+                    <span style={{fontSize:13,color:C.text,flex:1,fontWeight:500}}>{f.nome}</span>
+                    <span style={{fontSize:11,color:C.muted}}>{f.cotacoes} cot.</span>
+                    <span style={{fontSize:11,color:C.muted}}>{f.respostas} resp.</span>
+                    <span style={{fontSize:11,color:C.muted}}>{f.vitorias} pedido{f.vitorias!==1?"s":""}</span>
+                    <div style={{width:80,height:6,background:C.border,borderRadius:3}}>
+                      <div style={{height:"100%",background:cor,width:`${taxa}%`,borderRadius:3}}/>
+                    </div>
+                    <span style={{fontSize:12,fontWeight:700,color:cor,width:40,textAlign:"right"}}>{taxa}%</span>
+                  </div>
+                );
+              })}
+            </div>
+          }
+        </div>
+
+        {/* 5. MATRIZ SWOT */}
+        <div style={{...s.card, padding:"20px 24px", marginBottom:12}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+            <div style={{fontSize:11, color:C.muted, letterSpacing:"0.1em"}}>5. MATRIZ SWOT — {fmtMes.toUpperCase()}</div>
+            {!swotIA&&<div style={{fontSize:11,color:C.muted}}>Clique em "Gerar SWOT com IA" para preencher automaticamente</div>}
+          </div>
+          {loadingSwot&&(
+            <div style={{display:"flex",alignItems:"center",gap:10,color:C.muted,fontSize:13,padding:20,justifyContent:"center"}}>
+              <div style={{width:16,height:16,border:"2px solid #7c3aed",borderTopColor:"transparent",borderRadius:"50%",animation:"spin 0.8s linear infinite"}}/>
+              Gerando análise SWOT...
+            </div>
+          )}
+          {swotIA&&(
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              {[
+                {key:"forcas",label:"FORÇAS",icon:"💪",c:C.success,bg:"#0f2f1a"},
+                {key:"fraquezas",label:"FRAQUEZAS",icon:"⚠",c:"#ef4444",bg:"#2d1515"},
+                {key:"oportunidades",label:"OPORTUNIDADES",icon:"🚀",c:C.accent,bg:"#0f1e35"},
+                {key:"ameacas",label:"AMEAÇAS",icon:"🔴",c:C.warn,bg:"#3f2a0a"},
+              ].map(q=>(
+                <div key={q.key} style={{background:q.bg,border:`1px solid ${q.c}33`,borderRadius:8,padding:"14px 16px"}}>
+                  <div style={{fontSize:11,color:q.c,letterSpacing:"0.08em",fontWeight:700,marginBottom:10}}>{q.icon} {q.label}</div>
+                  {(swotIA[q.key]||[]).map((item,i)=>(
+                    <div key={i} style={{display:"flex",gap:8,marginBottom:6,fontSize:12,color:C.textSub,lineHeight:1.5}}>
+                      <span style={{color:q.c,flexShrink:0}}>•</span>
+                      <span>{item}</span>
+                    </div>
+                  ))}
+                </div>
+              ))}
+            </div>
+          )}
+          {!swotIA&&!loadingSwot&&(
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              {["💪 FORÇAS","⚠ FRAQUEZAS","🚀 OPORTUNIDADES","🔴 AMEAÇAS"].map(q=>(
+                <div key={q} style={{background:C.bg,border:`1px dashed ${C.border}`,borderRadius:8,padding:"14px 16px",minHeight:80,display:"flex",alignItems:"center",justifyContent:"center"}}>
+                  <span style={{fontSize:12,color:C.border}}>{q} — aguardando IA</span>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* 6. ALERTAS E RECOMENDAÇÕES */}
+        <div style={{...s.card, padding:"20px 24px", marginBottom:12}}>
+          <div style={{fontSize:11, color:C.muted, letterSpacing:"0.1em", marginBottom:14}}>6. ALERTAS E RECOMENDAÇÕES PARA O PRÓXIMO MÊS</div>
+          {alertasPeriodo.length===0
+            ?<div style={{fontSize:13,color:C.success}}>✅ Nenhum alerta crítico identificado. Manter o nível atual de gestão.</div>
+            :alertasPeriodo.map((a,i)=>(
+              <div key={i} style={{display:"flex",gap:12,padding:"10px 14px",background:a.sev==="alta"?"#2d1515":"#3f2a0a",border:`1px solid ${a.sev==="alta"?"#ef444433":"#f59e0b33"}`,borderRadius:7,marginBottom:8}}>
+                <span style={{fontSize:16,flexShrink:0}}>{a.sev==="alta"?"🔴":"🟡"}</span>
+                <div style={{fontSize:12,color:C.textSub,lineHeight:1.6}}>{a.txt}</div>
+              </div>
+            ))
+          }
+          {/* Top 3 recomendações */}
+          <div style={{marginTop:14}}>
+            <div style={{fontSize:11,color:C.muted,letterSpacing:"0.08em",marginBottom:10}}>TOP 3 AÇÕES PRIORITÁRIAS</div>
+            {recomendacoes.map((r,i)=>(
+              <div key={i} style={{display:"flex",gap:10,marginBottom:8,padding:"9px 14px",background:C.bg,borderRadius:6,alignItems:"flex-start"}}>
+                <span style={{color:C.accent,fontWeight:700,flexShrink:0,fontSize:12}}>{i+1}.</span>
+                <div>
+                  <div style={{fontSize:12,color:C.text,fontWeight:500}}>{r.txt}</div>
+                  <div style={{fontSize:11,color:C.muted,marginTop:2}}>{r.detalhe}</div>
+                </div>
+                <span style={{...s.tag(urgCfg[r.prioridade]?.c||C.muted),fontSize:9,flexShrink:0,marginLeft:"auto"}}>{r.prazo}d</span>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 7. SCORE DE SAÚDE HISTÓRICO — mês a mês do ano */}
+        {(()=>{
+          // Calcular score para cada mês do ano selecionado
+          const historico = MESES_PT.map((nomeMes, mesIdx) => {
+            const fin = chamados.filter(c=>{
+              const d=new Date(c.abertura);
+              return c.status==="finalizado"&&c.valorAprovado&&d.getMonth()===mesIdx&&d.getFullYear()===anoSel;
+            });
+            if (!fin.length) return { mes:nomeMes.slice(0,3), mesIdx, score:null, nota:null };
+            const gasto = fin.reduce((s,c)=>s+(c.valorNegociado??c.valorAprovado),0);
+            const sv = calcSavings(fin,cotacoes);
+            const svB = sv.reduce((s,c)=>s+c.savingB,0);
+            const svT = sv.reduce((s,c)=>s+c.savingTotal,0);
+            const urgAlta = fin.filter(c=>c.urgencia==="alta").length;
+            const sc = Math.min(100,Math.max(0,
+              70+(svT>gasto*0.08?15:svT>gasto*0.04?8:0)-(urgAlta>2?12:urgAlta>0?4:0)
+            ));
+            const chave = `${anoSel}-${String(mesIdx+1).padStart(2,"0")}`;
+            return { mes:nomeMes.slice(0,3), mesIdx, score:Math.round(sc), nota:notasPeriodo[chave]||null, chave, gasto, svT };
+          });
+          const comDados = historico.filter(h=>h.score!==null);
+          if (comDados.length < 2) return null;
+          const maxSc=100, minSc=0;
+          const W=560, H=120, PL=36, PR=16, PT=12, PB=28;
+          const toX=(i,total)=>PL+((i)/(total-1))*(W-PL-PR);
+          const toY=v=>PT+(1-(v-minSc)/(maxSc-minSc))*(H-PT-PB);
+          const pts=comDados.map((h,i)=>`${toX(i,comDados.length).toFixed(1)},${toY(h.score).toFixed(1)}`).join(" ");
+          // editandoNota e textoNota vêm do estado do componente pai
+          return(
+            <div style={{...s.card,padding:"20px 24px",marginBottom:12}}>
+              <div style={{fontSize:11,color:C.muted,letterSpacing:"0.1em",marginBottom:14}}>7. EVOLUÇÃO DO SCORE DE SAÚDE — {anoSel}</div>
+              {/* Gráfico */}
+              <div style={{background:C.bg,borderRadius:8,padding:"10px 8px",marginBottom:16}}>
+                <svg width="100%" viewBox={`0 0 ${W} ${H}`}>
+                  {/* Grid */}
+                  {[40,60,80,100].map(v=>(
+                    <g key={v}>
+                      <line x1={PL} y1={toY(v)} x2={W-PR} y2={toY(v)} stroke={C.border} strokeWidth={0.5}/>
+                      <text x={PL-4} y={toY(v)+4} textAnchor="end" fontSize={8} fill={C.muted}>{v}</text>
+                    </g>
+                  ))}
+                  {/* Área */}
+                  <polyline points={`${toX(0,comDados.length)},${H-PB} ${pts} ${toX(comDados.length-1,comDados.length)},${H-PB}`} fill={`${C.accent}20`} stroke="none"/>
+                  {/* Linha */}
+                  <polyline points={pts} fill="none" stroke={C.accent} strokeWidth={2} strokeLinejoin="round" strokeLinecap="round"/>
+                  {/* Pontos + labels */}
+                  {comDados.map((h,i)=>{
+                    const x=toX(i,comDados.length), y=toY(h.score);
+                    const cor=h.score>=80?C.success:h.score>=60?C.warn:"#ef4444";
+                    return(
+                      <g key={h.mesIdx}>
+                        <circle cx={x} cy={y} r={5} fill={cor} stroke={C.bg} strokeWidth={1.5}/>
+                        <text x={x} y={y-9} textAnchor="middle" fontSize={9} fontWeight="bold" fill={cor}>{h.score}</text>
+                        <text x={x} y={H-8} textAnchor="middle" fontSize={8} fill={C.muted}>{h.mes}</text>
+                        {h.nota&&<circle cx={x+6} cy={y-6} r={3} fill={C.warn} title={h.nota}/>}
+                      </g>
+                    );
+                  })}
+                </svg>
+              </div>
+              {/* Notas por mês */}
+              <div style={{fontSize:11,color:C.muted,letterSpacing:"0.08em",marginBottom:10}}>NOTAS DO GESTOR POR PERÍODO</div>
+              <div style={{display:"flex",flexDirection:"column",gap:6}}>
+                {comDados.map(h=>{
+                  const cor=h.score>=80?C.success:h.score>=60?C.warn:"#ef4444";
+                  const isEdit=editandoNota===h.chave;
+                  return(
+                    <div key={h.mesIdx} style={{display:"flex",gap:10,alignItems:"flex-start",background:C.bg,borderRadius:7,padding:"9px 12px"}}>
+                      <div style={{flexShrink:0,textAlign:"center",minWidth:56}}>
+                        <div style={{fontSize:10,color:C.muted}}>{h.mes}</div>
+                        <div style={{fontSize:16,fontWeight:700,color:cor}}>{h.score}</div>
+                      </div>
+                      <div style={{flex:1}}>
+                        {isEdit?(
+                          <div style={{display:"flex",gap:8}}>
+                            <textarea value={textoNota} onChange={e=>setTextoNota(e.target.value)} rows={2} autoFocus
+                              placeholder="Descreva o que impactou o score neste mês..."
+                              style={{...s.input,flex:1,resize:"none",fontSize:12}}/>
+                            <div style={{display:"flex",flexDirection:"column",gap:4}}>
+                              <button onClick={()=>{setNota(h.chave,textoNota);setEditandoNota(null);}}
+                                style={{...s.btn(true,"#238636"),padding:"5px 12px",fontSize:11}}>✓</button>
+                              <button onClick={()=>setEditandoNota(null)}
+                                style={{...s.btn(false),padding:"5px 12px",fontSize:11}}>✕</button>
+                            </div>
+                          </div>
+                        ):(
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",gap:8}}>
+                            <div style={{fontSize:12,color:h.nota?C.textSub:C.border,fontStyle:h.nota?"normal":"italic"}}>
+                              {h.nota||"Clique para adicionar nota do gestor..."}
+                            </div>
+                            <button onClick={()=>{setTextoNota(h.nota||"");setEditandoNota(h.chave);}}
+                              style={{background:"transparent",border:`1px solid ${C.border}`,borderRadius:5,padding:"3px 8px",color:C.muted,fontSize:10,cursor:"pointer",fontFamily:"inherit",flexShrink:0}}>
+                              ✏ Nota
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{fontSize:10,color:C.muted,marginTop:8}}>💡 Ponto laranja no gráfico indica meses com nota do gestor</div>
+            </div>
+          );
+        })()}
+
+        {/* 8. AÇÕES — adaptado ao período */}
+        {(()=>{
+          const ehMensal = periodo==="mes";
+          // Mensal: tarefas em curso
+          // Tri/anual: histórico de tarefas do período
+          const tarefasPeriodo = tarefas.filter(t=>{
+            if (!t.criacao) return false;
+            const d = new Date(t.criacao);
+            return mesesDoPeriodo().includes(d.getMonth()) && d.getFullYear()===anoSel;
+          });
+          const emCurso = tarefas.filter(t=>t.status==="em_andamento"||t.status==="pendente");
+          const lista = ehMensal ? emCurso : tarefasPeriodo;
+          if (!lista.length && !emCurso.length) return null;
+          return(
+            <div style={{...s.card,padding:"20px 24px",marginBottom:12}}>
+              <div style={{fontSize:11,color:C.muted,letterSpacing:"0.1em",marginBottom:14}}>
+                {ehMensal?"8. AÇÕES EM CURSO":`8. HISTÓRICO DE AÇÕES — ${fmtMes.toUpperCase()}`}
+              </div>
+              {lista.length===0&&<div style={{fontSize:13,color:C.muted}}>Nenhuma ação registrada para este período.</div>}
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {lista.map(t=>{
+                  const stCfg=statusTarefaCfg[t.status];
+                  const prCfg=prioridadeTarefaCfg[t.prioridade];
+                  const ultComent=t.comentarios?.slice(-1)[0];
+                  return(
+                    <div key={t.id} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"11px 14px",borderLeft:`3px solid ${prCfg.c}`}}>
+                      <div style={{display:"flex",gap:10,alignItems:"flex-start",justifyContent:"space-between",flexWrap:"wrap"}}>
+                        <div style={{flex:1}}>
+                          <div style={{display:"flex",gap:8,alignItems:"center",marginBottom:4,flexWrap:"wrap"}}>
+                            <span style={{fontSize:13,fontWeight:600,color:t.status==="concluida"?C.muted:C.text,textDecoration:t.status==="concluida"?"line-through":"none"}}>{t.titulo}</span>
+                            <span style={{...s.tag(stCfg.c),fontSize:9}}>{stCfg.icon} {stCfg.l}</span>
+                            <span style={s.tag(prCfg.c)}>{prCfg.l}</span>
+                          </div>
+                          {t.responsavel&&<div style={{fontSize:11,color:C.muted,marginBottom:3}}>👤 {t.responsavel}{t.prazo?` · Prazo: ${fmtD(t.prazo)}`:""}</div>}
+                          {ultComent&&(
+                            <div style={{fontSize:11,color:C.textSub,background:C.surface,borderRadius:5,padding:"5px 9px",marginTop:4}}>
+                              <span style={{color:C.muted}}>Último log ({fmtD(ultComent.data)}): </span>{ultComent.texto}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{fontSize:11,color:C.muted,flexShrink:0}}>
+                          {t.comentarios?.length>0&&`💬 ${t.comentarios.length} log${t.comentarios.length>1?"s":""}`}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* Rodapé */}
+        <div style={{textAlign:"center",padding:"16px 0",fontSize:11,color:C.muted}}>
+          Relatório gerado automaticamente pelo QuotaFlow · {new Date().toLocaleDateString("pt-BR")} · Confidencial
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
 // TELA: PLANO DE AÇÃO
 // ─────────────────────────────────────────────
 const statusTarefaCfg = {
@@ -2108,17 +3606,17 @@ function TelaPlanoAcao({ tarefas, setTarefas, onVoltar }) {
 
   const setStatus = (id, status) => setTarefas(prev => prev.map(t => t.id===id ? {...t, status} : t));
 
-  const filtradas = tarefas.dados.filter(t => {
+  const filtradas = tarefas.filter(t => {
     const matchF = filtro==="todos" || t.status===filtro || t.prioridade===filtro;
     const matchS = !search || t.titulo.toLowerCase().includes(search.toLowerCase()) || t.responsavel?.toLowerCase().includes(search.toLowerCase());
     return matchF && matchS;
   });
 
   // KPIs
-  const total = tarefas.dados.length;
-  const concluidas = tarefas.dados.filter(t=>t.status==="concluida").length;
-  const emAndamento = tarefas.dados.filter(t=>t.status==="em_andamento").length;
-  const atrasadas = tarefas.dados.filter(t=>t.status!=="concluida"&&t.status!=="cancelada"&&t.prazo&&new Date(t.prazo)<new Date()).length;
+  const total = tarefas.length;
+  const concluidas = tarefas.filter(t=>t.status==="concluida").length;
+  const emAndamento = tarefas.filter(t=>t.status==="em_andamento").length;
+  const atrasadas = tarefas.filter(t=>t.status!=="concluida"&&t.status!=="cancelada"&&t.prazo&&new Date(t.prazo)<new Date()).length;
   const pctConclusao = total ? Math.round(concluidas/total*100) : 0;
 
   const fmtDataPrazo = (d) => {
@@ -2467,6 +3965,168 @@ function TelaUsuarios({ usuarios, setUsuarios }) {
           </div>
         </Modal>
       )}
+    </div>
+  );
+}
+
+// ─────────────────────────────────────────────
+// ROOT
+// ─────────────────────────────────────────────
+export default function App(){
+  const [usuario, setUsuario] = useState(null);
+  const chamados = useChamados();
+  const cotacoes = useCotacoes();
+  const fornecedores = useFornecedores();
+  const equipamentos = useEquipamentos();
+  const tarefas = useTarefas();
+  const usuarios = useUsuarios();
+  const financeiro = useFinanceiro();
+  const inteligencia = useInteligencia();
+  const benchmark = useBenchmark();
+  const relatorio = useRelatorio();
+  const [tela,setTela]=useState("home");
+  const [participaBench,setParticipaBench]=useState(true);
+  const [notasPeriodo,setNotasPeriodo]=useState({
+    "2026-01":"Equipe completa. Mês tranquilo de manutenção.",
+    "2026-02":"Greve parcial da transportadora regional. Lead times 40% maiores que o normal.",
+    "2026-03":"Retorno normal. Dois técnicos em treinamento — aumento de chamados corretivos.",
+  });
+
+  const setNota = (chave, texto) => setNotasPeriodo(prev=>({...prev,[chave]:texto}));
+
+  const login = (user) => {
+    setUsuario(user);
+    // Salvar token se vier da API
+    if (user.access_token) {
+      localStorage.setItem('access_token', user.access_token);
+    }
+    // Redirecionar para tela padrão do perfil
+    const perfil = user.perfil || user.papel || 'comprador';
+    const telaInicial = { 
+      tecnico:"tecnico", 
+      comprador:"compradora", 
+      gestor:"financeiro", 
+      admin:"usuarios" 
+    };
+    setTela(telaInicial[perfil] || "home");
+  };
+
+  const logout = () => { setUsuario(null); setTela("home"); };
+
+  // Verificar permissão
+  const temAcesso = (t) => !PERMISSOES[t] || (usuario && PERMISSOES[t].includes(usuario.perfil));
+
+  // Navegar com verificação
+  const navegar = (t) => { if (temAcesso(t)) setTela(t); };
+
+  const abrirPlanoDeAcao = (recomendacoes, periodoLabel) => {
+    const novas = recomendacoes.map(r => {
+      tarefaIdCounter++;
+      const prazoDate = new Date();
+      prazoDate.setDate(prazoDate.getDate() + r.prazo);
+      return { id:tarefaIdCounter, titulo:r.txt, detalhe:r.detalhe+` — Gerado de ${periodoLabel}.`, responsavel:"", prazo:prazoDate.toISOString().split("T")[0], prioridade:r.prioridade, status:"pendente", criacao:new Date().toISOString(), comentarios:[] };
+    });
+    setTarefas(prev=>{
+      const ex=prev.map(t=>t.titulo);
+      return [...prev,...novas.filter(n=>!ex.includes(n.titulo))];
+    });
+    navegar("plano");
+  };
+
+  // Mostrar login se não autenticado
+  if (!usuario) return <TelaLogin onLogin={login}/>;
+
+  const perfil = PERFIS[usuario.perfil];
+
+  // Nav items filtrados por perfil
+  const navItems = [
+    {id:"home",          l:"Início",            perfis:["tecnico","comprador","gestor","admin"]},
+    {id:"tecnico",       l:"🔧 Chamado",         perfis:["tecnico","comprador","gestor","admin"]},
+    {id:"compradora",    l:"📋 Compras",          perfis:["comprador","gestor","admin"]},
+    {id:"plano",         l:`✅ Plano${tarefas.filter(t=>t.status==="em_andamento").length>0?` (${tarefas.filter(t=>t.status==="em_andamento").length})`:""
+      }`,                                        perfis:["comprador","gestor","admin"]},
+    {id:"financeiro",    l:"💰 Financeiro",       perfis:["gestor","admin"]},
+    {id:"relatorio",     l:"📄 Relatório",        perfis:["gestor","admin"]},
+    {id:"historico",     l:"📉 Histórico Preços", perfis:["gestor","admin"]},
+    {id:"inteligencia",  l:"🧠 Inteligência",     perfis:["gestor","admin"]},
+    {id:"benchmark",     l:"📈 Benchmark",        perfis:["gestor","admin"]},
+    {id:"equipamentos",  l:"⚙ Equipamentos",      perfis:["comprador","gestor","admin"]},
+    {id:"fornecedores",  l:"🏭 Fornecedores",     perfis:["comprador","gestor","admin"]},
+    {id:"fornecedorportal",l:"🔗 Portal fornecedor",perfis:["comprador","gestor","admin"]},
+    {id:"usuarios",      l:"👥 Usuários",          perfis:["admin"]},
+  ].filter(n=>n.perfis.includes(usuario.perfil));
+
+  return(
+    <div style={{fontFamily:"'DM Sans','Segoe UI',sans-serif",background:C.bg,height:"100vh",color:C.text,display:"flex",flexDirection:"column",overflow:"hidden"}}>
+      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet"/>
+
+      {/* Navbar com info do usuário logado */}
+      <div style={{background:C.surface,borderBottom:`1px solid ${C.border}`,padding:"0 20px",display:"flex",alignItems:"center",gap:4,height:50,flexShrink:0,overflowX:"auto"}}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginRight:16,flexShrink:0}}>
+          <div style={{width:4,height:22,background:"#f87171",borderRadius:2}}/>
+          <span style={{fontSize:14,fontWeight:700,color:C.text,letterSpacing:"0.02em"}}>QuotaFlow</span>
+        </div>
+
+        {navItems.map(t=>(
+          <button key={t.id} onClick={()=>navegar(t.id)}
+            style={{background:tela===t.id?"#1e2a3f":"transparent",border:`1px solid ${tela===t.id?C.accent:"transparent"}`,borderRadius:6,padding:"5px 12px",color:tela===t.id?C.accent:C.muted,fontSize:12,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap",transition:"all .1s"}}>
+            {t.l}
+          </button>
+        ))}
+
+        {/* Usuário logado + logout — direita */}
+        <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:10,flexShrink:0,paddingLeft:12,borderLeft:`1px solid ${C.border}`}}>
+          <div style={{textAlign:"right"}}>
+            <div style={{fontSize:12,color:C.text,fontWeight:500}}>{usuario.nome}</div>
+            <div style={{fontSize:10,color:perfil.c}}>{perfil.icon} {perfil.l}</div>
+          </div>
+          <button onClick={logout} style={{background:"transparent",border:`1px solid ${C.border}`,borderRadius:6,padding:"5px 10px",color:C.muted,fontSize:11,cursor:"pointer",fontFamily:"inherit"}} title="Sair">Sair</button>
+        </div>
+      </div>
+
+      {/* Conteúdo */}
+      <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>
+        {tela==="home"&&(
+          <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:40,overflowY:"auto"}}>
+            <div style={{maxWidth:600,width:"100%",textAlign:"center"}}>
+              <div style={{fontSize:52,marginBottom:16}}>{perfil.icon}</div>
+              <div style={{fontSize:26,fontWeight:700,color:C.text,marginBottom:8}}>Olá, {usuario.nome.split(" ")[0]}!</div>
+              <div style={{fontSize:14,color:C.muted,marginBottom:32}}>Você está logado como <strong style={{color:perfil.c}}>{perfil.l}</strong></div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12}}>
+                {navItems.filter(n=>n.id!=="home").map(n=>(
+                  <div key={n.id} onClick={()=>navegar(n.id)}
+                    style={{...s.card,padding:"18px 14px",cursor:"pointer",textAlign:"center",transition:"all .15s"}}
+                    onMouseEnter={e=>{e.currentTarget.style.background="#151d2e";e.currentTarget.style.transform="translateY(-2px)";}}
+                    onMouseLeave={e=>{e.currentTarget.style.background=C.surface;e.currentTarget.style.transform="translateY(0)";}}>
+                    <div style={{fontSize:11,color:C.text,fontWeight:500}}>{n.l}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Acesso negado */}
+        {!temAcesso(tela)&&tela!=="home"&&(
+          <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:16}}>
+            <div style={{fontSize:48}}>🔒</div>
+            <div style={{fontSize:18,fontWeight:700,color:C.text}}>Acesso restrito</div>
+            <div style={{fontSize:13,color:C.muted}}>Seu perfil ({perfil.l}) não tem permissão para esta área.</div>
+            <button onClick={()=>setTela("home")} style={{...s.btn(true),padding:"9px 20px"}}>← Voltar ao início</button>
+          </div>
+        )}
+
+        {temAcesso(tela)&&tela==="tecnico"&&<div style={{flex:1,overflowY:"auto"}}><TelaChamadosNova useChamados={useChamados} useEquipamentos={useEquipamentos} fmtBRL={fmtBRL} fmtD={fmtD} C={C} s={s}/></div>}
+        {temAcesso(tela)&&tela==="compradora"&&<div style={{flex:1,overflowY:"auto"}}><TelaCotacoesNova useCotacoes={useCotacoes} useFornecedores={useFornecedores} useChamados={useChamados} useEmail={useEmail} fmtBRL={fmtBRL} fmtD={fmtD} C={C} s={s}/></div>}
+        {temAcesso(tela)&&tela==="plano"&&<div style={{flex:1,overflowY:"auto"}}><TelaPlanoAcao tarefas={tarefas} setTarefas={setTarefas} onVoltar={()=>navegar("relatorio")}/></div>}
+        {temAcesso(tela)&&tela==="financeiro"&&<div style={{flex:1,overflowY:"auto"}}><TelaFinanceiro chamados={chamados} cotacoes={cotacoes} equipamentos={equipamentos}/></div>}
+        {temAcesso(tela)&&tela==="relatorio"&&<div style={{flex:1,overflowY:"auto"}}><TelaRelatorio chamados={chamados} cotacoes={cotacoes} fornecedores={fornecedores} equipamentos={equipamentos} onAbrirPlano={abrirPlanoDeAcao} tarefas={tarefas} notasPeriodo={notasPeriodo} setNota={setNota}/></div>}
+        {temAcesso(tela)&&tela==="historico"&&<div style={{flex:1,overflowY:"auto"}}><TelaHistoricoPrecos chamados={chamados} cotacoes={cotacoes}/></div>}
+        {temAcesso(tela)&&tela==="inteligencia"&&<div style={{flex:1,overflowY:"auto"}}><TelaInteligencia chamados={chamados} cotacoes={cotacoes} fornecedores={fornecedores} equipamentos={equipamentos} perfilUsuario={usuario.perfil}/></div>}
+        {temAcesso(tela)&&tela==="benchmark"&&<div style={{flex:1,overflowY:"auto"}}><TelaBenchmark chamados={chamados} participaBench={participaBench} setParticipaBench={setParticipaBench}/></div>}
+        {temAcesso(tela)&&tela==="equipamentos"&&<div style={{flex:1,overflowY:"auto"}}><TelaEquipamentos equipamentos={equipamentos} setEquipamentos={setEquipamentos}/></div>}
+        {temAcesso(tela)&&tela==="fornecedores"&&<div style={{flex:1,overflowY:"auto"}}><TelaFornecedoresNova useFornecedores={useFornecedores} fmtD={fmtD} C={C} s={s}/></div>}        {temAcesso(tela)&&tela==="fornecedorportal"&&<div style={{flex:1,overflowY:"auto"}}><TelaFornecedorPortal/></div>}
+      </div>
     </div>
   );
 }
