@@ -70,6 +70,17 @@ export function useAuth() {
     }
   }, []);
 
+  // hooks/useAuth.js (adicione esta função)
+  const loginWithData = useCallback((userData) => {
+    console.log('🔍 loginWithData recebido:', userData);
+    localStorage.setItem("accessToken", userData.access_token);
+    localStorage.setItem("refreshToken", userData.refresh_token);
+    setAccessToken(userData.access_token);
+    setRefreshToken(userData.refresh_token);
+    setUsuario(userData);
+    setTenant(userData.tenant || null);
+  }, []);
+
   const signup = useCallback(async (dados) => {
     try {
       setLoading(true);
@@ -192,6 +203,7 @@ export function useAuth() {
     signup,
     login,
     logout,
+    loginWithData,
     mudarSenha,
     renovarToken,
 

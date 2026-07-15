@@ -19,7 +19,6 @@ export function useEquipamentos() {
     setErro(null);
     try {
       const data = await equipamentosService.listar(token);
-      console.log('📦 Dados recebidos no hook:', data);
       setEquipamentos(data || []);
     } catch (err) {
       console.error('❌ Erro ao listar equipamentos:', err);

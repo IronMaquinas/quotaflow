@@ -23,7 +23,6 @@ export default function TelaEquipamentos({ fmtBRL, fmtD, C, s }) {
   const equipamentosSeguro = equipamentos || [];
 
   const salvar = async () => {
-    console.log('🔍 Dados enviados:', form);
     if (!form.nome || !form.tag) return;
     try {
       if (modal === 'novo') {

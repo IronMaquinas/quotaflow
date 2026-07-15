@@ -32,9 +32,8 @@ app.use("/api/fornecedores", tenantMiddleware, fornecedoresRoutes);
 app.use("/api/email",        tenantMiddleware, emailRoutes);
 app.use("/api/cnpj",         tenantMiddleware, cnpjRoutes);
 app.use("/api/usuarios",     tenantMiddleware, usuariosRoutes);
-
 app.use('/api/equipamentos', tenantMiddleware, equipamentosRouter);
-app.use('/api/tarefas', tenantMiddleware, tarefasRoutes);
+app.use('/api/tarefas',      tenantMiddleware, tarefasRoutes);
 
 // Rota de saúde (Railway usa para verificar se o servidor está rodando)
 app.get("/health", (req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));

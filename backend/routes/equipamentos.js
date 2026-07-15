@@ -7,7 +7,6 @@ router.get("/", tenantMiddleware, async (req, res) => {
   try {
     console.log('📥 GET /equipamentos tenant:', req.tenantId);
     const equipamentos = await DB.select("equipamentos", {}, req.tenantId);
-    console.log('📦 Equipamentos encontrados:', equipamentos);
     res.json(equipamentos);
   } catch (err) {
     console.error('❌ Erro ao listar equipamentos:', err.message);

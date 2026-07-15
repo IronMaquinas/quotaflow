@@ -12,6 +12,7 @@ async function gerarNumeroChamado(tenant_id) {
   const ano = new Date().getFullYear();
   const prefix = `CHAM-${ano}-`;
 
+  // Buscar o maior número usando id DESC
   const result = await DB.raw(`
     SELECT numero FROM chamados 
     WHERE tenant_id = $1 AND numero LIKE $2
@@ -27,7 +28,22 @@ async function gerarNumeroChamado(tenant_id) {
     }
   }
 
-  return `${prefix}${String(seq).padStart(4, "0")}`;
+  let novoNumero = `${prefix}${String(seq).padStart(4, "0")}`;
+  
+  // Verificar se existe usando selectOne (mais confiável)
+  let existe = await DB.selectOne("chamados", { numero: novoNumero }, tenant_id);
+  if (existe) {
+    // Se existir, incrementa até achar um livre (mas limitado a 100 tentativas)
+    let tentativas = 0;
+    while (existe && tentativas < 100) {
+      seq++;
+      novoNumero = `${prefix}${String(seq).padStart(4, "0")}`;
+      existe = await DB.selectOne("chamados", { numero: novoNumero }, tenant_id);
+      tentativas++;
+    }
+  }
+
+  return novoNumero;
 }
 
 async function gerarNumeroCotacao(tenant_id) {
@@ -73,8 +89,6 @@ async function gerarNumeroCotacao(tenant_id) {
 // GET /api/cotacoes/chamados
 router.get("/chamados", tenantMiddleware, async (req, res) => {
   try {
-    console.log("📥 GET /chamados tenant:", req.tenantId);
-    
     // Buscar todos os chamados
     const chamados = await DB.raw(`
       SELECT 
@@ -115,7 +129,6 @@ router.get("/chamados", tenantMiddleware, async (req, res) => {
       itens: itensPorChamado[ch.id] || []
     }));
 
-    console.log("✅ Retornando", resultado.length, "chamados");
     res.json(resultado);
   } catch (err) {
     console.error("❌ Erro listar chamados:", err.message);
@@ -168,7 +181,6 @@ router.post("/chamados", tenantMiddleware, async (req, res) => {
     };
 
     const chamado = await DB.insert("chamados", chamadoData, req.tenantId);
-console.log('✅ Chamado criado:', chamado); // 🔍 LOG
 
     const itensInseridos = [];
     for (const item of itensArray) {
@@ -356,6 +368,146 @@ router.put("/:id/finalizar", tenantMiddleware, async (req, res) => {
   } catch (err) {
     console.error("❌ Erro finalizar cotação:", err.message);
     res.status(500).json({ erro: err.message });
+  }
+});
+
+
+// DELETE /api/cotacoes/chamados/:id - Deletar chamado
+router.delete("/chamados/:id", tenantMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+
+    // Verificar se o chamado existe e pertence ao tenant
+    const chamado = await DB.selectOne("chamados", { id }, req.tenantId);
+    if (!chamado) {
+      return res.status(404).json({ erro: "Chamado não encontrado" });
+    }
+
+    // Deletar chamado (os itens serão deletados em cascata via ON DELETE CASCADE)
+    await DB.delete("chamados", id, req.tenantId);
+
+    res.json({
+      ok: true,
+      mensagem: `Chamado ${chamado.numero} deletado com sucesso`
+    });
+  } catch (err) {
+    console.error("❌ Erro ao deletar chamado:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// PUT /api/cotacoes/chamados/:id - Atualizar chamado
+router.put("/chamados/:id", tenantMiddleware, async (req, res) => {
+  
+  try {
+    const { id } = req.params;
+    const { equipamento_id, descricao_geral, itens } = req.body;
+    const tenantId = req.tenantId;
+ 
+    // Validação crítica
+    if (!Array.isArray(itens)) {
+      console.error('❌ ERRO CRÍTICO: itens não é um array!', typeof itens);
+      return res.status(400).json({ 
+        erro: "itens deve ser um array",
+        recebido: typeof itens,
+        valor: itens 
+      });
+    }
+ 
+    // Verifica se o chamado existe
+    const chamado = await DB.selectOne("chamados", { id, tenant_id: tenantId }, tenantId);
+    if (!chamado) {
+      console.error('❌ Chamado não encontrado:', id);
+      return res.status(404).json({ erro: "Chamado não encontrado" });
+    }
+ 
+    // Atualiza dados do chamado
+    const updateData = {};
+    if (equipamento_id !== undefined) updateData.equipamento_id = equipamento_id;
+    if (descricao_geral !== undefined) updateData.descricao = descricao_geral;
+    updateData.atualizado_em = new Date().toISOString();
+ 
+    await DB.update("chamados", id, updateData, tenantId);
+ 
+    const itensAntigos = await DB.select("chamado_itens", { chamado_id: id }, tenantId);
+    const totalAntigos = itensAntigos?.length || 0;
+
+    // Segundo: DELETAR cada item
+    if (totalAntigos > 0) {
+      for (const item of itensAntigos) {
+        await DB.delete("chamado_itens", item.id, tenantId);
+      }
+    } else {
+      console.log("⚠️ Nenhum item antigo encontrado para deletar");
+    }
+
+    // Terceiro: VERIFICAR que deletou
+    const verificacaoDelete = await DB.select("chamado_itens", { chamado_id: id }, tenantId);
+    const itensRestantes = verificacaoDelete?.length || 0;
+
+    if (itensRestantes > 0) {
+      console.error(`❌ AVISO: DELETE não funcionou completamente! Sobraram ${itensRestantes} itens`);
+    } else {
+      console.log('✅ DELETE completado com sucesso!');
+    }
+ 
+    // Inserir novos itens
+    const itensInseridos = [];
+    if (itens.length > 0) {
+      
+      for (const item of itens) {
+        const itemData = {
+          chamado_id: id,
+          tenant_id: tenantId,
+          item_nome: item.item_nome,
+          codigo: item.codigo || "",
+          quantidade: item.quantidade || 1,
+          urgencia: item.urgencia || "media",
+          categoria: item.categoria || null,
+          tipo_item: item.tipo_item || null,
+          descricao: item.descricao || ""
+        };
+        
+        const novoItem = await DB.insert("chamado_itens", itemData, tenantId);
+        itensInseridos.push(novoItem);
+      }
+    } else {
+      console.log("⚠️ Nenhum item enviado, todos removidos");
+    }
+ 
+    // Buscar chamado atualizado e seus itens
+    const chamadoAtualizado = await DB.selectOne("chamados", { id }, tenantId);
+    
+    const itensAtualizados = await DB.raw(
+      `SELECT * FROM chamado_itens WHERE chamado_id = $1 AND tenant_id = $2 ORDER BY id ASC`,
+      [id, tenantId]
+    );
+ 
+    // ⚠️ VALIDAÇÃO FINAL
+    if ((itensAtualizados?.length || 0) !== itens.length) {
+      console.error(`❌ ERRO: Esperava ${itens.length} itens, mas ficou com ${itensAtualizados?.length || 0}`);
+    } else {
+      console.log('✅ ✅ ✅ PUT /chamados/:id CONCLUÍDO COM SUCESSO');
+    }
+ 
+    res.json({ 
+      ok: true,
+      ...chamadoAtualizado, 
+      itens: itensAtualizados || [],
+      itensInseridos: itensInseridos.length,
+      itensEsperados: itens.length,
+      itensFinais: itensAtualizados?.length || 0,
+      mensagem: `Chamado atualizado com ${itensAtualizados.length} item(ns)`
+    });
+    
+  } catch (err) {
+    console.error("❌ ERRO CRÍTICO ao atualizar chamado:", err.message);
+    console.error("❌ Stack trace:", err.stack);
+    res.status(500).json({ 
+      erro: err.message, 
+      stack: err.stack,
+      detalhe: "Erro ao processar atualização"
+    });
   }
 });
 

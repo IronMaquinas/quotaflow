@@ -14,7 +14,6 @@ export const equipamentosService = {
   },
 
   async criar(accessToken, dados) {
-console.log('🔍 Requisição POST /equipamentos com:', dados);  
     const res = await fetch(`${API_URL}/equipamentos`, {
       method: 'POST',
       headers: {

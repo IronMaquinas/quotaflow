@@ -2,11 +2,13 @@ import React, { useState, useEffect } from "react";
 import ReactDOM from "react-dom/client";
 import TelaLogin from "./TelaLogin";
 import TelaSignup from "./TelaSignup";
-import App from "./App"; // Dashboard
+import App from "./App";
 import { useAuth } from "./hooks/useAuth";
 
+console.log('🚀 main.jsx executando');
+
 function Router() {
-  const { isLogado, loading } = useAuth();
+  const { isLogado, loading, loginWithData } = useAuth();
   const [currentPage, setCurrentPage] = useState(() => {
     const hash = window.location.hash.slice(1) || "login";
     return hash;
@@ -17,18 +19,15 @@ function Router() {
       const hash = window.location.hash.slice(1) || "login";
       setCurrentPage(hash);
     };
-
     window.addEventListener("hashchange", handleHashChange);
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
 
-  // Se está logado e tenta acessar login/signup, redireciona para dashboard
   if (isLogado && (currentPage === "login" || currentPage === "signup")) {
     window.location.hash = "#dashboard";
     return <div style={{ background: "#0a0e14", minHeight: "100vh" }} />;
   }
 
-  // Se não está logado e tenta acessar dashboard, redireciona para login
   if (!isLogado && currentPage === "dashboard") {
     window.location.hash = "#login";
     return <div style={{ background: "#0a0e14", minHeight: "100vh" }} />;
@@ -36,23 +35,12 @@ function Router() {
 
   if (loading) {
     return (
-      <div
-        style={{
-          background: "#0a0e14",
-          minHeight: "100vh",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          color: "#e2e8f0",
-          fontSize: 16,
-        }}
-      >
+      <div style={{ background: "#0a0e14", minHeight: "100vh", display: "flex", alignItems: "center", justifyContent: "center", color: "#e2e8f0", fontSize: 16 }}>
         Carregando...
       </div>
     );
   }
 
-  // Renderizar página conforme a hash
   if (currentPage === "signup") {
     return <TelaSignup onSignupSuccess={() => window.location.hash = "#login"} />;
   }
@@ -61,8 +49,14 @@ function Router() {
     return <App />;
   }
 
-  // Default: login
-  return <TelaLogin onLoginSuccess={() => window.location.hash = "#dashboard"} />;
+  const handleLogin = (userData) => {
+    console.log('🔍 handleLogin chamado com:', userData);
+    loginWithData(userData);
+    console.log('🔍 loginWithData chamado, redirecionando...');
+    window.location.hash = "#dashboard";
+  };
+
+  return <TelaLogin onLogin={handleLogin} />;
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(

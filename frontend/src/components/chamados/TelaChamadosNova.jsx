@@ -105,45 +105,51 @@ useEffect(() => {
   };
 
   // Submit
- const handleSubmit = async () => {
+  const handleSubmit = async () => {
+
+    // ✅ PRIMEIRO: Declarar e calcular itensValidos
     const itensValidos = form.itens.filter(item => item.item_nome.trim() !== "");
+
     if (itensValidos.length === 0) {
       alert("Adicione pelo menos um item com nome preenchido.");
       return;
     }
 
+    // ✅ SEGUNDO: Criar o payload (agora itensValidos existe)
+    const payload = {
+      equipamento_id: form.equipamentoId || null,
+      descricao_geral: form.descricaoGeral,
+      itens: itensValidos.map(item => ({
+        item_nome: item.item_nome,
+        codigo: item.codigo,
+        quantidade: parseInt(item.quantidade) || 1,
+        urgencia: item.urgencia,
+        categoria: item.categoria,
+        tipo_item: item.tipo_item,
+        descricao: item.descricao
+      }))
+    };
+
+    // ✅ TERCEIRO: Processar (agora payload existe)
     setProcessando(true);
     try {
-      const payload = {
-        equipamento_id: form.equipamentoId || null,
-        descricao_geral: form.descricaoGeral,
-        itens: itensValidos.map(item => ({
-          item_nome: item.item_nome,
-          codigo: item.codigo,
-          quantidade: parseInt(item.quantidade) || 1,
-          urgencia: item.urgencia,
-          categoria: item.categoria,
-          tipo_item: item.tipo_item,
-          descricao: item.descricao
-        }))
-      };
-
-      let resultado;
       if (modal === "editar") {
-        // Editar chamado existente
-        resultado = await atualizar(chamadoSel.id, payload);
-        alert("Chamado atualizado com sucesso!");
-      } else {
-        // Criar novo chamado
-        resultado = await criar(payload);
+          const resposta = await atualizar(chamadoSel.id, payload);
+          setChamadoSel(resposta);  // ← Adicione isto
+          setTelaAtual("detalhe");  // ← E isto
+          alert("Chamado atualizado com sucesso!");
+        } else {
+        const resposta = await criar(payload);
+        await carregar(); // recarrega sem força (já está cache)
         alert("Chamado criado com sucesso!");
       }
 
-      await carregar(); // recarregar lista
       setModal(null);
       resetForm();
     } catch (e) {
-      alert("Erro: " + e.message);
+      console.error("❌ Erro detalhado:", e);
+      console.error("❌ Stack:", e.stack);
+      alert("Erro: " + (e.message || "Ocorreu um erro inesperado"));
     } finally {
       setProcessando(false);
     }
