@@ -87,4 +87,29 @@ export const cotacoesService = {
       throw err;
     }
   },
+
+  // Gerar cotações automaticamente
+  async gerarAutomaticamente(accessToken, chamado_id) {
+    try {
+      const res = await fetch(`${API_URL}/cotacoes/gerar-automaticamente`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({ chamado_id })
+      });
+
+      if (!res.ok) {
+        const erro = await res.json();
+        throw new Error(erro.erro || 'Erro ao gerar cotações');
+      }
+
+      return await res.json();
+    } catch (err) {
+      console.error('❌ Erro ao gerar cotações:', err);
+      throw err;
+    }
+  }
+
 };

@@ -5,6 +5,8 @@ const router = express.Router();
 const { DB } = require("../db");
 const tenantMiddleware = require("../middleware/tenantMiddleware");
 const { enviarEmailCotacao, enviarEmailResultado } = require("../services/emailService");
+const CotacaoService = require('../services/CotacaoService');
+const cotacaoService = new CotacaoService(DB);
 
 // ─── HELPERS ───────────────────────────────────────────────
 
@@ -508,6 +510,36 @@ router.put("/chamados/:id", tenantMiddleware, async (req, res) => {
       stack: err.stack,
       detalhe: "Erro ao processar atualização"
     });
+  }
+});
+
+// POST /api/cotacoes/gerar-automaticamente
+router.post('/gerar-automaticamente', tenantMiddleware, async (req, res) => {
+  try {
+    const { chamado_id } = req.body;
+
+    if (!chamado_id) {
+      return res.status(400).json({ erro: 'chamado_id é obrigatório' });
+    }
+
+    console.log(`🎯 Gerando cotações automáticas para chamado ${chamado_id}`);
+
+    const cotacoes = await cotacaoService.gerarCotacoesPorCategoria(
+      req.tenantId,
+      chamado_id,
+      req.userId
+    );
+
+    res.status(201).json({
+      ok: true,
+      cotacoes: cotacoes,
+      total: cotacoes.length,
+      mensagem: `${cotacoes.length} cotação(ões) criada(s) automaticamente`
+    });
+
+  } catch (err) {
+    console.error('❌ Erro ao gerar cotações:', err.message);
+    res.status(500).json({ erro: err.message });
   }
 });
 

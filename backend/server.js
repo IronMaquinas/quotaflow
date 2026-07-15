@@ -14,6 +14,7 @@ const usuariosRoutes = require("./routes/usuarios");
 // const { verificarCNPJsFornecedores } = require("./jobs/cnpjMonitor");
 const equipamentosRouter = require('./routes/equipamentos');
 const tarefasRoutes = require('./routes/tarefas');
+const catalogoRoutes = require("./routes/catalogo");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -28,6 +29,7 @@ app.use(express.json());
 // ── Rotas ────────────────────────────────────
 app.use("/api/auth",         authRoutes);
 app.use("/api/cotacoes",     tenantMiddleware, cotacoesRoutes);
+app.use("/api/catalogo",     tenantMiddleware, catalogoRoutes);
 app.use("/api/fornecedores", tenantMiddleware, fornecedoresRoutes);
 app.use("/api/email",        tenantMiddleware, emailRoutes);
 app.use("/api/cnpj",         tenantMiddleware, cnpjRoutes);
