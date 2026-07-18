@@ -1,5 +1,6 @@
 import { useState, useRef, useEffect } from "react";
-import TelaCotacoesNova from "./components/cotacoes/TelaCotacoesNova";
+//import TelaCotacoesNova from "./components/cotacoes/TelaCotacoesNova";
+import TelaCotacoesNovaComAbas from "./components/cotacoes/TelaCotacoesNovaComAbas";
 import TelaChamadosNova from "./components/chamados/TelaChamadosNova";
 import TelaFornecedoresNova from "./components/fornecedores/TelaFornecedoresNova";
 import TelaEquipamentos from './components/equipamentos/TelaEquipamentos';
@@ -12,6 +13,9 @@ import TelaInteligenciaNova from './components/inteligencia/TelaInteligenciaNova
 import TelaBenchmarkNova from './components/benchmark/TelaBenchmarkNova';
 import TelaLogin from './TelaLogin';
 import apiService from './services/apiService';
+import TelaCatalogo from "./components/catalogo/TelaCatalogo";
+import { useCatalogo } from './hooks/useCatalogo';
+
 
 import {
   useChamados,
@@ -98,6 +102,8 @@ export default function App(){
   const chamados = useChamados();
   const cotacoes = useCotacoes();
   const fornecedores = useFornecedores();
+  const token = localStorage.getItem('access_token');
+  const catalogo = useCatalogo(token);
   const equipamentos = useEquipamentos();
   const tarefas = useTarefas();
   const usuarios = useUsuarios();
@@ -115,7 +121,7 @@ export default function App(){
   });
 
   const setNota = (chave, texto) => setNotasPeriodo(prev=>({...prev,[chave]:texto}));
-
+  const { itens, setItens, listar, importarFornecedor } = useCatalogo();
   const login = (user) => {
     setUsuario(user);
     
@@ -144,6 +150,9 @@ export default function App(){
     if (typeof usuarios.listar === 'function') {
       usuarios.listar();
     }
+    if (typeof catalogo.listar === 'function') {
+      catalogo.listar();
+    }
     
     const perfil = user.perfil || user.papel || 'comprador';
     const telaInicial = { 
@@ -154,7 +163,6 @@ export default function App(){
     };
     setTela(telaInicial[perfil] || "home");
   };
-
   const logout = () => { setUsuario(null); setTela("home"); };
 
   // Verificar permissão
@@ -189,21 +197,20 @@ export default function App(){
 
   // Nav items filtrados por perfil
   const navItems = [
-    {id:"home",          l:"Início",            perfis:["tecnico","comprador","gestor","admin"]},
-    {id:"tecnico",       l:"🔧 Chamado",         perfis:["tecnico","comprador","gestor","admin"]},
-    {id:"compradora",    l:"📋 Compras",          perfis:["comprador","gestor","admin"]},
-    {id:"plano",         l:`✅ Plano${tarefas.dados.filter(t=>t.status==="em_andamento").length>0?` (${tarefas.dados.filter(t=>t.status==="em_andamento").length})`:""
-      }`,                                        perfis:["comprador","gestor","admin"]},
-    
-    {id:"financeiro",    l:"💰 Financeiro",       perfis:["gestor","admin"]},
-    {id:"relatorio",     l:"📄 Relatório",        perfis:["gestor","admin"]},
-    {id:"historico",     l:"📉 Histórico Preços", perfis:["gestor","admin"]},
-    {id:"inteligencia",  l:"🧠 Inteligência",     perfis:["gestor","admin"]},
-    {id:"benchmark",     l:"📈 Benchmark",        perfis:["gestor","admin"]},
-    {id:"equipamentos",  l:"⚙ Equipamentos",      perfis:["comprador","gestor","admin"]},
-    {id:"fornecedores",  l:"🏭 Fornecedores",     perfis:["comprador","gestor","admin"]},
-    {id:"fornecedorportal",l:"🔗 Portal fornecedor",perfis:["comprador","gestor","admin"]},
-    {id:"usuarios",      l:"👥 Usuários",          perfis:["admin"]},
+    {id:"home",          l:"Início",                  perfis:["tecnico","comprador","gestor","admin"]},
+    {id:"tecnico",       l:"🔧 Chamado",              perfis:["tecnico","comprador","gestor","admin"]},
+    {id:"compradora",    l:"📋 Compras",              perfis:["comprador","gestor","admin"]},
+    {id:"plano",         l:`✅ Plano${tarefas.dados.filter(t=>t.status==="em_andamento").length>0?` (${tarefas.dados.filter(t=>t.status==="em_andamento").length})`:""}`, perfis:["comprador","gestor","admin"]},
+    {id:"financeiro",    l:"💰 Financeiro",           perfis:["gestor","admin"]},
+    {id:"relatorio",     l:"📄 Relatório",            perfis:["gestor","admin"]},
+    {id:"historico",     l:"📉 Histórico Preços",     perfis:["gestor","admin"]},
+    {id:"inteligencia",  l:"🧠 Inteligência",         perfis:["gestor","admin"]},
+    {id:"benchmark",     l:"📈 Benchmark",            perfis:["gestor","admin"]},
+    {id:"equipamentos",  l:"⚙ Equipamentos",          perfis:["comprador","gestor","admin"]},
+    {id:"fornecedores",  l:"🏭 Fornecedores",         perfis:["comprador","gestor","admin"]},
+    {id:"fornecedorportal",l:"🔗 Portal fornecedor",  perfis:["comprador","gestor","admin"]},
+    {id:"catalogo",      l:"📦 Catálogo",             perfis:["comprador","gestor","admin"]},
+    {id:"usuarios",      l:"👥 Usuários",             perfis:["admin"]},
   ].filter(n=>n.perfis.includes(usuario.perfil));
 
   return(
@@ -316,6 +323,8 @@ export default function App(){
           </div>
         )}
 
+
+
         {/* Acesso negado */}
         {!temAcesso(tela)&&tela!=="home"&&(
           <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:16}}>
@@ -325,38 +334,38 @@ export default function App(){
             <button onClick={()=>setTela("home")} style={{...s.btn(true),padding:"9px 20px"}}>← Voltar ao início</button>
           </div>
         )}
-
-{temAcesso(tela) && tela === "tecnico" && (
-  <div style={{flex:1,overflowY:"auto"}}>
-    <TelaChamadosNova 
-      chamados={chamados.dados || []} 
-      loading={chamados.loading} 
-      erro={chamados.erro} 
-      listar={chamados.carregar}   // <- aqui está o listar
-      criar={chamados.criar} 
-      atualizar={chamados.atualizar} 
-      deletar={chamados.deletar} 
-      equipamentos={equipamentos.dados || []} 
-      fmtBRL={fmtBRL} 
-      fmtD={fmtD} 
-      C={C} 
-      s={s} 
-    />
-  </div>
-)}
-
-{temAcesso(tela) && tela === "compradora" && (
-  <div style={{flex:1,overflowY:"auto"}}>
-    <TelaCotacoesNova 
-      C={C} 
-      s={s} 
-      fmtBRL={fmtBRL} 
-      fmtD={fmtD} 
-    />
-  </div>
-)}
-
-        {temAcesso(tela)&&tela==="financeiro"&&<div style={{flex:1,overflowY:"auto"}}><TelaFinanceiroNova chamados={chamados.dados || []} cotacoes={cotacoes.dados || []} equipamentos={equipamentos.dados || []} /></div>}
+        {temAcesso(tela) && tela === "tecnico" && (
+          <div style={{flex:1,overflowY:"auto"}}>
+            <TelaChamadosNova 
+              chamados={chamados.dados || []} 
+              loading={chamados.loading} 
+              erro={chamados.erro} 
+              listar={chamados.carregar}   // <- aqui está o listar
+              criar={chamados.criar} 
+              atualizar={chamados.atualizar} 
+              deletar={chamados.deletar} 
+              equipamentos={equipamentos.dados || []} 
+              fmtBRL={fmtBRL} 
+              fmtD={fmtD} 
+              C={C} 
+              s={s} 
+            />
+          </div>
+        )}
+        {temAcesso(tela) && tela === "compradora" && (
+          <div style={{flex:1,overflowY:"auto"}}>
+            <TelaCotacoesNovaComAbas 
+              C={C} 
+              s={s} 
+              fmtBRL={fmtBRL} 
+              fmtD={fmtD} 
+            />
+          </div>
+        )}
+        {temAcesso(tela)&&tela==="financeiro"&&
+          <div style={{flex:1,overflowY:"auto"}}>
+            <TelaFinanceiroNova chamados={chamados.dados || []} cotacoes={cotacoes.dados || []} equipamentos={equipamentos.dados || []} />
+          </div>}
         {temAcesso(tela) && tela === "inteligencia" && (
           <div style={{flex:1,overflowY:"auto"}}>
             <TelaInteligenciaNova 
@@ -384,16 +393,36 @@ export default function App(){
             />
           </div>
         )}
-        {temAcesso(tela)&&tela==="equipamentos"&&<div style={{flex:1,overflowY:"auto"}}><TelaEquipamentos fmtBRL={fmtBRL} fmtD={fmtD} C={C} s={s}/></div>}
-
-{temAcesso(tela) && tela === "fornecedores" && (
-  <div style={{flex:1,overflowY:"auto"}}>
-    <TelaFornecedoresNova C={C} s={s} fmtD={fmtD} />
-  </div>
-)}     
-        
-        {temAcesso(tela)&&tela==="fornecedorportal"&&<div style={{flex:1,overflowY:"auto"}}><TelaFornecedorPortal/></div>}
-        {temAcesso(tela) && tela === "usuarios" && (<div style={{ flex: 1, overflowY: "auto" }}><TelaUsuariosNova useUsuarios={useUsuarios} C={C} s={s} /></div>)}
+        {temAcesso(tela)&&tela==="equipamentos"&&
+          <div style={{flex:1,overflowY:"auto"}}>
+            <TelaEquipamentos fmtBRL={fmtBRL} fmtD={fmtD} C={C} s={s}/>
+          </div>}
+        {temAcesso(tela) && tela === "fornecedores" && (
+          <div style={{flex:1,overflowY:"auto"}}>
+            <TelaFornecedoresNova C={C} s={s} fmtD={fmtD} />
+          </div>
+        )}
+        {temAcesso(tela) && tela === "catalogo" && (
+          <div style={{flex:1,overflowY:"auto"}}>
+            <TelaCatalogo 
+              itens={itens}
+              setItens={setItens}
+              fornecedores={fornecedores.dados || []}
+              catalogo={catalogo}
+              C={C} 
+              s={s} 
+              fmtBRL={fmtBRL} 
+            />
+          </div>
+        )}
+        {temAcesso(tela)&&tela==="fornecedorportal"&&
+          <div style={{flex:1,overflowY:"auto"}}>
+            <TelaFornecedorPortal/>
+          </div>}
+        {temAcesso(tela) && tela === "usuarios" && (
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            <TelaUsuariosNova useUsuarios={useUsuarios} C={C} s={s} />
+          </div>)}
         {temAcesso(tela) && tela === "historico" && (
           <div style={{flex:1,overflowY:"auto"}}>
             <TelaHistoricoPrecosNova 

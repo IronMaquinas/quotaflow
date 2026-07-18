@@ -9,6 +9,7 @@
     "start:backend": "cd backend && npm start"
   },
   "dependencies": {
+    "express-fileupload": "^1.5.2",
     "pg": "^8.22.0"
   }
 }

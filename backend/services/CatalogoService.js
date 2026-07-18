@@ -12,6 +12,49 @@ class CatalogoService {
     this.db = db;
   }
 
+  parseCSV(csvText) {
+    const linhas = csvText.split('\n').filter((l) => l.trim());
+    if (linhas.length < 2) {
+      throw new Error('CSV vazio ou sem dados');
+    }
+
+    const headers = linhas[0]
+      .split(',')
+      .map((h) => h.trim().toLowerCase());
+
+    const indiceNome = headers.indexOf('nome');
+    const indiceCodigo = headers.indexOf('codigo');
+    const indiceCategoria = headers.indexOf('categoria');
+    const indiceMarca = headers.indexOf('marca');
+    const indiceModelo = headers.indexOf('modelo');
+    const indiceAnoModelo = headers.indexOf('ano_modelo');
+
+    if (indiceNome === -1) {
+      throw new Error('CSV deve ter coluna "nome"');
+    }
+
+    const itens = [];
+
+    for (let i = 1; i < linhas.length; i++) {
+      const partes = linhas[i].split(',').map((p) => p.trim());
+
+      if (partes[indiceNome]) {
+        const item = {
+          nome: partes[indiceNome],
+          codigo: indiceCodigo >= 0 ? partes[indiceCodigo] : '',
+          categoria: indiceCategoria >= 0 ? partes[indiceCategoria] : '',
+          marca: indiceMarca >= 0 ? partes[indiceMarca] : '',
+          modelo: indiceModelo >= 0 ? partes[indiceModelo] : '',
+          ano_modelo: indiceAnoModelo >= 0 ? partes[indiceAnoModelo] : '',
+        };
+
+        itens.push(item);
+      }
+    }
+
+    return itens;
+  }
+
   // ───────────────────────────────────────────────────────────────────────
   // CRIAR ITEM
   // ───────────────────────────────────────────────────────────────────────
@@ -322,6 +365,61 @@ class CatalogoService {
 
     console.log(`✅ [CatalogoService] Item deletado`);
   }
+
+  async importarFornecedor(tenantId, fornecedorId, csvText) {
+      console.log(`📦 Importando CSV para fornecedor ${fornecedorId}`);
+
+      // Parse CSV
+      const itensCSV = this.parseCSV(csvText);
+      
+      if (itensCSV.length === 0) {
+        throw new Error('Nenhum item encontrado no CSV');
+      }
+
+      let itensAdicionados = 0;
+      let itensVinculados = 0;
+      const erros = [];
+
+      // Processa cada item
+      for (const itemCSV of itensCSV) {
+        try {
+          console.log(`🔍 Processando: ${itemCSV.nome}`);
+
+          // Simples: tenta criar direto
+          // Seu método criarItem já trata duplicatas?
+          try {
+            const novoItem = await this.criarItem(tenantId, {
+              nome: itemCSV.nome,
+              codigo: itemCSV.codigo,
+              categoria: itemCSV.categoria || 'geral',
+              marca: itemCSV.marca,
+              modelo: itemCSV.modelo,
+              ano_fabricacao_inicio: itemCSV.ano_modelo ? parseInt(itemCSV.ano_modelo) : null,
+            });
+            
+            console.log(`   ✅ Item criado: ${novoItem.id}`);
+            itensAdicionados++;
+          } catch (err) {
+            // Se falhar por duplicata, ignora
+            console.log(`   ℹ️ Item já existe ou erro: ${err.message}`);
+            itensVinculados++;
+          }
+        } catch (err) {
+          console.error(`   ❌ Erro: ${err.message}`);
+          erros.push({ item: itemCSV.nome, erro: err.message });
+        }
+      }
+
+      console.log(`✅ Importação concluída: ${itensAdicionados} criados, ${itensVinculados} vinculados`);
+
+      return {
+        criados: itensAdicionados,
+        vinculados: itensVinculados,
+        total: itensAdicionados + itensVinculados,
+        erros,
+      };
+    }
+
 }
 
 module.exports = CatalogoService;

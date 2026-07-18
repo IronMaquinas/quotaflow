@@ -1,5 +1,6 @@
 require("dotenv").config();
 const express = require("express");
+const fileUpload = require("express-fileupload");
 const cors = require("cors");
 const cron = require("node-cron");
 
@@ -25,6 +26,7 @@ app.use(cors({
   credentials: true,
 }));
 app.use(express.json());
+app.use(fileUpload());
 
 // ── Rotas ────────────────────────────────────
 app.use("/api/auth",         authRoutes);
