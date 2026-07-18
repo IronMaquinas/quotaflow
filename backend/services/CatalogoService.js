@@ -55,6 +55,52 @@ class CatalogoService {
     return itens;
   }
 
+  // --- CALCULA SIMILARIDADE ENTRE O CATÁLOGO DOS FORNECEDORES ---
+  
+  calcularSimilaridade(str1, str2) {
+    // Normaliza (lowercase, remove pontuação)
+    const n1 = this.normalizarTexto(str1);
+    const n2 = this.normalizarTexto(str2);
+
+    if (n1 === n2) return 100;
+    if (!n1 || !n2) return 0;
+
+    // Algoritmo de Levenshtein (distância entre strings)
+    const len1 = n1.length;
+    const len2 = n2.length;
+    const matriz = Array(len2 + 1)
+      .fill(null)
+      .map(() => Array(len1 + 1).fill(0));
+
+    for (let i = 0; i <= len1; i++) matriz[0][i] = i;
+    for (let j = 0; j <= len2; j++) matriz[j][0] = j;
+
+    for (let j = 1; j <= len2; j++) {
+      for (let i = 1; i <= len1; i++) {
+        const cost = n1[i - 1] === n2[j - 1] ? 0 : 1;
+        matriz[j][i] = Math.min(
+          matriz[j][i - 1] + 1,
+          matriz[j - 1][i] + 1,
+          matriz[j - 1][i - 1] + cost
+        );
+      }
+    }
+
+    const maxLen = Math.max(len1, len2);
+    const distancia = matriz[len2][len1];
+    const similaridade = ((maxLen - distancia) / maxLen) * 100;
+
+    return Math.max(0, Math.min(100, similaridade));
+  }
+
+  normalizarTexto(texto) {
+    if (!texto) return '';
+    return texto
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '');
+  }
+
   // ───────────────────────────────────────────────────────────────────────
   // CRIAR ITEM
   // ───────────────────────────────────────────────────────────────────────
@@ -223,35 +269,34 @@ class CatalogoService {
   // BUSCAR ITEM ESPECÍFICO (Com fornecedores)
   // ───────────────────────────────────────────────────────────────────────
   async buscarItemCompleto(tenantId, itemId) {
+    // Busca o item
     const item = await this.db.selectOne('catalogo_itens', { id: itemId }, tenantId);
+    if (!item) throw new Error(`Item ${itemId} não encontrado`);
 
-    if (!item) {
-      throw new Error(`Item ${itemId} não encontrado`);
-    }
+    console.log('🔍 Parâmetros:', tenantId, itemId);
 
-    // Buscar fornecedores
+    // Busca fornecedores vinculados
     const fornecedores = await this.db.raw(`
-      SELECT 
-        fi.id,
-        f.id as fornecedor_id,
-        f.nome,
-        fi.codigo_fornecedor,
-        fi.descricao_fornecedor,
-        fi.preco_unitario,
-        fi.data_tabela,
-        fi.estoque_status,
-        fi.tempo_entrega_dias
-      FROM fornecedor_itens fi
-      JOIN fornecedores f ON fi.fornecedor_id = f.id
-      WHERE fi.tenant_id = $1 
-        AND fi.item_catalogo_id = $2 
-        AND fi.ativo = true
-      ORDER BY fi.preco_unitario ASC
-    `, [tenantId, itemId]);
+  SELECT * FROM fornecedor_itens 
+  WHERE tenant_id = $1 AND item_catalogo_id = $2
+`, [tenantId, itemId]);
 
+console.log('🔍 RESULTADO BRUTO:', JSON.stringify(fornecedores, null, 2));
+
+    // Mapeia para camelCase (como o frontend espera)
+    const fornecedoresMapeados = fornecedores.map(f => ({
+      fornecedorId: f.fornecedor_id,
+      nome: f.nome,
+      precoUnitario: f.preco_unitario || 0,
+      estoqueStatus: f.estoque_status || 'em_estoque',
+      tempoEntrega: f.tempo_entrega_dias || 3,
+    }));
+
+    console.log('🔍 FORNECEDORES ENCONTRADOS:', JSON.stringify(fornecedores, null, 2));
+    // Retorna o item com a propriedade fornecedores
     return {
       ...item,
-      fornecedores
+      fornecedores: fornecedoresMapeados
     };
   }
 
@@ -366,60 +411,82 @@ class CatalogoService {
     console.log(`✅ [CatalogoService] Item deletado`);
   }
 
+  // ───────────────────────────────────────────────────────────────────────
+  // IMPORTAR FORNECEDOR
+  // ───────────────────────────────────────────────────────────────────────
+
   async importarFornecedor(tenantId, fornecedorId, csvText) {
-      console.log(`📦 Importando CSV para fornecedor ${fornecedorId}`);
+    console.log(`📦 Importando para fornecedor ${fornecedorId}`);
 
-      // Parse CSV
-      const itensCSV = this.parseCSV(csvText);
-      
-      if (itensCSV.length === 0) {
-        throw new Error('Nenhum item encontrado no CSV');
-      }
+    const itensCSV = this.parseCSV(csvText);
+    
+    // Busca TODOS os itens do tenant UMA VEZ
+    const itensExistentes = await this.db.select('catalogo_itens', { tenant_id: tenantId });
+    
+    let itensAdicionados = 0;
+    let itensVinculados = 0;
 
-      let itensAdicionados = 0;
-      let itensVinculados = 0;
-      const erros = [];
-
-      // Processa cada item
-      for (const itemCSV of itensCSV) {
-        try {
-          console.log(`🔍 Processando: ${itemCSV.nome}`);
-
-          // Simples: tenta criar direto
-          // Seu método criarItem já trata duplicatas?
-          try {
-            const novoItem = await this.criarItem(tenantId, {
-              nome: itemCSV.nome,
-              codigo: itemCSV.codigo,
-              categoria: itemCSV.categoria || 'geral',
-              marca: itemCSV.marca,
-              modelo: itemCSV.modelo,
-              ano_fabricacao_inicio: itemCSV.ano_modelo ? parseInt(itemCSV.ano_modelo) : null,
-            });
-            
-            console.log(`   ✅ Item criado: ${novoItem.id}`);
-            itensAdicionados++;
-          } catch (err) {
-            // Se falhar por duplicata, ignora
-            console.log(`   ℹ️ Item já existe ou erro: ${err.message}`);
-            itensVinculados++;
+    for (const itemCSV of itensCSV) {
+      try {
+        let novoItem = null;
+        
+        // ✅ FUZZY MATCHING: Procura item similar PELO NOME
+        for (const itemExistente of itensExistentes) {
+          const similaridade = this.calcularSimilaridade(itemCSV.nome, itemExistente.nome);
+          if (similaridade >= 90) {
+            novoItem = itemExistente;
+            console.log(`   🔗 Encontrado similar: ${itemExistente.nome} (${similaridade}%)`);
+            break;
           }
-        } catch (err) {
-          console.error(`   ❌ Erro: ${err.message}`);
-          erros.push({ item: itemCSV.nome, erro: err.message });
         }
+        
+        // Se não encontrou similar, cria novo
+        if (!novoItem) {
+          novoItem = await this.criarItem(tenantId, {
+            nome: itemCSV.nome,
+            codigo: itemCSV.codigo,
+            categoria: itemCSV.categoria || 'geral',
+            marca: itemCSV.marca,
+            modelo: itemCSV.modelo,
+            ano_fabricacao_inicio: itemCSV.ano_modelo ? parseInt(itemCSV.ano_modelo) : null,
+          });
+          itensAdicionados++;
+          console.log(`   ✅ Item criado: ${novoItem.nome}`);
+        } else {
+          itensVinculados++;
+        }
+
+        // 2. Vincula fornecedor
+        if (novoItem && novoItem.id) {
+          try {
+            await this.db.insert('fornecedor_itens', {
+              tenant_id: tenantId,
+              fornecedor_id: fornecedorId,
+              item_catalogo_id: novoItem.id,
+              codigo_fornecedor: itemCSV.codigo || '',
+              descricao_fornecedor: itemCSV.nome,
+              preco_unitario: 0,
+              estoque_status: 'em_estoque',
+              tempo_entrega_dias: 3,
+              ativo: true
+            });
+          } catch (errVinc) {
+            console.log(`   ⚠️ Já vinculado`);
+          }
+        }
+      } catch (err) {
+        console.error(`❌ ${itemCSV.nome}: ${err.message}`);
       }
-
-      console.log(`✅ Importação concluída: ${itensAdicionados} criados, ${itensVinculados} vinculados`);
-
-      return {
-        criados: itensAdicionados,
-        vinculados: itensVinculados,
-        total: itensAdicionados + itensVinculados,
-        erros,
-      };
     }
 
+    console.log(`✅ Concluído: ${itensAdicionados} criados, ${itensVinculados} vinculados`);
+
+    return {
+      criados: itensAdicionados,
+      vinculados: itensVinculados,
+      total: itensAdicionados + itensVinculados,
+    };
+  }
 }
 
 module.exports = CatalogoService;

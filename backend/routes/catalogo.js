@@ -5,24 +5,53 @@ const CatalogoService = require('../services/CatalogoService');
 const tenantMiddleware = require('../middleware/tenantMiddleware');
 const { DB } = require('../db');
 
+// GET /api/catalogo/admin/:id - Detalhes do item com fornecedores
+router.get('/admin/:id', tenantMiddleware, async (req, res) => {
+    console.log('🚀 ROTA DE DETALHE FOI CHAMADA! ID:', req.params.id); // ← ADICIONE ISSO
+
+  try {
+    const service = new CatalogoService(DB);
+    const item = await service.buscarItemCompleto(req.tenantId, req.params.id);
+    res.json({ ok: true, item });
+  } catch (err) {
+    console.error('Erro ao buscar detalhes:', err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
 // ────────────────────────────────────────────────────────────────
 // GET /api/catalogo/admin - Listar itens
 // ────────────────────────────────────────────────────────────────
 router.get('/admin', tenantMiddleware, async (req, res) => {
   try {
     const service = new CatalogoService(DB);
-    const filtros = {
-      termo: req.query.termo,
-      categoria: req.query.categoria,
-      marca: req.query.marca,
-      modelo: req.query.modelo,
-      ano: req.query.ano ? parseInt(req.query.ano) : null
-    };
+    const itens = await service.buscarItens(req.tenantId, {});
     
-    const itens = await service.buscarItens(req.tenantId, filtros);
-    console.log('✅ Itens retornados:', itens.length); // Debug
+    // ✅ ADICIONA FORNECEDORES EM CADA ITEM
+    const itensComFornecedores = await Promise.all(
+      itens.map(async (item) => {
+        try {
+          const fornecedores = await DB.raw(`
+            SELECT f.id, f.nome, fi.preco_unitario, fi.estoque_status, fi.tempo_entrega_dias
+            FROM fornecedor_itens fi
+            JOIN fornecedores f ON fi.fornecedor_id = f.id
+            WHERE fi.item_catalogo_id = $1 AND fi.ativo = true
+          `, [item.id]);
+          
+          return {
+            ...item,
+            fornecedores: fornecedores || []
+          };
+        } catch (err) {
+          return {
+            ...item,
+            fornecedores: []
+          };
+        }
+      })
+    );
     
-    res.json({ ok: true, itens });  // ✅ Simples assim
+    res.json({ ok: true, itens: itensComFornecedores });
   } catch (err) {
     console.error('❌ Erro:', err.message);
     res.status(500).json({ erro: err.message });

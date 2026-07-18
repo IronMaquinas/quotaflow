@@ -9,16 +9,24 @@ export function useCatalogo() {
   const [erro, setErro] = useState(null);
 
   const listar = useCallback(async (filtros = {}) => {
-    try {
-      setLoading(true);
-      const response = await apiService.get('/catalogo/admin', { params: filtros });
-      setItens(response.itens || []);
-    } catch (err) {
-      console.error("Erro ao listar:", err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  try {
+    setLoading(true);
+    setErro(null);
+    
+    const response = await apiService.get('/catalogo/admin', { params: filtros });
+    console.log('📥 Itens recebidos:', response.itens?.length);
+    console.log('🔍 Primeiro item:', response.itens?.[0]);  // ← VER O PRIMEIRO ITEM!
+    console.log('🔍 Fornecedores do primeiro item:', response.itens?.[0]?.fornecedores);
+
+    setItens(response.itens || []);
+    console.log('✅ setItens foi chamado');  // ← DEPOIS DE SETAR
+  } catch (err) {
+    setErro(err.message);
+    console.error("Erro ao carregar:", err);
+  } finally {
+    setLoading(false);
+  }
+}, []);
 
   const carregarCategorias = useCallback(async () => {
     try {

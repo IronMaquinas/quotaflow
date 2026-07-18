@@ -97,81 +97,45 @@ export default function TelaCatalogo({
   // --- Importar Fornecedor ---
 
   const handleImportarFornecedor = useCallback(async () => {
-    if (!importForn.fornecedorSelecionado) {
-      alert("Selecione um fornecedor");
+    if (!importForn.fornecedorSelecionado || !importForn.arquivo) {
+      alert("Selecione fornecedor e arquivo");
       return;
     }
-  
-    if (!importForn.arquivo) {
-      alert("Selecione um arquivo CSV");
-      return;
-    }
-  
-    setImportForn((prev) => ({ ...prev, carregando: true, mensagem: "Processando..." }));
-  
-    try {
-      
-  console.log('🔍 DEBUG Fornecedor:', importForn.fornecedorSelecionado);
-  console.log('🔍 DEBUG Arquivo:', importForn.arquivo?.name);
 
-      // ✅ ENVIAR PARA O BACKEND (FormData)
+    setImportForn((p) => ({ ...p, carregando: true }));
+
+    try {
       const formData = new FormData();
       formData.append('fornecedor_id', importForn.fornecedorSelecionado.id);
       formData.append('arquivo', importForn.arquivo);
-  
+
       const token = localStorage.getItem('access_token');
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3000/api';
+      const response = await fetch(
+        `${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/catalogo/importar-fornecedor`,
+        {
+          method: 'POST',
+          headers: { 'Authorization': `Bearer ${token}` },
+          body: formData,
+        }
+      );
 
-  console.log('🔍 DEBUG URL:', `${apiUrl}/catalogo/importar-fornecedor`); // ← Ver URL
-  console.log('🔍 DEBUG Token:', token ? 'Existe' : 'Faltando!'); // ← Ver token
-
-
-      const response = await fetch(`${apiUrl}/catalogo/importar-fornecedor`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${token}`,
-        },
-        body: formData,
-      });
-  
-      if (!response.ok) {
-        const erro = await response.json();
-        console.error('❌ Erro do backend:', erro); // ← Ver resposta de erro
-
-        throw new Error(erro.erro || 'Erro ao importar');
-      }
-  
       const data = await response.json();
-      console.log('✅ Resposta do backend:', data);  // ← AQUI!
-  
-      // ✅ RECARREGAR ITENS DO BANCO
-      console.log('🔍 Antes de carregar:', catalogo);
+      console.log('✅ Importado:', data.dados);
 
-      if (typeof catalogo?.carregar === 'function') {
-        console.log('📥 Carregando itens...');
-        await catalogo.carregar();
-        console.log('✅ Itens carregados:', catalogo.itens);
-      } else {
-        console.log('❌ catalogo.carregar não é função!');
+      if (catalogo?.listar) {
+        console.log('🔄 Recarregando catálogo...');
+        await catalogo.listar();
+        console.log('✅ Catálogo recarregado!');
       }
-  
-      // Reset formulário
-      setImportForn({
-        fornecedorSelecionado: null,
-        arquivo: null,
-        carregando: false,
-        mensagem: null,
-      });
-  
+
+      setImportForn({ fornecedorSelecionado: null, arquivo: null, carregando: false, mensagem: null });
       setAbaPrincipal("lista");
       
-      alert(
-        `✅ Importação concluída!\n${data.dados.criados} itens criados\n${data.dados.vinculados} itens vinculados`
-      );
+      alert(`✅ ${data.dados.criados} criados, ${data.dados.vinculados} vinculados`);
     } catch (e) {
-      console.error('Erro ao importar:', e);
+      console.error('❌', e);
       alert("Erro: " + e.message);
-      setImportForn((prev) => ({ ...prev, carregando: false, mensagem: null }));
+      setImportForn((p) => ({ ...p, carregando: false }));
     }
   }, [importForn, catalogo]);
 
@@ -725,7 +689,7 @@ export default function TelaCatalogo({
                           }}
                         >
                           <div style={{ fontSize: 11, fontWeight: 600, color: C.text }}>
-                            {forn.fornecedorNome}
+                            {forn.nome}
                           </div>
                           <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
                             {fmtBRL(forn.precoUnitario)} • {forn.estoqueStatus === "em_estoque" ? "✓ Estoque" : "⊘ Encomenda"} •{" "}

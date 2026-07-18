@@ -64,6 +64,7 @@ class DB {
   // RAW: suporte para as consultas usadas nas rotas (SEM JOINS)
   // ─────────────────────────────────────────────────────────────────────────
   static async raw(sql, params = []) {
+
     // 1. Listar chamados com equipamentos e usuários
     if (sql.includes("FROM chamados c") && sql.includes("LEFT JOIN equipamentos")) {
       const tenantId = params[0];
@@ -152,6 +153,40 @@ class DB {
         .order("data_resposta", { ascending: false, nullsFirst: false });
       if (error) throw new Error(`Raw cotacao_fornecedores failed: ${error.message}`);
       return data;
+    }
+
+    // 4. Fornecedores de um item de catálogo
+    if (sql.includes("FROM fornecedor_itens fi") && sql.includes("JOIN fornecedores f")) {
+          console.log('✅ MATCH! Entrando no case de fornecedores');
+
+      const itemId = params[0];
+      const { data: fornecedorItens, error: e1 } = await supabase
+        .from("fornecedor_itens")
+        .select("id, fornecedor_id, preco_unitario, estoque_status, tempo_entrega_dias")
+        .eq("item_catalogo_id", itemId)
+        .eq("ativo", true);
+      if (e1) throw new Error(`Raw fornecedor_itens failed: ${e1.message}`);
+      
+      if (fornecedorItens.length === 0) return [];
+      
+      const fornecedorIds = fornecedorItens.map(f => f.fornecedor_id);
+      const { data: fornecedores, error: e2 } = await supabase
+        .from("fornecedores")
+        .select("id, nome")
+        .in("id", fornecedorIds);
+      if (e2) throw new Error(`Raw fornecedores failed: ${e2.message}`);
+      
+      // Juntar
+      return fornecedorItens.map(fi => {
+        const f = fornecedores.find(forn => forn.id === fi.fornecedor_id);
+        return {
+          id: fi.id,
+          nome: f?.nome || null,
+          preco_unitario: fi.preco_unitario,
+          estoque_status: fi.estoque_status,
+          tempo_entrega_dias: fi.tempo_entrega_dias
+        };
+      });
     }
 
     // 4. Listar usuários
