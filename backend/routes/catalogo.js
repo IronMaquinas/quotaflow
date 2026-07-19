@@ -7,7 +7,6 @@ const { DB } = require('../db');
 
 // GET /api/catalogo/admin/:id - Detalhes do item com fornecedores
 router.get('/admin/:id', tenantMiddleware, async (req, res) => {
-    console.log('🚀 ROTA DE DETALHE FOI CHAMADA! ID:', req.params.id); // ← ADICIONE ISSO
 
   try {
     const service = new CatalogoService(DB);

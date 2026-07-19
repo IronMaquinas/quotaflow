@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useChamados } from "../../hooks/useChamados";
 import { useEquipamentos } from "../../hooks/useEquipamentos";
+import { useCatalogo } from '../../hooks/useCatalogo';
 
 export default function TelaChamadosNova({ fmtBRL, fmtD, C, s }) {
   const { chamados, loading, erro, carregar, criar, atualizar, deletar } = useChamados();
@@ -19,6 +20,14 @@ export default function TelaChamadosNova({ fmtBRL, fmtD, C, s }) {
   const [eqSearch, setEqSearch] = useState("");
   const [showDrop, setShowDrop] = useState(false);
   const eqRef = useRef(null);
+
+  // Pesquisar itens do catálogo
+  const { itens: catalogoItens } = useCatalogo();
+
+  // Estado para autocomplete do nome do item
+  const [itemSugestoes, setItemSugestoes] = useState({});  // itemId -> []
+  const [showSugestoes, setShowSugestoes] = useState({});  // itemId -> boolean
+  const [loadingSugestoes, setLoadingSugestoes] = useState({});  // itemId -> boolean
 
   // Estado do formulário (com lista de itens)
   const [form, setForm] = useState({
@@ -50,6 +59,71 @@ useEffect(() => {
   chamados.forEach(ch => {
   });
 }, [chamados]);
+
+  // Buscar sugestões de itens do catálogo
+  function buscarSugestoesItem(termo, itemId) {
+    if (termo.trim().length < 2) {
+      setItemSugestoes(prev => ({ ...prev, [itemId]: [] }));
+      setShowSugestoes(prev => ({ ...prev, [itemId]: false }));
+      return;
+    }
+
+    const normalizarTexto = (texto) => {
+      return texto
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '');
+    };
+
+    const calcularSimilaridade = (str1, str2) => {
+      const n1 = normalizarTexto(str1);
+      const n2 = normalizarTexto(str2);
+      if (n1 === n2) return 100;
+      if (!n1 || !n2) return 0;
+
+      const len1 = n1.length;
+      const len2 = n2.length;
+      const matriz = Array(len2 + 1)
+        .fill(null)
+        .map(() => Array(len1 + 1).fill(0));
+
+      for (let i = 0; i <= len1; i++) matriz[0][i] = i;
+      for (let j = 0; j <= len2; j++) matriz[j][0] = j;
+
+      for (let j = 1; j <= len2; j++) {
+        for (let i = 1; i <= len1; i++) {
+          const cost = n1[i - 1] === n2[j - 1] ? 0 : 1;
+          matriz[j][i] = Math.min(
+            matriz[j][i - 1] + 1,
+            matriz[j - 1][i] + 1,
+            matriz[j - 1][i - 1] + cost
+          );
+        }
+      }
+
+      const maxLen = Math.max(len1, len2);
+      const distancia = matriz[len2][len1];
+      return Math.max(0, Math.min(100, ((maxLen - distancia) / maxLen) * 100));
+    };
+
+    const sugestoes = catalogoItens
+      .map(item => ({
+        ...item,
+        similaridade: calcularSimilaridade(termo, item.nome)
+      }))
+      .filter(item => item.similaridade >= 60)
+      .sort((a, b) => b.similaridade - a.similaridade)
+      .slice(0, 5);
+
+    setItemSugestoes(prev => ({ ...prev, [itemId]: sugestoes }));
+    setShowSugestoes(prev => ({ ...prev, [itemId]: sugestoes.length > 0 }));
+  }
+
+  function selecionarSugestao(itemId, nomeItem) {
+    atualizarItem(itemId, "item_nome", nomeItem);
+    setItemSugestoes(prev => ({ ...prev, [itemId]: [] }));
+    setShowSugestoes(prev => ({ ...prev, [itemId]: false }));
+  }
 
   // Equipamentos filtrados para autocomplete
   const eqFiltrados = (equipamentos || [])
@@ -275,15 +349,92 @@ useEffect(() => {
                   </div>
 
                   <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 80px", gap: 10 }}>
-                    <div>
+                    <div style={{ position: "relative" }}>
                       <label style={{ ...s.label, fontSize: 10 }}>NOME *</label>
-                      <input
-                        type="text"
-                        value={item.item_nome}
-                        onChange={e => atualizarItem(item.id, "item_nome", e.target.value)}
-                        placeholder="Ex: Rolamento SKF 6205"
-                        style={s.input}
-                      />
+                      <div style={{ position: "relative" }}>
+                        <input
+                          type="text"
+                          value={item.item_nome}
+                          onChange={e => {
+                            atualizarItem(item.id, "item_nome", e.target.value);
+                            buscarSugestoesItem(e.target.value, item.id);
+                          }}
+                          onFocus={() => {
+                            if (itemSugestoes[item.id]?.length > 0) {
+                              setShowSugestoes(prev => ({ ...prev, [item.id]: true }));
+                            }
+                          }}
+                          onBlur={() => {
+                            // Fechar dropdown após 200ms (tempo pra clicar)
+                            setTimeout(() => {
+                              setShowSugestoes(prev => ({ ...prev, [item.id]: false }));
+                            }, 200);
+                          }}
+                          placeholder="Ex: Rolamento SKF 6205"
+                          style={s.input}
+                        />
+
+                        {/* Dropdown com sugestões */}
+                        {showSugestoes[item.id] && itemSugestoes[item.id]?.length > 0 && (
+                          <div style={{
+                            position: "absolute",
+                            top: "100%",
+                            left: 0,
+                            right: 0,
+                            background: C.bg,
+                            border: `1px solid ${C.border}`,
+                            borderTop: "none",
+                            borderRadius: "0 0 6px 6px",
+                            zIndex: 100,
+                            maxHeight: 180,
+                            overflowY: "auto",
+                            boxShadow: "0 4px 6px rgba(0,0,0,0.1)"
+                          }}>
+                            {itemSugestoes[item.id].map((sugestao) => (
+                              <div
+                                key={sugestao.id}
+                                onClick={() => selecionarSugestao(item.id, sugestao.nome)}
+                                style={{
+                                  padding: "10px 12px",
+                                  cursor: "pointer",
+                                  borderBottom: `1px solid ${C.border}22`,
+                                  fontSize: 12,
+                                  transition: "background 0.15s"
+                                }}
+                                onMouseEnter={e => e.currentTarget.style.background = "#1e2a3f"}
+                                onMouseLeave={e => e.currentTarget.style.background = "transparent"}
+                              >
+                                <div style={{ color: C.text, fontWeight: 500 }}>
+                                  {sugestao.nome}
+                                </div>
+                                <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                                  {sugestao.categoria}
+                                </div>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+
+                        {/* Indicador de carregamento */}
+                        {loadingSugestoes[item.id] && (
+                          <div style={{
+                            position: "absolute",
+                            top: "100%",
+                            left: 0,
+                            right: 0,
+                            background: C.bg,
+                            border: `1px solid ${C.border}`,
+                            borderTop: "none",
+                            borderRadius: "0 0 6px 6px",
+                            padding: "8px 12px",
+                            fontSize: 12,
+                            color: C.muted,
+                            zIndex: 100
+                          }}>
+                            Buscando...
+                          </div>
+                        )}
+                      </div>
                     </div>
                     <div>
                       <label style={{ ...s.label, fontSize: 10 }}>CÓDIGO</label>

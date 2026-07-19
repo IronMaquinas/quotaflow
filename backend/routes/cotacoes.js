@@ -543,4 +543,135 @@ router.post('/gerar-automaticamente', tenantMiddleware, async (req, res) => {
   }
 });
 
+// ───────────────────────────────────────────────────────────────────────
+// 1. BUSCAR ITENS SIMILARES (Para autocomplete)
+// ───────────────────────────────────────────────────────────────────────
+router.post('/buscar-similares', tenantMiddleware, async (req, res) => {
+  try {
+    const { termo, limite = 5 } = req.body;
+
+    if (!termo || termo.trim().length < 2) {
+      return res.status(400).json({ erro: 'Termo deve ter pelo menos 2 caracteres' });
+    }
+
+    const similares = await cotacaoService.buscarSimilares(
+      req.tenantId,
+      termo,
+      limite
+    );
+
+    res.json({
+      ok: true,
+      similares: similares,
+      total: similares.length
+    });
+  } catch (err) {
+    console.error('❌ Erro em buscar-similares:', err);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ───────────────────────────────────────────────────────────────────────
+// 2. CRIAR COTAÇÃO AUTOMÁTICA
+// ───────────────────────────────────────────────────────────────────────
+router.post('/criar-automatica', tenantMiddleware, async (req, res) => {
+  try {
+    const { chamadoId, itemCatalogoId } = req.body;
+
+    if (!chamadoId || !itemCatalogoId) {
+      return res.status(400).json({ erro: 'chamadoId e itemCatalogoId são obrigatórios' });
+    }
+
+    const cotacao = await cotacaoService.criarAutomatica(
+      req.tenantId,
+      chamadoId,
+      itemCatalogoId,
+      req.usuarioId
+    );
+
+    res.json({
+      ok: true,
+      cotacao: cotacao
+    });
+  } catch (err) {
+    console.error('❌ Erro em criar-automatica:', err);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ───────────────────────────────────────────────────────────────────────
+// 3. ADICIONAR ITEM À COTAÇÃO
+// ───────────────────────────────────────────────────────────────────────
+router.post('/:cotacaoId/items', tenantMiddleware, async (req, res) => {
+  try {
+    const { cotacaoId } = req.params;
+    const { itemCatalogoId, quantidade = 1 } = req.body;
+
+    if (!itemCatalogoId) {
+      return res.status(400).json({ erro: 'itemCatalogoId é obrigatório' });
+    }
+
+    const item = await cotacaoService.adicionarItem(
+      req.tenantId,
+      cotacaoId,
+      itemCatalogoId,
+      quantidade
+    );
+
+    res.json({
+      ok: true,
+      item: item
+    });
+  } catch (err) {
+    console.error('❌ Erro em adicionar item:', err);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ───────────────────────────────────────────────────────────────────────
+// 4. REMOVER ITEM DA COTAÇÃO
+// ───────────────────────────────────────────────────────────────────────
+router.delete('/:cotacaoId/items/:itemId', tenantMiddleware, async (req, res) => {
+  try {
+    const { cotacaoId, itemId } = req.params;
+
+    const resultado = await cotacaoService.removerItem(
+      req.tenantId,
+      cotacaoId,
+      itemId
+    );
+
+    res.json({
+      ok: true,
+      resultado: resultado
+    });
+  } catch (err) {
+    console.error('❌ Erro em remover item:', err);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ───────────────────────────────────────────────────────────────────────
+// 5. CONFIRMAR COTAÇÃO (Sai de rascunho)
+// ───────────────────────────────────────────────────────────────────────
+router.put('/:cotacaoId/confirmar', tenantMiddleware, async (req, res) => {
+  try {
+    const { cotacaoId } = req.params;
+
+    const resultado = await cotacaoService.confirmarCotacao(
+      req.tenantId,
+      cotacaoId,
+      req.usuarioId
+    );
+
+    res.json({
+      ok: true,
+      resultado: resultado
+    });
+  } catch (err) {
+    console.error('❌ Erro em confirmar:', err);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
 module.exports = router;

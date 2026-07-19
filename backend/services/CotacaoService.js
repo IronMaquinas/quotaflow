@@ -429,6 +429,293 @@ class CotacaoService {
     const random = Math.random().toString(36).substring(2, 15);
     return `COT-${cotacaoId}-FOR-${fornecedorId}-${timestamp}-${random}`;
   }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // BUSCAR ITENS SIMILARES (Para autocomplete em TelaChamados)
+  // ───────────────────────────────────────────────────────────────────────
+  async buscarSimilares(tenantId, termo, limite = 5) {
+    console.log(`🔍 [CotacaoService] Buscando similares: "${termo}"`);
+
+    // 1. Buscar todos os itens do tenant
+    const itens = await this.db.select('catalogo_itens', { 
+      tenant_id: tenantId,
+      ativo: true
+    });
+
+    // 2. Calcular similaridade com cada item
+    const similares = itens
+      .map(item => ({
+        ...item,
+        similaridade: this.calcularSimilaridade(termo, item.nome)
+      }))
+      .filter(item => item.similaridade >= 70) // Threshold: 70%
+      .sort((a, b) => b.similaridade - a.similaridade)
+      .slice(0, limite);
+
+    console.log(`✅ [CotacaoService] ${similares.length} itens similares encontrados`);
+    return similares;
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // CALCULAR SIMILARIDADE (Levenshtein - REUTILIZA DO CATALOGO)
+  // ───────────────────────────────────────────────────────────────────────
+  calcularSimilaridade(str1, str2) {
+    const n1 = this.normalizarTexto(str1);
+    const n2 = this.normalizarTexto(str2);
+
+    if (n1 === n2) return 100;
+    if (!n1 || !n2) return 0;
+
+    const len1 = n1.length;
+    const len2 = n2.length;
+    const matriz = Array(len2 + 1)
+      .fill(null)
+      .map(() => Array(len1 + 1).fill(0));
+
+    for (let i = 0; i <= len1; i++) matriz[0][i] = i;
+    for (let j = 0; j <= len2; j++) matriz[j][0] = j;
+
+    for (let j = 1; j <= len2; j++) {
+      for (let i = 1; i <= len1; i++) {
+        const cost = n1[i - 1] === n2[j - 1] ? 0 : 1;
+        matriz[j][i] = Math.min(
+          matriz[j][i - 1] + 1,
+          matriz[j - 1][i] + 1,
+          matriz[j - 1][i - 1] + cost
+        );
+      }
+    }
+
+    const maxLen = Math.max(len1, len2);
+    const distancia = matriz[len2][len1];
+    const similaridade = ((maxLen - distancia) / maxLen) * 100;
+
+    return Math.max(0, Math.min(100, similaridade));
+  }
+
+  normalizarTexto(texto) {
+    if (!texto) return '';
+    return texto
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, ''); // Remove acentos
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // CRIAR COTAÇÃO AUTOMÁTICA (Com item sugerido)
+  // ───────────────────────────────────────────────────────────────────────
+  async criarAutomatica(tenantId, chamadoId, itemCatalogoId, usuarioId = null) {
+    console.log(`📝 [CotacaoService] Criando cotação automática para item ${itemCatalogoId}`);
+
+    // 1. Validar item existe
+    const item = await this.db.selectOne('catalogo_itens', { id: itemCatalogoId }, tenantId);
+    if (!item) {
+      throw new Error(`Item ${itemCatalogoId} não encontrado`);
+    }
+
+    console.log(`✅ Item validado: ${item.nome}`);
+
+    // 2. Buscar fornecedores do item
+    const fornecedores = await this.buscarFornecedoresPorItem(tenantId, itemCatalogoId);
+    console.log(`👥 ${fornecedores.length} fornecedor(es) encontrado(s)`);
+
+    // 3. Criar cotação em rascunho
+    const numeroCotacao = `COT-AUTO-${chamadoId}-${Date.now()}`;
+    const cotacao = await this.db.insert('cotacoes', {
+      tenant_id: tenantId,
+      chamado_id: chamadoId,
+      numero_cotacao: numeroCotacao,
+      status: 'rascunho',
+      modo: 'automatica',  // 🆕 Campo novo!
+      criado_por: usuarioId
+    });
+
+    console.log(`✅ Cotação criada: ${numeroCotacao} (ID: ${cotacao.id})`);
+
+    // 4. Adicionar item à cotação
+    const cotacaoItem = await this.db.insert('cotacao_itens', {  // 🆕 Tabela nova!
+      tenant_id: tenantId,
+      cotacao_id: cotacao.id,
+      item_catalogo_id: itemCatalogoId,
+      quantidade: 1,
+      preco_estimado: fornecedores[0]?.preco_unitario || null
+    });
+
+    console.log(`✅ Item adicionado à cotação`);
+
+    // 5. Retornar cotação com fornecedores
+    return {
+      cotacaoId: cotacao.id,
+      numero: numeroCotacao,
+      item: {
+        id: item.id,
+        nome: item.nome,
+        categoria: item.categoria,
+        fornecedores: fornecedores
+      }
+    };
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // BUSCAR FORNECEDORES DE UM ITEM (Helper)
+  // ───────────────────────────────────────────────────────────────────────
+  async buscarFornecedoresPorItem(tenantId, itemCatalogoId) {
+    const fornecedores = await this.db.raw(`
+      SELECT DISTINCT
+        fi.id as fornecedor_item_id,
+        fi.fornecedor_id,
+        f.nome as fornecedor_nome,
+        f.email as fornecedor_email,
+        fi.preco_unitario,
+        fi.estoque_status,
+        fi.tempo_entrega_dias
+      FROM fornecedor_itens fi
+      JOIN fornecedores f ON fi.fornecedor_id = f.id
+      WHERE fi.tenant_id = $1 
+        AND fi.item_catalogo_id = $2
+        AND fi.ativo = true
+      ORDER BY fi.preco_unitario ASC
+    `, [tenantId, itemCatalogoId]);
+
+    return fornecedores.map(f => ({
+      fornecedorId: f.fornecedor_id,
+      nome: f.fornecedor_nome,
+      email: f.fornecedor_email,
+      preco: f.preco_unitario || 0,
+      estoque: f.estoque_status,
+      prazo: f.tempo_entrega_dias
+    }));
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // ADICIONAR ITEM À COTAÇÃO AUTOMÁTICA (Edição)
+  // ───────────────────────────────────────────────────────────────────────
+  async adicionarItem(tenantId, cotacaoId, itemCatalogoId, quantidade = 1) {
+    console.log(`➕ [CotacaoService] Adicionando item ${itemCatalogoId} à cotação ${cotacaoId}`);
+
+    // Validar cotação existe
+    const cotacao = await this.db.selectOne('cotacoes', { id: cotacaoId }, tenantId);
+    if (!cotacao) throw new Error(`Cotação não encontrada`);
+
+    // Validar item existe
+    const item = await this.db.selectOne('catalogo_itens', { id: itemCatalogoId }, tenantId);
+    if (!item) throw new Error(`Item não encontrado`);
+
+    // Verificar se item já está na cotação
+    const itemExistente = await this.db.selectOne('cotacao_itens', {
+      cotacao_id: cotacaoId,
+      item_catalogo_id: itemCatalogoId
+    }, tenantId);
+
+    if (itemExistente) {
+      throw new Error(`Item já adicionado a esta cotação`);
+    }
+
+    // Buscar fornecedores
+    const fornecedores = await this.buscarFornecedoresPorItem(tenantId, itemCatalogoId);
+
+    // Adicionar item
+    const cotacaoItem = await this.db.insert('cotacao_itens', {
+      tenant_id: tenantId,
+      cotacao_id: cotacaoId,
+      item_catalogo_id: itemCatalogoId,
+      quantidade: quantidade,
+      preco_estimado: fornecedores[0]?.preco || null
+    });
+
+    console.log(`✅ Item adicionado`);
+
+    return {
+      id: cotacaoItem.id,
+      nome: item.nome,
+      categoria: item.categoria,
+      quantidade: quantidade,
+      fornecedores: fornecedores
+    };
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // REMOVER ITEM DA COTAÇÃO AUTOMÁTICA (Edição)
+  // ───────────────────────────────────────────────────────────────────────
+  async removerItem(tenantId, cotacaoId, cotacaoItemId) {
+    console.log(`➖ [CotacaoService] Removendo item ${cotacaoItemId} da cotação`);
+
+    // Validar que item pertence à cotação
+    const cotacaoItem = await this.db.selectOne('cotacao_itens', {
+      id: cotacaoItemId,
+      cotacao_id: cotacaoId
+    }, tenantId);
+
+    if (!cotacaoItem) throw new Error(`Item não encontrado nesta cotação`);
+
+    // Remover (soft delete ou delete?)
+    // Opção 1: Delete físico
+    await this.db.delete('cotacao_itens', cotacaoItemId, tenantId);
+
+    // Opção 2: Se tiver campo 'ativo', fazer soft delete:
+    // await this.db.update('cotacao_itens', cotacaoItemId, { ativo: false }, tenantId);
+
+    console.log(`✅ Item removido`);
+    return { ok: true };
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // CONFIRMAR COTAÇÃO AUTOMÁTICA (Muda de rascunho para pendente)
+  // ───────────────────────────────────────────────────────────────────────
+  async confirmarCotacao(tenantId, cotacaoId, usuarioId = null) {
+    console.log(`✓ [CotacaoService] Confirmando cotação ${cotacaoId}`);
+
+    // Validar cotação existe
+    const cotacao = await this.db.selectOne('cotacoes', { id: cotacaoId }, tenantId);
+    if (!cotacao) throw new Error(`Cotação não encontrada`);
+
+    // Validar que tem itens
+    const itens = await this.db.select('cotacao_itens', { cotacao_id: cotacaoId });
+    if (itens.length === 0) throw new Error(`Cotação não tem itens`);
+
+    // Coletar fornecedores únicos dos itens
+    const fornecedoresUnicos = new Set();
+    for (const item of itens) {
+      const fornecedores = await this.buscarFornecedoresPorItem(tenantId, item.item_catalogo_id);
+      fornecedores.forEach(f => fornecedoresUnicos.add(f.fornecedorId));
+    }
+
+    // Adicionar fornecedores à cotação
+    for (const fornecedorId of fornecedoresUnicos) {
+      const existe = await this.db.selectOne('cotacao_fornecedores', {
+        cotacao_id: cotacaoId,
+        fornecedor_id: fornecedorId
+      }, tenantId);
+
+      if (!existe) {
+        const token = this.gerarTokenFornecedor(cotacaoId, fornecedorId);
+        await this.db.insert('cotacao_fornecedores', {
+          tenant_id: tenantId,
+          cotacao_id: cotacaoId,
+          fornecedor_id: fornecedorId,
+          status: 'pendente',
+          token_acesso: token
+        });
+      }
+    }
+
+    // Mudar status de rascunho para pendente
+    await this.db.update('cotacoes', cotacaoId, {
+      status: 'pendente',
+      confirmado_em: new Date(),
+      confirmado_por: usuarioId
+    }, tenantId);
+
+    console.log(`✅ Cotação confirmada`);
+
+    return {
+      cotacaoId: cotacaoId,
+      status: 'pendente',
+      fornecedores: fornecedoresUnicos.size,
+      itens: itens.length
+    };
+  }
+
 }
 
 module.exports = CotacaoService;

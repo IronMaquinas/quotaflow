@@ -157,7 +157,6 @@ class DB {
 
     // 4. Fornecedores de um item de catálogo
     if (sql.includes("FROM fornecedor_itens fi") && sql.includes("JOIN fornecedores f")) {
-          console.log('✅ MATCH! Entrando no case de fornecedores');
 
       const itemId = params[0];
       const { data: fornecedorItens, error: e1 } = await supabase

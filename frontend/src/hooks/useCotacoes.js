@@ -94,6 +94,143 @@ export function useCotacoes(accessToken) {
     [cotacoes]
   );
 
+  // Buscar itens similares
+  async function buscarSimilares(termo, limite = 5) {
+    try {
+      setCarregando(true);
+      const response = await fetch(`${API_URL}/cotacoes/buscar-similares`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({ termo, limite })
+      });
+
+      if (!response.ok) {
+        const erro = await response.json();
+        throw new Error(erro.erro || 'Erro ao buscar similares');
+      }
+
+      const data = await response.json();
+      setCarregando(false);
+      return data.similares || [];
+    } catch (err) {
+      setErro(err.message);
+      setCarregando(false);
+      return [];
+    }
+  }
+
+  // Criar cotação automática
+  async function criarAutomatica(chamadoId, itemCatalogoId) {
+    try {
+      setCarregando(true);
+      const response = await fetch(`${API_URL}/cotacoes/criar-automatica`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({ chamadoId, itemCatalogoId })
+      });
+
+      if (!response.ok) {
+        const erro = await response.json();
+        throw new Error(erro.erro || 'Erro ao criar cotação');
+      }
+
+      const data = await response.json();
+      setCarregando(false);
+      return data.cotacao;
+    } catch (err) {
+      setErro(err.message);
+      setCarregando(false);
+      throw err;
+    }
+  }
+
+  // NOVO: Adicionar item à cotação
+  async function adicionarItem(cotacaoId, itemCatalogoId, quantidade = 1) {
+    try {
+      setCarregando(true);
+      const response = await fetch(`${API_URL}/cotacoes/${cotacaoId}/items`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({ itemCatalogoId, quantidade })
+      });
+
+      if (!response.ok) {
+        const erro = await response.json();
+        throw new Error(erro.erro || 'Erro ao adicionar item');
+      }
+
+      const data = await response.json();
+      setCarregando(false);
+      return data.item;
+    } catch (err) {
+      setErro(err.message);
+      setCarregando(false);
+      throw err;
+    }
+  }
+
+  // NOVO: Remover item da cotação
+  async function removerItem(cotacaoId, itemId) {
+    try {
+      setCarregando(true);
+      const response = await fetch(`${API_URL}/cotacoes/${cotacaoId}/items/${itemId}`, {
+        method: 'DELETE',
+        headers: {
+          'Authorization': `Bearer ${accessToken}`
+        }
+      });
+
+      if (!response.ok) {
+        const erro = await response.json();
+        throw new Error(erro.erro || 'Erro ao remover item');
+      }
+
+      setCarregando(false);
+      return true;
+    } catch (err) {
+      setErro(err.message);
+      setCarregando(false);
+      throw err;
+    }
+  }
+
+  // NOVO: Confirmar cotação
+  async function confirmarCotacao(cotacaoId) {
+    try {
+      setCarregando(true);
+      const response = await fetch(`${API_URL}/cotacoes/${cotacaoId}/confirmar`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${accessToken}`
+        },
+        body: JSON.stringify({})
+      });
+
+      if (!response.ok) {
+        const erro = await response.json();
+        throw new Error(erro.erro || 'Erro ao confirmar cotação');
+      }
+
+      const data = await response.json();
+      setCarregando(false);
+      return data.resultado;
+    } catch (err) {
+      setErro(err.message);
+      setCarregando(false);
+      throw err;
+    }
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // FILTRAR COTAÇÕES POR STATUS
   // ─────────────────────────────────────────────────────────────────────────
@@ -131,6 +268,11 @@ export function useCotacoes(accessToken) {
     buscarPorId,
     filtrar,
     contarRespostas,
+    buscarSimilares,
+    criarAutomatica,
+    adicionarItem,
+    removerItem,
+    confirmarCotacao,
     limparErro: () => setErro(null),
   };
 }

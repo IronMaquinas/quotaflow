@@ -105,7 +105,6 @@ class CatalogoService {
   // CRIAR ITEM
   // ───────────────────────────────────────────────────────────────────────
   async criarItem(tenantId, dados) {
-    console.log(`📦 [CatalogoService] Criando item: ${dados.nome}`);
 
     // Validar
     this.validarDadosItem(dados);
@@ -142,7 +141,6 @@ class CatalogoService {
       ativo: true
     });
 
-    console.log(`✅ [CatalogoService] Item criado: ID ${item.id}`);
     return item;
   }
 
@@ -150,8 +148,6 @@ class CatalogoService {
   // EDITAR ITEM
   // ───────────────────────────────────────────────────────────────────────
   async editarItem(tenantId, itemId, dados, usuarioId = null) {
-    console.log(`✏️ [CatalogoService] Editando item ${itemId}`);
-
     this.validarDadosItem(dados);
 
     const item = await this.db.update('catalogo_itens', itemId, {
@@ -173,7 +169,6 @@ class CatalogoService {
       atualizado_por: usuarioId
     }, tenantId);
 
-    console.log(`✅ [CatalogoService] Item atualizado`);
     return item;
   }
 
@@ -191,8 +186,6 @@ class CatalogoService {
       pagina = 1,
       tipo_fabricante = null
     } = filtros;
-
-    console.log(`🔍 [CatalogoService] Buscando itens:`, { termo, marca, modelo, ano });
 
     let query = `
       SELECT 
@@ -261,7 +254,6 @@ class CatalogoService {
 
     const itens = await this.db.raw(query, params);
 
-    console.log(`✅ [CatalogoService] ${itens.length} itens encontrados`);
     return itens;
   }
 
@@ -273,15 +265,11 @@ class CatalogoService {
     const item = await this.db.selectOne('catalogo_itens', { id: itemId }, tenantId);
     if (!item) throw new Error(`Item ${itemId} não encontrado`);
 
-    console.log('🔍 Parâmetros:', tenantId, itemId);
-
     // Busca fornecedores vinculados
     const fornecedores = await this.db.raw(`
   SELECT * FROM fornecedor_itens 
   WHERE tenant_id = $1 AND item_catalogo_id = $2
 `, [tenantId, itemId]);
-
-console.log('🔍 RESULTADO BRUTO:', JSON.stringify(fornecedores, null, 2));
 
     // Mapeia para camelCase (como o frontend espera)
     const fornecedoresMapeados = fornecedores.map(f => ({
@@ -292,7 +280,6 @@ console.log('🔍 RESULTADO BRUTO:', JSON.stringify(fornecedores, null, 2));
       tempoEntrega: f.tempo_entrega_dias || 3,
     }));
 
-    console.log('🔍 FORNECEDORES ENCONTRADOS:', JSON.stringify(fornecedores, null, 2));
     // Retorna o item com a propriedade fornecedores
     return {
       ...item,
@@ -401,14 +388,12 @@ console.log('🔍 RESULTADO BRUTO:', JSON.stringify(fornecedores, null, 2));
   // DELETAR ITEM (Soft delete)
   // ───────────────────────────────────────────────────────────────────────
   async deletarItem(tenantId, itemId) {
-    console.log(`🗑️ [CatalogoService] Deletando item ${itemId}`);
 
     await this.db.update('catalogo_itens', itemId, {
       ativo: false,
       atualizado_em: new Date()
     }, tenantId);
 
-    console.log(`✅ [CatalogoService] Item deletado`);
   }
 
   // ───────────────────────────────────────────────────────────────────────
@@ -416,7 +401,6 @@ console.log('🔍 RESULTADO BRUTO:', JSON.stringify(fornecedores, null, 2));
   // ───────────────────────────────────────────────────────────────────────
 
   async importarFornecedor(tenantId, fornecedorId, csvText) {
-    console.log(`📦 Importando para fornecedor ${fornecedorId}`);
 
     const itensCSV = this.parseCSV(csvText);
     
@@ -435,7 +419,6 @@ console.log('🔍 RESULTADO BRUTO:', JSON.stringify(fornecedores, null, 2));
           const similaridade = this.calcularSimilaridade(itemCSV.nome, itemExistente.nome);
           if (similaridade >= 90) {
             novoItem = itemExistente;
-            console.log(`   🔗 Encontrado similar: ${itemExistente.nome} (${similaridade}%)`);
             break;
           }
         }
@@ -451,7 +434,6 @@ console.log('🔍 RESULTADO BRUTO:', JSON.stringify(fornecedores, null, 2));
             ano_fabricacao_inicio: itemCSV.ano_modelo ? parseInt(itemCSV.ano_modelo) : null,
           });
           itensAdicionados++;
-          console.log(`   ✅ Item criado: ${novoItem.nome}`);
         } else {
           itensVinculados++;
         }
@@ -478,8 +460,6 @@ console.log('🔍 RESULTADO BRUTO:', JSON.stringify(fornecedores, null, 2));
         console.error(`❌ ${itemCSV.nome}: ${err.message}`);
       }
     }
-
-    console.log(`✅ Concluído: ${itensAdicionados} criados, ${itensVinculados} vinculados`);
 
     return {
       criados: itensAdicionados,
