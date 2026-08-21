@@ -34,9 +34,6 @@ function tenantMiddleware(req, res, next) {
     req.userEmail = decoded.email;
     req.userPerfil = decoded.perfil;
 
-    // Log para debug (remover em produção)
-    console.log(`[TENANT] User: ${req.userEmail} (${decoded.user_id}) | Tenant: ${req.tenantId}`);
-
     next();
   } catch (err) {
     if (err.name === "TokenExpiredError") {

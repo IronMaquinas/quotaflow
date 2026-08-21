@@ -1,15 +1,6 @@
 // services/CotacaoService.js
-/**
- * CotacaoService - BACKEND
- * 
- * Gerencia cotações com:
- * ✓ Agrupamento automático por categoria
- * ✓ Identificação automática de fornecedores por marca/modelo
- * ✓ Portal do fornecedor (público)
- * ✓ Resposta de cotações
- * 
- * NÃO É CLIENT-SIDE! Este é o serviço backend puro.
- */
+const DB = require('../db');
+const { supabase } = require('../db');
 
 class CotacaoService {
   constructor(db) {
@@ -261,56 +252,152 @@ class CotacaoService {
   // ───────────────────────────────────────────────────────────────────────
   // 5. OBTER COTAÇÃO COMPLETA (Com todos os detalhes)
   // ───────────────────────────────────────────────────────────────────────
-  async obterCotacao(tenantId, cotacaoId) {
-    const cotacao = await this.db.selectOne('cotacoes', { id: cotacaoId }, tenantId);
+ async obterCotacao(tenantId, cotacaoId) {
+  // 1. Buscar cotação
+  const cotacao = await this.db.selectOne('cotacoes', { id: cotacaoId }, tenantId);
+  if (!cotacao) throw new Error(`Cotação ${cotacaoId} não encontrada`);
 
-    if (!cotacao) {
-      throw new Error(`Cotação ${cotacaoId} não encontrada`);
-    }
+  // 2. Buscar itens com LEFT JOIN (para não falhar se não houver correspondência)
+  const { data: itens, error: errItens } = await supabase
+    .from('cotacao_itens')
+    .select(`
+      id,
+      quantidade,
+      preco_estimado,
+      chamado_item_id,
+      item_catalogo_id,
+      fornecedores_ids,
+      catalogo_itens!left (
+        nome,
+        categoria,
+        marca,
+        modelo
+      ),
+      chamado_itens!left (
+        item_nome
+      )
+    `)
+    .eq('cotacao_id', cotacaoId)
+    .eq('tenant_id', tenantId);
 
-    // Buscar itens
-    const itens = await this.db.raw(`
-      SELECT 
-        ci.id,
-        ci.quantidade,
-        ci.preco_estimado,
-        c.nome,
-        c.categoria,
-        c.marca,
-        c.modelo
-      FROM cotacao_itens ci
-      JOIN catalogo_itens c ON ci.item_catalogo_id = c.id
-      WHERE ci.cotacao_id = $1
-      ORDER BY c.nome
-    `, [cotacaoId]);
+  if (errItens) throw new Error(`Erro ao buscar itens: ${errItens.message}`);
 
-    // Buscar fornecedores
-    const fornecedores = await this.db.raw(`
-      SELECT 
-        cf.id,
-        cf.fornecedor_id,
-        f.nome,
-        f.email,
-        f.telefone,
-        cf.status,
-        cf.valor_total,
-        cf.respondido_em,
-        cf.token_acesso
-      FROM cotacao_fornecedores cf
-      JOIN fornecedores f ON cf.fornecedor_id = f.id
-      WHERE cf.cotacao_id = $1
-      ORDER BY f.nome
-    `, [cotacaoId]);
+  // 3. Buscar fornecedores com LEFT JOIN
+  const { data: fornecedores, error: errForn } = await supabase
+    .from('cotacao_fornecedores')
+    .select(`
+      id,
+      fornecedor_id,
+      status,
+      valor,
+      prazo,
+      frete,
+      valor_frete,
+      obs,
+      data_resposta,
+      token_acesso,
+      fornecedores!left (
+        nome,
+        email
+      )
+    `)
+    .eq('cotacao_id', cotacaoId)
+    .eq('tenant_id', tenantId);
 
-    return {
-      ...cotacao,
-      itens,
-      fornecedores,
-      total_itens: itens.length,
-      total_fornecedores: fornecedores.length,
-      preco_estimado_total: itens.reduce((sum, i) => sum + (i.preco_estimado || 0), 0)
-    };
-  }
+  if (errForn) throw new Error(`Erro ao buscar fornecedores: ${errForn.message}`);
+
+  // 4. Formatar itens com preços dos fornecedores + recomendados
+  const itensFormatados = await Promise.all(
+    itens.map(async (item) => {
+      // 4a. Buscar os 3 fornecedores mais baratos para este item (global)
+      const { data: recomendados, error: errRec } = await supabase
+        .from('fornecedor_itens')
+        .select(`
+          fornecedor_id,
+          preco_unitario,
+          fornecedores!inner (nome, email)
+        `)
+        .eq('item_catalogo_id', item.item_catalogo_id)
+        .eq('tenant_id', tenantId)
+        .eq('ativo', true)
+        .order('preco_unitario', { ascending: true })
+        .limit(3);
+
+      if (errRec) console.error('Erro ao buscar recomendados:', errRec);
+
+      // 4b. Mapear recomendados para o formato esperado
+      const recomendadosFormatados = (recomendados || []).map(r => ({
+        fornecedor_id: r.fornecedor_id,
+        nome: r.fornecedores?.nome || 'Fornecedor',
+        preco: parseFloat(r.preco_unitario) || 0
+      }));
+
+      // 4c. Buscar fornecedores da cotação (para manter os selecionados manualmente)
+      const fornecedoresDaCotacao = fornecedores.map(f => ({
+        fornecedor_id: f.fornecedor_id,
+        nome: f.fornecedores?.nome || f.nome,
+        preco: 0 // será substituído se houver preço
+      }));
+
+      // 4d. Juntar recomendados + fornecedores da cotação, remover duplicatas por fornecedor_id
+      const todos = [...recomendadosFormatados, ...fornecedoresDaCotacao];
+      const unicos = [];
+      const idsVistos = new Set();
+      for (const f of todos) {
+        if (!idsVistos.has(f.fornecedor_id)) {
+          idsVistos.add(f.fornecedor_id);
+          unicos.push(f);
+        }
+      }
+
+      // 4e. Atualizar preços dos fornecedores da cotação (que podem ter preço 0)
+      // Buscar preços reais para todos os fornecedores únicos
+      const { data: precosReais } = await supabase
+        .from('fornecedor_itens')
+        .select('fornecedor_id, preco_unitario')
+        .eq('item_catalogo_id', item.item_catalogo_id)
+        .eq('tenant_id', tenantId)
+        .in('fornecedor_id', unicos.map(f => f.fornecedor_id));
+
+      const precoMap = {};
+      precosReais?.forEach(p => { precoMap[p.fornecedor_id] = p.preco_unitario; });
+
+      // Atualizar preços nos objetos
+      unicos.forEach(f => {
+        if (precoMap[f.fornecedor_id] !== undefined) {
+          f.preco = parseFloat(precoMap[f.fornecedor_id]) || 0;
+        }
+      });
+
+      // 4f. Ordenar por preço (menor primeiro)
+      unicos.sort((a, b) => a.preco - b.preco);
+
+      return {
+        ...item,
+        nome: item.catalogo_itens?.nome || item.chamado_itens?.item_nome || 'Item sem nome',
+        categoria: item.catalogo_itens?.categoria || 'Sem categoria',
+        marca: item.catalogo_itens?.marca || null,
+        modelo: item.catalogo_itens?.modelo || null,
+        fornecedores: unicos // sempre terá pelo menos os 3 mais baratos
+      };
+    })
+  );
+
+  // 5. Formatar fornecedores
+  const fornecedoresFormatados = fornecedores.map(f => ({
+    ...f,
+    nome: f.fornecedores?.nome || null,
+    email: f.fornecedores?.email || null
+  }));
+
+  return {
+    ...cotacao,
+    itens: itensFormatados,
+    fornecedores: fornecedoresFormatados,
+    total_itens: itensFormatados.length,
+    total_fornecedores: fornecedoresFormatados.length
+  };
+}
 
   // ───────────────────────────────────────────────────────────────────────
   // 6. ENVIAR COTAÇÃO PARA FORNECEDORES
@@ -353,26 +440,29 @@ class CotacaoService {
     console.log(`🔍 [CotacaoService] Buscando cotação por token`);
 
     const cotacaoForn = await this.db.selectOne('cotacao_fornecedores', { token_acesso: token });
-
-    if (!cotacaoForn) {
-      throw new Error('Token inválido ou expirado');
-    }
+    if (!cotacaoForn) throw new Error('Token inválido ou expirado');
 
     // Buscar cotação completa
     const cotacao = await this.obterCotacao(cotacaoForn.tenant_id, cotacaoForn.cotacao_id);
 
-    // Filtrar apenas informações públicas
+    // Filtrar apenas informações públicas para o fornecedor
     return {
       id: cotacao.id,
       numero: cotacao.numero_cotacao,
-      categoria: cotacao.categoria,
-      data_cotacao: cotacao.criado_em,
-      itens: cotacao.itens,
-      seu_status: cotacaoForn.status,
-      sua_resposta: cotacaoForn.valor_total ? {
-        valor_total: cotacaoForn.valor_total,
-        respondido_em: cotacaoForn.respondido_em
-      } : null
+      empresa: 'Empresa do Comprador', // Buscar do tenant
+      comprador: 'Comprador', // Buscar do usuário que criou
+      fornecedor: cotacaoForn.fornecedor_nome || 'Fornecedor',
+      prazo_resposta: cotacaoForn.prazo || null,
+      token: token,
+      status: cotacaoForn.status,
+      itens: cotacao.itens.map(item => ({
+        id: item.chamado_item_id || item.id,
+        peca: item.nome,
+        codigo: item.codigo || item.modelo,
+        qtd: item.quantidade,
+        equipamento: item.equipamento_nome || '',
+        urgencia: item.urgencia || 'media'
+      }))
     };
   }
 
@@ -382,29 +472,51 @@ class CotacaoService {
   async responderCotacao(token, resposta) {
     console.log(`📝 [CotacaoService] Recebendo resposta de cotação`);
 
-    const { valor_total, observacoes } = resposta;
+    const { 
+      itens,              // array de { item_id, valor_unitario, frete, valor_frete }
+      prazo_entrega, 
+      observacoes 
+    } = resposta;
 
-    if (!valor_total || valor_total <= 0) {
-      throw new Error('Valor deve ser maior que 0');
+    if (!itens || itens.length === 0) {
+      throw new Error('Nenhum item respondido');
     }
 
+    // Buscar cotacao_fornecedores pelo token
     const cotacaoForn = await this.db.selectOne('cotacao_fornecedores', { token_acesso: token });
+    if (!cotacaoForn) throw new Error('Token inválido');
 
-    if (!cotacaoForn) {
-      throw new Error('Token inválido');
+    if (cotacaoForn.status === 'respondido') {
+      throw new Error('Esta cotação já foi respondida');
     }
 
-    // Atualizar resposta
+    // Calcular valor total a partir dos itens
+    let valorTotal = 0;
+    for (const item of itens) {
+      const unit = parseFloat(item.valor_unitario) || 0;
+      const frete = parseFloat(item.valor_frete) || 0;
+      // Se frete = CIF, o valor unitário já inclui frete; se FOB, soma o frete
+      const totalItem = unit + (item.frete === 'FOB' ? frete : 0);
+      valorTotal += totalItem;
+    }
+
+    // Atualizar cotacao_fornecedores com os dados da resposta
     await this.db.update('cotacao_fornecedores', cotacaoForn.id, {
-      status: 'respondida',
-      valor_total: valor_total,
-      observacoes: observacoes || null,
-      respondido_em: new Date()
+      status: 'respondido',
+      valor_total: valorTotal,
+      prazo: prazo_entrega || null,
+      obs: observacoes || null,
+      data_resposta: new Date(),
+      // Opcional: salvar resposta detalhada em JSON
+      resposta_json: resposta // se tiver campo no banco, senão pode criar depois
     });
 
-    console.log(`✅ [CotacaoService] Cotação respondida`);
+    console.log(`✅ Cotação respondida com sucesso`);
 
-    return { ok: true, mensagem: 'Resposta recebida com sucesso' };
+    // Enviar e-mail de confirmação para o comprador (opcional)
+    // await this.enviarEmailResposta(cotacaoForn);
+
+    return { ok: true, mensagem: 'Proposta enviada com sucesso!' };
   }
 
   // ───────────────────────────────────────────────────────────────────────
@@ -714,6 +826,685 @@ class CotacaoService {
       fornecedores: fornecedoresUnicos.size,
       itens: itens.length
     };
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // BUSCAR CHAMADO COM ITENS AGRUPADOS POR CATEGORIA + TOP 3 FORNECEDORES
+  // ───────────────────────────────────────────────────────────────────────
+  async buscarPorChamadoComFornecedores(tenantId, chamadoId) {
+
+    // 1. Buscar chamado
+    const chamado = await this.db.selectOne('chamados', { id: chamadoId }, tenantId);
+    if (!chamado) {
+      throw new Error(`Chamado ${chamadoId} não encontrado`);
+    }
+
+    // 2. Buscar itens do chamado
+    const itens = await this.db.select('chamado_itens', { chamado_id: chamadoId }, tenantId);
+    if (!itens || itens.length === 0) {
+      throw new Error(`Chamado ${chamadoId} não tem itens`);
+    }
+
+    // 3. Buscar catálogo para obter informações de categoria
+    const todosCatalogo = await this.db.select('catalogo_itens', { ativo: true }, tenantId);
+
+    // 4. Mapear itens com informações do catálogo
+    const itensComInfo = itens.map(item => {
+      const catalogoItem = todosCatalogo.find(c => c.id === item.item_catalogo_id);
+      
+      return {
+        id: item.id,
+        nome: item.item_nome || catalogoItem?.nome || 'Item sem nome',
+        categoria: item.categoria || catalogoItem?.categoria || 'Sem categoria',
+        codigo: item.codigo || catalogoItem?.codigo || '',
+        quantidade: item.quantidade || 1,
+        urgencia: item.urgencia || 'média',
+        item_catalogo_id: item.item_catalogo_id,
+        tipo_item: item.tipo_item || 'padrão'
+      };
+    });
+
+    // 5. Agrupar por categoria
+    const itensPorCategoria = itensComInfo.reduce((acc, item) => {
+      // Buscar categoria do catálogo
+      const catalogoItem = todosCatalogo.find(c => c.id === item.item_catalogo_id);
+      const categoriaCatalogo = catalogoItem?.categoria || 'Sem categoria';
+      
+      if (!acc[categoriaCatalogo]) {
+        acc[categoriaCatalogo] = [];
+      }
+      
+      acc[categoriaCatalogo].push({
+        ...item,
+        categoria_catalogo: categoriaCatalogo  // 🆕 Guardar a categoria do catálogo
+      });
+      return acc;
+    }, {});
+
+    // 6. Para cada item, buscar top 3 fornecedores mais baratos
+    const resultado = {};
+
+    for (const [categoria, itensCategoria] of Object.entries(itensPorCategoria)) {
+      resultado[categoria] = [];
+
+      for (const item of itensCategoria) {
+
+        // 1. Tenta buscar fornecedores diretos (pelo item_catalogo_id)
+        const { data: diretos, error: errDir } = await supabase
+          .from('fornecedor_itens')
+          .select(`
+            fornecedor_id,
+            preco_unitario,
+            data_tabela,
+            estoque_status,
+            tempo_entrega_dias,
+            quantidade_minima
+          `)
+          .eq('tenant_id', tenantId)
+          .eq('item_catalogo_id', item.item_catalogo_id)
+          .eq('ativo', true)
+          .order('preco_unitario', { ascending: true })
+          .limit(3);
+
+        let fornecedores = [];
+        if (!errDir && diretos && diretos.length > 0) {
+          // Buscar nomes/emails dos fornecedores
+          const fornecedorIds = diretos.map(f => f.fornecedor_id);
+          const { data: fornecedoresData } = await supabase
+            .from('fornecedores')
+            .select('id, nome, email')
+            .in('id', fornecedorIds)
+            .eq('tenant_id', tenantId);
+
+          fornecedores = diretos.map(fi => {
+            const f = fornecedoresData?.find(forn => forn.id === fi.fornecedor_id);
+            return {
+              fornecedor_id: fi.fornecedor_id,
+              fornecedor_nome: f?.nome || null,
+              fornecedor_email: f?.email || null,
+              preco_unitario: fi.preco_unitario,
+              data_tabela: fi.data_tabela,
+              estoque_status: fi.estoque_status,
+              tempo_entrega_dias: fi.tempo_entrega_dias,
+              quantidade_minima: fi.quantidade_minima
+            };
+          });
+        }
+
+        // 2. Se não encontrou direto, fallback por CATEGORIA
+        if (!fornecedores || fornecedores.length === 0) {
+
+          // Buscar categoria do item no catálogo
+          const catalogoItem = await this.db.selectOne('catalogo_itens', 
+            { id: item.item_catalogo_id, ativo: true }, 
+            tenantId
+          );
+
+          if (catalogoItem && catalogoItem.categoria) {
+            const categoria = catalogoItem.categoria.trim();
+
+            // Buscar todos os IDs de itens do catálogo com essa categoria
+            const { data: itensCatalogo, error: errCat } = await supabase
+              .from('catalogo_itens')
+              .select('id')
+              .eq('tenant_id', tenantId)
+              .eq('ativo', true)
+              .ilike('categoria', categoria); // ou .eq se for exato
+
+            if (!errCat && itensCatalogo && itensCatalogo.length > 0) {
+              const idsItens = itensCatalogo.map(item => item.id);
+
+              // Buscar fornecedor_itens para esses itens
+              const { data: fornecedorItens, error: errFI } = await supabase
+                .from('fornecedor_itens')
+                .select(`
+                  fornecedor_id,
+                  preco_unitario,
+                  data_tabela,
+                  estoque_status,
+                  tempo_entrega_dias,
+                  quantidade_minima
+                `)
+                .eq('tenant_id', tenantId)
+                .eq('ativo', true)
+                .in('item_catalogo_id', idsItens)
+                .order('preco_unitario', { ascending: true })
+                .limit(3);
+
+              if (!errFI && fornecedorItens && fornecedorItens.length > 0) {
+                const fornecedorIds = fornecedorItens.map(f => f.fornecedor_id);
+                const { data: fornecedoresData } = await supabase
+                  .from('fornecedores')
+                  .select('id, nome, email')
+                  .in('id', fornecedorIds)
+                  .eq('tenant_id', tenantId);
+
+                fornecedores = fornecedorItens.map(fi => {
+                  const f = fornecedoresData?.find(forn => forn.id === fi.fornecedor_id);
+                  return {
+                    fornecedor_id: fi.fornecedor_id,
+                    fornecedor_nome: f?.nome || null,
+                    fornecedor_email: f?.email || null,
+                    preco_unitario: fi.preco_unitario,
+                    data_tabela: fi.data_tabela,
+                    estoque_status: fi.estoque_status,
+                    tempo_entrega_dias: fi.tempo_entrega_dias,
+                    quantidade_minima: fi.quantidade_minima
+                  };
+                });
+              }
+            }
+          } else {
+            console.log(`❌ Item ${item.item_catalogo_id} não encontrado no catálogo ou sem categoria.`);
+          }
+        }
+
+        // Formatar para o resultado final (já está no formato esperado)
+        const fornecedoresFormatados = (fornecedores || []).map(f => ({
+          fornecedor_id: f.fornecedor_id,
+          nome: f.fornecedor_nome || 'Fornecedor não encontrado',
+          email: f.fornecedor_email || '',
+          preco: parseFloat(f.preco_unitario) || 0,
+          data_tabela: f.data_tabela,
+          estoque: f.estoque_status || 'desconhecido',
+          prazo: f.tempo_entrega_dias || 0,
+          quantidade_minima: f.quantidade_minima || 1
+        }));
+
+        resultado[categoria].push({
+          ...item,
+          fornecedores: fornecedoresFormatados
+        });
+      }
+    }
+
+    console.log(`✅ Cotação preparada com ${Object.keys(resultado).length} categorias`);
+
+    return {
+      chamado: {
+        id: chamado.id,
+        numero: chamado.numero || `CHA-${chamado.id}`,
+        equipamento_id: chamado.equipamento_id,
+        descricao_geral: chamado.descricao_geral,
+        urgencia: chamado.urgencia_geral,
+        status: chamado.status,
+        criado_em: chamado.criado_em
+      },
+      itensPorCategoria: resultado,
+      totalItens: itens.length,
+      totalCategorias: Object.keys(resultado).length
+    };
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // SALVAR COTAÇÃO EM RASCUNHO
+  // ───────────────────────────────────────────────────────────────────────
+  async salvarCotacao(tenantId, dados) {
+  console.log(`💾 [CotacaoService] Salvando cotação`);
+
+  const { chamado_id, itens, notas } = dados;
+
+  if (!chamado_id || !itens || itens.length === 0) {
+    throw new Error('Dados inválidos: chamado_id e itens são obrigatórios');
+  }
+
+  const cotacao = await this.db.insert('cotacoes', {
+    tenant_id: tenantId,
+    chamado_id: chamado_id,
+    status: 'rascunho',
+    modo: 'automatica',
+    notas: notas || null
+  });
+
+  console.log(`✅ Cotação criada: ${cotacao.id}`);
+
+  for (const item of itens) {
+    // Buscar o chamado_item para obter item_catalogo_id e quantidade
+    const chamadoItem = await this.db.selectOne('chamado_itens', 
+      { id: item.item_id }, 
+      tenantId
+    );
+
+    const itemCatalogoId = chamadoItem?.item_catalogo_id || null;
+    const quantidade = chamadoItem?.quantidade || 1;
+
+    await this.db.insert('cotacao_itens', {
+      tenant_id: tenantId,
+      cotacao_id: cotacao.id,
+      chamado_item_id: item.item_id,
+      item_catalogo_id: itemCatalogoId, // ← agora com valor
+      quantidade: quantidade,
+      preco_estimado: null,
+      fornecedores_ids: item.fornecedor_ids || []
+    });
+  }
+
+  console.log(`✅ ${itens.length} itens salvos`);
+
+  return {
+    cotacao_id: cotacao.id,
+    status: 'rascunho',
+    itens: itens.length,
+    mensagem: 'Cotação salva com sucesso'
+  };
+}
+
+  // ───────────────────────────────────────────────────────────────────────
+  // ENVIAR COTAÇÃO AOS FORNECEDORES
+  // ───────────────────────────────────────────────────────────────────────
+  async enviarCotacao(tenantId, cotacaoId) {
+    console.log(`📧 [CotacaoService] Enviando cotação ${cotacaoId}`);
+
+    // 1. Buscar cotação
+    const cotacao = await this.db.selectOne('cotacoes', { id: cotacaoId }, tenantId);
+    if (!cotacao) {
+      throw new Error(`Cotação ${cotacaoId} não encontrada`);
+    }
+
+    if (cotacao.status !== 'rascunho') {
+      throw new Error(`Cotação ${cotacaoId} já foi enviada`);
+    }
+
+    // 2. Buscar fornecedores da cotação
+    const fornecedores = await this.db.select('cotacao_fornecedores', 
+      { cotacao_id: cotacaoId, status: 'pendente' }, 
+      tenantId
+    );
+
+    if (fornecedores.length === 0) {
+      throw new Error(`Cotação ${cotacaoId} não tem fornecedores`);
+    }
+
+    // 3. Buscar dados para envio (chamado, itens, etc)
+    const chamado = await this.db.selectOne('chamados', { id: cotacao.chamado_id }, tenantId);
+    const itens = await this.db.select('chamado_itens', { chamado_id: cotacao.chamado_id }, tenantId);
+
+    // 4. Buscar emails dos fornecedores
+    const fornecedoresData = await this.db.raw(`
+      SELECT id, nome, email FROM fornecedores 
+      WHERE tenant_id = $1 AND id IN (${fornecedores.map(f => f.fornecedor_id).join(',')})
+    `, [tenantId]);
+
+    console.log(`📮 Enviando para ${fornecedoresData.length} fornecedores`);
+
+    // 5. Simular envio de email (DEPOIS integramos com emailService)
+    for (const forn of fornecedoresData) {
+      const cotacaoForn = fornecedores.find(f => f.fornecedor_id === forn.id);
+      
+      console.log(`📧 Email para ${forn.nome} (${forn.email})`);
+      console.log(`   Cotação: ${cotacao.id}`);
+      console.log(`   Token: ${cotacaoForn.token_acesso}`);
+      
+      // TODO: Chamar emailService.enviarCotacaoFornecedor()
+    }
+
+    // 6. Mudar status para 'enviada'
+    await this.db.update('cotacoes', cotacaoId, {
+      status: 'enviada',
+      enviada_em: new Date()
+    }, tenantId);
+
+    console.log(`✅ Cotação enviada com sucesso`);
+
+    return {
+      cotacao_id: cotacaoId,
+      status: 'enviada',
+      fornecedores_notificados: fornecedoresData.length,
+      mensagem: 'Cotação enviada aos fornecedores'
+    };
+  }
+
+  // ─── ATUALIZAR COTAÇÃO (editar fornecedores) ─────────────────
+  async atualizarCotacao(tenantId, cotacaoId, dados) {
+    console.log(`✏️ [CotacaoService] Atualizando cotação ${cotacaoId}`);
+
+    const { itens, notas } = dados;
+
+    const cotacao = await this.db.selectOne('cotacoes', { id: cotacaoId }, tenantId);
+    if (!cotacao) throw new Error('Cotação não encontrada');
+
+    if (cotacao.status !== 'rascunho') {
+      throw new Error('Apenas cotações em rascunho podem ser editadas');
+    }
+
+    if (notas !== undefined) {
+      await this.db.update('cotacoes', cotacaoId, { notas: notas }, tenantId);
+    }
+
+    // Remove itens antigos (ou atualiza)
+    await this.db.delete('cotacao_itens', { cotacao_id: cotacaoId }, tenantId);
+
+    // Adiciona novos itens com fornecedores_ids
+    for (const item of itens) {
+      await this.db.insert('cotacao_itens', {
+        tenant_id: tenantId,
+        cotacao_id: cotacaoId,
+        chamado_item_id: item.item_id,
+        item_catalogo_id: null,
+        quantidade: 1,
+        preco_estimado: null,
+        fornecedores_ids: item.fornecedor_ids || []
+      });
+    }
+
+    return {
+      cotacao_id: cotacaoId,
+      status: 'rascunho',
+      mensagem: 'Cotação atualizada com sucesso'
+    };
+  }
+
+  // ─── EXCLUIR COTAÇÃO (soft delete) ──────────────────────────
+  async excluirCotacao(tenantId, cotacaoId) {
+    console.log(`🗑️ [CotacaoService] Excluindo permanentemente cotação ${cotacaoId}`);
+
+    // Verifica se a cotação existe
+    const cotacao = await this.db.selectOne('cotacoes', { id: cotacaoId }, tenantId);
+    if (!cotacao) throw new Error('Cotação não encontrada');
+
+    // 1. Exclui itens da cotação
+    const { error: errItens } = await supabase
+      .from('cotacao_itens')
+      .delete()
+      .eq('cotacao_id', cotacaoId)
+      .eq('tenant_id', tenantId);
+    if (errItens) throw new Error(`Erro ao excluir itens: ${errItens.message}`);
+
+    // 2. Exclui fornecedores da cotação
+    const { error: errForn } = await supabase
+      .from('cotacao_fornecedores')
+      .delete()
+      .eq('cotacao_id', cotacaoId)
+      .eq('tenant_id', tenantId);
+    if (errForn) throw new Error(`Erro ao excluir fornecedores: ${errForn.message}`);
+
+    // 3. Exclui a cotação
+    await this.db.delete('cotacoes', cotacaoId, tenantId);
+
+    console.log(`✅ Cotação ${cotacaoId} excluída permanentemente`);
+    return { ok: true };
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // CRIAR ORDEM DE VENDA COM TODOS OS ITENS DO FORNECEDOR
+  // ───────────────────────────────────────────────────────────────────────
+  async criarOrdenVenda(tenantId, cotacaoId, fornecedorId) {
+    console.log(`📦 [CotacaoService] Criando OV para cotação ${cotacaoId}, fornecedor ${fornecedorId}`);
+
+    try {
+      // 1. Buscar cotação
+      const cotacao = await this.db.selectOne('cotacoes', { id: cotacaoId }, tenantId);
+      if (!cotacao) {
+        throw new Error(`Cotação ${cotacaoId} não encontrada`);
+      }
+
+      // 2. Buscar resposta do fornecedor (validar que respondeu)
+      const resposta = await this.db.selectOne('cotacao_fornecedores', {
+        cotacao_id: cotacaoId,
+        fornecedor_id: fornecedorId
+      }, tenantId);
+
+      if (!resposta) {
+        throw new Error(`Fornecedor ${fornecedorId} não encontrado na cotação`);
+      }
+
+      if (resposta.status !== 'respondido') {
+        throw new Error(`Fornecedor ainda não respondeu esta cotação`);
+      }
+
+      // 3. Buscar resposta do fornecedor (tem o valor!)
+      const respostaDetalhes = await this.db.selectOne('cotacao_fornecedores', {
+        cotacao_id: cotacaoId,
+        fornecedor_id: fornecedorId
+      }, tenantId);
+
+      console.log(`💰 Resposta do fornecedor:`, respostaDetalhes);  // 🆕 LOG
+
+
+      // 4. Buscar itens da cotação (SIMPLES)
+      const itensSimples = await this.db.raw(`
+        SELECT id, quantidade
+        FROM cotacao_itens
+        WHERE cotacao_id = $1
+          AND fornecedores_ids @> ARRAY[$2]::bigint[]
+      `, [cotacaoId, fornecedorId]);
+
+      // Montar array com valor do fornecedor
+      const itens = itensSimples.map(item => ({
+        id: item.id,
+        quantidade: item.quantidade,
+        valor_unitario: respostaDetalhes.valor,
+        valor_total: item.quantidade * respostaDetalhes.valor,
+        nome_item: `Item ${item.id}`
+      }));
+
+      console.log(`📋 Itens processados:`, itens);
+
+      if (!itens || itens.length === 0) {
+        throw new Error(`Nenhum item associado a este fornecedor nesta cotação`);
+      }
+
+      console.log(`📋 ${itens.length} itens encontrados para este fornecedor`);
+
+      // 4. Calcular valor total
+      const valorTotal = itens.reduce((sum, item) => {
+        return sum + (parseFloat(item.valor_total) || 0);
+      }, 0);
+
+      console.log(`💰 Valor total: R$ ${valorTotal.toFixed(2)}`);
+
+      // 5. Gerar número único para OV
+      const numeroOV = await this.gerarNumeroOrdenVenda(tenantId);
+
+      // 6. Criar ordem de venda
+      const ordemVenda = await this.db.insert('ordens_venda', {
+        tenant_id: tenantId,
+        cotacao_id: cotacaoId,
+        fornecedor_id: fornecedorId,
+        numero: numeroOV,
+        status: 'pendente',
+        valor_total: valorTotal,
+        valor_frete: resposta.valor_frete || 0,
+        prazo_entrega: resposta.prazo,
+        criado_em: new Date()
+      });
+
+      console.log(`✅ OV criada: ${numeroOV} (ID: ${ordemVenda.id})`);
+
+      // 7. Criar registro de itens da OV (pra auditoria/rastreamento)
+      for (const item of itens) {
+        await this.db.insert('ordem_venda_itens', {
+          tenant_id: tenantId,
+          ordem_venda_id: ordemVenda.id,
+          cotacao_item_id: item.id,
+          chamado_item_id: item.chamado_item_id,
+          item_catalogo_id: item.item_catalogo_id,
+          nome_item: item.nome_item,
+          quantidade: item.quantidade,
+          valor_unitario: item.valor_unitario,
+          valor_total: item.valor_total,
+          criado_em: new Date()
+        });
+      }
+
+      console.log(`✅ ${itens.length} itens adicionados à OV`);
+
+      // 8. Atualizar status da cotação para 'finalizada'
+      await this.db.update('cotacoes', cotacaoId, {
+        status: 'finalizada',
+        finalizado_em: new Date()
+      }, tenantId);
+
+      return {
+        ordem_venda_id: ordemVenda.id,
+        numero: numeroOV,
+        status: 'pendente',
+        fornecedor_id: fornecedorId,
+        valor_total: valorTotal,
+        prazo_entrega: resposta.prazo,
+        quantidade_itens: itens.length,
+        itens: itens.map(item => ({
+          id: item.id,
+          nome: item.nome_item,
+          quantidade: item.quantidade,
+          valor_unitario: item.valor_unitario,
+          valor_total: item.valor_total
+        })),
+        mensagem: `Ordem de Venda criada com sucesso para ${itens.length} item(ns)`
+      };
+
+    } catch (err) {
+      console.error(`❌ Erro ao criar OV:`, err.message);
+      throw err;
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // GERAR NÚMERO ÚNICO PARA ORDEM DE VENDA
+  // ───────────────────────────────────────────────────────────────────────
+  async gerarNumeroOrdenVenda(tenantId) {
+    const ano = new Date().getFullYear();
+    const mes = String(new Date().getMonth() + 1).padStart(2, '0');
+    const prefix = `OV-${ano}${mes}-`;
+
+    const resultado = await this.db.raw(`
+      SELECT numero FROM ordens_venda
+      WHERE tenant_id = $1 AND numero LIKE $2
+      ORDER BY numero DESC
+      LIMIT 1
+    `, [tenantId, `${prefix}%`]);
+
+    let seq = 1;
+    if (resultado.length > 0) {
+      const match = resultado[0].numero.match(/(\d+)$/);
+      if (match) {
+        seq = parseInt(match[1]) + 1;
+      }
+    }
+
+    return `${prefix}${String(seq).padStart(4, '0')}`;
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // OBTER STATUS COMPLETO DE UMA COTAÇÃO
+  // ───────────────────────────────────────────────────────────────────────
+  async obterStatusCotacao(tenantId, cotacaoId) {
+    console.log(`🔍 [CotacaoService] Obtendo status da cotação ${cotacaoId}`);
+
+    try {
+      // Buscar cotação
+      const cotacao = await this.db.selectOne('cotacoes', { id: cotacaoId }, tenantId);
+      if (!cotacao) {
+        throw new Error(`Cotação ${cotacaoId} não encontrada`);
+      }
+
+      // Buscar respostas dos fornecedores
+      const fornecedores = await this.db.raw(`
+        SELECT 
+          id,
+          fornecedor_id,
+          fornecedor_nome,
+          fornecedor_email,
+          status,
+          valor,
+          prazo,
+          valor_frete,
+          data_resposta
+        FROM cotacao_fornecedores
+        WHERE cotacao_id = $1 AND tenant_id = $2
+        ORDER BY valor ASC
+      `, [cotacaoId, tenantId]);
+
+      // Contar respondidos vs pendentes
+      const respondidos = fornecedores.filter(f => f.status === 'respondido');
+      const pendentes = fornecedores.filter(f => f.status === 'pendente');
+
+      // Encontrar melhor proposta (menor preço)
+      const melhorProposta = respondidos.length > 0 ? respondidos[0] : null;
+
+      // Buscar OV se existir
+      const ordemVenda = await this.db.selectOne('ordens_venda', {
+        cotacao_id: cotacaoId
+      }, tenantId);
+
+      return {
+        cotacao: {
+          id: cotacao.id,
+          numero: cotacao.numero,
+          status: cotacao.status,
+          modo: cotacao.modo,
+          criado_em: cotacao.criado_em,
+          enviado_em: cotacao.enviado_em,
+          finalizado_em: cotacao.finalizado_em
+        },
+        fornecedores: {
+          total: fornecedores.length,
+          respondidos: respondidos.length,
+          pendentes: pendentes.length,
+          respostas: fornecedores
+        },
+        melhorProposta: melhorProposta ? {
+          fornecedor_id: melhorProposta.fornecedor_id,
+          fornecedor_nome: melhorProposta.fornecedor_nome,
+          valor: melhorProposta.valor,
+          prazo: melhorProposta.prazo,
+          data_resposta: melhorProposta.data_resposta
+        } : null,
+        ordemVenda: ordemVenda ? {
+          id: ordemVenda.id,
+          numero: ordemVenda.numero,
+          status: ordemVenda.status,
+          criado_em: ordemVenda.criado_em
+        } : null
+      };
+
+    } catch (err) {
+      console.error(`❌ Erro ao obter status:`, err.message);
+      throw err;
+    }
+  }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // ATUALIZAR RESPOSTA MANUAL DE UM FORNECEDOR
+  // ───────────────────────────────────────────────────────────────────────
+  async atualizarRespostaFornecedor(tenantId, cotacaoId, fornecedorId, dados) {
+    console.log(`📝 [CotacaoService] Atualizando resposta do fornecedor ${fornecedorId}`);
+
+    try {
+      // 1. Buscar resposta atual
+      const atual = await this.db.selectOne('cotacao_fornecedores', {
+        cotacao_id: cotacaoId,
+        fornecedor_id: fornecedorId
+      }, tenantId);
+
+      if (!atual) {
+        throw new Error(`Fornecedor ${fornecedorId} não encontrado nesta cotação`);
+      }
+
+      // 2. Atualizar
+      const atualizado = await this.db.update('cotacao_fornecedores', atual.id, {
+        valor: dados.valor || atual.valor,
+        prazo: dados.prazo || atual.prazo,
+        valor_frete: dados.valor_frete !== undefined ? dados.valor_frete : atual.valor_frete,
+        obs: dados.obs || atual.obs,
+        status: 'respondido',
+        data_resposta: dados.data_resposta || new Date()
+      }, tenantId);
+
+      console.log(`✅ Resposta atualizada`);
+
+      return {
+        fornecedor_id: fornecedorId,
+        valor: dados.valor,
+        prazo: dados.prazo,
+        valor_frete: dados.valor_frete,
+        obs: dados.obs
+      };
+
+    } catch (err) {
+      console.error(`❌ Erro ao atualizar resposta:`, err.message);
+      throw err;
+    }
   }
 
 }

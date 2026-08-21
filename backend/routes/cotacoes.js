@@ -195,7 +195,8 @@ router.post("/chamados", tenantMiddleware, async (req, res) => {
         urgencia: item.urgencia || "media",
         categoria: item.categoria || null,
         tipo_item: item.tipo_item || null,
-        descricao: item.descricao || ""
+        descricao: item.descricao || "",
+        item_catalogo_id: item.item_catalogo_id || null
       };
       const novoItem = await DB.insert("chamado_itens", itemData, req.tenantId);
       itensInseridos.push(novoItem);
@@ -312,6 +313,18 @@ router.post("/", tenantMiddleware, async (req, res) => {
 
   } catch (err) {
     console.error("❌ Erro criar cotação:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// GET /api/cotacoes/:id - Buscar cotação completa por ID
+router.get('/:id', tenantMiddleware, async (req, res) => {
+  try {
+    const service = new CotacaoService(DB);
+    const cotacao = await service.obterCotacao(req.tenantId, req.params.id);
+    res.json({ ok: true, ...cotacao });
+  } catch (err) {
+    console.error('❌ Erro ao buscar cotação:', err.message);
     res.status(500).json({ erro: err.message });
   }
 });
@@ -467,7 +480,8 @@ router.put("/chamados/:id", tenantMiddleware, async (req, res) => {
           urgencia: item.urgencia || "media",
           categoria: item.categoria || null,
           tipo_item: item.tipo_item || null,
-          descricao: item.descricao || ""
+          descricao: item.descricao || "",
+          item_catalogo_id: item.item_catalogo_id || null      
         };
         
         const novoItem = await DB.insert("chamado_itens", itemData, tenantId);
@@ -671,6 +685,585 @@ router.put('/:cotacaoId/confirmar', tenantMiddleware, async (req, res) => {
   } catch (err) {
     console.error('❌ Erro em confirmar:', err);
     res.status(500).json({ erro: err.message });
+  }
+});
+
+// ───────────────────────────────────────────────────────────────────────
+// GET /api/cotacoes/por-chamado/:chamadoId
+// Busca chamado com itens agrupados por categoria + top 3 fornecedores
+// ───────────────────────────────────────────────────────────────────────
+router.get('/por-chamado/:chamadoId', tenantMiddleware, async (req, res) => {
+  try {
+    const { chamadoId } = req.params;
+
+    if (!chamadoId) {
+      return res.status(400).json({ erro: 'chamadoId é obrigatório' });
+    }
+
+    const resultado = await cotacaoService.buscarPorChamadoComFornecedores(
+      req.tenantId,
+      parseInt(chamadoId)
+    );
+
+    res.json({
+      ok: true,
+      ...resultado
+    });
+  } catch (err) {
+    console.error('❌ Erro em por-chamado:', err);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ───────────────────────────────────────────────────────────────────────
+// POST /api/cotacoes/salvar
+// Salva cotação em rascunho
+// ───────────────────────────────────────────────────────────────────────
+router.post('/salvar', tenantMiddleware, async (req, res) => {
+  try {
+    const { chamado_id, itens, notas } = req.body;
+
+    if (!chamado_id || !itens || itens.length === 0) {
+      return res.status(400).json({ 
+        erro: 'chamado_id e itens são obrigatórios' 
+      });
+    }
+
+    const resultado = await cotacaoService.salvarCotacao(req.tenantId, {
+      chamado_id,
+      itens,
+      notas
+    });
+
+    res.json({
+      ok: true,
+      ...resultado
+    });
+  } catch (err) {
+    console.error('❌ Erro em salvar:', err);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+router.post('/enviar', tenantMiddleware, async (req, res) => {
+  try {
+    const { cotacao_id } = req.body;
+
+    if (!cotacao_id) {
+      return res.status(400).json({ erro: 'cotacao_id é obrigatório' });
+    }
+
+    console.log(`📧 Enviando cotação ${cotacao_id} aos fornecedores...`);
+
+    // 1. Buscar cotação
+    const cotacao = await DB.selectOne('cotacoes', { id: cotacao_id }, req.tenantId);
+    if (!cotacao) {
+      return res.status(404).json({ erro: 'Cotação não encontrada' });
+    }
+
+    // 2. Buscar fornecedores que devem receber a cotação
+    const fornecedores = await DB.select(
+      'cotacao_fornecedores',
+      { cotacao_id: cotacao_id },
+      req.tenantId
+    );
+
+    if (!fornecedores || fornecedores.length === 0) {
+      return res.status(400).json({ erro: 'Nenhum fornecedor para enviar' });
+    }
+
+    console.log(`📧 Enviando para ${fornecedores.length} fornecedor(es)`);
+
+    // 3. Enviar email pra cada fornecedor
+    for (const forn of fornecedores) {
+      try {
+        // Gerar token único se não tiver
+        let token = forn.token;
+        if (!token) {
+          const crypto = require('crypto');
+          token = crypto.randomBytes(32).toString('hex');
+          await DB.update('cotacao_fornecedores', forn.id, { token }, req.tenantId);
+        }
+
+        // Montar URL do portal
+const portalUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/portal/cotacao/${cotacao_id}/${token}`;
+        // Template de email
+        const assunto = `Solicitação de Cotação - ${cotacao.numero}`;
+        const corpo = `
+          <h2>Solicitação de Cotação</h2>
+          <p>Olá ${forn.fornecedor_nome},</p>
+          <p>Recebemos uma solicitação de cotação para diversos itens.</p>
+          <p><strong>Número da Cotação:</strong> ${cotacao.numero}</p>
+          <p><strong>Data:</strong> ${new Date().toLocaleDateString('pt-BR')}</p>
+          
+          <p>
+            <a href="${portalUrl}" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">
+              Responder Cotação
+            </a>
+          </p>
+          
+          <p>O link acima levará você ao portal onde poderá visualizar os itens e enviar sua proposta.</p>
+          <p>Prazo para resposta: 48 horas</p>
+          
+          <hr>
+          <p><small>Esta é uma mensagem automática. Não responda este e-mail.</small></p>
+        `;
+
+        // AQUI: Chamar serviço de email
+        // await enviarEmailCotacao(forn.fornecedor_email, assunto, corpo);
+        
+        console.log(`✅ Email pronto para: ${forn.fornecedor_email}`);
+        
+      } catch (errEmail) {
+        console.error(`❌ Erro ao enviar email para ${forn.fornecedor_nome}:`, errEmail);
+        // Continua mesmo se um email falhar
+      }
+    }
+
+    // 4. Atualizar status da cotação
+    await DB.update('cotacoes', cotacao_id, {
+      status: 'enviada',
+      enviado_em: new Date()
+    }, req.tenantId);
+
+    res.json({
+      ok: true,
+      mensagem: `Cotação enviada para ${fornecedores.length} fornecedor(es)`,
+      total_fornecedores: fornecedores.length
+    });
+
+  } catch (err) {
+    console.error('❌ Erro ao enviar cotação:', err);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ───────────────────────────────────────────────────────────────────────
+// POST /api/cotacoes/enviar
+// Envia cotação aos fornecedores
+// ───────────────────────────────────────────────────────────────────────
+router.post('/enviar', tenantMiddleware, async (req, res) => {
+  try {
+    const { cotacao_id } = req.body;
+
+    if (!cotacao_id) {
+      return res.status(400).json({ erro: 'cotacao_id é obrigatório' });
+    }
+
+    const resultado = await cotacaoService.enviarCotacao(req.tenantId, cotacao_id);
+
+    res.json({
+      ok: true,
+      ...resultado
+    });
+  } catch (err) {
+    console.error('❌ Erro em enviar:', err);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// PUT /api/cotacoes/:id - Atualizar cotação
+router.put('/:id', tenantMiddleware, async (req, res) => {
+  try {
+    const { itens, notas } = req.body;
+    const cotacaoId = parseInt(req.params.id);
+
+    if (!itens || itens.length === 0) {
+      return res.status(400).json({ erro: 'itens são obrigatórios' });
+    }
+
+    const resultado = await cotacaoService.atualizarCotacao(req.tenantId, cotacaoId, {
+      itens,
+      notas
+    });
+
+    res.json({ ok: true, ...resultado });
+  } catch (err) {
+    console.error('❌ Erro em atualizar:', err);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// DELETE /api/cotacoes/:id - Excluir (cancelar) cotação
+router.delete('/:id', tenantMiddleware, async (req, res) => {
+  try {
+    const service = new CotacaoService(DB);
+    const result = await service.excluirCotacao(req.tenantId, req.params.id);
+    res.json({ ok: true, ...result });
+  } catch (err) {
+    console.error('❌ Erro ao excluir:', err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ───────────────────────────────────────────────────────────────────────
+// POST /api/cotacoes/:cotacaoId/ordem-venda
+// Cria ordem de venda a partir de uma cotação
+// ───────────────────────────────────────────────────────────────────────
+router.post('/:cotacaoId/ordem-venda', tenantMiddleware, async (req, res) => {
+  try {
+    const { cotacaoId } = req.params;
+    const { fornecedor_id } = req.body;
+
+    if (!cotacaoId || !fornecedor_id) {
+      return res.status(400).json({ 
+        erro: 'cotacaoId e fornecedor_id são obrigatórios' 
+      });
+    }
+
+    console.log(`📦 Criando OV para cotação ${cotacaoId}`);
+
+    const resultado = await cotacaoService.criarOrdenVenda(
+      req.tenantId,
+      parseInt(cotacaoId),
+      parseInt(fornecedor_id)
+    );
+
+    res.json({
+      ok: true,
+      ...resultado
+    });
+
+  } catch (err) {
+    console.error('❌ Erro ao criar OV:', err);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ───────────────────────────────────────────────────────────────────────
+// GET /api/cotacoes/:cotacaoId/status
+// Obter status completo de uma cotação (respostas, melhor proposta, etc)
+// ───────────────────────────────────────────────────────────────────────
+router.get('/:cotacaoId/status', tenantMiddleware, async (req, res) => {
+  try {
+    const { cotacaoId } = req.params;
+
+    if (!cotacaoId) {
+      return res.status(400).json({ erro: 'cotacaoId é obrigatório' });
+    }
+
+    console.log(`🔍 Obtendo status da cotação ${cotacaoId}`);
+
+    const status = await cotacaoService.obterStatusCotacao(
+      req.tenantId,
+      parseInt(cotacaoId)
+    );
+
+    res.json({
+      ok: true,
+      ...status
+    });
+
+  } catch (err) {
+    console.error('❌ Erro ao obter status:', err);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ───────────────────────────────────────────────────────────────────────
+// PUT /api/cotacoes/:cotacaoId/fornecedor/:fornecedorId/atualizar-resposta
+// Atualizar resposta manual de um fornecedor
+// ───────────────────────────────────────────────────────────────────────
+router.put('/:cotacaoId/fornecedor/:fornecedorId/atualizar-resposta', tenantMiddleware, async (req, res) => {
+  try {
+    const { cotacaoId, fornecedorId } = req.params;
+    const { valor, prazo, valor_frete, obs } = req.body;
+
+    if (!cotacaoId || !fornecedorId) {
+      return res.status(400).json({ 
+        erro: 'cotacaoId e fornecedorId são obrigatórios' 
+      });
+    }
+
+    console.log(`📝 Atualizando resposta: cotação ${cotacaoId}, fornecedor ${fornecedorId}`);
+
+    // Atualizar cotacao_fornecedores
+    const atualizado = await cotacaoService.atualizarRespostaFornecedor(
+      req.tenantId,
+      parseInt(cotacaoId),
+      parseInt(fornecedorId),
+      {
+        valor,
+        prazo,
+        valor_frete,
+        obs,
+        status: 'respondido',
+        data_resposta: new Date()
+      }
+    );
+
+    res.json({
+      ok: true,
+      mensagem: 'Resposta atualizada com sucesso',
+      ...atualizado
+    });
+
+  } catch (err) {
+    console.error('❌ Erro ao atualizar resposta:', err);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ───────────────────────────────────────────────────────────────────────
+// POST /api/cotacoes/:cotacaoId/fornecedores
+// Vincula fornecedor a uma cotação
+// ───────────────────────────────────────────────────────────────────────
+
+router.post('/:cotacaoId/fornecedores', tenantMiddleware, async (req, res) => {
+  try {
+    const { cotacaoId } = req.params;
+    const { fornecedor_id } = req.body;
+    const tenantId = req.tenantId;
+
+    if (!fornecedor_id) {
+      return res.status(400).json({ erro: 'fornecedor_id é obrigatório' });
+    }
+
+    // 1. Verificar se cotação existe
+    const cotacao = await DB.selectOne('cotacoes', { id: cotacaoId }, tenantId);
+    if (!cotacao) {
+      return res.status(404).json({ erro: 'Cotação não encontrada' });
+    }
+
+    // 2. Verificar se fornecedor existe
+    const fornecedor = await DB.selectOne('fornecedores', { id: fornecedor_id }, tenantId);
+    if (!fornecedor) {
+      return res.status(404).json({ erro: 'Fornecedor não encontrado' });
+    }
+
+    // 3. Gerar token único
+    const { v4: uuidv4 } = require('uuid');
+    const token = uuidv4();
+
+    // 4. Inserir em cotacao_fornecedores
+    const resultado = await DB.insert(
+      'cotacao_fornecedores',
+      {
+        tenant_id: tenantId,
+        cotacao_id: cotacaoId,
+        fornecedor_id: fornecedor_id,
+        fornecedor_nome: fornecedor.nome,
+        fornecedor_email: fornecedor.email || fornecedor.contato_email,
+        token: token,
+        status: 'pendente'
+      },
+      tenantId
+    );
+
+    return res.json({
+      ok: true,
+      cotacao_fornecedor_id: resultado.id,
+      token: token,
+      mensagem: `Fornecedor ${fornecedor.nome} vinculado com sucesso`
+    });
+
+  } catch (erro) {
+    console.error('❌ Erro ao vincular fornecedor:', erro);
+    return res.status(500).json({ 
+      erro: 'Erro ao vincular fornecedor',
+      detalhes: process.env.NODE_ENV === 'development' ? erro.message : undefined
+    });
+  }
+});
+
+// ───────────────────────────────────────────────────────────────────────
+// GET /api/cotacoes/:cotacaoId/monitorar
+// Retorna status da cotação estruturado por ITEM (para TelaMonitorarRespostas)
+// ───────────────────────────────────────────────────────────────────────
+
+router.get('/:cotacaoId/monitorar', tenantMiddleware, async (req, res) => {
+  try {
+    const { cotacaoId } = req.params;
+    const tenantId = req.tenantId;
+
+    // 1. Buscar cotação
+    const cotacao = await DB.selectOne('cotacoes', { id: cotacaoId }, tenantId);
+    if (!cotacao) {
+      return res.status(404).json({ erro: 'Cotação não encontrada' });
+    }
+
+    // 2. Buscar itens da cotação
+    const itens = await DB.select('cotacao_itens', { cotacao_id: cotacaoId }, tenantId);
+
+    // 2b. Buscar dados dos itens do chamado (nome, código, etc)
+    const chamadoItemIds = itens.map(i => i.chamado_item_id);
+    const chamadoItens = chamadoItemIds.length > 0 
+      ? await DB.select('chamado_itens', {}, tenantId).then(todos =>
+          todos.filter(ci => chamadoItemIds.includes(ci.id))
+        )
+      : [];
+
+    // 2c. Juntar informações
+    const itensComDados = itens.map(item => {
+      const chamadoItem = chamadoItens.find(ci => ci.id === item.chamado_item_id);
+      return {
+        ...item,
+        item_nome: chamadoItem?.item_nome || 'Sem nome',
+        codigo: chamadoItem?.codigo || '',
+        categoria: chamadoItem?.categoria || ''
+      };
+    });
+
+    // 3. Buscar fornecedores vinculados
+    const fornecedores = await DB.select(
+      'cotacao_fornecedores',
+      { cotacao_id: cotacaoId },
+      tenantId
+    );
+
+    // ✅ NOVO: Buscar apenas os fornecedores que foram selecionados por item
+    const selecionesPorItem = await DB.select(
+      'cotacao_fornecedor_item_selecionado',
+      { cotacao_id: cotacaoId },
+      tenantId
+    );
+
+    // 4. Buscar respostas de cada fornecedor para cada item
+    const fornecedorItens = await DB.select(
+      'cotacao_fornecedor_itens',
+      {},
+      tenantId
+    );
+
+    // Filtrar pelos fornecedores desta cotação
+    const fornecedoresIds = fornecedores.map(f => f.id);
+    const fornecedorItensFiltered = fornecedorItens.filter(fi =>
+      fornecedoresIds.includes(fi.cotacao_fornecedor_id)
+    );
+
+    // 5. Estruturar por ITEM
+   const itensEstruturados = itensComDados.map(item => {
+    // ✅ FILTRAR: Apenas fornecedores selecionados pra este item
+    const fornecedoresSelecionados = selecionesPorItem
+      .filter(sel => sel.cotacao_item_id === item.id)
+      .map(sel => {
+        const forn = fornecedores.find(f => f.fornecedor_id === sel.fornecedor_id);
+        return forn;
+      })
+      .filter(Boolean);
+
+    // Buscar respostas apenas dos fornecedores selecionados
+    const fornecedoresComResposta = fornecedoresSelecionados.map(forn => {
+      const resposta = fornecedorItensFiltered.find(
+        fi => fi.cotacao_fornecedor_id === forn.id
+      );
+
+      return {
+        id: forn.id,
+        fornecedor_id: forn.fornecedor_id,
+        nome: forn.fornecedor_nome,
+        email: forn.fornecedor_email,
+        status: forn.status,
+        valor: resposta?.valor || null,
+        frete: resposta?.frete || null,
+        prazo: resposta?.prazo || null,
+        obs: forn.obs || null,
+        data_resposta: forn.data_resposta,
+        total: resposta?.valor ? (resposta.valor + (resposta.frete || 0)) : null,
+        posicao: null
+      };
+    });
+
+      // Calcular posições (melhor, 2º, pior)
+      const comValor = fornecedoresComResposta.filter(f => f.total !== null);
+      if (comValor.length > 0) {
+        const ordenado = [...comValor].sort((a, b) => a.total - b.total);
+        ordenado.forEach((f, idx) => {
+          const fornInArray = fornecedoresComResposta.find(fn => fn.id === f.id);
+          if (fornInArray) {
+            fornInArray.posicao = idx + 1;
+          }
+        });
+      }
+
+      return {
+        id: item.id,
+        nome: item.item_nome,
+        quantidade: item.quantidade,
+        categoria: item.categoria,
+        codigo: item.codigo,
+        fornecedores: fornecedoresComResposta
+      };
+    });
+
+        console.log('DEBUG - Itens estruturados:', JSON.stringify(itensEstruturados, null, 2));
+
+    // 6. Calcular resumos
+    const totalFornecedores = fornecedores.length;
+    const respondidos = fornecedores.filter(f => f.status === 'respondido').length;
+    const pendentes = totalFornecedores - respondidos;
+
+    const itensComResposta = itensEstruturados.filter(item => 
+      item.fornecedores.some(f => f.status === 'respondido')
+    ).length;
+
+    // 7. Encontrar melhor proposta geral
+    const todasRespostas = fornecedores
+      .filter(f => f.status === 'respondido' && f.valor)
+      .map(f => ({
+        ...f,
+        total: f.valor + (f.valor_frete || 0)
+      }));
+
+    const melhorProposta = todasRespostas.length > 0
+      ? todasRespostas.reduce((a, b) => a.total < b.total ? a : b)
+      : null;
+
+      console.log('DEBUG FINAL - itensEstruturados:', JSON.stringify(itensEstruturados, null, 2));
+
+    return res.json({
+      cotacao: {
+        id: cotacao.id,
+        numero: cotacao.numero,
+        status: cotacao.status,
+        criado_em: cotacao.criado_em,
+        enviado_em: cotacao.enviado_em
+      },
+      itens: itensEstruturados,
+      resumo: {
+        total: itensEstruturados.length,
+        respondidos: itensComResposta,
+        pendentes: itensEstruturados.length - itensComResposta
+      },
+      melhorProposta
+    });
+
+  } catch (erro) {
+    console.error('❌ Erro ao buscar status cotação:', erro);
+    return res.status(500).json({
+      erro: 'Erro ao carregar status',
+      detalhes: process.env.NODE_ENV === 'development' ? erro.message : undefined
+    });
+  }
+});
+
+// POST /api/cotacoes/:cotacaoId/item-fornecedor-selecionado
+router.post('/:cotacaoId/item-fornecedor-selecionado', tenantMiddleware, async (req, res) => {
+  try {
+    const { cotacaoId } = req.params;
+    const { cotacao_item_id, fornecedor_id } = req.body;
+    const tenantId = req.tenantId;
+
+    if (!cotacao_item_id || !fornecedor_id) {
+      return res.status(400).json({ erro: 'cotacao_item_id e fornecedor_id são obrigatórios' });
+    }
+
+    await DB.insert(
+      'cotacao_fornecedor_item_selecionado',
+      {
+        tenant_id: tenantId,
+        cotacao_id: cotacaoId,
+        cotacao_item_id,
+        fornecedor_id,
+        criado_em: new Date().toISOString()
+      },
+      tenantId
+    );
+
+    return res.json({ ok: true });
+  } catch (erro) {
+    console.error('❌ Erro ao registrar seleção:', erro);
+    return res.status(500).json({ erro: 'Erro ao registrar seleção' });
   }
 });
 

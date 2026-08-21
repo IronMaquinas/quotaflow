@@ -41,6 +41,17 @@ router.delete("/:id", tenantMiddleware, async (req, res) => {
     await DB.delete("equipamentos", req.params.id, req.tenantId);
     res.json({ ok: true });
   } catch (err) {
+    // Verifica se o erro é de chave estrangeira (chamados associados)
+    if (err.message && (
+      err.message.includes('foreign key constraint') ||
+      err.message.includes('chamados_equipamento_id_fkey')
+    )) {
+      return res.status(400).json({
+        erro: 'Este equipamento possui chamados associados e não pode ser excluído. Para preservar o histórico, você pode desativá-lo em vez de excluí-lo.'
+      });
+    }
+    // Outros erros
+    console.error('❌ Erro ao deletar equipamento:', err.message);
     res.status(500).json({ erro: err.message });
   }
 });

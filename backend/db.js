@@ -241,3 +241,4 @@ async function initializeDB() {
 }
 
 module.exports = { supabase, DB, initializeDB };
+module.exports.supabase = supabase;
