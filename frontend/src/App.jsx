@@ -11,6 +11,7 @@ import TelaRelatorioNova from './components/relatorio/TelaRelatorioNova';
 import TelaHistoricoPrecosNova from './components/historico/TelaHistoricoPrecosNova';
 import TelaInteligenciaNova from './components/inteligencia/TelaInteligenciaNova';
 import TelaBenchmarkNova from './components/benchmark/TelaBenchmarkNova';
+import TelaPortalFornecedor from './components/portal/TelaPortalFornecedor';
 import TelaLogin from './TelaLogin';
 import apiService from './services/apiService';
 import TelaCatalogo from "./components/catalogo/TelaCatalogo";
@@ -190,10 +191,23 @@ export default function App(){
     navegar("plano");
   };
 
-  // Mostrar login se não autenticado
-  if (!usuario) return <TelaLogin onLogin={login}/>;
+  // ✅ ROTA PÚBLICA PORTAL (SEM LOGIN)
+const hashAtual = window.location.hash;
+console.log('🔍 Hash COMPLETO:', hashAtual);
 
-  const perfil = PERFIS[usuario.perfil];
+if (hashAtual.startsWith('#/portal/cotacao/')) {
+  console.log('✅ Abrindo portal sem login!');
+  return (
+    <div style={{fontFamily:"'DM Sans','Segoe UI',sans-serif",background:C.bg,height:"100vh",color:C.text}}>
+      <TelaPortalFornecedor />
+    </div>
+  );
+}
+
+// Mostrar login se não autenticado
+if (!usuario) return <TelaLogin onLogin={login}/>;
+
+const perfil = PERFIS[usuario.perfil];
 
   // Nav items filtrados por perfil
   const navItems = [
@@ -295,7 +309,7 @@ export default function App(){
                 fontFamily: "inherit",
                 width: "100%",
               }}
-            >
+            >ß
               Sair
             </button>
           </div>
@@ -322,8 +336,6 @@ export default function App(){
             </div>
           </div>
         )}
-
-
 
         {/* Acesso negado */}
         {!temAcesso(tela)&&tela!=="home"&&(
@@ -417,7 +429,7 @@ export default function App(){
         )}
         {temAcesso(tela)&&tela==="fornecedorportal"&&
           <div style={{flex:1,overflowY:"auto"}}>
-            <TelaFornecedorPortal/>
+            <TelaPortalFornecedor/>
           </div>}
         {temAcesso(tela) && tela === "usuarios" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
@@ -1402,398 +1414,6 @@ Departamento de Compras`}
     </div>
   );
 }
-
-// ─────────────────────────────────────────────
-// PORTAL FORNECEDOR — MULTI-ITEM
-// ─────────────────────────────────────────────
-// Mock de cotação com múltiplos itens — simula o que viria via link único
-const MOCK_COTACAO_PORTAL = {
-  ref: "COT-2026-0010",
-  empresa: "Indústria Exemplo Ltda",
-  comprador: "Mariana Costa",
-  fornecedor: "Rolamentos Brasil",
-  prazoResposta: "2026-03-18",
-  token: "tok_portal_demo",
-  itens: [
-    { id:1, peca:"Rolamento SKF 6205",       codigo:"SKF-6205",    qtd:2, equipamento:"Compressor AR-03",    urgencia:"alta"  },
-    { id:2, peca:"Mancal UCF205",             codigo:"UCF205",      qtd:1, equipamento:"Esteira TR-07",       urgencia:"alta"  },
-    { id:3, peca:"Correia Dentada T5-600",    codigo:"T5-600-10",   qtd:3, equipamento:"Esteira TR-07",       urgencia:"baixa" },
-    { id:4, peca:"Filtro Hidráulico 10µ",     codigo:"FH-10-G1",    qtd:2, equipamento:"Prensa HP-12",        urgencia:"media" },
-    { id:5, peca:"Chave Fim de Curso WL",     codigo:"WL-CFC-01",   qtd:1, equipamento:"Transportador TC-04", urgencia:"media" },
-  ],
-};
-
-function TelaFornecedorPortal() {
-  const cot = MOCK_COTACAO_PORTAL;
-
-  // Estado por item: valor, frete (CIF/FOB), grupo (null = individual)
-  const [linhas, setLinhas] = useState(
-    cot.itens.map(it => ({ id: it.id, valor:"", frete:"CIF", grupo: null, valorFreteInd:"" }))
-  );
-  // Grupos de frete: { id, nome, valorFrete }
-  const [grupos, setGrupos] = useState([
-    { id:"G1", nome:"Volume 1", valorFrete:"" },
-  ]);
-  const [prazoGeral, setPrazoGeral] = useState("");
-  const [obs, setObs] = useState("");
-  const [step, setStep] = useState("preencher"); // preencher | revisar | enviado
-
-  const setLinha = (id, campo, val) =>
-    setLinhas(prev => prev.map(l => l.id===id ? {...l, [campo]:val} : l));
-
-  const addGrupo = () => {
-    const ids = grupos.map(g=>parseInt(g.id.replace("G",""))||0);
-    const next = Math.max(...ids,0)+1;
-    setGrupos(prev=>[...prev,{id:`G${next}`,nome:`Volume ${next}`,valorFrete:""}]);
-  };
-  const removeGrupo = (gid) => {
-    setGrupos(prev=>prev.filter(g=>g.id!==gid));
-    setLinhas(prev=>prev.map(l=>l.grupo===gid?{...l,grupo:null}:l));
-  };
-  const setGrupoFrete = (gid, val) =>
-    setGrupos(prev=>prev.map(g=>g.id===gid?{...g,valorFrete:val}:g));
-
-  // Calcular frete rateado por item
-  const freteRateado = (linha) => {
-    if (linha.frete==="CIF") return 0;
-    if (!linha.grupo) return parseFloat(linha.valorFreteInd||0); // FOB individual
-    const grupo = grupos.find(g=>g.id===linha.grupo);
-    if (!grupo?.valorFrete) return 0;
-    const membros = linhas.filter(l=>l.grupo===linha.grupo&&l.valor);
-    const totalGrupo = membros.reduce((s,l)=>s+parseFloat(l.valor||0),0);
-    if (!totalGrupo) return 0;
-    const proporcao = parseFloat(linha.valor||0)/totalGrupo;
-    return parseFloat(grupo.valorFrete)*proporcao;
-  };
-
-  // Custo total por item
-  const custoItem = (linha) => {
-    const val = parseFloat(linha.valor||0);
-    if (!val) return null;
-    return val + freteRateado(linha);
-  };
-
-  // Validação: todos os itens com valor + prazo geral
-  const linhasOK = linhas.filter(l=>l.valor);
-  const podeRevisar = linhasOK.length===linhas.length && prazoGeral;
-
-  // Totais para resumo
-  const totalPecas = linhas.reduce((s,l)=>s+parseFloat(l.valor||0),0);
-  const totalFrete = grupos.reduce((s,g)=>s+parseFloat(g.valorFrete||0),0)
-    + linhas.filter(l=>l.frete==="FOB"&&!l.grupo).reduce((s,l)=>s+parseFloat(l.valorFreteInd||0),0);
-  const totalGeral = totalPecas + totalFrete;
-
-  // ── TELA ENVIADO ──
-  if (step==="enviado") return (
-    <div style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minHeight:"100%",gap:20,padding:40}}>
-      <div style={{fontSize:52}}>🎉</div>
-      <div style={{fontSize:20,fontWeight:700,color:C.text}}>Proposta enviada com sucesso!</div>
-      <div style={{...s.card,padding:"20px 28px",minWidth:320}}>
-        <div style={{fontSize:11,color:C.muted,marginBottom:12,letterSpacing:"0.08em"}}>RESUMO — {cot.ref}</div>
-        {cot.itens.map((it,i)=>{
-          const l = linhas.find(l=>l.id===it.id);
-          const ct = custoItem(l)||0;
-          return(
-            <div key={it.id} style={{display:"flex",justifyContent:"space-between",padding:"6px 0",borderBottom:`1px solid ${C.border}22`,fontSize:13}}>
-              <span style={{color:C.textSub}}>{it.peca}</span>
-              <span style={{color:C.success,fontWeight:600}}>{fmtBRL(ct)}</span>
-            </div>
-          );
-        })}
-        <div style={{display:"flex",justifyContent:"space-between",marginTop:10,paddingTop:10,borderTop:`1px solid ${C.border}`,fontSize:15,fontWeight:700}}>
-          <span style={{color:C.text}}>Total do pedido</span>
-          <span style={{color:C.success}}>{fmtBRL(totalGeral)}</span>
-        </div>
-        <div style={{fontSize:12,color:C.muted,marginTop:8}}>Prazo: {prazoGeral} dias úteis</div>
-      </div>
-      <div style={{fontSize:13,color:C.muted,textAlign:"center",maxWidth:360}}>
-        Um e-mail de confirmação foi enviado para você com todos os dados desta proposta.
-      </div>
-    </div>
-  );
-
-  // ── TELA REVISÃO ──
-  if (step==="revisar") return (
-    <div style={{maxWidth:620,margin:"0 auto",padding:"32px 20px",overflowY:"auto"}}>
-      <div style={{...s.card,padding:"14px 20px",marginBottom:20,display:"flex",gap:10,alignItems:"center"}}>
-        <div style={{width:4,height:28,background:C.success,borderRadius:2}}/>
-        <div>
-          <div style={{fontSize:14,fontWeight:700,color:C.text}}>{cot.empresa} · {cot.ref}</div>
-          <div style={{fontSize:11,color:C.muted}}>Revise sua proposta antes de enviar</div>
-        </div>
-      </div>
-
-      <div style={{...s.card,overflow:"hidden",marginBottom:16}}>
-        <div style={{padding:"12px 18px",borderBottom:`1px solid ${C.border}`,fontSize:11,color:C.muted,letterSpacing:"0.08em"}}>ITENS DA PROPOSTA</div>
-        <div style={{display:"grid",gridTemplateColumns:"2fr 80px 80px 80px 80px 100px",padding:"9px 18px",background:C.bg,borderBottom:`1px solid ${C.border}`,fontSize:10,color:C.muted,letterSpacing:"0.07em"}}>
-          <span>ITEM</span><span>QTD</span><span>VL UNIT.</span><span>FRETE</span><span>GRUPO</span><span style={{textAlign:"right"}}>CUSTO TOTAL</span>
-        </div>
-        {cot.itens.map((it,i)=>{
-          const l = linhas.find(l=>l.id===it.id);
-          const fr = freteRateado(l);
-          const ct = custoItem(l);
-          const g = grupos.find(g=>g.id===l.grupo);
-          return(
-            <div key={it.id} style={{display:"grid",gridTemplateColumns:"2fr 80px 80px 80px 80px 100px",padding:"11px 18px",borderBottom:i<cot.itens.length-1?`1px solid ${C.border}22`:"none",alignItems:"center"}}>
-              <div>
-                <div style={{fontSize:13,color:C.text,fontWeight:500}}>{it.peca}</div>
-                <div style={{fontSize:10,color:C.muted}}>{it.codigo}</div>
-              </div>
-              <span style={{fontSize:12,color:C.textSub}}>{it.qtd}x</span>
-              <span style={{fontSize:13,color:C.text,fontWeight:600}}>{fmtBRL(parseFloat(l.valor))}</span>
-              <span style={{...s.tag(l.frete==="CIF"?C.success:C.warn),fontSize:9}}>{l.frete}</span>
-              <span style={{fontSize:11,color:C.muted}}>{g?g.nome:l.frete==="FOB"?`Individual${l.valorFreteInd?` (${fmtBRL(parseFloat(l.valorFreteInd))})`:""}`:"—"}</span>
-              <div style={{textAlign:"right"}}>
-                <div style={{fontSize:14,fontWeight:700,color:C.success}}>{fmtBRL(ct)}</div>
-                {fr>0&&<div style={{fontSize:10,color:C.muted}}>+{fmtBRL(fr)} frete</div>}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Totais */}
-      <div style={{...s.card,padding:"16px 20px",marginBottom:16}}>
-        <div style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:6}}>
-          <span style={{color:C.textSub}}>Subtotal peças</span>
-          <span style={{color:C.text}}>{fmtBRL(totalPecas)}</span>
-        </div>
-        {grupos.filter(g=>g.valorFrete).map(g=>(
-          <div key={g.id} style={{display:"flex",justifyContent:"space-between",fontSize:13,marginBottom:6}}>
-            <span style={{color:C.textSub}}>Frete {g.nome}</span>
-            <span style={{color:C.warn}}>{fmtBRL(parseFloat(g.valorFrete))}</span>
-          </div>
-        ))}
-        <div style={{display:"flex",justifyContent:"space-between",fontSize:16,fontWeight:700,paddingTop:10,marginTop:6,borderTop:`1px solid ${C.border}`}}>
-          <span style={{color:C.text}}>Total do pedido</span>
-          <span style={{color:C.success}}>{fmtBRL(totalGeral)}</span>
-        </div>
-        <div style={{fontSize:12,color:C.muted,marginTop:6}}>Prazo: {prazoGeral} dias úteis</div>
-      </div>
-
-      <div style={{display:"flex",gap:10}}>
-        <button onClick={()=>setStep("preencher")} style={{...s.btn(true),flex:1,background:C.surface,color:C.textSub}}>← Editar</button>
-        <button onClick={()=>setStep("enviado")} style={{...s.btn(true,"#238636"),flex:2,padding:14,fontSize:15}}>✓ Confirmar e enviar proposta</button>
-      </div>
-      <div style={{fontSize:11,color:C.muted,textAlign:"center",marginTop:10}}>Sua proposta é confidencial. Outros fornecedores não têm acesso aos seus valores.</div>
-    </div>
-  );
-
-  // ── TELA PRINCIPAL — PREENCHIMENTO ──
-  return (
-    <div style={{maxWidth:760,margin:"0 auto",padding:"28px 20px",overflowY:"auto"}}>
-      {/* Header */}
-      <div style={{...s.card,padding:"14px 20px",marginBottom:16,display:"flex",gap:10,alignItems:"center",justifyContent:"space-between",flexWrap:"wrap"}}>
-        <div style={{display:"flex",gap:10,alignItems:"center"}}>
-          <div style={{width:4,height:28,background:C.success,borderRadius:2}}/>
-          <div>
-            <div style={{fontSize:14,fontWeight:700,color:C.text}}>{cot.empresa}</div>
-            <div style={{fontSize:11,color:C.muted}}>Cotação {cot.ref} · Responder até {fmtD(cot.prazoResposta)}</div>
-          </div>
-        </div>
-        <span style={{...s.tag(urgCfg["alta"].c),fontSize:10}}>{cot.itens.filter(i=>i.urgencia==="alta").length} item(ns) urgente(s)</span>
-      </div>
-
-      {/* Instrução */}
-      <div style={{background:"#0f1e35",border:`1px solid ${C.accent}33`,borderRadius:8,padding:"12px 16px",marginBottom:16,fontSize:12,color:C.textSub,lineHeight:1.8}}>
-        <span style={{color:C.accent,fontWeight:600}}>ℹ Instruções de preenchimento: </span>
-        Para cada item informe o valor unitário e a modalidade de frete.
-        <strong style={{color:C.text}}> CIF</strong> = frete incluso no preço.
-        <strong style={{color:C.text}}> FOB</strong> = frete cobrado à parte.
-        Se múltiplos itens compartilham o mesmo volume de entrega, agrupe-os e informe o frete do grupo — o sistema rateia automaticamente pelo valor de cada item.
-      </div>
-
-      {/* Tabela de itens */}
-      <div style={{...s.card,overflow:"hidden",marginBottom:14}}>
-        <div style={{padding:"12px 16px",borderBottom:`1px solid ${C.border}`,fontSize:11,color:C.muted,letterSpacing:"0.08em"}}>
-          ITENS SOLICITADOS — {cot.itens.length} SKU(s)
-        </div>
-        {/* Header */}
-        <div style={{display:"grid",gridTemplateColumns:"2fr 50px 120px 130px 160px 110px",padding:"9px 16px",background:C.bg,borderBottom:`1px solid ${C.border}`,fontSize:10,color:C.muted,letterSpacing:"0.07em",gap:8}}>
-          <span>ITEM / CÓDIGO</span><span>QTD</span><span>VALOR UNIT. (R$)</span><span>MODALIDADE</span><span>GRUPO DE FRETE</span><span style={{textAlign:"right"}}>CUSTO TOTAL</span>
-        </div>
-        {cot.itens.map((it,i)=>{
-          const l = linhas.find(l=>l.id===it.id);
-          const ct = custoItem(l);
-          const fr = freteRateado(l);
-          return(
-            <div key={it.id} style={{display:"grid",gridTemplateColumns:"2fr 50px 120px 130px 160px 110px",padding:"12px 16px",borderBottom:i<cot.itens.length-1?`1px solid ${C.border}22`:"none",alignItems:"center",gap:8,background:l.valor?"transparent":"#0d111a"}}>
-              {/* Item */}
-              <div>
-                <div style={{display:"flex",gap:6,alignItems:"center"}}>
-                  <span style={{...s.tag(urgCfg[it.urgencia].c),fontSize:9}}>{urgCfg[it.urgencia].l}</span>
-                  <span style={{fontSize:13,color:C.text,fontWeight:500}}>{it.peca}</span>
-                </div>
-                <div style={{fontSize:10,color:C.accent,marginTop:2,fontFamily:"'IBM Plex Mono',monospace"}}>{it.codigo} · {it.equipamento}</div>
-              </div>
-              {/* Qtd */}
-              <span style={{fontSize:13,color:C.textSub,fontWeight:600}}>{it.qtd}x</span>
-              {/* Valor */}
-              <input type="number" value={l.valor} onChange={e=>setLinha(it.id,"valor",e.target.value)}
-                placeholder="0,00"
-                style={{...s.input,fontSize:14,fontWeight:600,padding:"7px 10px",
-                  border:`1px solid ${l.valor?C.success:C.border}`,
-                  background:l.valor?"#0f2f1a":C.bg}}/>
-              {/* CIF / FOB toggle */}
-              <div style={{display:"flex",gap:4}}>
-                {["CIF","FOB"].map(op=>(
-                  <div key={op} onClick={()=>setLinha(it.id,"frete",op)}
-                    style={{flex:1,padding:"6px 4px",borderRadius:6,border:`1px solid ${l.frete===op?(op==="CIF"?C.success:C.warn):C.border}`,background:l.frete===op?(op==="CIF"?"#0f2f1a":"#3f2a0a"):C.bg,cursor:"pointer",textAlign:"center",transition:"all .1s"}}>
-                    <div style={{fontSize:12,fontWeight:700,color:l.frete===op?(op==="CIF"?C.success:C.warn):C.muted}}>{op}</div>
-                    <div style={{fontSize:9,color:C.muted}}>{op==="CIF"?"incluso":"à parte"}</div>
-                  </div>
-                ))}
-              </div>
-              {/* Grupo de frete */}
-              <div>
-                {l.frete==="FOB" ? (
-                  <div style={{display:"flex",flexDirection:"column",gap:6}}>
-                    <select value={l.grupo||""} onChange={e=>setLinha(it.id,"grupo",e.target.value||null)}
-                      style={{...s.input,padding:"7px 8px",fontSize:12,appearance:"none"}}>
-                      <option value="">Individual</option>
-                      {grupos.map(g=><option key={g.id} value={g.id}>{g.nome}</option>)}
-                    </select>
-                    {/* Campo frete individual — só aparece quando FOB + Individual */}
-                    {!l.grupo&&(
-                      <input type="number" value={l.valorFreteInd}
-                        onChange={e=>setLinha(it.id,"valorFreteInd",e.target.value)}
-                        placeholder="Frete R$ 0,00"
-                        style={{...s.input,padding:"6px 8px",fontSize:12,
-                          border:`1px solid ${l.valorFreteInd?C.warn:C.border}`,
-                          background:l.valorFreteInd?"#3f2a0a":C.bg}}/>
-                    )}
-                  </div>
-                ) : (
-                  <span style={{fontSize:11,color:C.muted}}>— (CIF incluso)</span>
-                )}
-              </div>
-              {/* Custo total */}
-              <div style={{textAlign:"right"}}>
-                {ct!=null ? (
-                  <>
-                    <div style={{fontSize:14,fontWeight:700,color:C.success}}>{fmtBRL(ct)}</div>
-                    {fr>0&&<div style={{fontSize:10,color:C.muted}}>+{fmtBRL(fr)} frete</div>}
-                  </>
-                ) : (
-                  <span style={{fontSize:12,color:C.border}}>—</span>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Grupos de frete */}
-      <div style={{...s.card,padding:"16px 18px",marginBottom:14}}>
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-          <div style={{fontSize:11,color:C.muted,letterSpacing:"0.08em"}}>🚚 GRUPOS DE FRETE (FOB)</div>
-          <button onClick={addGrupo} style={{background:"#1e2a3f",border:`1px solid ${C.accent}`,borderRadius:6,padding:"5px 12px",color:C.accent,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>
-            + Adicionar grupo
-          </button>
-        </div>
-        {grupos.length===0&&<div style={{fontSize:12,color:C.muted}}>Nenhum grupo criado. Crie grupos para ratear o frete entre itens do mesmo volume.</div>}
-        <div style={{display:"flex",flexDirection:"column",gap:8}}>
-          {grupos.map(g=>{
-            const membros = linhas.filter(l=>l.grupo===g.id);
-            const totalMembros = membros.reduce((s,l)=>s+parseFloat(l.valor||0),0);
-            return(
-              <div key={g.id} style={{background:C.bg,border:`1px solid ${C.border}`,borderRadius:8,padding:"12px 14px"}}>
-                <div style={{display:"flex",gap:10,alignItems:"center",flexWrap:"wrap"}}>
-                  <div style={{width:8,height:8,borderRadius:"50%",background:C.warn,flexShrink:0}}/>
-                  <span style={{fontSize:13,fontWeight:600,color:C.text,minWidth:80}}>{g.nome}</span>
-                  {/* Itens do grupo */}
-                  <div style={{flex:1,display:"flex",gap:4,flexWrap:"wrap"}}>
-                    {membros.length===0
-                      ? <span style={{fontSize:11,color:C.muted}}>Nenhum item — selecione "Grupo" na linha do item</span>
-                      : membros.map(l=>{
-                          const it=cot.itens.find(i=>i.id===l.id);
-                          return <span key={l.id} style={{...s.tag(C.warn),fontSize:9}}>{it?.codigo}</span>;
-                        })
-                    }
-                  </div>
-                  {/* Valor do frete */}
-                  <div style={{display:"flex",alignItems:"center",gap:8,flexShrink:0}}>
-                    <span style={{fontSize:11,color:C.muted}}>Frete total:</span>
-                    <input type="number" value={g.valorFrete} onChange={e=>setGrupoFrete(g.id,e.target.value)}
-                      placeholder="R$ 0,00" style={{...s.input,width:100,padding:"5px 8px",fontSize:13}}/>
-                    {totalMembros>0&&g.valorFrete&&(
-                      <span style={{fontSize:10,color:C.muted,whiteSpace:"nowrap"}}>
-                        {((parseFloat(g.valorFrete)/totalMembros)*100).toFixed(0)}% do subtotal
-                      </span>
-                    )}
-                  </div>
-                  <button onClick={()=>removeGrupo(g.id)} style={{background:"transparent",border:"none",color:"#ef4444",fontSize:14,cursor:"pointer",flexShrink:0}}>✕</button>
-                </div>
-                {/* Rateio preview */}
-                {membros.length>0&&g.valorFrete&&totalMembros>0&&(
-                  <div style={{marginTop:10,paddingTop:10,borderTop:`1px solid ${C.border}22`,display:"flex",gap:12,flexWrap:"wrap"}}>
-                    {membros.map(l=>{
-                      const it=cot.itens.find(i=>i.id===l.id);
-                      const prop=parseFloat(l.valor||0)/totalMembros;
-                      const frItem=parseFloat(g.valorFrete)*prop;
-                      return(
-                        <div key={l.id} style={{fontSize:11,color:C.muted}}>
-                          <span style={{color:C.textSub}}>{it?.codigo}</span>: {fmtBRL(frItem)} ({(prop*100).toFixed(0)}%)
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Prazo geral + obs */}
-      <div style={{...s.card,padding:"16px 18px",marginBottom:16}}>
-        <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:14}}>
-          <div>
-            <label style={s.label}>PRAZO DE ENTREGA (DIAS ÚTEIS) *</label>
-            <input type="number" value={prazoGeral} onChange={e=>setPrazoGeral(e.target.value)}
-              placeholder="Ex: 3" style={{...s.input,fontSize:16,fontWeight:600}}/>
-            <div style={{fontSize:11,color:C.muted,marginTop:4}}>Prazo único para todos os itens</div>
-          </div>
-          <div>
-            <label style={s.label}>OBSERVAÇÕES GERAIS (OPCIONAL)</label>
-            <textarea value={obs} onChange={e=>setObs(e.target.value)} rows={2}
-              placeholder="Condições de pagamento, validade da proposta, marcas alternativas..."
-              style={{...s.input,resize:"none"}}/>
-          </div>
-        </div>
-      </div>
-
-      {/* Totalizador e botão */}
-      <div style={{...s.card,padding:"16px 20px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",flexWrap:"wrap",gap:12}}>
-        <div style={{display:"flex",gap:24,flexWrap:"wrap"}}>
-          <div><div style={{fontSize:10,color:C.muted,marginBottom:2}}>SUBTOTAL PEÇAS</div><div style={{fontSize:16,fontWeight:700,color:C.text}}>{fmtBRL(totalPecas)}</div></div>
-          <div><div style={{fontSize:10,color:C.muted,marginBottom:2}}>TOTAL FRETE</div><div style={{fontSize:16,fontWeight:700,color:C.warn}}>{fmtBRL(totalFrete)}</div></div>
-          <div style={{borderLeft:`1px solid ${C.border}`,paddingLeft:24}}>
-            <div style={{fontSize:10,color:C.muted,marginBottom:2}}>TOTAL DO PEDIDO</div>
-            <div style={{fontSize:20,fontWeight:700,color:C.success}}>{fmtBRL(totalGeral)}</div>
-          </div>
-        </div>
-        <div style={{display:"flex",gap:8,alignItems:"center"}}>
-          <div style={{fontSize:12,color:C.muted,textAlign:"right"}}>
-            {linhasOK.length}/{linhas.length} itens preenchidos
-            {!prazoGeral&&" · prazo obrigatório"}
-          </div>
-          <button onClick={()=>podeRevisar&&setStep("revisar")} disabled={!podeRevisar}
-            style={{...s.btn(podeRevisar,"#238636"),padding:"10px 24px",fontSize:14,whiteSpace:"nowrap"}}>
-            Revisar proposta →
-          </button>
-        </div>
-      </div>
-      <div style={{fontSize:11,color:C.muted,textAlign:"center"}}>Sua proposta é confidencial. Outros fornecedores não têm acesso aos seus valores.</div>
-    </div>
-  );
-}
-
-// ─────────────────────────────────────────────
-// CUSTO TOTAL (peça + frete)
-// ─────────────────────────────────────────────
-const custoTotal = f => (f.valor||0) + (f.valorFrete||0);
-const getMenorTotal = fs => { const vs=fs.filter(f=>f.valor!=null).map(f=>custoTotal(f)); return vs.length?Math.min(...vs):null; };
 
 // ─────────────────────────────────────────────
 // TELA: BENCHMARK DE MERCADO

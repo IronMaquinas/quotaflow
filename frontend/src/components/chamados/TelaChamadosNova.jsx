@@ -1,3 +1,5 @@
+// frontend/src/components/chamados/TelaChamadosNova.jsx
+
 import { useState, useEffect, useRef } from "react";
 import { useChamados } from "../../hooks/useChamados";
 import { useEquipamentos } from "../../hooks/useEquipamentos";
@@ -106,21 +108,50 @@ useEffect(() => {
       return Math.max(0, Math.min(100, ((maxLen - distancia) / maxLen) * 100));
     };
 
-    const sugestoes = catalogoItens
-      .map(item => ({
-        ...item,
-        similaridade: calcularSimilaridade(termo, item.nome)
-      }))
-      .filter(item => item.similaridade >= 60)
-      .sort((a, b) => b.similaridade - a.similaridade)
-      .slice(0, 5);
+    const termoBuscado = normalizarTexto(termo);
+    const termoOriginal = termo.toLowerCase();
+
+    // 🆕 ESTRATÉGIA 1: Busca por INCLUSÃO (contém a palavra)
+    const porInclusao = catalogoItens.filter(item => {
+      const nomeNorm = normalizarTexto(item.nome);
+      const nomeLower = item.nome.toLowerCase();
+      
+      // Verifica se contém como substring
+      return nomeNorm.includes(termoBuscado) || nomeLower.includes(termoOriginal);
+    });
+
+    let sugestoes;
+
+    if (porInclusao.length > 0) {
+      // Se encontrou por inclusão, usa esses resultados
+      sugestoes = porInclusao
+        .map(item => ({
+          ...item,
+          similaridade: calcularSimilaridade(termo, item.nome),
+          tipo: 'inclusao'
+        }))
+        .sort((a, b) => b.similaridade - a.similaridade)
+        .slice(0, 5);
+    } else {
+      // 🆕 ESTRATÉGIA 2: Levenshtein com threshold MAIS BAIXO
+      sugestoes = catalogoItens
+        .map(item => ({
+          ...item,
+          similaridade: calcularSimilaridade(termo, item.nome),
+          tipo: 'levenshtein'
+        }))
+        .filter(item => item.similaridade >= 40) // 🆕 REDUZIDO de 60 para 40!
+        .sort((a, b) => b.similaridade - a.similaridade)
+        .slice(0, 5);
+    }
 
     setItemSugestoes(prev => ({ ...prev, [itemId]: sugestoes }));
     setShowSugestoes(prev => ({ ...prev, [itemId]: sugestoes.length > 0 }));
   }
 
-  function selecionarSugestao(itemId, nomeItem) {
+  function selecionarSugestao(itemId, nomeItem, catalogoId) {
     atualizarItem(itemId, "item_nome", nomeItem);
+    atualizarItem(itemId, "item_catalogo_id", catalogoId);  // 🆕
     setItemSugestoes(prev => ({ ...prev, [itemId]: [] }));
     setShowSugestoes(prev => ({ ...prev, [itemId]: false }));
   }
@@ -200,7 +231,8 @@ useEffect(() => {
         urgencia: item.urgencia,
         categoria: item.categoria,
         tipo_item: item.tipo_item,
-        descricao: item.descricao
+        descricao: item.descricao,
+        item_catalogo_id: item.item_catalogo_id || null
       }))
     };
 
@@ -393,7 +425,7 @@ useEffect(() => {
                             {itemSugestoes[item.id].map((sugestao) => (
                               <div
                                 key={sugestao.id}
-                                onClick={() => selecionarSugestao(item.id, sugestao.nome)}
+                                  onClick={() => selecionarSugestao(item.id, sugestao.nome, sugestao.id)}
                                 style={{
                                   padding: "10px 12px",
                                   cursor: "pointer",

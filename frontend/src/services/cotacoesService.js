@@ -110,6 +110,139 @@ export const cotacoesService = {
       console.error('❌ Erro ao gerar cotações:', err);
       throw err;
     }
+  },
+
+  async buscarChamadoComItens(accessToken, chamadoId) {
+    const response = await fetch(`${API_URL}/cotacoes/por-chamado/${chamadoId}`, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+    if (!response.ok) {
+      const erro = await response.json();
+      throw new Error(erro.erro || "Erro ao buscar chamado");
+    }
+    return response.json();
+  },
+
+  async salvarCotacao(accessToken, payload) {
+    const response = await fetch(`${API_URL}/cotacoes/salvar`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify(payload),
+    });
+    if (!response.ok) {
+      const erro = await response.json();
+      throw new Error(erro.erro || "Erro ao salvar cotação");
+    }
+    return response.json();
+  },
+
+  async enviarCotacao(accessToken, cotacaoId) {
+    const response = await fetch(`${API_URL}/cotacoes/enviar`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ cotacao_id: cotacaoId }),
+    });
+    if (!response.ok) {
+      const erro = await response.json();
+      throw new Error(erro.erro || "Erro ao enviar cotação");
+    }
+    return response.json();
+  },
+
+    async atualizarCotacao(token, cotacaoId, dados) {
+    const url = `${API_URL}/cotacoes/${cotacaoId}`;
+    const response = await fetch(url, {
+      method: 'PUT',
+      headers: { 'Authorization': `Bearer ${token}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify(dados)
+    });
+    if (!response.ok) throw new Error(await response.text());
+    return response.json();
+  },
+
+  async excluirCotacao(token, cotacaoId) {
+    const url = `${API_URL}/cotacoes/${cotacaoId}`;
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) throw new Error(await response.text());
+    return response.json();
+  },
+
+  async buscarDetalhes(token, id) {
+    const url = `${API_URL}/cotacoes/${id}`;
+    const response = await fetch(url, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!response.ok) throw new Error(await response.text());
+    return response.json();
+  },
+
+  async criarOrdenVenda(accessToken, cotacaoId, fornecedorId) {
+    const response = await fetch(`${API_URL}/cotacoes/${cotacaoId}/ordem-venda`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ fornecedor_id: fornecedorId }),
+    });
+
+    if (!response.ok) {
+      const erro = await response.json();
+      throw new Error(erro.erro || "Erro ao criar ordem de venda");
+    }
+
+    return response.json();
+  },
+
+  async obterStatusCotacao(accessToken, cotacaoId) {
+  const response = await fetch(`${API_URL}/cotacoes/${cotacaoId}/monitorar`, {
+      method: "GET",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+    });
+
+    if (!response.ok) {
+      const erro = await response.json();
+      throw new Error(erro.erro || "Erro ao obter status");
+    }
+
+    return response.json();
+  },
+
+  async atualizarRespostaFornecedor(accessToken, cotacaoId, fornecedorId, dados) {
+    const response = await fetch(
+      `${API_URL}/cotacoes/${cotacaoId}/fornecedor/${fornecedorId}/atualizar-resposta`,
+      {
+        method: "PUT",
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(dados),
+      }
+    );
+
+    if (!response.ok) {
+      const erro = await response.json();
+      throw new Error(erro.erro || "Erro ao atualizar resposta");
+    }
+
+    return response.json();
   }
 
 };

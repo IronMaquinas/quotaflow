@@ -32,7 +32,7 @@ export function useCotacoes(accessToken) {
   // Carregar ao montar componente
   useEffect(() => {
     carregar();
-  }, [carregar]);
+  }, []);
 
   // ─────────────────────────────────────────────────────────────────────────
   // CRIAR COTAÇÃO
@@ -93,6 +93,22 @@ export function useCotacoes(accessToken) {
     },
     [cotacoes]
   );
+
+  const buscarDetalhesCotacao = useCallback(async (id) => {
+      console.log('🔍 buscarDetalhesCotacao - id:', id);
+
+    try {
+      setErro(null);
+      setLoading(true);
+      const data = await cotacoesService.buscarDetalhes(accessToken, id);
+      return data;
+    } catch (err) {
+      setErro(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [accessToken]);
 
   // Buscar itens similares
   async function buscarSimilares(termo, limite = 5) {
@@ -257,6 +273,183 @@ export function useCotacoes(accessToken) {
     [cotacoes]
   );
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // NOVO: BUSCAR CHAMADO COM ITENS AGRUPADOS POR CATEGORIA + FORNECEDORES
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const buscarChamadoComItens = useCallback(
+    async (chamadoId) => {
+      try {
+        setErro(null);
+        setLoading(true);
+
+        const response = await cotacoesService.buscarChamadoComItens(
+          accessToken,
+          chamadoId
+        );
+
+        console.log(`✅ Chamado carregado:`, response);
+        return response;
+      } catch (err) {
+        setErro(err.message);
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [accessToken]
+  );
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // NOVO: SALVAR COTAÇÃO (RASCUNHO)
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const salvarCotacao = useCallback(
+    async (chamadoId, itens, notas = "") => {
+     console.log('🔍 [salvarCotacao] chamadoId:', chamadoId, 'itens:', itens);
+     
+      try {
+        setErro(null);
+        setLoading(true);
+
+        const payload = {
+          chamado_id: chamadoId,
+          itens: itens, // array de { item_id, fornecedor_ids }
+          notas: notas
+        };
+
+        const nova = await cotacoesService.salvarCotacao(accessToken, payload);
+
+        setCotacoes([...cotacoes, nova]);
+        console.log(`✅ Cotação salva:`, nova);
+        return nova;
+      } catch (err) {
+        setErro(err.message);
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [accessToken, cotacoes]
+  );
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // NOVO: SALVAR & ENVIAR COTAÇÃO
+  // ─────────────────────────────────────────────────────────────────────────
+
+  const salvarEEnviarCotacao = useCallback(
+    async (chamadoId, itens, notas = "") => {
+      try {
+        setErro(null);
+        setLoading(true);
+
+        // 1. Salvar cotação
+        const salva = await salvarCotacao(chamadoId, itens, notas);
+        if (!salva.cotacao_id) throw new Error("Erro ao salvar cotação");
+
+        const cotacao_id = salva.cotacao_id;
+
+        // 2. Juntar todos os fornecedores únicos
+        const fornecedoresUnicos = new Set();
+        for (const item of itens) {
+          item.fornecedor_ids.forEach(id => fornecedoresUnicos.add(id));
+        }
+
+        // 3. Vincular fornecedores (uma vez por cotação)
+        for (const fornecedor_id of fornecedoresUnicos) {
+          try {
+            const resposta = await fetch(
+              `${import.meta.env.VITE_API_URL}/cotacoes/${cotacao_id}/fornecedores`,
+              {
+                method: 'POST',
+                headers: {
+                  'Content-Type': 'application/json',
+                  'Authorization': `Bearer ${accessToken}`
+                },
+                body: JSON.stringify({ fornecedor_id })
+              }
+            );
+            if (!resposta.ok) throw new Error(`Erro ao vincular fornecedor ${fornecedor_id}`);
+          } catch (err) {
+            console.error(`Erro ao vincular fornecedor ${fornecedor_id}:`, err);
+          }
+        }
+
+        // 4. ✅ NOVO: Salvar quais fornecedores foram selecionados pra cada item
+        for (const item of itens) {
+          for (const fornecedor_id of item.fornecedor_ids) {
+            try {
+              await fetch(
+                `${import.meta.env.VITE_API_URL}/cotacoes/${cotacao_id}/item-fornecedor-selecionado`,
+                {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': `Bearer ${accessToken}`
+                  },
+                  body: JSON.stringify({
+                    cotacao_item_id: item.item_id,
+                    fornecedor_id
+                  })
+                }
+              );
+            } catch (err) {
+              console.warn(`Aviso ao registrar seleção:`, err);
+            }
+          }
+        }
+
+
+        // 5. Enviar cotação
+        const enviada = await cotacoesService.enviarCotacao(accessToken, cotacao_id);
+        console.log(`✅ Cotação enviada:`, enviada);
+        return enviada;
+      } catch (err) {
+        setErro(err.message);
+        throw err;
+      } finally {
+        setLoading(false);
+      }
+    },
+    [accessToken, salvarCotacao]
+  );
+
+  const atualizarCotacao = useCallback(async (cotacaoId, itens, notas = "") => {
+    try {
+      setErro(null);
+      setLoading(true);
+
+      const payload = {
+        itens: itens, // array de { item_id, fornecedor_ids }
+        notas: notas
+      };
+
+      const updated = await cotacoesService.atualizarCotacao(accessToken, cotacaoId, payload);
+      setCotacoes(prev => prev.map(c => c.id === cotacaoId ? { ...c, ...updated } : c));
+      return updated;
+    } catch (err) {
+      setErro(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [accessToken]);
+
+  const excluirCotacao = useCallback(async (cotacaoId) => {
+    try {
+      setErro(null);
+      setLoading(true);
+      await cotacoesService.excluirCotacao(accessToken, cotacaoId);
+      setCotacoes(prev => prev.filter(c => c.id !== cotacaoId));
+      return { ok: true };
+    } catch (err) {
+      setErro(err.message);
+      throw err;
+    } finally {
+      setLoading(false);
+    }
+  }, [accessToken]);
+
   return {
     cotacoes,
     loading,
@@ -273,6 +466,12 @@ export function useCotacoes(accessToken) {
     adicionarItem,
     removerItem,
     confirmarCotacao,
+    buscarChamadoComItens,
+    salvarCotacao,
+    salvarEEnviarCotacao,
+    atualizarCotacao,
+    excluirCotacao,
+    buscarDetalhesCotacao,
     limparErro: () => setErro(null),
   };
 }

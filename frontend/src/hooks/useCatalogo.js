@@ -50,7 +50,7 @@ export function useCatalogo() {
     listar();
     carregarCategorias();
     carregarMarcas();
-  }, [listar, carregarCategorias, carregarMarcas]);
+  }, []);
 
   return {
     itens,
