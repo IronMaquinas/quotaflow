@@ -1,20 +1,10 @@
-// ════════════════════════════════════════════════════════════════════════════════
-// routes/email.js: ENVIO DE EMAILS E NOTIFICAÇÕES
-// ════════════════════════════════════════════════════════════════════════════════
-// Endpoints:
-// POST   /api/email/teste           - Testar envio de email
-// POST   /api/email/cotacao         - Enviar cotação para fornecedor
-// POST   /api/email/resultado       - Notificar resultado para fornecedor
-// GET    /api/email/logs            - Ver logs de emails enviados
-// ════════════════════════════════════════════════════════════════════════════════
-
 const express = require("express");
 const router = express.Router();
 const { DB } = require("../db");
 const tenantMiddleware = require("../middleware/tenantMiddleware");
-const { Resend } = require("resend");
+const sgMail = require("@sendgrid/mail");
 
-const resend = new Resend(process.env.RESEND_API_KEY);
+sgMail.setApiKey(process.env.SENDGRID_API_KEY);
 
 // ─────────────────────────────────────────────────────────────────────────
 // POST /api/email/teste - Testar envio de email
@@ -28,7 +18,7 @@ router.post("/teste", tenantMiddleware, async (req, res) => {
       return res.status(400).json({ erro: "email_destino é obrigatório" });
     }
 
-    const result = await resend.emails.send({
+    await sgMail.send({
       from: process.env.EMAIL_FROM || "noreply@quotaflow.com.br",
       to: email_destino,
       subject: "Teste - Quotaflow",
@@ -39,14 +29,9 @@ router.post("/teste", tenantMiddleware, async (req, res) => {
       `
     });
 
-    if (result.error) {
-      throw new Error(result.error.message);
-    }
-
     res.json({
       ok: true,
-      mensagem: "Email de teste enviado com sucesso",
-      email_id: result.data.id
+      mensagem: "Email de teste enviado com sucesso"
     });
 
   } catch (err) {
@@ -71,7 +56,7 @@ router.post("/cotacao", tenantMiddleware, async (req, res) => {
 
     const linkCotacao = `${process.env.FRONTEND_URL}/cotacao/${token}`;
 
-    const result = await resend.emails.send({
+    await sgMail.send({
       from: process.env.EMAIL_FROM || "noreply@quotaflow.com.br",
       to: fornecedor_email,
       subject: `Solicitação de Cotação - ${chamado_numero}`,
@@ -108,14 +93,9 @@ router.post("/cotacao", tenantMiddleware, async (req, res) => {
       `
     });
 
-    if (result.error) {
-      throw new Error(result.error.message);
-    }
-
     res.json({
       ok: true,
-      mensagem: `Cotação enviada para ${fornecedor_email}`,
-      email_id: result.data.id
+      mensagem: `Cotação enviada para ${fornecedor_email}`
     });
 
   } catch (err) {
@@ -156,7 +136,7 @@ router.post("/resultado", tenantMiddleware, async (req, res) => {
         <p>Continuaremos contando com sua parceria para futuras oportunidades!</p>
       `;
 
-    const result = await resend.emails.send({
+    await sgMail.send({
       from: process.env.EMAIL_FROM || "noreply@quotaflow.com.br",
       to: fornecedor_email,
       subject: assunto,
@@ -171,14 +151,9 @@ router.post("/resultado", tenantMiddleware, async (req, res) => {
       `
     });
 
-    if (result.error) {
-      throw new Error(result.error.message);
-    }
-
     res.json({
       ok: true,
-      mensagem: `Email de resultado enviado para ${fornecedor_email}`,
-      email_id: result.data.id
+      mensagem: `Email de resultado enviado para ${fornecedor_email}`
     });
 
   } catch (err) {
@@ -195,7 +170,7 @@ router.get("/logs", tenantMiddleware, async (req, res) => {
   try {
     res.json({
       mensagem: "Logs de email - funcionalidade em desenvolvimento",
-      nota: "Para ver logs completos, integre com Resend Dashboard ou banco de dados"
+      nota: "Para ver logs completos, integre com SendGrid Dashboard ou banco de dados"
     });
   } catch (err) {
     console.error("❌ Erro ao buscar logs:", err.message);
