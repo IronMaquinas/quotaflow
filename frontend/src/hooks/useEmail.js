@@ -5,11 +5,13 @@ export function useEmail(accessToken) {
   const [enviando, setEnviando] = useState(false);
   const [erro, setErro] = useState(null);
 
+  const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+
   const enviarCotacao = async ({ cotacaoId, fornecedorId, email }) => {
     setEnviando(true);
     setErro(null);
     try {
-      const response = await fetch('http://localhost:3001/api/email/enviar-cotacao', {
+      const response = await fetch(`${API_URL}/email/enviar-cotacao`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',

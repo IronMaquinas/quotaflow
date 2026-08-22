@@ -224,7 +224,7 @@ export const FRETE_TIPO = ["CIF", "FOB", "EXW", "Frete Grátis"];
 // API CONFIG
 // ────────────────────────────────────────────────────────────────────────────
 
-export const API_URL = "http://localhost:3001/api";
+export const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
 export const API_TIMEOUTS = {
   DEFAULT: 10000,

@@ -1,7 +1,7 @@
 // Camada de comunicação com o backend
 // Todos os componentes usam estas funções — nunca chamam fetch diretamente
 
-const BASE = "/api"; // O vite.config.js redireciona para http://localhost:3001
+const BASE = import.meta.env.VITE_API_URL || '/api';
 
 function getToken() {
   return localStorage.getItem("qf_token");

@@ -328,8 +328,6 @@ id | tenant_id | cotacao_id | fornecedor_id | numero | status
 
 **frontend/.env.local:**
 ```
-VITE_API_URL=http://localhost:3001/api
-```
 
 ### Iniciar Projeto:
 
