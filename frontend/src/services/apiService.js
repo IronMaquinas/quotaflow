@@ -1,14 +1,7 @@
-// ════════════════════════════════════════════════════════════════════════════════
 // frontend/src/services/apiService.js
-// CLIENTE HTTP CENTRALIZADO - Reutilizável para todas as requisições
-// ════════════════════════════════════════════════════════════════════════════════
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 
-/**
- * Classe ApiService - Centraliza todas as requisições HTTP
- * Lida com autenticação, erro handling e logging
- */
 class ApiService {
   constructor() {
     this.baseURL = API_BASE_URL;

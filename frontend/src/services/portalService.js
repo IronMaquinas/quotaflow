@@ -1,7 +1,9 @@
 // frontend/src/services/portalService.js
 // Serviço para comunicar com o portal do fornecedor
 
-const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+import { API_URL } from '../utils/constants';
+console.log('🔍 API_URL no portalService:', API_URL);
+
 
 export const portalService = {
   /**

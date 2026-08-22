@@ -1,5 +1,5 @@
 // services/chamadosService.js
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
+import { API_URL } from "../utils/constants";
 
 export const chamadosService = {
   async listar(token, force = false) {
