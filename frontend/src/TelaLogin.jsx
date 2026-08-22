@@ -1,12 +1,7 @@
-import { useState } from "react";
+// src/TelaLogin.jsx
 
-// ══════════════════════════════════════════════════════════════════════════════
-// TELA LOGIN - CONECTADA AO BACKEND REAL VIA API
-// ══════════════════════════════════════════════════════════════════════════════
-// ✅ Chama POST /api/auth/login
-// ✅ Valida contra Supabase
-// ✅ Recebe e salva JWT
-// ✅ 100% integrada com backend real
+import { useState } from "react";
+import { API_URL } from "./utils/constants";
 
 const C = {
   bg: "#0a0e14",

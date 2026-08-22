@@ -1,22 +1,4 @@
-/**
- * services/catalogoService.js
- * 
- * Serviço de lógica para catálogo de itens
- * Inclui:
- * - Fuzzy matching (reconhecer variações de texto)
- * - Normalização de descrições
- * - Validação de itens
- * - Importação de CSV/Excel
- */
 
-/**
- * FUZZY MATCHING: calcula similaridade entre 2 strings (0-100%)
- * 
- * Exemplo:
- * "farol lado direito" vs "farol, lado direito" = 95%
- * "farol lado direito" vs "farol lado esquerdo" = 80%
- * "farol lado direito" vs "motor" = 0%
- */
 export function calcularSimilaridade(str1, str2) {
   // Normaliza (lowercase, remove pontuação)
   const n1 = normalizarTexto(str1);

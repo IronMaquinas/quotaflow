@@ -1,6 +1,7 @@
-import { useState, useEffect, useCallback } from "react";
+// /src/hooks/useAuth.js
 
-const API_URL = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
+import { useState, useEffect, useCallback } from "react";
+import { API_URL } from '../utils/constants';
 
 export function useAuth() {
   const [usuario, setUsuario] = useState(null);
