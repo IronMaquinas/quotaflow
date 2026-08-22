@@ -14,8 +14,8 @@ export function useAuth() {
   useEffect(() => {
     const restaurarSessao = async () => {
       try {
-        const token = localStorage.getItem("accessToken");
-        const refresh = localStorage.getItem("refreshToken");
+        const token = localStorage.getItem("access_token");
+        const refresh = localStorage.getItem("refresh_token");
 
         if (!token) return;
 
@@ -57,8 +57,8 @@ export function useAuth() {
       const novoAccessToken = data.tokens.accessToken;
       const novoRefreshToken = data.tokens.refreshToken;
 
-      localStorage.setItem("accessToken", novoAccessToken);
-      localStorage.setItem("refreshToken", novoRefreshToken);
+      localStorage.setItem("access_token", novoAccessToken);
+      localStorage.setItem("refresh_token", novoRefreshToken);
 
       setAccessToken(novoAccessToken);
       setRefreshToken(novoRefreshToken);
@@ -74,8 +74,8 @@ export function useAuth() {
   // hooks/useAuth.js (adicione esta função)
   const loginWithData = useCallback((userData) => {
     console.log('🔍 loginWithData recebido:', userData);
-    localStorage.setItem("accessToken", userData.access_token);
-    localStorage.setItem("refreshToken", userData.refresh_token);
+    localStorage.setItem("access_token", userData.access_token);
+    localStorage.setItem("refresh_token", userData.refresh_token);
     setAccessToken(userData.access_token);
     setRefreshToken(userData.refresh_token);
     setUsuario(userData);
@@ -99,8 +99,8 @@ export function useAuth() {
         throw new Error(data.erro || "Erro ao criar conta");
       }
 
-      localStorage.setItem("accessToken", data.tokens.accessToken);
-      localStorage.setItem("refreshToken", data.tokens.refreshToken);
+      localStorage.setItem("access_token", data.tokens.accessToken);
+      localStorage.setItem("refresh_token", data.tokens.refreshToken);
 
       setAccessToken(data.tokens.accessToken);
       setRefreshToken(data.tokens.refreshToken);
@@ -136,8 +136,8 @@ export function useAuth() {
         throw new Error(data.erro || "Erro ao fazer login");
       }
 
-      localStorage.setItem("accessToken", data.tokens.accessToken);
-      localStorage.setItem("refreshToken", data.tokens.refreshToken);
+      localStorage.setItem("access_token", data.tokens.accessToken);
+      localStorage.setItem("refresh_token", data.tokens.refreshToken);
 
       setAccessToken(data.tokens.accessToken);
       setRefreshToken(data.tokens.refreshToken);
@@ -183,8 +183,8 @@ export function useAuth() {
   }, [accessToken]);
 
   const logout = useCallback(() => {
-    localStorage.removeItem("accessToken");
-    localStorage.removeItem("refreshToken");
+    localStorage.removeItem("access_token");
+    localStorage.removeItem("refresh_token");
 
     setAccessToken(null);
     setRefreshToken(null);

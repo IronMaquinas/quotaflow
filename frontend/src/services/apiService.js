@@ -16,13 +16,13 @@ class ApiService {
    * Retorna o JWT do localStorage
    */
   getToken() {
-    try {
-      const token = localStorage.getItem("token");
-      return token;
-    } catch {
-      return null;
-    }
+  try {
+    const token = localStorage.getItem("access_token"); // ← mude de "token" para "access_token"
+    return token;
+  } catch {
+    return null;
   }
+}
 
   /**
    * Define novo token
