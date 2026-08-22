@@ -3,7 +3,7 @@ import { API_URL } from "../utils/constants";
 
 export const chamadosService = {
   async listar(token, force = false) {
-    const url = `${API_URL}/chamados${force ? '?_t=' + Date.now() : ''}`;
+    const url = `${API_URL}/cotacoes/chamados${force ? '?_t=' + Date.now() : ''}`;
     const res = await fetch(url, {
       headers: { Authorization: `Bearer ${token}` },
       cache: 'no-store',
@@ -16,7 +16,7 @@ export const chamadosService = {
   },
 
   async criar(token, dados) {
-    const res = await fetch(`${API_URL}/chamados`, {
+    const res = await fetch(`${API_URL}/cotacoes/chamados`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -32,7 +32,7 @@ export const chamadosService = {
   },
 
   async atualizar(token, id, dados) {
-    const res = await fetch(`${API_URL}/chamados/${id}`, {
+    const res = await fetch(`${API_URL}/cotacoes/chamados/${id}`, {
       method: 'PUT',
       headers: {
         'Content-Type': 'application/json',
@@ -49,7 +49,7 @@ export const chamadosService = {
   },
 
   async deletar(token, id) {
-    const res = await fetch(`${API_URL}/chamados/${id}`, {
+    const res = await fetch(`${API_URL}/cotacoes/chamados/${id}`, {
       method: 'DELETE',
       headers: { Authorization: `Bearer ${token}` },
     });
