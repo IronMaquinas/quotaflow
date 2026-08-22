@@ -786,7 +786,7 @@ router.post('/enviar', tenantMiddleware, async (req, res) => {
         }
 
         // Montar URL do portal
-const portalUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/portal/cotacao/${cotacao_id}/${token}`;
+        const portalUrl = `${process.env.FRONTEND_URL || 'http://localhost:5173'}/portal/cotacao/${cotacao_id}/${token}`;
         // Template de email
         const assunto = `Solicitação de Cotação - ${cotacao.numero}`;
         const corpo = `
@@ -1036,6 +1036,9 @@ router.post('/:cotacaoId/fornecedores', tenantMiddleware, async (req, res) => {
     const token = uuidv4();
 
     // 4. Inserir em cotacao_fornecedores
+    const contatos = fornecedor.contatos ? JSON.parse(fornecedor.contatos) : [];
+    const emailComercial = contatos?.[0]?.email || fornecedor.email;
+
     const resultado = await DB.insert(
       'cotacao_fornecedores',
       {
@@ -1043,7 +1046,7 @@ router.post('/:cotacaoId/fornecedores', tenantMiddleware, async (req, res) => {
         cotacao_id: cotacaoId,
         fornecedor_id: fornecedor_id,
         fornecedor_nome: fornecedor.nome,
-        fornecedor_email: fornecedor.email || fornecedor.contato_email,
+        fornecedor_email: emailComercial,
         token: token,
         status: 'pendente'
       },

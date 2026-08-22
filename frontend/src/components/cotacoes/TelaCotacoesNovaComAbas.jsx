@@ -568,7 +568,7 @@ const handleAbrirCotacao = async (cotacao) => {
                               {forn.nome}
                             </div>
                             <div style={{ fontSize: 10, color: C.muted }}>
-                              {forn.email}
+                            {forn.contatos?.[0]?.email || forn.email || "Sem email"}
                             </div>
                           </div>
                         </label>
@@ -669,81 +669,81 @@ const handleAbrirCotacao = async (cotacao) => {
                                 }}
                               >
                               {(() => {
-  // 1. Fornecedores recomendados do backend
-  const recomendados = item.fornecedores || [];
-  
-  // 2. IDs dos fornecedores selecionados manualmente
-  const idsSelecionadosManualmente = (selecionesFornecedor[item.id] || []).filter(
-    (id) => !recomendados.some((f) => f.fornecedor_id === id)
-  );
-  
-  // 3. Buscar objetos completos dos fornecedores manuais
-  const manuais = idsSelecionadosManualmente
-    .map((id) => {
-      const f = fornecedoresSeguro.find((forn) => forn.id === id);
-      return f
-        ? { fornecedor_id: f.id, nome: f.nome, preco: f.preco || 0 }
-        : null;
-    })
-    .filter(Boolean);
+                              // 1. Fornecedores recomendados do backend
+                              const recomendados = item.fornecedores || [];
+                              
+                              // 2. IDs dos fornecedores selecionados manualmente
+                              const idsSelecionadosManualmente = (selecionesFornecedor[item.id] || []).filter(
+                                (id) => !recomendados.some((f) => f.fornecedor_id === id)
+                              );
+                              
+                              // 3. Buscar objetos completos dos fornecedores manuais
+                              const manuais = idsSelecionadosManualmente
+                                .map((id) => {
+                                  const f = fornecedoresSeguro.find((forn) => forn.id === id);
+                                  return f
+                                    ? { fornecedor_id: f.id, nome: f.nome, preco: f.preco || 0 }
+                                    : null;
+                                })
+                                .filter(Boolean);
 
-  // 4. ✅ MOSTRAR TODOS (recomendados + manuais)
-  const todosFornecedores = [...recomendados, ...manuais];
+                              // 4. ✅ MOSTRAR TODOS (recomendados + manuais)
+                              const todosFornecedores = [...recomendados, ...manuais];
 
-  if (todosFornecedores.length === 0) {
-    return (
-      <span style={{ fontSize: 11, color: C.muted, fontStyle: "italic" }}>
-        Nenhum fornecedor encontrado
-      </span>
-    );
-  }
+                              if (todosFornecedores.length === 0) {
+                                return (
+                                  <span style={{ fontSize: 11, color: C.muted, fontStyle: "italic" }}>
+                                    Nenhum fornecedor encontrado
+                                  </span>
+                                );
+                              }
 
-  // 5. ✅ RENDERIZAR TODOS, mas com visual diferente se selecionado
-  return todosFornecedores.map((forn) => (
-    <label
-      key={forn.fornecedor_id}
-      style={{
-        display: "flex",
-        alignItems: "center",
-        gap: 6,
-        fontSize: 11,
-        padding: "4px 8px",
-        background: selecionesFornecedor[item.id]?.includes(forn.fornecedor_id)
-          ? C.accent + "22"  // ✅ Destacado se selecionado
-          : "#ffffff05",      // Discreto se não
-        border: selecionesFornecedor[item.id]?.includes(forn.fornecedor_id)
-          ? `1px solid ${C.accent}`
-          : `1px solid ${C.border}33`,
-        borderRadius: 4,
-        cursor: "pointer",
-        transition: "all 0.2s",
-      }}
-    >
-      <input
-        type="checkbox"
-        checked={
-          selecionesFornecedor[item.id]?.includes(forn.fornecedor_id) || false
-        }
-        onChange={() => toggleFornecedorAutomatico(item.id, forn.fornecedor_id)}
-        style={{ cursor: "pointer", width: 14, height: 14 }}
-      />
-      <span>{forn.nome} - {fmtBRL(forn.preco || 0)}</span>
-      {!recomendados.some((f) => f.fornecedor_id === forn.fornecedor_id) && (
-        <span
-          style={{
-            fontSize: 8,
-            background: C.warn + "33",
-            color: C.warn,
-            padding: "1px 4px",
-            borderRadius: 2,
-          }}
-        >
-          manual
-        </span>
-      )}
-    </label>
-  ));
-})()}
+                              // 5. ✅ RENDERIZAR TODOS, mas com visual diferente se selecionado
+                              return todosFornecedores.map((forn) => (
+                                <label
+                                  key={forn.fornecedor_id}
+                                  style={{
+                                    display: "flex",
+                                    alignItems: "center",
+                                    gap: 6,
+                                    fontSize: 11,
+                                    padding: "4px 8px",
+                                    background: selecionesFornecedor[item.id]?.includes(forn.fornecedor_id)
+                                      ? C.accent + "22"  // ✅ Destacado se selecionado
+                                      : "#ffffff05",      // Discreto se não
+                                    border: selecionesFornecedor[item.id]?.includes(forn.fornecedor_id)
+                                      ? `1px solid ${C.accent}`
+                                      : `1px solid ${C.border}33`,
+                                    borderRadius: 4,
+                                    cursor: "pointer",
+                                    transition: "all 0.2s",
+                                  }}
+                                >
+                                  <input
+                                    type="checkbox"
+                                    checked={
+                                      selecionesFornecedor[item.id]?.includes(forn.fornecedor_id) || false
+                                    }
+                                    onChange={() => toggleFornecedorAutomatico(item.id, forn.fornecedor_id)}
+                                    style={{ cursor: "pointer", width: 14, height: 14 }}
+                                  />
+                                  <span>{forn.nome} - {fmtBRL(forn.preco || 0)}</span>
+                                  {!recomendados.some((f) => f.fornecedor_id === forn.fornecedor_id) && (
+                                    <span
+                                      style={{
+                                        fontSize: 8,
+                                        background: C.warn + "33",
+                                        color: C.warn,
+                                        padding: "1px 4px",
+                                        borderRadius: 2,
+                                      }}
+                                    >
+                                      manual
+                                    </span>
+                                  )}
+                                </label>
+                              ));
+                            })()}
                               </div>
 
                               {/* BOTÃO ADICIONAR FORNECEDOR MANUALMENTE */}

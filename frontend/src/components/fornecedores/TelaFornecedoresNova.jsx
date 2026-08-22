@@ -28,6 +28,7 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
     contato_telefone: "",
     contato_whatsapp: "",
     categorias: [],
+    email: "",
   });
 
   const categorias = [
@@ -176,6 +177,7 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
         cep: form.cep.replace(/\D/g, "") || null,
         contatos: contatos,
         categorias: form.categorias || [],
+        email: form.email || form.contato_email,
         ativo: 1,
       };
 
@@ -213,6 +215,7 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
       contato_telefone: "",
       contato_whatsapp: "",
       categorias: [],
+      email: "",
     });
   };
 
@@ -304,6 +307,18 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
                   style={s.input}
                 />
               </div>
+            </div>
+
+            {/* ─── EMAIL DE CADASTRO ─── */}
+            <div style={{ marginBottom: 14 }}>
+              <label style={s.label}>EMAIL DE CADASTRO</label>
+              <input
+                type="email"
+                value={form.email}
+                onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                placeholder="contato@email.com.br"
+                style={s.input}
+              />
             </div>
 
             {/* ─── ENDEREÇO ─── */}
@@ -594,6 +609,7 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
                       cidade: forn.cidade || "",
                       estado: forn.estado || "",
                       cep: forn.cep ? formatarCEP(forn.cep) : "",
+                      email: forn.email || "",  // ✅ ADD ISSO
                       contato_nome: contato.nome || "",
                       contato_email: contato.email || "",
                       contato_telefone: contato.telefone || "",

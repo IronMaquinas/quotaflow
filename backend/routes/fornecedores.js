@@ -1,6 +1,4 @@
-// ════════════════════════════════════════════════════════════════════════════════
-// routes/fornecedores.js: FORNECEDORES MULTI-TENANT (SUPABASE)
-// ════════════════════════════════════════════════════════════════════════════════
+// backend/routes/fornecedores.js
 
 const express = require("express");
 const router = express.Router();
@@ -74,10 +72,28 @@ router.post("/", tenantMiddleware, async (req, res) => {
       obs,
       latitude,
       longitude,
+      email,
     } = req.body;
 
     if (!nome) {
       return res.status(400).json({ erro: "Nome é obrigatório" });
+    }
+
+    // ✅ Validar CNPJ duplicado
+    if (cnpj) {
+      const cnpjLimpo = cnpj.replace(/\D/g, '');
+      const jaExiste = await DB.selectOne(
+        "fornecedores",
+        { cnpj: cnpjLimpo },
+        req.tenantId
+      );
+      
+      if (jaExiste) {
+        return res.status(409).json({ 
+          erro: "CNPJ já cadastrado",
+          fornecedorExistente: jaExiste.id 
+        });
+      }
     }
 
     // Preparar dados para inserção
@@ -97,6 +113,7 @@ router.post("/", tenantMiddleware, async (req, res) => {
       obs: obs || null,
       latitude: latitude || null,
       longitude: longitude || null,
+      email: email || null,
       ativo: 1,
     };
 
@@ -137,6 +154,7 @@ router.put("/:id", tenantMiddleware, async (req, res) => {
       obs,
       latitude,
       longitude,
+      email,
       ativo,
     } = req.body;
 
@@ -146,12 +164,28 @@ router.put("/:id", tenantMiddleware, async (req, res) => {
       return res.status(404).json({ erro: "Fornecedor não encontrado" });
     }
 
+    // ✅ ADD ISSO AQUI - Validar CNPJ duplicado
+    if (cnpj !== undefined && cnpj) {
+      const cnpjLimpo = cnpj.replace(/\D/g, '');
+      const jaExiste = await DB.selectOne(
+        "fornecedores",
+        { cnpj: cnpjLimpo },
+        req.tenantId
+      );
+      
+      if (jaExiste && jaExiste.id !== parseInt(id)) {
+        return res.status(409).json({ 
+          erro: "CNPJ já cadastrado por outro fornecedor",
+          fornecedorExistente: jaExiste.id 
+        });
+      }
+    }
+
     // Preparar dados para atualização (apenas campos enviados)
     const updateData = {};
     if (nome !== undefined) updateData.nome = nome;
     if (razao_social !== undefined) updateData.razao_social = razao_social;
-    if (cnpj !== undefined) updateData.cnpj = cnpj.replace(/\D/g, '');
-    if (endereco !== undefined) updateData.endereco = endereco;
+    if (cnpj !== undefined) updateData.cnpj = cnpj ? cnpj.replace(/\D/g, '') : null;    if (endereco !== undefined) updateData.endereco = endereco;
     if (numero !== undefined) updateData.numero = numero;
     if (complemento !== undefined) updateData.complemento = complemento;
     if (bairro !== undefined) updateData.bairro = bairro;
@@ -163,6 +197,7 @@ router.put("/:id", tenantMiddleware, async (req, res) => {
     if (obs !== undefined) updateData.obs = obs;
     if (latitude !== undefined) updateData.latitude = latitude;
     if (longitude !== undefined) updateData.longitude = longitude;
+    if (email !== undefined) updateData.email = email;
     if (ativo !== undefined) updateData.ativo = ativo ? 1 : 0;
 
     const updated = await DB.update("fornecedores", id, updateData, req.tenantId);
