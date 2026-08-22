@@ -3,6 +3,8 @@ import { useState, useEffect, useMemo } from 'react';
 import { usePortal } from '../../hooks/usePortal';
 import { fmtBRL, fmtD } from '../../utils/formatters'; // ajuste conforme seu projeto
 
+const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:3001/api';
+
 // Configuração de urgência (para tags)
 const URG_CONFIG = {
   alta: { c: '#ef4444', l: '🔥 Alta' },
