@@ -1242,7 +1242,7 @@ class CotacaoService {
     // 6. Atualizar status da cotação para 'enviada'
     await this.db.update('cotacoes', cotacaoId, {
       status: 'enviada',
-      enviada_em: new Date()
+      enviado_em: new Date()   // ← coluna correta
     }, tenantId);
 
     // 7. Atualizar status do chamado para 'cotando'
