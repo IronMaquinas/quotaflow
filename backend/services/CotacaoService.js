@@ -424,6 +424,8 @@ class CotacaoService {
       WHERE ci.cotacao_id = $1 AND ci.tenant_id = $2
     `, [cotacaoId, tenantId]);
 
+    console.log(`📦 Itens da cotação:`, JSON.stringify(itensCotacao, null, 2));
+
     let fornecedores = await this.db.select('cotacao_fornecedores', {
       cotacao_id: cotacaoId,
       status: 'pendente'
@@ -448,13 +450,30 @@ class CotacaoService {
 
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
 
+    // 🔥 Função auxiliar para extrair array de IDs (robusta)
+    const extrairIds = (campo) => {
+      if (!campo) return [];
+      if (Array.isArray(campo)) return campo.map(id => Number(id));
+      if (typeof campo === 'string') {
+        try {
+          const parsed = JSON.parse(campo);
+          return Array.isArray(parsed) ? parsed.map(id => Number(id)) : [];
+        } catch {
+          return campo.split(',').map(id => Number(id.trim())).filter(n => !isNaN(n));
+        }
+      }
+      return [];
+    };
+
     for (const forn of fornecedores) {
       try {
         const fornecedorInfo = fornecedorMap[forn.fornecedor_id];
-        if (!fornecedorInfo) continue;
+        if (!fornecedorInfo) {
+          console.warn(`⚠️ Fornecedor ${forn.fornecedor_id} não encontrado`);
+          continue;
+        }
 
-        // 🔥 Garante que o token existe
-        let token = forn.token_acesso || forn.token; // tenta ambos os nomes
+        let token = forn.token_acesso || forn.token;
         if (!token) {
           token = this.gerarTokenFornecedor(cotacaoId, forn.fornecedor_id);
           await this.db.update('cotacao_fornecedores', forn.id, {
@@ -463,19 +482,41 @@ class CotacaoService {
           console.log(`🔑 Token gerado para fornecedor ${forn.fornecedor_id}`);
         }
 
+        // ✅ Filtrar itens que têm este fornecedor selecionado
         const itensDoFornecedor = itensCotacao.filter(item => {
-          const ids = item.fornecedores_ids || [];
-          return ids.includes(forn.fornecedor_id);
+          const ids = extrairIds(item.fornecedores_ids);
+          return ids.includes(Number(forn.fornecedor_id));
         });
 
+        console.log(`🔍 Fornecedor ${fornecedorInfo.nome} (ID ${forn.fornecedor_id}) - Itens encontrados: ${itensDoFornecedor.length}`);
+
         if (itensDoFornecedor.length === 0) {
-          console.log(`⚠️ Fornecedor ${forn.nome} não tem itens selecionados`);
+          console.log(`⚠️ Fornecedor ${fornecedorInfo.nome} não tem itens selecionados. Pulando.`);
           continue;
         }
 
         const link = `${frontendUrl}/portal/cotacao/${cotacaoId}/${token}`;
 
-        const corpo = `...`; // seu corpo HTML
+        // 🔥 CORPO CORRETO (com a lista de itens)
+        const listaItens = itensDoFornecedor.map(item =>
+          `<li>${item.item_nome} - Qtd: ${item.quantidade}</li>`
+        ).join('');
+
+        const corpo = `
+          <h2>Nova Cotação: ${cotacao.numero || cotacaoId}</h2>
+          <p>Prezado(a) ${fornecedorInfo.nome},</p>
+          <p>Você recebeu uma solicitação de cotação para os seguintes itens:</p>
+          <ul>
+            ${listaItens}
+          </ul>
+          <p>Clique no link abaixo para acessar o portal e enviar sua proposta:</p>
+          <p><a href="${link}" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Responder Cotação</a></p>
+          <p>Prazo para resposta: 48 horas.</p>
+          <hr>
+          <p><small>Esta é uma mensagem automática. Não responda este e-mail.</small></p>
+        `;
+
+        console.log(`📧 Corpo do e-mail para ${fornecedorInfo.email} (tamanho: ${corpo.length}) - início: ${corpo.substring(0, 100)}...`);
 
         await enviarEmailCotacao(fornecedorInfo.email, `Cotação ${cotacao.numero || cotacaoId}`, corpo);
         console.log(`✅ E‑mail enviado para ${fornecedorInfo.email} com ${itensDoFornecedor.length} itens`);
