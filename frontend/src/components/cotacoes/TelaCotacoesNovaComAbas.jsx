@@ -112,7 +112,10 @@ export default function TelaCotacoesNovaComAbas({ fmtBRL, fmtD, C, s }) {
   };
 
   // ─── APERTAR BOTÃO NOVA COTAÇÃO ────────────────────────────
-  const handleAbrirNovaJanelaModal = (tipoAba) => {
+  const handleAbrirNovaJanelaModal = async (tipoAba) => {
+    // 🔄 Recarrega a lista de cotações para garantir dados atualizados
+    await listarCotacoes();
+
     if (tipoAba === "manual") {
       setAbaAtiva("manual");
       setModal("nova");

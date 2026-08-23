@@ -10,6 +10,7 @@
   },
   "dependencies": {
     "express-fileupload": "^1.5.2",
-    "pg": "^8.23.0"
+    "pg": "^8.23.0",
+    "resend": "^6.22.0"
   }
 }

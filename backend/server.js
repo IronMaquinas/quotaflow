@@ -21,9 +21,11 @@ const app = express();
 const PORT = process.env.PORT || 3001;
 
 // ── Middlewares ──────────────────────────────
-const allowedOrigins = process.env.FRONTEND_URL
-  ? process.env.FRONTEND_URL.split(',')
-  : ['http://localhost:5173', 'https://quotaflow.netlify.app'];
+const allowedOrigins = [
+  'https://kotuno.netlify.app',
+  'https://quotaflow.netlify.app',
+  'http://localhost:5173'
+];
 
 app.use(cors({
   origin: function (origin, callback) {
@@ -31,10 +33,10 @@ app.use(cors({
     if (!origin || allowedOrigins.includes(origin)) {
       callback(null, true);
     } else {
-      callback(new Error(`Origin ${origin} not allowed by CORS`));
+      callback(new Error('Not allowed by CORS'));
     }
   },
-  credentials: true,
+  credentials: true
 }));
 app.use(express.json());
 app.use(fileUpload());
