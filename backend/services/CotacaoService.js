@@ -411,7 +411,7 @@ class CotacaoService {
     const cotacao = await this.db.selectOne('cotacoes', { id: cotacaoId }, tenantId);
     if (!cotacao) throw new Error(`Cotação ${cotacaoId} não encontrada`);
 
-    // Buscar chamado e itens
+    // Buscar chamado e ITENS DA COTAÇÃO (com fornecedores_ids)
     const chamado = await this.db.selectOne('chamados', { id: cotacao.chamado_id }, tenantId);
     const itensCotacao = await this.db.raw(`
       SELECT 
@@ -424,6 +424,8 @@ class CotacaoService {
       JOIN chamado_itens ch ON ch.id = ci.chamado_item_id
       WHERE ci.cotacao_id = $1 AND ci.tenant_id = $2
     `, [cotacaoId, tenantId]);
+
+    console.log(`📦 Itens da cotação:`, itensCotacao); // 🔍 LOG PARA DEPURAÇÃO
 
     // Buscar fornecedores relacionados à cotação
     let fornecedores = await this.db.select('cotacao_fornecedores', {
@@ -468,10 +470,14 @@ class CotacaoService {
           continue;
         }
 
-        // ✅ Filtrar itens que têm este fornecedor selecionado
+        // ✅ FILTRO CORRIGIDO (conversão de tipos)
         const itensDoFornecedor = itensCotacao.filter(item => 
-          item.fornecedores_ids && item.fornecedores_ids.includes(forn.fornecedor_id)
+          item.fornecedores_ids && 
+          Array.isArray(item.fornecedores_ids) && 
+          item.fornecedores_ids.some(id => Number(id) === Number(forn.fornecedor_id))
         );
+
+        console.log(`🔍 Fornecedor ${fornecedorInfo.nome} (ID ${forn.fornecedor_id}) - Itens encontrados: ${itensDoFornecedor.length}`);
 
         if (itensDoFornecedor.length === 0) {
           console.log(`⚠️ Fornecedor ${forn.nome} não tem itens selecionados`);
