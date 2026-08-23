@@ -412,19 +412,20 @@ class CotacaoService {
 
     const chamado = await this.db.selectOne('chamados', { id: cotacao.chamado_id }, tenantId);
 
+    // 🔥 CORREÇÃO: Buscar também o nome do item da tabela chamado_itens
     const itensCotacao = await this.db.raw(`
       SELECT 
         ci.id, 
         ci.chamado_item_id,
         ci.quantidade, 
         ci.fornecedores_ids,
-        ch.item_nome
+        COALESCE(ch.item_nome, 'Item sem nome') as item_nome
       FROM cotacao_itens ci
       JOIN chamado_itens ch ON ch.id = ci.chamado_item_id
       WHERE ci.cotacao_id = $1 AND ci.tenant_id = $2
     `, [cotacaoId, tenantId]);
 
-    console.log(`📦 Itens da cotação:`, JSON.stringify(itensCotacao, null, 2));
+    console.log(`📦 Itens da cotação (com nome):`, JSON.stringify(itensCotacao, null, 2));
 
     let fornecedores = await this.db.select('cotacao_fornecedores', {
       cotacao_id: cotacaoId,
@@ -449,8 +450,8 @@ class CotacaoService {
     fornecedoresData.forEach(f => { fornecedorMap[f.id] = f; });
 
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
+    console.log(`🔗 FRONTEND_URL: ${frontendUrl}`);
 
-    // 🔥 Função auxiliar para extrair array de IDs (robusta)
     const extrairIds = (campo) => {
       if (!campo) return [];
       if (Array.isArray(campo)) return campo.map(id => Number(id));
@@ -482,7 +483,6 @@ class CotacaoService {
           console.log(`🔑 Token gerado para fornecedor ${forn.fornecedor_id}`);
         }
 
-        // ✅ Filtrar itens que têm este fornecedor selecionado
         const itensDoFornecedor = itensCotacao.filter(item => {
           const ids = extrairIds(item.fornecedores_ids);
           return ids.includes(Number(forn.fornecedor_id));
@@ -495,11 +495,12 @@ class CotacaoService {
           continue;
         }
 
+        // 🔥 GARANTE que o link esteja correto
         const link = `${frontendUrl}/portal/cotacao/${cotacaoId}/${token}`;
+        console.log(`🔗 Link gerado: ${link}`);
 
-        // 🔥 CORPO CORRETO (com a lista de itens)
         const listaItens = itensDoFornecedor.map(item =>
-          `<li>${item.item_nome} - Qtd: ${item.quantidade}</li>`
+          `<li>${item.item_nome || 'Item sem nome'} - Qtd: ${item.quantidade}</li>`
         ).join('');
 
         const corpo = `
@@ -510,7 +511,7 @@ class CotacaoService {
             ${listaItens}
           </ul>
           <p>Clique no link abaixo para acessar o portal e enviar sua proposta:</p>
-          <p><a href="${link}" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Responder Cotação</a></p>
+          <p><a href="${link}" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px; display: inline-block;">Responder Cotação</a></p>
           <p>Prazo para resposta: 48 horas.</p>
           <hr>
           <p><small>Esta é uma mensagem automática. Não responda este e-mail.</small></p>
