@@ -413,7 +413,17 @@ class CotacaoService {
 
     // Buscar chamado e itens
     const chamado = await this.db.selectOne('chamados', { id: cotacao.chamado_id }, tenantId);
-    const itens = await this.db.select('chamado_itens', { chamado_id: chamado.id }, tenantId);
+    const itensCotacao = await this.db.raw(`
+      SELECT 
+        ci.id, 
+        ci.chamado_item_id,
+        ci.quantidade, 
+        ci.fornecedores_ids,
+        ch.item_nome
+      FROM cotacao_itens ci
+      JOIN chamado_itens ch ON ch.id = ci.chamado_item_id
+      WHERE ci.cotacao_id = $1 AND ci.tenant_id = $2
+    `, [cotacaoId, tenantId]);
 
     // Buscar fornecedores relacionados à cotação
     let fornecedores = await this.db.select('cotacao_fornecedores', {
@@ -458,6 +468,16 @@ class CotacaoService {
           continue;
         }
 
+        // ✅ Filtrar itens que têm este fornecedor selecionado
+        const itensDoFornecedor = itensCotacao.filter(item => 
+          item.fornecedores_ids && item.fornecedores_ids.includes(forn.fornecedor_id)
+        );
+
+        if (itensDoFornecedor.length === 0) {
+          console.log(`⚠️ Fornecedor ${forn.nome} não tem itens selecionados`);
+          continue;
+        }
+
         const link = `${frontendUrl}/portal/cotacao/${cotacaoId}/${token}`;
 
         const corpo = `
@@ -465,7 +485,7 @@ class CotacaoService {
           <p>Prezado(a) ${fornecedorInfo.nome},</p>
           <p>Você recebeu uma solicitação de cotação para os seguintes itens:</p>
           <ul>
-            ${itens.map(item => `<li>${item.item_nome} - Qtd: ${item.quantidade}</li>`).join('')}
+            ${itensDoFornecedor.map(item => `<li>${item.item_nome} - Qtd: ${item.quantidade}</li>`).join('')}
           </ul>
           <p>Clique no link abaixo para acessar o portal e enviar sua proposta:</p>
           <p><a href="${link}" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Responder Cotação</a></p>
@@ -475,10 +495,9 @@ class CotacaoService {
         `;
 
         await enviarEmailCotacao(fornecedorInfo.email, `Cotação ${cotacao.numero || cotacaoId}`, corpo);
-        console.log(`✅ E-mail enviado para ${fornecedorInfo.email}`);
+        console.log(`✅ E‑mail enviado para ${fornecedorInfo.email} com ${itensDoFornecedor.length} itens`);
       } catch (err) {
-        console.error(`❌ Falha ao enviar e-mail para fornecedor ${forn.fornecedor_id}:`, err.message);
-        // Não interrompe o fluxo
+        console.error(`❌ Falha ao enviar e‑mail para fornecedor ${forn.fornecedor_id}:`, err.message);
       }
     }
 
@@ -1164,99 +1183,6 @@ class CotacaoService {
       status: 'rascunho',
       itens: itens.length,
       mensagem: 'Cotação salva com sucesso'
-    };
-  }
-
-  // ───────────────────────────────────────────────────────────────────────
-  // ENVIAR COTAÇÃO AOS FORNECEDORES
-  // ───────────────────────────────────────────────────────────────────────
-  async enviarCotacao(tenantId, cotacaoId) {
-    console.log(`📧 [CotacaoService] Enviando cotação ${cotacaoId}`);
-
-    // 1. Buscar cotação
-    const cotacao = await this.db.selectOne('cotacoes', { id: cotacaoId }, tenantId);
-    if (!cotacao) {
-      throw new Error(`Cotação ${cotacaoId} não encontrada`);
-    }
-
-    if (cotacao.status !== 'rascunho') {
-      throw new Error(`Cotação ${cotacaoId} já foi enviada`);
-    }
-
-    // 2. Buscar fornecedores da cotação
-    const fornecedores = await this.db.select('cotacao_fornecedores', 
-      { cotacao_id: cotacaoId, status: 'pendente' }, 
-      tenantId
-    );
-
-    if (fornecedores.length === 0) {
-      throw new Error(`Cotação ${cotacaoId} não tem fornecedores`);
-    }
-
-    // 3. Buscar dados para envio (chamado, itens, etc)
-    const chamado = await this.db.selectOne('chamados', { id: cotacao.chamado_id }, tenantId);
-    const itens = await this.db.select('chamado_itens', { chamado_id: cotacao.chamado_id }, tenantId);
-
-    // 4. Buscar emails dos fornecedores
-    const fornecedoresIds = fornecedores.map(f => f.fornecedor_id);
-    const fornecedoresData = await this.db.raw(`
-      SELECT id, nome, email FROM fornecedores 
-      WHERE tenant_id = $1 AND id = ANY($2::int[])
-    `, [tenantId, fornecedoresIds]);
-
-    console.log(`📮 Enviando para ${fornecedoresData.length} fornecedores`);
-
-    // 5. Enviar e‑mail para cada fornecedor
-    for (const forn of fornecedoresData) {
-      const cotacaoForn = fornecedores.find(f => f.fornecedor_id === forn.id);
-      if (!cotacaoForn) continue;
-
-      const token = cotacaoForn.token_acesso;
-      const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-      const link = `${frontendUrl}/portal/cotacao/${cotacaoId}/${token}`;
-
-      // Monta o corpo do e‑mail (personalize conforme necessário)
-      const corpo = `
-        <h2>Nova Cotação: ${cotacao.numero || cotacaoId}</h2>
-        <p>Prezado(a) ${forn.nome},</p>
-        <p>Você recebeu uma solicitação de cotação para os seguintes itens:</p>
-        <ul>
-          ${itens.map(item => `<li>${item.item_nome} - Qtd: ${item.quantidade}</li>`).join('')}
-        </ul>
-        <p>Clique no link abaixo para acessar o portal e enviar sua proposta:</p>
-        <p><a href="${link}" style="background: #007bff; color: white; padding: 10px 20px; text-decoration: none; border-radius: 5px;">Responder Cotação</a></p>
-        <p>Prazo para resposta: 48 horas.</p>
-        <hr>
-        <p><small>Esta é uma mensagem automática. Não responda este e-mail.</small></p>
-      `;
-
-      try {
-        await enviarEmailCotacao(forn.email, `Cotação ${cotacao.numero || cotacaoId}`, corpo);
-        console.log(`✅ E‑mail enviado para ${forn.email}`);
-      } catch (err) {
-        console.error(`❌ Falha ao enviar e‑mail para ${forn.email}:`, err.message);
-        // Não interrompe o fluxo, apenas registra o erro
-      }
-    }
-
-    // 6. Atualizar status da cotação para 'enviada'
-    await this.db.update('cotacoes', cotacaoId, {
-      status: 'enviada',
-      enviado_em: new Date()   // ← coluna correta
-    }, tenantId);
-
-    // 7. Atualizar status do chamado para 'cotando'
-    await this.db.update('chamados', cotacao.chamado_id, {
-      status: 'cotando'
-    }, tenantId);
-
-    console.log(`✅ Cotação enviada com sucesso e chamado atualizado`);
-
-    return {
-      cotacao_id: cotacaoId,
-      status: 'enviada',
-      fornecedores_notificados: fornecedoresData.length,
-      mensagem: 'Cotação enviada aos fornecedores'
     };
   }
 
