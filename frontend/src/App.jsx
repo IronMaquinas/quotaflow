@@ -98,23 +98,41 @@ function calcSavings(chamados, cotacoes) {
   });
 }
 
-export default function App(){
+export default function App() {
+  // 1. LOGS INICIAIS PARA DIAGNÓSTICO (síncronos)
+  console.log('🔍 [App] window.location.href:', window.location.href);
+  console.log('🔍 [App] window.location.hash:', window.location.hash);
+  console.log('🔍 [App] hash.startsWith("#/portal/cotacao/")?', window.location.hash.startsWith('#/portal/cotacao/'));
 
-  // ✅ ROTA PÚBLICA PORTAL (SEM LOGIN)
-  const hashAtual = window.location.hash;
-  console.log('🔍 Hash COMPLETO:', hashAtual);
-  console.log('🔍 Starts with #/portal/cotacao/:', hashAtual.startsWith('#/portal/cotacao/'));
+  // 2. ESTADO PARA CONTROLAR SE ESTAMOS NO PORTAL
+  const [isPortal, setIsPortal] = useState(false);
 
-  if (hashAtual.startsWith('#/portal/cotacao/')) {
-    console.log('✅ Abrindo portal sem login!');
+  // 3. useEffect para monitorar mudanças no hash
+  useEffect(() => {
+    const checkHash = () => {
+      const hash = window.location.hash;
+      console.log('🔍 [useEffect] hash detectado:', hash);
+      const isPortalRoute = hash.startsWith('#/portal/cotacao/');
+      console.log('🔍 [useEffect] isPortalRoute?', isPortalRoute);
+      setIsPortal(isPortalRoute);
+    };
+
+    checkHash(); // verifica na montagem
+    window.addEventListener('hashchange', checkHash); // reage a mudanças
+    return () => window.removeEventListener('hashchange', checkHash);
+  }, []);
+
+  // 4. SE FOR ROTA DE PORTAL, RENDERIZA IMEDIATAMENTE (sem login)
+  if (isPortal) {
+    console.log('✅ Renderizando TelaPortalFornecedor (sem login)');
     return (
-      <div style={{fontFamily:"'DM Sans','Segoe UI',sans-serif",background:C.bg,height:"100vh",color:C.text}}>
+      <div style={{ fontFamily: "'DM Sans','Segoe UI',sans-serif", background: C.bg, height: "100vh", color: C.text }}>
         <TelaPortalFornecedor />
       </div>
     );
   }
 
-
+  // 5. RESTANTE DO APP (login, estado do usuário, etc.)
   const [usuario, setUsuario] = useState(null);
   const chamados = useChamados();
   const cotacoes = useCotacoes();
@@ -222,6 +240,14 @@ export default function App(){
     );
   }
   */
+
+if (isPortal) {
+  return (
+    <div style={{fontFamily:"'DM Sans','Segoe UI',sans-serif", background:C.bg, height:"100vh", color:C.text}}>
+      <TelaPortalFornecedor />
+    </div>
+  );
+}
 
   console.log('❌ Não é portal, checando login...');
   // Mostrar login se não autenticado
