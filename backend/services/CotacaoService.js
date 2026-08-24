@@ -499,9 +499,14 @@ class CotacaoService {
         const link = `${frontendUrl}/portal/cotacao/${cotacaoId}/${token}`;
         console.log(`🔗 Link gerado: ${link}`);
 
-        const listaItens = itensDoFornecedor.map(item =>
-          `<li>${item.item_nome} - Qtd: ${item.quantidade}</li>`
-        ).join('');
+        const listaItens = itensDoFornecedor.map(item => {
+          console.log(`📝 Item: ${item.id} - Nome: "${item.item_nome}" - Qtd: ${item.quantidade}`);
+          return `<li>${item.item_nome} - Qtd: ${item.quantidade}</li>`;
+        }).join('');
+
+        console.log(`📧 Lista de itens gerada:\n${listaItens}`);
+        console.log(`🔗 Link FINAL: ${link}`);
+        console.log(`📨 Enviando email para: ${fornecedorInfo.email}`);
 
         const corpo = `
           <h2>Nova Cotação: ${cotacao.numero || cotacaoId}</h2>
