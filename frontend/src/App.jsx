@@ -194,6 +194,7 @@ export default function App(){
   // ✅ ROTA PÚBLICA PORTAL (SEM LOGIN)
   const hashAtual = window.location.hash;
   console.log('🔍 Hash COMPLETO:', hashAtual);
+  console.log('🔍 Starts with #/portal/cotacao/:', hashAtual.startsWith('#/portal/cotacao/'));
 
   if (hashAtual.startsWith('#/portal/cotacao/')) {
     console.log('✅ Abrindo portal sem login!');
@@ -204,6 +205,7 @@ export default function App(){
     );
   }
 
+  console.log('❌ Não é portal, checando login...');
   // Mostrar login se não autenticado
   if (!usuario) return <TelaLogin onLogin={login}/>;
 

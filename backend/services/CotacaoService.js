@@ -413,19 +413,22 @@ class CotacaoService {
 
     const chamado = await this.db.selectOne('chamados', { id: cotacao.chamado_id }, tenantId);
 
+    console.log(`🔍 Buscando itens para cotacao_id: ${cotacaoId}`);
+
     const itensCotacao = await this.db.raw(`
       SELECT 
         ci.id, 
         ci.chamado_item_id,
         ci.quantidade, 
         ci.fornecedores_ids,
-        COALESCE(ch.item_nome, 'Item sem nome') as item_nome
+        ch.item_nome,
+        ch.id as ch_id
       FROM cotacao_itens ci
       LEFT JOIN chamado_itens ch ON ch.id = ci.chamado_item_id
       WHERE ci.cotacao_id = $1 AND ci.tenant_id = $2
     `, [cotacaoId, tenantId]);
 
-    console.log(`📦 Itens da cotação (com nome):`, JSON.stringify(itensCotacao, null, 2));
+    console.log(`✅ Raw result:`, JSON.stringify(itensCotacao, null, 2));
 
     let fornecedores = await this.db.select('cotacao_fornecedores', {
       cotacao_id: cotacaoId,
