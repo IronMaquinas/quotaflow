@@ -192,18 +192,20 @@ export default function App(){
   };
 
   // ✅ ROTA PÚBLICA PORTAL (SEM LOGIN)
-const hashAtual = window.location.hash;
-console.log('🔍 Hash COMPLETO:', hashAtual);
-console.log('🔍 Starts with #/portal/cotacao/:', hashAtual.startsWith('#/portal/cotacao/'));
+  const hashAtual = window.location.hash;
+  console.log('🔍 Hash COMPLETO:', hashAtual);
 
-if (hashAtual.startsWith('#/portal/cotacao/')) {
-  console.log('✅ Abrindo portal sem login!');
-  console.log('✅ TelaPortalFornecedor:', TelaPortalFornecedor); // ← ADD ISSO
-  return <TelaPortalFornecedor />;
-}
+  if (hashAtual.startsWith('#/portal/cotacao/')) {
+    console.log('✅ Abrindo portal sem login!');
+    return (
+      <div style={{fontFamily:"'DM Sans','Segoe UI',sans-serif",background:C.bg,height:"100vh",color:C.text}}>
+        <TelaPortalFornecedor />
+      </div>
+    );
+  }
 
-console.log('❌ Não é portal, verificando login...');
-if (!usuario) return <TelaLogin onLogin={login}/>;
+  // Mostrar login se não autenticado
+  if (!usuario) return <TelaLogin onLogin={login}/>;
 
 const perfil = PERFIS[usuario.perfil];
 
