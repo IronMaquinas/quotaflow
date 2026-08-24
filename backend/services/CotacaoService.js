@@ -412,7 +412,7 @@ class CotacaoService {
 
     const chamado = await this.db.selectOne('chamados', { id: cotacao.chamado_id }, tenantId);
 
-    // 🔥 CORREÇÃO: Buscar também o nome do item da tabela chamado_itens
+    // 🔥 CORREÇÃO DEFINITIVA: garantir que item_nome seja retornado
     const itensCotacao = await this.db.raw(`
       SELECT 
         ci.id, 
@@ -449,6 +449,7 @@ class CotacaoService {
     const fornecedorMap = {};
     fornecedoresData.forEach(f => { fornecedorMap[f.id] = f; });
 
+    // 🔥 CORREÇÃO: usa a variável diretamente (sem concatenar com "FRONTEND_URL=")
     const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
     console.log(`🔗 FRONTEND_URL: ${frontendUrl}`);
 
@@ -495,12 +496,12 @@ class CotacaoService {
           continue;
         }
 
-        // 🔥 GARANTE que o link esteja correto
+        // 🔥 Link CORRETO (sem "FRONTEND_URL=")
         const link = `${frontendUrl}/portal/cotacao/${cotacaoId}/${token}`;
         console.log(`🔗 Link gerado: ${link}`);
 
         const listaItens = itensDoFornecedor.map(item =>
-          `<li>${item.item_nome || 'Item sem nome'} - Qtd: ${item.quantidade}</li>`
+          `<li>${item.item_nome} - Qtd: ${item.quantidade}</li>`
         ).join('');
 
         const corpo = `
