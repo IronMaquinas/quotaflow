@@ -414,16 +414,16 @@ class CotacaoService {
 
     // 🔥 CORREÇÃO DEFINITIVA: garantir que item_nome seja retornado
     const itensCotacao = await this.db.raw(`
-      SELECT 
-        ci.id, 
-        ci.chamado_item_id,
-        ci.quantidade, 
-        ci.fornecedores_ids,
-        COALESCE(ch.item_nome, 'Item sem nome') as item_nome
-      FROM cotacao_itens ci
-      JOIN chamado_itens ch ON ch.id = ci.chamado_item_id
-      WHERE ci.cotacao_id = $1 AND ci.tenant_id = $2
-    `, [cotacaoId, tenantId]);
+    SELECT 
+      ci.id, 
+      ci.chamado_item_id,
+      ci.quantidade, 
+      ci.fornecedores_ids,
+      ch.item_nome
+    FROM cotacao_itens ci
+    LEFT JOIN chamado_itens ch ON ch.id = ci.chamado_item_id
+    WHERE ci.cotacao_id = $1 AND ci.tenant_id = $2
+  `, [cotacaoId, tenantId]);
 
     console.log(`📦 Itens da cotação (com nome):`, JSON.stringify(itensCotacao, null, 2));
 
@@ -450,8 +450,7 @@ class CotacaoService {
     fornecedoresData.forEach(f => { fornecedorMap[f.id] = f; });
 
     // 🔥 CORREÇÃO: usa a variável diretamente (sem concatenar com "FRONTEND_URL=")
-    const frontendUrl = process.env.FRONTEND_URL || 'http://localhost:5173';
-    console.log(`🔗 FRONTEND_URL: ${frontendUrl}`);
+    const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/^FRONTEND_URL=/, '');    console.log(`🔗 FRONTEND_URL: ${frontendUrl}`);
 
     const extrairIds = (campo) => {
       if (!campo) return [];
