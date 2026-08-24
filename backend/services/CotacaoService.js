@@ -405,6 +405,7 @@ class CotacaoService {
   // 6. ENVIAR COTAÇÃO PARA FORNECEDORES
   // ───────────────────────────────────────────────────────────────────────
   async enviarCotacao(tenantId, cotacaoId, fornecedorIds = null) {
+    console.log('🚀 [enviarCotacao] INICIANDO FUNÇÃO');
     console.log(`📧 [CotacaoService] Enviando cotação ${cotacaoId}`);
 
     const cotacao = await this.db.selectOne('cotacoes', { id: cotacaoId }, tenantId);
@@ -412,18 +413,17 @@ class CotacaoService {
 
     const chamado = await this.db.selectOne('chamados', { id: cotacao.chamado_id }, tenantId);
 
-    // 🔥 CORREÇÃO DEFINITIVA: garantir que item_nome seja retornado
     const itensCotacao = await this.db.raw(`
-    SELECT 
-      ci.id, 
-      ci.chamado_item_id,
-      ci.quantidade, 
-      ci.fornecedores_ids,
-      ch.item_nome
-    FROM cotacao_itens ci
-    LEFT JOIN chamado_itens ch ON ch.id = ci.chamado_item_id
-    WHERE ci.cotacao_id = $1 AND ci.tenant_id = $2
-  `, [cotacaoId, tenantId]);
+      SELECT 
+        ci.id, 
+        ci.chamado_item_id,
+        ci.quantidade, 
+        ci.fornecedores_ids,
+        COALESCE(ch.item_nome, 'Item sem nome') as item_nome
+      FROM cotacao_itens ci
+      LEFT JOIN chamado_itens ch ON ch.id = ci.chamado_item_id
+      WHERE ci.cotacao_id = $1 AND ci.tenant_id = $2
+    `, [cotacaoId, tenantId]);
 
     console.log(`📦 Itens da cotação (com nome):`, JSON.stringify(itensCotacao, null, 2));
 
@@ -449,8 +449,8 @@ class CotacaoService {
     const fornecedorMap = {};
     fornecedoresData.forEach(f => { fornecedorMap[f.id] = f; });
 
-    // 🔥 CORREÇÃO: usa a variável diretamente (sem concatenar com "FRONTEND_URL=")
-    const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/^FRONTEND_URL=/, '');    console.log(`🔗 FRONTEND_URL: ${frontendUrl}`);
+    const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/^FRONTEND_URL=/, '');
+    console.log(`🔗 FRONTEND_URL: ${frontendUrl}`);
 
     const extrairIds = (campo) => {
       if (!campo) return [];
@@ -495,8 +495,8 @@ class CotacaoService {
           continue;
         }
 
-        // 🔥 Link CORRETO (sem "FRONTEND_URL=")
-        const link = `${frontendUrl}/portal/cotacao/${cotacaoId}/${token}`;
+        // 🔥 Link com # para funcionar no Netlify SPA
+        const link = `${frontendUrl}/#/portal/cotacao/${cotacaoId}/${token}`;
         console.log(`🔗 Link gerado: ${link}`);
 
         const listaItens = itensDoFornecedor.map(item => {
@@ -505,7 +505,6 @@ class CotacaoService {
         }).join('');
 
         console.log(`📧 Lista de itens gerada:\n${listaItens}`);
-        console.log(`🔗 Link FINAL: ${link}`);
         console.log(`📨 Enviando email para: ${fornecedorInfo.email}`);
 
         const corpo = `
