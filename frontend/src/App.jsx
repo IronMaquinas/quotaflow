@@ -99,6 +99,22 @@ function calcSavings(chamados, cotacoes) {
 }
 
 export default function App(){
+
+  // ✅ ROTA PÚBLICA PORTAL (SEM LOGIN)
+  const hashAtual = window.location.hash;
+  console.log('🔍 Hash COMPLETO:', hashAtual);
+  console.log('🔍 Starts with #/portal/cotacao/:', hashAtual.startsWith('#/portal/cotacao/'));
+
+  if (hashAtual.startsWith('#/portal/cotacao/')) {
+    console.log('✅ Abrindo portal sem login!');
+    return (
+      <div style={{fontFamily:"'DM Sans','Segoe UI',sans-serif",background:C.bg,height:"100vh",color:C.text}}>
+        <TelaPortalFornecedor />
+      </div>
+    );
+  }
+
+
   const [usuario, setUsuario] = useState(null);
   const chamados = useChamados();
   const cotacoes = useCotacoes();
@@ -191,6 +207,7 @@ export default function App(){
     navegar("plano");
   };
 
+  /*
   // ✅ ROTA PÚBLICA PORTAL (SEM LOGIN)
   const hashAtual = window.location.hash;
   console.log('🔍 Hash COMPLETO:', hashAtual);
@@ -204,6 +221,7 @@ export default function App(){
       </div>
     );
   }
+  */
 
   console.log('❌ Não é portal, checando login...');
   // Mostrar login se não autenticado
