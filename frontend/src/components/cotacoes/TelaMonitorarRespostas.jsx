@@ -388,7 +388,7 @@ export default function TelaMonitorarRespostas({
 
       {/* BOTÃO FINALIZAR */}
       <button
-        onClick={() => onFinalizarOV(cotacao.id)}
+        onClick={() => onFinalizarOV(cotacao.id, melhorProposta?.fornecedor_id)}
         disabled={resumo.respondidos === 0}
         style={{
           ...s.btn(resumo.respondidos > 0, C.success),

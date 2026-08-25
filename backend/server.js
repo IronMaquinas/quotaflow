@@ -27,6 +27,8 @@ const allowedOrigins = [
   'http://localhost:5173'
 ];
 
+const ordensVendaRoutes = require('./routes/ordensVenda');
+
 app.use(cors({
   origin: function (origin, callback) {
     // Permite requisições sem origin (ex: Postman) ou se origin estiver na lista
@@ -52,6 +54,7 @@ app.use("/api/usuarios",     tenantMiddleware, usuariosRoutes);
 app.use('/api/equipamentos', tenantMiddleware, equipamentosRouter);
 app.use('/api/tarefas',      tenantMiddleware, tarefasRoutes);
 app.use('/api', require('./routes/portalFornecedor'));
+app.use('/api/ordens-venda', tenantMiddleware, ordensVendaRoutes);
 
 // Rota de saúde (Railway usa para verificar se o servidor está rodando)
 app.get("/health", (req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));

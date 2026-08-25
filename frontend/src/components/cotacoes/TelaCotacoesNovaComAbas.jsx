@@ -361,8 +361,8 @@ const handleAbrirCotacao = async (cotacao) => {
     } catch (err) {
       alert('Erro ao carregar cotação: ' + err.message);
     }
-  } else if (cotacao.status === 'enviada' || cotacao.status === 'finalizada') {
-    // ← MODO VISUALIZAÇÃO (enviada/finalizada) 
+  } else if (cotacao.status === 'enviada' || cotacao.status === 'finalizada' || cotacao.status === 'respondida') {
+    // ← MODO VISUALIZAÇÃO (enviada/finalizada/respondida) 
     console.log(`👁️ Visualizando cotação ${cotacao.id}`);
     
     // Abrir a tela de respostas direto!
@@ -388,17 +388,12 @@ const handleAbrirCotacao = async (cotacao) => {
   };
 
   // ─── FILTRO COTAÇÕES (seu código original) ─────────────────
-  const cotacoesFiltered = cotacoesSeguro
-  .filter((cotacao) => {
-    if (filtro === "todos") {
-      return true;
-    }
-    if (filtro === "em_curso") {
-      return cotacao.status === "enviada";
-    }
-    if (filtro === "finalizado") {
-      return cotacao.status === "finalizada";
-    }
+  const cotacoesFiltered = cotacoesSeguro.filter((c) => {
+    if (filtro === "todos") return true;
+    if (filtro === "em_curso") return c.status === "enviada" || c.status === "respondida"; // opcional incluir
+    if (filtro === "respondida") return c.status === "respondida";
+    if (filtro === "finalizado") return c.status === "finalizada";
+    return false;
   })
   .filter((c) => {
     const chamado = chamadosSeguro.find((ch) => Number(ch.id) === Number(c.chamadoId));
@@ -1178,17 +1173,19 @@ const handleAbrirCotacao = async (cotacao) => {
           />
         </div>
         <div style={{ display: "flex", gap: 8 }}>
-          {["todos", "rascunho", "em_curso", "finalizado"].map((status) => {
-            // Calcula contagem apenas para rascunho e em_curso
+          {["todos", "rascunho", "em_curso", "finalizado", "respondida"].map((status) => {
+              // Calcula contagem apenas para rascunho e em_curso
             let label = status === "todos"
               ? "Todas"
               : status === "rascunho"
               ? "Rascunho"
               : status === "em_curso"
               ? "Em Curso"
-              : "Finalizadas";
+              : status === "finalizado"
+              ? "Finalizadas"
+              : "Respondidas"; // ← ADICIONE ESTA LINHA
 
-            // Adiciona contagem para rascunho e em_curso
+            // Adiciona contagem para rascunho, em_curso e respondida
             if (status === "rascunho") {
               const count = cotacoesSeguro.filter(c => c.status === 'rascunho').length;
               label += ` (${count})`;
@@ -1196,6 +1193,9 @@ const handleAbrirCotacao = async (cotacao) => {
               const count = cotacoesSeguro.filter(c => 
                 c.status === 'pendente' || c.status === 'enviada' || c.status === 'em_curso'
               ).length;
+              label += ` (${count})`;
+            } else if (status === "respondida") {
+              const count = cotacoesSeguro.filter(c => c.status === 'respondida').length;
               label += ` (${count})`;
             }
 
@@ -1375,7 +1375,6 @@ const handleAbrirCotacao = async (cotacao) => {
                 </div>
               );
             }
-
             if (telaMonitorar && statusCotacao) {
               return (
                 <TelaMonitorarRespostas
@@ -1389,7 +1388,7 @@ const handleAbrirCotacao = async (cotacao) => {
                     setStatusCotacao(null);
                     listarCotacoes();
                   }}
-                  onCriarOrdenVenda={handleCriarOrdenVenda}
+                  onFinalizarOV={handleCriarOrdenVenda}
                 />
               );
             }
@@ -1429,12 +1428,14 @@ const handleAbrirCotacao = async (cotacao) => {
                         cotacao.status === "pendente" ? C.warn :
                         cotacao.status === "enviada" ? C.accent :
                         cotacao.status === "finalizado" ? C.success :
+                        cotacao.status === "respondida" ? C.success :
                         C.muted
                       }}>
                         {cotacao.status === "rascunho" ? "Rascunho" :
                         cotacao.status === "pendente" ? "Pendente" :
                         cotacao.status === "enviada" ? "Enviada" :
                         cotacao.status === "finalizado" ? "Finalizado" :
+                        cotacao.status === "respondida" ? "Respondida" :
                         cotacao.status}
                     </div>
                   </div>

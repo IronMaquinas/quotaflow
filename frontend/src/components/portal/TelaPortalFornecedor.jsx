@@ -11,8 +11,11 @@ const URG_CONFIG = {
 };
 
 export default function TelaPortalFornecedor() {
-  // Pega o token da URL (ex: /portal/tok_xxx)
-  const token = window.location.pathname.split('/').pop();
+  // Extrai token e cotacaoId do hash
+  const hashParts = window.location.hash.split('/');
+  // Exemplo: #/portal/cotacao/1/token → ["", "portal", "cotacao", "1", "token"]
+  const token = hashParts[hashParts.length - 1];
+  const cotacaoId = hashParts[hashParts.length - 2];
 
   const { cotacao, loading, erro, respondendo, respostaEnviada, enviarResposta } = usePortal(token);
 
@@ -87,6 +90,7 @@ export default function TelaPortalFornecedor() {
 
   // Calcular frete rateado por item (igual ao mock)
   const freteRateado = (linha) => {
+    if (!linha) return 0;
     if (linha.frete === 'CIF') return 0;
     if (!linha.grupo) return parseFloat(linha.valorFreteInd || 0);
     const grupo = grupos.find((g) => g.id === linha.grupo);
@@ -99,6 +103,7 @@ export default function TelaPortalFornecedor() {
   };
 
   const custoItem = (linha) => {
+    if (!linha) return null;
     const val = parseFloat(linha.valor || 0);
     if (!val) return null;
     return val + freteRateado(linha);
@@ -163,6 +168,7 @@ export default function TelaPortalFornecedor() {
           </div>
           {cotacao.itens.map((it, i) => {
             const l = linhas.find((l) => l.id === it.id);
+            if (!l) return null;
             const ct = custoItem(l) || 0;
             return (
               <div
@@ -267,8 +273,21 @@ export default function TelaPortalFornecedor() {
                 }}
               >
                 <div>
-                  <div style={{ fontSize: 13, color: '#f3f4f6', fontWeight: 500 }}>{it.peca || it.nome}</div>
-                  <div style={{ fontSize: 10, color: '#6b7280' }}>{it.codigo}</div>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                    <span style={{ fontSize: 13, color: '#f3f4f6', fontWeight: 500 }}>
+                      {it.peca || it.nome}
+                    </span>
+                    {it.codigo && (
+                      <span style={{ fontSize: 10, color: '#3b82f6', fontFamily: "'IBM Plex Mono', monospace" }}>
+                        {it.codigo}
+                      </span>
+                    )}
+                  </div>
+                  {it.descricao && (
+                    <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>
+                      {it.descricao}
+                    </div>
+                  )}
                 </div>
                 <span style={{ fontSize: 12, color: '#d1d5db' }}>{it.quantidade}x</span>
                 <span style={{ fontSize: 13, color: '#f3f4f6', fontWeight: 600 }}>{fmtBRL(parseFloat(l.valor))}</span>
@@ -452,7 +471,7 @@ export default function TelaPortalFornecedor() {
               }}
             >
               <div>
-                <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
                   <span
                     style={{
                       fontSize: 9,
@@ -464,11 +483,20 @@ export default function TelaPortalFornecedor() {
                   >
                     {URG_CONFIG[it.urgencia]?.l || it.urgencia}
                   </span>
-                  <span style={{ fontSize: 13, color: '#f3f4f6', fontWeight: 500 }}>{it.peca || it.nome}</span>
+                  <span style={{ fontSize: 13, color: '#f3f4f6', fontWeight: 500 }}>
+                    {it.peca || it.nome}
+                  </span>
+                  {it.codigo && (
+                    <span style={{ fontSize: 10, color: '#3b82f6', fontFamily: "'IBM Plex Mono', monospace" }}>
+                      {it.codigo}
+                    </span>
+                  )}
                 </div>
-                <div style={{ fontSize: 10, color: '#3b82f6', marginTop: 2, fontFamily: "'IBM Plex Mono', monospace" }}>
-                  {it.codigo} · {it.equipamento || ''}
-                </div>
+                {it.descricao && (
+                  <div style={{ fontSize: 11, color: '#6b7280', marginTop: 2 }}>
+                    {it.descricao}
+                  </div>
+                )}
               </div>
               <span style={{ fontSize: 13, color: '#d1d5db', fontWeight: 600 }}>{it.quantidade}x</span>
               <input

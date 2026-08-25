@@ -6,6 +6,7 @@ import TelaLogin from "./TelaLogin";
 import TelaSignup from "./TelaSignup";
 import App from "./App";
 import { useAuth } from "./hooks/useAuth";
+import TelaPortalFornecedor from "./components/portal/TelaPortalFornecedor";
 
 console.log('🚀 main.jsx executando');
 
@@ -25,11 +26,18 @@ function Router() {
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
 
+  // 🔥 ROTA PÚBLICA DO PORTAL (NÃO REQUER LOGIN)
+  if (currentPage.startsWith('/portal/cotacao/')) {
+    return <TelaPortalFornecedor />;
+  }
+
+  // Redirecionar se já logado e tentar acessar login/signup
   if (isLogado && (currentPage === "login" || currentPage === "signup")) {
     window.location.hash = "#dashboard";
     return <div style={{ background: "#0a0e14", minHeight: "100vh" }} />;
   }
 
+  // Redirecionar para login se não logado e tentar acessar dashboard
   if (!isLogado && currentPage === "dashboard") {
     window.location.hash = "#login";
     return <div style={{ background: "#0a0e14", minHeight: "100vh" }} />;
@@ -51,6 +59,7 @@ function Router() {
     return <App />;
   }
 
+  // Qualquer outra rota → TelaLogin
   const handleLogin = (userData) => {
     console.log('🔍 handleLogin chamado com:', userData);
     loginWithData(userData);

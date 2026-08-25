@@ -415,20 +415,33 @@ class CotacaoService {
 
     console.log(`🔍 Buscando itens para cotacao_id: ${cotacaoId}`);
 
-    const itensCotacao = await this.db.raw(`
-      SELECT 
-        ci.id, 
-        ci.chamado_item_id,
-        ci.quantidade, 
-        ci.fornecedores_ids,
-        ch.item_nome,
-        ch.id as ch_id
-      FROM cotacao_itens ci
-      LEFT JOIN chamado_itens ch ON ch.id = ci.chamado_item_id
-      WHERE ci.cotacao_id = $1 AND ci.tenant_id = $2
-    `, [cotacaoId, tenantId]);
+    // 🔥 USANDO SUPABASE NATIVO (em vez de raw)
+    const { data: itensCotacao, error } = await supabase
+      .from('cotacao_itens')
+      .select(`
+        id,
+        chamado_item_id,
+        quantidade,
+        fornecedores_ids,
+        chamado_itens (
+          item_nome,
+          codigo,
+          descricao
+        )
+      `)
+      .eq('cotacao_id', cotacaoId)
+      .eq('tenant_id', tenantId);
 
-    console.log(`✅ Raw result:`, JSON.stringify(itensCotacao, null, 2));
+    if (error) throw new Error(`Erro ao buscar itens: ${error.message}`);
+
+    const itensComNome = itensCotacao.map(item => ({
+      ...item,
+      item_nome: item.chamado_itens?.item_nome || 'Item sem nome',
+      codigo: item.chamado_itens?.codigo || '',
+      descricao: item.chamado_itens?.descricao || ''
+    }));
+
+    console.log(`✅ Itens com nome:`, JSON.stringify(itensComNome, null, 2));
 
     let fornecedores = await this.db.select('cotacao_fornecedores', {
       cotacao_id: cotacaoId,
@@ -486,7 +499,7 @@ class CotacaoService {
           console.log(`🔑 Token gerado para fornecedor ${forn.fornecedor_id}`);
         }
 
-        const itensDoFornecedor = itensCotacao.filter(item => {
+        const itensDoFornecedor = itensComNome.filter(item => {
           const ids = extrairIds(item.fornecedores_ids);
           return ids.includes(Number(forn.fornecedor_id));
         });
@@ -498,17 +511,15 @@ class CotacaoService {
           continue;
         }
 
-        // 🔥 Link com # para funcionar no Netlify SPA
         const link = `${frontendUrl}/#/portal/cotacao/${cotacaoId}/${token}`;
         console.log(`🔗 Link gerado: ${link}`);
 
         const listaItens = itensDoFornecedor.map(item => {
-          console.log(`📝 Item: ${item.id} - Nome: "${item.item_nome}" - Qtd: ${item.quantidade}`);
-          return `<li>${item.item_nome} - Qtd: ${item.quantidade}</li>`;
+          const nome = item.item_nome;
+          const codigo = item.codigo ? ` (${item.codigo})` : '';
+          const descricao = item.descricao ? `<br/><small style="color:#666;">${item.descricao}</small>` : '';
+          return `<li>${nome}${codigo} - Qtd: ${item.quantidade}${descricao}</li>`;
         }).join('');
-
-        console.log(`📧 Lista de itens gerada:\n${listaItens}`);
-        console.log(`📨 Enviando email para: ${fornecedorInfo.email}`);
 
         const corpo = `
           <h2>Nova Cotação: ${cotacao.numero || cotacaoId}</h2>
@@ -1300,7 +1311,7 @@ class CotacaoService {
         throw new Error(`Cotação ${cotacaoId} não encontrada`);
       }
 
-      // 2. Buscar resposta do fornecedor (validar que respondeu)
+      // 2. Buscar resposta do fornecedor
       const resposta = await this.db.selectOne('cotacao_fornecedores', {
         cotacao_id: cotacaoId,
         fornecedor_id: fornecedorId
@@ -1314,16 +1325,15 @@ class CotacaoService {
         throw new Error(`Fornecedor ainda não respondeu esta cotação`);
       }
 
-      // 3. Buscar resposta do fornecedor (tem o valor!)
+      // 3. Buscar detalhes da resposta
       const respostaDetalhes = await this.db.selectOne('cotacao_fornecedores', {
         cotacao_id: cotacaoId,
         fornecedor_id: fornecedorId
       }, tenantId);
 
-      console.log(`💰 Resposta do fornecedor:`, respostaDetalhes);  // 🆕 LOG
+      console.log(`💰 Resposta do fornecedor:`, respostaDetalhes);
 
-
-      // 4. Buscar itens da cotação (SIMPLES)
+      // 4. Buscar itens da cotação
       const itensSimples = await this.db.raw(`
         SELECT id, quantidade
         FROM cotacao_itens
@@ -1331,7 +1341,6 @@ class CotacaoService {
           AND fornecedores_ids @> ARRAY[$2]::bigint[]
       `, [cotacaoId, fornecedorId]);
 
-      // Montar array com valor do fornecedor
       const itens = itensSimples.map(item => ({
         id: item.id,
         quantidade: item.quantidade,
@@ -1348,17 +1357,17 @@ class CotacaoService {
 
       console.log(`📋 ${itens.length} itens encontrados para este fornecedor`);
 
-      // 4. Calcular valor total
+      // 5. Calcular valor total
       const valorTotal = itens.reduce((sum, item) => {
         return sum + (parseFloat(item.valor_total) || 0);
       }, 0);
 
       console.log(`💰 Valor total: R$ ${valorTotal.toFixed(2)}`);
 
-      // 5. Gerar número único para OV
+      // 6. Gerar número único para OV
       const numeroOV = await this.gerarNumeroOrdenVenda(tenantId);
 
-      // 6. Criar ordem de venda
+      // 7. Criar ordem de venda
       const ordemVenda = await this.db.insert('ordens_venda', {
         tenant_id: tenantId,
         cotacao_id: cotacaoId,
@@ -1373,7 +1382,7 @@ class CotacaoService {
 
       console.log(`✅ OV criada: ${numeroOV} (ID: ${ordemVenda.id})`);
 
-      // 7. Criar registro de itens da OV (pra auditoria/rastreamento)
+      // 8. Criar itens da OV
       for (const item of itens) {
         await this.db.insert('ordem_venda_itens', {
           tenant_id: tenantId,
@@ -1391,11 +1400,57 @@ class CotacaoService {
 
       console.log(`✅ ${itens.length} itens adicionados à OV`);
 
-      // 8. Atualizar status da cotação para 'finalizada'
+      // 🔥 9. ENVIAR E-MAIL DE CONFIRMAÇÃO DA OV PARA O FORNECEDOR
+      try {
+        const { enviarEmailCotacao } = require('./emailService');
+        const fornecedor = await this.db.selectOne('fornecedores', { id: fornecedorId }, tenantId);
+        const empresa = await this.db.selectOne('tenants', { id: tenantId });
+        const cotacao = await this.db.selectOne('cotacoes', { id: cotacaoId }, tenantId);
+
+        if (fornecedor?.email) {
+          const assunto = `Ordem de Venda ${numeroOV} - Quotaflow`;
+          const listaItens = itens.map(i => 
+            `<li>${i.nome_item || 'Item'} - Qtd: ${i.quantidade} - Valor: R$ ${i.valor_unitario.toFixed(2)}</li>`
+          ).join('');
+
+          const corpo = `
+            <h2>Ordem de Venda #${numeroOV}</h2>
+            <p>Prezado(a) ${fornecedor.nome},</p>
+            <p>Confirmamos a emissão da Ordem de Venda para os itens abaixo:</p>
+            <ul>${listaItens}</ul>
+            <p><strong>Valor Total:</strong> R$ ${valorTotal.toFixed(2)}</p>
+            <p><strong>Prazo de Entrega:</strong> ${resposta.prazo} dias</p>
+            <p>Em breve o comprador entrará em contato para os próximos passos.</p>
+            <p>Agradecemos pela parceria!</p>
+            <hr>
+            <p><small>Esta é uma mensagem automática. Não responda este e-mail.</small></p>
+          `;
+
+          await enviarEmailCotacao(fornecedor.email, assunto, corpo);
+          console.log(`✅ E-mail de OV enviado para ${fornecedor.email}`);
+        } else {
+          console.warn(`⚠️ Fornecedor ${fornecedorId} sem e-mail cadastrado, não foi possível enviar OV.`);
+        }
+      } catch (err) {
+        console.error('❌ Falha ao enviar e-mail de OV:', err.message);
+        // Não interrompe o fluxo – a OV já foi criada
+      }
+
+      // 10. Atualizar status da cotação para 'finalizada'
       await this.db.update('cotacoes', cotacaoId, {
         status: 'finalizada',
         finalizado_em: new Date()
       }, tenantId);
+
+      // 11. Atualizar status do chamado para 'finalizado'
+      const chamado = await this.db.selectOne('chamados', { id: cotacao.chamado_id }, tenantId);
+      if (chamado) {
+        await this.db.update('chamados', chamado.id, {
+          status: 'finalizado',
+          finalizado_em: new Date()
+        }, tenantId);
+        console.log(`✅ Chamado ${chamado.numero} finalizado`);
+      }
 
       return {
         ordem_venda_id: ordemVenda.id,

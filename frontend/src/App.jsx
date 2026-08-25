@@ -16,7 +16,7 @@ import TelaLogin from './TelaLogin';
 import apiService from './services/apiService';
 import TelaCatalogo from "./components/catalogo/TelaCatalogo";
 import { useCatalogo } from './hooks/useCatalogo';
-
+import TelaOrdensVenda from './components/ordensvenda/TelaOrdensVenda';
 
 import {
   useChamados,
@@ -100,9 +100,6 @@ function calcSavings(chamados, cotacoes) {
 
 export default function App() {
   // 1. LOGS INICIAIS PARA DIAGNÓSTICO (síncronos)
-  console.log('🔍 [App] window.location.href:', window.location.href);
-  console.log('🔍 [App] window.location.hash:', window.location.hash);
-  console.log('🔍 [App] hash.startsWith("#/portal/cotacao/")?', window.location.hash.startsWith('#/portal/cotacao/'));
 
   // 2. ESTADO PARA CONTROLAR SE ESTAMOS NO PORTAL
   const [isPortal, setIsPortal] = useState(false);
@@ -239,7 +236,7 @@ export default function App() {
       </div>
     );
   }
-  */
+  
 
 if (isPortal) {
   return (
@@ -248,8 +245,16 @@ if (isPortal) {
     </div>
   );
 }
+  */
 
-  console.log('❌ Não é portal, checando login...');
+if (window.location.hash.startsWith('#/portal/cotacao/')) {
+  return (
+    <div style={{fontFamily:"'DM Sans','Segoe UI',sans-serif",background:C.bg,height:"100vh",color:C.text}}>
+      <TelaPortalFornecedor />
+    </div>
+  );
+}
+
   // Mostrar login se não autenticado
   if (!usuario) return <TelaLogin onLogin={login}/>;
 
@@ -260,6 +265,7 @@ const perfil = PERFIS[usuario.perfil];
     {id:"home",          l:"Início",                  perfis:["tecnico","comprador","gestor","admin"]},
     {id:"tecnico",       l:"🔧 Chamado",              perfis:["tecnico","comprador","gestor","admin"]},
     {id:"compradora",    l:"📋 Compras",              perfis:["comprador","gestor","admin"]},
+    {id:"ordensvenda",   l:"📄 Ordens de Venda",      perfis:["comprador","gestor","admin"]},
     {id:"plano",         l:`✅ Plano${tarefas.dados.filter(t=>t.status==="em_andamento").length>0?` (${tarefas.dados.filter(t=>t.status==="em_andamento").length})`:""}`, perfis:["comprador","gestor","admin"]},
     {id:"financeiro",    l:"💰 Financeiro",           perfis:["gestor","admin"]},
     {id:"relatorio",     l:"📄 Relatório",            perfis:["gestor","admin"]},
@@ -420,6 +426,13 @@ const perfil = PERFIS[usuario.perfil];
             />
           </div>
         )}
+
+        {temAcesso(tela) && tela === "ordensvenda" && (
+          <div style={{flex:1, overflowY:"auto"}}>
+            <TelaOrdensVenda C={C} s={s} fmtBRL={fmtBRL} fmtD={fmtD} />
+          </div>
+        )}
+
         {temAcesso(tela)&&tela==="financeiro"&&
           <div style={{flex:1,overflowY:"auto"}}>
             <TelaFinanceiroNova chamados={chamados.dados || []} cotacoes={cotacoes.dados || []} equipamentos={equipamentos.dados || []} />
