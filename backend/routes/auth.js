@@ -386,4 +386,54 @@ router.post("/logout", tenantMiddleware, async (req, res) => {
   });
 });
 
+// ─── LOGIN PARA FORNECEDOR ───
+router.post('/login-fornecedor', async (req, res) => {
+  try {
+    const { email, senha } = req.body;
+
+    if (!email || !senha) {
+      return res.status(400).json({ erro: 'Email e senha são obrigatórios' });
+    }
+
+    // Buscar fornecedor_usuarios
+    const usuario = await DB.selectOne('fornecedor_usuarios', { email });
+    if (!usuario) {
+      return res.status(401).json({ erro: 'Credenciais inválidas' });
+    }
+
+    // Verificar senha
+    const senhaValida = bcrypt.compareSync(senha, usuario.senha_hash);
+    if (!senhaValida) {
+      return res.status(401).json({ erro: 'Credenciais inválidas' });
+    }
+
+    // Gerar token JWT
+    const token = jwt.sign(
+      { user_id: usuario.id, fornecedor_id: usuario.fornecedor_id },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+
+    // Buscar dados do fornecedor
+    const fornecedor = await DB.selectOne('fornecedores', { id: usuario.fornecedor_id });
+
+    res.json({
+      ok: true,
+      token,
+      usuario: {
+        id: usuario.id,
+        nome: usuario.nome,
+        email: usuario.email,
+        perfil: usuario.perfil || 'vendedor',
+        fornecedor_id: usuario.fornecedor_id,
+        fornecedor_nome: fornecedor?.nome || ''
+      }
+    });
+
+  } catch (err) {
+    console.error('❌ Erro no login-fornecedor:', err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
 module.exports = router;

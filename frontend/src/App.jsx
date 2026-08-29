@@ -17,6 +17,11 @@ import apiService from './services/apiService';
 import TelaCatalogo from "./components/catalogo/TelaCatalogo";
 import { useCatalogo } from './hooks/useCatalogo';
 import TelaOrdensVenda from './components/ordensvenda/TelaOrdensVenda';
+import TelaCanalSpot from './components/spot/TelaCanalSpot';
+import TelaEstoqueConsumiveis from './components/estoque/TelaEstoqueConsumiveis';
+import TelaRetiradaConsumiveis from './components/estoque/TelaRetiradaConsumiveis';
+import TelaHistoricoMovimentacoes from './components/estoque/TelaHistoricoMovimentacoes';
+import TelaAprovacaoRetirada from './components/estoque/TelaAprovacaoRetirada';
 
 import {
   useChamados,
@@ -108,9 +113,7 @@ export default function App() {
   useEffect(() => {
     const checkHash = () => {
       const hash = window.location.hash;
-      console.log('🔍 [useEffect] hash detectado:', hash);
       const isPortalRoute = hash.startsWith('#/portal/cotacao/');
-      console.log('🔍 [useEffect] isPortalRoute?', isPortalRoute);
       setIsPortal(isPortalRoute);
     };
 
@@ -121,7 +124,6 @@ export default function App() {
 
   // 4. SE FOR ROTA DE PORTAL, RENDERIZA IMEDIATAMENTE (sem login)
   if (isPortal) {
-    console.log('✅ Renderizando TelaPortalFornecedor (sem login)');
     return (
       <div style={{ fontFamily: "'DM Sans','Segoe UI',sans-serif", background: C.bg, height: "100vh", color: C.text }}>
         <TelaPortalFornecedor />
@@ -144,6 +146,7 @@ export default function App() {
   const benchmark = useBenchmark();
   const relatorio = useRelatorio();
   const [tela,setTela]=useState("home");
+  const [totalPendencias, setTotalPendencias] = useState(0);
   const [participaBench,setParticipaBench]=useState(true);
   const email = useEmail();
   const [notasPeriodo,setNotasPeriodo]=useState({
@@ -152,15 +155,45 @@ export default function App() {
     "2026-03":"Retorno normal. Dois técnicos em treinamento — aumento de chamados corretivos.",
   });
 
+    const buscarTotalPendencias = async () => {
+    try {
+      const res = await apiService.get('/estoque/solicitacoes'); 
+      
+      console.log('📦 O que veio em res:', res); // Vai mostrar o array com os 4 itens
+      
+      const qtd = Array.isArray(res) ? res.length : 0;
+      setTotalPendencias(qtd || 0);
+    } catch (error) {
+      console.error("Erro ao buscar contagem de pendências:", error);
+      setTotalPendencias(0);
+    }
+  };
+
+  // Buscar pendências assim que o usuário logar
+  useEffect(() => {
+    if (usuario) {
+      buscarTotalPendencias();
+    }
+  }, [usuario]); 
+
   const setNota = (chave, texto) => setNotasPeriodo(prev=>({...prev,[chave]:texto}));
   const { itens, setItens, listar, importarFornecedor } = useCatalogo();
+  
   const login = (user) => {
     setUsuario(user);
-    
-    // ✅ SALVAR TOKEN PRIMEIRO
+    buscarTotalPendencias(); 
+  
+    // Salvar dados no localStorage
+    localStorage.setItem('usuario', JSON.stringify(user));
     if (user.access_token) {
       localStorage.setItem('access_token', user.access_token);
       apiService.setToken(user.access_token);
+    }
+    
+    // 🔥 SE FOR FORNECEDOR, REDIRECIONA PARA O PORTAL E NÃO CARREGA DADOS DE COMPRADOR
+    if (user.perfil === 'fornecedor' || user.fornecedor_id) {
+      window.location.hash = '#/portal'; // Redireciona para o portal
+      return; // Não carrega dados de comprador
     }
     
     // ✅ DEPOIS carregar dados
@@ -191,7 +224,8 @@ export default function App() {
       tecnico:"tecnico", 
       comprador:"compradora", 
       gestor:"financeiro", 
-      admin:"usuarios" 
+      admin:"usuarios",
+      fornecedor: "portalfornecedor"
     };
     setTela(telaInicial[perfil] || "home");
   };
@@ -222,31 +256,6 @@ export default function App() {
     navegar("plano");
   };
 
-  /*
-  // ✅ ROTA PÚBLICA PORTAL (SEM LOGIN)
-  const hashAtual = window.location.hash;
-  console.log('🔍 Hash COMPLETO:', hashAtual);
-  console.log('🔍 Starts with #/portal/cotacao/:', hashAtual.startsWith('#/portal/cotacao/'));
-
-  if (hashAtual.startsWith('#/portal/cotacao/')) {
-    console.log('✅ Abrindo portal sem login!');
-    return (
-      <div style={{fontFamily:"'DM Sans','Segoe UI',sans-serif",background:C.bg,height:"100vh",color:C.text}}>
-        <TelaPortalFornecedor />
-      </div>
-    );
-  }
-  
-
-if (isPortal) {
-  return (
-    <div style={{fontFamily:"'DM Sans','Segoe UI',sans-serif", background:C.bg, height:"100vh", color:C.text}}>
-      <TelaPortalFornecedor />
-    </div>
-  );
-}
-  */
-
 if (window.location.hash.startsWith('#/portal/cotacao/')) {
   return (
     <div style={{fontFamily:"'DM Sans','Segoe UI',sans-serif",background:C.bg,height:"100vh",color:C.text}}>
@@ -265,6 +274,11 @@ const perfil = PERFIS[usuario.perfil];
     {id:"home",          l:"Início",                  perfis:["tecnico","comprador","gestor","admin"]},
     {id:"tecnico",       l:"🔧 Chamado",              perfis:["tecnico","comprador","gestor","admin"]},
     {id:"compradora",    l:"📋 Compras",              perfis:["comprador","gestor","admin"]},
+    {id:"spot",          l:"⚡ Canal Spot",            perfis:["comprador","gestor","admin"]}, 
+    {id:"retirada",      l:"📤 Retirada",             perfis:["tecnico","comprador","gestor","admin"]},
+    {id:"estoque",       l:"📦 Consumíveis",          perfis:["comprador","gestor","admin"]},
+    {id:"historico_estoque", l:"📜 Movimentações",    perfis:["comprador","gestor","admin"]},
+    {id:"aprovacoes", l:"✅ Aprovações", perfis:["gestor","admin"], badge: totalPendencias > 0 ? totalPendencias : null},
     {id:"ordensvenda",   l:"📄 Ordens de Venda",      perfis:["comprador","gestor","admin"]},
     {id:"plano",         l:`✅ Plano${tarefas.dados.filter(t=>t.status==="em_andamento").length>0?` (${tarefas.dados.filter(t=>t.status==="em_andamento").length})`:""}`, perfis:["comprador","gestor","admin"]},
     {id:"financeiro",    l:"💰 Financeiro",           perfis:["gestor","admin"]},
@@ -274,7 +288,7 @@ const perfil = PERFIS[usuario.perfil];
     {id:"benchmark",     l:"📈 Benchmark",            perfis:["gestor","admin"]},
     {id:"equipamentos",  l:"⚙ Equipamentos",          perfis:["comprador","gestor","admin"]},
     {id:"fornecedores",  l:"🏭 Fornecedores",         perfis:["comprador","gestor","admin"]},
-    {id:"fornecedorportal",l:"🔗 Portal fornecedor",  perfis:["comprador","gestor","admin"]},
+    {id:"portalfornecedor", l:"🏢 Portal Fornecedor", perfis:["fornecedor","admin"]},
     {id:"catalogo",      l:"📦 Catálogo",             perfis:["comprador","gestor","admin"]},
     {id:"usuarios",      l:"👥 Usuários",             perfis:["admin"]},
   ].filter(n=>n.perfis.includes(usuario.perfil));
@@ -330,6 +344,21 @@ const perfil = PERFIS[usuario.perfil];
             >
               <span style={{width:20, display:"inline-block"}}>{t.l.split(" ")[0]}</span>
               <span>{t.l.split(" ").slice(1).join(" ")}</span>
+              {/* AQUI É O CONTADOR */}
+              {t.badge && (
+                <span style={{
+                  background: "#4CAF50",
+                  color: "white",
+                  fontSize: "11px",
+                  fontWeight: "bold",
+                  padding: "2px 6px",
+                  borderRadius: "10px",
+                  minWidth: "18px",
+                  textAlign: "center"
+                }}>
+                  {t.badge}
+                </span>
+              )}
             </button>
           ))}
 
@@ -404,7 +433,7 @@ const perfil = PERFIS[usuario.perfil];
               chamados={chamados.dados || []} 
               loading={chamados.loading} 
               erro={chamados.erro} 
-              listar={chamados.carregar}   // <- aqui está o listar
+              listar={chamados.carregar}
               criar={chamados.criar} 
               atualizar={chamados.atualizar} 
               deletar={chamados.deletar} 
@@ -426,6 +455,11 @@ const perfil = PERFIS[usuario.perfil];
             />
           </div>
         )}
+        {temAcesso(tela) && tela === "spot" && (
+          <div style={{flex:1, overflowY:"auto"}}>
+            <TelaCanalSpot C={C} s={s} fmtD={fmtD} />
+          </div>
+        )}
 
         {temAcesso(tela) && tela === "ordensvenda" && (
           <div style={{flex:1, overflowY:"auto"}}>
@@ -433,10 +467,46 @@ const perfil = PERFIS[usuario.perfil];
           </div>
         )}
 
+        {temAcesso(tela) && tela === "estoque" && (
+          <div style={{flex:1, overflowY:"auto"}}>
+            <TelaEstoqueConsumiveis C={C} s={s} fmtBRL={fmtBRL} fmtD={fmtD} />
+          </div>
+        )}
+
+        {temAcesso(tela) && tela === "historico_estoque" && (
+          <div style={{flex:1, overflowY:"auto"}}>
+            <TelaHistoricoMovimentacoes C={C} s={s} fmtD={fmtD} />
+          </div>
+        )}
+
+        {temAcesso(tela) && tela === "aprovacoes" && (
+          <div style={{flex:1, overflowY:"auto"}}>
+            {/* 🔥 Adicione a prop onAtualizarBadge */}
+            <TelaAprovacaoRetirada 
+              C={C} 
+              s={s} 
+              fmtD={fmtD} 
+              onAtualizarBadge={buscarTotalPendencias} 
+            />
+          </div>
+        )}
+
         {temAcesso(tela)&&tela==="financeiro"&&
           <div style={{flex:1,overflowY:"auto"}}>
             <TelaFinanceiroNova chamados={chamados.dados || []} cotacoes={cotacoes.dados || []} equipamentos={equipamentos.dados || []} />
           </div>}
+        
+        {temAcesso(tela) && tela === "retirada" && (
+          <div style={{flex:1, overflowY:"auto"}}>
+            <TelaRetiradaConsumiveis 
+              C={C} 
+              s={s} 
+              fmtBRL={fmtBRL} 
+              fmtD={fmtD}
+            />
+          </div>
+        )}
+
         {temAcesso(tela) && tela === "inteligencia" && (
           <div style={{flex:1,overflowY:"auto"}}>
             <TelaInteligenciaNova 
@@ -486,7 +556,7 @@ const perfil = PERFIS[usuario.perfil];
             />
           </div>
         )}
-        {temAcesso(tela)&&tela==="fornecedorportal"&&
+        {temAcesso(tela) && tela === "portalfornecedor" &&
           <div style={{flex:1,overflowY:"auto"}}>
             <TelaPortalFornecedor/>
           </div>}
@@ -2036,6 +2106,7 @@ const PERFIS = {
   comprador: { l:"Comprador",     c:"#3b82f6", icon:"📋" },
   gestor:    { l:"Gestor",        c:"#a78bfa", icon:"📊" },
   admin:     { l:"Administrador", c:"#ef4444", icon:"⚙"  },
+  fornecedor: { l:"Fornecedor",   c:"#22c55e", icon:"🏢" },
 };
 
 // Permissões por tela
@@ -2047,12 +2118,13 @@ const PERMISSOES = {
   financeiro:     ["gestor","admin"],
   relatorio:      ["gestor","admin"],
   historico:      ["gestor","admin"],
-  inteligencia:   ["gestor","admin"],   // compliance só admin vê dentro
+  inteligencia:   ["gestor","admin"],
   benchmark:      ["gestor","admin"],
   equipamentos:   ["comprador","gestor","admin"],
   fornecedores:   ["comprador","gestor","admin"],
   usuarios:       ["admin"],
-  fornecedorportal: ["tecnico","comprador","gestor","admin"], // demo
+  portalfornecedor: ["fornecedor","admin"],
+  aprovacoes:       ["gestor","admin"], 
 };
 
 // ─── Tela de Gestão de Usuários (Admin) ──────
@@ -2159,7 +2231,7 @@ function TelaUsuarios({ usuarios, setUsuarios }) {
             <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
               {Object.entries(PERMISSOES).map(([tela,perfis])=>{
                 const temAcesso=perfis.includes(form.perfil);
-                const labels={home:"Início",tecnico:"Chamados",compradora:"Compras",plano:"Plano de Ação",financeiro:"Financeiro",relatorio:"Relatório",historico:"Histórico",inteligencia:"Inteligência",benchmark:"Benchmark",equipamentos:"Equipamentos",fornecedores:"Fornecedores",usuarios:"Usuários",fornecedorportal:"Portal Fornecedor"};
+                const labels={home:"Início",tecnico:"Chamados",compradora:"Compras",plano:"Plano de Ação",financeiro:"Financeiro",relatorio:"Relatório",historico:"Histórico",inteligencia:"Inteligência",benchmark:"Benchmark",equipamentos:"Equipamentos",fornecedores:"Fornecedores",usuarios:"Usuários",portalfornecedor:"Portal Fornecedor"};
                 return(
                   <span key={tela} style={{fontSize:10,borderRadius:4,padding:"2px 7px",background:temAcesso?`${C.success}22`:C.border,color:temAcesso?C.success:C.muted,border:`1px solid ${temAcesso?`${C.success}44`:C.border}`}}>
                     {temAcesso?"✓":"✕"} {labels[tela]||tela}

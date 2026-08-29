@@ -8,14 +8,26 @@ export function useOrdensVenda() {
   const [erro, setErro] = useState(null);
 
   const listar = async () => {
+    const token = localStorage.getItem('access_token');
+    
+    // 🔥 SE NÃO HOUVER TOKEN, NÃO FAZ REQUISIÇÃO
+    if (!token) {
+      console.log('⏳ Token não encontrado, aguardando login...');
+      return;
+    }
+
     try {
       setLoading(true);
-      const data = await apiService.get('/ordens-venda');
-      setOrdens(data);
       setErro(null);
+      const data = await apiService.get('/ordens-venda');
+      setOrdens(data || []);
     } catch (err) {
+      console.error('❌ Erro ao listar OVs:', err);
+      // Se for erro de autenticação, não faz nada (o apiService já redireciona)
+      if (err.message?.includes('401') || err.message?.includes('unauthorized')) {
+        return;
+      }
       setErro(err.message);
-      console.error('Erro ao listar OVs:', err);
     } finally {
       setLoading(false);
     }

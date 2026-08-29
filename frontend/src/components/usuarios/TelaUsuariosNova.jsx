@@ -84,8 +84,14 @@ export default function TelaUsuariosNova({ useUsuarios, C, s }) {
     }
   };
 
-  const perfis = ['tecnico', 'comprador', 'gestor', 'admin'];
-  const perfilLabels = { tecnico: 'Técnico', comprador: 'Comprador', gestor: 'Gestor', admin: 'Administrador' };
+  const perfis = ['tecnico', 'comprador', 'gestor', 'admin', 'fornecedor'];
+  const perfilLabels = {
+    tecnico: 'Técnico',
+    comprador: 'Comprador',
+    gestor: 'Gestor',
+    admin: 'Administrador',
+    fornecedor: 'Fornecedor'
+  };
 
   return (
     <div style={{ padding: '22px 24px', overflowY: 'auto', height: '100%' }}>
@@ -116,7 +122,7 @@ export default function TelaUsuariosNova({ useUsuarios, C, s }) {
           style={{ ...s.input, flex: 1, minWidth: 200, padding: '8px 12px', fontSize: 12 }}
         />
         <div style={{ display: 'flex', gap: 4 }}>
-          {['todos', 'tecnico', 'comprador', 'gestor', 'admin'].map(p => (
+          {['todos', 'tecnico', 'comprador', 'gestor', 'admin', 'fornecedor'].map(p => (
             <button
               key={p}
               onClick={() => setFiltroPerfil(p)}
@@ -170,9 +176,10 @@ export default function TelaUsuariosNova({ useUsuarios, C, s }) {
         </div>
       ) : (
         <div style={{ ...s.card, overflow: 'hidden' }}>
-          <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 120px 100px 100px 100px', padding: '10px 18px', background: C.bg, borderBottom: `1px solid ${C.border}`, fontSize: 10, color: C.muted, letterSpacing: '0.08em' }}>
+          <div style={{ display: 'grid', gridTemplateColumns: '2fr 2fr 120px 120px 100px 100px 100px', padding: '10px 18px', background: C.bg, borderBottom: `1px solid ${C.border}`, fontSize: 10, color: C.muted, letterSpacing: '0.08em' }}>
             <span>NOME</span>
             <span>E-MAIL</span>
+            <span>TELEFONE</span>
             <span>PERFIL</span>
             <span>STATUS</span>
             <span>CRIADO EM</span>
@@ -191,6 +198,7 @@ export default function TelaUsuariosNova({ useUsuarios, C, s }) {
             >
               <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>{u.nome}</div>
               <div style={{ fontSize: 12, color: C.accent }}>{u.email}</div>
+              <div style={{ fontSize: 12, color: C.muted }}>{u.telefone || '—'}</div>
               <div>
                 <span style={{ ...s.tag(C.accent), fontSize: 10 }}>{perfilLabels[u.perfil]}</span>
               </div>
@@ -206,6 +214,7 @@ export default function TelaUsuariosNova({ useUsuarios, C, s }) {
                     setForm({
                       nome: u.nome,
                       email: u.email,
+                      telefone: u.telefone,
                       senha: '',
                       perfil: u.perfil,
                       ativo: u.ativo,
@@ -265,6 +274,13 @@ export default function TelaUsuariosNova({ useUsuarios, C, s }) {
                   onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
                   placeholder="joao@empresa.com"
                   style={s.input}
+                />
+                <Input
+                  label="TELEFONE"
+                  type="tel"
+                  value={form.telefone}
+                  onChange={e => setForm(f => ({ ...f, telefone: e.target.value }))}
+                  placeholder="(11) 99999-9999"
                 />
               </div>
 

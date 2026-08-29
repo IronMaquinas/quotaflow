@@ -10,6 +10,7 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
   const [modal, setModal] = useState(null);
   const [processando, setProcessando] = useState(false);
   const [consultandoCNPJ, setConsultandoCNPJ] = useState(false);
+  const [filtroCategoria, setFiltroCategoria] = useState('');
 
   // Estado do formulário (expandido)
   const [form, setForm] = useState({
@@ -52,16 +53,11 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
 
   // ─── FILTROS ──────────────────────────────────────────────
   const fornecedoresFiltered = (fornecedores || [])
-    .filter(f => filtroAtivo === "todos" || (filtroAtivo === "ativo" ? f.ativo : !f.ativo))
-    .filter(f => {
-      const search = busca.toLowerCase();
-      const contato = f.contatos?.[0] || {};
-      return (
-        f.nome?.toLowerCase().includes(search) ||
-        contato.email?.toLowerCase().includes(search) ||
-        f.cnpj?.includes(search)
-      );
-    });
+    .filter(f => filtroAtivo === 'todos' || (filtroAtivo === 'ativo' ? f.ativo : !f.ativo))
+    .filter(f => !busca || f.nome.toLowerCase().includes(busca.toLowerCase()))
+    .filter(f => !filtroCategoria || (f.categorias || []).some(cat => 
+      cat.toLowerCase().includes(filtroCategoria.toLowerCase())
+    ));
 
   // ─── FORMATADORES ─────────────────────────────────────────
   const formatarCNPJ = (valor) => {
@@ -217,6 +213,29 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
       categorias: [],
       email: "",
     });
+  };
+
+  const handleEditar = (forn) => {
+    const contato = forn.contatos?.[0] || {};
+    setForm({
+      nome: forn.nome || "",
+      razao_social: forn.razao_social || "",
+      cnpj: forn.cnpj ? formatarCNPJ(forn.cnpj) : "",
+      endereco: forn.endereco || "",
+      numero: forn.numero || "",
+      complemento: forn.complemento || "",
+      bairro: forn.bairro || "",
+      cidade: forn.cidade || "",
+      estado: forn.estado || "",
+      cep: forn.cep ? formatarCEP(forn.cep) : "",
+      email: forn.email || "",
+      contato_nome: contato.nome || "",
+      contato_email: contato.email || "",
+      contato_telefone: contato.telefone || "",
+      contato_whatsapp: contato.whatsapp || "",
+      categorias: forn.categorias || [],
+    });
+    setModal(forn.id);
   };
 
   // ─── TOGGLE ATIVO / DELETAR ──────────────────────────────
@@ -518,7 +537,8 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
         </button>
       </div>
 
-      <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap" }}>
+      {/* ─── FILTROS ─── */}
+      <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap", alignItems: "center" }}>
         <input
           type="text"
           placeholder="Buscar fornecedor..."
@@ -526,6 +546,16 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
           onChange={e => setBusca(e.target.value)}
           style={{ ...s.input, flex: 1, minWidth: 200, padding: "8px 12px", fontSize: 12 }}
         />
+        
+        {/* 🔥 FILTRO POR CATEGORIA (autocomplete simples) */}
+        <input
+          type="text"
+          placeholder="Filtrar por categoria..."
+          value={filtroCategoria}
+          onChange={e => setFiltroCategoria(e.target.value)}
+          style={{ ...s.input, width: 180, padding: "8px 12px", fontSize: 12 }}
+        />
+        
         <div style={{ display: "flex", gap: 4 }}>
           {[
             { id: "todos", label: "Todos" },
@@ -552,18 +582,25 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
         </div>
       </div>
 
-      {loading && <div style={{ color: C.muted, padding: 20, textAlign: "center" }}>Carregando...</div>}
-      {erro && <div style={{ color: "#ef4444", padding: 20, background: "#ef444422", borderRadius: 8, marginBottom: 16 }}>{erro}</div>}
-
+      {/* ─── LISTA DE FORNECEDORES ─── */}
       <div style={{ ...s.card, overflow: "hidden" }}>
-        <div style={{ display: "grid", gridTemplateColumns: "2fr 2fr 150px 120px 100px 100px", padding: "10px 18px", background: C.bg, borderBottom: `1px solid ${C.border}`, fontSize: 10, color: C.muted, letterSpacing: "0.08em" }}>
+        <div style={{ 
+          display: "grid", 
+          gridTemplateColumns: "2fr 1.5fr 1fr 1fr 100px", 
+          padding: "10px 18px", 
+          background: C.bg, 
+          borderBottom: `1px solid ${C.border}`, 
+          fontSize: 10, 
+          color: C.muted, 
+          letterSpacing: "0.08em" 
+        }}>
           <span>FORNECEDOR</span>
           <span>CONTATO</span>
-          <span>CNPJ</span>
           <span>CATEGORIAS</span>
+          <span>TIPO</span>
           <span>STATUS</span>
-          <span></span>
         </div>
+        
         {fornecedoresFiltered.map((forn, i) => {
           const contato = forn.contatos?.[0] || {};
           return (
@@ -571,53 +608,67 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
               key={forn.id}
               style={{
                 display: "grid",
-                gridTemplateColumns: "2fr 2fr 150px 120px 100px 100px",
+                gridTemplateColumns: "2fr 1.5fr 1fr 1fr 100px",
                 padding: "13px 18px",
                 borderBottom: i < fornecedoresFiltered.length - 1 ? `1px solid ${C.border}22` : "none",
                 alignItems: "center",
               }}
             >
+              {/* FORNECEDOR */}
               <div>
-                <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>{forn.nome}</div>
+                <div style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 13, color: C.text, fontWeight: 500 }}>
+                  {forn.nome}
+                  {forn.tipo === "global" && (
+                    <span
+                      style={{
+                        fontSize: 9,
+                        background: "#22c55e",
+                        color: "#fff",
+                        padding: "1px 8px",
+                        borderRadius: 12,
+                        fontWeight: 600,
+                        letterSpacing: "0.04em",
+                      }}
+                      title="Fornecedor verificado pela plataforma"
+                    >
+                      🏅 Certificado
+                    </span>
+                  )}
+                </div>
                 {forn.cidade && forn.estado && <div style={{ fontSize: 10, color: C.muted }}>{forn.cidade}/{forn.estado}</div>}
               </div>
+
+              {/* CONTATO */}
               <div>
                 {contato.nome && <div style={{ fontSize: 12, color: C.text }}>{contato.nome}</div>}
                 <div style={{ fontSize: 11, color: C.accent }}>{contato.email || "—"}</div>
               </div>
-              <div style={{ fontSize: 11, color: C.accent, fontFamily: "'IBM Plex Mono',monospace" }}>
-                {forn.cnpj || "—"}
-              </div>
+
+              {/* CATEGORIAS (resumidas) */}
               <div style={{ fontSize: 10, color: C.muted }}>
                 {forn.categorias?.slice(0, 2).join(", ") || "—"}
                 {forn.categorias?.length > 2 && ` +${forn.categorias.length - 2}`}
               </div>
-              <div style={{ ...s.tag(forn.ativo ? C.success : C.muted), fontSize: 10 }}>
-                {forn.ativo ? "Ativo" : "Inativo"}
+
+              {/* TIPO */}
+              <div>
+                <span style={{ 
+                  ...s.tag(forn.tipo === "global" ? C.success : C.muted), 
+                  fontSize: 9,
+                  background: forn.tipo === "global" ? "#22c55e22" : "transparent",
+                  border: `1px solid ${forn.tipo === "global" ? "#22c55e44" : C.border}`,
+                }}>
+                  {forn.tipo === "global" ? "Global" : "Local"}
+                </span>
               </div>
-              <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
+
+              {/* STATUS + AÇÕES */}
+              <div style={{ display: "flex", alignItems: "center", gap: 8, justifyContent: "flex-end" }}>
+                <span style={{ ...s.tag(forn.ativo ? C.success : C.muted), fontSize: 10 }}>
+                  {forn.ativo ? "Ativo" : "Inativo"}
+                </span>
                 <button
-                  onClick={() => {
-                    setForm({
-                      nome: forn.nome || "",
-                      razao_social: forn.razao_social || "",
-                      cnpj: forn.cnpj ? formatarCNPJ(forn.cnpj) : "",
-                      endereco: forn.endereco || "",
-                      numero: forn.numero || "",
-                      complemento: forn.complemento || "",
-                      bairro: forn.bairro || "",
-                      cidade: forn.cidade || "",
-                      estado: forn.estado || "",
-                      cep: forn.cep ? formatarCEP(forn.cep) : "",
-                      email: forn.email || "",  // ✅ ADD ISSO
-                      contato_nome: contato.nome || "",
-                      contato_email: contato.email || "",
-                      contato_telefone: contato.telefone || "",
-                      contato_whatsapp: contato.whatsapp || "",
-                      categorias: forn.categorias || [],
-                    });
-                    setModal(forn.id);
-                  }}
+                  onClick={() => handleEditar(forn)}
                   style={{ background: "transparent", border: `1px solid ${C.border}`, borderRadius: 5, padding: "4px 8px", color: C.muted, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}
                 >
                   ✏
@@ -627,12 +678,6 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
                   style={{ background: "transparent", border: `1px solid ${forn.ativo ? "#ef444433" : "#22c55e33"}`, borderRadius: 5, padding: "4px 8px", color: forn.ativo ? "#ef4444" : C.success, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}
                 >
                   {forn.ativo ? "❌" : "✅"}
-                </button>
-                <button
-                  onClick={() => handleDeletar(forn.id)}
-                  style={{ background: "transparent", border: `1px solid #ef444433`, borderRadius: 5, padding: "4px 8px", color: "#ef4444", fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}
-                >
-                  🗑
                 </button>
               </div>
             </div>

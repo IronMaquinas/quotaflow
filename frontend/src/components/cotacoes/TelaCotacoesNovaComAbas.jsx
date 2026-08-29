@@ -406,11 +406,8 @@ const handleAbrirCotacao = async (cotacao) => {
 
   // ─── RENDER: MODAL NOVA COTAÇÃO ─────────────────────────────
   if (modal === "nova") {
-    const chamadosSemCotacao = chamadosSeguro.filter(
-      (ch) => !cotacoesSeguro.some((c) => 
-        c.chamadoId === ch.id && 
-        (c.status === 'rascunho' || c.status === 'pendente' || c.status === 'enviada')
-      )
+    const chamadosSemCotacao = chamados.filter(
+      (ch) => !cotacoes.some((c) => c.chamado_id === ch.id) // Remove qualquer cotação, independente do status
     );
 
     return (
@@ -507,72 +504,90 @@ const handleAbrirCotacao = async (cotacao) => {
                     })}
                   </select>
                 </div>
-
-                <div style={{ marginBottom: 18 }}>
-                  <label style={s.label}>FORNECEDORES *</label>
-                  <div
-                    style={{
-                      display: "flex",
-                      flexDirection: "column",
-                      gap: 8,
-                      maxHeight: 250,
-                      overflowY: "auto",
-                    }}
-                  >
-                    {fornecedoresSeguro
-                      .filter((f) => f.ativo)
-                      .map((forn) => (
-                        <label
-                          key={forn.id}
-                          style={{
-                            display: "flex",
-                            alignItems: "center",
-                            gap: 10,
-                            padding: "8px 10px",
-                            background: formManual.fornecedorIds.includes(forn.id)
-                              ? C.accent + "22"
-                              : C.bg,
-                            borderRadius: 6,
-                            cursor: "pointer",
-                            border: formManual.fornecedorIds.includes(forn.id)
-                              ? `1px solid ${C.accent}`
-                              : "none",
-                            transition: "all 0.2s",
-                          }}
-                        >
-                          <input
-                            type="checkbox"
-                            checked={formManual.fornecedorIds.includes(forn.id)}
-                            onChange={(e) =>
-                              setFormManual((f) => ({
-                                ...f,
-                                fornecedorIds: e.target.checked
-                                  ? [...f.fornecedorIds, forn.id]
-                                  : f.fornecedorIds.filter(
-                                      (id) => id !== forn.id
-                                    ),
-                              }))
-                            }
-                            style={{ cursor: "pointer" }}
-                          />
-                          <div>
-                            <div
-                              style={{
-                                fontSize: 12,
-                                fontWeight: 500,
-                                color: C.text,
-                              }}
-                            >
-                              {forn.nome}
+                  <div style={{ marginBottom: 18 }}>
+                    <label style={s.label}>FORNECEDORES *</label>
+                    <div
+                      style={{
+                        display: "flex",
+                        flexDirection: "column",
+                        gap: 8,
+                        maxHeight: 250,
+                        overflowY: "auto",
+                      }}
+                    >
+                      {fornecedoresSeguro
+                        .filter((f) => f.ativo)
+                        .map((forn) => (
+                          <label
+                            key={forn.id}
+                            style={{
+                              display: "flex",
+                              alignItems: "center",
+                              gap: 10,
+                              padding: "8px 10px",
+                              background: formManual.fornecedorIds.includes(forn.id)
+                                ? C.accent + "22"
+                                : C.bg,
+                              borderRadius: 6,
+                              cursor: "pointer",
+                              border: formManual.fornecedorIds.includes(forn.id)
+                                ? `1px solid ${C.accent}`
+                                : "none",
+                              transition: "all 0.2s",
+                            }}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={formManual.fornecedorIds.includes(forn.id)}
+                              onChange={(e) =>
+                                setFormManual((f) => ({
+                                  ...f,
+                                  fornecedorIds: e.target.checked
+                                    ? [...f.fornecedorIds, forn.id]
+                                    : f.fornecedorIds.filter(
+                                        (id) => id !== forn.id
+                                      ),
+                                }))
+                              }
+                              style={{ cursor: "pointer" }}
+                            />
+                            <div>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  alignItems: "center",
+                                  gap: 6,
+                                  fontSize: 12,
+                                  fontWeight: 500,
+                                  color: C.text,
+                                }}
+                              >
+                                {forn.nome}
+                                {forn.tipo === "global" && (
+                                  <span
+                                    style={{
+                                      fontSize: 10,
+                                      background: "#22c55e",
+                                      color: "#fff",
+                                      padding: "1px 8px",
+                                      borderRadius: 12,
+                                      fontWeight: 600,
+                                      letterSpacing: "0.04em",
+                                    }}
+                                    title="Fornecedor verificado pela plataforma"
+                                  >
+                                    🏅 Certificado
+                                  </span>
+                                )}
+                              </div>
+                              <div style={{ fontSize: 10, color: C.muted }}>
+                                {forn.contatos?.[0]?.email || forn.email || "Sem email"}
+                              </div>
                             </div>
-                            <div style={{ fontSize: 10, color: C.muted }}>
-                            {forn.contatos?.[0]?.email || forn.email || "Sem email"}
-                            </div>
-                          </div>
-                        </label>
-                      ))}
+                          </label>
+                        ))}
+                    </div>
                   </div>
-                </div>
               </>
             )}
 
@@ -593,8 +608,7 @@ const handleAbrirCotacao = async (cotacao) => {
                   >
                     <option value="">Selecione um chamado</option>
                     {chamadosSemCotacao.map((ch) => {
-                      const primeiroItem =
-                        ch.itens?.[0]?.item_nome || ch.peca || "Sem item";
+                      const equipamento = ch.equipamento || "Equipamento não definido";
                       return (
                         <option key={ch.id} value={ch.id}>
                           {ch.numero} - {primeiroItem} ({ch.itens?.length || 0} itens)

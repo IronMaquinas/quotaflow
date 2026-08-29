@@ -1,6 +1,5 @@
 // frontend/src/services/portalService.js
 import { API_URL } from '../utils/constants';
-console.log('🔍 API_URL no portalService:', API_URL);
 
 export const portalService = {
   /**
@@ -9,6 +8,11 @@ export const portalService = {
    * @returns {Promise<Object>} Dados da cotação
    */
   async buscarCotacao(token) {
+    
+    if (!token) {
+      throw new Error('Token não fornecido');
+    }
+
     // Extrai cotacaoId do hash (formato: #/portal/cotacao/1/token)
     const hashParts = window.location.hash.split('/');
     const cotacaoId = hashParts[hashParts.length - 2];

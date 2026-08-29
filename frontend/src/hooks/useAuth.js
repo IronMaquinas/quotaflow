@@ -16,6 +16,17 @@ export function useAuth() {
       try {
         const token = localStorage.getItem("access_token");
         const refresh = localStorage.getItem("refresh_token");
+        const userType = localStorage.getItem("user_type");
+
+        // 🔥 SE FOR FORNECEDOR, NÃO TENTA RESTAURAR SESSÃO VIA /auth/me
+        if (userType === 'fornecedor') {
+          const usuario = JSON.parse(localStorage.getItem('usuario') || '{}');
+          if (usuario.id) {
+            setUsuario(usuario);
+            // Não tenta carregar tenant nem fazer requisições extras
+          }
+          return;
+        }
 
         if (!token) return;
 
@@ -73,7 +84,6 @@ export function useAuth() {
 
   // hooks/useAuth.js (adicione esta função)
   const loginWithData = useCallback((userData) => {
-    console.log('🔍 loginWithData recebido:', userData);
     localStorage.setItem("access_token", userData.access_token);
     localStorage.setItem("refresh_token", userData.refresh_token);
     setAccessToken(userData.access_token);

@@ -6,6 +6,7 @@ const cron = require("node-cron");
 
 const { DB, initializeDB } = require("./db");
 const tenantMiddleware = require("./middleware/tenantMiddleware");
+const fornecedorMiddleware = require("./middleware/fornecedorMiddleware");
 const authRoutes = require("./routes/auth");
 const cotacoesRoutes = require("./routes/cotacoes");
 const fornecedoresRoutes = require("./routes/fornecedores");
@@ -19,6 +20,14 @@ const catalogoRoutes = require("./routes/catalogo");
 
 const app = express();
 const PORT = process.env.PORT || 3001;
+const ordensVendaRoutes = require('./routes/ordensVenda');
+const spotRoutes = require('./routes/spot');
+const fornecedorRoutes = require('./routes/fornecedor');
+const itensConsumoRoutes = require('./routes/estoque/itensConsumo');
+const movimentacoesRoutes = require('./routes/estoque/movimentacoes');
+const recompraRoutes = require('./routes/estoque/recompra');
+const configEstoqueRoutes = require('./routes/estoque/configuracoes');
+const solicitacoesRoutes = require('./routes/estoque/solicitacoes');
 
 // ── Middlewares ──────────────────────────────
 const allowedOrigins = [
@@ -26,8 +35,6 @@ const allowedOrigins = [
   'https://quotaflow.netlify.app',
   'http://localhost:5173'
 ];
-
-const ordensVendaRoutes = require('./routes/ordensVenda');
 
 app.use(cors({
   origin: function (origin, callback) {
@@ -47,7 +54,7 @@ app.use(fileUpload());
 app.use("/api/auth",         authRoutes);
 app.use("/api/cotacoes",     cotacoesRoutes);
 app.use("/api/catalogo",     tenantMiddleware, catalogoRoutes);
-app.use("/api/fornecedores", tenantMiddleware, fornecedoresRoutes);
+app.use("/api/fornecedores", tenantMiddleware, fornecedoresRoutes); // Fornecedor do Cliente
 app.use("/api/email",        tenantMiddleware, emailRoutes);
 app.use("/api/cnpj",         tenantMiddleware, cnpjRoutes);
 app.use("/api/usuarios",     tenantMiddleware, usuariosRoutes);
@@ -55,6 +62,37 @@ app.use('/api/equipamentos', tenantMiddleware, equipamentosRouter);
 app.use('/api/tarefas',      tenantMiddleware, tarefasRoutes);
 app.use('/api', require('./routes/portalFornecedor'));
 app.use('/api/ordens-venda', tenantMiddleware, ordensVendaRoutes);
+app.use('/api/fornecedor', fornecedorRoutes); // Fornecedor anunciante com perfil de fornecedor exclusivo
+app.use('/api/estoque/itens', tenantMiddleware, itensConsumoRoutes);
+app.use('/api/estoque/movimentacoes', tenantMiddleware, movimentacoesRoutes);
+app.use('/api/estoque/recompra', tenantMiddleware, recompraRoutes);
+app.use('/api/estoque/configuracoes', tenantMiddleware, configEstoqueRoutes);
+app.use('/api/estoque/solicitacoes', tenantMiddleware, solicitacoesRoutes);
+app.use('/api/estoque', solicitacoesRoutes);
+
+// ROTA PÚBLICA (SEM MIDDLEWARE) – DEVE VIR ANTES
+app.get('/api/spot/publicas', async (req, res) => {
+  try {
+    const demandas = await DB.raw(`
+      SELECT 
+        ds.id, ds.tenant_id, ds.descricao_equipamento,
+        ds.marca_modelo, ds.componente, ds.part_number, ds.quantidade,
+        ds.comentarios, ds.urgencia, ds.criado_em,
+        t.nome as empresa_nome
+      FROM demandas_spot ds
+      JOIN tenants t ON t.id = ds.tenant_id
+      WHERE ds.status = 'aberta'
+      ORDER BY ds.criado_em DESC
+    `);
+    res.json(demandas);
+  } catch (err) {
+    console.error('❌ Erro ao listar demandas públicas:', err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// Rotas protegidas (exigem autenticação)
+app.use('/api/spot', tenantMiddleware, spotRoutes);
 
 // Rota de saúde (Railway usa para verificar se o servidor está rodando)
 app.get("/health", (req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));

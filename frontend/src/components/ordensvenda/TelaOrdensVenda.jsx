@@ -7,8 +7,17 @@ export default function TelaOrdensVenda({ fmtBRL, fmtD, C, s }) {
   const [detalhes, setDetalhes] = useState(null);
 
   useEffect(() => {
+  const token = localStorage.getItem('access_token');
+  if (token) {
     listar();
-  }, []);
+  } else {
+    console.log('⏳ Aguardando token para carregar OVs...');
+  }
+}, []);
+
+useEffect(() => {
+  console.log('📦 Ordens recebidas (detalhado):', JSON.stringify(ordens, null, 2));
+}, [ordens]);
 
   const handleAbrirDetalhes = async (id) => {
     const data = await buscarPorId(id);
@@ -84,9 +93,10 @@ export default function TelaOrdensVenda({ fmtBRL, fmtD, C, s }) {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 16, marginBottom: 20 }}>
               <div><span style={{ color: C.muted }}>Fornecedor:</span> {detalhes.fornecedor_nome}</div>
-              <div><span style={{ color: C.muted }}>Cotação:</span> {detalhes.cotacao_numero}</div>
-              <div><span style={{ color: C.muted }}>Prazo:</span> {detalhes.prazo_entrega} dias</div>
-            </div>
+              <div><span style={{ color: C.muted }}>Cotação:</span> {detalhes.cotacao_numero || detalhes.cotacao_id}</div>
+              <div><span style={{ color: C.muted }}>Criado por:</span> {detalhes.criado_por_nome}</div>
+              <div><span style={{ color: C.muted }}>Aprovado por:</span> {detalhes.aprovado_por_nome}</div>            </div>
+              <div><span style={{ color: C.muted }}>Data de emissão:</span> {new Date(detalhes.criado_em).toLocaleDateString('pt-BR')} às {new Date(detalhes.criado_em).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}</div>
             <div style={{ marginTop: 12 }}>
               <div style={{ fontSize: 12, fontWeight: 600, color: C.muted, marginBottom: 8 }}>ITENS</div>
               <div style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr', padding: '8px 12px', background: C.bg, borderRadius: 6, borderBottom: `1px solid ${C.border}`, fontSize: 11 }}>

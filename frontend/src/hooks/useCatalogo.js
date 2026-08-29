@@ -14,12 +14,8 @@ export function useCatalogo() {
     setErro(null);
     
     const response = await apiService.get('/catalogo/admin', { params: filtros });
-    console.log('📥 Itens recebidos:', response.itens?.length);
-    console.log('🔍 Primeiro item:', response.itens?.[0]);  // ← VER O PRIMEIRO ITEM!
-    console.log('🔍 Fornecedores do primeiro item:', response.itens?.[0]?.fornecedores);
 
     setItens(response.itens || []);
-    console.log('✅ setItens foi chamado');  // ← DEPOIS DE SETAR
   } catch (err) {
     setErro(err.message);
     console.error("Erro ao carregar:", err);

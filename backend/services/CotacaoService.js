@@ -180,32 +180,30 @@ class CotacaoService {
         fi.data_tabela,
         c.marca,
         c.modelo,
-        c.tipo_fabricante
+        c.tipo_fabricante,
+        f.tipo,
+        f.tenant_id as fornecedor_tenant_id
       FROM fornecedor_itens fi
       JOIN fornecedores f ON fi.fornecedor_id = f.id
       JOIN catalogo_itens c ON fi.item_catalogo_id = c.id
-      WHERE fi.tenant_id = $1 
-        AND fi.ativo = true
-        AND c.categoria = $2
+      WHERE fi.ativo = true
+        AND f.ativo = true
+        AND c.categoria = $1
+        AND (f.tipo = 'global' OR f.tenant_id = $2)
     `;
 
-    const params = [tenantId, categoria];
+    const params = [categoria, tenantId];
 
-    // Se temos marca, buscar ESPECÍFICO da marca OU genéricos
     if (marca) {
       query += ` AND (c.marca = $${params.length + 1} OR c.marca IS NULL)`;
       params.push(marca);
-
-      // Se temos modelo, buscar ESPECÍFICO do modelo OU genéricos
       if (modelo) {
         query += ` AND (c.modelo = $${params.length + 1} OR c.modelo IS NULL)`;
         params.push(modelo);
       }
     }
 
-    // Ordenar por preço (melhor preço primeiro)
     query += ` ORDER BY fi.preco_unitario ASC LIMIT 10`;
-
     const fornecedores = await this.db.raw(query, params);
     return fornecedores;
   }
@@ -482,6 +480,25 @@ class CotacaoService {
       return [];
     };
 
+    // ✅ BUSCAR COMPRADOR (ADICIONE AQUI)
+    const comprador = await this.db.selectOne('usuarios', { id: cotacao.usuario_id }, tenantId);
+      
+    // ✅ MONTAR ASSUNTO E RODAPÉ (ADICIONE AQUI)
+    const assunto = `Solicitação de Cotação - ${cotacao.numero_cotacao}`;    
+    
+    const rodape = `
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    Este é um email automático. Não responda diretamente.
+
+    Dúvidas sobre esta cotação?
+    ${comprador?.nome || 'Comprador'}:
+    📧 ${comprador?.email}
+    📞 ${comprador?.telefone || 'N/A'}
+
+    Acesse o portal: https://kotuno.netlify.app
+    ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+    `;
+
     for (const forn of fornecedores) {
       try {
         const fornecedorInfo = fornecedorMap[forn.fornecedor_id];
@@ -522,7 +539,7 @@ class CotacaoService {
         }).join('');
 
         const corpo = `
-          <h2>Nova Cotação: ${cotacao.numero || cotacaoId}</h2>
+          <h2>Solicitação de Cotação: ${cotacao.numero_cotacao}</h2>
           <p>Prezado(a) ${fornecedorInfo.nome},</p>
           <p>Você recebeu uma solicitação de cotação para os seguintes itens:</p>
           <ul>
@@ -761,7 +778,7 @@ class CotacaoService {
     console.log(`👥 ${fornecedores.length} fornecedor(es) encontrado(s)`);
 
     // 3. Criar cotação em rascunho
-    const numeroCotacao = `COT-AUTO-${chamadoId}-${Date.now()}`;
+    const numeroCotacao = `COT-${chamadoId}-${Date.now()}`;
     const cotacao = await this.db.insert('cotacoes', {
       tenant_id: tenantId,
       chamado_id: chamadoId,
@@ -809,14 +826,17 @@ class CotacaoService {
         f.email as fornecedor_email,
         fi.preco_unitario,
         fi.estoque_status,
-        fi.tempo_entrega_dias
+        fi.tempo_entrega_dias,
+        f.tipo,
+        f.tenant_id as fornecedor_tenant_id
       FROM fornecedor_itens fi
       JOIN fornecedores f ON fi.fornecedor_id = f.id
-      WHERE fi.tenant_id = $1 
-        AND fi.item_catalogo_id = $2
+      WHERE fi.item_catalogo_id = $1
         AND fi.ativo = true
+        AND f.ativo = true
+        AND (f.tipo = 'global' OR f.tenant_id = $2)
       ORDER BY fi.preco_unitario ASC
-    `, [tenantId, itemCatalogoId]);
+    `, [itemCatalogoId, tenantId]);
 
     return fornecedores.map(f => ({
       fornecedorId: f.fornecedor_id,
@@ -824,7 +844,9 @@ class CotacaoService {
       email: f.fornecedor_email,
       preco: f.preco_unitario || 0,
       estoque: f.estoque_status,
-      prazo: f.tempo_entrega_dias
+      prazo: f.tempo_entrega_dias,
+      tipo: f.tipo,
+      fornecedor_tenant_id: f.fornecedor_tenant_id
     }));
   }
 
@@ -1020,20 +1042,28 @@ class CotacaoService {
 
         // 1. Tenta buscar fornecedores diretos (pelo item_catalogo_id)
         const { data: diretos, error: errDir } = await supabase
-          .from('fornecedor_itens')
-          .select(`
-            fornecedor_id,
-            preco_unitario,
-            data_tabela,
-            estoque_status,
-            tempo_entrega_dias,
-            quantidade_minima
-          `)
-          .eq('tenant_id', tenantId)
-          .eq('item_catalogo_id', item.item_catalogo_id)
-          .eq('ativo', true)
-          .order('preco_unitario', { ascending: true })
-          .limit(3);
+        .from('fornecedor_itens')
+        .select(`
+          fornecedor_id,
+          preco_unitario,
+          data_tabela,
+          estoque_status,
+          tempo_entrega_dias,
+          quantidade_minima,
+          fornecedores!inner (
+            id,
+            nome,
+            email,
+            tipo,
+            tenant_id
+          )
+        `)
+        .eq('item_catalogo_id', item.item_catalogo_id)
+        .eq('ativo', true)
+        .eq('fornecedores.ativo', true)
+        .or(`fornecedores.tipo.eq.global,fornecedores.tenant_id.eq.${tenantId}`)
+        .order('preco_unitario', { ascending: true })
+        .limit(5);
 
         let fornecedores = [];
         if (!errDir && diretos && diretos.length > 0) {
@@ -1092,13 +1122,21 @@ class CotacaoService {
                   data_tabela,
                   estoque_status,
                   tempo_entrega_dias,
-                  quantidade_minima
+                  quantidade_minima,
+                  fornecedores!inner (
+                    id,
+                    nome,
+                    email,
+                    tipo,
+                    tenant_id
+                  )
                 `)
-                .eq('tenant_id', tenantId)
                 .eq('ativo', true)
                 .in('item_catalogo_id', idsItens)
+                .eq('fornecedores.ativo', true)
+                .or(`fornecedores.tipo.eq.global,fornecedores.tenant_id.eq.${tenantId}`)
                 .order('preco_unitario', { ascending: true })
-                .limit(3);
+                .limit(5);
 
               if (!errFI && fornecedorItens && fornecedorItens.length > 0) {
                 const fornecedorIds = fornecedorItens.map(f => f.fornecedor_id);
@@ -1137,7 +1175,8 @@ class CotacaoService {
           data_tabela: f.data_tabela,
           estoque: f.estoque_status || 'desconhecido',
           prazo: f.tempo_entrega_dias || 0,
-          quantidade_minima: f.quantidade_minima || 1
+          quantidade_minima: f.quantidade_minima || 1,
+          tipo: f.tipo || 'local'
         }));
 
         resultado[categoria].push({
@@ -1335,10 +1374,14 @@ class CotacaoService {
 
       // 4. Buscar itens da cotação
       const itensSimples = await this.db.raw(`
-        SELECT id, quantidade
-        FROM cotacao_itens
-        WHERE cotacao_id = $1
-          AND fornecedores_ids @> ARRAY[$2]::bigint[]
+        SELECT 
+          ci.id,
+          ci.quantidade,
+          COALESCE(ch.item_nome, 'Item sem nome') as nome_item
+        FROM cotacao_itens ci
+        LEFT JOIN chamado_itens ch ON ch.id = ci.chamado_item_id
+        WHERE ci.cotacao_id = $1
+          AND ci.fornecedores_ids @> ARRAY[$2]::bigint[]
       `, [cotacaoId, fornecedorId]);
 
       const itens = itensSimples.map(item => ({
@@ -1346,7 +1389,7 @@ class CotacaoService {
         quantidade: item.quantidade,
         valor_unitario: respostaDetalhes.valor,
         valor_total: item.quantidade * respostaDetalhes.valor,
-        nome_item: `Item ${item.id}`
+        nome_item: item.nome_item
       }));
 
       console.log(`📋 Itens processados:`, itens);
@@ -1377,7 +1420,8 @@ class CotacaoService {
         valor_total: valorTotal,
         valor_frete: resposta.valor_frete || 0,
         prazo_entrega: resposta.prazo,
-        criado_em: new Date()
+        criado_em: new Date(),
+        criado_por: usuarioId
       });
 
       console.log(`✅ OV criada: ${numeroOV} (ID: ${ordemVenda.id})`);

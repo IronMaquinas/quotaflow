@@ -90,10 +90,8 @@ router.post("/", tenantMiddleware, requerAdmin, async (req, res) => {
       });
     }
 
-    if (!["tecnico", "comprador", "gestor", "admin"].includes(perfil || "tecnico")) {
-      return res.status(400).json({
-        erro: "Perfil inválido. Opções: tecnico, comprador, gestor, admin"
-      });
+    if (!["tecnico", "comprador", "gestor", "admin", "fornecedor"].includes(perfil || "tecnico")) {
+      return res.status(400).json({ erro: "Perfil inválido. Opções: tecnico, comprador, gestor, admin, fornecedor" });
     }
 
     // Verificar se email já existe neste tenant
@@ -134,40 +132,80 @@ router.post("/", tenantMiddleware, requerAdmin, async (req, res) => {
 // PUT /api/usuarios/:id - Atualizar usuário
 // ─────────────────────────────────────────────────────────────────────────
 
+// PUT /api/usuarios/:id - Atualizar usuário (completo)
 router.put("/:id", tenantMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
-    const { nome, email } = req.body;
+    const { nome, email, perfil, ativo, senha } = req.body;
 
-    // Verificar que usuário pertence ao tenant
     const usuario = await DB.selectOne("usuarios", { id }, req.tenantId);
     if (!usuario) {
       return res.status(404).json({ erro: "Usuário não encontrado" });
     }
 
-    // Se está tentando mudar email, verificar se já existe
+    // Verificar email único
     if (email && email !== usuario.email) {
       const emailEmUso = await DB.selectOne("usuarios", { email }, req.tenantId);
       if (emailEmUso) {
-        return res.status(409).json({
-          erro: "Este email já está em uso nesta transportadora"
-        });
+        return res.status(409).json({ erro: "Este email já está em uso" });
       }
     }
 
-    // Atualizar
-    const updated = await DB.update("usuarios", id, {
-      nome: nome || usuario.nome,
-      email: email || usuario.email
-    }, req.tenantId);
+    const dadosAtualizar = {};
+    if (nome !== undefined) dadosAtualizar.nome = nome;
+    if (email !== undefined) dadosAtualizar.email = email;
+    if (perfil !== undefined) dadosAtualizar.perfil = perfil;
+    if (ativo !== undefined) dadosAtualizar.ativo = ativo ? 1 : 0;
+    if (senha && senha.length > 0) {
+      dadosAtualizar.senha_hash = bcrypt.hashSync(senha, 10);
+    }
 
+    await DB.update("usuarios", id, dadosAtualizar, req.tenantId);
+
+    const updated = await DB.selectOne("usuarios", { id }, req.tenantId);
     const { senha_hash, ...usuarioSeguro } = updated;
 
-    res.json({
-      ...usuarioSeguro,
-      mensagem: "Usuário atualizado com sucesso"
-    });
+    res.json({ ...usuarioSeguro, mensagem: "Usuário atualizado com sucesso" });
+  } catch (err) {
+    console.error("❌ Erro ao atualizar usuário:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
 
+// PATCH /api/usuarios/:id - Atualização parcial (mesma lógica)
+router.patch("/:id", tenantMiddleware, async (req, res) => {
+  // Reaproveita a mesma função do PUT
+  try {
+    const { id } = req.params;
+    const { nome, email, perfil, ativo, senha } = req.body;
+
+    const usuario = await DB.selectOne("usuarios", { id }, req.tenantId);
+    if (!usuario) {
+      return res.status(404).json({ erro: "Usuário não encontrado" });
+    }
+
+    if (email && email !== usuario.email) {
+      const emailEmUso = await DB.selectOne("usuarios", { email }, req.tenantId);
+      if (emailEmUso) {
+        return res.status(409).json({ erro: "Este email já está em uso" });
+      }
+    }
+
+    const dadosAtualizar = {};
+    if (nome !== undefined) dadosAtualizar.nome = nome;
+    if (email !== undefined) dadosAtualizar.email = email;
+    if (perfil !== undefined) dadosAtualizar.perfil = perfil;
+    if (ativo !== undefined) dadosAtualizar.ativo = ativo ? 1 : 0;
+    if (senha && senha.length > 0) {
+      dadosAtualizar.senha_hash = bcrypt.hashSync(senha, 10);
+    }
+
+    await DB.update("usuarios", id, dadosAtualizar, req.tenantId);
+
+    const updated = await DB.selectOne("usuarios", { id }, req.tenantId);
+    const { senha_hash, ...usuarioSeguro } = updated;
+
+    res.json({ ...usuarioSeguro, mensagem: "Usuário atualizado com sucesso" });
   } catch (err) {
     console.error("❌ Erro ao atualizar usuário:", err.message);
     res.status(500).json({ erro: err.message });

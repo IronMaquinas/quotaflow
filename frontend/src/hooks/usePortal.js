@@ -20,6 +20,11 @@ export function usePortal(token) {
       const data = await portalService.buscarCotacao(token);
       setCotacao(data);
     } catch (err) {
+      // 🔥 SE FOR ERRO DE TOKEN AUSENTE, IGNORA (NÃO MOSTRA ERRO)
+      if (err.message === 'Token não fornecido') {
+        setLoading(false);
+        return;
+      }
       setErro(err.message);
     } finally {
       setLoading(false);
@@ -45,8 +50,12 @@ export function usePortal(token) {
 
   // Carregar na montagem
   useEffect(() => {
+    if (!token) {
+      setLoading(false);
+      return;
+    }
     carregar();
-  }, [carregar]);
+  }, [token]);
 
   return {
     cotacao,

@@ -823,7 +823,8 @@ router.post('/:cotacaoId/ordem-venda', tenantMiddleware, async (req, res) => {
     const resultado = await cotacaoService.criarOrdenVenda(
       req.tenantId,
       parseInt(cotacaoId),
-      parseInt(fornecedor_id)
+      parseInt(fornecedor_id),
+      req.userId
     );
 
     res.json({

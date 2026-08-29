@@ -57,64 +57,61 @@ export default function TelaLogin({ onLogin }) {
   const [loading, setLoading] = useState(false);
   const [showSenha, setShowSenha] = useState(false);
 
+  const [isFornecedor, setIsFornecedor] = useState(false);
+
   // ─────────────────────────────────────────────────────────────────────
   // FAZER LOGIN VIA API REAL
   // ─────────────────────────────────────────────────────────────────────
   const entrar = async (e) => {
-  if (e) e.preventDefault();
+    if (e) e.preventDefault();
 
-  if (!email || !senha) {
-    setErro("Preencha email e senha");
-    return;
-  }
-
-  setErro("");
-  setLoading(true);
-
-  try {
-    const response = await fetch(`${API_URL}/auth/login`, {      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-      },
-      body: JSON.stringify({
-        email: email,
-        senha: senha,
-      }),
-    });
-
-    const data = await response.json();
-
-    console.log("🔍 Response completa:", data);
-    console.log("🔍 Tokens:", data.tokens);  // ← MUDE ISTO
-    console.log("🔍 Usuario:", data.usuario);
-
-    if (!response.ok) {
-      setErro(data.erro || data.message || "Erro ao fazer login");
-      setLoading(false);
+    if (!email || !senha) {
+      setErro("Preencha email e senha");
       return;
     }
 
-    // ✅ LOGIN BEM-SUCEDIDO
-    localStorage.setItem("access_token", data.tokens.accessToken);  // ← accessToken
-    localStorage.setItem("refresh_token", data.tokens.refreshToken);  // ← refreshToken
+    setErro("");
+    setLoading(true);
 
-    const usuario = {
-      id: data.usuario.id,
-      nome: data.usuario.nome,
-      email: data.usuario.email,
-      perfil: data.usuario.perfil || data.usuario.papel || "comprador",
-      ativo: true,
-      access_token: data.tokens.accessToken,  // ← accessToken
-    };
+    try {
+      const endpoint = isFornecedor ? '/auth/login-fornecedor' : '/auth/login';
+      const response = await fetch(`${API_URL}${endpoint}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, senha }),
+      });
 
-    onLogin(usuario);
+      const data = await response.json();
 
-  } catch (e) {
-    console.error("Erro de conexão:", e);
-    setErro("Erro de conexão com o servidor. Verifique se o backend está rodando.");
-    setLoading(false);
-  }
-};
+      if (!response.ok) {
+        setErro(data.erro || data.message || "Erro ao fazer login");
+        setLoading(false);
+        return;
+      }
+
+      // ✅ LOGIN BEM-SUCEDIDO
+      localStorage.setItem("access_token", data.tokens?.accessToken || data.token);
+      localStorage.setItem("refresh_token", data.tokens?.refreshToken || '');
+      localStorage.setItem("user_type", isFornecedor ? 'fornecedor' : 'comprador');
+
+      const usuario = {
+        id: data.usuario.id,
+        nome: data.usuario.nome,
+        email: data.usuario.email,
+        perfil: data.usuario.perfil || data.usuario.papel || (isFornecedor ? 'fornecedor' : 'comprador'),
+        ativo: true,
+        access_token: data.tokens?.accessToken || data.token,
+        fornecedor_id: data.usuario.fornecedor_id || null,
+      };
+
+      onLogin(usuario);
+
+    } catch (e) {
+      console.error("Erro de conexão:", e);
+      setErro("Erro de conexão com o servidor.");
+      setLoading(false);
+    }
+  };
 
   // ─────────────────────────────────────────────────────────────────────
   // PREENCHIMENTO RÁPIDO (credenciais de teste)
@@ -188,6 +185,48 @@ export default function TelaLogin({ onLogin }) {
             }}
           >
             Entrar na sua conta
+          </div>
+
+          {/* 🔥 TOGGLE COMPRADOR / FORNECEDOR */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 20 }}>
+            <button
+              type="button"
+              onClick={() => setIsFornecedor(false)}
+              style={{
+                flex: 1,
+                padding: '10px',
+                borderRadius: 6,
+                background: !isFornecedor ? C.accent : 'transparent',
+                border: `1px solid ${!isFornecedor ? C.accent : C.border}`,
+                color: !isFornecedor ? '#fff' : C.muted,
+                cursor: 'pointer',
+                fontSize: 13,
+                fontWeight: 600,
+                fontFamily: 'inherit',
+                transition: 'all .2s',
+              }}
+            >
+              🏢 Sou Comprador
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsFornecedor(true)}
+              style={{
+                flex: 1,
+                padding: '10px',
+                borderRadius: 6,
+                background: isFornecedor ? C.accent : 'transparent',
+                border: `1px solid ${isFornecedor ? C.accent : C.border}`,
+                color: isFornecedor ? '#fff' : C.muted,
+                cursor: 'pointer',
+                fontSize: 13,
+                fontWeight: 600,
+                fontFamily: 'inherit',
+                transition: 'all .2s',
+              }}
+            >
+              🔗 Sou Fornecedor
+            </button>
           </div>
 
           <form onSubmit={entrar}>
@@ -291,7 +330,7 @@ export default function TelaLogin({ onLogin }) {
                 </>
               ) : (
                 <>
-                  → Entrar
+                  {isFornecedor ? '🔗 Entrar como Fornecedor' : '→ Entrar'}
                 </>
               )}
             </button>
