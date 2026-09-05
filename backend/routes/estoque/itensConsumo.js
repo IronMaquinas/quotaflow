@@ -8,16 +8,25 @@ const tenantMiddleware = require('../../middleware/tenantMiddleware');
 router.get('/', tenantMiddleware, async (req, res) => {
   try {
     const tenantId = req.tenantId;
-    const itens = await DB.raw(`
-      SELECT 
-        ic.*,
-        f.nome as fornecedor_nome
-      FROM itens_consumo ic
-      LEFT JOIN fornecedores f ON f.id = ic.fornecedor_preferencial_id AND f.tenant_id = ic.tenant_id
-      WHERE ic.tenant_id = $1
-      ORDER BY ic.nome ASC
-    `, [tenantId]);
-    res.json(itens);
+    
+    // 1. Buscar os itens (com TODOS os campos, incluindo os novos)
+    const itens = await DB.select('itens_consumo', { tenant_id: tenantId }, tenantId);
+
+    // 2. Buscar o fornecedor separadamente (para exibir o nome)
+    const itensComFornecedor = await Promise.all(itens.map(async (item) => {
+      const fornecedor = item.fornecedor_preferencial_id ? 
+        await DB.selectOne('fornecedores', { id: item.fornecedor_preferencial_id, tenant_id: tenantId }, tenantId) : null;
+      
+      return {
+        ...item,
+        fornecedor_nome: fornecedor?.nome || '—'
+      };
+    }));
+
+    // 3. Ordenar por nome
+    itensComFornecedor.sort((a, b) => a.nome.localeCompare(b.nome));
+
+    res.json(itensComFornecedor);
   } catch (err) {
     console.error('❌ Erro ao listar itens de consumo:', err.message);
     res.status(500).json({ erro: err.message });
@@ -55,7 +64,13 @@ router.post('/', tenantMiddleware, async (req, res) => {
       lote_minimo_compra,
       quantidade_lotes_automatico,
       fornecedor_preferencial_id,
-      localizacao
+      localizacao,
+      // 🔥 NOVOS CAMPOS:
+      fabricante,
+      lote,
+      validade,
+      codigo_barras,
+      ativo
     } = req.body;
 
     if (!nome) {
@@ -75,7 +90,11 @@ router.post('/', tenantMiddleware, async (req, res) => {
       quantidade_lotes_automatico: quantidade_lotes_automatico || 1,
       fornecedor_preferencial_id: fornecedor_preferencial_id || null,
       localizacao: localizacao || null,
-      ativo: true
+      fabricante: fabricante || null,
+      lote: lote || null,
+      validade: validade || null,
+      codigo_barras: codigo_barras || null,
+      ativo: ativo !== false // 🔥 Se não vier, assume true
     }, tenantId);
 
     res.status(201).json(novoItem);
@@ -102,7 +121,12 @@ router.put('/:id', tenantMiddleware, async (req, res) => {
       quantidade_lotes_automatico,
       fornecedor_preferencial_id,
       localizacao,
-      ativo
+      ativo,
+      // 🔥 NOVOS CAMPOS:
+      fabricante,
+      lote,
+      validade,
+      codigo_barras
     } = req.body;
 
     const item = await DB.selectOne('itens_consumo', { id, tenant_id: tenantId }, tenantId);
@@ -120,9 +144,15 @@ router.put('/:id', tenantMiddleware, async (req, res) => {
     if (limite_recompra !== undefined) updateData.limite_recompra = limite_recompra;
     if (lote_minimo_compra !== undefined) updateData.lote_minimo_compra = lote_minimo_compra;
     if (quantidade_lotes_automatico !== undefined) updateData.quantidade_lotes_automatico = quantidade_lotes_automatico;
-    if (fornecedor_preferencial_id !== undefined) updateData.fornecedor_preferencial_id = fornecedor_preferencial_id;
-    if (localizacao !== undefined) updateData.localizacao = localizacao;
+    if (fornecedor_preferencial_id !== undefined) updateData.fornecedor_preferencial_id = fornecedor_preferencial_id;    if (localizacao !== undefined) updateData.localizacao = localizacao;
     if (ativo !== undefined) updateData.ativo = ativo;
+    
+    // 🔥 NOVOS CAMPOS:
+    if (fabricante !== undefined) updateData.fabricante = fabricante;
+    if (lote !== undefined) updateData.lote = lote;
+    if (validade !== undefined) updateData.validade = validade;
+    if (codigo_barras !== undefined) updateData.codigo_barras = codigo_barras;
+    
     updateData.atualizado_em = new Date();
 
     await DB.update('itens_consumo', id, updateData, tenantId);

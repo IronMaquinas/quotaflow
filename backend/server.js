@@ -28,6 +28,7 @@ const movimentacoesRoutes = require('./routes/estoque/movimentacoes');
 const recompraRoutes = require('./routes/estoque/recompra');
 const configEstoqueRoutes = require('./routes/estoque/configuracoes');
 const solicitacoesRoutes = require('./routes/estoque/solicitacoes');
+const ordemServicoRoutes = require('./routes/estoque/ordemServico');
 
 // ── Middlewares ──────────────────────────────
 const allowedOrigins = [
@@ -69,6 +70,7 @@ app.use('/api/estoque/recompra', tenantMiddleware, recompraRoutes);
 app.use('/api/estoque/configuracoes', tenantMiddleware, configEstoqueRoutes);
 app.use('/api/estoque/solicitacoes', tenantMiddleware, solicitacoesRoutes);
 app.use('/api/estoque', solicitacoesRoutes);
+app.use('/api/estoque/ordem-servico', tenantMiddleware, ordemServicoRoutes);
 
 // ROTA PÚBLICA (SEM MIDDLEWARE) – DEVE VIR ANTES
 app.get('/api/spot/publicas', async (req, res) => {

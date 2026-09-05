@@ -45,12 +45,13 @@ export default function TelaMonitorarRespostas({
     setFormEdicao({
       valor: fornecedor.valor || '',
       prazo: fornecedor.prazo || '',
-      frete: fornecedor.frete || '',
-      obs: fornecedor.obs || ''
+      frete: fornecedor.valor_frete || '',
+      obs: fornecedor.obs || '',
+      valor_renegociado: fornecedor.valor_renegociado || '',
+      frete_renegociado: fornecedor.frete_renegociado || '' // 🔥 NOVO
     });
   };
 
-  // ─── SALVAR EDIÇÃO ────────────────────────────────────────
   const handleSalvarEdicao = async () => {
     if (!formEdicao.valor || !formEdicao.prazo) {
       alert('Preencha valor e prazo');
@@ -66,10 +67,28 @@ export default function TelaMonitorarRespostas({
         {
           valor: parseFloat(formEdicao.valor),
           prazo: parseInt(formEdicao.prazo),
-          frete: formEdicao.frete ? parseFloat(formEdicao.frete) : 0,
-          obs: formEdicao.obs
+          valor_frete: formEdicao.frete ? parseFloat(formEdicao.frete) : 0,
+          obs: formEdicao.obs,
+          valor_renegociado: formEdicao.valor_renegociado ? parseFloat(formEdicao.valor_renegociado) : null,
+          frete_renegociado: formEdicao.frete_renegociado ? parseFloat(formEdicao.frete_renegociado) : null // 🔥 NOVO
         }
       );
+
+      // 🔥 ATUALIZAR O ESTADO LOCAL
+      setDados(prev => ({
+        ...prev,
+        itens: prev.itens.map(item => ({
+          ...item,
+          fornecedores: item.fornecedores.map(f => 
+            f.id === editandoFornecedor.id ? { 
+              ...f, 
+              valor_frete: parseFloat(formEdicao.frete) || 0,
+              valor_renegociado: formEdicao.valor_renegociado ? parseFloat(formEdicao.valor_renegociado) : null,
+              frete_renegociado: formEdicao.frete_renegociado ? parseFloat(formEdicao.frete_renegociado) : null // 🔥 NOVO
+            } : f
+          )
+        }))
+      }));
 
       setEditandoFornecedor(null);
       await carregarDados();
@@ -151,6 +170,54 @@ export default function TelaMonitorarRespostas({
 
           <div style={{ marginBottom: 16 }}>
             <label style={{ fontSize: 12, color: C.muted, display: "block", marginBottom: 4 }}>
+              VALOR RENEGOCIADO (R$)
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              value={formEdicao.valor_renegociado}
+              onChange={(e) => {
+                const val = e.target.value;
+                console.log('🔍 DIGITANDO valor_renegociado:', val);
+                setFormEdicao({...formEdicao, valor_renegociado: val});
+              }}
+            />
+          </div>
+
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 12, color: C.muted, display: "block", marginBottom: 4 }}>
+              FRETE RENEGOCIADO (R$)
+            </label>
+            <input
+              type="number"
+              step="0.01"
+              value={formEdicao.frete_renegociado}
+              onChange={(e) => setFormEdicao({...formEdicao, frete_renegociado: e.target.value})}
+              placeholder="Ex: 5.00"
+              style={{ ...s.input, width: "100%" }}
+            />
+          </div>
+
+          {/* 🔥 MOSTRAR ECONOMIA NO MODAL */}
+          {formEdicao.valor_renegociado && (
+            <div style={{ 
+              marginTop: 8, 
+              background: '#0f2f1a', 
+              border: '1px solid #22c55e44', 
+              borderRadius: 8, 
+              padding: '8px 12px', 
+              display: 'flex', 
+              gap: 8, 
+              alignItems: 'center' 
+            }}>
+              <span style={{ fontSize: 12, fontWeight: 700, color: '#22c55e' }}>
+                💰 Economia: {fmtBRL(parseFloat(formEdicao.valor) - parseFloat(formEdicao.valor_renegociado))}
+              </span>
+            </div>
+          )}
+
+          <div style={{ marginBottom: 16 }}>
+            <label style={{ fontSize: 12, color: C.muted, display: "block", marginBottom: 4 }}>
               OBSERVAÇÕES
             </label>
             <textarea
@@ -179,6 +246,27 @@ export default function TelaMonitorarRespostas({
       </div>
     );
   }
+
+  const salvarValorRenegociado = async (forn) => {
+    try {
+      await cotacoesService.atualizarRespostaFornecedor(
+        token,
+        cotacaoId,
+        forn.fornecedor_id,
+        {
+          valor: forn.valor,
+          prazo: forn.prazo,
+          frete: forn.frete,
+          obs: forn.obs,
+          valor_renegociado: forn.valor_renegociado
+        }
+      );
+      alert('✅ Valor renegociado salvo!');
+      await carregarDados();
+    } catch (err) {
+      alert('Erro ao salvar: ' + err.message);
+    }
+  };
 
   // ─── MODO VISUALIZAÇÃO ────────────────────────────────────
 
@@ -261,134 +349,176 @@ export default function TelaMonitorarRespostas({
       )}
 
       {/* TABELA POR ITEM */}
-      <div style={{ marginBottom: 20 }}>
-        <div style={{ fontSize: 12, fontWeight: 600, color: C.muted, marginBottom: 12 }}>
-          PROPOSTAS POR ITEM
-        </div>
-
-        {itens.map((item, itemIdx) => (
-          <div key={item.id} style={{ marginBottom: 16 }}>
-            {/* HEADER DO ITEM */}
-            <div style={{
-              display: "grid",
-              gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr 1fr 100px",
-              gap: 12,
-              padding: "12px 14px",
-              background: C.bg,
-              borderRadius: "6px 6px 0 0",
-              borderBottom: `1px solid ${C.border}`,
-              fontSize: 11,
-              fontWeight: 600,
-              color: C.muted,
-              letterSpacing: "0.05em"
-            }}>
-              <div>ITEM</div>
-              <div style={{ textAlign: "center" }}>QTD</div>
-              <div>FORNECEDOR</div>
-              <div style={{ textAlign: "right" }}>VALOR</div>
-              <div style={{ textAlign: "right" }}>FRETE</div>
-              <div style={{ textAlign: "right" }}>TOTAL</div>
-              <div style={{ textAlign: "center" }}>PRAZO</div>
-              <div></div>
-            </div>
-
-            {/* LINHAS DE FORNECEDORES */}
-            {item.fornecedores.map((forn, fornIdx) => {
-              const isMelhor = forn.posicao === 1;
-              const is2Melhor = forn.posicao === 2;
-              const isTemResposta = forn.status === 'respondido';
-              const corBorda = isTemResposta ? getCorBorda(forn.posicao) : 'transparent';
-
-              return (
-                <div key={forn.id} style={{
-                  display: "grid",
-                  gridTemplateColumns: "2fr 1fr 1fr 1fr 1fr 1fr 1fr 100px",
-                  gap: 12,
-                  padding: "12px 14px",
-                  background: itemIdx % 2 === 0 ? C.bg : "transparent",
-                  borderLeft: `4px solid ${corBorda}`,
-                  borderBottom: fornIdx < item.fornecedores.length - 1 ? `1px solid ${C.border}22` : `2px solid ${C.border}`,
-                  alignItems: "center",
-                  opacity: isTemResposta ? 1 : 0.6
-                }}>
-                  {/* ITEM + QTD (mesclados - só na primeira linha) */}
-                  {fornIdx === 0 ? (
-                    <>
-                      <div style={{
-                        fontSize: 12,
-                        fontWeight: 600,
-                        color: C.text,
-                        gridColumn: "1"
-                      }}>
-                        <div>{item.nome}</div>
-                        {item.codigo && (
-                          <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
-                            {item.codigo}
-                          </div>
-                        )}
-                      </div>
-                      <div style={{ textAlign: "center", fontSize: 12, fontWeight: 600, color: C.text }}>
-                        {item.quantidade}
-                      </div>
-                    </>
-                  ) : (
-                    <>
-                      <div></div>
-                      <div></div>
-                    </>
-                  )}
-
-                  {/* FORNECEDOR */}
-                  <div style={{ fontSize: 12, color: C.text, fontWeight: 500 }}>
-                    {forn.nome}
-                  </div>
-
-                  {/* VALOR */}
-                  <div style={{ textAlign: "right", fontSize: 12, color: C.text, fontWeight: isTemResposta ? 600 : 400 }}>
-                    {isTemResposta ? fmtBRL(forn.valor) : '—'}
-                  </div>
-
-                  {/* FRETE */}
-                  <div style={{ textAlign: "right", fontSize: 12, color: C.text, fontWeight: isTemResposta ? 600 : 400 }}>
-                    {isTemResposta ? fmtBRL(forn.frete || 0) : '—'}
-                  </div>
-
-                  {/* TOTAL */}
-                  <div style={{
-                    textAlign: "right",
-                    fontSize: 12,
-                    fontWeight: 700,
-                    color: isTemResposta ? (isMelhor ? C.success : is2Melhor ? C.warn : '#ef4444') : C.muted
-                  }}>
-                    {isTemResposta ? fmtBRL(forn.total) : '⏳ Aguardando'}
-                  </div>
-
-                  {/* PRAZO */}
-                  <div style={{ textAlign: "center", fontSize: 11, color: C.muted }}>
-                    {isTemResposta ? `${forn.prazo}d` : '—'}
-                  </div>
-
-                  {/* BOTÕES */}
-                  <button
-                    onClick={() => handleAbrirEdicao(forn)}
-                    style={{
-                      ...s.btn(true, C.accent),
-                      padding: "6px 12px",
-                      fontSize: 11
-                    }}
-                  >
-                    {isTemResposta ? "✏️" : "➕"}
-                  </button>
-                </div>
-              );
-            })}
+      <div style={{ marginBottom: 20, overflowX: 'auto', maxWidth: '100%' }}>
+        <div style={{ minWidth: 1000 }}>
+          {/* TÍTULO */}
+          <div style={{ fontSize: 12, fontWeight: 600, color: C.muted, marginBottom: 12 }}>
+            PROPOSTAS POR ITEM
           </div>
-        ))}
+
+          {itens.map((item, itemIdx) => (
+            <div key={item.id} style={{ marginBottom: 16 }}>
+              {/* HEADER DO ITEM */}
+              <div style={{
+                display: "grid",
+                gridTemplateColumns: "minmax(100px, 1fr) 40px minmax(110px, 1fr) 80px 80px 80px 60px 110px 110px 90px 80px",
+                padding: "12px 14px",
+                background: C.bg,
+                borderRadius: "6px 6px 0 0",
+                borderBottom: `1px solid ${C.border}`,
+                fontSize: 11,
+                fontWeight: 600,
+                color: C.muted,
+                letterSpacing: "0.05em"
+              }}>
+                <div>ITEM</div>
+                <div style={{ textAlign: "center" }}>QTD</div>
+                <div>FORNECEDOR</div>
+                <div style={{ textAlign: "left" }}>VALOR</div>
+                <div style={{ textAlign: "left" }}>FRETE</div>
+                <div style={{ textAlign: "left" }}>TOTAL</div>
+                <div style={{ textAlign: "left" }}>PRAZO</div>
+                <div style={{ textAlign: "left" }}>RENEGOCIADO</div>
+                <div style={{ textAlign: "left" }}>FRETE RENEGOCIADO</div>
+                <div style={{ textAlign: "left" }}>SAVING</div>
+                <div></div>
+              </div>
+
+              {/* LINHAS DE FORNECEDORES */}
+              {item.fornecedores.map((forn, fornIdx) => {
+                const isMelhor = forn.posicao === 1;
+                const is2Melhor = forn.posicao === 2;
+                const isTemResposta = forn.status === 'respondido';
+                const corBorda = isTemResposta ? getCorBorda(forn.posicao) : 'transparent';
+
+                return (
+                  <div key={forn.id} style={{
+                    display: "grid",
+                    gridTemplateColumns: "minmax(100px, 1fr) 40px minmax(110px, 1fr) 80px 80px 80px 60px 110px 110px 90px 80px",
+                    gap: 6,
+                    padding: "12px 14px",
+                    background: itemIdx % 2 === 0 ? C.bg : "transparent",
+                    borderLeft: `4px solid ${corBorda}`,
+                    borderBottom: fornIdx < item.fornecedores.length - 1 ? `1px solid ${C.border}22` : `2px solid ${C.border}`,
+                    alignItems: "center",
+                    opacity: isTemResposta ? 1 : 0.6
+                  }}>
+                    {/* ITEM + QTD */}
+                    {fornIdx === 0 && (
+                      <>
+                        <div style={{
+                          fontSize: 12,
+                          fontWeight: 600,
+                          color: C.text,
+                        }}>
+                          <div>{item.nome}</div>
+                          {item.codigo && (
+                            <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
+                              {item.codigo}
+                            </div>
+                          )}
+                        </div>
+                        <div style={{ textAlign: "center", fontSize: 12, fontWeight: 600, color: C.text }}>
+                          {item.quantidade}
+                        </div>
+                      </>
+                    )}
+                    {fornIdx > 0 && (
+                      <>
+                        <div></div>
+                        <div></div>
+                      </>
+                    )}
+
+                    {/* FORNECEDOR */}
+                    <div style={{ fontSize: 12, color: C.text, fontWeight: 500 }}>
+                      {forn.nome}
+                    </div>
+
+                    {/* VALOR */}
+                    <div style={{ textAlign: "right", fontSize: 12, color: C.text, fontWeight: 600 }}>
+                      {isTemResposta ? fmtBRL(forn.valor) : '—'}
+                    </div>
+
+                    {/* FRETE */}
+                    <div style={{ textAlign: "right", fontSize: 12, color: C.text, fontWeight: 600 }}>
+                      {isTemResposta ? fmtBRL(forn.frete || 0) : '—'}
+                    </div>
+
+                    {/* TOTAL */}
+                    <div style={{
+                      textAlign: "right",
+                      fontSize: 12,
+                      fontWeight: 700,
+                      color: isTemResposta ? (isMelhor ? C.success : is2Melhor ? C.warn : '#ef4444') : C.muted
+                    }}>
+                      {isTemResposta ? fmtBRL(forn.total) : '⏳ Aguardando'}
+                    </div>
+
+                    {/* PRAZO */}
+                    <div style={{ textAlign: "center", fontSize: 11, color: C.muted }}>
+                      {isTemResposta ? `${forn.prazo}d` : '—'}
+                    </div>
+
+                    {/* RENEGOCIADO */}
+                    <div style={{ textAlign: "right", fontSize: 12, color: '#f59e0b', fontWeight: 600 }}>
+                      {forn.valor_renegociado ? fmtBRL(forn.valor_renegociado) : '—'}
+                    </div>
+
+                    {/* FRETE RENEGOCIADO */}
+                    <div style={{ textAlign: "right", fontSize: 12, color: '#f59e0b', fontWeight: 600 }}>
+                      {forn.frete_renegociado ? fmtBRL(forn.frete_renegociado) : '—'}
+                    </div>
+
+                    {/* SAVING */}
+                    <div style={{ textAlign: "right", fontSize: 12, color: '#22c55e', fontWeight: 700 }}>
+                      {forn.economia || forn.economia_frete ? fmtBRL((forn.economia || 0) + (forn.economia_frete || 0)) : '—'}
+                    </div>
+
+                    {/* BOTÕES DE AÇÃO */}
+                    <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                      <button
+                        onClick={() => handleAbrirEdicao(forn)}
+                        style={{
+                          ...s.btn(true, C.accent),
+                          padding: "6px 12px",
+                          fontSize: 11
+                        }}
+                      >
+                        {isTemResposta ? "✏️" : "➕"}
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+        </div>
       </div>
 
       {/* BOTÃO FINALIZAR */}
       <button
-        onClick={() => onFinalizarOV(cotacao.id, melhorProposta?.fornecedor_id)}
+        onClick={() => {
+          // 🔥 Verificar se tem melhor proposta
+          if (!melhorProposta) {
+            alert('Selecione um fornecedor vencedor');
+            return;
+          }
+          
+          // 🔥 Buscar o fornecedor vencedor com todos os dados
+          const fornecedorVencedor = melhorProposta;
+          const valorFinal = fornecedorVencedor.valor_renegociado || fornecedorVencedor.valor;
+          const freteFinal = fornecedorVencedor.frete_renegociado || fornecedorVencedor.frete;
+          
+          onFinalizarOV(cotacao.id, fornecedorVencedor.fornecedor_id, {
+            valor: valorFinal,
+            frete: freteFinal,
+            valor_original: fornecedorVencedor.valor,
+            frete_original: fornecedorVencedor.frete,
+            economia: (fornecedorVencedor.valor - valorFinal) + (fornecedorVencedor.frete - freteFinal),
+            obs: fornecedorVencedor.obs
+          });
+        }}
         disabled={resumo.respondidos === 0}
         style={{
           ...s.btn(resumo.respondidos > 0, C.success),

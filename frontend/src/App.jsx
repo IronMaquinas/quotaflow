@@ -22,6 +22,8 @@ import TelaEstoqueConsumiveis from './components/estoque/TelaEstoqueConsumiveis'
 import TelaRetiradaConsumiveis from './components/estoque/TelaRetiradaConsumiveis';
 import TelaHistoricoMovimentacoes from './components/estoque/TelaHistoricoMovimentacoes';
 import TelaAprovacaoRetirada from './components/estoque/TelaAprovacaoRetirada';
+import TelaRecebimento from './components/estoque/TelaRecebimento';
+import TelaOrdemServico from './components/estoque/TelaOrdemServico';
 
 import {
   useChamados,
@@ -272,13 +274,15 @@ const perfil = PERFIS[usuario.perfil];
   // Nav items filtrados por perfil
   const navItems = [
     {id:"home",          l:"Início",                  perfis:["tecnico","comprador","gestor","admin"]},
+    {id: "ordem_servico",l: "🛠️ Ordem de Serviço",    perfis: ["tecnico", "comprador", "gestor", "admin"]},
+    {id:"recebimento",   l: "📥 Recebimento",         perfis: ["comprador", "gestor", "admin"]},
     {id:"tecnico",       l:"🔧 Chamado",              perfis:["tecnico","comprador","gestor","admin"]},
     {id:"compradora",    l:"📋 Compras",              perfis:["comprador","gestor","admin"]},
     {id:"spot",          l:"⚡ Canal Spot",            perfis:["comprador","gestor","admin"]}, 
     {id:"retirada",      l:"📤 Retirada",             perfis:["tecnico","comprador","gestor","admin"]},
     {id:"estoque",       l:"📦 Consumíveis",          perfis:["comprador","gestor","admin"]},
     {id:"historico_estoque", l:"📜 Movimentações",    perfis:["comprador","gestor","admin"]},
-    {id:"aprovacoes", l:"✅ Aprovações", perfis:["gestor","admin"], badge: totalPendencias > 0 ? totalPendencias : null},
+    {id:"aprovacoes",    l:"✅ Aprovações",           perfis:["gestor","admin"], badge: totalPendencias > 0 ? totalPendencias : null},
     {id:"ordensvenda",   l:"📄 Ordens de Venda",      perfis:["comprador","gestor","admin"]},
     {id:"plano",         l:`✅ Plano${tarefas.dados.filter(t=>t.status==="em_andamento").length>0?` (${tarefas.dados.filter(t=>t.status==="em_andamento").length})`:""}`, perfis:["comprador","gestor","admin"]},
     {id:"financeiro",    l:"💰 Financeiro",           perfis:["gestor","admin"]},
@@ -445,6 +449,13 @@ const perfil = PERFIS[usuario.perfil];
             />
           </div>
         )}
+
+        {temAcesso(tela) && tela === "ordem_servico" && (
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            <TelaOrdemServico C={C} s={s} equipamentos={equipamentos.dados || []} />
+          </div>
+        )}
+
         {temAcesso(tela) && tela === "compradora" && (
           <div style={{flex:1,overflowY:"auto"}}>
             <TelaCotacoesNovaComAbas 
@@ -464,6 +475,12 @@ const perfil = PERFIS[usuario.perfil];
         {temAcesso(tela) && tela === "ordensvenda" && (
           <div style={{flex:1, overflowY:"auto"}}>
             <TelaOrdensVenda C={C} s={s} fmtBRL={fmtBRL} fmtD={fmtD} />
+          </div>
+        )}
+
+        {temAcesso(tela) && tela === "recebimento" && (
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            <TelaRecebimento C={C} s={s} />
           </div>
         )}
 

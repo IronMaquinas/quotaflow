@@ -9,7 +9,6 @@ export default function TelaChamadosNova({ fmtBRL, fmtD, C, s }) {
   const { chamados, loading, erro, carregar, criar, atualizar, deletar } = useChamados();
   const { equipamentos } = useEquipamentos();
 
-  // Restante dos estados continua igual
   const [telaAtual, setTelaAtual] = useState("lista");
   const [chamadoSel, setChamadoSel] = useState(null);
   const [filtroStatus, setFiltroStatus] = useState("todos");
@@ -18,34 +17,29 @@ export default function TelaChamadosNova({ fmtBRL, fmtD, C, s }) {
   const [modal, setModal] = useState(null);
   const [processando, setProcessando] = useState(false);
 
-  // Autocomplete de equipamento
   const [eqSearch, setEqSearch] = useState("");
   const [showDrop, setShowDrop] = useState(false);
   const eqRef = useRef(null);
 
-  // Pesquisar itens do catálogo
   const { itens: catalogoItens } = useCatalogo();
 
-  // Estado para autocomplete do nome do item
-  const [itemSugestoes, setItemSugestoes] = useState({});  // itemId -> []
-  const [showSugestoes, setShowSugestoes] = useState({});  // itemId -> boolean
-  const [loadingSugestoes, setLoadingSugestoes] = useState({});  // itemId -> boolean
+  const [itemSugestoes, setItemSugestoes] = useState({});
+  const [showSugestoes, setShowSugestoes] = useState({});
+  const [loadingSugestoes, setLoadingSugestoes] = useState({});
 
-  // Estado do formulário (com lista de itens)
   const [form, setForm] = useState({
     equipamentoId: "",
     descricaoGeral: "",
+    servico_nome: "",
     itens: [
       { id: Date.now(), item_nome: "", codigo: "", quantidade: 1, urgencia: "media", categoria: "corretiva", tipo_item: "", descricao: "" }
     ]
   });
 
-// 1️⃣ CARREGAR DADOS
 useEffect(() => {
   carregar();
 }, []);
 
-// 2️⃣ FECHAR DROPDOWN
 useEffect(() => {
   const handleClickOutside = (e) => {
     if (eqRef.current && !eqRef.current.contains(e.target)) {
@@ -56,7 +50,6 @@ useEffect(() => {
   return () => document.removeEventListener("mousedown", handleClickOutside);
 }, []);
 
-// 3️⃣ LOG DE DEPURAÇÃO (NOVO)
 useEffect(() => {
   chamados.forEach(ch => {
   });
@@ -111,19 +104,16 @@ useEffect(() => {
     const termoBuscado = normalizarTexto(termo);
     const termoOriginal = termo.toLowerCase();
 
-    // 🆕 ESTRATÉGIA 1: Busca por INCLUSÃO (contém a palavra)
     const porInclusao = catalogoItens.filter(item => {
       const nomeNorm = normalizarTexto(item.nome);
       const nomeLower = item.nome.toLowerCase();
       
-      // Verifica se contém como substring
       return nomeNorm.includes(termoBuscado) || nomeLower.includes(termoOriginal);
     });
 
     let sugestoes;
 
     if (porInclusao.length > 0) {
-      // Se encontrou por inclusão, usa esses resultados
       sugestoes = porInclusao
         .map(item => ({
           ...item,
@@ -140,7 +130,7 @@ useEffect(() => {
           similaridade: calcularSimilaridade(termo, item.nome),
           tipo: 'levenshtein'
         }))
-        .filter(item => item.similaridade >= 40) // 🆕 REDUZIDO de 60 para 40!
+        .filter(item => item.similaridade >= 40)
         .sort((a, b) => b.similaridade - a.similaridade)
         .slice(0, 5);
     }
@@ -212,7 +202,6 @@ useEffect(() => {
   // Submit
   const handleSubmit = async () => {
 
-    // ✅ PRIMEIRO: Declarar e calcular itensValidos
     const itensValidos = form.itens.filter(item => item.item_nome.trim() !== "");
 
     if (itensValidos.length === 0) {
@@ -220,10 +209,10 @@ useEffect(() => {
       return;
     }
 
-    // ✅ SEGUNDO: Criar o payload (agora itensValidos existe)
     const payload = {
       equipamento_id: form.equipamentoId || null,
       descricao_geral: form.descricaoGeral,
+      servico_nome: form.servico_nome || form.descricaoGeral || "Manutenção",
       itens: itensValidos.map(item => ({
         item_nome: item.item_nome,
         codigo: item.codigo,
@@ -236,17 +225,16 @@ useEffect(() => {
       }))
     };
 
-    // ✅ TERCEIRO: Processar (agora payload existe)
     setProcessando(true);
     try {
       if (modal === "editar") {
           const resposta = await atualizar(chamadoSel.id, payload);
-          setChamadoSel(resposta);  // ← Adicione isto
-          setTelaAtual("detalhe");  // ← E isto
+          setChamadoSel(resposta);
+          setTelaAtual("detalhe");
           alert("Chamado atualizado com sucesso!");
         } else {
         const resposta = await criar(payload);
-        await carregar(); // recarrega sem força (já está cache)
+        await carregar();
         alert("Chamado criado com sucesso!");
       }
 
@@ -265,6 +253,7 @@ useEffect(() => {
     setForm({
       equipamentoId: "",
       descricaoGeral: "",
+      servico_nome: "",
       itens: [{ id: Date.now(), item_nome: "", codigo: "", quantidade: 1, urgencia: "media", categoria: "corretiva", tipo_item: "", descricao: "" }]
     });
     setEqSearch("");
@@ -352,6 +341,17 @@ useEffect(() => {
                 onChange={e => setForm(f => ({ ...f, descricaoGeral: e.target.value }))}
                 placeholder="Observações gerais sobre o chamado"
                 style={{ ...s.input, minHeight: 60, resize: "vertical" }}
+              />
+            </div>
+
+            {/* NOME DO SERVIÇO */}
+            <div style={{ marginBottom: 14 }}>
+              <label style={s.label}>NOME DO SERVIÇO</label>
+              <input
+                value={form.servico_nome}
+                onChange={e => setForm(f => ({ ...f, servico_nome: e.target.value }))}
+                placeholder="Ex: Preventiva 10.000km, Troca de óleo, etc."
+                style={s.input}
               />
             </div>
 
@@ -662,7 +662,7 @@ useEffect(() => {
           <div style={{ ...s.card, overflow: "hidden" }}>
             <div style={{ display: "grid", gridTemplateColumns: "1fr 2fr 120px 100px 80px 80px 100px", padding: "10px 18px", background: C.bg, borderBottom: `1px solid ${C.border}`, fontSize: 10, color: C.muted, letterSpacing: "0.08em" }}>
               <span>NÚMERO</span>
-              <span>ITEM / QTD</span>
+              <span>DESCRIÇÃO</span>
               <span>DATA ABERTURA</span>
               <span>URGÊNCIA</span>
               <span>CATEGORIA</span>
@@ -671,7 +671,7 @@ useEffect(() => {
             </div>
             {chamadosFiltered.map((chamado, i) => {
               const primeiroItem = chamado.itens && chamado.itens.length > 0 ? chamado.itens[0] : null;
-              const nomeExibicao = primeiroItem ? primeiroItem.item_nome : (chamado.peca || "—");
+              const nomeExibicao = chamado.servico_nome || chamado.descricao || primeiroItem?.item_nome || (chamado.peca || "—"); // 🔥 Usa a descrição!
               const qtdExibicao = primeiroItem ? primeiroItem.quantidade : 1;
               const urgenciaExibicao = primeiroItem ? primeiroItem.urgencia : chamado.urgencia;
               const categoriaExibicao = primeiroItem ? primeiroItem.categoria : chamado.categoria;
@@ -681,6 +681,7 @@ useEffect(() => {
                 aberto: { l: "Aberto", c: C.muted },
                 cotando: { l: "Cotando", c: C.warn },
                 finalizado: { l: "Finalizado", c: C.success },
+                aguardando_cotacao: { l: "Aguardando Cotação", c: C.warn }, // 🔥 Adicione esse
               }[chamado.status] || { l: chamado.status, c: C.muted };
 
               const urgenciaCfg = {
@@ -704,9 +705,10 @@ useEffect(() => {
                     {chamado.numero}
                     {totalItens > 1 && <span style={{ fontSize: 9, color: C.muted, marginLeft: 4 }}>({totalItens} itens)</span>}
                   </div>
+                  {/* 🔥 Descrição (em vez do primeiro item) */}
                   <div>
                     <div style={{ fontSize: 12, color: C.text, fontWeight: 500 }}>{nomeExibicao}</div>
-                    <div style={{ fontSize: 10, color: C.muted }}>Qtd: {qtdExibicao}</div>
+                    {totalItens > 1 && <div style={{ fontSize: 10, color: C.muted }}>{totalItens} itens solicitados</div>}
                   </div>
                   <div style={{ fontSize: 11, color: C.muted }}>{fmtD(chamado.aberto_em)}</div>
                   <div style={{ ...s.tag(urgenciaCfg.c), fontSize: 10 }}>{urgenciaCfg.l}</div>

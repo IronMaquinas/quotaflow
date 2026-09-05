@@ -27,7 +27,8 @@ export default function TelaHistoricoMovimentacoes({ C, s, fmtD, fmtBRL }) {
     .filter(m => filtroTipo === 'todos' || m.tipo === filtroTipo)
     .filter(m => !busca || 
       m.item_nome?.toLowerCase().includes(busca.toLowerCase()) ||
-      m.observacao?.toLowerCase().includes(busca.toLowerCase())
+      m.observacao?.toLowerCase().includes(busca.toLowerCase()) ||
+      m.numero_solicitacao?.toLowerCase().includes(busca.toLowerCase()) // 🔥 Busca por número
     );
 
   const getTipoConfig = (tipo) => {
@@ -54,7 +55,7 @@ export default function TelaHistoricoMovimentacoes({ C, s, fmtD, fmtBRL }) {
       <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>
         <input
           type="text"
-          placeholder="Buscar por item ou observação..."
+          placeholder="Buscar por item, observação ou Nº solicitação..."
           value={busca}
           onChange={e => setBusca(e.target.value)}
           style={{ ...s.input, flex: 1, minWidth: 200, padding: '8px 12px', fontSize: 12 }}
@@ -85,7 +86,7 @@ export default function TelaHistoricoMovimentacoes({ C, s, fmtD, fmtBRL }) {
       <div style={{ ...s.card, overflow: 'hidden' }}>
         <div style={{ 
           display: 'grid', 
-          gridTemplateColumns: '2fr 1fr 1.5fr 1.5fr 1fr 1fr', 
+          gridTemplateColumns: '1.5fr 1fr 1.5fr 1.5fr 1.5fr 1fr', 
           padding: '10px 18px', 
           background: C.bg, 
           borderBottom: `1px solid ${C.border}`, 
@@ -93,13 +94,12 @@ export default function TelaHistoricoMovimentacoes({ C, s, fmtD, fmtBRL }) {
           color: C.muted, 
           letterSpacing: '0.08em' 
         }}>
+          <span>Nº SOLICITAÇÃO</span>
           <span>ITEM</span>
           <span>QUANTIDADE</span>
           <span>TIPO</span>
           <span>RESPONSÁVEL</span>
-          <span>APROVADO POR</span>
           <span>DATA</span>
-          <span>OBSERVAÇÃO</span>
         </div>
         {movimentacoesFiltradas.map((m, i) => {
           const tipoCfg = getTipoConfig(m.tipo);
@@ -108,13 +108,16 @@ export default function TelaHistoricoMovimentacoes({ C, s, fmtD, fmtBRL }) {
               key={m.id} 
               style={{ 
                 display: 'grid', 
-                gridTemplateColumns: '2fr 1fr 1.5fr 1.5fr 1fr 1fr', 
+                gridTemplateColumns: '1.5fr 1fr 1.5fr 1.5fr 1.5fr 1fr', 
                 padding: '11px 18px', 
                 borderBottom: i < movimentacoesFiltradas.length - 1 ? `1px solid ${C.border}22` : 'none',
                 alignItems: 'center',
                 background: m.tipo === 'saida' ? '#0f0f0f' : 'transparent'
               }}
             >
+              <div style={{ fontSize: 12, color: C.accent, fontFamily: "'IBM Plex Mono',monospace", fontWeight: 600 }}>
+                {m.numero_solicitacao || '—'}
+              </div>
               <div>
                 <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>{m.item_nome}</div>
                 <div style={{ fontSize: 10, color: C.muted }}>{m.sku || '—'}</div>
@@ -130,14 +133,8 @@ export default function TelaHistoricoMovimentacoes({ C, s, fmtD, fmtBRL }) {
               <div style={{ fontSize: 11, color: C.textSub }}>
                 {m.responsavel_nome || '—'}
               </div>
-              <div style={{ fontSize: 11, color: C.textSub }}>
-                {m.aprovado_por_nome || 'Automático'}
-                </div>
               <div style={{ fontSize: 11, color: C.muted }}>
                 {fmtD(m.criado_em)}
-              </div>
-              <div style={{ fontSize: 11, color: C.muted, maxWidth: 150, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                {m.observacao || '—'}
               </div>
             </div>
           );

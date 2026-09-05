@@ -91,21 +91,34 @@ async function gerarNumeroCotacao(tenant_id) {
 // GET /api/cotacoes/chamados
 router.get("/chamados", tenantMiddleware, async (req, res) => {
   try {
-    // Buscar todos os chamados
-    const chamados = await DB.raw(`
-      SELECT 
-        c.id, c.numero, c.equipamento_id, c.status, c.aberto_em,
-        c.tecnico_nome, c.descricao,
-        e.tag as equipamento_tag, 
-        e.nome as equipamento_nome
-      FROM chamados c
-      LEFT JOIN equipamentos e ON e.id = c.equipamento_id AND e.tenant_id = c.tenant_id
-      WHERE c.tenant_id = $1
-      ORDER BY c.aberto_em DESC
-    `, [req.tenantId]);
+        console.log('🔍 Chamados da API:');
 
-    // Buscar todos os itens de uma vez (em vez de um por um)
+    const origem_os_id = req.query.origem_os_id;
+
+    // 1. Buscar chamados
+    const chamados = await DB.select('chamados', { tenant_id: req.tenantId }, req.tenantId);
+    console.log('🔍 CHAMADOS RETORNADOS:', chamados);
+
+    // 2. Buscar equipamentos separadamente (para adicionar nome e tag)
     const chamadoIds = chamados.map(ch => ch.id);
+    const equipamentoIds = chamados.map(ch => ch.equipamento_id).filter(Boolean);
+
+    let equipamentos = [];
+    if (equipamentoIds.length > 0) {
+      equipamentos = await DB.raw(`
+        SELECT id, nome, tag
+        FROM equipamentos
+        WHERE id = ANY($1) AND tenant_id = $2
+      `, [equipamentoIds, req.tenantId]);
+    }
+
+    // Agrupar equipamentos por ID
+    const equipamentosPorID = {};
+    equipamentos.forEach(eq => {
+      equipamentosPorID[eq.id] = eq;
+    });
+
+    // 3. Buscar itens de todos os chamados
     let itens = [];
     if (chamadoIds.length > 0) {
       itens = await DB.raw(`
@@ -125,9 +138,12 @@ router.get("/chamados", tenantMiddleware, async (req, res) => {
       itensPorChamado[item.chamado_id].push(item);
     });
 
-    // Montar resultado
+    // 4. Adicionar equipamento_nome e equipamento_tag
     const resultado = chamados.map(ch => ({
       ...ch,
+      equipamento_nome: equipamentosPorID[ch.equipamento_id]?.nome || '—',
+      equipamento_tag: equipamentosPorID[ch.equipamento_id]?.tag || '—',
+      origem_os_numero: ch.origem_os_numero || null,
       itens: itensPorChamado[ch.id] || []
     }));
 
@@ -141,7 +157,7 @@ router.get("/chamados", tenantMiddleware, async (req, res) => {
 // POST /api/cotacoes/chamados
 router.post("/chamados", tenantMiddleware, async (req, res) => {
   try {
-    const { equipamento_id, tecnico_nome, descricao_geral, itens } = req.body;
+    const { equipamento_id, tecnico_nome, descricao_geral, itens, servico_nome, urgencia, categoria } = req.body;
 
     let itensArray = itens;
     if (!itensArray || itensArray.length === 0) {
@@ -178,7 +194,11 @@ router.post("/chamados", tenantMiddleware, async (req, res) => {
       tecnico_id: req.userId,
       tecnico_nome: tecnico_nome || req.userEmail || req.userId,
       descricao: descricao_geral || "",
+      servico_nome: servico_nome || descricao_geral || "Manutenção",
+      urgencia: urgencia || "media",
+      categoria: categoria || "corretiva",
       status: "aguardando_cotacao",
+      origem_os_numero: servico_nome || "Manutenção",
       participa_benchmark: 1
     };
 
@@ -219,35 +239,60 @@ router.post("/chamados", tenantMiddleware, async (req, res) => {
 // GET /api/cotacoes
 router.get("/", tenantMiddleware, async (req, res) => {
   try {
-    const cotacoes = await DB.raw(`
-      SELECT 
-        c.id,
-        c.numero as cotacao_numero,
-        c.status as cotacao_status,
-        c.enviado_em,
-        c.finalizado_em,
-        ch.numero as chamado_numero,
-        ch.peca,
-        ch.categoria_item
-      FROM cotacoes c
-      JOIN chamados ch ON ch.id = c.chamado_id AND ch.tenant_id = c.tenant_id
-      WHERE c.tenant_id = $1
-      ORDER BY c.enviado_em DESC
-    `, [req.tenantId]);
+    // 1. Buscar cotações
+    const cotacoes = await DB.select('cotacoes', { tenant_id: req.tenantId }, req.tenantId);
 
-    const resultado = await Promise.all(
-      cotacoes.map(async (cot) => {
-        const fornecedores = await DB.raw(`
-          SELECT 
-            id, fornecedor_nome, fornecedor_email, status, 
-            valor, prazo, frete, valor_frete, obs, data_resposta
-          FROM cotacao_fornecedores
-          WHERE cotacao_id = $1 AND tenant_id = $2
-          ORDER BY data_resposta DESC NULLS LAST
-        `, [cot.id, req.tenantId]);
-        return { ...cot, fornecedores };
-      })
-    );
+    // 2. Buscar chamados separadamente
+    const chamadoIds = cotacoes.map(c => c.chamado_id).filter(Boolean);
+    let chamados = [];
+    if (chamadoIds.length > 0) {
+      chamados = await DB.raw(`
+        SELECT id, numero, peca, categoria_item, servico_nome, urgencia, descricao, status as chamado_status
+        FROM chamados
+        WHERE id = ANY($1) AND tenant_id = $2
+      `, [chamadoIds, req.tenantId]);
+    }
+
+    // Agrupar chamados por ID
+    const chamadosPorID = {};
+    chamados.forEach(ch => {
+      chamadosPorID[ch.id] = ch;
+    });
+
+    // 3. Buscar fornecedores de todas as cotações
+    const cotacaoIds = cotacoes.map(c => c.id);
+    let fornecedores = [];
+    if (cotacaoIds.length > 0) {
+      fornecedores = await DB.raw(`
+        SELECT 
+          id, cotacao_id, fornecedor_nome, fornecedor_email, status, 
+          valor, prazo, frete, valor_frete, obs, data_resposta
+        FROM cotacao_fornecedores
+        WHERE cotacao_id = ANY($1) AND tenant_id = $2
+        ORDER BY data_resposta DESC NULLS LAST
+      `, [cotacaoIds, req.tenantId]);
+    }
+
+    // Agrupar fornecedores por cotação
+    const fornecedoresPorCotacao = {};
+    fornecedores.forEach(f => {
+      if (!fornecedoresPorCotacao[f.cotacao_id]) {
+        fornecedoresPorCotacao[f.cotacao_id] = [];
+      }
+      fornecedoresPorCotacao[f.cotacao_id].push(f);
+    });
+
+    // 4. Montar resultado
+    const resultado = cotacoes.map(c => ({
+      ...c,
+      chamado_numero: chamadosPorID[c.chamado_id]?.numero || null,
+      chamado_peca: chamadosPorID[c.chamado_id]?.peca || null,
+      chamado_servico_nome: chamadosPorID[c.chamado_id]?.servico_nome || null,
+      chamado_urgencia: chamadosPorID[c.chamado_id]?.urgencia || null,
+      chamado_categoria: chamadosPorID[c.chamado_id]?.categoria_item || null,
+      chamado_status: chamadosPorID[c.chamado_id]?.chamado_status || null,
+      fornecedores: fornecedoresPorCotacao[c.id] || []
+    }));
 
     res.json(resultado);
   } catch (err) {
@@ -259,7 +304,7 @@ router.get("/", tenantMiddleware, async (req, res) => {
 // POST /api/cotacoes
 router.post("/", tenantMiddleware, async (req, res) => {
   try {
-    const { chamado_id, fornecedores } = req.body;
+    const { chamado_id, fornecedores, origem_ov_numero } = req.body;
 
     if (!chamado_id || !fornecedores || fornecedores.length === 0) {
       return res.status(400).json({ erro: "chamado_id e lista de fornecedores são obrigatórios" });
@@ -272,10 +317,13 @@ router.post("/", tenantMiddleware, async (req, res) => {
 
     const numero = await gerarNumeroCotacao(req.tenantId);
 
+    const origem = origem_ov_numero || chamado?.origem_os_numero || chamado?.servico_nome || "Manutenção";
+
     const cotacao = await DB.insert("cotacoes", {
       chamado_id,
       numero,
-      status: "em_curso"
+      status: "em_curso",
+      origem_ov_numero: origem
     }, req.tenantId);
 
     const linhas = [];
@@ -416,7 +464,7 @@ router.put("/chamados/:id", tenantMiddleware, async (req, res) => {
   
   try {
     const { id } = req.params;
-    const { equipamento_id, descricao_geral, itens } = req.body;
+    const { equipamento_id, descricao_geral, servico_nome, itens } = req.body;
     const tenantId = req.tenantId;
  
     // Validação crítica
@@ -440,6 +488,7 @@ router.put("/chamados/:id", tenantMiddleware, async (req, res) => {
     const updateData = {};
     if (equipamento_id !== undefined) updateData.equipamento_id = equipamento_id;
     if (descricao_geral !== undefined) updateData.descricao = descricao_geral;
+    if (servico_nome !== undefined) updateData.servico_nome = servico_nome;
     updateData.atualizado_em = new Date().toISOString();
  
     await DB.update("chamados", id, updateData, tenantId);
@@ -531,26 +580,24 @@ router.put("/chamados/:id", tenantMiddleware, async (req, res) => {
 router.post('/gerar-automaticamente', tenantMiddleware, async (req, res) => {
   try {
     const { chamado_id } = req.body;
-
-    if (!chamado_id) {
-      return res.status(400).json({ erro: 'chamado_id é obrigatório' });
-    }
-
-    console.log(`🎯 Gerando cotações automáticas para chamado ${chamado_id}`);
-
+    
+    // 🔥 PREENCHER A ORIGEM
+    const chamado = await DB.selectOne('chamados', { id: chamado_id }, req.tenantId);
+    const origem_ov_numero = chamado?.origem_os_numero || null;
+    
     const cotacoes = await cotacaoService.gerarCotacoesPorCategoria(
       req.tenantId,
       chamado_id,
-      req.userId
+      req.userId,
+      origem_ov_numero
     );
-
+    
     res.status(201).json({
       ok: true,
       cotacoes: cotacoes,
       total: cotacoes.length,
       mensagem: `${cotacoes.length} cotação(ões) criada(s) automaticamente`
     });
-
   } catch (err) {
     console.error('❌ Erro ao gerar cotações:', err.message);
     res.status(500).json({ erro: err.message });
@@ -721,7 +768,7 @@ router.get('/por-chamado/:chamadoId', tenantMiddleware, async (req, res) => {
 // ───────────────────────────────────────────────────────────────────────
 router.post('/salvar', tenantMiddleware, async (req, res) => {
   try {
-    const { chamado_id, itens, notas } = req.body;
+    const { chamado_id, itens, notas, origem_ov_numero } = req.body;
 
     if (!chamado_id || !itens || itens.length === 0) {
       return res.status(400).json({ 
@@ -732,7 +779,8 @@ router.post('/salvar', tenantMiddleware, async (req, res) => {
     const resultado = await cotacaoService.salvarCotacao(req.tenantId, {
       chamado_id,
       itens,
-      notas
+      notas,
+      origem_ov_numero: origem_ov_numero || null
     });
 
     res.json({
@@ -751,13 +799,15 @@ router.post('/salvar', tenantMiddleware, async (req, res) => {
 // ───────────────────────────────────────────────────────────────────────
 router.post('/enviar', tenantMiddleware, async (req, res) => {
   try {
-    const { cotacao_id } = req.body;
+    const { cotacao_id, origem_ov_numero } = req.body;
 
     if (!cotacao_id) {
       return res.status(400).json({ erro: 'cotacao_id é obrigatório' });
     }
 
-    const resultado = await cotacaoService.enviarCotacao(req.tenantId, cotacao_id);
+    const resultado = await cotacaoService.enviarCotacao(req.tenantId, cotacao_id, {
+      origem_ov_numero: origem_ov_numero || null
+    });
 
     res.json({
       ok: true,
@@ -810,7 +860,7 @@ router.delete('/:id', tenantMiddleware, async (req, res) => {
 router.post('/:cotacaoId/ordem-venda', tenantMiddleware, async (req, res) => {
   try {
     const { cotacaoId } = req.params;
-    const { fornecedor_id } = req.body;
+    const { fornecedor_id, valor, frete, valor_original, frete_original, economia, obs } = req.body;
 
     if (!cotacaoId || !fornecedor_id) {
       return res.status(400).json({ 
@@ -818,20 +868,22 @@ router.post('/:cotacaoId/ordem-venda', tenantMiddleware, async (req, res) => {
       });
     }
 
-    console.log(`📦 Criando OV para cotação ${cotacaoId}`);
-
     const resultado = await cotacaoService.criarOrdenVenda(
       req.tenantId,
       parseInt(cotacaoId),
       parseInt(fornecedor_id),
-      req.userId
+      req.userId,
+      {
+        valor,
+        frete,
+        valor_original,
+        frete_original,
+        economia,
+        obs
+      }
     );
 
-    res.json({
-      ok: true,
-      ...resultado
-    });
-
+    res.json({ ok: true, ...resultado });
   } catch (err) {
     console.error('❌ Erro ao criar OV:', err);
     res.status(500).json({ erro: err.message });
@@ -840,7 +892,6 @@ router.post('/:cotacaoId/ordem-venda', tenantMiddleware, async (req, res) => {
 
 // ───────────────────────────────────────────────────────────────────────
 // GET /api/cotacoes/:cotacaoId/status
-// Obter status completo de uma cotação (respostas, melhor proposta, etc)
 // ───────────────────────────────────────────────────────────────────────
 router.get('/:cotacaoId/status', tenantMiddleware, async (req, res) => {
   try {
@@ -875,7 +926,8 @@ router.get('/:cotacaoId/status', tenantMiddleware, async (req, res) => {
 router.put('/:cotacaoId/fornecedor/:fornecedorId/atualizar-resposta', tenantMiddleware, async (req, res) => {
   try {
     const { cotacaoId, fornecedorId } = req.params;
-    const { valor, prazo, valor_frete, obs } = req.body;
+    // 🔥 ADICIONE frete_renegociado
+    const { valor, prazo, valor_frete, obs, valor_renegociado, frete_renegociado } = req.body;
 
     if (!cotacaoId || !fornecedorId) {
       return res.status(400).json({ 
@@ -885,7 +937,6 @@ router.put('/:cotacaoId/fornecedor/:fornecedorId/atualizar-resposta', tenantMidd
 
     console.log(`📝 Atualizando resposta: cotação ${cotacaoId}, fornecedor ${fornecedorId}`);
 
-    // Atualizar cotacao_fornecedores
     const atualizado = await cotacaoService.atualizarRespostaFornecedor(
       req.tenantId,
       parseInt(cotacaoId),
@@ -895,8 +946,8 @@ router.put('/:cotacaoId/fornecedor/:fornecedorId/atualizar-resposta', tenantMidd
         prazo,
         valor_frete,
         obs,
-        status: 'respondido',
-        data_resposta: new Date()
+        valor_renegociado,
+        frete_renegociado
       }
     );
 
@@ -905,7 +956,6 @@ router.put('/:cotacaoId/fornecedor/:fornecedorId/atualizar-resposta', tenantMidd
       mensagem: 'Resposta atualizada com sucesso',
       ...atualizado
     });
-
   } catch (err) {
     console.error('❌ Erro ao atualizar resposta:', err);
     res.status(500).json({ erro: err.message });
@@ -1016,66 +1066,34 @@ router.get('/:cotacaoId/monitorar', tenantMiddleware, async (req, res) => {
     });
 
     // 3. Buscar fornecedores vinculados
-    const fornecedores = await DB.select(
-      'cotacao_fornecedores',
-      { cotacao_id: cotacaoId },
-      tenantId
-    );
+    const fornecedores = await DB.select('cotacao_fornecedores', { cotacao_id: cotacaoId }, tenantId);
 
-    // ✅ NOVO: Buscar apenas os fornecedores que foram selecionados por item
-    const selecionesPorItem = await DB.select(
-      'cotacao_fornecedor_item_selecionado',
-      { cotacao_id: cotacaoId },
-      tenantId
-    );
+    // ✅ NOVO: Estruturar por ITEM usando fornecedores_ids do próprio item!
+    const itensEstruturados = itensComDados.map(item => {
+      // 🔥 USAR O fornecedores_ids DO PRÓPRIO ITEM
+      const fornecedoresIds = Array.isArray(item.fornecedores_ids) 
+        ? item.fornecedores_ids 
+        : JSON.parse(item.fornecedores_ids || '[]');
 
-    // 4. Buscar respostas de cada fornecedor para cada item
-    const fornecedorItens = await DB.select(
-      'cotacao_fornecedor_itens',
-      {},
-      tenantId
-    );
+      const fornecedoresComResposta = fornecedoresIds.map(fornecedorId => {
+        const forn = fornecedores.find(f => f.fornecedor_id === fornecedorId);
+        return forn ? {
+          id: forn.id,
+          fornecedor_id: forn.fornecedor_id,
+          nome: forn.fornecedor_nome,
+          email: forn.fornecedor_email,
+          status: forn.status,
+          valor: forn.valor || null,
+          frete: forn.valor_frete || null,
+          prazo: forn.prazo || null,
+          obs: forn.obs || null,
+          data_resposta: forn.data_resposta,
+          total: forn.valor ? (forn.valor + (forn.valor_frete || 0)) : null,
+          posicao: null
+        } : null;
+      }).filter(Boolean);
 
-    // Filtrar pelos fornecedores desta cotação
-    const fornecedoresIds = fornecedores.map(f => f.id);
-    const fornecedorItensFiltered = fornecedorItens.filter(fi =>
-      fornecedoresIds.includes(fi.cotacao_fornecedor_id)
-    );
-
-    // 5. Estruturar por ITEM
-   const itensEstruturados = itensComDados.map(item => {
-    // ✅ FILTRAR: Apenas fornecedores selecionados pra este item
-    const fornecedoresSelecionados = selecionesPorItem
-      .filter(sel => sel.cotacao_item_id === item.id)
-      .map(sel => {
-        const forn = fornecedores.find(f => f.fornecedor_id === sel.fornecedor_id);
-        return forn;
-      })
-      .filter(Boolean);
-
-    // Buscar respostas apenas dos fornecedores selecionados
-    const fornecedoresComResposta = fornecedoresSelecionados.map(forn => {
-      const resposta = fornecedorItensFiltered.find(
-        fi => fi.cotacao_fornecedor_id === forn.id
-      );
-
-      return {
-        id: forn.id,
-        fornecedor_id: forn.fornecedor_id,
-        nome: forn.fornecedor_nome,
-        email: forn.fornecedor_email,
-        status: forn.status,
-        valor: resposta?.valor || null,
-        frete: resposta?.frete || null,
-        prazo: resposta?.prazo || null,
-        obs: forn.obs || null,
-        data_resposta: forn.data_resposta,
-        total: resposta?.valor ? (resposta.valor + (resposta.frete || 0)) : null,
-        posicao: null
-      };
-    });
-
-      // Calcular posições (melhor, 2º, pior)
+      // Calcular posições
       const comValor = fornecedoresComResposta.filter(f => f.total !== null);
       if (comValor.length > 0) {
         const ordenado = [...comValor].sort((a, b) => a.total - b.total);
@@ -1097,30 +1115,14 @@ router.get('/:cotacaoId/monitorar', tenantMiddleware, async (req, res) => {
       };
     });
 
-        console.log('DEBUG - Itens estruturados:', JSON.stringify(itensEstruturados, null, 2));
-
     // 6. Calcular resumos
-    const totalFornecedores = fornecedores.length;
     const respondidos = fornecedores.filter(f => f.status === 'respondido').length;
-    const pendentes = totalFornecedores - respondidos;
-
-    const itensComResposta = itensEstruturados.filter(item => 
-      item.fornecedores.some(f => f.status === 'respondido')
-    ).length;
+    const pendentes = fornecedores.length - respondidos;
 
     // 7. Encontrar melhor proposta geral
-    const todasRespostas = fornecedores
+    const melhorProposta = fornecedores
       .filter(f => f.status === 'respondido' && f.valor)
-      .map(f => ({
-        ...f,
-        total: f.valor + (f.valor_frete || 0)
-      }));
-
-    const melhorProposta = todasRespostas.length > 0
-      ? todasRespostas.reduce((a, b) => a.total < b.total ? a : b)
-      : null;
-
-      console.log('DEBUG FINAL - itensEstruturados:', JSON.stringify(itensEstruturados, null, 2));
+      .reduce((a, b) => (a.valor + (a.valor_frete || 0)) < (b.valor + (b.valor_frete || 0)) ? a : b, null);
 
     return res.json({
       cotacao: {
@@ -1133,8 +1135,8 @@ router.get('/:cotacaoId/monitorar', tenantMiddleware, async (req, res) => {
       itens: itensEstruturados,
       resumo: {
         total: itensEstruturados.length,
-        respondidos: itensComResposta,
-        pendentes: itensEstruturados.length - itensComResposta
+        respondidos: respondidos,
+        pendentes: pendentes
       },
       melhorProposta
     });
@@ -1175,6 +1177,59 @@ router.post('/:cotacaoId/item-fornecedor-selecionado', tenantMiddleware, async (
   } catch (erro) {
     console.error('❌ Erro ao registrar seleção:', erro);
     return res.status(500).json({ erro: 'Erro ao registrar seleção' });
+  }
+});
+
+// GET /api/cotacoes/metricas-negociacao
+router.get('/metricas-negociacao', tenantMiddleware, async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    
+    const dados = await DB.raw(`
+      SELECT 
+        COUNT(*) as total_negociacoes,
+        SUM(CASE WHEN economia > 0 THEN 1 ELSE 0 END) as negociacoes_sucesso,
+        AVG(economia) as economia_media,
+        SUM(economia) as economia_total
+      FROM cotacao_fornecedores
+      WHERE tenant_id = $1 AND valor_renegociado IS NOT NULL
+    `, [tenantId]);
+
+    res.json(dados[0]);
+  } catch (err) {
+    console.error('❌ Erro ao calcular métricas:', err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// POST /api/cotacoes/:cotacaoId/fornecedor/:fornecedorId/renegociar
+router.post('/:cotacaoId/fornecedor/:fornecedorId/renegociar', tenantMiddleware, async (req, res) => {
+  try {
+    const { cotacaoId, fornecedorId } = req.params;
+    const { valor_renegociado } = req.body;
+
+    const resposta = await DB.selectOne('cotacao_fornecedores', { 
+      cotacao_id: cotacaoId, 
+      fornecedor_id: fornecedorId 
+    }, req.tenantId);
+    
+    if (!resposta) {
+      return res.status(404).json({ erro: 'Resposta não encontrada' });
+    }
+
+    // 🔥 SALVAR O VALOR RENEGOCIADO E CALCULAR ECONOMIA
+    const economia = (resposta.valor || 0) - valor_renegociado;
+
+    await DB.update('cotacao_fornecedores', resposta.id, {
+      valor_renegociado,
+      economia,
+      data_renegociacao: new Date()
+    }, req.tenantId);
+
+    return res.json({ ok: true, economia });
+  } catch (err) {
+    console.error('❌ Erro ao renegociar:', err.message);
+    return res.status(500).json({ erro: err.message });
   }
 });
 

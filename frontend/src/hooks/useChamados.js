@@ -9,24 +9,27 @@ export function useChamados() {
 
   const getToken = () => localStorage.getItem('access_token');
 
+  // hooks/useChamados.js
   const carregar = useCallback(async (force = false) => {
-    const token = getToken();
-    if (!token) {
-      console.warn('⚠️ Token ausente');
-      return;
-    }
-    setLoading(true);
-    setErro(null);
-    try {
-      const dados = await chamadosService.listar(token, force);
-      setChamados(dados || []);
-    } catch (err) {
-      setErro(err.message);
-      console.error('❌ Erro ao carregar chamados:', err);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+      const token = getToken();
+      if (!token) {
+        console.warn('⚠️ Token ausente');
+        return;
+      }
+      setLoading(true);
+      setErro(null);
+      try {
+        console.log('🔍 CHAMANDO API /cotacoes/chamados');
+        const dados = await chamadosService.listar(token, force);
+        console.log('🔍 API RETORNOU:', dados);
+        setChamados(dados || []);
+      } catch (err) {
+        setErro(err.message);
+        console.error('❌ Erro ao carregar chamados:', err);
+      } finally {
+        setLoading(false);
+      }
+    }, []);
 
   const criar = useCallback(async (dados) => {
     const token = getToken();
@@ -87,5 +90,5 @@ export function useChamados() {
     carregar();
   }, []);
 
-  return { chamados, loading, erro, carregar, criar, atualizar, deletar };
+  return { chamados, setChamados, loading, erro, carregar, criar, atualizar, deletar };
 }

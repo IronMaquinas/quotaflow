@@ -74,30 +74,40 @@ export default function TelaAprovacaoRetirada({ C, s, fmtD, onAtualizarBadge }) 
 
       {solicitacoes.map(sol => (
         <div key={sol.id} style={{ ...s.card, padding: '16px 18px', marginBottom: 12 }}>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            <div>
-              <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>{sol.item_nome}</div>
-              <div style={{ fontSize: 12, color: C.muted }}>
-                {sol.quantidade} {sol.unidade_medida || 'UN'} · {sol.solicitante_nome} · {fmtD(sol.criado_em)}
+          <div style={{ fontSize: 12, color: C.accent, fontFamily: "'IBM Plex Mono',monospace", marginBottom: 4 }}>
+            {sol.numero_solicitacao || 'Sem número'}
+          </div>
+          
+          {/* 🔥 LISTA DE ITENS (todos os itens filhos) */}
+          <div style={{ marginBottom: 8 }}>
+            {sol.itens?.map(item => (
+              <div key={item.id} style={{ fontSize: 12, color: C.text, marginBottom: 4 }}>
+                {item.item_nome} - Qtd: {item.quantidade} {item.unidade_medida || 'UN'}
               </div>
-              {sol.motivo && <div style={{ fontSize: 11, color: C.textSub, marginTop: 4 }}>"{sol.motivo}"</div>}
-            </div>
-            <div style={{ display: 'flex', gap: 8 }}>
-              <button
-                onClick={() => aprovar(sol.id)}
-                disabled={processando[sol.id]}
-                style={{ ...s.btn(true, C.success), padding: '6px 14px', fontSize: 12 }}
-              >
-                ✅ Aprovar
-              </button>
-              <button
-                onClick={() => rejeitar(sol.id)}
-                disabled={processando[sol.id]}
-                style={{ ...s.btn(true, C.danger), padding: '6px 14px', fontSize: 12 }}
-              >
-                ❌ Rejeitar
-              </button>
-            </div>
+            ))}
+          </div>
+
+          <div style={{ fontSize: 12, color: C.muted }}>
+            {sol.solicitante_nome} · {fmtD(sol.criado_em)}
+          </div>
+          
+          {sol.motivo && <div style={{ fontSize: 11, color: C.textSub, marginTop: 4 }}>"{sol.motivo}"</div>}
+
+          <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+            <button
+              onClick={() => aprovar(sol.id)}
+              disabled={processando[sol.id]}
+              style={{ ...s.btn(true, C.success), padding: '6px 14px', fontSize: 12 }}
+            >
+              ✅ Aprovar
+            </button>
+            <button
+              onClick={() => rejeitar(sol.id)}
+              disabled={processando[sol.id]}
+              style={{ ...s.btn(true, C.danger), padding: '6px 14px', fontSize: 12 }}
+            >
+              ❌ Rejeitar
+            </button>
           </div>
         </div>
       ))}

@@ -9,23 +9,27 @@ const { enviarEmailCotacao } = require('../services/emailService');
 router.get('/', tenantMiddleware, async (req, res) => {
   try {
     const tenantId = req.tenantId;
+    const origem_os_id = req.query.origem_os_id;
     const usuario = await DB.selectOne('usuarios', { id: req.userId }, tenantId);
     const perfil = usuario?.perfil;
 
     // 🔥 CONSTRÓI O FILTRO CONFORME O PERFIL
     let filtro = { tenant_id: tenantId };
 
+    // Se tiver origem_os_id, adiciona ao filtro
+    if (origem_os_id) {
+      filtro.origem_os_id = origem_os_id;
+    }
+
     // Se for fornecedor, filtra apenas as OVs onde ele é o fornecedor
     if (perfil === 'fornecedor') {
-      // Buscar o fornecedor_id vinculado ao usuário
       const fornecedor = await DB.selectOne('fornecedores', { 
         tenant_id: tenantId,
-        email: usuario.email  // ou outro campo de vínculo
+        email: usuario.email
       });
       if (fornecedor) {
         filtro.fornecedor_id = fornecedor.id;
       } else {
-        // Se não encontrar fornecedor, retorna vazio
         return res.json([]);
       }
     }
@@ -33,18 +37,24 @@ router.get('/', tenantMiddleware, async (req, res) => {
     // Busca as OVs com o filtro definido
     const ordens = await DB.select('ordens_venda', filtro, tenantId);
 
-    // Enriquecer com nomes
-    const ordensComNome = await Promise.all(ordens.map(async (ov) => {
+    // 🔥 ENRIQUECER COM ITENS (para mostrar a contagem)
+    const ordensComItens = await Promise.all(ordens.map(async (ov) => {
+      // Buscar itens da OV
+      const itens = await DB.select('ordem_venda_itens', { ordem_venda_id: ov.id }, tenantId);
+      
+      // Buscar fornecedor
       const fornecedor = await DB.selectOne('fornecedores', { id: ov.fornecedor_id }, tenantId);
       const cotacao = await DB.selectOne('cotacoes', { id: ov.cotacao_id }, tenantId);
+      
       return {
         ...ov,
         fornecedor_nome: fornecedor?.nome || 'Fornecedor não identificado',
-        cotacao_numero: cotacao?.numero || null
+        cotacao_numero: cotacao?.numero || null,
+        itens: itens || [] // 🔥 Adicionar os itens!
       };
     }));
 
-    res.json(ordensComNome);
+    res.json(ordensComItens);
   } catch (err) {
     console.error('❌ Erro ao listar OVs:', err.message);
     res.status(500).json({ erro: err.message });

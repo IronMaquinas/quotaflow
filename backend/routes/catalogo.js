@@ -117,4 +117,49 @@ router.post('/importar-fornecedor', tenantMiddleware, async (req, res) => {
   }
 });
 
+// ────────────────────────────────────────────────────────────────
+// POST /api/catalogo/vincular-fornecedor - Vincular fornecedor a item
+// ────────────────────────────────────────────────────────────────
+router.post('/vincular-fornecedor', tenantMiddleware, async (req, res) => {
+  try {
+    const { itemId, fornecedorId, precoUnitario, estoqueStatus, tempoEntrega } = req.body;
+
+    if (!itemId || !fornecedorId || !precoUnitario) {
+      return res.status(400).json({ erro: 'itemId, fornecedorId e precoUnitario são obrigatórios' });
+    }
+
+    // Verificar se já existe vinculação
+    const jaExiste = await DB.selectOne('fornecedor_itens', {
+      item_catalogo_id: itemId,
+      fornecedor_id: fornecedorId
+    }, req.tenantId);
+
+    if (jaExiste) {
+      // Atualizar se já existe
+      await DB.update('fornecedor_itens', jaExiste.id, {
+        preco_unitario: parseFloat(precoUnitario),
+        estoque_status: estoqueStatus,
+        tempo_entrega_dias: parseInt(tempoEntrega),
+        ativo: 1
+      }, req.tenantId);
+    } else {
+      // Inserir novo
+      await DB.insert('fornecedor_itens', {
+        tenant_id: req.tenantId,
+        item_catalogo_id: parseInt(itemId),
+        fornecedor_id: parseInt(fornecedorId),
+        preco_unitario: parseFloat(precoUnitario),
+        estoque_status: estoqueStatus,
+        tempo_entrega_dias: parseInt(tempoEntrega),
+        ativo: 1
+      }, req.tenantId);
+    }
+
+    res.json({ ok: true, mensagem: 'Fornecedor vinculado com sucesso' });
+  } catch (err) {
+    console.error('❌ Erro ao vincular fornecedor:', err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
 module.exports = router;

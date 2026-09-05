@@ -21,7 +21,12 @@ export default function TelaEstoqueConsumiveis({ C, s, fmtBRL, fmtD }) {
     lote_minimo_compra: '',
     quantidade_lotes_automatico: 1,
     fornecedor_preferencial_id: '',
-    localizacao: ''
+    localizacao: '',
+    fabricante: '',
+    lote: '',
+    validade: '',
+    codigo_barras: '',
+    ativo: true
   });
 
   // ─── CARREGAR ITENS ──────────────────────────────────────────
@@ -71,17 +76,30 @@ const salvarConfig = async () => {
 };
 
   // ─── SALVAR ITEM ─────────────────────────────────────────────
-  const salvarItem = async () => {
+    const salvarItem = async () => {
     if (!form.nome) {
       alert('Nome é obrigatório');
       return;
     }
 
     try {
+      // 🔥 CORREÇÃO 1: Adicione os campos que estavam faltando
+      const dadosParaSalvar = {
+        ...form,
+        ativo: form.ativo ? true : false, // 🔥 Envia o toggle corretamente
+        saldo_atual: form.saldo_atual === '' ? 0 : parseFloat(form.saldo_atual),
+        limite_inferior_controle: form.limite_inferior_controle === '' ? null : parseFloat(form.limite_inferior_controle),
+        limite_recompra: form.limite_recompra === '' ? null : parseFloat(form.limite_recompra),
+        lote_minimo_compra: form.lote_minimo_compra === '' ? null : parseFloat(form.lote_minimo_compra),
+        quantidade_lotes_automatico: form.quantidade_lotes_automatico === '' ? null : parseInt(form.quantidade_lotes_automatico),
+        fornecedor_preferencial_id: form.fornecedor_preferencial_id === '' ? null : parseInt(form.fornecedor_preferencial_id),
+        codigo_barras: form.codigo_barras || null // 🔥 Envia o código de barras
+      };
+
       if (modal === 'novo') {
-        await apiService.post('/estoque/itens', form);
+        await apiService.post('/estoque/itens', dadosParaSalvar);
       } else {
-        await apiService.put(`/estoque/itens/${modal}`, form);
+        await apiService.put(`/estoque/itens/${modal}`, dadosParaSalvar);
       }
       setModal(null);
       setForm({
@@ -95,7 +113,12 @@ const salvarConfig = async () => {
         lote_minimo_compra: '',
         quantidade_lotes_automatico: 1,
         fornecedor_preferencial_id: '',
-        localizacao: ''
+        localizacao: '',
+        fabricante: '',
+        lote: '',
+        validade: '',
+        codigo_barras: '',
+        ativo: true
       });
       carregarItens();
     } catch (err) {
@@ -115,7 +138,12 @@ const salvarConfig = async () => {
       lote_minimo_compra: item.lote_minimo_compra || '',
       quantidade_lotes_automatico: item.quantidade_lotes_automatico || 1,
       fornecedor_preferencial_id: item.fornecedor_preferencial_id || '',
-      localizacao: item.localizacao || ''
+      localizacao: item.localizacao || '',
+      fabricante: item.fabricante || '',
+      lote: item.lote || '',
+      validade: item.validade || '',
+      codigo_barras: item.codigo_barras || '',
+      ativo: item.ativo !== false
     });
     setModal(item.id);
   };
@@ -330,7 +358,128 @@ const salvarConfig = async () => {
               <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{modal === 'novo' ? 'Novo Item' : 'Editar Item'}</div>
             </div>
             <div style={{ padding: '20px 22px', overflowY: 'auto' }}>
-              {/* ... seu formulário existente ... */}
+              {/* CAMPOS DO FORMULÁRIO */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={s.label}>NOME DO ITEM *</label>
+                  <input value={form.nome} onChange={e => setForm(f => ({...f, nome: e.target.value}))} style={s.input} />
+                </div>
+                <div>
+                  <label style={s.label}>SKU / CÓDIGO</label>
+                  <input value={form.sku} onChange={e => setForm(f => ({...f, sku: e.target.value}))} style={s.input} />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={s.label}>FABRICANTE</label>
+                  <input value={form.fabricante} onChange={e => setForm(f => ({...f, fabricante: e.target.value}))} placeholder="Ex: SKF, Bosch..." style={s.input} />
+                </div>
+                <div>
+                  <label style={s.label}>UNIDADE DE MEDIDA *</label>
+                  <select value={form.unidade_medida} onChange={e => setForm(f => ({...f, unidade_medida: e.target.value}))} style={{...s.input, appearance: 'none'}}>
+                    <option value="UN">UN (Unidade)</option>
+                    <option value="L">L (Litro)</option>
+                    <option value="KG">KG (Quilograma)</option>
+                    <option value="CX">CX (Caixa)</option>
+                    <option value="RL">RL (Rolo)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={s.label}>LOTE</label>
+                  <input value={form.lote} onChange={e => setForm(f => ({...f, lote: e.target.value}))} placeholder="Ex: L2024-08" style={s.input} />
+                </div>
+                <div>
+                  <label style={s.label}>VALIDADE</label>
+                  <input type="date" value={form.validade} onChange={e => setForm(f => ({...f, validade: e.target.value}))} style={s.input} />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={s.label}>LOCALIZAÇÃO (BIN)</label>
+                  <input value={form.localizacao} onChange={e => setForm(f => ({...f, localizacao: e.target.value}))} placeholder="Ex: Prateleira A, Corredor 2" style={s.input} />
+                </div>
+                <div>
+                  <label style={s.label}>CÓDIGO DE BARRAS (EAN)</label>
+                  <input value={form.codigo_barras} onChange={e => setForm(f => ({...f, codigo_barras: e.target.value}))} placeholder="Ex: 7891234567890" style={s.input} />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={s.label}>SALDO ATUAL</label>
+                  <input type="number" value={form.saldo_atual} onChange={e => setForm(f => ({...f, saldo_atual: e.target.value}))} style={s.input} />
+                </div>
+                <div>
+                  <label style={s.label}>LIMITE INFERIOR</label>
+                  <input type="number" value={form.limite_inferior_controle} onChange={e => setForm(f => ({...f, limite_inferior_controle: e.target.value}))} style={s.input} />
+                </div>
+                <div>
+                  <label style={s.label}>LIMITE DE RECOMPRA</label>
+                  <input type="number" value={form.limite_recompra} onChange={e => setForm(f => ({...f, limite_recompra: e.target.value}))} style={s.input} />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                <div>
+                  <label style={s.label}>LOTE MÍNIMO DE COMPRA</label>
+                  <input type="number" value={form.lote_minimo_compra} onChange={e => setForm(f => ({...f, lote_minimo_compra: e.target.value}))} style={s.input} />
+                </div>
+                <div>
+                  <label style={s.label}>QUANTIDADE LOTES AUTO</label>
+                  <input type="number" value={form.quantidade_lotes_automatico} onChange={e => setForm(f => ({...f, quantidade_lotes_automatico: e.target.value}))} style={s.input} />
+                </div>
+              </div>
+
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 12 }}>
+                <div>
+                  <label style={s.label}>FORNECEDOR</label>
+                  <input 
+                    value={form.fornecedor_preferencial_id} 
+                    onChange={e => setForm(f => ({...f, fornecedor_preferencial_id: e.target.value}))} 
+                    placeholder="Ex: SKF, Bosch, Mercedes..." 
+                    style={s.input} 
+                  />
+                </div>
+              </div>
+
+              {/* Toggle: Ativo */}
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
+                <div>
+                  <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Item Ativo</div>
+                  <div style={{ fontSize: 11, color: C.muted }}>Permite que este item seja usado em operações</div>
+                </div>
+                <button
+                  onClick={() => setForm(f => ({ ...f, ativo: !f.ativo }))}
+                  style={{
+                    width: 48,
+                    height: 28,
+                    borderRadius: 14,
+                    background: form.ativo ? C.success : C.border,
+                    cursor: 'pointer',
+                    position: 'relative',
+                    transition: 'background .2s',
+                    border: 'none',
+                    flexShrink: 0
+                  }}
+                >
+                  <div style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: '50%',
+                    background: '#fff',
+                    position: 'absolute',
+                    top: 3,
+                    left: form.ativo ? 23 : 3,
+                    transition: 'left .2s',
+                    boxShadow: '0 2px 4px rgba(0,0,0,0.2)'
+                  }} />
+                </button>
+              </div>
             </div>
             <div style={{ display: 'flex', gap: 10, padding: '14px 22px', borderTop: `1px solid ${C.border}` }}>
               <button onClick={() => setModal(null)} style={{ ...s.btn(false), flex: 1 }}>Cancelar</button>

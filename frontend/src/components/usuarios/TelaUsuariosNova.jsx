@@ -13,6 +13,7 @@ export default function TelaUsuariosNova({ useUsuarios, C, s }) {
   const [form, setForm] = useState({
     nome: '',
     email: '',
+    telefone: '',
     senha: '',
     perfil: 'comprador',
     ativo: true,
@@ -275,12 +276,13 @@ export default function TelaUsuariosNova({ useUsuarios, C, s }) {
                   placeholder="joao@empresa.com"
                   style={s.input}
                 />
-                <Input
-                  label="TELEFONE"
+                <label style={s.label}>TELEFONE</label>
+                <input
                   type="tel"
                   value={form.telefone}
                   onChange={e => setForm(f => ({ ...f, telefone: e.target.value }))}
                   placeholder="(11) 99999-9999"
+                  style={s.input}
                 />
               </div>
 

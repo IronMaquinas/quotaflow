@@ -143,14 +143,17 @@ export const cotacoesService = {
     return response.json();
   },
 
-  async enviarCotacao(accessToken, cotacaoId) {
+  async enviarCotacao(accessToken, cotacaoId, origem_ov_numero = null) {
     const response = await fetch(`${API_URL}/cotacoes/enviar`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ cotacao_id: cotacaoId }),
+      body: JSON.stringify({ 
+        cotacao_id: cotacaoId,
+        origem_ov_numero // ✅ Agora está definida!
+      }),
     });
     if (!response.ok) {
       const erro = await response.json();
@@ -208,7 +211,7 @@ export const cotacoesService = {
   },
 
   async obterStatusCotacao(accessToken, cotacaoId) {
-  const response = await fetch(`${API_URL}/cotacoes/${cotacaoId}/monitorar`, {
+  const response = await fetch(`${API_URL}/cotacoes/${cotacaoId}/status`, {
       method: "GET",
       headers: {
         "Authorization": `Bearer ${accessToken}`,

@@ -23,6 +23,7 @@ export default function TelaRetiradaConsumiveis({ C, s, fmtD, fmtBRL }) {
   const [minhasSolicitacoes, setMinhasSolicitacoes] = useState([]);
   const [filtroStatus, setFiltroStatus] = useState("todos");
   const [searchTerm, setSearchTerm] = useState("");
+  const [origem, setOrigem] = useState('');
 
   // No TelaRetiradaConsumiveis.jsx
   const carregarSolicitacoes = async () => {
@@ -113,7 +114,7 @@ export default function TelaRetiradaConsumiveis({ C, s, fmtD, fmtBRL }) {
   }, []);
 
   // Realizar retirada
-  const realizarRetirada = async () => {
+const realizarRetirada = async () => {
     if (!itemSelecionado) {
       setMensagem({ tipo: 'erro', texto: 'Selecione um item' });
       return;
@@ -139,40 +140,42 @@ export default function TelaRetiradaConsumiveis({ C, s, fmtD, fmtBRL }) {
     setMensagem(null);
 
     try {
-    const response = await apiService.post('/estoque/movimentacoes', {
-      item_consumo_id: itemSelecionado.id,
-      tipo: 'saida',
-      quantidade: qtd,
-      observacao: motivo
-    });
+      // 🔥 MUDANÇA IMPORTANTE: Chamar a rota de SOLICITAÇÃO (não a de movimentação direta)
+      const response = await apiService.post('/estoque/solicitacoes', {
+        item_consumo_id: itemSelecionado.id,
+        quantidade: qtd,
+        motivo: motivo,
+        solicitante_id: JSON.parse(localStorage.getItem('usuario'))?.id,
+        origem_ov_numero: origem || null
+      });
 
-    // 🔥 VERIFICA SE É UMA SOLICITAÇÃO (APROVAÇÃO) OU MOVIMENTAÇÃO DIRETA
-    if (response.status === 'pendente') {
-      setMensagem({ 
-        tipo: 'sucesso', 
-        texto: `✅ Solicitação de retirada enviada para aprovação! ID: ${response.solicitacao_id}` 
-      });
-    } else {
-      setMensagem({ 
-        tipo: 'sucesso', 
-        texto: `✅ Retirada realizada com sucesso! Novo saldo: ${response.novo_saldo.toFixed(2)} ${itemSelecionado.unidade_medida || 'UN'}` 
-      });
+      // 🔥 A resposta agora traz o número da solicitação
+      if (response.numero_solicitacao) {
+        setMensagem({ 
+          tipo: 'sucesso', 
+          texto: `✅ Solicitação ${response.numero_solicitacao} enviada para aprovação!` 
+        });
+      } else {
+        setMensagem({ 
+          tipo: 'sucesso', 
+          texto: `✅ Solicitação enviada para aprovação!` 
+        });
+      }
+
+      // Limpar formulário
+      setBusca('');
+      setItemSelecionado(null);
+      setQuantidade('');
+      setMotivo('');
+      
+      // 🔥 Recarregar histórico de solicitações (e não os itens, por enquanto)
+      carregarSolicitacoes();
+
+    } catch (err) {
+      setMensagem({ tipo: 'erro', texto: '❌ Erro ao realizar retirada: ' + err.message });
+    } finally {
+      setRetirando(false);
     }
-
-    // Limpar formulário
-    setBusca('');
-    setItemSelecionado(null);
-    setQuantidade('');
-    setMotivo('');
-    
-    // Recarregar itens
-    carregarItens();
-
-  } catch (err) {
-    setMensagem({ tipo: 'erro', texto: '❌ Erro ao realizar retirada: ' + err.message });
-  } finally {
-    setRetirando(false);
-  }
 };
 
   if (loading) return <div style={{ padding: 20, color: C.muted }}>Carregando...</div>;
@@ -203,6 +206,16 @@ export default function TelaRetiradaConsumiveis({ C, s, fmtD, fmtBRL }) {
           {mensagem.texto}
         </div>
       )}
+
+      <div style={{ marginBottom: 16 }}>
+        <label style={s.label}>ORIGEM (OPCIONAL)</label>
+        <input 
+          value={origem} 
+          onChange={e => setOrigem(e.target.value)} 
+          placeholder="Ex: OS-2026-0001, Obra X ou Cotação CHAM-2026-0001" 
+          style={s.input} 
+        />
+      </div>
 
       <div style={{ ...s.card, padding: '24px', maxWidth: 520, margin: '0 auto' }}>
         {/* CAMPO DE BUSCA COM AUTOCOMPLETE */}
@@ -409,6 +422,11 @@ export default function TelaRetiradaConsumiveis({ C, s, fmtD, fmtBRL }) {
               marginBottom: 10,
               borderLeft: `3px solid ${statusCfg.c}` 
             }}>
+              {/* 🔥 NÚMERO DA SOLICITAÇÃO (bem visível) */}
+              <div style={{ fontSize: 12, fontWeight: 700, color: C.accent, fontFamily: "'IBM Plex Mono',monospace", marginBottom: 4 }}>
+                {sol.numero_solicitacao || 'Sem número'}
+              </div>
+
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 6 }}>
                 <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{sol.item_nome}</div>
                 <span style={{ 
@@ -436,7 +454,7 @@ export default function TelaRetiradaConsumiveis({ C, s, fmtD, fmtBRL }) {
                 <div style={{ fontSize: 11, color: C.textSub, marginTop: 4 }}>Motivo: "{sol.motivo}"</div>
               )}
 
-              {sol.status === 'rejeitado' && sol.observacao_rejeicao && (
+              {sol.status === 'rejeitado' && (sol.observacao_aprovacao || sol.observacao_rejeicao) && (
                 <div style={{ 
                   marginTop: 8, 
                   padding: '6px 10px', 
@@ -446,13 +464,15 @@ export default function TelaRetiradaConsumiveis({ C, s, fmtD, fmtBRL }) {
                   color: '#ef4444',
                   border: '1px solid #ef444433'
                 }}>
-                  <strong>Motivo da rejeição:</strong> {sol.observacao_rejeicao}
+                  <strong>Motivo da rejeição:</strong> {sol.observacao_aprovacao || sol.observacao_rejeicao}
                 </div>
               )}
 
               {sol.status === 'aprovado' && (sol.aprovado_nome || sol.aprovador_nome) && (
                 <div style={{ marginTop: 6, fontSize: 11, color: C.muted }}>
-                  Aprovado por: <strong style={{ color: C.text }}>{sol.aprovado_nome || sol.aprovador_nome}</strong>
+                  Aprovado por: <strong style={{ color: C.text }}>
+                    {sol.aprovado_nome || sol.aprovador_nome === 'Sistema' ? 'Aprovação automática' : sol.aprovado_nome || sol.aprovador_nome}
+                  </strong>
                 </div>
               )}
 

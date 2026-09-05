@@ -338,7 +338,7 @@ export function useCotacoes(accessToken) {
   // ─────────────────────────────────────────────────────────────────────────
 
   const salvarEEnviarCotacao = useCallback(
-    async (chamadoId, itens, notas = "") => {
+    async (chamadoId, itens, notas = "", origem = null) => {
       try {
         setErro(null);
         setLoading(true);
@@ -375,7 +375,7 @@ export function useCotacoes(accessToken) {
           }
         }
 
-        // 4. ✅ NOVO: Salvar quais fornecedores foram selecionados pra cada item
+        // 4. Salvar quais fornecedores foram selecionados pra cada item
         for (const item of itens) {
           for (const fornecedor_id of item.fornecedor_ids) {
             try {
@@ -399,9 +399,8 @@ export function useCotacoes(accessToken) {
           }
         }
 
-
-        // 5. Enviar cotação
-        const enviada = await cotacoesService.enviarCotacao(accessToken, cotacao_id);
+        // 5. Enviar cotação (com a origem)
+        const enviada = await cotacoesService.enviarCotacao(accessToken, cotacao_id, origem);
         console.log(`✅ Cotação enviada:`, enviada);
         return enviada;
       } catch (err) {

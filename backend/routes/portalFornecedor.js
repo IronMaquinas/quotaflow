@@ -24,10 +24,10 @@ router.get('/portal/cotacao/:cotacaoId/:token', async (req, res) => {
       return res.status(400).json({ message: 'ID da cotação inválido' });
     }
 
-    // 1. Validar token
+    // 🔥 BUSCAR POR token_acesso (NÃO por token!)
     const cotacaoFornecedor = await DB.select(
       'cotacao_fornecedores',
-      { cotacao_id: cotacaoId, token }
+      { cotacao_id: cotacaoId, token_acesso: token }
     );
 
     if (cotacaoFornecedor.length === 0) {
@@ -105,10 +105,10 @@ router.post('/portal/cotacao/:cotacaoId/:token/responder', async (req, res) => {
     const { cotacaoId, token } = req.params;
     const { respostas } = req.body;
 
-    // 🔥 1. VALIDAR TOKEN E OBTER DADOS DO FORNECEDOR
+    // 🔥 1. VALIDAR TOKEN (use token_acesso!)
     const cotacaoFornecedor = await DB.select(
       'cotacao_fornecedores',
-      { cotacao_id: cotacaoId, token }
+      { cotacao_id: cotacaoId, token_acesso: token }
     );
 
     if (cotacaoFornecedor.length === 0) {
@@ -116,7 +116,6 @@ router.post('/portal/cotacao/:cotacaoId/:token/responder', async (req, res) => {
     }
 
     const fornData = cotacaoFornecedor[0];
-    // 🟢 DECLARE TODAS AS VARIÁVEIS AQUI, ANTES DE USAR EM QUALQUER QUERY
     const tenantId = fornData.tenant_id;
     const fornecedorId = fornData.fornecedor_id;
     const cotacaoFornecedorId = fornData.id;
@@ -126,10 +125,11 @@ router.post('/portal/cotacao/:cotacaoId/:token/responder', async (req, res) => {
       return res.status(400).json({ message: 'Esta cotação já foi respondida.' });
     }
 
-    // 🔥 3. CALCULAR VALOR TOTAL
+    // 🔥 3. CALCULAR VALOR TOTAL (item + frete)
     const valorTotal = respostas.reduce((acc, r) => {
-      const valor = parseFloat(r.valor || 0);
-      return acc + (valor * (r.quantidade || 1));
+      const valor = parseFloat(r.valor_unitario || 0);
+      const frete = parseFloat(r.valor_frete || 0);
+      return acc + (valor * (r.quantidade || 1)) + frete;
     }, 0);
 
     // 🔥 4. ATUALIZAR COTAÇÃO_FORNECEDORES
@@ -143,7 +143,7 @@ router.post('/portal/cotacao/:cotacaoId/:token/responder', async (req, res) => {
         obs: respostas[0]?.observacoes || '',
         prazo: parseInt(respostas[0]?.prazo || 0),
         frete: respostas.reduce((acc, r) => acc + parseFloat(r.frete || 0), 0),
-        token_acesso: require('uuid').v4() // Gera novo token (opcional)
+        token_acesso: require('uuid').v4()
       },
       tenantId
     );
@@ -173,7 +173,7 @@ router.post('/portal/cotacao/:cotacaoId/:token/responder', async (req, res) => {
       await DB.update('cotacoes', cotacaoId, { status: 'respondida' }, tenantId);
     }
 
-    // 7. ENVIAR E‑MAIL DE CONFIRMAÇÃO PARA O FORNECEDOR (e/ou comprador)
+    // 7. ENVIAR E‑MAIL DE CONFIRMAÇÃO PARA O FORNECEDOR
     try {
       const { enviarEmailCotacao } = require('../services/emailService');
       const fornecedor = await DB.selectOne('fornecedores', { id: fornecedorId }, tenantId);
@@ -196,7 +196,6 @@ router.post('/portal/cotacao/:cotacaoId/:token/responder', async (req, res) => {
       console.log(`✅ E‑mail de confirmação enviado para ${fornecedor?.email}`);
     } catch (err) {
       console.error('❌ Falha ao enviar e‑mail de confirmação:', err.message);
-      // Não interrompe o fluxo
     }
 
     return res.json({
@@ -219,10 +218,10 @@ router.get('/portal/cotacao/:cotacaoId/:token/status', async (req, res) => {
   try {
     const { cotacaoId, token } = req.params;
 
-    // Validar token
+    // 🔥 Validar token_acesso (NÃO token)
     const cotacaoFornecedor = await DB.select(
       'cotacao_fornecedores',
-      { cotacao_id: cotacaoId, token }
+      { cotacao_id: cotacaoId, token_acesso: token }
     );
 
     if (cotacaoFornecedor.length === 0) {

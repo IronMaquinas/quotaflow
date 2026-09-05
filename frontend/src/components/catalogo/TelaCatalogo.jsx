@@ -42,6 +42,7 @@ export default function TelaCatalogo({
   const [busca, setBusca] = useState("");
   const [filtroCategoria, setFiltroCategoria] = useState("todos");
   const [modal, setModal] = useState(null); // null | novo | editar | vinculaForn
+  const token = localStorage.getItem('access_token');
 
   // Estado do formulário novo item
   const [formNovoItem, setFormNovoItem] = useState({
@@ -400,38 +401,58 @@ export default function TelaCatalogo({
   // FUNÇÕES: Vinculação de Fornecedores
   // ──────────────────────────────────────────────────────────
 
-  const handleAdicionarFornecedor = useCallback(() => {
+  const handleAdicionarFornecedor = useCallback(async () => {
     if (!vinculacaoForm.itemId || !vinculacaoForm.fornecedorId || !vinculacaoForm.precoUnitario) {
       alert("Preencha todos os campos");
       return;
     }
 
-    setItens((prevItens) =>
-      prevItens.map((item) => {
-        if (item.id === vinculacaoForm.itemId) {
-          const fornecedor = fornecedores.find((f) => f.id === parseInt(vinculacaoForm.fornecedorId));
-          return {
-            ...item,
-            fornecedores: [
-              ...(item.fornecedores || []),
-              {
-                fornecedorId: parseInt(vinculacaoForm.fornecedorId),
-                fornecedorNome: fornecedor?.nome,
-                precoUnitario: parseFloat(vinculacaoForm.precoUnitario),
-                estoqueStatus: vinculacaoForm.estoqueStatus,
-                tempoEntrega: parseInt(vinculacaoForm.tempoEntrega),
-              },
-            ],
-          };
-        }
-        return item;
-      })
-    );
+    try {
+      // ✅ 1. SALVAR NO BACKEND PRIMEIRO
+      const response = await fetch(`${import.meta.env.VITE_API_URL}/catalogo/vincular-fornecedor`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` },
+        body: JSON.stringify({
+          itemId: parseInt(vinculacaoForm.itemId),
+          fornecedorId: parseInt(vinculacaoForm.fornecedorId),
+          precoUnitario: parseFloat(vinculacaoForm.precoUnitario),
+          estoqueStatus: vinculacaoForm.estoqueStatus,
+          tempoEntrega: parseInt(vinculacaoForm.tempoEntrega),
+        })
+      });
 
-    setVinculacaoForm({ itemId: null, fornecedorId: null, precoUnitario: "", estoqueStatus: "em_estoque", tempoEntrega: 3 });
-    setModal(null);
-    alert("Fornecedor vinculado com sucesso!");
-  }, [vinculacaoForm, fornecedores]);
+      if (!response.ok) throw new Error('Erro ao vincular fornecedor');
+
+      // ✅ 2. DEPOIS atualizar estado local
+      setItens((prevItens) =>
+        prevItens.map((item) => {
+          if (item.id === vinculacaoForm.itemId) {
+            const fornecedor = fornecedores.find((f) => f.id === parseInt(vinculacaoForm.fornecedorId));
+            return {
+              ...item,
+              fornecedores: [
+                ...(item.fornecedores || []),
+                {
+                  fornecedorId: parseInt(vinculacaoForm.fornecedorId),
+                  fornecedorNome: fornecedor?.nome,
+                  precoUnitario: parseFloat(vinculacaoForm.precoUnitario),
+                  estoqueStatus: vinculacaoForm.estoqueStatus,
+                  tempoEntrega: parseInt(vinculacaoForm.tempoEntrega),
+                },
+              ],
+            };
+          }
+          return item;
+        })
+      );
+
+      setVinculacaoForm({ itemId: null, fornecedorId: null, precoUnitario: "", estoqueStatus: "em_estoque", tempoEntrega: 3 });
+      setModal(null);
+      alert("Fornecedor vinculado com sucesso!");
+    } catch (err) {
+      alert("Erro: " + err.message);
+    }
+  }, [vinculacaoForm, fornecedores, token]);
 
   // ──────────────────────────────────────────────────────────
   // FUNÇÕES: Busca e Filtro
@@ -689,7 +710,7 @@ export default function TelaCatalogo({
                           }}
                         >
                           <div style={{ fontSize: 11, fontWeight: 600, color: C.text }}>
-                            {forn.nome}
+                            {forn.fornecedorNome || forn.nome}
                           </div>
                           <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
                             {fmtBRL(forn.precoUnitario)} • {forn.estoqueStatus === "em_estoque" ? "✓ Estoque" : "⊘ Encomenda"} •{" "}

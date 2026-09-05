@@ -1,6 +1,7 @@
 // components/cotacoes/TelaCotacoesNovaComAbas.jsx
 
 import { useState, useEffect, useCallback } from "react";
+import apiService from "../../services/apiService";
 import { useCotacoes } from "../../hooks/useCotacoes";
 import { useFornecedores } from "../../hooks/useFornecedores";
 import { useChamados } from "../../hooks/useChamados";
@@ -14,7 +15,7 @@ export default function TelaCotacoesNovaComAbas({ fmtBRL, fmtD, C, s }) {
   const { cotacoes, loading, erro, carregar: listarCotacoes, criar: criarCotacao, aprovar: aprovarFornecedor, 
         buscarChamadoComItens, salvarCotacao, salvarEEnviarCotacao,   buscarDetalhesCotacao, atualizarCotacao, excluirCotacao } = useCotacoes(token);
   const { fornecedores } = useFornecedores();
-  const { chamados } = useChamados();
+  const { chamados, setChamados, carregar: carregarChamados } = useChamados();
   const { enviarCotacao } = useEmail();
 
   const cotacoesSeguro = cotacoes || [];
@@ -30,6 +31,7 @@ export default function TelaCotacoesNovaComAbas({ fmtBRL, fmtD, C, s }) {
   const [enviando, setEnviando] = useState(false);
   const [aprovando, setAprovando] = useState(false);
   const [telaMonitorar, setTelaMonitorar] = useState(false);
+  const [origem, setOrigem] = useState("");
 
   // ─── NOVO: ABA ATIVA (Manual vs Automático) ─────────────────
   const [abaAtiva, setAbaAtiva] = useState("manual");
@@ -58,9 +60,13 @@ export default function TelaCotacoesNovaComAbas({ fmtBRL, fmtD, C, s }) {
   const [cotacaoEditando, setCotacaoEditando] = useState(null); 
 
   // Carregar cotações ao montar
-  useEffect(() => {
-    listarCotacoes();
-  }, []);
+useEffect(() => {
+  listarCotacoes();
+  // 🔥 Buscar os dados diretamente, sem depender do uso do hook
+  apiService.get('/cotacoes/chamados').then(data => {
+    setChamados(data || []);
+  });
+}, []);
 
   // ─── NOVO: TOGGLE FORNECEDOR ───────────────────────────────
   const toggleFornecedorAutomatico = useCallback((itemId, fornecedorId) => {
@@ -75,7 +81,7 @@ export default function TelaCotacoesNovaComAbas({ fmtBRL, fmtD, C, s }) {
   }, []);
 
    // ─── MODO MANUAL (seu código original) ──────────────────────
-  const handleCriarCotacaoManual = async () => {
+   const handleCriarCotacaoManual = async () => {
     if (!formManual.chamadoId || formManual.fornecedorIds.length === 0) {
       alert("Selecione chamado e pelo menos 1 fornecedor");
       return;
@@ -86,6 +92,7 @@ export default function TelaCotacoesNovaComAbas({ fmtBRL, fmtD, C, s }) {
       const novaCotacao = await criarCotacao({
         chamado_id: formManual.chamadoId,
         fornecedor_ids: formManual.fornecedorIds,
+        origem_ov_numero: origem || null
       });
 
       for (const fornId of formManual.fornecedorIds) {
@@ -102,6 +109,8 @@ export default function TelaCotacoesNovaComAbas({ fmtBRL, fmtD, C, s }) {
       await listarCotacoes();
       setModal(null);
       setFormManual({ chamadoId: "", fornecedorIds: [] });
+      // 🔥 LIMPE O CAMPO DE ORIGEM:
+      setOrigem("");
       alert("Cotação criada e enviada com sucesso!");
     } catch (e) {
       console.error(e);
@@ -113,7 +122,11 @@ export default function TelaCotacoesNovaComAbas({ fmtBRL, fmtD, C, s }) {
 
   // ─── APERTAR BOTÃO NOVA COTAÇÃO ────────────────────────────
   const handleAbrirNovaJanelaModal = async (tipoAba) => {
-    // 🔄 Recarrega a lista de cotações para garantir dados atualizados
+    // 🔥 Buscar os dados diretamente da API
+    apiService.get('/cotacoes/chamados').then(data => {
+      setChamados(data || []);
+    });
+    
     await listarCotacoes();
 
     if (tipoAba === "manual") {
@@ -151,11 +164,8 @@ export default function TelaCotacoesNovaComAbas({ fmtBRL, fmtD, C, s }) {
   const handleCarregarChamadoAutomatico = async (chamadoId) => {
     setCarregandoAutomatico(true);
     try {
-      console.log(`🔍 Carregando chamado ${chamadoId}...`);
       
       const resultado = await buscarChamadoComItens(chamadoId);
-      
-      console.log(`✅ Chamado carregado:`, resultado);
       
       // Processar resposta do backend
       setChamadoAutomatico({
@@ -211,19 +221,17 @@ export default function TelaCotacoesNovaComAbas({ fmtBRL, fmtD, C, s }) {
 
     setEnviando(true);
     try {
-      // Monta payload no formato correto: itens com fornecedores_ids
       const itensPayload = Object.entries(selecionesFornecedor).map(([itemId, fornecedorIds]) => ({
         item_id: parseInt(itemId),
         fornecedor_ids: fornecedorIds
       }));
 
       if (editandoId) {
-        // Atualizar cotação existente
         await atualizarCotacao(editandoId, itensPayload, "");
         alert("Cotação atualizada com sucesso!");
       } else {
-        // Salvar nova cotação
-        await salvarCotacao(chamadoAutomatico.id, itensPayload, "");
+        // 🔥 ADICIONE O CAMPO DE ORIGEM:
+        await salvarCotacao(chamadoAutomatico.id, itensPayload, "", origem || null);
         alert("Rascunho salvo com sucesso!");
       }
 
@@ -234,6 +242,8 @@ export default function TelaCotacoesNovaComAbas({ fmtBRL, fmtD, C, s }) {
       setChamadoAutomatico(null);
       setAgrupado([]);
       setSelecionesFornecedor({});
+      // 🔥 LIMPE O CAMPO DE ORIGEM:
+      setOrigem("");
     } catch (err) {
       console.error("❌ Erro ao salvar:", err);
       alert("Erro ao salvar: " + err.message);
@@ -242,7 +252,7 @@ export default function TelaCotacoesNovaComAbas({ fmtBRL, fmtD, C, s }) {
     }
   };
 
-  const handleEnviarAutomatico = async () => {
+const handleEnviarAutomatico = async () => {
   const temSelecoes = Object.values(selecionesFornecedor).some(arr => arr.length > 0);
   if (!temSelecoes) {
     alert("Selecione pelo menos um fornecedor para um item");
@@ -260,23 +270,24 @@ export default function TelaCotacoesNovaComAbas({ fmtBRL, fmtD, C, s }) {
       fornecedor_ids: fornecedorIds
     }));
 
-    // 🔍 DEBUG - VER O QUE ESTÁ SENDO ENVIADO
-    console.log('📋 selecionesFornecedor (estado):', selecionesFornecedor);
-    console.log('📦 itensPayload (o que vai enviar):', JSON.stringify(itensPayload, null, 2));
-    
-    // Também mostrar por item
-    itensPayload.forEach(item => {
-      console.log(`  Item ${item.item_id}: ${item.fornecedor_ids.length} fornecedor(es) - IDs: ${item.fornecedor_ids.join(', ')}`);
-    });
-
+    // 🔥 Se estiver editando, apenas atualizar
     if (editandoId) {
-      await atualizarCotacao(editandoId, itensPayload, "");
-      alert("✅ Cotação atualizada!");
+      await atualizarCotacao(editandoId, itensPayload, "", origem || null);
+      const cotacaoId = editandoId;
+      
+      // 🔥 ENVIAR A COTAÇÃO
+      await cotacoesService.enviarCotacao(token, cotacaoId, origem || null);
+      console.log("✅ Cotação enviada!");
     } else {
-      await salvarEEnviarCotacao(chamadoAutomatico.id, itensPayload, "");
-      alert("✅ Cotação criada e enviada!");
+      // 🔥 Criar nova cotação e enviar
+      const salva = await salvarCotacao(chamadoAutomatico.id, itensPayload, "", origem || null);
+      const cotacaoId = salva.cotacao_id;
+      
+      await cotacoesService.enviarCotacao(token, cotacaoId, origem || null);
+      console.log("✅ Cotação enviada!");
     }
 
+    // Limpar estados
     await listarCotacoes();
     setModal(null);
     setEditandoId(null);
@@ -284,6 +295,7 @@ export default function TelaCotacoesNovaComAbas({ fmtBRL, fmtD, C, s }) {
     setChamadoAutomatico(null);
     setAgrupado([]);
     setSelecionesFornecedor({});
+    setOrigem("");
   } catch (err) {
     console.error("❌ Erro ao enviar:", err);
     alert("Erro ao enviar: " + err.message);
@@ -292,15 +304,24 @@ export default function TelaCotacoesNovaComAbas({ fmtBRL, fmtD, C, s }) {
   }
 };
 
+// -- Status Label ---
+const statusLabels = {
+  'aguardando_cotacao': 'Aguardando Cotação',
+  'cotando': 'Cotando',
+  'finalizado': 'Finalizado',
+  'aberto': 'Aberto',
+  'rascunho': 'Rascunho',
+  'enviada': 'Enviada',
+  'respondida': 'Respondida'
+};
+
 // ─── NOVO: BUSCAR STATUS DA COTAÇÃO E ABRIR MONITORAMENTO ────────────
 const handleVisualizarRespostas = async (cotacaoId) => {
   setCarregandoStatus(true);
   try {
-    console.log(`🔍 Buscando status da cotação ${cotacaoId}...`);
     
     const status = await cotacoesService.obterStatusCotacao(token, cotacaoId);
     
-    console.log(`✅ Status carregado:`, status);
     setStatusCotacao(status);
     setTelaMonitorar(true);  // ← MUDE ISTO (era setTelaRespostas)
     
@@ -313,31 +334,26 @@ const handleVisualizarRespostas = async (cotacaoId) => {
 };
 
 // ─── CRIAR ORDEM DE VENDA ───────────────────────────
-const handleCriarOrdenVenda = async (cotacaoId, fornecedorId) => {
+const handleCriarOrdenVenda = async (cotacaoId, fornecedorId, dadosAdicionais = {}) => {
   if (!window.confirm(`Deseja emitir a OV para este fornecedor?`)) {
     return;
   }
 
   setEnviando(true);
   try {
-    console.log(`📦 Criando OV...`);
-    
     const resultado = await cotacoesService.criarOrdenVenda(
       token,
       cotacaoId,
-      fornecedorId
+      fornecedorId,
+      dadosAdicionais
     );
-    
-    console.log(`✅ OV criada:`, resultado);
     
     await listarCotacoes();
     setTelaRespostas(false);
     setStatusCotacao(null);
     
     alert(`✅ Ordem de Venda ${resultado.numero} criada com sucesso!`);
-    
   } catch (err) {
-    console.error("❌ Erro:", err);
     alert("Erro ao criar OV: " + err.message);
   } finally {
     setEnviando(false);
@@ -347,21 +363,43 @@ const handleCriarOrdenVenda = async (cotacaoId, fornecedorId) => {
 // Abrir para Edição ou Visualização
 const handleAbrirCotacao = async (cotacao) => {
   if (cotacao.status === 'rascunho' || cotacao.status === 'pendente') {
-    // ← MODO EDIÇÃO (rascunho/pendente)
     try {
       const data = await buscarDetalhesCotacao(cotacao.id);
-      console.log('📦 Dados da cotação:', data);
+
+      setOrigem(data.origem_ov_numero || '');
       
+      // 🔥 CARREGAR OS ITENS DO CHAMADO
+      const resultado = await buscarChamadoComItens(data.chamado_id);
+      
+      setChamadoAutomatico({
+        id: data.chamado_id,
+        numero: resultado.chamado.numero || '',
+        itens: []
+      });
+      
+      // ESTRUTURAR OS ITENS AGRUPADOS
+      const categoriasAgrupadas = Object.entries(resultado.itensPorCategoria).map(
+        ([categoria, itens]) => ({
+          categoria,
+          itens: itens.map(item => ({
+            id: item.id,
+            nome: item.nome,
+            quantidade: item.quantidade,
+            fornecedores: item.fornecedores || [],
+            fornecedoresSelecionados: []
+          }))
+        })
+      );
+      
+      setAgrupado(categoriasAgrupadas);
       setCotacaoEditando(data);
       setEditandoId(cotacao.id);
-      // ... resto do código igual ...
-      
       setAbaAtiva('automatico');
       setModal('nova');
     } catch (err) {
       alert('Erro ao carregar cotação: ' + err.message);
     }
-  } else if (cotacao.status === 'enviada' || cotacao.status === 'finalizada' || cotacao.status === 'respondida') {
+   } else if (cotacao.status === 'enviada' || cotacao.status === 'finalizada' || cotacao.status === 'respondida') {
     // ← MODO VISUALIZAÇÃO (enviada/finalizada/respondida) 
     console.log(`👁️ Visualizando cotação ${cotacao.id}`);
     
@@ -390,13 +428,14 @@ const handleAbrirCotacao = async (cotacao) => {
   // ─── FILTRO COTAÇÕES (seu código original) ─────────────────
   const cotacoesFiltered = cotacoesSeguro.filter((c) => {
     if (filtro === "todos") return true;
-    if (filtro === "em_curso") return c.status === "enviada" || c.status === "respondida"; // opcional incluir
+    if (filtro === "rascunho") return c.status === "rascunho";
+    if (filtro === "em_curso") return c.status === "enviada" || c.status === "respondida";
     if (filtro === "respondida") return c.status === "respondida";
     if (filtro === "finalizado") return c.status === "finalizada";
     return false;
   })
   .filter((c) => {
-    const chamado = chamadosSeguro.find((ch) => Number(ch.id) === Number(c.chamadoId));
+    const chamado = chamadosSeguro.find((ch) => String(ch.id) === String(c.chamado_id));
     return (
       !busca ||
       (chamado?.peca && chamado.peca.toLowerCase().includes(busca.toLowerCase())) ||
@@ -406,9 +445,13 @@ const handleAbrirCotacao = async (cotacao) => {
 
   // ─── RENDER: MODAL NOVA COTAÇÃO ─────────────────────────────
   if (modal === "nova") {
-    const chamadosSemCotacao = chamados.filter(
-      (ch) => !cotacoes.some((c) => c.chamado_id === ch.id) // Remove qualquer cotação, independente do status
-    );
+      const chamadosSemCotacao = chamados.filter((ch) => {
+        // 🔥 Se estiver editando (cotação em rascunho), traga o chamado vinculado
+        if (editandoId && String(cotacaoEditando?.chamado_id) === String(ch.id)) return true;
+        
+        // 🔥 Se não estiver editando, traga apenas os chamados sem cotação
+        return !cotacoes.some((c) => String(c.chamado_id) === String(ch.id));
+      });   
 
     return (
       <div
@@ -498,7 +541,7 @@ const handleAbrirCotacao = async (cotacao) => {
                         ch.itens?.[0]?.item_nome || ch.peca || "Sem item";
                       return (
                         <option key={ch.id} value={ch.id}>
-                          {ch.numero} - {primeiroItem} ({ch.urgencia || "média"})
+                          {ch.numero} - {ch.servico_nome || ch.descricao || ch.itens[0]?.item_nome || 'Sem descrição'} ({ch.itens?.length || 0} itens)
                         </option>
                       );
                     })}
@@ -586,6 +629,16 @@ const handleAbrirCotacao = async (cotacao) => {
                             </div>
                           </label>
                         ))}
+                    {/* 🔥 CAMPO DE ORIGEM (MODO MANUAL) */}
+                      <div style={{ marginBottom: 18 }}>
+                        <label style={s.label}>ORIGEM (OPCIONAL)</label>
+                        <input
+                          value={origem}
+                          onChange={(e) => setOrigem(e.target.value)}
+                          placeholder="Ex: OS-2026-0001 ou Obra X"
+                          style={s.input}
+                        />
+                      </div>
                     </div>
                   </div>
               </>
@@ -608,14 +661,25 @@ const handleAbrirCotacao = async (cotacao) => {
                   >
                     <option value="">Selecione um chamado</option>
                     {chamadosSemCotacao.map((ch) => {
+                      const primeiroItem = ch.itens && ch.itens.length > 0 ? ch.itens[0]?.item_nome : (ch.peca || "Sem item");
                       const equipamento = ch.equipamento || "Equipamento não definido";
                       return (
                         <option key={ch.id} value={ch.id}>
-                          {ch.numero} - {primeiroItem} ({ch.itens?.length || 0} itens)
+                          {ch.numero} - {ch.servico_nome || ch.descricao || ch.itens[0]?.item_nome || 'Sem descrição'} ({ch.itens?.length || 0} itens)
                         </option>
                       );
                     })}
                   </select>
+                </div>
+              {/* 🔥 CAMPO DE ORIGEM (MODO AUTOMÁTICO) */}
+                <div style={{ marginBottom: 18 }}>
+                  <label style={s.label}>ORIGEM (OPCIONAL)</label>
+                  <input
+                    value={origem}
+                    onChange={(e) => setOrigem(e.target.value)}
+                    placeholder="Ex: OS-2026-0001 ou Obra X"
+                    style={s.input}
+                  />
                 </div>
 
                 {chamadoAutomatico && agrupado.length > 0 && (
@@ -1426,8 +1490,8 @@ const handleAbrirCotacao = async (cotacao) => {
                     {numeroChamado}
                   </div>
                   <div style={{ fontSize: 12, color: C.text, marginTop: 4 }}>
-                    {descricaoChamado}
-                    {chamado?.itens && ` (${chamado.itens.length} itens)`}
+                    {/* 🔥 USE ?. PARA EVITAR ERRO QUANDO chamado for undefined */}
+                    {chamado?.servico_nome || chamado?.descricao || chamado?.itens?.[0]?.item_nome || 'Sem descrição'}
                   </div>
                   <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
                     Cotação: {cotacao.numero || `#${cotacao.id}`} • {fmtD(cotacao.enviado_em)}
