@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 
 // Função helper para validar matematicamente a Chave de Acesso (Módulo 11)
@@ -28,13 +28,68 @@ function validarChaveAcessoNFe(chave) {
 
 export function LeitorCodigoBarras({ onDetectado, onFechar, C, s }) {
   const html5QrcodeRef = useRef(null);
-  const detectadoRef = useRef(false); // Evita chamadas duplicadas após a primeira detecção válida
+  const detectadoRef = useRef(false); // Evita chamadas duplicadas/concorrentes
+  const inputUsbRef = useRef(null); // Referência para garantir foco no leitor USB
+  const [chaveManual, setChaveManual] = useState("");
+
+  // Handler compartilhado para finalizar com sucesso
+  const finalizarSucesso = (chaveValida) => {
+    if (detectadoRef.current) return;
+    detectadoRef.current = true;
+
+    console.log("✅ Chave de acesso 100% válida aceita:", chaveValida);
+    onDetectado(chaveValida);
+
+    setTimeout(() => {
+      if (html5QrcodeRef.current && html5QrcodeRef.current.isScanning) {
+        html5QrcodeRef.current.stop()
+          .then(() => onFechar())
+          .catch(() => onFechar());
+      } else {
+        onFechar();
+      }
+    }, 100); 
+  };
+
+
+  // Escuta a entrada do leitor USB (Pistola física) ou digitação manual
+  const handleInputChange = (e) => {
+    const valorApenasNumeros = e.target.value.replace(/\D/g, "");
+    setChaveManual(valorApenasNumeros);
+
+    // Se o leitor USB preencher os 44 números direto, já valida e fecha
+    if (valorApenasNumeros.length === 44) {
+      if (validarChaveAcessoNFe(valorApenasNumeros)) {
+        finalizarSucesso(valorApenasNumeros);
+      } else {
+        console.warn("⚠️ Chave USB/Manual matemática inválida:", valorApenasNumeros);
+      }
+    }
+  };
+
+  const handleKeyDown = (e) => {
+    // Leitores USB costumam injetar um "Enter" ou "Tab" após a leitura
+    if (e.key === "Enter") {
+      e.preventDefault();
+      const chaveLimpa = chaveManual.trim();
+      if (validarChaveAcessoNFe(chaveLimpa)) {
+        finalizarSucesso(chaveLimpa);
+      } else {
+        alert("Chave de acesso inválida ou incompleta.");
+      }
+    }
+  };
 
   useEffect(() => {
     let isMounted = true;
     const scannerId = "qr-reader";
 
-    // Instancia o leitor
+    // Garante foco no input assim que a modal abrir (útil para leitores USB de balcão)
+    if (inputUsbRef.current) {
+      inputUsbRef.current.focus();
+    }
+
+    // Instancia o leitor de câmera
     const html5Qrcode = new Html5Qrcode(scannerId);
     html5QrcodeRef.current = html5Qrcode;
 
@@ -54,41 +109,22 @@ export function LeitorCodigoBarras({ onDetectado, onFechar, C, s }) {
         { facingMode: "environment" },
         configuracao,
         (decodedText) => {
-          // Se já detectou com sucesso antes, ignora leituras do loop
-          if (detectadoRef.current) return;
-
           const chaveAcesso = decodedText.trim();
 
-          // 🚨 VALIDAÇÃO COMPLETA: Verifica tamanho e aplica a matemática do dígito verificador
+          // Validação completa por frame da câmera
           if (!validarChaveAcessoNFe(chaveAcesso)) {
-            console.warn("⚠️ Chave inválida ou incompleta ignorada:", chaveAcesso);
-            return; // Descarta o frame e o leitor continua tentando ler na mesma hora
+            console.warn("⚠️ Chave de câmera inválida/incompleta ignorada:", chaveAcesso);
+            return; 
           }
 
-          // Se passou no teste matemático, avança para o sucesso
-          console.log("✅ Chave de acesso 100% válida detectada:", chaveAcesso);
-          detectadoRef.current = true;
-
-          onDetectado(chaveAcesso);
-
-          // Para a câmera imediatamente e fecha
-          if (html5Qrcode.isScanning) {
-            html5Qrcode
-              .stop()
-              .then(() => onFechar())
-              .catch(() => onFechar());
-          } else {
-            onFechar();
-          }
+          finalizarSucesso(chaveAcesso);
         },
-        () => {
-          /* Silenciar erros de scan por frame */
-        }
+        () => { /* Silenciar erros de scan por frame */ }
       )
       .then(() => {
         if (!isMounted) return;
 
-        // Ajuste dinâmico de zoom usando elementos nativos do navegador
+        // Ajuste dinâmico de zoom usando elementos nativos
         const elementoVideo = document.querySelector(`#${scannerId} video`);
 
         if (elementoVideo && elementoVideo.srcObject) {
@@ -96,7 +132,7 @@ export function LeitorCodigoBarras({ onDetectado, onFechar, C, s }) {
           const tracks = stream.getVideoTracks();
 
           if (tracks && tracks.length > 0) {
-            const track = tracks[0];
+            const track = tracks[0]; // Fix: Seleciona o primeiro track ativo
 
             if (typeof track.getCapabilities === "function") {
               const capabilities = track.getCapabilities();
@@ -114,17 +150,16 @@ export function LeitorCodigoBarras({ onDetectado, onFechar, C, s }) {
         }
       })
       .catch((err) => {
-        console.error("Erro ao iniciar a câmera:", err);
+        console.error("Erro ao iniciar a câmera (ignorado se rodar em PC sem webcam):", err);
       });
 
-    // Cleanup robusto ao desmontar o componente
     return () => {
       isMounted = false;
       if (html5Qrcode.isScanning) {
         html5Qrcode.stop().catch(() => console.log("Câmera já parada"));
       }
     };
-  }, [onDetectado, onFechar]);
+  }, [onFechar]);
 
   const fecharEParar = () => {
     if (html5QrcodeRef.current && html5QrcodeRef.current.isScanning) {
@@ -157,6 +192,7 @@ export function LeitorCodigoBarras({ onDetectado, onFechar, C, s }) {
           width: "100%",
         }}
       >
+        {/* Cabeçalho da Modal */}
         <div
           style={{
             display: "flex",
@@ -166,7 +202,7 @@ export function LeitorCodigoBarras({ onDetectado, onFechar, C, s }) {
           }}
         >
           <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>
-            📱 Escanear Código de Barras
+            📦 Recebimento Fiscal Híbrido
           </div>
           <button
             onClick={fecharEParar}
@@ -182,12 +218,37 @@ export function LeitorCodigoBarras({ onDetectado, onFechar, C, s }) {
           </button>
         </div>
 
-        {/* Container da câmera em formato de leitor de barras */}
+        {/* Input focado para Leitores USB e Digitação Manual */}
+        <div style={{ marginBottom: 16 }}>
+          <input
+            ref={inputUsbRef}
+            type="text"
+            maxLength={44}
+            value={chaveManual}
+            onChange={handleInputChange}
+            onKeyDown={handleKeyDown}
+            autoFocus
+            placeholder="Aponte a pistola USB ou digite a chave"
+            style={{
+              width: "95%",
+              padding: "10px 12px",
+              borderRadius: 6,
+              border: `1px solid ${C.border}`,
+              background: C.background || "#fff",
+              color: C.text,
+              fontSize: 13,
+              textAlign: "center",
+              letterSpacing: "1px"
+            }}
+          />
+        </div>
+
+        {/* Container da câmera em formato de leitor de barras deitado */}
         <div
           style={{
             position: "relative",
             width: "100%",
-            height: 180,
+            height: 160,
             borderRadius: 8,
             overflow: "hidden",
             marginBottom: 16,
@@ -196,7 +257,7 @@ export function LeitorCodigoBarras({ onDetectado, onFechar, C, s }) {
         >
           <div id="qr-reader" style={{ width: "100%", height: "100%" }} />
 
-          {/* Linha vermelha guia */}
+          {/* Linha vermelha guia estilo scanner profissional */}
           <div
             style={{
               position: "absolute",
@@ -212,8 +273,8 @@ export function LeitorCodigoBarras({ onDetectado, onFechar, C, s }) {
           />
         </div>
 
-        <div style={{ fontSize: 11, color: C.muted, textAlign: "center" }}>
-          Alinhe o código de barras horizontalmente na linha vermelha.
+        <div style={{ fontSize: 11, color: C.muted, textAlign: "center", lineHeight: "1.4" }}>
+          Bipe com a pistola USB, digite acima ou use a linha vermelha para ler com a câmera do celular.
         </div>
       </div>
     </div>
