@@ -1,6 +1,7 @@
 // components/estoque/TelaRecebimento.jsx
 import { useState, useEffect, useRef } from 'react';
 import apiService from '../../services/apiService';
+import { LeitorCodigoBarras } from "../../components/LeitorCodigoBarras";
 
 // Função para formatar valores em Reais
 const fmtBRL = (v) => {
@@ -14,8 +15,8 @@ export default function TelaRecebimento({ C, s, fmtD }) {
   const [itensOV, setItensOV] = useState([]);
   const [buscaOV, setBuscaOV] = useState('');
   const [loading, setLoading] = useState(true);
+  const [abrirLeitor, setAbrirLeitor] = useState(false);
 
-  // ─── ESTADOS PARA RECEBIMENTO AVULSO (MODAL) ───────────────
   const [modalAvulso, setModalAvulso] = useState(false);
   const [itens, setItens] = useState([]);
   const [busca, setBusca] = useState('');
@@ -109,6 +110,14 @@ export default function TelaRecebimento({ C, s, fmtD }) {
       validade: '',
       numero_serie: '',
       unidade_medida: item.unidade_medida || 'UN'
+    });
+  };
+
+  // FUNÇÃO DE LEITURA DE CÓDIGO DE BARRAS
+  const handleCodigoDetectado = (codigo) => {
+    setItemConferenciaFiscal({
+      ...itemConferenciaFiscal,
+      numero_nota_fiscal: codigo,
     });
   };
 
@@ -450,10 +459,54 @@ export default function TelaRecebimento({ C, s, fmtD }) {
                 </>
               ) : (
                 <>
+                  
+                  <div style={{ marginBottom: 16 }}>
+  <label style={s.label}>NÚMERO DA NOTA FISCAL</label>
+  <div style={{ display: "flex", gap: 8 }}>
+    <input
+      type="text"
+      value={itemConferenciaFiscal.numero_nota_fiscal || ""}
+      onChange={(e) =>
+        setItemConferenciaFiscal({
+          ...itemConferenciaFiscal,
+          numero_nota_fiscal: e.target.value,
+        })
+      }
+      placeholder="Ex: 12345"
+      style={{ ...s.input, flex: 1 }}
+    />
+    <button
+      onClick={() => setAbrirLeitor(true)}
+      style={{
+        ...s.btn(true, C.accent),
+        padding: "9px 18px",
+        fontSize: 12,
+        whiteSpace: "nowrap",
+      }}
+    >
+      📱 Escanear
+    </button>
+  </div>
+</div>
+
+{abrirLeitor && (
+  <LeitorCodigoBarras
+    onDetectado={handleCodigoDetectado}
+    onFechar={() => setAbrirLeitor(false)}
+    C={C}
+    s={s}
+  />
+)}
+
+
+                  {/*CAMPO DE NÚMERO DE NF ANTIGO
                   <div style={{ marginBottom: 16 }}>
                     <label style={s.label}>NÚMERO DA NOTA FISCAL</label>
                     <input type="text" value={itemConferenciaFiscal.numero_nota_fiscal || ''} onChange={(e) => setItemConferenciaFiscal({ ...itemConferenciaFiscal, numero_nota_fiscal: e.target.value })} placeholder="Ex: 12345" style={s.input} />
                   </div>
+                  */}
+                  
+                  
                   <div style={{ marginBottom: 16 }}>
                     <label style={s.label}>VALOR DA NF (R$)</label>
                     <input type="number" step="0.01" value={itemConferenciaFiscal.valor_nf || ''} onChange={(e) => setItemConferenciaFiscal({ ...itemConferenciaFiscal, valor_nf: e.target.value })} onWheel={(e) => e.target.blur()} placeholder="Ex: 85.00" style={s.input} />
