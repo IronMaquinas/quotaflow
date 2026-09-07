@@ -5,7 +5,6 @@ import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
 function validarChaveAcessoNFe(chave) {
   if (chave.length !== 44 || !/^\d+$/.test(chave)) return false;
 
-  // Multiplicadores oficiais da SEFAZ para o cálculo do dígito
   const multiplicadores = [
     2, 3, 4, 5, 6, 7, 8, 9, 2, 3, 4, 5, 6, 7, 8, 9, 2, 3, 4, 5, 6, 7, 8, 9, 2,
     3, 4, 5, 6, 7, 8, 9, 2, 3, 4, 5, 6, 7, 8, 9, 2, 3, 4,
@@ -13,7 +12,6 @@ function validarChaveAcessoNFe(chave) {
 
   let soma = 0;
   
-  // Calcula a soma ponderada dos primeiros 43 dígitos (de trás para frente)
   for (let i = 0; i < 43; i++) {
     const digito = parseInt(chave.charAt(42 - i), 10);
     soma += digito * multiplicadores[i];
@@ -28,15 +26,17 @@ function validarChaveAcessoNFe(chave) {
 
 export function LeitorCodigoBarras({ onDetectado, onFechar, C, s }) {
   const html5QrcodeRef = useRef(null);
-  const detectadoRef = useRef(false); // Evita chamadas duplicadas/concorrentes
-  const inputUsbRef = useRef(null); // Referência para garantir foco no leitor USB
+  const detectadoRef = useRef(false);
+  const inputUsbRef = useRef(null);
   const [chaveManual, setChaveManual] = useState("");
+  const [erro, setErro] = useState(false); // 🚨 NOVO: Estado para controlar a validação visual
 
-  // Handler compartilhado para finalizar com sucesso
+  // Handler compartilhado para finalizar com sucesso de forma segura
   const finalizarSucesso = (chaveValida) => {
     if (detectadoRef.current) return;
     detectadoRef.current = true;
 
+    setErro(false);
     console.log("✅ Chave de acesso 100% válida aceita:", chaveValida);
     onDetectado(chaveValida);
 
@@ -51,31 +51,38 @@ export function LeitorCodigoBarras({ onDetectado, onFechar, C, s }) {
     }, 100); 
   };
 
-
-  // Escuta a entrada do leitor USB (Pistola física) ou digitação manual
+  // Escuta a entrada do leitor USB ou digitação manual
   const handleInputChange = (e) => {
     const valorApenasNumeros = e.target.value.replace(/\D/g, "");
     setChaveManual(valorApenasNumeros);
 
-    // Se o leitor USB preencher os 44 números direto, já valida e fecha
+    // Se limpou o campo ou está digitando, remove o estado de erro visual
+    if (valorApenasNumeros.length < 44) {
+      setErro(false);
+      return;
+    }
+
+    // Quando chega exatamente a 44 dígitos (seja via digitação, colagem ou leitor USB)
     if (valorApenasNumeros.length === 44) {
       if (validarChaveAcessoNFe(valorApenasNumeros)) {
         finalizarSucesso(valorApenasNumeros);
       } else {
-        console.warn("⚠️ Chave USB/Manual matemática inválida:", valorApenasNumeros);
+        // 🚨 Ativa o erro se os 44 dígitos falharem no cálculo matemático
+        setErro(true);
+        console.warn("⚠️ Chave manual/USB matemática inválida:", valorApenasNumeros);
       }
     }
   };
 
   const handleKeyDown = (e) => {
-    // Leitores USB costumam injetar um "Enter" ou "Tab" após a leitura
+    // Tratamento caso o leitor USB envie o "Enter" no final
     if (e.key === "Enter") {
       e.preventDefault();
       const chaveLimpa = chaveManual.trim();
       if (validarChaveAcessoNFe(chaveLimpa)) {
         finalizarSucesso(chaveLimpa);
       } else {
-        alert("Chave de acesso inválida ou incompleta.");
+        setErro(true);
       }
     }
   };
@@ -84,12 +91,10 @@ export function LeitorCodigoBarras({ onDetectado, onFechar, C, s }) {
     let isMounted = true;
     const scannerId = "qr-reader";
 
-    // Garante foco no input assim que a modal abrir (útil para leitores USB de balcão)
     if (inputUsbRef.current) {
       inputUsbRef.current.focus();
     }
 
-    // Instancia o leitor de câmera
     const html5Qrcode = new Html5Qrcode(scannerId);
     html5QrcodeRef.current = html5Qrcode;
 
@@ -103,7 +108,6 @@ export function LeitorCodigoBarras({ onDetectado, onFechar, C, s }) {
       formatsToSupport: [Html5QrcodeSupportedFormats.CODE_128],
     };
 
-    // Inicia a câmera
     html5Qrcode
       .start(
         { facingMode: "environment" },
@@ -111,7 +115,7 @@ export function LeitorCodigoBarras({ onDetectado, onFechar, C, s }) {
         (decodedText) => {
           const chaveAcesso = decodedText.trim();
 
-          // Validação completa por frame da câmera
+          // Validação da câmera continua silenciosa em background para não assustar o usuário
           if (!validarChaveAcessoNFe(chaveAcesso)) {
             console.warn("⚠️ Chave de câmera inválida/incompleta ignorada:", chaveAcesso);
             return; 
@@ -119,30 +123,24 @@ export function LeitorCodigoBarras({ onDetectado, onFechar, C, s }) {
 
           finalizarSucesso(chaveAcesso);
         },
-        () => { /* Silenciar erros de scan por frame */ }
+        () => {}
       )
       .then(() => {
         if (!isMounted) return;
 
-        // Ajuste dinâmico de zoom usando elementos nativos
         const elementoVideo = document.querySelector(`#${scannerId} video`);
-
         if (elementoVideo && elementoVideo.srcObject) {
           const stream = elementoVideo.srcObject;
           const tracks = stream.getVideoTracks();
 
           if (tracks && tracks.length > 0) {
-            const track = tracks[0]; // Fix: Seleciona o primeiro track ativo
-
+            const track = tracks[0];
             if (typeof track.getCapabilities === "function") {
               const capabilities = track.getCapabilities();
-
               if (capabilities.zoom) {
                 const zoomIdeal = Math.min(2.0, capabilities.zoom.max);
                 track
-                  .applyConstraints({
-                    advanced: [{ zoom: zoomIdeal }],
-                  })
+                  .applyConstraints({ advanced: [{ zoom: zoomIdeal }] })
                   .catch((err) => console.log("Ajuste de zoom ignorado:", err));
               }
             }
@@ -150,7 +148,7 @@ export function LeitorCodigoBarras({ onDetectado, onFechar, C, s }) {
         }
       })
       .catch((err) => {
-        console.error("Erro ao iniciar a câmera (ignorado se rodar em PC sem webcam):", err);
+        console.error("Erro ao iniciar a câmera:", err);
       });
 
     return () => {
@@ -192,7 +190,6 @@ export function LeitorCodigoBarras({ onDetectado, onFechar, C, s }) {
           width: "100%",
         }}
       >
-        {/* Cabeçalho da Modal */}
         <div
           style={{
             display: "flex",
@@ -218,7 +215,7 @@ export function LeitorCodigoBarras({ onDetectado, onFechar, C, s }) {
           </button>
         </div>
 
-        {/* Input focado para Leitores USB e Digitação Manual */}
+        {/* Campo de Input com validação visual dinâmica */}
         <div style={{ marginBottom: 16 }}>
           <input
             ref={inputUsbRef}
@@ -228,22 +225,31 @@ export function LeitorCodigoBarras({ onDetectado, onFechar, C, s }) {
             onChange={handleInputChange}
             onKeyDown={handleKeyDown}
             autoFocus
-            placeholder="Aponte a pistola USB ou digite a chave"
+            placeholder="Aponte a pistola USB, digite ou cole a chave"
             style={{
               width: "95%",
               padding: "10px 12px",
               borderRadius: 6,
-              border: `1px solid ${C.border}`,
+              // 🚨 MUDANÇA: Se houver erro de validação, a borda fica vermelha rígida
+              border: `1px solid ${erro ? "#ef4444" : C.border}`,
               background: C.background || "#fff",
-              color: C.text,
+              // 🚨 MUDANÇA: O texto digitado também ganha a cor vermelha em caso de erro
+              color: erro ? "#ef4444" : C.text,
               fontSize: 13,
               textAlign: "center",
-              letterSpacing: "1px"
+              letterSpacing: "1px",
+              boxShadow: erro ? "0 0 0 1px #ef4444" : "none",
+              transition: "all 0.2s ease"
             }}
           />
+          {/* 🚨 NOVO: Mensagem auxiliar em vermelho abaixo do campo */}
+          {erro && (
+            <div style={{ color: "#ef4444", fontSize: 11, marginTop: 4, textAlign: "center", fontWeight: 500 }}>
+              ❌ Chave de acesso inválida (falha no dígito verificador).
+            </div>
+          )}
         </div>
 
-        {/* Container da câmera em formato de leitor de barras deitado */}
         <div
           style={{
             position: "relative",
@@ -256,8 +262,6 @@ export function LeitorCodigoBarras({ onDetectado, onFechar, C, s }) {
           }}
         >
           <div id="qr-reader" style={{ width: "100%", height: "100%" }} />
-
-          {/* Linha vermelha guia estilo scanner profissional */}
           <div
             style={{
               position: "absolute",

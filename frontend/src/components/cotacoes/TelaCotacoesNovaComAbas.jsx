@@ -682,6 +682,15 @@ const handleAbrirCotacao = async (cotacao) => {
                   />
                 </div>
 
+                {/* SELECIONAR FILIAL */}
+                <div style={{ marginBottom: 16 }}>
+                  <label style={s.label}>FILIAL DE ENTREGA</label>
+                  <select value={form.filial_id} onChange={(e) => setForm({ ...form, filial_id: e.target.value })} style={{ ...s.input, appearance: 'none' }}>
+                    <option value="">— Matriz —</option>
+                    {filiais.map(f => <option key={f.id} value={f.id}>{f.nome_filial} ({f.cnpj_filial})</option>)}
+                  </select>
+                </div>
+
                 {chamadoAutomatico && agrupado.length > 0 && (
                   <div style={{ marginBottom: 18 }}>
                     <div
