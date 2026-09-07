@@ -1154,6 +1154,8 @@ router.get('/ordens-em-processo', tenantMiddleware, async (req, res) => {
         tenant_id: tenantId 
       }, tenantId);
 
+            console.log(`OV ${ov.id} tem ${itens.length} itens`);
+
       // Buscar nomes dos itens
       const itensComNomes = await Promise.all(itens.map(async (item) => {
         const itemConsumo = await DB.selectOne('itens_consumo', { 
@@ -1220,7 +1222,7 @@ router.get('/ordens-venda', tenantMiddleware, async (req, res) => {
       // Buscar itens da OV
       const itens = await DB.select('ordem_venda_itens', { 
         ordem_venda_id: ov.id, 
-        tenant_id: tenantId 
+        //tenant_id: tenantId 
       }, tenantId);
 
       // Buscar fornecedor
@@ -1239,6 +1241,50 @@ router.get('/ordens-venda', tenantMiddleware, async (req, res) => {
     res.json(ordensCompletas || []);
   } catch (err) {
     console.error('❌ Erro ao buscar OVs:', err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// PUT /api/estoque/movimentacoes/item/:itemId/aprovar-saldo
+router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const { itemId } = req.params;
+    const { justificativa } = req.body;
+
+    if (!justificativa) {
+      return res.status(400).json({ erro: 'Justificativa é obrigatória' });
+    }
+
+    // Buscar item da OV
+    const item = await DB.selectOne('ordem_venda_itens', { id: itemId, tenant_id: tenantId }, tenantId);
+    if (!item) {
+      return res.status(404).json({ erro: 'Item não encontrado' });
+    }
+
+    // Verificar se está em quarentena
+    if (item.status_quarentena !== 'rejeitado') {
+      return res.status(400).json({ erro: 'Item não está em quarentena' });
+    }
+
+    // Atualizar status para aprovado e registrar aprovação
+    await DB.update('ordem_venda_itens', itemId, {
+      status_quarentena: 'aprovado',
+      aprovado_por: req.userId,
+      aprovado_em: new Date(),
+      observacao: `Saldo aprovado: ${justificativa}`
+    }, tenantId);
+
+    // Opcional: já dar entrada no estoque se desejar
+    // (ou deixar para o botão "Entrada" como está)
+
+    res.json({
+      ok: true,
+      mensagem: 'Saldo aprovado com sucesso!'
+    });
+
+  } catch (err) {
+    console.error('❌ Erro ao aprovar saldo:', err.message);
     res.status(500).json({ erro: err.message });
   }
 });

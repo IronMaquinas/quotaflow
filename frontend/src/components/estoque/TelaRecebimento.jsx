@@ -189,19 +189,41 @@ export default function TelaRecebimento({ C, s, fmtD }) {
     }));
   };
 
-  // ─── FUNÇÃO PARA SALVAR CONTAGEM CEGA (MODIFICADA) ──────────
-  const salvarContagemCega = async (itemId, status = 'aprovado') => {
-    try {
-      const dados = contagens[itemId];
+  // ─── FUNÇÃO PARA SALVAR CONTAGEM CEGA (CORRIGIDA) ──────────
+const salvarContagemCega = async (itemId) => {
+  try {
+    const dados = contagens[itemId];
+    const item = itensParaContar.find(i => i.id === itemId);
+    
+    // 🔥 LOG PARA VER OS VALORES
+    console.log('🔍 MIGO - VALIDAÇÃO:');
+    console.log('item.quantidade:', item?.quantidade, 'tipo:', typeof item?.quantidade);
+    console.log('dados.quantidade:', dados?.quantidade, 'tipo:', typeof dados?.quantidade);
       
       if (!dados || !dados.quantidade || parseFloat(dados.quantidade) <= 0) {
         alert('⚠️ Informe a quantidade contada!');
         return;
       }
 
-      const qtdEsperada = parseFloat(itensParaContar.find(i => i.id === itemId)?.quantidade || 0);
-      const qtdContada = parseFloat(dados.quantidade);
-      const statusContagem = qtdContada === qtdEsperada ? 'aprovado' : 'rejeitado';
+      // 🔥 Buscar o item com segurança
+      //const item = itensParaContar.find(i => i.id === itemId);
+      if (!item) {
+        alert('❌ Item não encontrado!');
+        return;
+      }
+
+      // 🔥 Converter para número com vírgula como separador decimal
+      const qtdEsperada = parseFloat(String(item.quantidade || 0).replace(',', '.'));
+      const qtdContada = parseFloat(String(dados.quantidade).replace(',', '.'));
+      
+      if (isNaN(qtdEsperada) || isNaN(qtdContada)) {
+        alert('❌ Quantidade inválida!');
+        return;
+      }
+
+      // 🔥 Comparação com tolerância (evita problemas de float)
+      const diferenca = Math.abs(qtdContada - qtdEsperada);
+      const statusContagem = diferenca < 0.001 ? 'aprovado' : 'rejeitado';
       
       // Se for a 3ª tentativa e ainda divergente, força quarentena
       if (contagemTentativa === 3 && statusContagem === 'rejeitado') {
@@ -252,16 +274,9 @@ export default function TelaRecebimento({ C, s, fmtD }) {
           if (window.confirm(msg)) {
             abrirContagemCega(itensDivergentes, contagemTentativa + 1);
           } else {
-            // 🔥 MODIFICADO: Em vez de quarentena, colocar como "pendente"
-            for (const item of itensDivergentes) {
-              // Atualizar status para pendente (não quarentena)
-              await DB.update('ordem_venda_itens', item.id, {
-                status_contagem: 'pendente'
-              });
-            }
-            alert('⏸️ Contagens interrompidas. Você pode retomá-las na aba "Contagens Pendentes".');
-            carregarContagensPendentes(); // Recarregar lista de pendentes
-            carregarItensOV(ordemVendaSel.id);
+            alert('⏸️ Contagens interrompidas. Você pode retomar a contagem posteriormente.');
+            await carregarItensOV(ordemVendaSel.id);
+            await carregarOVs();
           }
         }
       }
@@ -962,15 +977,23 @@ return (
 
                   <button
                     onClick={() => {
-                      if (item.miro_por) {
-                        if (item.status_contagem === 'concluido') {
-                          alert('⚠️ Este item já foi contado!');
-                          return;
-                        }
-                        abrirContagemCega([item], (item.tentativa_atual || 0) + 1);
-                      } else {
+                      if (!item.miro_por) {
                         alert('⚠️ Conclua a conferência fiscal primeiro!');
+                        return;
                       }
+                      // Se já atingiu 3 tentativas, não permite mais
+                      if (item.tentativa_atual >= 3) {
+                        alert('⚠️ Número máximo de contagens (3) atingido!');
+                        return;
+                      }
+                      // Se já foi aprovado, não permite recontar
+                      if (item.status_contagem === 'concluido' && item.status_quarentena === 'aprovado') {
+                        alert('⚠️ Este item já foi aprovado na contagem!');
+                        return;
+                      }
+                      // Permite reabrir mesmo se status_contagem = 'concluido' mas status_quarentena != 'aprovado'
+                      const proximaTentativa = (item.tentativa_atual || 0) + 1;
+                      abrirContagemCega([item], proximaTentativa);
                     }}
                     style={{
                       ...s.btn(true, C.warn),
@@ -980,7 +1003,9 @@ return (
                       cursor: item.miro_por ? 'pointer' : 'not-allowed'
                     }}
                   >
-                    {item.migo_por ? '✅ Física' : `📦 ${(item.tentativa_atual || 0) + 1}ª Contagem`}
+                    {item.migo_por && item.status_quarentena === 'aprovado' ? '✅ Física' : 
+                    item.tentativa_atual >= 3 ? '🔒 Máximo' :
+                    `📦 ${(item.tentativa_atual || 0) + 1}ª Contagem`}
                   </button>
 
                   <button
@@ -1001,6 +1026,37 @@ return (
                   >
                     {item.entrada_por ? '✅ Entrada' : '✅ 3. Entrada'}
                   </button>
+
+                  {/* 🔥 BOTÃO APROVAR SALDO (aparece só se estiver em quarentena) */}
+                  {item.status_quarentena === 'rejeitado' && (
+                    <button
+                      onClick={async () => {
+                        const justificativa = window.prompt('Justifique a aprovação do saldo (ex: fornecedor enviou a mais, ajuste de preço, etc.):');
+                        if (!justificativa) {
+                          alert('Justificativa é obrigatória!');
+                          return;
+                        }
+                        try {
+                          await apiService.put(`/estoque/movimentacoes/item/${item.id}/aprovar-saldo`, {
+                            justificativa
+                          });
+                          alert('✅ Saldo aprovado! O item foi liberado para entrada no estoque.');
+                          await carregarItensOV(ordemVendaSel.id);
+                          await carregarOVs();
+                        } catch (err) {
+                          alert('Erro ao aprovar saldo: ' + err.message);
+                        }
+                      }}
+                      style={{
+                        ...s.btn(true, C.success),
+                        padding: '8px 14px',
+                        fontSize: 11,
+                      }}
+                    >
+                      ✅ Aprovar Saldo
+                    </button>
+                  )}
+
                 </div>
               </div>
             </div>
@@ -1637,26 +1693,71 @@ return (
                 <span>{itensParaContar.length} item(ns) pendentes</span>
               </div>
               <div style={{ flex: 1 }}></div>
+              
+              {/* 🔥 BOTÃO CANCELAR - só fecha */}
               <button 
                 onClick={() => {
-                  if (window.confirm(`Tem certeza? Os itens pendentes (${itensParaContar.length}) serão enviados para quarentena.`)) {
-                    setModalContagemCega(false);
-                    // Enviar para quarentena
-                    itensParaContar.forEach(async (item) => {
-                      await apiService.post('/estoque/movimentacoes/contagem-cega', {
-                        item_id: item.id,
-                        quantidade: 0,
-                        tentativa: contagemTentativa,
-                        status: 'rejeitado',
-                        observacao: 'Contagem cancelada pelo usuário'
-                      });
-                    });
-                    carregarItensOV(ordemVendaSel.id);
-                  }
+                  setModalContagemCega(false);
+                  // Não faz nada com os itens
                 }} 
                 style={{ ...s.btn(false), padding: '8px 16px', fontSize: 12 }}
               >
                 Cancelar
+              </button>
+
+              {/* 🔥 BOTÃO ABRIR NÃO CONFORMIDADE */}
+              <button
+                onClick={() => {
+                  const justificativa = window.prompt('Descreva a não conformidade (ex: produto com avaria, conteúdo incorreto, etc.):');
+                  if (!justificativa) {
+                    alert('Justificativa é obrigatória!');
+                    return;
+                  }
+                  // Envia todos os itens pendentes para "bloqueado"
+                  itensParaContar.forEach(async (item) => {
+                    await apiService.post('/estoque/movimentacoes/contagem-cega', {
+                      item_id: item.id,
+                      quantidade: 0,
+                      tentativa: contagemTentativa,
+                      status: 'bloqueado',
+                      observacao: `Não conformidade: ${justificativa}`
+                    });
+                  });
+                  setModalContagemCega(false);
+                  alert('🚫 Item(s) movido(s) para Estoque Bloqueado!');
+                  carregarItensOV(ordemVendaSel.id);
+                  carregarOVs();
+                }}
+                style={{ ...s.btn(true, C.danger), padding: '8px 16px', fontSize: 12 }}
+              >
+                🚫 Não Conformidade
+              </button>
+
+              {/* 🔥 BOTÃO COLOCAR EM QUARENTENA */}
+              <button
+                onClick={() => {
+                  const motivo = window.prompt('Digite o motivo da quarentena:');
+                  if (!motivo) {
+                    alert('Motivo é obrigatório!');
+                    return;
+                  }
+                  itensParaContar.forEach(async (item) => {
+                    await apiService.post('/estoque/movimentacoes/contagem-cega', {
+                      item_id: item.id,
+                      quantidade: 0,
+                      tentativa: contagemTentativa,
+                      status: 'rejeitado',
+                      observacao: `Quarentena: ${motivo}`
+                    });
+                  });
+                  setModalContagemCega(false);
+                  alert('🚫 Item(s) enviado(s) para Quarentena!');
+                  carregarItensOV(ordemVendaSel.id);
+                  carregarOVs();
+                }}
+                style={{ ...s.btn(true, C.warn), padding: '8px 16px', fontSize: 12 }}
+              >
+                ⚠️ Quarentena
               </button>
             </div>
           </div>
