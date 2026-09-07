@@ -531,7 +531,28 @@ router.put('/item/:itemId/fiscal', tenantMiddleware, async (req, res) => {
       }, tenantId);
     }
 
-    return res.json({ ok: true, mensagem: 'Conferência fiscal salva com sucesso!', numero_recebimento: numeroRecebimentoOV });
+    // 🔥 INÍCIO DA ATUALIZAÇÃO DO STATUS DA OV PAI
+    // 1. Busca novamente todos os itens da OV atualizados no banco
+    const todosItensDaOV = await DB.select('ordem_venda_itens', { 
+      ordem_venda_id: ov.id 
+    }, tenantId);
+
+    // 2. Calcula o status geral com base no estado atual de todos os itens
+    const novoStatusDaOV = calcularStatusOV(todosItensDaOV);
+
+    // 3. Atualiza a tabela pai 'ordens_venda' com o novo status calculado
+    await DB.update('ordens_venda', ov.id, {
+      status_recebimento: novoStatusDaOV,
+      atualizado_em: new Date()
+    }, tenantId);
+    // ⚠️ FIM DA ATUALIZAÇÃO DO STATUS DA OV PAI
+
+    return res.json({ 
+      ok: true, 
+      mensagem: 'Conferência fiscal salva com sucesso e status atualizado!', 
+      numero_recebimento: numeroRecebimentoOV 
+    });
+
   } catch (err) {
     console.error('❌ Erro ao salvar conferência fiscal:', err.message);
     return res.status(500).json({ erro: err.message });
@@ -626,8 +647,13 @@ router.put('/item/:itemId/fisica', tenantMiddleware, async (req, res) => {
     // 8. Verificar se todos os itens da OV foram recebidos
     const itensOV = await DB.select('ordem_venda_itens', { ordem_venda_id: ov.id }, tenantId);
     const todosRecebidos = itensOV.every(i => i.quantidade_recebida_fisica >= i.quantidade);
+    
+    // 🔥 AJUSTE ESTE ATUALIZAR DA LINHA 382:
+    const novoStatusRecebimento = calcularStatusOV(itensOV);
     await DB.update('ordens_venda', ov.id, {
-      status: todosRecebidos ? 'recebido' : 'parcial_recebido'
+      status: todosRecebidos ? 'recebido' : 'parcial_recebido',
+      status_recebimento: novoStatusRecebimento, // <-- Adicione esta linha
+      atualizado_em: new Date()
     }, tenantId);
 
     return res.json({ ok: true, mensagem: 'Conferência física salva com sucesso!', numero_recebimento: numeroRecebimentoMIGO });
@@ -852,22 +878,14 @@ router.post('/contagem-cega', tenantMiddleware, async (req, res) => {
       validade, 
       numero_serie,
       unidade_medida = 'UN',
-      tentativa = 1,
-      observacao = null,
-      status = 'aprovado'
+      observacao = null
+      // ⚠️ NÃO RECEBE 'tentativa' nem 'status'
     } = req.body;
 
-    // Validar item_id
     const itemIdNum = parseInt(item_id);
     if (isNaN(itemIdNum)) {
       return res.status(400).json({ erro: 'ID do item inválido' });
     }
-
-    const contagemExistente = await DB.selectOne('historico_contagens_cegas', {
-      ordem_venda_item_id: itemIdNum,
-      tenant_id: tenantId,
-      is_atual: true
-    }, tenantId);
 
     // 1. Buscar o item da OV
     const item = await DB.selectOne('ordem_venda_itens', { 
@@ -879,21 +897,49 @@ router.post('/contagem-cega', tenantMiddleware, async (req, res) => {
       return res.status(404).json({ erro: 'Item da OV não encontrado' });
     }
 
-    // 2. Validar tentativa
-    if (tentativa > 3) {
+    // 2. Contar quantas contagens já existem para este item
+    const contagensExistentes = await DB.select('historico_contagens_cegas', {
+      ordem_venda_item_id: itemIdNum,
+      tenant_id: tenantId
+    }, tenantId);
+
+    const tentativaReal = contagensExistentes.length + 1;
+
+    if (tentativaReal > 3) {
       return res.status(400).json({ erro: 'Número máximo de contagens (3) excedido' });
     }
 
-    // 3. Registrar no histórico
+    // 3. VALIDAÇÃO DA CONTAGEM (backend)
+    const qtdEsperada = parseFloat(item.quantidade || 0);
+    const qtdContada = parseFloat(quantidade || 0);
+    const unidadeEsperada = item.unidade_medida || 'UN';
+    const unidadeContada = unidade_medida || 'UN';
+
+    const diferenca = Math.abs(qtdContada - qtdEsperada);
+    const quantidadeOk = diferenca < 0.001;
+    const unidadeOk = unidadeEsperada === unidadeContada;
+
+    let status;
+    if (quantidadeOk && unidadeOk) {
+      status = 'aprovado';
+    } else {
+      if (tentativaReal < 3) {
+        status = 'pendente';
+      } else {
+        status = 'rejeitado';
+      }
+    }
+
+    // 4. Registrar no histórico
     const historico = await DB.insert('historico_contagens_cegas', {
       tenant_id: tenantId,
       ordem_venda_item_id: itemIdNum,
-      tentativa: parseInt(tentativa),
-      quantidade_contada: parseFloat(quantidade),
+      tentativa: tentativaReal,
+      quantidade_contada: qtdContada,
       lote: lote || null,
       validade: validade || null,
       numero_serie: numero_serie || null,
-      unidade_medida: unidade_medida || 'UN',
+      unidade_medida: unidadeContada,
       status_quarentena: status,
       observacao: observacao || null,
       contado_por: req.userId,
@@ -901,46 +947,41 @@ router.post('/contagem-cega', tenantMiddleware, async (req, res) => {
       is_atual: true
     }, tenantId);
 
-    // 🔥 4. Desmarcar contagens anteriores (sem usar .raw())
-    // Buscar todas as contagens anteriores deste item
-    const contagensAnteriores = await DB.select('historico_contagens_cegas', {
-      ordem_venda_item_id: itemIdNum,
-      tenant_id: tenantId
-    }, tenantId);
-
-    // Atualizar cada uma para is_atual = false
-    for (const c of contagensAnteriores) {
-      if (c.id !== historico.id) {
-        await DB.update('historico_contagens_cegas', c.id, {
-          is_atual: false
-        }, tenantId);
-      }
+    // 5. Desmarcar contagens anteriores
+    for (const c of contagensExistentes) {
+      await DB.update('historico_contagens_cegas', c.id, {
+        is_atual: false
+      }, tenantId);
     }
 
-    // 5. Atualizar o item da OV
+    // 6. Atualizar o item da OV
+    const contagemDefinitiva = (status === 'aprovado' || tentativaReal >= 3);
+
     await DB.update('ordem_venda_itens', itemIdNum, {
-      tentativa_atual: parseInt(tentativa),
+      tentativa_atual: tentativaReal,
       contagem_atual_id: historico.id,
-      quantidade_recebida_fisica: parseFloat(quantidade),
-      status_contagem: 'concluido',
+      quantidade_recebida_fisica: qtdContada,
+      // Se não for definitivo, mantém como 'em_andamento' para o front reabrir
+      status_contagem: contagemDefinitiva ? 'concluido' : 'em_andamento', 
       lote: lote || null,
       validade: validade || null,
       numero_serie: numero_serie || null,
-      unidade_medida: unidade_medida || 'UN',
-      status_quarentena: status,
+      unidade_medida: unidadeContada,
+      // Salva como 'rejeitado' apenas na 3ª tentativa errada
+      status_quarentena: status, 
       migo_por: req.userId,
       migo_em: new Date()
     }, tenantId);
 
-    // 6. Se aprovado e tentativa >= 2, atualizar saldo
-    if (status === 'aprovado' && parseInt(tentativa) >= 2) {
+    // 7. Se aprovado e tentativa >= 2, atualizar saldo
+    if (status === 'aprovado' && tentativaReal >= 2) {
       const itemConsumo = await DB.selectOne('itens_consumo', { 
         id: item.item_catalogo_id, 
         tenant_id: tenantId 
       }, tenantId);
       
       if (itemConsumo) {
-        const novoSaldo = (parseFloat(itemConsumo.saldo_atual) || 0) + parseFloat(quantidade);
+        const novoSaldo = (parseFloat(itemConsumo.saldo_atual) || 0) + qtdContada;
         await DB.update('itens_consumo', itemConsumo.id, {
           saldo_atual: novoSaldo,
           atualizado_em: new Date()
@@ -948,13 +989,13 @@ router.post('/contagem-cega', tenantMiddleware, async (req, res) => {
       }
     }
 
-    // 7. Buscar histórico completo para retornar
+    // 8. Buscar histórico completo para retornar
     const historicoCompleto = await DB.select('historico_contagens_cegas', { 
       ordem_venda_item_id: itemIdNum,
       tenant_id: tenantId 
     }, tenantId);
 
-    // 8. Verificar se todos os itens da OV foram contados
+    // 9. Verificar se todos os itens da OV foram contados
     const itensOV = await DB.select('ordem_venda_itens', { 
       ordem_venda_id: item.ordem_venda_id, 
       tenant_id: tenantId 
@@ -972,7 +1013,7 @@ router.post('/contagem-cega', tenantMiddleware, async (req, res) => {
     res.json({
       ok: true,
       mensagem: 'Contagem cega registrada com sucesso!',
-      tentativa_atual: parseInt(tentativa),
+      tentativa_atual: tentativaReal,
       historico: historicoCompleto,
       status: status
     });
@@ -1177,16 +1218,22 @@ router.get('/ordens-em-processo', tenantMiddleware, async (req, res) => {
       // Calcular status da OV
       const statusRecebimento = calcularStatusOV(itensComNomes);
 
+      const itensDivergentesCalculados = itensComNomes.filter(i => 
+        i.status_quarentena === 'rejeitado' || 
+        i.status_contagem === 'pendente' ||
+        i.status_contagem === 'em_andamento' 
+      ).length;
+
+      // ✅ 2. Retorno ajustado para forçar o envio de todas as formas possíveis
       return {
         ...ov,
         itens: itensComNomes,
         fornecedor_nome: fornecedor?.nome || '—',
         status_recebimento: statusRecebimento,
         total_itens: itensComNomes.length,
-        itens_divergentes: itensComNomes.filter(i => 
-          i.status_quarentena === 'rejeitado' || 
-          i.status_contagem === 'pendente'
-        ).length
+        itens_divergentes: itensDivergentesCalculados, // Alinhado com snake_case
+        itensDivergentes: itensDivergentesCalculados,   // Alinhado com camelCase
+        TESTE_CONEXAO: "ROTA_EM_PROCESSO_ATUALIZADA"   // Nosso carimbo de prova real
       };
     }));
 
@@ -1207,8 +1254,60 @@ router.get('/ordens-em-processo', tenantMiddleware, async (req, res) => {
   }
 });
 
-// GET /api/estoque/movimentacoes/ordens-venda
+// ─────────────────────────────────────────────────────────────────────
+// 2. ROTA DO CLIQUE NO CARD (NO SINGULAR) - Usada quando você clica em uma OV
+// ─────────────────────────────────────────────────────────────────────
+router.get('/ordem-venda/:ovId', tenantMiddleware, async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const { ovId } = req.params;
+
+    // Buscar OV
+    const ov = await DB.selectOne('ordens_venda', { id: ovId }, tenantId);
+    if (!ov) {
+      return res.status(404).json({ erro: 'OV não encontrada' });
+    }
+
+    // Buscar itens da OV
+    const itens = await DB.select('ordem_venda_itens', { ordem_venda_id: ovId }, tenantId);
+
+    // Buscar dados do catálogo para cada item
+    const itensCompletos = await Promise.all(itens.map(async (item) => {
+      const itemConsumo = await DB.selectOne('itens_consumo', { id: item.item_catalogo_id }, tenantId);
+      return {
+        ...item,
+        item_nome: itemConsumo?.nome || item.nome_item || 'Item sem nome',
+        sku: itemConsumo?.sku || item.sku || '—',
+        saldo_atual: itemConsumo?.saldo_atual || 0,
+        unidade_medida: itemConsumo?.unidade_medida || item.unidade_medida || 'UN',
+        quantidade_recebida: item.quantidade_recebida || 0,
+        quantidade_pendente: (item.quantidade || 0) - (item.quantidade_recebida || 0)
+      };
+    }));
+
+    // Retorno padrão esperado pelo seu frontend
+    res.json({
+      ok: true,
+      ordem_venda: {
+        id: ov.id,
+        numero: ov.numero,
+        status: ov.status,
+        fornecedor_id: ov.fornecedor_id,
+        valor_total: ov.valor_total
+      },
+      itens: itensCompletos
+    });
+  } catch (err) {
+    console.error('❌ Erro ao buscar itens da OV:', err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// 1. ROTA DA LISTAGEM GERAL (NO PLURAL) - Usada para carregar a tela
+// ─────────────────────────────────────────────────────────────────────
 router.get('/ordens-venda', tenantMiddleware, async (req, res) => {
+  console.log('🔍 Rota /ordens-venda chamada');
   try {
     const tenantId = req.tenantId;
 
@@ -1220,21 +1319,34 @@ router.get('/ordens-venda', tenantMiddleware, async (req, res) => {
     // Buscar dados relacionados para cada OV
     const ordensCompletas = await Promise.all(ordens.map(async (ov) => {
       // Buscar itens da OV
-      const itens = await DB.select('ordem_venda_itens', { 
-        ordem_venda_id: ov.id, 
-        //tenant_id: tenantId 
-      }, tenantId);
+      const itens = await DB.select('ordem_venda_itens', {
+        ordem_venda_id: ov.id
+      }, null);
 
       // Buscar fornecedor
-      const fornecedor = ov.fornecedor_id ? 
-        await DB.selectOne('fornecedores', { id: ov.fornecedor_id, tenant_id: tenantId }, tenantId) : 
+      const fornecedor = ov.fornecedor_id ?
+        await DB.selectOne('fornecedores', { id: ov.fornecedor_id, tenant_id: tenantId }, tenantId) :
         null;
 
+      // Calcular status dinâmico
+      const statusRealCalculado = calcularStatusOV(itens);
+
+      // Calcular itens divergentes
+      const itensDivergentes = itens.filter(i =>
+        i.status_quarentena === 'rejeitado' ||
+        i.status_contagem === 'pendente' ||
+        i.status_contagem === 'em_andamento'
+      ).length;
+
+      // Injeta as propriedades calculadas depois do spread (...ov) para o JSON não sumir
       return {
         ...ov,
         itens: itens || [],
         fornecedor_nome: fornecedor?.nome || '—',
-        total_itens: itens?.length || 0
+        total_itens: itens?.length || 0,
+        status_recebimento: statusRealCalculado,
+        itens_divergentes: itensDivergentes,
+        itensDivergentes: itensDivergentes
       };
     }));
 
@@ -1244,6 +1356,7 @@ router.get('/ordens-venda', tenantMiddleware, async (req, res) => {
     res.status(500).json({ erro: err.message });
   }
 });
+
 
 // PUT /api/estoque/movimentacoes/item/:itemId/aprovar-saldo
 router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => {
@@ -1289,20 +1402,27 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
   }
 });
 
-// Função auxiliar para calcular status da OV
+// FUNÇÃO AUXILIAR
 function calcularStatusOV(itens) {
   if (!itens || itens.length === 0) return 'pendente';
   
-  const temQuarentena = itens.some(i => i.status_quarentena === 'rejeitado');
-  const temPendente = itens.some(i => i.status_contagem === 'pendente' && i.status_quarentena !== 'rejeitado');
+  // 1. PRIORIDADE MÁXIMA: Se houver item rejeitado/quarentena
+  const temQuarentena = itens.some(i => i.status_quarentena === 'rejeitado' || i.status_quarentena === 'quarentena');
+  if (temQuarentena) return 'quarentena';
+
+  // 2. SEGUNDA PRIORIDADE: Se houver recontagem em andamento ou pendência física, DEVE ir para contagem_pendente
+  const temPendente = itens.some(i => i.status_contagem === 'pendente' || i.status_contagem === 'em_andamento');
+  if (temPendente) return 'contagem_pendente';
+
+  // 3. TERCEIRA PRIORIDADE: Etapas normais do fluxo
   const temMiro = itens.some(i => i.miro_por);
   const todosConcluidos = itens.every(i => i.status_contagem === 'concluido' && i.status_quarentena === 'aprovado');
 
-  if (temQuarentena) return 'quarentena';
-  if (temPendente) return 'contagem_pendente';
   if (temMiro && !todosConcluidos) return 'aguardando_contagem';
   if (todosConcluidos) return 'parcial';
+  
   return 'pendente';
 }
+
 
 module.exports = router;

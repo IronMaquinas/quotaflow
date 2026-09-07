@@ -17,7 +17,7 @@ class ApiService {
    */
   getToken() {
   try {
-    const token = localStorage.getItem("access_token"); // ← mude de "token" para "access_token"
+    const token = localStorage.getItem("access_token");
     return token;
   } catch {
     return null;

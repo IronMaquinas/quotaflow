@@ -54,10 +54,20 @@ export default function TelaRecebimento({ C, s, fmtD }) {
   // ─── FUNÇÕES PARA OVs ──────────────────────────────────────
   const carregarOVs = async () => {
     try {
+      console.log('🔍 [frontend] carregarOVs chamada para o módulo de estoque');
+      
+      // 🔥 AJUSTE AQUI: Adicione o caminho correto do módulo de estoque antes do endpoint
       const data = await apiService.get('/ordens-venda');
+
+      console.log('━━━━━━━━━━ 🕵️ VERIFICAÇÃO DE DADOS REAIS ━━━━━━━━━━');
+      if (data && data.length > 0) {
+        console.log("Dados que chegaram do arquivo correto do backend:", data[0]);
+      }
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+
       setOrdensVendaAbertas(data || []);
     } catch (err) {
-      console.error('Erro ao carregar OVs:', err);
+      console.error('❌ [frontend] Erro ao carregar OVs:', err);
     } finally {
       setLoading(false);
     }
@@ -190,99 +200,108 @@ export default function TelaRecebimento({ C, s, fmtD }) {
   };
 
   // ─── FUNÇÃO PARA SALVAR CONTAGEM CEGA (CORRIGIDA) ──────────
-const salvarContagemCega = async (itemId) => {
-  try {
-    const dados = contagens[itemId];
-    const item = itensParaContar.find(i => i.id === itemId);
-    
-    // 🔥 LOG PARA VER OS VALORES
-    console.log('🔍 MIGO - VALIDAÇÃO:');
-    console.log('item.quantidade:', item?.quantidade, 'tipo:', typeof item?.quantidade);
-    console.log('dados.quantidade:', dados?.quantidade, 'tipo:', typeof dados?.quantidade);
-      
-      if (!dados || !dados.quantidade || parseFloat(dados.quantidade) <= 0) {
+  const salvarContagemCega = async (itemId) => {
+    try {
+      const dados = contagens[itemId];
+      const item = itensParaContar.find(i => i.id === itemId);
+
+      if (!dados || !dados.quantidade || parseFloat(String(dados.quantidade).replace(',', '.')) <= 0) {
         alert('⚠️ Informe a quantidade contada!');
         return;
       }
 
-      // 🔥 Buscar o item com segurança
-      //const item = itensParaContar.find(i => i.id === itemId);
       if (!item) {
         alert('❌ Item não encontrado!');
         return;
       }
 
-      // 🔥 Converter para número com vírgula como separador decimal
-      const qtdEsperada = parseFloat(String(item.quantidade || 0).replace(',', '.'));
-      const qtdContada = parseFloat(String(dados.quantidade).replace(',', '.'));
-      
-      if (isNaN(qtdEsperada) || isNaN(qtdContada)) {
-        alert('❌ Quantidade inválida!');
+      // 🔥 Valida se unidade foi selecionada
+      const unidadeContada = dados.unidade_medida || '';
+      if (!unidadeContada) {
+        alert('⚠️ Selecione a unidade de medida usada na contagem!');
         return;
       }
 
-      // 🔥 Comparação com tolerância (evita problemas de float)
-      const diferenca = Math.abs(qtdContada - qtdEsperada);
-      const statusContagem = diferenca < 0.001 ? 'aprovado' : 'rejeitado';
-      
-      // Se for a 3ª tentativa e ainda divergente, força quarentena
-      if (contagemTentativa === 3 && statusContagem === 'rejeitado') {
-        if (!window.confirm(`⚠️ ÚLTIMA TENTATIVA! A quantidade contada (${qtdContada}) difere da esperada (${qtdEsperada}).\n\nO item será enviado para QUARENTENA. Confirmar?`)) {
-          return;
-        }
-      }
+      const qtdContada = parseFloat(String(dados.quantidade).replace(',', '.'));
 
+      // 🔥 Envia a contagem para o backend (sem status)
       const response = await apiService.post('/estoque/movimentacoes/contagem-cega', {
         item_id: itemId,
         quantidade: qtdContada,
         tentativa: contagemTentativa,
-        status: statusContagem,
         lote: dados.lote || null,
         validade: dados.validade || null,
         numero_serie: dados.numero_serie || null,
+        unidade_medida: unidadeContada,
         observacao: `Contagem ${contagemTentativa}ª tentativa`
       });
 
-      // Remover o item da lista de pendentes
+      // 🔥 O backend retorna o status calculado
+      const statusBackend = response.status; // 'aprovado', 'pendente' ou 'rejeitado'
+
+      // Remove o item da lista de pendentes do modal
       const novosItens = itensParaContar.filter(i => i.id !== itemId);
       setItensParaContar(novosItens);
-      
-      // Limpar os dados da contagem
       setContagens(prev => {
         const newState = { ...prev };
         delete newState[itemId];
         return newState;
       });
 
-      // Se todos os itens foram contados
+      // Se terminou de contar todos os itens do modal
       if (novosItens.length === 0) {
         setModalContagemCega(false);
-        
-        // Recarregar a lista de itens
+
+        // Recarrega a lista de itens da OV para pegar os status atualizados
         await carregarItensOV(ordemVendaSel.id);
-        
-        // Verificar se há divergências para sugerir nova contagem
+
+        // Busca novamente os itens da OV para verificar divergências pendentes
         const itemAtualizado = await apiService.get(`/estoque/movimentacoes/ordem-venda/${ordemVendaSel.id}`);
+        
+        // 🔥 Filtra itens que ficaram com status 'pendente' (divergência) e têm menos de 3 tentativas
         const itensDivergentes = itemAtualizado.itens.filter(i => 
-          i.status_quarentena === 'rejeitado' && 
+          i.status_quarentena === 'pendente' && 
           i.tentativa_atual < 3
         );
 
         if (itensDivergentes.length > 0 && contagemTentativa < 3) {
-          const msg = `🔴 Divergência detectada em ${itensDivergentes.length} item(ns)!\n\n${itensDivergentes.map(i => `• ${i.item_nome}`).join('\n')}\n\nDeseja abrir a ${contagemTentativa + 1}ª CONTAGEM CEGA?`;
+          const msg = `🔴 Divergência detectada em ${itensDivergentes.length} item(ns) na ${contagemTentativa}ª contagem!\n\nDeseja abrir a ${contagemTentativa + 1}ª CONTAGEM CEGA?`;
           
           if (window.confirm(msg)) {
+            // 🔥 Reabre o modal com os itens divergentes e aumenta a tentativa
             abrirContagemCega(itensDivergentes, contagemTentativa + 1);
+            return; // Não exibe o alert de sucesso agora
           } else {
-            alert('⏸️ Contagens interrompidas. Você pode retomar a contagem posteriormente.');
-            await carregarItensOV(ordemVendaSel.id);
-            await carregarOVs();
+            // Usuário optou por não continuar: mantém os itens como pendentes
+            alert('⏸️ Contagens interrompidas. Os itens divergentes permanecem pendentes para recontagem posterior.');
+            await carregarOVs(); // Atualiza a lista de OVs
+            return;
           }
         }
+
+        // Se não há divergentes, verifica se todos foram aprovados ou se houve quarentena
+        const itensRejeitados = itemAtualizado.itens.filter(i => i.status_quarentena === 'rejeitado');
+        if (itensRejeitados.length > 0) {
+          alert(`🚫 ${itensRejeitados.length} item(ns) enviado(s) para quarentena.`);
+        } else {
+          alert('✅ Todos os itens foram aprovados na contagem!');
+        }
+        
+        await carregarOVs(); // Atualiza a lista de OVs
+        return;
       }
 
-      alert(`✅ Contagem registrada! ${statusContagem === 'aprovado' ? 'Aprovado' : 'Em quarentena'}`);
-      
+      // Se ainda há itens para contar no modal, apenas informa o status do item contado
+      let mensagemStatus = '';
+      if (statusBackend === 'aprovado') {
+        mensagemStatus = '✅ Aprovado!';
+      } else if (statusBackend === 'pendente') {
+        mensagemStatus = '⏸️ Pendente - Aguardando nova tentativa';
+      } else if (statusBackend === 'rejeitado') {
+        mensagemStatus = '🚫 Em quarentena';
+      }
+      alert(`📦 Contagem registrada! Status: ${mensagemStatus}`);
+
     } catch (err) {
       console.error('❌ Erro ao salvar contagem:', err);
       alert('❌ Erro ao salvar contagem: ' + err.message);
@@ -301,29 +320,6 @@ const salvarContagemCega = async (itemId) => {
       setLoadingPendentes(false);
     }
   };
-
-  /*
-  // ─── CARREGAR ORDENS EM PROCESSO ──────────────────────────
-  const carregarOrdensEmProcesso = async () => {
-    try {
-      setLoading(true);
-      const response = await apiService.get('/estoque/movimentacoes/ordens-em-processo');
-      setOrdensEmProcesso(response.ordens || []);
-    } catch (err) {
-      console.error('❌ Erro ao carregar OVs:', err);
-    } finally {
-      setLoading(false);
-    }
-  };
-
-
-  // Chamar quando a aba for ativada
-  useEffect(() => {
-    if (abaAtiva === 'pendentes') {
-      carregarContagensPendentes();
-    }
-  }, [abaAtiva]);
-*/
 
   // Calcular se há divergência
   const temDivergencia = itemConferenciaFiscal ? (
@@ -824,15 +820,26 @@ return (
 
             if (!matchBusca) return null;
 
-            let statusConfig = { cor: C.success, icone: '🟢', label: 'Aguardando Recebimento' };
+            // 🔥 SEGREDO: O FRONTEND CALCULA AS DIVERGÊNCIAS DIRETO DO ARRAY DE ITENS REAIS QUE CHEGOU!
+            const totalDivergentesReal = ov.itens?.filter(i =>
+              i.status_quarentena === 'rejeitado' ||
+              i.status_contagem === 'pendente' ||
+              i.status_contagem === 'em_andamento'
+            ).length || 0;
+
+            let statusConfig = { cor: C.muted, icone: '⚪', label: 'Status Desconhecido' };
+            
             if (ov.status_recebimento === 'quarentena') {
               statusConfig = { cor: C.danger, icone: '🔴', label: '🚫 Em Tratamento de Quarentena' };
             } else if (ov.status_recebimento === 'contagem_pendente') {
-              statusConfig = { cor: C.warn, icone: '🟡', label: `⚠️ Aguardando Recontagem (${ov.itens_divergentes || 0} item divergente)` };
+              // ✅ AGORA USAMOS O CÁLCULO REAL FEITO NA LINHA DE CIMA!
+              statusConfig = { cor: C.warn, icone: '🟡', label: `⚠️ Aguardando Recontagem (${totalDivergentesReal} item divergente)` };
             } else if (ov.status_recebimento === 'aguardando_contagem') {
               statusConfig = { cor: '#f59e0b', icone: '🟠', label: '📦 Aguardando Contagem' };
             } else if (ov.status_recebimento === 'parcial') {
               statusConfig = { cor: C.accent, icone: '🔵', label: '⏳ Aguardando Entrada' };
+            } else if (ov.status_recebimento === 'pendente') {
+              statusConfig = { cor: C.success, icone: '🟢', label: 'Aguardando Recebimento' };
             }
 
             return (
@@ -856,7 +863,7 @@ return (
                           {ov.numero}
                         </div>
                         <div style={{ fontSize: 12, color: C.muted }}>
-                          {ov.fornecedor_nome} · {ov.total_itens || 0} itens
+                          {ov.fornecedor_nome} · {ov.itens?.length || 0} itens
                         </div>
                       </div>
                     </div>
@@ -1031,7 +1038,13 @@ return (
                   {item.status_quarentena === 'rejeitado' && (
                     <button
                       onClick={async () => {
-                        const justificativa = window.prompt('Justifique a aprovação do saldo (ex: fornecedor enviou a mais, ajuste de preço, etc.):');
+                        const justificativa = window.prompt(
+                          `📊 Divergência detectada:\n` +
+                          `Esperado: ${qtdEsperada} ${unidade}\n` +
+                          `Contado: ${qtdContada} ${unidade}\n` +
+                          `Diferença: ${qtdContada - qtdEsperada} ${unidade}\n\n` +
+                          `Justifique a aprovação do saldo:`
+                        );                        
                         if (!justificativa) {
                           alert('Justificativa é obrigatória!');
                           return;
@@ -1544,22 +1557,15 @@ return (
                   ({itensParaContar.length} item(ns) pendentes)
                 </span>
               </div>
-              <button onClick={() => {
-                if (window.confirm('Tem certeza? Os itens pendentes serão enviados para quarentena.')) {
+              <button 
+                onClick={() => {
+                  // 🔥 APENAS FECHA O MODAL - NÃO FAZ NADA COM OS ITENS
                   setModalContagemCega(false);
-                  // Enviar itens pendentes para quarentena
-                  itensParaContar.forEach(async (item) => {
-                    await apiService.post('/estoque/movimentacoes/contagem-cega', {
-                      item_id: item.id,
-                      quantidade: 0,
-                      tentativa: contagemTentativa,
-                      status: 'rejeitado',
-                      observacao: 'Contagem cancelada pelo usuário'
-                    });
-                  });
-                  carregarItensOV(ordemVendaSel.id);
-                }
-              }} style={{ background: 'transparent', border: 'none', color: C.muted, fontSize: 20, cursor: 'pointer' }}>×</button>
+                }} 
+                style={{ background: 'transparent', border: 'none', color: C.muted, fontSize: 20, cursor: 'pointer' }}
+              >
+                ×
+              </button>
             </div>
 
             <div style={{ padding: '20px 22px', overflowY: 'auto' }}>
@@ -1618,19 +1624,20 @@ return (
 
                       <div>
                         <label style={s.label}>UNIDADE DE MEDIDA</label>
-                        <select 
-                          value={dadosContagem.unidade_medida || item.unidade_medida || 'UN'} 
-                          onChange={(e) => atualizarContagem(item.id, 'unidade_medida', e.target.value)}
-                          style={{ ...s.input, appearance: 'none' }}
-                        >
-                          <option value="UN">UN (Unidade)</option>
-                          <option value="L">L (Litro)</option>
-                          <option value="KG">KG (Quilograma)</option>
-                          <option value="M">M (Metro)</option>
-                          <option value="CX">CX (Caixa)</option>
-                          <option value="RL">RL (Rolo)</option>
-                          <option value="GL">GL (Galão)</option>
-                        </select>
+                          <select 
+                            value={dadosContagem.unidade_medida || ''} 
+                            onChange={(e) => atualizarContagem(item.id, 'unidade_medida', e.target.value)}
+                            style={{ ...s.input, appearance: 'none' }}
+                          >
+                            <option value="">Selecione a unidade</option>
+                            <option value="UN">UN (Unidade)</option>
+                            <option value="L">L (Litro)</option>
+                            <option value="KG">KG (Quilograma)</option>
+                            <option value="M">M (Metro)</option>
+                            <option value="CX">CX (Caixa)</option>
+                            <option value="RL">RL (Rolo)</option>
+                            <option value="GL">GL (Galão)</option>
+                          </select>
                       </div>
                     </div>
 
