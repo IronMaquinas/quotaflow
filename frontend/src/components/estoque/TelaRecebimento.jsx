@@ -51,19 +51,28 @@ export default function TelaRecebimento({ C, s, fmtD }) {
   const [itemConferenciaFiscal, setItemConferenciaFiscal] = useState(null);
   const [itemConferenciaFisica, setItemConferenciaFisica] = useState(null);
 
-  // ─── FUNÇÕES PARA OVs ──────────────────────────────────────
+  const [itemTratativaQuarentena, setItemTratativaQuarentena] = useState(null);
+  const [justificativaTratativa, setJustificativaTratativa] = useState('');
+
+  // ─── FUNÇÕES PARA OVs (INVESTIGAÇÃO DE STATUS PAI) ────────────────────
   const carregarOVs = async () => {
     try {
-      console.log('🔍 [frontend] carregarOVs chamada para o módulo de estoque');
-      
-      // 🔥 AJUSTE AQUI: Adicione o caminho correto do módulo de estoque antes do endpoint
+      console.log('🔍 [frontend] carregarOVs chamada');
       const data = await apiService.get('/ordens-venda');
-
-      console.log('━━━━━━━━━━ 🕵️ VERIFICAÇÃO DE DADOS REAIS ━━━━━━━━━━');
+      
+      console.log('━━━━━━━━━━ 🕵️ RAIO-X DE STATUS DA ORDEM PAI ━━━━━━━━━━');
       if (data && data.length > 0) {
-        console.log("Dados que chegaram do arquivo correto do backend:", data[0]);
+        // Encontra a nossa OV com problema no array
+        const ovProblema = data.find(o => o.numero === 'OV-202609-0001') || data[0];
+        
+        console.log(`Análise da Ordem: ${ovProblema.numero}`);
+        console.log("Todas as chaves de status disponíveis na ordem pai:", Object.keys(ovProblema));
+        console.log("Valores reais que chegaram do banco/backend:");
+        console.log(`-> status: "${ovProblema.status}"`);
+        console.log(`-> status_recebimento: "${ovProblema.status_recebimento}"`);
+        console.log(`-> statusRecebimento: "${ovProblema.statusRecebimento}"`);
       }
-      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
+      console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
 
       setOrdensVendaAbertas(data || []);
     } catch (err) {
@@ -1034,31 +1043,12 @@ return (
                     {item.entrada_por ? '✅ Entrada' : '✅ 3. Entrada'}
                   </button>
 
-                  {/* 🔥 BOTÃO APROVAR SALDO (aparece só se estiver em quarentena) */}
+                  {/* 🔥 BOTÃO QUE ABRE O MODAL DE TRATATIVA */}
                   {item.status_quarentena === 'rejeitado' && (
                     <button
-                      onClick={async () => {
-                        const justificativa = window.prompt(
-                          `📊 Divergência detectada:\n` +
-                          `Esperado: ${qtdEsperada} ${unidade}\n` +
-                          `Contado: ${qtdContada} ${unidade}\n` +
-                          `Diferença: ${qtdContada - qtdEsperada} ${unidade}\n\n` +
-                          `Justifique a aprovação do saldo:`
-                        );                        
-                        if (!justificativa) {
-                          alert('Justificativa é obrigatória!');
-                          return;
-                        }
-                        try {
-                          await apiService.put(`/estoque/movimentacoes/item/${item.id}/aprovar-saldo`, {
-                            justificativa
-                          });
-                          alert('✅ Saldo aprovado! O item foi liberado para entrada no estoque.');
-                          await carregarItensOV(ordemVendaSel.id);
-                          await carregarOVs();
-                        } catch (err) {
-                          alert('Erro ao aprovar saldo: ' + err.message);
-                        }
+                      onClick={() => {
+                        setJustificativaTratativa('');
+                        setItemTratativaQuarentena(item);
                       }}
                       style={{
                         ...s.btn(true, C.success),
@@ -1066,7 +1056,7 @@ return (
                         fontSize: 11,
                       }}
                     >
-                      ✅ Aprovar Saldo
+                      ⚖️ Tratar Quarentena
                     </button>
                   )}
 
@@ -1542,6 +1532,114 @@ return (
                 ))}
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 🔥 MODAL DE TRATATIVA DE QUARENTENA (PADRÃO SAP WM) */}
+      {itemTratativaQuarentena && (
+        <div style={{ position: 'fixed', inset: 0, background: '#00000090', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 500, padding: 20 }}>
+          <div style={{ ...s.card, width: 500, maxWidth: '100%', padding: '20px 22px' }}>
+            
+            <div style={{ fontSize: 16, fontWeight: 700, color: C.text, marginBottom: 12, display: 'flex', alignItems: 'center', gap: 8 }}>
+              ⚖️ Tratativa de Quarentena — {itemTratativaQuarentena.item_nome}
+            </div>
+
+            {/* Painel Matemático da Divergência */}
+            <div style={{ background: C.bg, padding: '12px 14px', borderRadius: 8, marginBottom: 16, border: `1px solid ${C.border}44`, fontSize: 12, color: C.text }}>
+              <strong>📋 Dados do Desvio:</strong>
+              <div style={{ marginTop: 6, display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+                <div><span style={{ color: C.muted }}>Esperado:</span> <br /><strong>{parseFloat(itemTratativaQuarentena.quantidade || 0)} {itemTratativaQuarentena.unidade_medida || 'UN'}</strong></div>
+                <div><span style={{ color: C.muted }}>Contado:</span> <br /><strong>{parseFloat(itemTratativaQuarentena.quantidade_recebida_fisica || itemTratativaQuarentena.quantidade_nf || 0)} {itemTratativaQuarentena.unidade_medida || 'UN'}</strong></div>
+                <div><span style={{ color: C.muted }}>Diferença:</span> <br /><strong style={{ color: C.danger }}>{(parseFloat(itemTratativaQuarentena.quantidade_recebida_fisica || 0)) - parseFloat(itemTratativaQuarentena.quantidade || 0)}</strong></div>
+              </div>
+            </div>
+
+            {/* Campo de Justificativa OBRIGATÓRIA */}
+            <div style={{ marginBottom: 16 }}>
+              <label style={{ ...s.label, color: C.text }}>JUSTIFICATIVA DA DECISÃO *</label>
+              <textarea
+                value={justificativaTratativa}
+                onChange={(e) => setJustificativaTratativa(e.target.value)}
+                placeholder="Digite o motivo da aprovação ou recusa do material..."
+                rows={3}
+                style={{ ...s.input, resize: 'vertical', marginTop: 6 }}
+              />
+            </div>
+
+            {/* 🔥 AÇÕES OBJETIVAS: Os 3 botões alinhados lado a lado na mesma linha */}
+            <div style={{ 
+              display: 'flex', 
+              gap: 10, 
+              marginTop: 18,
+              justifyContent: 'space-between'
+            }}>
+
+              <button
+                onClick={async () => {
+                  if (!justificativaTratativa.trim()) return alert('⚠️ A justificativa é obrigatória!');
+                  try {
+                    await apiService.put(`/estoque/movimentacoes/item/${itemTratativaQuarentena.id}/aprovar-saldo`, {
+                      justificativa: justificativaTratativa,
+                      destino_tratativa: 'nao_conformidade'
+                    });
+                    alert('🚫 Não Conformidade registrada com sucesso!');
+                    setItemTratativaQuarentena(null);
+                    await carregarItensOV(ordemVendaSel.id);
+                    await carregarOVs();
+                  } catch (err) { alert(err.message); }
+                }}
+                style={{ 
+                  ...s.btn(true, C.danger), 
+                  flex: 1, 
+                  padding: '10px 8px', 
+                  fontSize: 11,
+                  whiteSpace: 'nowrap' 
+                }}
+              >
+                🔴 Recusar Material
+              </button>
+
+              <button
+                onClick={() => setItemTratativaQuarentena(null)}
+                style={{ 
+                  ...s.btn(false), 
+                  flex: 1, 
+                  padding: '10px 8px', 
+                  fontSize: 11,
+                  borderColor: C.border,
+                  whiteSpace: 'nowrap'
+                }}
+              >
+                ⚪ Cancelar e Sair
+              </button>
+
+              <button
+                onClick={async () => {
+                  if (!justificativaTratativa.trim()) return alert('⚠️ A justificativa é obrigatória!');
+                  try {
+                    await apiService.put(`/estoque/movimentacoes/item/${itemTratativaQuarentena.id}/aprovar-saldo`, {
+                      justificativa: justificativaTratativa,
+                      destino_tratativa: 'aprovado'
+                    });
+                    alert('✅ Saldo aprovado! Material enviado para a área de RECEBIMENTO.');
+                    setItemTratativaQuarentena(null);
+                    await carregarItensOV(ordemVendaSel.id);
+                    await carregarOVs();
+                  } catch (err) { alert(err.message); }
+                }}
+                style={{ 
+                  ...s.btn(true, C.success), 
+                  flex: 1, 
+                  padding: '10px 8px', 
+                  fontSize: 11,
+                  whiteSpace: 'nowrap' 
+                }}
+              >
+                🟢 Aprovar Saldo
+              </button>
+            </div>
+
           </div>
         </div>
       )}

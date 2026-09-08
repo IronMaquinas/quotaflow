@@ -40,7 +40,7 @@ const SISTEMA_UUID = '00000000-0000-0000-0000-000000000000';
     return dp[m][n];
   };
 
-// NO TOPO DO ARQUIVO (antes das rotas)
+  //--- GERAR NÚMERO DO RECEBIMENTO ---
 async function gerarNumeroRecebimento(tenantId) {
   const ano = new Date().getFullYear();
   const prefix = `REC-${ano}-`;
@@ -72,6 +72,28 @@ async function gerarNumeroRecebimento(tenantId) {
 
   return novoNumero;
 }
+
+// --- Gerar número de RNC sequencial ---
+async function gerarNumeroNC(tenantId) {
+  const ano = new Date().getFullYear();
+  const prefix = `NC-${ano}-`;
+  
+  const result = await DB.raw(`
+    SELECT numero_nc FROM nao_conformidades
+    WHERE tenant_id = $1 AND numero_nc LIKE $2
+    ORDER BY numero_nc DESC
+    LIMIT 1
+  `, [tenantId, `${prefix}%`]).catch(() => []); // catch preventivo caso a tabela não exista ainda
+
+  let seq = 1;
+  if (result.length > 0 && result[0].numero_nc) {
+    const match = result[0].numero_nc.match(/(\d+)$/);
+    if (match) seq = parseInt(match[1]) + 1;
+  }
+
+  return `${prefix}${String(seq).padStart(4, '0')}`;
+}
+
 
 // ─── LISTAR MOVIMENTAÇÕES ──────────────────────────────────
 router.get('/', tenantMiddleware, async (req, res) => {
@@ -995,7 +1017,7 @@ router.post('/contagem-cega', tenantMiddleware, async (req, res) => {
       tenant_id: tenantId 
     }, tenantId);
 
-    // 9. Verificar se todos os itens da OV foram contados
+    // 9. Verificar se todos os itens da OV foram contados (DENTRO DE POST /contagem-cega)
     const itensOV = await DB.select('ordem_venda_itens', { 
       ordem_venda_id: item.ordem_venda_id, 
       tenant_id: tenantId 
@@ -1003,16 +1025,19 @@ router.post('/contagem-cega', tenantMiddleware, async (req, res) => {
     
     const todosContados = itensOV.every(i => i.status_contagem === 'concluido');
     
-    if (todosContados) {
-      await DB.update('ordens_venda', item.ordem_venda_id, {
-        status: 'contagem_concluida',
-        atualizado_em: new Date()
-      }, tenantId);
-    }
+    // 🔥 CALCULA O STATUS GERAL DA OV BASEADO NOS ITENS ATUALIZADOS
+    const novoStatusGeralOV = calcularStatusOV(itensOV);
+
+    // 🔥 ATUALIZAÇÃO SÍNCRONA NO SUPABASE (Tabela Pai)
+    await DB.update('ordens_venda', item.ordem_venda_id, {
+      status: todosContados ? 'contagem_concluida' : 'em_andamento',
+      status_recebimento: novoStatusGeralOV, // ✅ Atualiza a coluna física que o front lê!
+      atualizado_em: new Date()
+    }, tenantId);
 
     res.json({
       ok: true,
-      mensagem: 'Contagem cega registrada com sucesso!',
+      mensagem: 'Contagem cega registrada com sucesso e status atualizado!',
       tentativa_atual: tentativaReal,
       historico: historicoCompleto,
       status: status
@@ -1320,7 +1345,8 @@ router.get('/ordens-venda', tenantMiddleware, async (req, res) => {
     const ordensCompletas = await Promise.all(ordens.map(async (ov) => {
       // Buscar itens da OV
       const itens = await DB.select('ordem_venda_itens', {
-        ordem_venda_id: ov.id
+        ordem_venda_id: ov.id,
+        tenant_id: tenantId
       }, null);
 
       // Buscar fornecedor
@@ -1363,37 +1389,107 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
   try {
     const tenantId = req.tenantId;
     const { itemId } = req.params;
-    const { justificativa } = req.body;
+    const { justificativa, destino_tratativa } = req.body; // 'aprovado' ou 'nao_conformidade'
 
     if (!justificativa) {
       return res.status(400).json({ erro: 'Justificativa é obrigatória' });
     }
 
-    // Buscar item da OV
+    // 1. Buscar item da OV
     const item = await DB.selectOne('ordem_venda_itens', { id: itemId, tenant_id: tenantId }, tenantId);
     if (!item) {
       return res.status(404).json({ erro: 'Item não encontrado' });
     }
 
-    // Verificar se está em quarentena
-    if (item.status_quarentena !== 'rejeitado') {
-      return res.status(400).json({ erro: 'Item não está em quarentena' });
+    // 2. Tratar de acordo com a decisão do Gestor
+    if (destino_tratativa === 'nao_conformidade') {
+      // Gera o número da NC em tempo de execução
+      let numeroNC = `NC-${new Date().getFullYear()}-0001`; 
+      try {
+        numeroNC = await gerarNumeroNC(tenantId);
+      } catch (e) {
+        console.log("Tabela nao_conformidades ainda não criada. Usando número temporário.");
+      }
+
+      const justificativaCompleta = `[${numeroNC}] - Recusa definitiva por: ${justificativa}`;
+
+      // Atualiza o item da OV com o carimbo da NC na observação
+      await DB.update('ordem_venda_itens', itemId, {
+        status_quarentena: 'nao_conforme',
+        status_contagem: 'concluido',
+        observacao: justificativaCompleta,
+        atualizado_em: new Date()
+      }, tenantId);
+
+      // alvar na tabela nova de não conformmidades
+      await DB.insert('nao_conformidades', {
+        tenant_id: tenantId,
+        numero_nc: numeroNC,
+        ordem_venda_id: ov.id,
+        numero_pedido: ov.numero,
+        fornecedor_nome: ov.fornecedor_nome,
+        numero_nota_fiscal: item.numero_nota_fiscal,
+        inspetor_id: req.userId,
+        motivo_recusa: justificativa,
+        quantidade: parseFloat(item.quantidade_recebida_fisica || 0),
+        unidade_medida: item.unidade_medida,
+        lote: item.lote,
+        numero_serie: item.numero_serie,
+        validade: item.validade
+      }, tenantId);
+      
+      // Recalcula o status pai da ordem para atualizar o card na tela
+      const todosItens = await DB.select('ordem_venda_itens', { ordem_venda_id: item.ordem_venda_id }, tenantId);
+      const novoStatusOV = calcularStatusOV(todosItens);
+      await DB.update('ordens_venda', item.ordem_venda_id, {
+        status_recebimento: novoStatusOV,
+        atualizado_em: new Date()
+      }, tenantId);
+
+      return res.json({
+        ok: true,
+        mensagem: `Material rejeitado com sucesso! Foi gerado o Registro de Não Conformidade: ${numeroNC}`
+      });
     }
 
-    // Atualizar status para aprovado e registrar aprovação
+    // 📦 SE FOR APROVADO (Fluxo SAP: Envia para o endereço 'RECEBIMENTO')
+    // 3. Atualizar o item da OV para liberado
     await DB.update('ordem_venda_itens', itemId, {
       status_quarentena: 'aprovado',
+      status_contagem: 'concluido',
       aprovado_por: req.userId,
       aprovado_em: new Date(),
-      observacao: `Saldo aprovado: ${justificativa}`
+      observacao: `Saldo aprovado em tratativa: ${justificativa}`
     }, tenantId);
 
-    // Opcional: já dar entrada no estoque se desejar
-    // (ou deixar para o botão "Entrada" como está)
+    // 4. Buscar o cadastro do item no catálogo para saber a quantidade física contada
+    const itemConsumo = await DB.selectOne('itens_consumo', { id: item.item_catalogo_id }, tenantId);
+    
+    if (itemConsumo) {
+      // Entrada do saldo na tabela de estoque apontando para a doca/localização de RECEBIMENTO
+      const novoSaldo = (parseFloat(itemConsumo.saldo_atual) || 0) + parseFloat(item.quantidade_recebida_fisica || 0);
+      
+      await DB.update('itens_consumo', itemConsumo.id, {
+        saldo_atual: novoSaldo,
+        localizacao: 'RECEBIMENTO', // 🔥 Transfere temporariamente para o endereço de conferência
+        atualizado_em: new Date()
+      }, tenantId);
+
+      // Registrar o histórico da movimentação de entrada SAP
+      await DB.insert('movimentacoes_estoque', {
+        tenant_id: tenantId,
+        item_consumo_id: itemConsumo.id,
+        tipo: 'entrada',
+        quantidade: parseFloat(item.quantidade_recebida_fisica || 0),
+        responsavel_id: req.userId,
+        observacao: `Entrada via Liberação de Quarentena (SAP WM). Justificativa: ${justificativa}`,
+        criado_em: new Date()
+      }, tenantId);
+    }
 
     res.json({
       ok: true,
-      mensagem: 'Saldo aprovado com sucesso!'
+      mensagem: 'Saldo aprovado com sucesso! O material está alocado na doca de RECEBIMENTO.'
     });
 
   } catch (err) {
@@ -1402,27 +1498,30 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
   }
 });
 
-// FUNÇÃO AUXILIAR
+// VERSÃO DEFINITIVA BASEADA NO NÚMERO DE TENTATIVAS REAIS
 function calcularStatusOV(itens) {
   if (!itens || itens.length === 0) return 'pendente';
   
-  // 1. PRIORIDADE MÁXIMA: Se houver item rejeitado/quarentena
+  // 1. PRIORIDADE MÁXIMA: Se houver qualquer item rejeitado/quarentena (Falha na 3ª contagem ou fiscal)
   const temQuarentena = itens.some(i => i.status_quarentena === 'rejeitado' || i.status_quarentena === 'quarentena');
   if (temQuarentena) return 'quarentena';
 
-  // 2. SEGUNDA PRIORIDADE: Se houver recontagem em andamento ou pendência física, DEVE ir para contagem_pendente
-  const temPendente = itens.some(i => i.status_contagem === 'pendente' || i.status_contagem === 'em_andamento');
-  if (temPendente) return 'contagem_pendente';
+  // 2. SEGUNDA PRIORIDADE: Se o item já teve alguma tentativa registrada (tentativa_atual > 0)
+  // mas o status_contagem NÃO está concluído, significa que ele está esperando recontagem (AMARELO)!
+  const temRecontagemAtiva = itens.some(i => (i.tentativa_atual || 0) > 0 && i.status_contagem !== 'concluido');
+  if (temRecontagemAtiva) return 'contagem_pendente';
 
-  // 3. TERCEIRA PRIORIDADE: Etapas normais do fluxo
+  // 3. TERCEIRA PRIORIDADE: Se a conferência fiscal foi feita, mas NENHUMA contagem foi tentada ainda (tentativa_atual === 0)
   const temMiro = itens.some(i => i.miro_por);
-  const todosConcluidos = itens.every(i => i.status_contagem === 'concluido' && i.status_quarentena === 'aprovado');
+  const nenhumaContagemFeita = itens.every(i => (i.tentativa_atual || 0) === 0);
+  
+  if (temMiro && nenhumaContagemFeita) return 'aguardando_contagem';
 
-  if (temMiro && !todosConcluidos) return 'aguardando_contagem';
+  // 4. QUARTA PRIORIDADE: Fluxo feliz 100% concluído e aprovado
+  const todosConcluidos = itens.every(i => i.status_contagem === 'concluido' && i.status_quarentena === 'aprovado');
   if (todosConcluidos) return 'parcial';
   
-  return 'pendente';
+  return 'pendente'; 
 }
-
 
 module.exports = router;
