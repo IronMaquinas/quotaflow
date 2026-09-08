@@ -1401,46 +1401,33 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
       return res.status(404).json({ erro: 'Item não encontrado' });
     }
 
-    // 2. Tratar de acordo com a decisão do Gestor
+    // ─────────────────────────────────────────────────────────────────
+    // CAMINHO 2: NÃO CONFORME (Recusa/Devolução)
+    // ─────────────────────────────────────────────────────────────────
     if (destino_tratativa === 'nao_conformidade') {
-      // Gera o número da NC em tempo de execução
       let numeroNC = `NC-${new Date().getFullYear()}-0001`; 
       try {
         numeroNC = await gerarNumeroNC(tenantId);
       } catch (e) {
-        console.log("Tabela nao_conformidades ainda não criada. Usando número temporário.");
+        console.log("Erro ao gerar número sequencial de NC.");
       }
 
       const justificativaCompleta = `[${numeroNC}] - Recusa definitiva por: ${justificativa}`;
 
-      // Atualiza o item da OV com o carimbo da NC na observação
+      // ✅ ATUALIZAÇÃO CORRIGIDA: Gravando nas colunas certas do seu Supabase!
       await DB.update('ordem_venda_itens', itemId, {
         status_quarentena: 'nao_conforme',
         status_contagem: 'concluido',
         observacao: justificativaCompleta,
-        atualizado_em: new Date()
+        aprovado_por: req.userId, // Salva o UUID de quem recusou
+        aprovado_em: new Date()   // Salva a data exata da recusa
       }, tenantId);
 
-      // alvar na tabela nova de não conformmidades
-      await DB.insert('nao_conformidades', {
-        tenant_id: tenantId,
-        numero_nc: numeroNC,
-        ordem_venda_id: ov.id,
-        numero_pedido: ov.numero,
-        fornecedor_nome: ov.fornecedor_nome,
-        numero_nota_fiscal: item.numero_nota_fiscal,
-        inspetor_id: req.userId,
-        motivo_recusa: justificativa,
-        quantidade: parseFloat(item.quantidade_recebida_fisica || 0),
-        unidade_medida: item.unidade_medida,
-        lote: item.lote,
-        numero_serie: item.numero_serie,
-        validade: item.validade
-      }, tenantId);
-      
       // Recalcula o status pai da ordem para atualizar o card na tela
       const todosItens = await DB.select('ordem_venda_itens', { ordem_venda_id: item.ordem_venda_id }, tenantId);
       const novoStatusOV = calcularStatusOV(todosItens);
+      
+      // Na ordens_venda a coluna atualizado_em existe e pode ser usada
       await DB.update('ordens_venda', item.ordem_venda_id, {
         status_recebimento: novoStatusOV,
         atualizado_em: new Date()
@@ -1448,34 +1435,36 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
 
       return res.json({
         ok: true,
+        numero_nc: numeroNC,
         mensagem: `Material rejeitado com sucesso! Foi gerado o Registro de Não Conformidade: ${numeroNC}`
       });
     }
 
-    // 📦 SE FOR APROVADO (Fluxo SAP: Envia para o endereço 'RECEBIMENTO')
-    // 3. Atualizar o item da OV para liberado
+    // ─────────────────────────────────────────────────────────────────
+    // CAMINHO 1: APROVADO (Padrão SAP - Entrada em Doca de Recebimento)
+    // ─────────────────────────────────────────────────────────────────
+    // ✅ ATUALIZAÇÃO CORRIGIDA: Gravando nas colunas certas do seu Supabase!
     await DB.update('ordem_venda_itens', itemId, {
       status_quarentena: 'aprovado',
       status_contagem: 'concluido',
-      aprovado_por: req.userId,
-      aprovado_em: new Date(),
+      aprovado_por: req.userId, // Salva o UUID de quem aprovou
+      aprovado_em: new Date(),   // Salva a data exata da aprovação
       observacao: `Saldo aprovado em tratativa: ${justificativa}`
     }, tenantId);
 
-    // 4. Buscar o cadastro do item no catálogo para saber a quantidade física contada
+    // Lançar o saldo físico no catálogo apontando para a doca de RECEBIMENTO
     const itemConsumo = await DB.selectOne('itens_consumo', { id: item.item_catalogo_id }, tenantId);
     
     if (itemConsumo) {
-      // Entrada do saldo na tabela de estoque apontando para a doca/localização de RECEBIMENTO
       const novoSaldo = (parseFloat(itemConsumo.saldo_atual) || 0) + parseFloat(item.quantidade_recebida_fisica || 0);
       
       await DB.update('itens_consumo', itemConsumo.id, {
         saldo_atual: novoSaldo,
-        localizacao: 'RECEBIMENTO', // 🔥 Transfere temporariamente para o endereço de conferência
+        localizacao: 'RECEBIMENTO', // Direciona para o endereço de conferência SAP
         atualizado_em: new Date()
       }, tenantId);
 
-      // Registrar o histórico da movimentação de entrada SAP
+      // Histórico de auditoria da movimentação
       await DB.insert('movimentacoes_estoque', {
         tenant_id: tenantId,
         item_consumo_id: itemConsumo.id,
@@ -1487,9 +1476,17 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
       }, tenantId);
     }
 
+    // Recalcula o status pai da ordem para atualizar o card na tela
+    const todosItens = await DB.select('ordem_venda_itens', { ordem_venda_id: item.ordem_venda_id }, tenantId);
+    const novoStatusOV = calcularStatusOV(todosItens);
+    await DB.update('ordens_venda', item.ordem_venda_id, {
+      status_recebimento: novoStatusOV,
+      atualizado_em: new Date()
+    }, tenantId);
+
     res.json({
       ok: true,
-      mensagem: 'Saldo aprovado com sucesso! O material está alocado na doca de RECEBIMENTO.'
+      mensagem: 'Saldo liberado! Material alocado temporariamente na doca de RECEBIMENTO.'
     });
 
   } catch (err) {
@@ -1498,28 +1495,34 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
   }
 });
 
-// VERSÃO DEFINITIVA BASEADA NO NÚMERO DE TENTATIVAS REAIS
+// VERSÃO 100% CORRIGIDA DO CÁLCULO DE STATUS NO BACKEND
 function calcularStatusOV(itens) {
   if (!itens || itens.length === 0) return 'pendente';
   
-  // 1. PRIORIDADE MÁXIMA: Se houver qualquer item rejeitado/quarentena (Falha na 3ª contagem ou fiscal)
-  const temQuarentena = itens.some(i => i.status_quarentena === 'rejeitado' || i.status_quarentena === 'quarentena');
-  if (temQuarentena) return 'quarentena';
+  // 1. PRIORIDADE 1: Itens em quarentena ativa (esperando decisão do gestor)
+  const temQuarentenaAtiva = itens.some(i => i.status_quarentena === 'rejeitado' || i.status_quarentena === 'quarentena');
+  if (temQuarentenaAtiva) return 'quarentena';
 
-  // 2. SEGUNDA PRIORIDADE: Se o item já teve alguma tentativa registrada (tentativa_atual > 0)
-  // mas o status_contagem NÃO está concluído, significa que ele está esperando recontagem (AMARELO)!
+  // 2. PRIORIDADE 2: Itens em processo de recontagem física ativa (1ª ou 2ª tentativa falhas)
   const temRecontagemAtiva = itens.some(i => (i.tentativa_atual || 0) > 0 && i.status_contagem !== 'concluido');
   if (temRecontagemAtiva) return 'contagem_pendente';
 
-  // 3. TERCEIRA PRIORIDADE: Se a conferência fiscal foi feita, mas NENHUMA contagem foi tentada ainda (tentativa_atual === 0)
+  // 3. PRIORIDADE 3: Etapa fiscal concluída, mas contagem física não iniciada
   const temMiro = itens.some(i => i.miro_por);
   const nenhumaContagemFeita = itens.every(i => (i.tentativa_atual || 0) === 0);
-  
   if (temMiro && nenhumaContagemFeita) return 'aguardando_contagem';
 
-  // 4. QUARTA PRIORIDADE: Fluxo feliz 100% concluído e aprovado
-  const todosConcluidos = itens.every(i => i.status_contagem === 'concluido' && i.status_quarentena === 'aprovado');
-  if (todosConcluidos) return 'parcial';
+  // 🚨 4. PRIORIDADE 4: ENCERRAMENTO DO CICLO (A Mágica da Conclusão)
+  // Uma ordem está concluída se TODOS os itens dela tiverem sido finalizados na contagem.
+  const todosContadosEConcluidos = itens.every(i => i.status_contagem === 'concluido');
+  
+  if (todosContadosEConcluidos) {
+    // Se houver qualquer item rejeitado em definitivo (não conforme), a OV foi encerrada com desvio
+    const temNaoConformidade = itens.some(i => i.status_quarentena === 'nao_conforme');
+    if (temNaoConformidade) return 'concluido_recusado'; // 🔥 Novo status de encerramento!
+    
+    return 'parcial'; // Entrada realizada com sucesso (Aguardando Entrada)
+  }
   
   return 'pendente'; 
 }

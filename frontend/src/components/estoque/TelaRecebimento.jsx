@@ -53,6 +53,7 @@ export default function TelaRecebimento({ C, s, fmtD }) {
 
   const [itemTratativaQuarentena, setItemTratativaQuarentena] = useState(null);
   const [justificativaTratativa, setJustificativaTratativa] = useState('');
+  const [modalSucessoNC, setModalSucessoNC] = useState(null);
 
   // ─── FUNÇÕES PARA OVs (INVESTIGAÇÃO DE STATUS PAI) ────────────────────
   const carregarOVs = async () => {
@@ -777,98 +778,189 @@ return (
     )}
 
     {/* ─── SEÇÃO: EM PROCESSO ───────────────────────────────── */}
-    <div style={{ marginBottom: 24 }}>
-      <div style={{
-        fontSize: 13,
-        fontWeight: 600,
-        color: C.text,
-        marginBottom: 12,
-        display: 'flex',
-        alignItems: 'center',
-        gap: 8
-      }}>
-        📋 EM PROCESSO
-        <span style={{
-          fontSize: 11,
-          color: C.muted,
-          fontWeight: 400,
-          background: C.bg,
-          padding: '2px 10px',
-          borderRadius: 12
-        }}>
-          {ordensVendaAbertas.length}
-        </span>
+    {(() => {
+      // 1. Filtra a lista antes de renderizar
+      const ordensEmAndamentoReal = ordensVendaAbertas.filter(ov => 
+        ov.status_recebimento !== 'concluido_recusado' && 
+        ov.status !== 'contagem_concluida'
+      );
+
+      return (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{
+            fontSize: 13,
+            fontWeight: 600,
+            color: C.text,
+            marginBottom: 12,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8
+          }}>
+            📋 EM PROCESSO
+            <span style={{
+              fontSize: 11,
+              color: C.muted,
+              fontWeight: 400,
+              background: C.bg,
+              padding: '2px 10px',
+              borderRadius: 12
+            }}>
+              {/* ✅ O CONTADOR AGORA CAI PARA 0 QUANDO A OV FOR CONCLUÍDA */}
+              {ordensEmAndamentoReal.length}
+            </span>
+          </div>
+
+          <input
+            type="text"
+            placeholder="🔍 Buscar por item, SKU ou número da OV..."
+            value={buscaOV}
+            onChange={(e) => setBuscaOV(e.target.value)}
+            style={{ ...s.input, marginBottom: 12 }}
+          />
+
+          {loading ? (
+            <div style={{ color: C.muted, fontSize: 13, padding: 20, textAlign: 'center' }}>Carregando...</div>
+          ) : ordensEmAndamentoReal.length === 0 ? (
+            <div style={{
+              padding: '32px',
+              textAlign: 'center',
+              color: C.muted,
+              background: C.bg,
+              borderRadius: 8
+            }}>
+              🎉 Nenhuma ordem em processo no momento.
+            </div>
+          ) : (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+              {ordensEmAndamentoReal.map(ov => {
+                const matchBusca = !buscaOV ||
+                  ov.numero.toLowerCase().includes(buscaOV.toLowerCase()) ||
+                  ov.itens?.some(i => (i.item_nome || '').toLowerCase().includes(buscaOV.toLowerCase()));
+                  
+                if (!matchBusca) return null;
+
+                // ✅ O FRONTEND CALCULA AS DIVERGÊNCIAS DIRETO DO ARRAY DE ITENS REAIS QUE CHEGOU!
+                const totalDivergentesReal = ov.itens?.filter(i =>
+                  i.status_quarentena === 'rejeitado' ||
+                  i.status_contagem === 'pendente' ||
+                  i.status_contagem === 'em_andamento'
+                ).length || 0;
+
+                let statusConfig = { color: C.muted, icone: '⚪', label: 'Status Desconhecido' };
+
+                if (ov.status_recebimento === 'quarentena') {
+                  statusConfig = { cor: C.danger, icone: '🔴', label: '🚫 Em Tratamento de Quarentena' };
+                } else if (ov.status_recebimento === 'contagem_pendente') {
+                  statusConfig = { cor: C.warn, icone: '🟡', label: `⚠️ Aguardando Recontagem (${totalDivergentesReal} item divergente)` };
+                } else if (ov.status_recebimento === 'aguardando_contagem') {
+                  statusConfig = { cor: '#f59e0b', icone: '🟠', label: '📦 Aguardando Contagem' };
+                } else if (ov.status_recebimento === 'parcial') {
+                  statusConfig = { cor: C.accent, icone: '🔵', label: '⏳ Aguardando Entrada' };
+                } else if (ov.status_recebimento === 'pendente') {
+                  statusConfig = { cor: C.success, icone: '🟢', label: 'Aguardando Recebimento' };
+                } else if (ov.status_recebimento === 'concluido_recusado') {
+                  statusConfig = { cor: C.muted, icone: '⚫', label: '🚫 Recebimento Encerrado (Recusado)' };
+                }
+
+                return (
+                  <div
+                    key={ov.id}
+                    onClick={() => carregarItensOV(ov.id)}
+                    style={{
+                      ...s.card,
+                      padding: '14px 18px',
+                      cursor: 'pointer',
+                      border: `1px solid ${ordemVendaSel?.id === ov.id ? C.accent : statusConfig.cor + '44'}`,
+                      background: ordemVendaSel?.id === ov.id ? C.bg : C.surface
+                    }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <div>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                          <span style={{ fontSize: 16 }}>{statusConfig.icone}</span>
+                          <div>
+                            <div style={{ fontSize: 13, fontWeight: 600, color: C.accent, fontFamily: "'IBM Plex Mono',monospace" }}>
+                              {ov.numero}
+                            </div>
+                            <div style={{ fontSize: 12, color: C.muted }}>
+                              {ov.fornecedor_nome} · {ov.itens?.length || 0} itens
+                        </div>
+                          </div>
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                        <span style={{
+                          ...s.tag(statusConfig.cor),
+                          fontSize: 10,
+                          background: statusConfig.cor + '22',
+                          color: statusConfig.cor
+                        }}>
+                          {statusConfig.label}
+                        </span>
+                        <span style={{ fontSize: 16, color: C.muted }}>→</span>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      );
+    })()}
+
+    {/* ─── SEÇÃO: HISTÓRICO (link para consulta) ────────────── */}
+    <div style={{ marginTop: 32 }}>
+      <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 12 }}>
+        📁 Histórico de Recebimentos Concluídos
       </div>
 
-      <input
-        type="text"
-        placeholder="🔍 Buscar por item, SKU ou número da OV..."
-        value={buscaOV}
-        onChange={(e) => setBuscaOV(e.target.value)}
-        style={{ ...s.input, marginBottom: 12 }}
-      />
+      {/* ✅ Filtra o array para capturar o que foi encerrado por não conformidade ou sucesso */}
+      {(() => {
+        const ordensConcluidas = ordensVendaAbertas.filter(ov => 
+          ov.status_recebimento === 'concluido_recusado' || 
+          ov.status === 'contagem_concluida'
+        );
 
-      {loading ? (
-        <div style={{ color: C.muted, fontSize: 13, padding: 20, textAlign: 'center' }}>Carregando...</div>
-      ) : ordensVendaAbertas.length === 0 ? (
-        <div style={{
-          padding: '32px',
-          textAlign: 'center',
-          color: C.muted,
-          background: C.bg,
-          borderRadius: 8
-        }}>
-          🎉 Nenhuma ordem em processo no momento.
-        </div>
-      ) : (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {ordensVendaAbertas.map(ov => {
-            const matchBusca = !buscaOV ||
-              ov.numero.toLowerCase().includes(buscaOV.toLowerCase()) ||
-              ov.itens?.some(i => (i.item_nome || '').toLowerCase().includes(buscaOV.toLowerCase()));
+        if (ordensConcluidas.length === 0) {
+          return (
+            <div style={{ padding: '20px', textAlign: 'center', color: C.muted, background: C.bg, borderRadius: 8, fontSize: 12 }}>
+              📬 Nenhum recebimento concluído ainda.
+            </div>
+          );
+        }
 
-            if (!matchBusca) return null;
+        return (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            {ordensConcluidas.map(ov => {
+              
+              // Define o visual cinza/arquivado para o card de histórico
+              let statusConfig = { 
+                cor: C.muted, 
+                icone: '⚫', 
+                label: ov.status_recebimento === 'concluido_recusado' 
+                  ? '🚫 Recebimento Encerrado (Recusado)' 
+                  : '✅ Entrada Concluída' 
+              };
 
-            // 🔥 SEGREDO: O FRONTEND CALCULA AS DIVERGÊNCIAS DIRETO DO ARRAY DE ITENS REAIS QUE CHEGOU!
-            const totalDivergentesReal = ov.itens?.filter(i =>
-              i.status_quarentena === 'rejeitado' ||
-              i.status_contagem === 'pendente' ||
-              i.status_contagem === 'em_andamento'
-            ).length || 0;
-
-            let statusConfig = { cor: C.muted, icone: '⚪', label: 'Status Desconhecido' };
-            
-            if (ov.status_recebimento === 'quarentena') {
-              statusConfig = { cor: C.danger, icone: '🔴', label: '🚫 Em Tratamento de Quarentena' };
-            } else if (ov.status_recebimento === 'contagem_pendente') {
-              // ✅ AGORA USAMOS O CÁLCULO REAL FEITO NA LINHA DE CIMA!
-              statusConfig = { cor: C.warn, icone: '🟡', label: `⚠️ Aguardando Recontagem (${totalDivergentesReal} item divergente)` };
-            } else if (ov.status_recebimento === 'aguardando_contagem') {
-              statusConfig = { cor: '#f59e0b', icone: '🟠', label: '📦 Aguardando Contagem' };
-            } else if (ov.status_recebimento === 'parcial') {
-              statusConfig = { cor: C.accent, icone: '🔵', label: '⏳ Aguardando Entrada' };
-            } else if (ov.status_recebimento === 'pendente') {
-              statusConfig = { cor: C.success, icone: '🟢', label: 'Aguardando Recebimento' };
-            }
-
-            return (
-              <div
-                key={ov.id}
-                onClick={() => carregarItensOV(ov.id)}
-                style={{
-                  ...s.card,
-                  padding: '14px 18px',
-                  cursor: 'pointer',
-                  border: `1px solid ${ordemVendaSel?.id === ov.id ? C.accent : statusConfig.cor + '44'}`,
-                  background: ordemVendaSel?.id === ov.id ? C.bg : C.surface
-                }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <div>
+              return (
+                <div
+                  key={ov.id}
+                  onClick={() => carregarItensOV(ov.id)}
+                  style={{
+                    ...s.card,
+                    padding: '14px 18px',
+                    cursor: 'pointer',
+                    border: `1px solid ${C.border}44`,
+                    background: C.bg,
+                    opacity: 0.8 /* Dá um efeito visual de item arquivado */
+                  }}
+                >
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
                       <span style={{ fontSize: 16 }}>{statusConfig.icone}</span>
                       <div>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: C.accent, fontFamily: "'IBM Plex Mono',monospace" }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: C.text, fontFamily: "'IBM Plex Mono',monospace" }}>
                           {ov.numero}
                         </div>
                         <div style={{ fontSize: 12, color: C.muted }}>
@@ -876,47 +968,16 @@ return (
                         </div>
                       </div>
                     </div>
-                  </div>
-                  <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-                    <span style={{
-                      ...s.tag(statusConfig.cor),
-                      fontSize: 10,
-                      background: statusConfig.cor + '22',
-                      color: statusConfig.cor
-                    }}>
+                    <span style={{ ...s.tag(statusConfig.cor), fontSize: 10, background: statusConfig.cor + '11', color: statusConfig.cor }}>
                       {statusConfig.label}
                     </span>
-                    <span style={{ fontSize: 16, color: C.muted }}>→</span>
                   </div>
                 </div>
-              </div>
-            );
-          })}
-        </div>
-      )}
-    </div>
-
-    {/* ─── SEÇÃO: HISTÓRICO (link para consulta) ────────────── */}
-    <div style={{
-      paddingTop: 16,
-      borderTop: `1px solid ${C.border}`,
-      display: 'flex',
-      justifyContent: 'space-between',
-      alignItems: 'center'
-    }}>
-      <div style={{ fontSize: 12, color: C.muted }}>
-        📋 Histórico de Recebimentos Concluídos
-      </div>
-      <button
-        onClick={() => setMostrarHistorico(!mostrarHistorico)}
-        style={{
-          ...s.btn(false),
-          padding: '6px 14px',
-          fontSize: 11
-        }}
-      >
-        {mostrarHistorico ? '⬆️ Ocultar' : '📋 Ver todos →'}
-      </button>
+              );
+            })}
+          </div>
+        );
+      })()}
     </div>
 
     {mostrarHistorico && (
@@ -1575,19 +1636,40 @@ return (
               justifyContent: 'space-between'
             }}>
 
+              {/* 🔥 BOTÃO REFORMULADO COM POP-UP DE VALIDAÇÃO DE NC */}
               <button
                 onClick={async () => {
                   if (!justificativaTratativa.trim()) return alert('⚠️ A justificativa é obrigatória!');
                   try {
-                    await apiService.put(`/estoque/movimentacoes/item/${itemTratativaQuarentena.id}/aprovar-saldo`, {
+                    // Captura a resposta do backend que trará os dados da NC gerada
+                    const response = await apiService.put(`/estoque/movimentacoes/item/${itemTratativaQuarentena.id}/aprovar-saldo`, {
                       justificativa: justificativaTratativa,
                       destino_tratativa: 'nao_conformidade'
                     });
-                    alert('🚫 Não Conformidade registrada com sucesso!');
+
+                    // Fecha o modal de decisão
                     setItemTratativaQuarentena(null);
+                    
+                    // 🔥 Abre o modal de validação de sucesso injetando os dados retornados
+                    setModalSucessoNC({
+                      numero_nc: response.numero_nc || `NC-${new Date().getFullYear()}-0001`,
+                      pedido: ordemVendaSel?.numero || '—',
+                      fornecedor: ordemVendaSel?.fornecedor_nome || '—',
+                      nota_fiscal: itemTratativaQuarentena?.numero_nota_fiscal || '—',
+                      motivo: justificativaTratativa,
+                      quantidade: `${parseFloat(itemTratativaQuarentena?.quantidade_recebida_fisica || 0)} ${itemTratativaQuarentena?.unidade_medida || 'UN'}`,
+                      lote: itemTratativaQuarentena?.lote || '—',
+                      serie: itemTratativaQuarentena?.numero_serie || '—',
+                      validade: itemTratativaQuarentena?.validade 
+                        ? new Date(itemTratativaQuarentena.validade).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) 
+                        : '—'                    });
+
+                    // Atualiza a tela por trás
                     await carregarItensOV(ordemVendaSel.id);
                     await carregarOVs();
-                  } catch (err) { alert(err.message); }
+                  } catch (err) { 
+                    alert('❌ Erro ao registrar Não Conformidade: ' + err.message); 
+                  }
                 }}
                 style={{ 
                   ...s.btn(true, C.danger), 
@@ -1865,6 +1947,67 @@ return (
                 ⚠️ Quarentena
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* 📋 POP-UP DE VALIDAÇÃO: NÃO CONFORMIDADE GERADA COM SUCESSO (PADRÃO SAP) */}
+      {modalSucessoNC && (
+        <div style={{ position: 'fixed', inset: 0, background: '#000000bb', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 600, padding: 20 }}>
+          <div style={{ ...s.card, width: 480, maxWidth: '100%', padding: '22px', border: `1px solid ${C.danger}` }}>
+            
+            {/* Cabeçalho de Sucesso */}
+            <div style={{ fontSize: 16, fontWeight: 700, color: C.danger, marginBottom: 14, display: 'flex', alignItems: 'center', gap: 8 }}>
+              ⚠️ Não Conformidade {modalSucessoNC.numero_nc} Criada com Sucesso!
+            </div>
+
+            <div style={{ fontSize: 13, color: C.text, marginBottom: 16, lineHeight: '1.5' }}>
+              O material foi formalmente recusado pelo controle de qualidade e o saldo foi bloqueado para devolução.
+            </div>
+
+            {/* Ficha Espelho de Auditoria */}
+            <div style={{ 
+              background: C.bg, 
+              padding: '14px', 
+              borderRadius: 8, 
+              border: `1px solid ${C.border}44`,
+              display: 'flex',
+              flexDirection: 'column',
+              gap: 8,
+              fontSize: 12,
+              fontFamily: "'IBM Plex Mono', monospace"
+            }}>
+              <div><span style={{ color: C.muted }}>📦 Pedido/OV:</span> <span style={{ color: C.accent }}>{modalSucessoNC.pedido}</span></div>
+              <div><span style={{ color: C.muted }}>🏢 Fornecedor:</span> <span style={{ color: C.text }}>{modalSucessoNC.fornecedor}</span></div>
+              <div><span style={{ color: C.muted }}>📄 Nota Fiscal:</span> <span style={{ color: C.text }}>{modalSucessoNC.nota_fiscal}</span></div>
+              <div><span style={{ color: C.muted }}>🔢 Qtd Recusada:</span> <span style={{ color: C.danger, fontWeight: 600 }}>{modalSucessoNC.quantidade}</span></div>
+              <div><span style={{ color: C.muted }}>🏷️ Lote / Série:</span> <span style={{ color: C.text }}>{modalSucessoNC.lote} / {modalSucessoNC.serie}</span></div>
+              <div><span style={{ color: C.muted }}>📆 Validade:</span> <span style={{ color: C.text }}>{modalSucessoNC.validade}</span></div>
+              <div style={{ 
+                marginTop: 6, 
+                paddingTop: 8, 
+                borderTop: `1px solid ${C.border}22`,
+                color: C.danger 
+              }}>
+                <span style={{ color: C.muted }}>📝 Motivo da Recusa:</span><br />
+                <span style={{ fontStyle: 'italic' }}>{modalSucessoNC.motivo}</span>
+              </div>
+            </div>
+
+            {/* Botão de Saída Confortável */}
+            <button
+              onClick={() => setModalSucessoNC(null)}
+              style={{ 
+                ...s.btn(true, C.danger), 
+                width: '100%', 
+                padding: '11px', 
+                marginTop: 18, 
+                fontWeight: 600 
+              }}
+            >
+              🔒 Fechar e Concluir Processo
+            </button>
+
           </div>
         </div>
       )}
