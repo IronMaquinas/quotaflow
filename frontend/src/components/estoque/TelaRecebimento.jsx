@@ -909,32 +909,33 @@ return (
       );
     })()}
 
-    {/* ─── SEÇÃO: HISTÓRICO (link para consulta) ────────────── */}
+    {/* ───────────────────────────────────────────────────────────────────── */}
+    {/* 📋 HISTÓRICO DE RECEBIMENTOS CONCLUÍDOS (CORRIGIDO SEM TEXTO DUPLICADO) */}
+    {/* ───────────────────────────────────────────────────────────────────── */}
     <div style={{ marginTop: 32 }}>
       <div style={{ fontSize: 13, fontWeight: 600, color: C.text, marginBottom: 12 }}>
         📁 Histórico de Recebimentos Concluídos
       </div>
 
-      {/* ✅ Filtra o array para capturar o que foi encerrado por não conformidade ou sucesso */}
       {(() => {
         const ordensConcluidas = ordensVendaAbertas.filter(ov => 
           ov.status_recebimento === 'concluido_recusado' || 
           ov.status === 'contagem_concluida'
         );
 
+        // Se realmente não tiver nada, mostra o aviso e encerra o retorno
         if (ordensConcluidas.length === 0) {
           return (
             <div style={{ padding: '20px', textAlign: 'center', color: C.muted, background: C.bg, borderRadius: 8, fontSize: 12 }}>
-              📬 Nenhum recebimento concluído ainda.
+              📭 Nenhum recebimento concluído ainda.
             </div>
           );
         }
 
+        // Se houver itens, renderiza APENAS os cards
         return (
           <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             {ordensConcluidas.map(ov => {
-              
-              // Define o visual cinza/arquivado para o card de histórico
               let statusConfig = { 
                 cor: C.muted, 
                 icone: '⚫', 
@@ -953,7 +954,7 @@ return (
                     cursor: 'pointer',
                     border: `1px solid ${C.border}44`,
                     background: C.bg,
-                    opacity: 0.8 /* Dá um efeito visual de item arquivado */
+                    opacity: 0.8
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -979,21 +980,6 @@ return (
         );
       })()}
     </div>
-
-    {mostrarHistorico && (
-      <div style={{ marginTop: 12 }}>
-        <div style={{
-          padding: '20px',
-          background: C.bg,
-          borderRadius: 8,
-          textAlign: 'center',
-          color: C.muted,
-          fontSize: 13
-        }}>
-          📭 Nenhum recebimento concluído ainda.
-        </div>
-      </div>
-    )}
 
     {/* ─── ITENS DA OV SELECIONADA ───────────────────────────── */}
     {ordemVendaSel && (

@@ -70,29 +70,39 @@ router.post('/interesse', fornecedorMiddleware, async (req, res) => {
 });
 
 // GET /api/fornecedor/interesses - Listar interesses do fornecedor
+// FIX (2026-09, grave): mesmo problema do GET /catalogo — esse JOIN de 3
+// tabelas não bate com nenhum padrão que DB.raw() reconhece, então caía no
+// fallback genérico ("SELECT * FROM interesses_spot" só com o filtro de
+// tenant_id, quando a regex do fallback conseguia achar esse pedaço da
+// query — o filtro de fornecedor_id era sempre ignorado). Confirmado com
+// teste real: fornecedor 1 via a mensagem privada de interesse do
+// fornecedor 2 na mesma demanda, e nenhum dos campos da OS/demanda
+// (componente, urgência etc.) vinha preenchido. Reescrito sem raw().
 router.get('/interesses', fornecedorMiddleware, async (req, res) => {
   try {
     const fornecedorId = req.fornecedorId;
     const fornecedor = await DB.selectOne('fornecedores', { id: fornecedorId });
     const tenantId = fornecedor.tenant_id;
 
-    const interesses = await DB.raw(`
-      SELECT 
-        i.*,
-        d.componente,
-        d.descricao_equipamento,
-        d.quantidade,
-        d.urgencia,
-        d.status as demanda_status,
-        t.nome as empresa_nome
-      FROM interesses_spot i
-      JOIN demandas_spot d ON d.id = i.demanda_id
-      JOIN tenants t ON t.id = d.tenant_id
-      WHERE i.fornecedor_id = $1 AND i.tenant_id = $2
-      ORDER BY i.criado_em DESC
-    `, [fornecedorId, tenantId]);
+    const meusInteresses = await DB.select('interesses_spot', { fornecedor_id: fornecedorId }, tenantId);
 
-    res.json(interesses);
+    const interessesCompletos = await Promise.all(meusInteresses.map(async (i) => {
+      const demanda = await DB.selectOne('demandas_spot', { id: i.demanda_id });
+      const tenant = demanda ? await DB.selectOne('tenants', { id: demanda.tenant_id }) : null;
+      return {
+        ...i,
+        componente: demanda?.componente ?? null,
+        descricao_equipamento: demanda?.descricao_equipamento ?? null,
+        quantidade: demanda?.quantidade ?? null,
+        urgencia: demanda?.urgencia ?? null,
+        demanda_status: demanda?.status ?? null,
+        empresa_nome: tenant?.nome ?? null
+      };
+    }));
+
+    interessesCompletos.sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em));
+
+    res.json(interessesCompletos);
   } catch (err) {
     console.error('❌ Erro ao listar interesses:', err.message);
     res.status(500).json({ erro: err.message });
@@ -100,19 +110,42 @@ router.get('/interesses', fornecedorMiddleware, async (req, res) => {
 });
 
 // GET /api/fornecedor/catalogo - Listar produtos do fornecedor
+// FIX (2026-09, grave): esse JOIN não está entre os poucos padrões de SQL
+// que DB.raw() reconhece de verdade, então caía no fallback genérico —
+// que faz "SELECT * FROM <primeira tabela do FROM>" IGNORANDO o JOIN, as
+// colunas pedidas E o WHERE fi.fornecedor_id = $1. Na prática, todo
+// fornecedor autenticado via essa rota via o catálogo de preços de TODOS
+// os fornecedores da base, não só o próprio — vazamento de dado
+// confidencial (confirmado com teste real: fornecedor 1 via o preço do
+// fornecedor 2). Reescrito sem raw(): busca só os itens do próprio
+// fornecedor via DB.select (filtro de verdade), depois busca os dados do
+// catálogo relacionado e junta em JS.
 router.get('/catalogo', fornecedorMiddleware, async (req, res) => {
   try {
     const fornecedorId = req.fornecedorId;
-    const itens = await DB.raw(`
-      SELECT 
-        fi.id, fi.preco_unitario, fi.estoque_status, fi.data_tabela,
-        ci.id as item_catalogo_id, ci.nome, ci.codigo, ci.categoria
-      FROM fornecedor_itens fi
-      JOIN catalogo_itens ci ON ci.id = fi.item_catalogo_id
-      WHERE fi.fornecedor_id = $1 AND fi.ativo = true
-      ORDER BY ci.nome ASC
-    `, [fornecedorId]);
-    res.json(itens);
+
+    const meusItens = await DB.select('fornecedor_itens', {
+      fornecedor_id: fornecedorId,
+      ativo: true
+    });
+
+    const itensComCatalogo = await Promise.all(meusItens.map(async (fi) => {
+      const ci = await DB.selectOne('catalogo_itens', { id: fi.item_catalogo_id });
+      return {
+        id: fi.id,
+        preco_unitario: fi.preco_unitario,
+        estoque_status: fi.estoque_status,
+        data_tabela: fi.data_tabela,
+        item_catalogo_id: ci?.id ?? fi.item_catalogo_id,
+        nome: ci?.nome ?? null,
+        codigo: ci?.codigo ?? null,
+        categoria: ci?.categoria ?? null
+      };
+    }));
+
+    itensComCatalogo.sort((a, b) => (a.nome || '').localeCompare(b.nome || ''));
+
+    res.json(itensComCatalogo);
   } catch (err) {
     console.error('❌ Erro ao listar catálogo:', err.message);
     res.status(500).json({ erro: err.message });
@@ -120,6 +153,15 @@ router.get('/catalogo', fornecedorMiddleware, async (req, res) => {
 });
 
 // POST /api/fornecedor/catalogo - Adicionar produto ao catálogo
+// FIX (2026-09): fornecedor_itens.tenant_id é NOT NULL, mas o insert nunca
+// preenchia esse campo (DB.insert só recebia 2 argumentos) — toda chamada
+// quebrava com "null value in column tenant_id violates not-null
+// constraint". O tenant_id certo aqui não é o do fornecedor (fornecedores.
+// tenant_id é quem cadastrou esse fornecedor como vendor) — é o tenant DONO
+// do item de catálogo (catalogo_itens.tenant_id), já que o preço que o
+// fornecedor está cadastrando é especificamente pro catálogo daquele
+// comprador. Também passou a validar que o item de catálogo existe antes de
+// tentar o insert, em vez de deixar a FK estourar um erro cru.
 router.post('/catalogo', fornecedorMiddleware, async (req, res) => {
   try {
     const fornecedorId = req.fornecedorId;
@@ -127,6 +169,11 @@ router.post('/catalogo', fornecedorMiddleware, async (req, res) => {
 
     if (!item_catalogo_id || !preco_unitario) {
       return res.status(400).json({ erro: 'item_catalogo_id e preco_unitario são obrigatórios' });
+    }
+
+    const itemCatalogo = await DB.selectOne('catalogo_itens', { id: item_catalogo_id });
+    if (!itemCatalogo) {
+      return res.status(404).json({ erro: 'Item de catálogo não encontrado' });
     }
 
     // Verificar se já existe
@@ -140,6 +187,7 @@ router.post('/catalogo', fornecedorMiddleware, async (req, res) => {
     }
 
     const novo = await DB.insert('fornecedor_itens', {
+      tenant_id: itemCatalogo.tenant_id,
       fornecedor_id: fornecedorId,
       item_catalogo_id,
       preco_unitario: parseFloat(preco_unitario),
@@ -156,12 +204,30 @@ router.post('/catalogo', fornecedorMiddleware, async (req, res) => {
 });
 
 // DELETE /api/fornecedor/catalogo/:id - Remover produto do catálogo
+// FIX (2026-09): DB.update só sabe filtrar por tenant_id (um valor único,
+// vira "AND tenant_id = $N"), mas esta rota passava um OBJETO
+// { fornecedor_id: fornecedorId } nesse parâmetro — quebrava com erro de
+// tipo do Postgres ("invalid input syntax for type integer"), então a
+// exclusão nunca funcionou. Pior: como o erro só estourava DEPOIS da
+// tentativa, não existia nenhuma verificação real de que o item pertence a
+// este fornecedor — se não fosse o erro de tipo, qualquer fornecedor
+// autenticado poderia desativar item de catálogo de outro fornecedor só
+// adivinhando o id. Agora busca o item primeiro e confirma o dono antes de
+// desativar.
 router.delete('/catalogo/:id', fornecedorMiddleware, async (req, res) => {
   try {
     const fornecedorId = req.fornecedorId;
     const { id } = req.params;
 
-    await DB.update('fornecedor_itens', id, { ativo: false }, { fornecedor_id: fornecedorId });
+    const item = await DB.selectOne('fornecedor_itens', { id });
+    if (!item) {
+      return res.status(404).json({ erro: 'Item não encontrado' });
+    }
+    if (item.fornecedor_id !== fornecedorId) {
+      return res.status(403).json({ erro: 'Este item não pertence ao seu catálogo' });
+    }
+
+    await DB.update('fornecedor_itens', id, { ativo: false }, item.tenant_id);
     res.json({ ok: true });
   } catch (err) {
     console.error('❌ Erro ao remover produto:', err.message);

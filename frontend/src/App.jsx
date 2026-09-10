@@ -160,9 +160,7 @@ export default function App() {
     const buscarTotalPendencias = async () => {
     try {
       const res = await apiService.get('/estoque/solicitacoes'); 
-      
-      console.log('📦 O que veio em res:', res); // Vai mostrar o array com os 4 itens
-      
+         
       const qtd = Array.isArray(res) ? res.length : 0;
       setTotalPendencias(qtd || 0);
     } catch (error) {

@@ -57,15 +57,35 @@ export default function TelaCotacoesNovaComAbas({ fmtBRL, fmtD, C, s }) {
   const [buscaFornecedorManual, setBuscaFornecedorManual] = useState("");
   const [buscaFornecedor, setBuscaFornecedor] = useState({});
   const [editandoId, setEditandoId] = useState(null);
-  const [cotacaoEditando, setCotacaoEditando] = useState(null); 
+  const [cotacaoEditando, setCotacaoEditando] = useState(null);
+
+  // ─── Fase D: busca OS e RM juntos ───────────────────────────
+  // GET /cotacoes/chamados só filtra por UM tipo_documento por vez (padrão
+  // 'os'). Esta tela precisa dos dois ao mesmo tempo: RM pra alimentar o
+  // dropdown de nova cotação (a partir de agora, só RM pode virar RC — a
+  // OS primeiro precisa virar RM na tela "Gerar Requisição de Material"),
+  // e OS pra continuar resolvendo corretamente o número/descrição de
+  // cotações que já existem hoje, criadas direto contra o chamado_id de
+  // uma OS (antes de existir essa separação OS/RM). Sem buscar os dois,
+  // toda cotação antiga cairia no fallback "Chamado {id}" só porque o
+  // chamado de origem dela deixou de aparecer na lista.
+  const carregarChamadosParaCotacao = useCallback(async () => {
+    try {
+      const [osList, rmList] = await Promise.all([
+        apiService.get("/cotacoes/chamados?tipo_documento=os"),
+        apiService.get("/cotacoes/chamados?tipo_documento=requisicao_material"),
+      ]);
+      setChamados([...(osList || []), ...(rmList || [])]);
+    } catch (err) {
+      console.error("❌ Erro ao carregar chamados/RM:", err);
+      setChamados([]);
+    }
+  }, [setChamados]);
 
   // Carregar cotações ao montar
 useEffect(() => {
   listarCotacoes();
-  // 🔥 Buscar os dados diretamente, sem depender do uso do hook
-  apiService.get('/cotacoes/chamados').then(data => {
-    setChamados(data || []);
-  });
+  carregarChamadosParaCotacao();
 }, []);
 
   // ─── NOVO: TOGGLE FORNECEDOR ───────────────────────────────
@@ -122,11 +142,7 @@ useEffect(() => {
 
   // ─── APERTAR BOTÃO NOVA COTAÇÃO ────────────────────────────
   const handleAbrirNovaJanelaModal = async (tipoAba) => {
-    // 🔥 Buscar os dados diretamente da API
-    apiService.get('/cotacoes/chamados').then(data => {
-      setChamados(data || []);
-    });
-    
+    await carregarChamadosParaCotacao();
     await listarCotacoes();
 
     if (tipoAba === "manual") {
@@ -447,11 +463,16 @@ const handleAbrirCotacao = async (cotacao) => {
   if (modal === "nova") {
       const chamadosSemCotacao = chamados.filter((ch) => {
         // 🔥 Se estiver editando (cotação em rascunho), traga o chamado vinculado
+        // — vale pra cotação antiga (contra OS) ou nova (contra RM).
         if (editandoId && String(cotacaoEditando?.chamado_id) === String(ch.id)) return true;
-        
+
+        // Fase D: a partir de agora só RM pode virar cotação/RC — a OS
+        // primeiro precisa virar RM na tela "Gerar Requisição de Material".
+        if ((ch.tipo_documento || "os") !== "requisicao_material") return false;
+
         // 🔥 Se não estiver editando, traga apenas os chamados sem cotação
         return !cotacoes.some((c) => String(c.chamado_id) === String(ch.id));
-      });   
+      });
 
     return (
       <div
@@ -682,14 +703,14 @@ const handleAbrirCotacao = async (cotacao) => {
                   />
                 </div>
 
-                {/* SELECIONAR FILIAL */}
+                {/* SELECIONAR FILIAL
                 <div style={{ marginBottom: 16 }}>
                   <label style={s.label}>FILIAL DE ENTREGA</label>
                   <select value={form.filial_id} onChange={(e) => setForm({ ...form, filial_id: e.target.value })} style={{ ...s.input, appearance: 'none' }}>
                     <option value="">— Matriz —</option>
                     {filiais.map(f => <option key={f.id} value={f.id}>{f.nome_filial} ({f.cnpj_filial})</option>)}
                   </select>
-                </div>
+                </div>  */}
 
                 {chamadoAutomatico && agrupado.length > 0 && (
                   <div style={{ marginBottom: 18 }}>

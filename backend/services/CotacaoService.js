@@ -976,9 +976,10 @@ class CotacaoService {
     }
 
     // 2. Buscar itens do chamado
-    const itens = await this.db.select('chamado_itens', { chamado_id: chamadoId }, tenantId);
+    const todosOsItens = await this.db.select('chamado_itens', { chamado_id: chamadoId }, tenantId);
+    const itens = (todosOsItens || []).filter(item => item.tipo !== 'servico');
     if (!itens || itens.length === 0) {
-      throw new Error(`Chamado ${chamadoId} não tem itens`);
+      throw new Error(`Chamado ${chamadoId} não tem itens de material para cotação`);
     }
 
     // 3. Buscar catálogo para obter informações de categoria

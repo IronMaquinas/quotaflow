@@ -77,23 +77,29 @@ async function gerarNumeroRecebimento(tenantId) {
 async function gerarNumeroNC(tenantId) {
   const ano = new Date().getFullYear();
   const prefix = `NC-${ano}-`;
-  
-  const result = await DB.raw(`
-    SELECT numero_nc FROM nao_conformidades
-    WHERE tenant_id = $1 AND numero_nc LIKE $2
-    ORDER BY numero_nc DESC
-    LIMIT 1
-  `, [tenantId, `${prefix}%`]).catch(() => []); // catch preventivo caso a tabela não exista ainda
+
+  // FIX (2026-09): a versão anterior usava DB.raw() com LIKE/ORDER BY/LIMIT —
+  // esse padrão de SQL não está entre os poucos que db.js reconhece de fato,
+  // então caía no fallback genérico (sem filtro/ordenação reais) e a
+  // numeração nunca avançava direito. Trocado para buscar as NCs do tenant
+  // via DB.select (sempre confiável) e calcular a maior sequência em JS.
+  const todasNC = await DB.select('nao_conformidades', { tenant_id: tenantId }, tenantId).catch(() => []);
 
   let seq = 1;
-  if (result.length > 0 && result[0].numero_nc) {
-    const match = result[0].numero_nc.match(/(\d+)$/);
-    if (match) seq = parseInt(match[1]) + 1;
+  const numerosDoAno = (todasNC || [])
+    .map(nc => nc.numero_nc)
+    .filter(n => n && n.startsWith(prefix))
+    .map(n => {
+      const match = n.match(/(\d+)$/);
+      return match ? parseInt(match[1]) : 0;
+    });
+
+  if (numerosDoAno.length > 0) {
+    seq = Math.max(...numerosDoAno) + 1;
   }
 
   return `${prefix}${String(seq).padStart(4, '0')}`;
 }
-
 
 // ─── LISTAR MOVIMENTAÇÕES ──────────────────────────────────
 router.get('/', tenantMiddleware, async (req, res) => {
@@ -294,22 +300,27 @@ router.post('/recebimento', tenantMiddleware, async (req, res) => {
         }
 
         // Verificar se quantidade recebida não excede o pendente
-        const quantidadePendente = (itemOV.quantidade || 0) - (itemOV.quantidade_recebida || 0);
+        const quantidadePendente = (parseFloat(itemOV.quantidade) || 0) - (parseFloat(itemOV.quantidade_recebida) || 0);
         if (item.quantidade > quantidadePendente) {
           return res.status(400).json({ erro: `Quantidade recebida excede o pendente para o item ${itemOV.nome_item}` });
         }
 
+        // FIX (2026-09): saldo_atual e quantidade_recebida são colunas
+        // `numeric` no Postgres — o driver retorna esse tipo como STRING em
+        // JS, não number. Sem parseFloat, "+" virava concatenação de texto
+        // (ex.: "41" + 4 = "414" em vez de 45), inflando o saldo de forma
+        // silenciosa e corrompendo também a comparação de status abaixo.
         // Atualizar quantidade recebida no item da OV
-        const novaQuantidadeRecebida = (itemOV.quantidade_recebida || 0) + item.quantidade;
+        const novaQuantidadeRecebida = (parseFloat(itemOV.quantidade_recebida) || 0) + parseFloat(item.quantidade);
         await DB.update('ordem_venda_itens', itemOV.id, {
           quantidade_recebida: novaQuantidadeRecebida,
-          status_recebimento: novaQuantidadeRecebida >= itemOV.quantidade ? 'recebido' : 'parcial'
+          status_recebimento: novaQuantidadeRecebida >= parseFloat(itemOV.quantidade) ? 'recebido' : 'parcial'
         }, tenantId);
 
         // Buscar item de consumo (para atualizar saldo)
-        const itemConsumo = await DB.selectOne('itens_consumo', { id: itemOV.item_catalogo_id }, tenantId);
+        const itemConsumo = await DB.selectOne('itens_consumo', { catalogo_item_id: itemOV.item_catalogo_id, tenant_id: tenantId }, tenantId);
         if (itemConsumo) {
-          const novoSaldo = (itemConsumo.saldo_atual || 0) + item.quantidade;
+          const novoSaldo = (parseFloat(itemConsumo.saldo_atual) || 0) + parseFloat(item.quantidade);
           await DB.update('itens_consumo', itemConsumo.id, {
             saldo_atual: novoSaldo,
             atualizado_em: new Date()
@@ -319,7 +330,7 @@ router.post('/recebimento', tenantMiddleware, async (req, res) => {
         // Registrar movimentação de entrada (vinculada à OV)
         await DB.insert('movimentacoes_estoque', {
           tenant_id: tenantId,
-          item_consumo_id: itemOV.item_catalogo_id || null,
+          item_consumo_id: itemConsumo?.id || null,
           tipo: 'entrada',
           quantidade: item.quantidade,
           responsavel_id: req.userId,
@@ -415,7 +426,7 @@ router.get('/ordem-venda/:ovId', tenantMiddleware, async (req, res) => {
 
     // 3. Buscar itens de consumo (para saber o SKU e saldo)
     const itensCompletos = await Promise.all(itens.map(async (item) => {
-      const itemConsumo = await DB.selectOne('itens_consumo', { id: item.item_catalogo_id }, tenantId);
+      const itemConsumo = await DB.selectOne('itens_consumo', { catalogo_item_id: item.item_catalogo_id, tenant_id: tenantId }, tenantId);
       return {
         ...item,
         item_nome: itemConsumo?.nome || item.nome_item || 'Item sem nome',
@@ -686,81 +697,132 @@ router.put('/item/:itemId/fisica', tenantMiddleware, async (req, res) => {
 });
 
 // POST /api/estoque/movimentacoes/entrada
+// FIX (2026-09): reescrita completa. Antes tinha um ReferenceError (usava um
+// `itemId` que nunca era declarado — quebrava sempre) e, mesmo corrigindo só
+// isso, só cobria entrada vinculada a uma OV existente, duplicando o que
+// MIRO/MIGO/aprovar-saldo já fazem. Agora suporta dois modos: com OV
+// (item_id) e sem OV (item_consumo_id) — este último pra compra emergencial
+// fora do processo (cartão, dinheiro etc.), com rastreabilidade: toda
+// entrada sem OV grava ordem_venda_numero: 'Compra sem OV', pra permitir no
+// futuro medir que % das compras da empresa não passam pelo fluxo normal.
 router.post('/entrada', tenantMiddleware, async (req, res) => {
   try {
     const tenantId = req.tenantId;
-    const { ordem_venda_id, item_consumo_id, quantidade, numero_nota_fiscal, observacao } = req.body;
+    const {
+      item_id,                 // modo COM OV: id de ordem_venda_itens
+      item_consumo_id,         // modo SEM OV: id direto de itens_consumo
+      fornecedor_id,           // opcional, se o fornecedor já está cadastrado
+      fornecedor_nome_manual,  // opcional, texto livre p/ fornecedor avulso
+      quantidade,
+      numero_nota_fiscal,
+      observacao
+    } = req.body;
 
-    // 1. Buscar item da OV
-    const item = await DB.selectOne('ordem_venda_itens', { id: itemId }, tenantId);
-    if (!item) {
-      return res.status(404).json({ erro: 'Item da OV não encontrado' });
+    if (!quantidade || quantidade <= 0) {
+      return res.status(400).json({ erro: 'Quantidade inválida' });
     }
 
-    // 2. Buscar OV
-    const ov = await DB.selectOne('ordens_venda', { id: item.ordem_venda_id }, tenantId);
-    if (!ov) {
-      return res.status(404).json({ erro: 'OV não encontrada' });
+    if (item_id) {
+      // ─── MODO COM OV: mantém o 3-way match contra o item da OV ───
+      const item = await DB.selectOne('ordem_venda_itens', { id: item_id, tenant_id: tenantId }, tenantId);
+      if (!item) {
+        return res.status(404).json({ erro: 'Item da OV não encontrado' });
+      }
+
+      const ov = await DB.selectOne('ordens_venda', { id: item.ordem_venda_id, tenant_id: tenantId }, tenantId);
+      if (!ov) {
+        return res.status(404).json({ erro: 'OV não encontrada' });
+      }
+
+      const itemConsumo = await DB.selectOne('itens_consumo', { catalogo_item_id: item.item_catalogo_id, tenant_id: tenantId }, tenantId);
+      if (!itemConsumo) {
+        return res.status(404).json({ erro: 'Item de consumo não encontrado' });
+      }
+
+      // 3-WAY MATCH VALIDAÇÃO
+      const valorNF = parseFloat(item.valor_nf || 0);
+      const valorOV = parseFloat(item.valor_unitario * item.quantidade || 0);
+      const quantidadeNF = parseInt(item.numero_nota_fiscal ? item.quantidade : 0);
+      const quantidadeFisica = parseInt(item.quantidade_recebida_fisica || 0);
+
+      const divergencias = [];
+      if (valorNF !== valorOV) divergencias.push('Valor da NF diferente da OV');
+      if (quantidadeNF !== quantidadeFisica) divergencias.push('Quantidade da NF diferente da física');
+
+      if (divergencias.length > 0) {
+        return res.status(400).json({
+          erro: 'Divergência encontrada no 3-Way Match',
+          divergencias
+        });
+      }
+
+      const novoSaldo = (parseFloat(itemConsumo.saldo_atual) || 0) + parseFloat(quantidade);
+      await DB.update('itens_consumo', itemConsumo.id, {
+        saldo_atual: novoSaldo,
+        atualizado_em: new Date()
+      }, tenantId);
+
+      await DB.insert('movimentacoes_estoque', {
+        tenant_id: tenantId,
+        item_consumo_id: itemConsumo.id,
+        tipo: 'entrada',
+        quantidade: quantidade,
+        responsavel_id: req.userId,
+        observacao: observacao || `Recebimento da OV ${ov.numero}`,
+        fornecedor_id: fornecedor_id || ov.fornecedor_id || null,
+        numero_nota_fiscal: numero_nota_fiscal || null,
+        ordem_venda_id: ov.id,
+        ordem_venda_numero: ov.numero,
+        criado_em: new Date()
+      }, tenantId);
+
+      await DB.update('ordem_venda_itens', item.id, {
+        quantidade_recebida: parseInt(item.quantidade_recebida || 0) + parseInt(quantidade),
+        atualizado_em: new Date()
+      }, tenantId);
+
+      const itensOV = await DB.select('ordem_venda_itens', { ordem_venda_id: ov.id }, tenantId);
+      const todosRecebidos = itensOV.every(i => i.quantidade_recebida >= i.quantidade);
+      await DB.update('ordens_venda', ov.id, {
+        status: todosRecebidos ? 'recebido' : 'parcial_recebido'
+      }, tenantId);
+
+      return res.json({ ok: true, mensagem: '3-Way Match validado e entrada no estoque realizada!' });
     }
 
-    // 3. Buscar item de consumo
-    const itemConsumo = await DB.selectOne('itens_consumo', { id: item.item_catalogo_id }, tenantId);
+    // ─── MODO SEM OV: entrada manual / compra emergencial ───
+    if (!item_consumo_id) {
+      return res.status(400).json({ erro: 'Informe item_id (com OV) ou item_consumo_id (sem OV)' });
+    }
+
+    const itemConsumo = await DB.selectOne('itens_consumo', { id: item_consumo_id, tenant_id: tenantId }, tenantId);
     if (!itemConsumo) {
       return res.status(404).json({ erro: 'Item de consumo não encontrado' });
     }
 
-    // 4. 3-WAY MATCH VALIDAÇÃO
-    const valorNF = parseFloat(item.valor_nf || 0);
-    const valorOV = parseFloat(item.valor_unitario * item.quantidade || 0);
-    const quantidadeNF = parseInt(item.numero_nota_fiscal ? item.quantidade : 0);
-    const quantidadeFisica = parseInt(item.quantidade_recebida_fisica || 0);
-
-    // Divergências
-    const divergencias = [];
-    if (valorNF !== valorOV) divergencias.push('Valor da NF diferente da OV');
-    if (quantidadeNF !== quantidadeFisica) divergencias.push('Quantidade da NF diferente da física');
-
-    // 5. Se houver divergência, bloquear entrada
-    if (divergencias.length > 0) {
-      return res.status(400).json({
-        erro: 'Divergência encontrada no 3-Way Match',
-        divergencias
-      });
-    }
-
-    // 6. Entrada no estoque
-    const novoSaldo = (itemConsumo.saldo_atual || 0) + quantidade;
+    const novoSaldo = (parseFloat(itemConsumo.saldo_atual) || 0) + parseFloat(quantidade);
     await DB.update('itens_consumo', itemConsumo.id, {
       saldo_atual: novoSaldo,
       atualizado_em: new Date()
     }, tenantId);
 
-    // 7. Registrar movimentação
+    const observacaoFornecedor = fornecedor_nome_manual ? ` - Fornecedor: ${fornecedor_nome_manual}` : '';
+
     await DB.insert('movimentacoes_estoque', {
       tenant_id: tenantId,
       item_consumo_id: itemConsumo.id,
       tipo: 'entrada',
       quantidade: quantidade,
       responsavel_id: req.userId,
-      observacao: `Recebimento da OV ${ov.numero}`,
+      observacao: `Entrada manual sem OV${observacaoFornecedor}${observacao ? ' - ' + observacao : ''}`,
+      fornecedor_id: fornecedor_id || null,
       numero_nota_fiscal: numero_nota_fiscal || null,
+      ordem_venda_id: null,
+      ordem_venda_numero: 'Compra sem OV',
       criado_em: new Date()
     }, tenantId);
 
-    // 8. Atualizar quantidade recebida
-    await DB.update('ordem_venda_itens', item.id, {
-      quantidade_recebida: parseInt(item.quantidade_recebida || 0) + quantidade,
-      atualizado_em: new Date()
-    }, tenantId);
-
-    // 9. Verificar se todos os itens foram recebidos
-    const itensOV = await DB.select('ordem_venda_itens', { ordem_venda_id: ov.id }, tenantId);
-    const todosRecebidos = itensOV.every(i => i.quantidade_recebida >= i.quantidade);
-    await DB.update('ordens_venda', ov.id, {
-      status: todosRecebidos ? 'recebido' : 'parcial_recebido'
-    }, tenantId);
-
-    return res.json({ ok: true, mensagem: '3-Way Match validado e entrada no estoque realizada!' });
+    return res.json({ ok: true, mensagem: 'Entrada manual registrada com sucesso (sem OV).' });
   } catch (err) {
     console.error('❌ Erro ao entrar no estoque:', err.message);
     return res.status(500).json({ erro: err.message });
@@ -995,6 +1057,7 @@ router.post('/contagem-cega', tenantMiddleware, async (req, res) => {
       migo_em: new Date()
     }, tenantId);
 
+    /* O SALDO NÃO SERÁ MAIS APROVADO APÓS A 2a TENTATIVA
     // 7. Se aprovado e tentativa >= 2, atualizar saldo
     if (status === 'aprovado' && tentativaReal >= 2) {
       const itemConsumo = await DB.selectOne('itens_consumo', { 
@@ -1010,6 +1073,7 @@ router.post('/contagem-cega', tenantMiddleware, async (req, res) => {
         }, tenantId);
       }
     }
+    */
 
     // 8. Buscar histórico completo para retornar
     const historicoCompleto = await DB.select('historico_contagens_cegas', { 
@@ -1094,7 +1158,7 @@ router.get('/item/:itemId/historico-contagens', tenantMiddleware, async (req, re
     let itemConsumo = null;
     if (item?.item_catalogo_id) {
       itemConsumo = await DB.selectOne('itens_consumo', { 
-        id: item.item_catalogo_id, 
+        catalogo_item_id: item.item_catalogo_id, 
         tenant_id: tenantId 
       }, tenantId);
     }
@@ -1137,11 +1201,17 @@ router.get('/contagens-pendentes', tenantMiddleware, async (req, res) => {
   try {
     const tenantId = req.tenantId;
 
+    // FIX (2026-09): DB.select faz `coluna = valor` — passar um array como
+    // valor nunca bate com uma coluna escalar (equivale a comparar
+    // status_contagem = ARRAY['pendente','em_andamento'], que nunca é
+    // verdadeiro), então essa rota nunca listava nada, mesmo com itens
+    // pendentes de verdade. Busca tudo do tenant e filtra em JS.
     // 1. Buscar todos os itens pendentes
-    const itensPendentes = await DB.select('ordem_venda_itens', {
-      tenant_id: tenantId,
-      status_contagem: ['pendente', 'em_andamento']
+    const statusContagemDesejados = ['pendente', 'em_andamento'];
+    const todosItensDoTenant = await DB.select('ordem_venda_itens', {
+      tenant_id: tenantId
     }, tenantId);
+    const itensPendentes = todosItensDoTenant.filter(i => statusContagemDesejados.includes(i.status_contagem));
 
     // 2. Filtrar os que não estão em quarentena
     const itensFiltrados = itensPendentes.filter(item => 
@@ -1152,7 +1222,7 @@ router.get('/contagens-pendentes', tenantMiddleware, async (req, res) => {
     const itensCompletos = await Promise.all(itensFiltrados.map(async (item) => {
       // Buscar item de consumo
       const itemConsumo = await DB.selectOne('itens_consumo', { 
-        id: item.item_catalogo_id, 
+        catalogo_item_id: item.item_catalogo_id, 
         tenant_id: tenantId 
       }, tenantId);
 
@@ -1207,11 +1277,15 @@ router.get('/ordens-em-processo', tenantMiddleware, async (req, res) => {
   try {
     const tenantId = req.tenantId;
 
+    // FIX (2026-09): mesmo problema de /contagens-pendentes — array como
+    // valor de filtro nunca bate numa coluna escalar. Busca todas as OVs do
+    // tenant e filtra os status desejados em JS.
     // 1. Buscar todas as OVs não concluídas
-    const ordens = await DB.select('ordens_venda', {
-      tenant_id: tenantId,
-      status_recebimento: ['pendente', 'parcial', 'aguardando_contagem', 'contagem_pendente', 'quarentena']
+    const statusEmProcesso = ['pendente', 'parcial', 'aguardando_contagem', 'contagem_pendente', 'quarentena'];
+    const todasOrdensDoTenant = await DB.select('ordens_venda', {
+      tenant_id: tenantId
     }, tenantId);
+    const ordens = todasOrdensDoTenant.filter(ov => statusEmProcesso.includes(ov.status_recebimento));
 
     // 2. Buscar itens de cada OV
     const ordensCompletas = await Promise.all(ordens.map(async (ov) => {
@@ -1225,7 +1299,7 @@ router.get('/ordens-em-processo', tenantMiddleware, async (req, res) => {
       // Buscar nomes dos itens
       const itensComNomes = await Promise.all(itens.map(async (item) => {
         const itemConsumo = await DB.selectOne('itens_consumo', { 
-          id: item.item_catalogo_id, 
+          catalogo_item_id: item.item_catalogo_id, 
           tenant_id: tenantId 
         }, tenantId);
         
@@ -1298,7 +1372,7 @@ router.get('/ordem-venda/:ovId', tenantMiddleware, async (req, res) => {
 
     // Buscar dados do catálogo para cada item
     const itensCompletos = await Promise.all(itens.map(async (item) => {
-      const itemConsumo = await DB.selectOne('itens_consumo', { id: item.item_catalogo_id }, tenantId);
+      const itemConsumo = await DB.selectOne('itens_consumo', { catalogo_item_id: item.item_catalogo_id, tenant_id: tenantId }, tenantId);
       return {
         ...item,
         item_nome: itemConsumo?.nome || item.nome_item || 'Item sem nome',
@@ -1414,6 +1488,35 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
 
       const justificativaCompleta = `[${numeroNC}] - Recusa definitiva por: ${justificativa}`;
 
+      // FIX (2026-09): registra de fato o Registro de Não Conformidade na
+      // tabela nao_conformidades — antes disso nunca acontecia em lugar
+      // nenhum do arquivo, então gerarNumeroNC() nunca via NC anterior
+      // nenhuma e repetia sempre NC-2026-0001. Envolvido em try/catch
+      // próprio pra não travar a recusa do item (já decidida) se algo
+      // aqui falhar.
+      try {
+        const ovParaNC = await DB.selectOne('ordens_venda', { id: item.ordem_venda_id, tenant_id: tenantId }, tenantId);
+        const fornecedorParaNC = ovParaNC?.fornecedor_id
+          ? await DB.selectOne('fornecedores', { id: ovParaNC.fornecedor_id, tenant_id: tenantId }, tenantId)
+          : null;
+
+        await DB.insert('nao_conformidades', {
+          tenant_id: tenantId,
+          numero_nc: numeroNC,
+          ordem_venda_id: item.ordem_venda_id,
+          numero_pedido: ovParaNC?.numero || null,
+          fornecedor_nome: fornecedorParaNC?.nome || null,
+          numero_nota_fiscal: item.numero_nota_fiscal || null,
+          inspetor_id: req.userId,
+          motivo_recusa: justificativa,
+          quantidade: parseFloat(item.quantidade_recebida_fisica || 0),
+          unidade_medida: item.unidade_medida || 'UN',
+          criado_em: new Date()
+        }, tenantId);
+      } catch (e) {
+        console.error('❌ Erro ao registrar Não Conformidade:', e.message);
+      }
+
       // ✅ ATUALIZAÇÃO CORRIGIDA: Gravando nas colunas certas do seu Supabase!
       await DB.update('ordem_venda_itens', itemId, {
         status_quarentena: 'nao_conforme',
@@ -1431,6 +1534,28 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
       await DB.update('ordens_venda', item.ordem_venda_id, {
         status_recebimento: novoStatusOV,
         atualizado_em: new Date()
+      }, tenantId);
+
+      // FIX (2026-09): rastreabilidade de bloqueio — registra no módulo de
+      // estoque que uma quantidade foi recusada/bloqueada nesta OV, sem
+      // alterar saldo_atual (o material nunca chegou a entrar no disponível)
+      // e sem tocar em itens_consumo.localizacao (esse campo representa o
+      // item inteiro — todo o saldo já existente daquele SKU no
+      // almoxarifado — não só este recebimento específico).
+      const itemConsumoBloqueado = await DB.selectOne('itens_consumo', {
+        catalogo_item_id: item.item_catalogo_id,
+        tenant_id: tenantId
+      }, tenantId);
+
+      await DB.insert('movimentacoes_estoque', {
+        tenant_id: tenantId,
+        item_consumo_id: itemConsumoBloqueado?.id || null,
+        tipo: 'bloqueio',
+        quantidade: parseFloat(item.quantidade_recebida_fisica || 0),
+        responsavel_id: req.userId,
+        observacao: justificativaCompleta,
+        ordem_venda_id: item.ordem_venda_id,
+        criado_em: new Date()
       }, tenantId);
 
       return res.json({
@@ -1453,8 +1578,8 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
     }, tenantId);
 
     // Lançar o saldo físico no catálogo apontando para a doca de RECEBIMENTO
-    const itemConsumo = await DB.selectOne('itens_consumo', { id: item.item_catalogo_id }, tenantId);
-    
+    const itemConsumo = await DB.selectOne('itens_consumo', { catalogo_item_id: item.item_catalogo_id, tenant_id: tenantId }, tenantId);
+
     if (itemConsumo) {
       const novoSaldo = (parseFloat(itemConsumo.saldo_atual) || 0) + parseFloat(item.quantidade_recebida_fisica || 0);
       

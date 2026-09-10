@@ -9,9 +9,9 @@ router.get('/', tenantMiddleware, async (req, res) => {
   try {
     const tenantId = req.tenantId;
     const origem_os_id = req.query.origem_os_id;
-    
+
     // Se tiver origem_os_id, filtra por ele
-    const solicitacoes = origem_os_id 
+    const solicitacoes = origem_os_id
       ? await DB.select('solicitacoes_retirada', { tenant_id: tenantId, origem_os_id: origem_os_id }, tenantId)
       : await DB.select('solicitacoes_retirada', { tenant_id: tenantId }, tenantId);
 
@@ -20,7 +20,7 @@ router.get('/', tenantMiddleware, async (req, res) => {
     let itensRetirada = [];
     if (solicitacaoIds.length > 0) {
       itensRetirada = await DB.raw(`
-        SELECT * FROM solicitacao_retirada_itens 
+        SELECT * FROM solicitacao_retirada_itens
         WHERE tenant_id = $1 AND solicitacao_retirada_id = ANY($2)
         ORDER BY id
       `, [tenantId, solicitacaoIds]);
@@ -71,20 +71,20 @@ router.put('/:id/aprovar', tenantMiddleware, async (req, res) => {
     const { observacao } = req.body;
 
     // 1. Buscar solicitação
-    const solicitacao = await DB.selectOne('solicitacoes_retirada', { 
-      id, 
+    const solicitacao = await DB.selectOne('solicitacoes_retirada', {
+      id,
       tenant_id: tenantId,
       status: 'pendente'
     }, tenantId);
-    
+
     if (!solicitacao) {
       return res.status(404).json({ erro: 'Solicitação não encontrada ou já processada' });
     }
 
     // 2. Buscar itens filhos
-    const itens = await DB.select('solicitacao_retirada_itens', { 
-      solicitacao_retirada_id: id, 
-      tenant_id: tenantId 
+    const itens = await DB.select('solicitacao_retirada_itens', {
+      solicitacao_retirada_id: id,
+      tenant_id: tenantId
     }, tenantId);
 
     if (!itens || itens.length === 0) {
@@ -141,12 +141,12 @@ router.put('/:id/rejeitar', tenantMiddleware, async (req, res) => {
     const { observacao } = req.body;
 
     // 1. Buscar solicitação
-    const solicitacao = await DB.selectOne('solicitacoes_retirada', { 
-      id, 
+    const solicitacao = await DB.selectOne('solicitacoes_retirada', {
+      id,
       tenant_id: tenantId,
       status: 'pendente'
     }, tenantId);
-    
+
     if (!solicitacao) {
       return res.status(404).json({ erro: 'Solicitação não encontrada ou já processada' });
     }
@@ -160,9 +160,9 @@ router.put('/:id/rejeitar', tenantMiddleware, async (req, res) => {
     }, tenantId);
 
     // 3. 🔥 Atualizar status dos itens filhos para 'rejeitado'
-    const itens = await DB.select('solicitacao_retirada_itens', { 
-      solicitacao_retirada_id: id, 
-      tenant_id: tenantId 
+    const itens = await DB.select('solicitacao_retirada_itens', {
+      solicitacao_retirada_id: id,
+      tenant_id: tenantId
     }, tenantId);
 
     if (itens.length > 0) {
@@ -196,9 +196,9 @@ router.get('/minhas-solicitacoes', tenantMiddleware, async (req, res) => {
 
     const solicitacoesCompletas = await Promise.all(solicitacoes.map(async (s) => {
       const item = await DB.selectOne('itens_consumo', { id: s.item_consumo_id }, tenantId);
-      
+
       const usuario = await DB.selectOne('usuarios', { id: s.solicitante_id }, tenantId);
-      
+
       const aprovador = s.aprovado_por ? await DB.selectOne('usuarios', { id: s.aprovado_por }, tenantId) : null;
 
       return {
@@ -207,7 +207,7 @@ router.get('/minhas-solicitacoes', tenantMiddleware, async (req, res) => {
         sku: item?.sku || '—',
         unidade_medida: item?.unidade_medida || 'UN',
         solicitante_nome: usuario?.nome || 'Usuário não encontrado',
-        
+
         aprovador_nome: aprovador?.nome || 'Gestor'
       };
     }));
@@ -221,25 +221,29 @@ router.get('/minhas-solicitacoes', tenantMiddleware, async (req, res) => {
   }
 });
 
-// ─── CRIAR SOLICITAÇÃO DE RETIRADA ──────────────────────
 router.post('/', tenantMiddleware, async (req, res) => {
   try {
     const tenantId = req.tenantId;
-    const { item_consumo_id, quantité, motivo, solicitante_id } = req.body;
-    // 🔥 NOVOS CAMPOS DE ORIGEM:
-    const { origem_os_id, origem_ov_id, origem_ov_numero } = req.body;
+    const { item_consumo_id, quantidade, motivo, solicitante_id } = req.body;
+    // 🔥 CAMPOS DE ORIGEM (opcionais — presentes quando a retirada nasce de uma OS/OV):
+    const { origem_os_id, origem_os_numero, origem_ov_id, origem_ov_numero } = req.body;
 
-    if (!item_consumo_id || !quantidade || !motivo || !solicitante_id) {
+    if (!item_consumo_id || !quantidade || quantidade <= 0 || !motivo || !solicitante_id) {
       return res.status(400).json({ erro: 'Dados obrigatórios não fornecidos' });
     }
 
-    // Gerar número...
+    const itemConsumo = await DB.selectOne('itens_consumo', { id: item_consumo_id, tenant_id: tenantId }, tenantId);
+    if (!itemConsumo) {
+      return res.status(404).json({ erro: 'Item de consumo não encontrado' });
+    }
+
+    // Gerar número sequencial (RET-AAAA-NNNN)
     const ultimas = await DB.select('solicitacoes_retirada', { tenant_id: tenantId }, tenantId);
     let ultimaSequencia = 0;
     if (ultimas.length > 0) {
       ultimas.sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em));
-      if (ultimas[0].numero_solicitacion) {
-        const partes = ultimas[0].numero_solicitacion.split('-');
+      if (ultimas[0].numero_solicitacao) {
+        const partes = ultimas[0].numero_solicitacao.split('-');
         ultimaSequencia = parseInt(partes[2]) || 0;
       }
     }
@@ -247,25 +251,38 @@ router.post('/', tenantMiddleware, async (req, res) => {
     const sequencia = ultimaSequencia + 1;
     const numero = `RET-${ano}-${String(sequencia).padStart(4, '0')}`;
 
-    // Insert com origem:
-    await DB.insert('solicitacoes_retirada', {
+    // 1) Cabeçalho
+    const novaSolicitacao = await DB.insert('solicitacoes_retirada', {
       tenant_id: tenantId,
-      numero_solicitacion: numero,
+      numero_solicitacao: numero,
       item_consumo_id: item_consumo_id,
-      quantité: quantité,
+      quantidade: quantidade,
       motivo: motivo,
       solicitante_id: solicitante_id,
       status: 'pendente',
       criado_em: new Date(),
-      // 🔥 Campos de origem:
       origem_os_id: origem_os_id || null,
+      origem_os_numero: origem_os_numero || null,
       origem_ov_id: origem_ov_id || null,
       origem_ov_numero: origem_ov_numero || null
     }, tenantId);
 
-    res.json({ ok: true, numero_solicitacion: numero });
+    // 2) Item filho correspondente — necessário pro PUT /:id/aprovar
+    // (que itera solicitacao_retirada_itens) conseguir dar baixa depois.
+    await DB.insert('solicitacao_retirada_itens', {
+      tenant_id: tenantId,
+      solicitacao_retirada_id: novaSolicitacao.id,
+      item_consumo_id: item_consumo_id,
+      item_nome: itemConsumo.nome,
+      quantidade: quantidade,
+      unidade_medida: itemConsumo.unidade_medida,
+      criado_em: new Date(),
+      status: 'pendente'
+    }, tenantId);
+
+    res.json({ ok: true, numero_solicitacao: numero, id: novaSolicitacao.id });
   } catch (err) {
-    console.error('❌ Erro ao créer solicitação:', err.message);
+    console.error('❌ Erro ao criar solicitação:', err.message);
     res.status(500).json({ erro: err.message });
   }
 });

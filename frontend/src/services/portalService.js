@@ -67,13 +67,23 @@ export const portalService = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        fornecedorId: '1', // TODO: ajustar se necessário
+        // FIX (2026-09): fornecedorId nunca era usado pelo backend real
+        // (routes/portalFornecedor.js identifica o fornecedor pelo token,
+        // não por esse campo) — removido o hardcode '1' que só confundia.
+        // FIX (2026-09, grave): "valor" nunca chegava no backend porque o
+        // campo aqui era "valor_unitario" (o que o backend de fato lê,
+        // depois da correção) — antes disso o preço de cada item era
+        // sempre perdido. "chamadoItemId: item.id" também nunca
+        // funcionava, porque o item aqui não tem campo .id (só item_id);
+        // o backend agora deriva chamado_item_id sozinho a partir do
+        // itemId, então não precisa mais vir daqui.
         respostas: dados.itens.map(item => ({
           itemId: item.item_id,
-          chamadoItemId: item.id,
-          valor: parseFloat(item.valor_unitario || 0),
+          valor_unitario: parseFloat(item.valor_unitario || 0),
+          quantidade: item.quantidade,
           prazo: parseInt(dados.prazo_entrega || 0),
-          frete: parseFloat(item.valor_frete || 0),
+          valor_frete: parseFloat(item.valor_frete || 0),
+          frete: item.frete,
           observacoes: dados.observacoes || ''
         }))
       })

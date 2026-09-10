@@ -19,9 +19,7 @@ export function useChamados() {
       setLoading(true);
       setErro(null);
       try {
-        console.log('🔍 CHAMANDO API /cotacoes/chamados');
         const dados = await chamadosService.listar(token, force);
-        console.log('🔍 API RETORNOU:', dados);
         setChamados(dados || []);
       } catch (err) {
         setErro(err.message);
