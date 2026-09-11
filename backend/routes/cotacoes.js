@@ -16,7 +16,7 @@ async function gerarNumeroChamado(tenant_id) {
 
   // Buscar o maior número usando id DESC
   const result = await DB.raw(`
-    SELECT numero FROM chamados 
+    SELECT numero FROM chamados
     WHERE tenant_id = $1 AND numero LIKE $2
     ORDER BY id DESC
     LIMIT 1
@@ -31,7 +31,7 @@ async function gerarNumeroChamado(tenant_id) {
   }
 
   let novoNumero = `${prefix}${String(seq).padStart(4, "0")}`;
-  
+
   // Verificar se existe usando selectOne (mais confiável)
   let existe = await DB.selectOne("chamados", { numero: novoNumero }, tenant_id);
   if (existe) {
@@ -53,7 +53,7 @@ async function gerarNumeroCotacao(tenant_id) {
   const prefix = `COT-${ano}-`;
 
   const result = await DB.raw(`
-    SELECT numero FROM cotacoes 
+    SELECT numero FROM cotacoes
     WHERE tenant_id = $1 AND numero LIKE $2
     ORDER BY numero DESC
     LIMIT 1
@@ -88,7 +88,7 @@ async function gerarNumeroCotacao(tenant_id) {
 
 async function gerarNumeroRM(tenant_id) {
   const ano = new Date().getFullYear();
-  const prefix = `RM-${ano}-`;
+  const prefix = `RC-${ano}-`;
 
   const todasRM = await DB.select(
     "chamados",
@@ -122,6 +122,349 @@ async function gerarNumeroRM(tenant_id) {
   }
 
   return novoNumero;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// gerarNumeroRET — mesma lógica de RET-{ano}-000X que já existe em
+// routes/estoque/solicitacoes.js (POST /), extraída aqui porque o split
+// automático da OS agora também precisa criar RET diretamente, sem passar
+// pelo endpoint HTTP daquele arquivo (evita round-trip interno e mantém a
+// criação do cabeçalho + item filho atômica dentro da mesma transação de
+// salvar a OS). NÃO mexe no gerador original de solicitacoes.js — os dois
+// convivem, cada request de retirada (manual ou auto-gerada) recalcula o
+// próximo número livre do tenant.
+// ─────────────────────────────────────────────────────────────────────────
+async function gerarNumeroRET(tenant_id) {
+  const ultimas = await DB.select("solicitacoes_retirada", { tenant_id }, tenant_id);
+  let ultimaSequencia = 0;
+  ultimas.forEach((s) => {
+    if (s.numero_solicitacao) {
+      const partes = s.numero_solicitacao.split("-");
+      const n = parseInt(partes[2]) || 0;
+      if (n > ultimaSequencia) ultimaSequencia = n;
+    }
+  });
+  const ano = new Date().getFullYear();
+  const sequencia = ultimaSequencia + 1;
+  return `RET-${ano}-${String(sequencia).padStart(4, "0")}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// calcularDisponivel — mesmo cálculo já usado em routes/estoque/reservas.js
+// (GET /saldo): físico (itens_consumo.saldo_atual) − soma das reservas
+// ativas (estoque_reservas com liberado_em IS NULL, filtrado em JS porque
+// DB.select não expressa IS NULL — ver nota em reservas.js). Replicado
+// aqui em vez de chamar o endpoint HTTP porque o split acontece dentro da
+// mesma transação lógica de salvar a OS.
+//
+// Retorna null quando o item não tem vínculo físico no almoxarifado
+// (sem item_catalogo_id, ou sem linha correspondente em itens_consumo) —
+// nesse caso a chamada decide tratar como "sem_estoque" (vai inteiro pra
+// RC), mesma decisão de produto já confirmada no item 11 do schema doc.
+async function calcularDisponivel(itemCatalogoId, tenantId) {
+  if (!itemCatalogoId) return null;
+
+  const itemConsumo = await DB.selectOne(
+    "itens_consumo",
+    { catalogo_item_id: itemCatalogoId, tenant_id: tenantId },
+    tenantId
+  );
+  if (!itemConsumo) return null;
+
+  const todasReservas = await DB.select(
+    "estoque_reservas",
+    { item_catalogo_id: itemCatalogoId, tenant_id: tenantId },
+    tenantId
+  );
+  const reservasAtivas = (todasReservas || []).filter(r => !r.liberado_em);
+  const reservado = reservasAtivas.reduce((soma, r) => soma + (parseFloat(r.quantidade) || 0), 0);
+  const fisico = parseFloat(itemConsumo.saldo_atual) || 0;
+
+  return {
+    disponivel: fisico - reservado,
+    itemConsumoId: itemConsumo.id,
+    // Política de recompra do item (já existiam em itens_consumo, nunca
+    // consumidas por nenhuma lógica até agora — ver
+    // claude/redesenho-os-rm-rc.md, seção "sugestão de lote de recompra").
+    loteMinimoCompra: parseFloat(itemConsumo.lote_minimo_compra) || 0,
+    // Usados só pela reposição por saldo baixo (ver
+    // calcularQuantidadeReposicao / seção "reposição sem déficit" no doc) —
+    // limite_recompra é o gatilho, quantidade_lotes_automatico é quantos
+    // lotes comprar de uma vez quando o gatilho dispara.
+    limiteRecompra: parseFloat(itemConsumo.limite_recompra) || 0,
+    quantidadeLotesAutomatico: parseInt(itemConsumo.quantidade_lotes_automatico) || 1
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// calcularSugestaoRecompra — quantidade sugerida de compra pra um item que
+// já vai pra RC por déficit (disponivel < quantidade planejada). NUNCA
+// substitui o déficit real — só sugere um valor MAIOR, arredondando o
+// déficit para cima até o próximo múltiplo de lote_minimo_compra, sempre
+// visível ao comprador como sugestão separada e editável (nunca aplicada
+// automaticamente na quantidade que vai a cotação). Ver
+// claude/redesenho-os-rm-rc.md.
+//
+// Retorna null quando não há lote_minimo_compra cadastrado (> 0) — nesse
+// caso não há sugestão nenhuma, só o déficit puro, como já era.
+function calcularSugestaoRecompra(deficit, loteMinimoCompra) {
+  if (!loteMinimoCompra || loteMinimoCompra <= 0) return null;
+  if (deficit <= 0) return null;
+
+  const lotes = Math.ceil(deficit / loteMinimoCompra);
+  const sugestao = lotes * loteMinimoCompra;
+
+  // Só faz sentido mostrar a sugestão quando ela de fato aumenta a
+  // quantidade — se o déficit já é um múltiplo exato do lote, sugestão
+  // e déficit coincidem, não precisa de UI extra pra isso.
+  if (sugestao <= deficit) return null;
+
+  return sugestao;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// calcularQuantidadeReposicao — reposição de estoque SEM déficit na OS (ver
+// claude/redesenho-os-rm-rc.md, seção "reposição sem déficit"). Caso
+// diferente de calcularSugestaoRecompra: aqui o item foi 100% coberto pela
+// RM (a OS não precisa comprar nada), mas a RETIRADA fez o saldo
+// remanescente cair abaixo de itens_consumo.limite_recompra — dispara uma
+// RC de reposição pura, pro comprador repor o estoque físico antes que
+// falte da próxima vez. Sempre revisável/editável pelo comprador (mesma
+// trava de bloqueado_em das outras RCs), nunca comprado sozinho de fato.
+//
+// Quantidade = lote_minimo_compra × quantidade_lotes_automatico (nº de
+// lotes a comprar de cada vez que o gatilho dispara — não tenta calcular
+// quantos lotes seriam necessários pra voltar acima do limite_recompra,
+// mantém simples: 1 disparo = quantidade_lotes_automatico lotes).
+//
+// Retorna null quando não há limite_recompra ou lote_minimo_compra
+// cadastrados (>0), ou quando o remanescente já está no limite ou acima
+// (nada a repor).
+function calcularQuantidadeReposicao(remanescente, limiteRecompra, loteMinimoCompra, quantidadeLotesAutomatico) {
+  if (!limiteRecompra || limiteRecompra <= 0) return null;
+  if (!loteMinimoCompra || loteMinimoCompra <= 0) return null;
+  if (remanescente >= limiteRecompra) return null;
+
+  const lotes = quantidadeLotesAutomatico && quantidadeLotesAutomatico > 0 ? quantidadeLotesAutomatico : 1;
+  return loteMinimoCompra * lotes;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// dividirESalvarMateriais — o split automático em si (ver
+// claude/redesenho-os-rm-rc.md no projeto). Roda depois que os itens da OS
+// já foram inseridos/atualizados em chamado_itens. Para cada item de
+// material ATIVO (ignora serviço e item cancelado):
+//
+//   - sem item_catalogo_id, ou sem vínculo em itens_consumo -> "sem
+//     estoque": quantidade inteira vai pra RC.
+//   - disponivel >= quantidade -> quantidade inteira vai pra RM (retirada).
+//   - 0 < disponivel < quantidade -> divide: `disponivel` pra RM, o resto
+//     pra RC.
+//   - disponivel <= 0 -> quantidade inteira vai pra RC.
+//
+// Cria no máximo 1 RC (chamados, tipo_documento='requisicao_material') e
+// no máximo 1 RET (solicitacoes_retirada) por chamada — mesmo padrão de
+// "1 cabeçalho, N itens filhos" já usado nos dois fluxos que está
+// reaproveitando. Não cria nada se não houver itens pra nenhum dos dois
+// lados (ex: OS só de serviço, ou todos os itens já totalmente cobertos
+// por uma divisão anterior — não é o caso ainda nesta fase, que só roda
+// na criação).
+//
+// Idempotência: cada item de OS só pode alimentar uma RC/RM ativa por vez
+// (mesma trava por chamado_itens.origem_os_item_id que
+// POST /chamados/:id/gerar-requisicao-material já usava manualmente) —
+// aqui simplesmente não é chamada de novo pro mesmo item enquanto o
+// vínculo anterior está ativo, já que quem chama (POST /chamados) só roda
+// isso uma vez, na criação.
+async function dividirESalvarMateriais(itensMaterialInseridos, os, tenantId) {
+  const paraRC = [];
+  const paraRM = [];
+  // Itens que foram 100% cobertos pela RM (sem déficit nenhum nesta OS),
+  // mas cuja retirada derrubou o saldo remanescente abaixo do
+  // limite_recompra — geram uma RC de reposição pura, desvinculada da
+  // quantidade que a OS pediu (ver calcularQuantidadeReposicao acima).
+  const paraReposicao = [];
+
+  for (const item of itensMaterialInseridos) {
+    if (item.status === "cancelado") continue;
+
+    const quantidade = parseFloat(item.quantidade) || 0;
+    if (quantidade <= 0) continue;
+
+    const calc = await calcularDisponivel(item.item_catalogo_id, tenantId);
+
+    if (calc === null) {
+      // Sem vínculo físico — sem_estoque, vai inteiro pra RC. Sem
+      // itens_consumo não há lote_minimo_compra pra consultar, então nunca
+      // tem sugestão de recompra aqui.
+      paraRC.push({ item, quantidade, quantidadeSugerida: null, loteMinimoCompra: null });
+      continue;
+    }
+
+    const { disponivel, itemConsumoId, loteMinimoCompra, limiteRecompra, quantidadeLotesAutomatico } = calc;
+
+    if (disponivel >= quantidade) {
+      paraRM.push({ item, quantidade, itemConsumoId });
+
+      // Sem déficit nesta OS — mas será que a retirada deixou o estoque
+      // abaixo do limite de recompra? Só verifica aqui (cobertura 100% por
+      // RM); os outros dois braços (split parcial / sem estoque) já geram
+      // RC por déficit próprio, não precisa duplicar a checagem.
+      const remanescente = disponivel - quantidade;
+      const quantidadeReposicao = calcularQuantidadeReposicao(
+        remanescente, limiteRecompra, loteMinimoCompra, quantidadeLotesAutomatico
+      );
+      if (quantidadeReposicao) {
+        paraReposicao.push({ item, quantidade: quantidadeReposicao, loteMinimoCompra, itemConsumoId });
+      }
+    } else if (disponivel > 0) {
+      paraRM.push({ item, quantidade: disponivel, itemConsumoId });
+      const deficit = quantidade - disponivel;
+      paraRC.push({
+        item,
+        quantidade: deficit,
+        quantidadeSugerida: calcularSugestaoRecompra(deficit, loteMinimoCompra),
+        loteMinimoCompra: loteMinimoCompra || null
+      });
+    } else {
+      paraRC.push({
+        item,
+        quantidade,
+        quantidadeSugerida: calcularSugestaoRecompra(quantidade, loteMinimoCompra),
+        loteMinimoCompra: loteMinimoCompra || null
+      });
+    }
+  }
+
+  let rc = null;
+  let ret = null;
+
+  if (paraRC.length > 0 || paraReposicao.length > 0) {
+    const numeroRC = await gerarNumeroRM(tenantId); // já gera prefixo RC- (ver acima)
+    rc = await DB.insert("chamados", {
+      tenant_id: tenantId,
+      numero: numeroRC,
+      tipo_documento: "requisicao_material",
+      origem_os_id: os.id,
+      origem_os_numero: os.numero,
+      equipamento_id: os.equipamento_id || null,
+      urgencia: os.urgencia || "media",
+      categoria: os.categoria || "corretiva",
+      status: "aguardando_cotacao",
+      descricao: `Materiais a comprar da ${os.numero}`,
+      servico_nome: os.servico_nome || os.descricao || `Materiais da ${os.numero}`,
+      participa_benchmark: 1
+    }, tenantId);
+
+    for (const { item, quantidade, quantidadeSugerida, loteMinimoCompra } of paraRC) {
+      await DB.insert("chamado_itens", {
+        chamado_id: rc.id,
+        tenant_id: tenantId,
+        tipo: "material",
+        origem: "planejado",
+        status: "ativo",
+        item_nome: item.item_nome,
+        codigo: item.codigo,
+        quantidade,
+        urgencia: item.urgencia,
+        categoria: item.categoria,
+        tipo_item: item.tipo_item,
+        descricao: item.descricao,
+        item_catalogo_id: item.item_catalogo_id,
+        unidade_medida: item.unidade_medida,
+        origem_os_item_id: item.id,
+        // Sugestão de lote de recompra (migration 013) — nunca altera
+        // `quantidade` (o déficit real, que é o que vai pra cotação por
+        // padrão). Só existe quando itens_consumo.lote_minimo_compra está
+        // cadastrado e o lote arredondado é maior que o déficit puro. O
+        // comprador decide na tela de cotação se quer usar a sugestão ou
+        // manter o déficit — ver claude/redesenho-os-rm-rc.md.
+        quantidade_sugerida_recompra: quantidadeSugerida,
+        lote_minimo_compra_snapshot: loteMinimoCompra,
+        // motivo_recompra (migration 014) distingue "precisa comprar pra
+        // atender esta OS" de "reposição de estoque, sem urgência da OS" —
+        // ver bloco paraReposicao abaixo. Aqui é sempre déficit real.
+        motivo_recompra: "deficit"
+      }, tenantId);
+    }
+
+    for (const { item, quantidade, loteMinimoCompra } of paraReposicao) {
+      // Reposição pura (migration 014, ver calcularQuantidadeReposicao):
+      // a OS não precisa comprar nada deste item (foi 100% atendido pela
+      // RM) — esta linha existe só pra repor o estoque físico que a
+      // retirada esvaziou abaixo do limite_recompra. `quantidade` aqui já
+      // É o valor proposto (lote × quantidade_lotes_automatico), não um
+      // déficit — por isso não tem uma segunda coluna de "sugestão": a
+      // quantidade inteira da linha É a sugestão, e o comprador decide se
+      // mantém, edita ou remove antes de cotar (mesma trava de
+      // bloqueado_em das outras linhas de RC).
+      await DB.insert("chamado_itens", {
+        chamado_id: rc.id,
+        tenant_id: tenantId,
+        tipo: "material",
+        origem: "planejado",
+        status: "ativo",
+        item_nome: item.item_nome,
+        codigo: item.codigo,
+        quantidade,
+        urgencia: item.urgencia,
+        categoria: item.categoria,
+        tipo_item: item.tipo_item,
+        descricao: item.descricao,
+        item_catalogo_id: item.item_catalogo_id,
+        unidade_medida: item.unidade_medida,
+        origem_os_item_id: item.id,
+        quantidade_sugerida_recompra: null,
+        lote_minimo_compra_snapshot: loteMinimoCompra,
+        motivo_recompra: "reposicao_estoque"
+      }, tenantId);
+    }
+  }
+
+  if (paraRM.length > 0) {
+    const numeroRET = await gerarNumeroRET(tenantId);
+    ret = await DB.insert("solicitacoes_retirada", {
+      tenant_id: tenantId,
+      numero_solicitacao: numeroRET,
+      status: "pendente",
+      criado_em: new Date(),
+      motivo: `Materiais com estoque disponível da ${os.numero}`,
+      solicitante_id: os.tecnico_id || null,
+      origem_os_id: os.id,
+      origem_os_numero: os.numero,
+      // Cabeçalho de RET foi desenhado originalmente pra 1 item
+      // (item_consumo_id/quantidade no próprio cabeçalho, replicado no
+      // item filho). Split automático pode gerar múltiplos itens por OS
+      // — grava o primeiro no cabeçalho por compatibilidade com telas que
+      // ainda leem esses campos direto do cabeçalho, e TODOS os itens
+      // (incluindo o primeiro) em solicitacao_retirada_itens, que é a
+      // fonte de verdade pra aprovação (PUT /:id/aprovar itera os itens
+      // filhos, não o cabeçalho).
+      item_consumo_id: paraRM[0].itemConsumoId,
+      quantidade: paraRM[0].quantidade
+    }, tenantId);
+
+    for (const { item, quantidade, itemConsumoId } of paraRM) {
+      await DB.insert("solicitacao_retirada_itens", {
+        tenant_id: tenantId,
+        solicitacao_retirada_id: ret.id,
+        item_consumo_id: itemConsumoId,
+        item_nome: item.item_nome,
+        quantidade,
+        unidade_medida: item.unidade_medida,
+        status: "pendente",
+        criado_em: new Date(),
+        origem_os_item_id: item.id
+      }, tenantId);
+    }
+  }
+
+  return {
+    rc, ret,
+    itensParaRC: paraRC.length,
+    itensParaRM: paraRM.length,
+    itensParaReposicao: paraReposicao.length
+  };
 }
 
 // ─── ROTAS ─────────────────────────────────────────────────
@@ -170,7 +513,8 @@ router.get("/chamados", tenantMiddleware, async (req, res) => {
       itens = await DB.raw(`
         SELECT chamado_id, id, item_nome, codigo, quantidade, urgencia, categoria, tipo_item, descricao,
                item_catalogo_id, tipo, origem, status, numero_base, posicao,
-               qtd_pessoas_planejada, data_inicio_prevista, data_fim_prevista, origem_os_item_id
+               qtd_pessoas_planejada, data_inicio_prevista, data_fim_prevista, origem_os_item_id,
+               quantidade_sugerida_recompra, lote_minimo_compra_snapshot, motivo_recompra
         FROM chamado_itens
         WHERE chamado_id = ANY($1) AND tenant_id = $2
         ORDER BY chamado_id, posicao NULLS LAST, id
@@ -280,7 +624,22 @@ function montarChamadoItemData(item, chamadoId, tenantId) {
     item_catalogo_id: item.item_catalogo_id || null,
     qtd_pessoas_planejada: null,
     data_inicio_prevista: null,
-    data_fim_prevista: null
+    data_fim_prevista: null,
+    // Sugestão de lote de recompra (migration 013): só existe em item de RC
+    // gerado pelo split automático (dividirESalvarMateriais grava direto
+    // via DB.insert, não passa por aqui). Este helper é usado tanto pra
+    // criar item de OS do zero (nunca tem sugestão — vem undefined do
+    // payload, cai no `?? null`) quanto pro upsert de PUT /chamados/:id
+    // (edição de item de RC já existente) — nesse caso o frontend faz
+    // round-trip do que o GET devolveu, então repassar preserva a
+    // sugestão calculada na criação em vez de apagá-la a cada save,
+    // mesmo que o comprador só tenha editado outro campo do item.
+    quantidade_sugerida_recompra: item.quantidade_sugerida_recompra ?? null,
+    lote_minimo_compra_snapshot: item.lote_minimo_compra_snapshot ?? null,
+    // motivo_recompra (migration 014): 'deficit' | 'reposicao_estoque' |
+    // null (item de OS comum, nunca passou pelo split). Mesma lógica de
+    // preservar no round-trip do PUT que os dois campos acima.
+    motivo_recompra: item.motivo_recompra ?? null
   };
 }
 
@@ -332,6 +691,7 @@ router.post("/chamados", tenantMiddleware, async (req, res) => {
 
     const chamadoData = {
       numero,
+      tipo_documento: "os",
       equipamento_id: equipamento_id || null,
       tecnico_id: req.userId,
       tecnico_nome: tecnico_nome || req.userEmail || req.userId,
@@ -340,7 +700,12 @@ router.post("/chamados", tenantMiddleware, async (req, res) => {
       // urgencia/categoria agora vivem no nível da OS (não mais por item).
       urgencia: urgencia || "media",
       categoria: categoria || "corretiva",
-      status: "aguardando_cotacao",
+      // Status OPERACIONAL da OS — nunca mais "aguardando_cotacao" (isso é
+      // status de suprimentos, agora vive na RC, não na OS). Ver
+      // claude/redesenho-os-rm-rc.md. "aberta" é o estado inicial antes de
+      // qualquer execução; a tela de OS decide quando avançar pra
+      // em_andamento/concluida.
+      status: "aberta",
       origem_os_numero: servico_nome || "Manutenção",
       participa_benchmark: 1,
       // Programação da OS (migration 003): 'nenhuma' | 'geral' | 'detalhada'.
@@ -358,12 +723,29 @@ router.post("/chamados", tenantMiddleware, async (req, res) => {
       itensInseridos.push(novoItem);
     }
 
+    // Split automático OS -> RM (retirada, estoque disponível) / RC (a
+    // comprar) — só olha itens de material ativos; serviço nunca entra
+    // aqui (OS só-serviço não gera RM nem RC, por design).
+    const itensMaterialAtivos = itensInseridos.filter(it => it.tipo === "material" && it.status === "ativo");
+    let split = { rc: null, ret: null, itensParaRC: 0, itensParaRM: 0 };
+    if (itensMaterialAtivos.length > 0) {
+      split = await dividirESalvarMateriais(itensMaterialAtivos, chamado, req.tenantId);
+    }
+
     res.status(201).json({
       id: chamado.id,
       numero: chamado.numero,
       status: chamado.status,
       modo_programacao: chamado.modo_programacao,
       itens: itensInseridos,
+      requisicao_compra: split.rc ? {
+        id: split.rc.id,
+        numero: split.rc.numero,
+        itens: split.itensParaRC + split.itensParaReposicao,
+        itens_deficit: split.itensParaRC,
+        itens_reposicao_estoque: split.itensParaReposicao
+      } : null,
+      requisicao_material: split.ret ? { id: split.ret.id, numero: split.ret.numero_solicitacao, itens: split.itensParaRM } : null,
       mensagem: `Chamado criado com ${itensInseridos.length} item(ns)`
     });
 
@@ -376,13 +758,12 @@ router.post("/chamados", tenantMiddleware, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────
 // POST /api/cotacoes/chamados/:id/gerar-requisicao-material  (Fase B)
 //
-// Gera uma Requisição de Material (RM) a partir de itens de material de uma
-// OS já salva. Não é automático: o comprador escolhe explicitamente quais
-// itens (e em que quantidade — pode ser menor que a planejada na OS, se
-// parte já está coberta por estoque) entram nesta RM. Uma OS pode gerar
-// mais de uma RM ao longo do tempo (ex: itens urgentes agora, resto depois)
-// — o que a rota bloqueia é gerar RM duas vezes para o MESMO item da OS
-// enquanto o vínculo anterior estiver ativo.
+// MANTIDO como via manual/complementar (ex: item que ficou só na OS porque
+// não tinha item_catalogo_id no momento do save e foi vinculado depois, ou
+// ajuste do comprador). O caminho PRIMÁRIO agora é o split automático em
+// POST /chamados. Continua bloqueando gerar RM duas vezes pro mesmo item
+// da OS enquanto o vínculo anterior estiver ativo — o split automático
+// também respeita essa trava por construção (só roda 1x, na criação).
 //
 // Body esperado: { itens: [{ chamado_item_id, quantidade }, ...] }
 // ─────────────────────────────────────────────────────────────────────────
@@ -532,8 +913,8 @@ router.get("/", tenantMiddleware, async (req, res) => {
     let fornecedores = [];
     if (cotacaoIds.length > 0) {
       fornecedores = await DB.raw(`
-        SELECT 
-          id, cotacao_id, fornecedor_nome, fornecedor_email, status, 
+        SELECT
+          id, cotacao_id, fornecedor_nome, fornecedor_email, status,
           valor, prazo, frete, valor_frete, obs, data_resposta
         FROM cotacao_fornecedores
         WHERE cotacao_id = ANY($1) AND tenant_id = $2
@@ -583,6 +964,15 @@ router.post("/", tenantMiddleware, async (req, res) => {
       return res.status(404).json({ erro: "Chamado não encontrado" });
     }
 
+    // Trava de rastreabilidade: uma RC já bloqueada (cotação anterior já
+    // disparada) não pode gerar OUTRA cotação nova do zero por aqui — evita
+    // duas cotações concorrentes pro mesmo conjunto de itens. Cancelar a
+    // cotação anterior é o caminho pra tentar de novo (fora de escopo
+    // desta fase).
+    if (chamado.bloqueado_em) {
+      return res.status(400).json({ erro: `${chamado.numero} já está bloqueada para edição (cotação em andamento desde ${new Date(chamado.bloqueado_em).toLocaleString('pt-BR')})` });
+    }
+
     const numero = await gerarNumeroCotacao(req.tenantId);
 
     const origem = origem_ov_numero || chamado?.origem_os_numero || chamado?.servico_nome || "Manutenção";
@@ -616,7 +1006,11 @@ router.post("/", tenantMiddleware, async (req, res) => {
       await enviarEmailCotacao(chamado, f, token, process.env.FRONTEND_URL).catch(e => console.error(e.message));
     }
 
-    await DB.update("chamados", chamado_id, { status: "cotando" }, req.tenantId);
+    // Trava a RC pra adição de novos itens a partir de agora — rastreabilidade:
+    // depois de enviada pra cotação, o requisitante não pode mais "descobrir"
+    // um item novo que precisa entrar retroativamente (ver
+    // claude/redesenho-os-rm-rc.md).
+    await DB.update("chamados", chamado_id, { status: "cotando", bloqueado_em: new Date() }, req.tenantId);
 
     res.status(201).json({
       id: cotacao.id,
@@ -740,6 +1134,13 @@ router.delete("/chamados/:id", tenantMiddleware, async (req, res) => {
 // novoMaterial()/novoServico() em TelaChamadosNova.jsx) leva INSERT.
 // Nenhum item é fisicamente deletado por aqui — cancelamento é
 // status:'cancelado', já vindo assim no payload.
+//
+// FIX (2026-09, redesenho OS/RM/RC): se o chamado é uma RC já bloqueada
+// (bloqueado_em setado — cotação já disparada), rejeita qualquer item do
+// payload que não exista ainda em chamado_itens (adição de item novo).
+// Edição de item já existente (quantidade, etc) continua permitida — só a
+// ADIÇÃO de item novo é travada, por pedido explícito do usuário
+// (rastreabilidade/auditoria — ver claude/redesenho-os-rm-rc.md).
 router.put("/chamados/:id", tenantMiddleware, async (req, res) => {
 
   try {
@@ -800,6 +1201,21 @@ router.put("/chamados/:id", tenantMiddleware, async (req, res) => {
       return String(n);
     }
 
+    // Trava de RC bloqueada: rejeita item novo (sem id existente) se este
+    // chamado já está com bloqueado_em setado. Não afeta OS (bloqueado_em
+    // só é setado em RC, nunca em OS) nem edição de item já existente.
+    if (chamado.bloqueado_em) {
+      const temItemNovo = itens.some(item => {
+        const idNormalizado = normalizarIdExistente(item.id);
+        return idNormalizado === null || !idsExistentes.has(idNormalizado);
+      });
+      if (temItemNovo) {
+        return res.status(400).json({
+          erro: `${chamado.numero} está bloqueada para adição de novos itens (cotação já em andamento desde ${new Date(chamado.bloqueado_em).toLocaleString('pt-BR')})`
+        });
+      }
+    }
+
     const itensSalvos = [];
     for (const item of itens) {
       const itemData = montarChamadoItemData(item, id, tenantId);
@@ -818,10 +1234,21 @@ router.put("/chamados/:id", tenantMiddleware, async (req, res) => {
     // ao GET, pra devolver a mesma ordem que a tela vai exibir).
     const chamadoAtualizado = await DB.selectOne("chamados", { id }, tenantId);
 
-    const itensAtualizados = await DB.raw(
-      `SELECT * FROM chamado_itens WHERE chamado_id = $1 AND tenant_id = $2 ORDER BY posicao NULLS LAST, id ASC`,
-      [id, tenantId]
-    );
+    // FIX (2026-09, achado durante teste da Fase 1 do redesenho OS/RM/RC):
+    // esta query caía no fallback genérico de DB.raw() (só reconhece
+    // tenant_id no WHERE, ignora "chamado_id = $1") — devolvia os
+    // chamado_itens de TODOS os chamados do tenant, não só deste. Os dados
+    // gravados no banco sempre estiveram corretos (o bug era só na
+    // resposta HTTP), mas qualquer tela que confiasse nesse retorno pra
+    // saber quais itens pertencem a este chamado estaria recebendo lixo de
+    // outros chamados junto. Trocado por DB.select, que filtra de verdade.
+    const itensAtualizadosBrutos = await DB.select("chamado_itens", { chamado_id: id, tenant_id: tenantId }, tenantId);
+    const itensAtualizados = itensAtualizadosBrutos.sort((a, b) => {
+      const posA = a.posicao ?? Infinity;
+      const posB = b.posicao ?? Infinity;
+      if (posA !== posB) return posA - posB;
+      return Number(a.id) - Number(b.id);
+    });
 
     res.json({
       ok: true,
@@ -846,18 +1273,18 @@ router.put("/chamados/:id", tenantMiddleware, async (req, res) => {
 router.post('/gerar-automaticamente', tenantMiddleware, async (req, res) => {
   try {
     const { chamado_id } = req.body;
-    
+
     // 🔥 PREENCHER A ORIGEM
     const chamado = await DB.selectOne('chamados', { id: chamado_id }, req.tenantId);
     const origem_ov_numero = chamado?.origem_os_numero || null;
-    
+
     const cotacoes = await cotacaoService.gerarCotacoesPorCategoria(
       req.tenantId,
       chamado_id,
       req.userId,
       origem_ov_numero
     );
-    
+
     res.status(201).json({
       ok: true,
       cotacoes: cotacoes,
@@ -1037,8 +1464,8 @@ router.post('/salvar', tenantMiddleware, async (req, res) => {
     const { chamado_id, itens, notas, origem_ov_numero } = req.body;
 
     if (!chamado_id || !itens || itens.length === 0) {
-      return res.status(400).json({ 
-        erro: 'chamado_id e itens são obrigatórios' 
+      return res.status(400).json({
+        erro: 'chamado_id e itens são obrigatórios'
       });
     }
 
@@ -1129,8 +1556,8 @@ router.post('/:cotacaoId/ordem-venda', tenantMiddleware, async (req, res) => {
     const { fornecedor_id, valor, frete, valor_original, frete_original, economia, obs } = req.body;
 
     if (!cotacaoId || !fornecedor_id) {
-      return res.status(400).json({ 
-        erro: 'cotacaoId e fornecedor_id são obrigatórios' 
+      return res.status(400).json({
+        erro: 'cotacaoId e fornecedor_id são obrigatórios'
       });
     }
 
@@ -1196,8 +1623,8 @@ router.put('/:cotacaoId/fornecedor/:fornecedorId/atualizar-resposta', tenantMidd
     const { valor, prazo, valor_frete, obs, valor_renegociado, frete_renegociado } = req.body;
 
     if (!cotacaoId || !fornecedorId) {
-      return res.status(400).json({ 
-        erro: 'cotacaoId e fornecedorId são obrigatórios' 
+      return res.status(400).json({
+        erro: 'cotacaoId e fornecedorId são obrigatórios'
       });
     }
 
@@ -1286,7 +1713,7 @@ router.post('/:cotacaoId/fornecedores', tenantMiddleware, async (req, res) => {
 
   } catch (erro) {
     console.error('❌ Erro ao vincular fornecedor:', erro);
-    return res.status(500).json({ 
+    return res.status(500).json({
       erro: 'Erro ao vincular fornecedor',
       detalhes: process.env.NODE_ENV === 'development' ? erro.message : undefined
     });
@@ -1314,7 +1741,7 @@ router.get('/:cotacaoId/monitorar', tenantMiddleware, async (req, res) => {
 
     // 2b. Buscar dados dos itens do chamado (nome, código, etc)
     const chamadoItemIds = itens.map(i => i.chamado_item_id);
-    const chamadoItens = chamadoItemIds.length > 0 
+    const chamadoItens = chamadoItemIds.length > 0
       ? await DB.select('chamado_itens', {}, tenantId).then(todos =>
           todos.filter(ci => chamadoItemIds.includes(ci.id))
         )
@@ -1337,8 +1764,8 @@ router.get('/:cotacaoId/monitorar', tenantMiddleware, async (req, res) => {
     // ✅ NOVO: Estruturar por ITEM usando fornecedores_ids do próprio item!
     const itensEstruturados = itensComDados.map(item => {
       // 🔥 USAR O fornecedores_ids DO PRÓPRIO ITEM
-      const fornecedoresIds = Array.isArray(item.fornecedores_ids) 
-        ? item.fornecedores_ids 
+      const fornecedoresIds = Array.isArray(item.fornecedores_ids)
+        ? item.fornecedores_ids
         : JSON.parse(item.fornecedores_ids || '[]');
 
       const fornecedoresComResposta = fornecedoresIds.map(fornecedorId => {
@@ -1450,9 +1877,9 @@ router.post('/:cotacaoId/item-fornecedor-selecionado', tenantMiddleware, async (
 router.get('/metricas-negociacao', tenantMiddleware, async (req, res) => {
   try {
     const tenantId = req.tenantId;
-    
+
     const dados = await DB.raw(`
-      SELECT 
+      SELECT
         COUNT(*) as total_negociacoes,
         SUM(CASE WHEN economia > 0 THEN 1 ELSE 0 END) as negociacoes_sucesso,
         AVG(economia) as economia_media,
@@ -1474,11 +1901,11 @@ router.post('/:cotacaoId/fornecedor/:fornecedorId/renegociar', tenantMiddleware,
     const { cotacaoId, fornecedorId } = req.params;
     const { valor_renegociado } = req.body;
 
-    const resposta = await DB.selectOne('cotacao_fornecedores', { 
-      cotacao_id: cotacaoId, 
-      fornecedor_id: fornecedorId 
+    const resposta = await DB.selectOne('cotacao_fornecedores', {
+      cotacao_id: cotacaoId,
+      fornecedor_id: fornecedorId
     }, req.tenantId);
-    
+
     if (!resposta) {
       return res.status(404).json({ erro: 'Resposta não encontrada' });
     }

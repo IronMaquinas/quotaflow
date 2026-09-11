@@ -8,15 +8,15 @@ const tenantMiddleware = require('../../middleware/tenantMiddleware');
 router.get('/', tenantMiddleware, async (req, res) => {
   try {
     const tenantId = req.tenantId;
-    
+
     // 1. Buscar os itens (com TODOS os campos, incluindo os novos)
     const itens = await DB.select('itens_consumo', { tenant_id: tenantId }, tenantId);
 
     // 2. Buscar o fornecedor separadamente (para exibir o nome)
     const itensComFornecedor = await Promise.all(itens.map(async (item) => {
-      const fornecedor = item.fornecedor_preferencial_id ? 
+      const fornecedor = item.fornecedor_preferencial_id ?
         await DB.selectOne('fornecedores', { id: item.fornecedor_preferencial_id, tenant_id: tenantId }, tenantId) : null;
-      
+
       return {
         ...item,
         fornecedor_nome: fornecedor?.nome || '—'
@@ -105,6 +105,17 @@ router.post('/', tenantMiddleware, async (req, res) => {
 });
 
 // ─── ATUALIZAR ITEM DE CONSUMO ──────────────────────────────
+//
+// FIX (2026-09-11): "UPDATE itens_consumo failed: invalid input syntax for
+// type date: """. `validade` é coluna `date` no Postgres — não aceita
+// string vazia, só uma data válida ou NULL. O POST (criar) já tratava isso
+// certo (`validade || null`), mas o PUT usava só `!== undefined`, então
+// quando o formulário manda o campo de data vazio como "" (não como
+// `undefined` nem `null` — comportamento comum de <input type="date">
+// controlado em React quando o campo é limpo), a string vazia ia direto
+// pro Postgres e quebrava. Corrigido: "" (ou qualquer string em branco)
+// em `validade` agora vira `null` antes de gravar, preservando o resto do
+// comportamento (campo omitido do payload = não mexe no valor atual).
 router.put('/:id', tenantMiddleware, async (req, res) => {
   try {
     const tenantId = req.tenantId;
@@ -146,13 +157,15 @@ router.put('/:id', tenantMiddleware, async (req, res) => {
     if (quantidade_lotes_automatico !== undefined) updateData.quantidade_lotes_automatico = quantidade_lotes_automatico;
     if (fornecedor_preferencial_id !== undefined) updateData.fornecedor_preferencial_id = fornecedor_preferencial_id;    if (localizacao !== undefined) updateData.localizacao = localizacao;
     if (ativo !== undefined) updateData.ativo = ativo;
-    
+
     // 🔥 NOVOS CAMPOS:
     if (fabricante !== undefined) updateData.fabricante = fabricante;
     if (lote !== undefined) updateData.lote = lote;
-    if (validade !== undefined) updateData.validade = validade;
+    // FIX: "" -> null (ver comentário acima do router.put). `validade` é
+    // `date` no banco, não aceita string vazia.
+    if (validade !== undefined) updateData.validade = (validade === '' ? null : validade);
     if (codigo_barras !== undefined) updateData.codigo_barras = codigo_barras;
-    
+
     updateData.atualizado_em = new Date();
 
     await DB.update('itens_consumo', id, updateData, tenantId);

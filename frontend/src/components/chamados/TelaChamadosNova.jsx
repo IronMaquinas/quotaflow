@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useChamados } from "../../hooks/useChamados";
 import { useEquipamentos } from "../../hooks/useEquipamentos";
-import { useCatalogo } from '../../hooks/useCatalogo';
 import apiService from "../../services/apiService";
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -18,7 +17,12 @@ function useEstoque() {
     setConsultando(prev => ({ ...prev, [itemCatalogoId]: true }));
     try {
       // TODO(backend): GET /estoque/saldo?item_catalogo_id=X -> { disponivel, reservado, fisico }
-      const resp = await apiService.get('/estoque/saldo', { params: { item_catalogo_id: itemCatalogoId } });
+      // FIX: apiService.get(endpoint, params) recebe os query params DIRETO
+      // (sem wrapper { params: {...} } — isso é convenção do axios, não
+      // deste apiService). Com o wrapper, a URL saía como
+      // "?params=[object Object]" e a consulta de saldo sempre falhava
+      // silenciosamente (caía no catch abaixo, retornando "nao_verificado").
+      const resp = await apiService.get('/estoque/saldo', { item_catalogo_id: itemCatalogoId });
       const disponivel = resp?.disponivel ?? 0;
       const qtd = Number(quantidadeNecessaria) || 1;
       let status = "sem_estoque";
@@ -50,7 +54,11 @@ const estoqueCfg = {
   atende:         { icon: "🟢", label: "Estoque atende à demanda" },
   parcial:        { icon: "🟡", label: "Estoque atende parcialmente" },
   sem_estoque:    { icon: "🔴", label: "Sem estoque — necessário comprar" },
-  nao_verificado: { icon: "⚪", label: "Selecione um item do catálogo para verificar o estoque" },
+  nao_verificado: { icon: "⚪", label: "Selecione um item da lista para verificar o estoque" },
+  // Item reconhecido (bate com o cadastro de algum fornecedor), mas sem
+  // vínculo de estoque local — não há o que consultar. Nunca mostra
+  // fornecedor/preço aqui, só a confirmação de que o nome é conhecido.
+  reconhecido_sem_estoque_local: { icon: "🔵", label: "Item reconhecido — sem controle de estoque local para ele" },
 };
 
 const urgenciaCfgMap = { alta: { l: "Alta", c: "#ef4444" }, media: { l: "Média", c: "#f59e0b" }, baixa: { l: "Baixa", c: "#22c55e" } };
@@ -154,7 +162,6 @@ function paraISOComOffset(datetimeLocalStr) {
 export default function TelaChamadosNova({ fmtBRL, fmtD, C, s }) {
   const { chamados, loading, erro, carregar, criar, atualizar, deletar } = useChamados();
   const { equipamentos } = useEquipamentos();
-  const { itens: catalogoItens } = useCatalogo();
   const { consultarSaldo, consultando, reservar } = useEstoque();
 
   const [telaAtual, setTelaAtual] = useState("lista");
@@ -171,6 +178,11 @@ export default function TelaChamadosNova({ fmtBRL, fmtD, C, s }) {
 
   const [itemSugestoes, setItemSugestoes] = useState({});
   const [showSugestoes, setShowSugestoes] = useState({});
+  const [buscandoSugestoes, setBuscandoSugestoes] = useState({});
+  // debounce + guard de resposta fora de ordem: por item (chave = itemId),
+  // guarda o timer pendente e um contador de "última busca disparada" — se
+  // a resposta que chega não é da busca mais recente, é descartada.
+  const buscaItemRef = useRef({});
 
   const formVazio = () => ({
     equipamentoId: "",
@@ -210,60 +222,80 @@ export default function TelaChamadosNova({ fmtBRL, fmtD, C, s }) {
     return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
-  // Busca de sugestões no catálogo (lógica original preservada)
+  // Busca de sugestões — via backend (GET /catalogo/buscar-item), cobrindo
+  // catálogo local do tenant E marketplace de fornecedores (dual-source).
+  // Contrato de resposta é DELIBERADAMENTE restrito: nunca traz fornecedor
+  // nem preço, porque quem usa esta tela não deve ver dado comercial —
+  // isso é garantido no backend (routes/catalogoBusca.js), não aqui; esta
+  // função só consome o que a API já devolve.
+  // Debounce (350ms) + guard de resposta fora de ordem por item, já que
+  // várias teclas digitadas rápido podem disparar requisições que voltam
+  // em ordem diferente da que foram enviadas.
   function buscarSugestoesItem(termo, itemId) {
+    if (!buscaItemRef.current[itemId]) buscaItemRef.current[itemId] = { timer: null, ultimaChamadaId: 0 };
+    const ctrl = buscaItemRef.current[itemId];
+
+    if (ctrl.timer) clearTimeout(ctrl.timer);
+
     if (termo.trim().length < 2) {
+      ctrl.ultimaChamadaId += 1;
       setItemSugestoes(prev => ({ ...prev, [itemId]: [] }));
       setShowSugestoes(prev => ({ ...prev, [itemId]: false }));
+      setBuscandoSugestoes(prev => ({ ...prev, [itemId]: false }));
       return;
     }
-    const normalizarTexto = (texto) => texto.toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-    const calcularSimilaridade = (str1, str2) => {
-      const n1 = normalizarTexto(str1);
-      const n2 = normalizarTexto(str2);
-      if (n1 === n2) return 100;
-      if (!n1 || !n2) return 0;
-      const len1 = n1.length, len2 = n2.length;
-      const matriz = Array(len2 + 1).fill(null).map(() => Array(len1 + 1).fill(0));
-      for (let i = 0; i <= len1; i++) matriz[0][i] = i;
-      for (let j = 0; j <= len2; j++) matriz[j][0] = j;
-      for (let j = 1; j <= len2; j++) {
-        for (let i = 1; i <= len1; i++) {
-          const cost = n1[i - 1] === n2[j - 1] ? 0 : 1;
-          matriz[j][i] = Math.min(matriz[j][i - 1] + 1, matriz[j - 1][i] + 1, matriz[j - 1][i - 1] + cost);
-        }
+
+    setBuscandoSugestoes(prev => ({ ...prev, [itemId]: true }));
+
+    ctrl.timer = setTimeout(async () => {
+      const chamadaId = ++ctrl.ultimaChamadaId;
+      try {
+        // apiService.get(endpoint, params) recebe os query params DIRETO
+        // (sem wrapper { params: {...} } — esse é o formato do axios, não
+        // o deste apiService, que monta a URL via URLSearchParams a partir
+        // do objeto passado aqui mesmo).
+        const resp = await apiService.get('/catalogo/buscar-item', { termo, limit: 5 });
+        if (chamadaId !== ctrl.ultimaChamadaId) return; // resposta obsoleta, ignora
+        const resultados = resp?.resultados || [];
+        setItemSugestoes(prev => ({ ...prev, [itemId]: resultados }));
+        setShowSugestoes(prev => ({ ...prev, [itemId]: resultados.length > 0 }));
+      } catch (err) {
+        if (chamadaId !== ctrl.ultimaChamadaId) return;
+        console.warn("⚠️ /catalogo/buscar-item indisponível:", err.message);
+        setItemSugestoes(prev => ({ ...prev, [itemId]: [] }));
+        setShowSugestoes(prev => ({ ...prev, [itemId]: false }));
+      } finally {
+        if (chamadaId === ctrl.ultimaChamadaId) setBuscandoSugestoes(prev => ({ ...prev, [itemId]: false }));
       }
-      const maxLen = Math.max(len1, len2);
-      const distancia = matriz[len2][len1];
-      return Math.max(0, Math.min(100, ((maxLen - distancia) / maxLen) * 100));
-    };
-    const termoBuscado = normalizarTexto(termo);
-    const termoOriginal = termo.toLowerCase();
-    const porInclusao = catalogoItens.filter(item => {
-      const nomeNorm = normalizarTexto(item.nome);
-      const nomeLower = item.nome.toLowerCase();
-      return nomeNorm.includes(termoBuscado) || nomeLower.includes(termoOriginal);
-    });
-    let sugestoes;
-    if (porInclusao.length > 0) {
-      sugestoes = porInclusao.map(item => ({ ...item, similaridade: calcularSimilaridade(termo, item.nome), tipo: 'inclusao' }))
-        .sort((a, b) => b.similaridade - a.similaridade).slice(0, 5);
-    } else {
-      sugestoes = catalogoItens.map(item => ({ ...item, similaridade: calcularSimilaridade(termo, item.nome), tipo: 'levenshtein' }))
-        .filter(item => item.similaridade >= 40).sort((a, b) => b.similaridade - a.similaridade).slice(0, 5);
-    }
-    setItemSugestoes(prev => ({ ...prev, [itemId]: sugestoes }));
-    setShowSugestoes(prev => ({ ...prev, [itemId]: sugestoes.length > 0 }));
+    }, 350);
   }
 
-  async function selecionarSugestao(itemId, nomeItem, catalogoId) {
-    atualizarItem(itemId, "item_nome", nomeItem);
-    atualizarItem(itemId, "item_catalogo_id", catalogoId);
+  // sug = { origem: "catalogo" | "fornecedores", catalogo_item_id, nome, codigo, categoria, tipo_match, confianca }
+  async function selecionarSugestao(itemId, sug) {
+    atualizarItem(itemId, "item_nome", sug.nome);
+    atualizarItem(itemId, "codigo", sug.codigo || "");
     setItemSugestoes(prev => ({ ...prev, [itemId]: [] }));
     setShowSugestoes(prev => ({ ...prev, [itemId]: false }));
-    const item = form.itens.find(m => m.id === itemId);
-    const { status, disponivel } = await consultarSaldo(catalogoId, item?.quantidade || 1);
-    setForm(f => ({ ...f, itens: f.itens.map(m => m.id === itemId ? { ...m, status_estoque: status, saldo_disponivel: disponivel } : m) }));
+
+    if (sug.origem === "catalogo" && sug.catalogo_item_id) {
+      // Match no catálogo local do tenant -> tem estoque real pra consultar.
+      atualizarItem(itemId, "item_catalogo_id", sug.catalogo_item_id);
+      const item = form.itens.find(m => m.id === itemId);
+      const { status, disponivel } = await consultarSaldo(sug.catalogo_item_id, item?.quantidade || 1);
+      setForm(f => ({ ...f, itens: f.itens.map(m => m.id === itemId ? { ...m, status_estoque: status, saldo_disponivel: disponivel } : m) }));
+    } else {
+      // Match só no marketplace de fornecedores: nome reconhecido, mas sem
+      // vínculo de estoque local — não existe item_catalogo_id pra
+      // consultar saldo. O código preenchido acima (linha 276) é o PN de
+      // UM fornecedor específico que respondeu o match — útil como
+      // referência pra diferenciar itens de nome parecido (ex: duas
+      // "lâmpada farol direito" de veículos diferentes), mas não é um PN
+      // "oficial" unificado do item. Rótulo neutro específico de estoque,
+      // nunca mostra fornecedor/preço aqui (esses dados nem chegam nesta
+      // tela — o backend já os omite por contrato).
+      atualizarItem(itemId, "item_catalogo_id", null);
+      setForm(f => ({ ...f, itens: f.itens.map(m => m.id === itemId ? { ...m, status_estoque: "reconhecido_sem_estoque_local", saldo_disponivel: null } : m) }));
+    }
   }
 
   async function revalidarSaldoQuantidade(itemId, novaQuantidade) {
@@ -666,15 +698,42 @@ export default function TelaChamadosNova({ fmtBRL, fmtD, C, s }) {
                                 onFocus={() => { if (itemSugestoes[item.id]?.length > 0) setShowSugestoes(prev => ({ ...prev, [item.id]: true })); }}
                                 onBlur={() => setTimeout(() => setShowSugestoes(prev => ({ ...prev, [item.id]: false })), 200)}
                                 placeholder="Ex: Rolamento SKF 6205" style={s.input} />
-                              {showSugestoes[item.id] && itemSugestoes[item.id]?.length > 0 && (
-                                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: C.bg, border: `1px solid ${C.border}`, borderTop: "none", borderRadius: "0 0 6px 6px", zIndex: 100, maxHeight: 180, overflowY: "auto", boxShadow: "0 4px 6px rgba(0,0,0,0.1)" }}>
-                                  {itemSugestoes[item.id].map(sug => (
-                                    <div key={sug.id} onClick={() => selecionarSugestao(item.id, sug.nome, sug.id)} style={{ padding: "10px 12px", cursor: "pointer", borderBottom: `1px solid ${C.border}22`, fontSize: 12 }}
-                                      onMouseEnter={e => e.currentTarget.style.background = "#1e2a3f"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
-                                      <div style={{ color: C.text, fontWeight: 500 }}>{sug.nome}</div>
-                                      <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{sug.categoria}</div>
-                                    </div>
-                                  ))}
+                              {buscandoSugestoes[item.id] && (
+                                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: C.bg, border: `1px solid ${C.border}`, borderTop: "none", borderRadius: "0 0 6px 6px", zIndex: 100, padding: "8px 12px", fontSize: 11, color: C.muted }}>
+                                  Buscando...
+                                </div>
+                              )}
+                              {!buscandoSugestoes[item.id] && showSugestoes[item.id] && itemSugestoes[item.id]?.length > 0 && (
+                                <div style={{ position: "absolute", top: "100%", left: 0, right: 0, background: C.bg, border: `1px solid ${C.border}`, borderTop: "none", borderRadius: "0 0 6px 6px", zIndex: 100, maxHeight: 220, overflowY: "auto", boxShadow: "0 4px 6px rgba(0,0,0,0.1)" }}>
+                                  {itemSugestoes[item.id].map((sug, i) => {
+                                    const doCatalogo = sug.origem === "catalogo";
+                                    const matchExato = sug.tipo_match === "codigo" || sug.tipo_match === "pn";
+                                    // PN no hint ajuda a diferenciar itens de nome parecido mas
+                                    // de aplicação/veículo diferente (ex: duas "lâmpada farol
+                                    // direito" com PN distinto). Vindo do marketplace, é o PN de
+                                    // UM fornecedor específico — referência, não um código
+                                    // "oficial" unificado do item.
+                                    const partesInfo = [];
+                                    if (sug.codigo) partesInfo.push(`PN: ${sug.codigo}`);
+                                    else if (doCatalogo) partesInfo.push(sug.categoria || "Catálogo local");
+                                    else partesInfo.push("Reconhecido");
+                                    if (doCatalogo && sug.codigo && sug.categoria) partesInfo.push(sug.categoria);
+                                    if (matchExato) partesInfo.push("código exato");
+                                    return (
+                                      <div key={`${sug.origem}-${sug.catalogo_item_id || sug.nome}-${i}`} onClick={() => selecionarSugestao(item.id, sug)} style={{ padding: "10px 12px", cursor: "pointer", borderBottom: `1px solid ${C.border}22`, fontSize: 12, display: "flex", alignItems: "center", gap: 8 }}
+                                        onMouseEnter={e => e.currentTarget.style.background = "#1e2a3f"} onMouseLeave={e => e.currentTarget.style.background = "transparent"}>
+                                        <span title={doCatalogo ? "No catálogo local — estoque pode ser verificado" : "Reconhecido — sem estoque local para verificar"} style={{ fontSize: 13, flexShrink: 0 }}>
+                                          {doCatalogo ? "📦" : "🔵"}
+                                        </span>
+                                        <div style={{ flex: 1, minWidth: 0 }}>
+                                          <div style={{ color: C.text, fontWeight: 500 }}>{sug.nome}</div>
+                                          <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                                            {partesInfo.join(" · ")}
+                                          </div>
+                                        </div>
+                                      </div>
+                                    );
+                                  })}
                                 </div>
                               )}
                             </div>
