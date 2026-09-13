@@ -212,7 +212,7 @@ const realizarRetirada = async () => {
         <input 
           value={origem} 
           onChange={e => setOrigem(e.target.value)} 
-          placeholder="Ex: OS-2026-0001, Obra X ou Cotação CHAM-2026-0001" 
+          placeholder="Ex: OS-2026-0001, Obra X ou Cotação RC-2026-0001" 
           style={s.input} 
         />
       </div>

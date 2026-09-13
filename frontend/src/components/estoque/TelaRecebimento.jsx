@@ -2076,7 +2076,7 @@ return (
 
               <div style={{ marginBottom: 16 }}>
                 <label style={s.label}>OBSERVAÇÃO</label>
-                <input value={observacao} onChange={(e) => setObservacao(e.target.value)} placeholder="Ex: Compra efetuada via cotação CHAM-2026-0001" style={s.input} disabled={!itemSelecionado}/>
+                <input value={observacao} onChange={(e) => setObservacao(e.target.value)} placeholder="Ex: Compra efetuada via cotação RC-2026-0001" style={s.input} disabled={!itemSelecionado}/>
               </div>
             </div>
 

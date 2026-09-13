@@ -12,7 +12,7 @@ const cotacaoService = new CotacaoService(DB);
 
 async function gerarNumeroChamado(tenant_id) {
   const ano = new Date().getFullYear();
-  const prefix = `CHAM-${ano}-`;
+  const prefix = `RC-${ano}-`;
 
   // Buscar o maior número usando id DESC
   const result = await DB.raw(`
@@ -43,6 +43,39 @@ async function gerarNumeroChamado(tenant_id) {
       existe = await DB.selectOne("chamados", { numero: novoNumero }, tenant_id);
       tentativas++;
     }
+  }
+
+  return novoNumero;
+}
+
+async function gerarNumeroOS(tenant_id) {
+  const ano = new Date().getFullYear();
+  const prefix = `OS-${ano}-`;
+
+  const result = await DB.raw(`
+    SELECT numero FROM chamados
+    WHERE tenant_id = $1 AND numero LIKE $2
+    ORDER BY id DESC
+    LIMIT 1
+  `, [tenant_id, `${prefix}%`]);
+
+  let seq = 1;
+  if (result.length > 0 && result[0].numero) {
+    const match = result[0].numero.match(/(\d+)$/);
+    if (match) {
+      seq = parseInt(match[1]) + 1;
+    }
+  }
+
+  let novoNumero = `${prefix}${String(seq).padStart(4, "0")}`;
+
+  let existe = await DB.selectOne("chamados", { numero: novoNumero }, tenant_id);
+  let tentativas = 0;
+  while (existe && tentativas < 100) {
+    seq++;
+    novoNumero = `${prefix}${String(seq).padStart(4, "0")}`;
+    existe = await DB.selectOne("chamados", { numero: novoNumero }, tenant_id);
+    tentativas++;
   }
 
   return novoNumero;
@@ -508,17 +541,26 @@ router.get("/chamados", tenantMiddleware, async (req, res) => {
     // 3. Buscar itens de todos os chamados
     // Inclui os campos da repaginação (materiais+serviços unificados):
     // tipo/origem/status/numero_base/posicao + campos específicos de serviço.
+    // DEPOIS: DB.select + sort em JS. O ORDER BY em SQL era ignorado pelo
+    // fallback genérico do DB.raw (mesma classe de bug que já apareceu no
+    // reverter/aplicar). Sort em JS não tem custo perceptível (a lista é do
+    // tamanho de 1 OS), e é o padrão confiável do projeto.
     let itens = [];
     if (chamadoIds.length > 0) {
-      itens = await DB.raw(`
-        SELECT chamado_id, id, item_nome, codigo, quantidade, urgencia, categoria, tipo_item, descricao,
-               item_catalogo_id, tipo, origem, status, numero_base, posicao,
-               qtd_pessoas_planejada, data_inicio_prevista, data_fim_prevista, origem_os_item_id,
-               quantidade_sugerida_recompra, lote_minimo_compra_snapshot, motivo_recompra
-        FROM chamado_itens
-        WHERE chamado_id = ANY($1) AND tenant_id = $2
-        ORDER BY chamado_id, posicao NULLS LAST, id
-      `, [chamadoIds, req.tenantId]);
+      const todosItens = await DB.select(
+        "chamado_itens",
+        { tenant_id: req.tenantId },
+        req.tenantId
+      );
+      itens = todosItens
+        .filter(it => chamadoIds.includes(it.chamado_id))
+        .sort((a, b) => {
+          if (a.chamado_id !== b.chamado_id) return a.chamado_id - b.chamado_id;
+          const pa = a.posicao ?? a.numero_base ?? Number.MAX_SAFE_INTEGER;
+          const pb = b.posicao ?? b.numero_base ?? Number.MAX_SAFE_INTEGER;
+          if (pa !== pb) return pa - pb;
+          return Number(a.id) - Number(b.id);
+        });
     }
 
     const rmPorOrigemItem = {};
@@ -562,14 +604,22 @@ router.get("/chamados", tenantMiddleware, async (req, res) => {
       });
     });
 
-    // 4. Adicionar equipamento_nome e equipamento_tag
-    const resultado = chamados.map(ch => ({
+    // Calcula o % de conclusão pra OSs em andamento (as demais ficam null).
+    // Feito em batch: 1 chamada por OS, mas só pra quem precisa.
+    const osComPercentual = await Promise.all(chamados.map(async (ch) => {
+      const precisaPct = (ch.tipo_documento || "os") === "os"
+        && ch.status === "em_andamento";
+      const percentual = precisaPct
+        ? await calcularPercentualConclusao(ch.id, req.tenantId)
+        : null;
+      return { ...ch, percentual_conclusao: percentual };
+    }));
+
+    const resultado = osComPercentual.map(ch => ({
       ...ch,
       equipamento_nome: equipamentosPorID[ch.equipamento_id]?.nome || '—',
       equipamento_tag: equipamentosPorID[ch.equipamento_id]?.tag || '—',
       origem_os_numero: ch.origem_os_numero || null,
-      // modo_programacao/data_inicio_prevista/data_fim_prevista já vêm
-      // direto do spread de `ch` (colunas da migration 003 em `chamados`).
       itens: itensPorChamado[ch.id] || []
     }));
 
@@ -622,6 +672,15 @@ function montarChamadoItemData(item, chamadoId, tenantId) {
     tipo_item: item.tipo_item || null,
     descricao: item.descricao || "",
     item_catalogo_id: item.item_catalogo_id || null,
+    // FIX (2026-09-11, achado testando POST /chamados/rc-manual): este
+    // helper nunca grava unidade_medida — o campo simplesmente não estava
+    // no objeto de retorno, então TODO item de material criado ou editado
+    // por aqui (POST /chamados, PUT /chamados/:id, e agora rc-manual)
+    // sempre caía no default 'UN' da coluna, mesmo quando o frontend
+    // mandava outra unidade (CX, L, KG...). Bug pré-existente, não
+    // introduzido nesta rodada — só foi notado agora testando o payload
+    // novo do rc-manual com unidade_medida != 'UN'.
+    unidade_medida: item.unidade_medida || "UN",
     qtd_pessoas_planejada: null,
     data_inicio_prevista: null,
     data_fim_prevista: null,
@@ -687,7 +746,8 @@ router.post("/chamados", tenantMiddleware, async (req, res) => {
       }
     }
 
-    const numero = await gerarNumeroChamado(req.tenantId);
+    //const numero = await gerarNumeroChamado(req.tenantId);
+    const numero = await gerarNumeroOS(req.tenantId);
 
     const chamadoData = {
       numero,
@@ -732,6 +792,17 @@ router.post("/chamados", tenantMiddleware, async (req, res) => {
       split = await dividirESalvarMateriais(itensMaterialAtivos, chamado, req.tenantId);
     }
 
+    // Registra evento de criação (assíncrono, não bloqueia a resposta)
+    {
+      const u = await usuarioAtual(req, req.tenantId);
+      await registrarEvento(
+        req.tenantId, chamado.id, "criacao",
+        `OS criada com ${itensInseridos.length} item(ns)`,
+        { total_itens: itensInseridos.length, equipamento_id: chamado.equipamento_id },
+        u
+      );
+    }
+
     res.status(201).json({
       id: chamado.id,
       numero: chamado.numero,
@@ -751,6 +822,81 @@ router.post("/chamados", tenantMiddleware, async (req, res) => {
 
   } catch (err) {
     console.error("❌ Erro criar chamado:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/cotacoes/chamados/rc-manual  (Fase 2 — RC standalone, sem OS)
+//
+// Cria uma RC (chamados, tipo_documento='requisicao_material') DIRETO —
+// sem passar por tipo_documento='os' primeiro. Diferente do split
+// automático (dividirESalvarMateriais, chamado de dentro de POST
+// /chamados), que sempre nasce a partir de uma OS real: esta rota existe
+// pra compra administrativa/avulsa que nunca teve execução de campo
+// nenhuma (não faz sentido criar uma "OS fantasma" só pra virar uma RC
+// imediatamente) — ver claude/redesenho-os-rm-rc.md, Fase 2, decisão
+// "Cria RC direto, sem OS fantasma".
+//
+// origem_os_id/origem_os_numero ficam null nessas RCs — é assim que o
+// frontend (TelaChamadosNova.jsx, agora a tela de RC) distingue "Manual"
+// de "gerada a partir de uma OS" na coluna Origem.
+//
+// Body esperado: { itens: [...], urgencia, categoria, descricao_geral }
+// — mesmo formato de item que POST /chamados já aceita pra tipo=material
+// (ver montarChamadoItemData). Só material: item tipo=servico no payload
+// é rejeitado (RC nunca teve serviço, isso é conteúdo de OS).
+// ─────────────────────────────────────────────────────────────────────────
+router.post("/chamados/rc-manual", tenantMiddleware, async (req, res) => {
+  try {
+    const { itens, urgencia, categoria, descricao_geral, servico_nome, equipamento_id } = req.body;
+
+    if (!Array.isArray(itens) || itens.length === 0) {
+      return res.status(400).json({ erro: "itens é obrigatório e deve conter ao menos 1 material" });
+    }
+
+    for (const item of itens) {
+      if (item.tipo && item.tipo !== "material") {
+        return res.status(400).json({ erro: "RC manual só aceita itens de material (sem serviço)" });
+      }
+      if (!item.item_nome) {
+        return res.status(400).json({ erro: "Todos os itens devem ter item_nome" });
+      }
+    }
+
+    const numero = await gerarNumeroRM(req.tenantId); // já gera prefixo RC-
+
+    const rc = await DB.insert("chamados", {
+      tenant_id: req.tenantId,
+      numero,
+      tipo_documento: "requisicao_material",
+      origem_os_id: null,
+      origem_os_numero: null,
+      equipamento_id: equipamento_id || null,
+      urgencia: urgencia || "media",
+      categoria: categoria || "corretiva",
+      status: "aguardando_cotacao",
+      descricao: descricao_geral || "",
+      servico_nome: servico_nome || descricao_geral || `Requisição de compra manual`,
+      participa_benchmark: 1
+    }, req.tenantId);
+
+    const itensInseridos = [];
+    for (const item of itens) {
+      const itemData = montarChamadoItemData({ ...item, tipo: "material" }, rc.id, req.tenantId);
+      const novoItem = await DB.insert("chamado_itens", itemData, req.tenantId);
+      itensInseridos.push(novoItem);
+    }
+
+    res.status(201).json({
+      id: rc.id,
+      numero: rc.numero,
+      status: rc.status,
+      itens: itensInseridos,
+      mensagem: `${rc.numero} criada com ${itensInseridos.length} item(ns)`
+    });
+  } catch (err) {
+    console.error("❌ Erro ao criar RC manual:", err.message);
     res.status(500).json({ erro: err.message });
   }
 });
@@ -1168,6 +1314,19 @@ router.put("/chamados/:id", tenantMiddleware, async (req, res) => {
       return res.status(404).json({ erro: "Chamado não encontrado" });
     }
 
+    // Trava de conclusão: OS concluída é imutável.
+    if (chamado.concluida_em) {
+      return res.status(400).json({
+        erro: `${chamado.numero} está concluída desde ${new Date(chamado.concluida_em).toLocaleString('pt-BR')} — não pode ser editada`
+      });
+    }
+
+    if (chamado.cancelada_em) {
+      return res.status(400).json({
+        erro: `${chamado.numero} está cancelada desde ${new Date(chamado.cancelada_em).toLocaleString('pt-BR')} — não pode ser editada`
+      });
+    }
+
     // Atualiza dados do chamado
     const updateData = {};
     if (equipamento_id !== undefined) updateData.equipamento_id = equipamento_id;
@@ -1217,16 +1376,60 @@ router.put("/chamados/:id", tenantMiddleware, async (req, res) => {
     }
 
     const itensSalvos = [];
+    // Mapa dos existentes pra diff
+    const itensExistentesPorId = {};
+    itensExistentes.forEach(it => { itensExistentesPorId[String(it.id)] = it; });
+
     for (const item of itens) {
       const itemData = montarChamadoItemData(item, id, tenantId);
       const idNormalizado = normalizarIdExistente(item.id);
 
       if (idNormalizado !== null && idsExistentes.has(idNormalizado)) {
+        const anterior = itensExistentesPorId[idNormalizado];
+
+        // Diff antes do update — registra eventos de alteração
+        const diffDescricoes = [];
+        if (anterior.item_nome !== itemData.item_nome) {
+          diffDescricoes.push(`nome: "${anterior.item_nome}" → "${itemData.item_nome}"`);
+        }
+        if (Number(anterior.quantidade) !== Number(itemData.quantidade) && itemData.tipo === "material") {
+          diffDescricoes.push(`quantidade: ${anterior.quantidade} → ${itemData.quantidade}`);
+        }
+        if (anterior.status !== itemData.status) {
+          diffDescricoes.push(`status: ${anterior.status} → ${itemData.status}`);
+        }
+
         const atualizado = await DB.update("chamado_itens", idNormalizado, itemData, tenantId);
         itensSalvos.push(atualizado);
+
+        if (diffDescricoes.length > 0) {
+          const tipoEvento = (anterior.status !== "cancelado" && itemData.status === "cancelado")
+            ? "item_cancelado"
+            : (anterior.status === "cancelado" && itemData.status === "ativo")
+              ? "item_restaurado"
+              : "item_alterado";
+          const desc = tipoEvento === "item_cancelado"
+            ? `Item #${atualizado.numero_base ?? atualizado.id} cancelado: ${atualizado.item_nome}`
+            : tipoEvento === "item_restaurado"
+              ? `Item #${atualizado.numero_base ?? atualizado.id} restaurado: ${atualizado.item_nome}`
+              : `Item #${atualizado.numero_base ?? atualizado.id} alterado: ${diffDescricoes.join(" · ")}`;
+          const u = await usuarioAtual(req, tenantId);
+          await registrarEvento(tenantId, id, tipoEvento, desc, {
+            item_id: atualizado.id,
+            diff: diffDescricoes,
+          }, u);
+        }
       } else {
         const inserido = await DB.insert("chamado_itens", itemData, tenantId);
         itensSalvos.push(inserido);
+
+        const u = await usuarioAtual(req, tenantId);
+        await registrarEvento(
+          tenantId, id, "item_adicionado",
+          `Item #${inserido.numero_base ?? inserido.id} adicionado: ${inserido.item_nome}`,
+          { item_id: inserido.id, tipo: inserido.tipo },
+          u
+        );
       }
     }
 
@@ -1968,6 +2171,26 @@ router.post("/chamados/:id/apontamentos", tenantMiddleware, async (req, res) => 
       return res.status(400).json({ erro: "Apontamento só se aplica a itens do tipo serviço" });
     }
 
+    // Busca a OS pra: (a) validar se está concluída/cancelada,
+    // (b) auto-transicionar 'aberta' → 'em_andamento'.
+    const osAp = await DB.selectOne("chamados", { id: chamadoId, tenant_id: tenantId }, tenantId);
+    if (osAp?.concluida_em) {
+      return res.status(400).json({ erro: `${osAp.numero} está concluída — não aceita apontamentos` });
+    }
+    if (osAp?.cancelada_em) {
+      return res.status(400).json({ erro: `${osAp.numero} está cancelada — não aceita apontamentos` });
+    }
+    if (osAp?.status === "aberta") {
+      await DB.update("chamados", chamadoId, { status: "em_andamento" }, tenantId);
+      const u = await usuarioAtual(req, tenantId);
+      await registrarEvento(
+        tenantId, chamadoId, "status_alterado",
+        "Status alterado: Aberta → Em andamento (primeiro apontamento registrado)",
+        { de: "aberta", para: "em_andamento" },
+        u
+      );
+    }
+
     // Validação de janela, espelhando a mesma regra já aplicada no
     // planejado (fim não pode ser anterior ao início).
     if (data_inicio_real && data_fim_real && new Date(data_fim_real) < new Date(data_inicio_real)) {
@@ -1999,9 +2222,1217 @@ router.post("/chamados/:id/apontamentos", tenantMiddleware, async (req, res) => 
       RETURNING *
     `, [dados.tenant_id, dados.chamado_item_id, dados.pessoas_reais, dados.data_inicio_real, dados.data_fim_real, dados.horas_extras, dados.lancado_por, dados.lancado_em]);
 
+    {
+      const u = await usuarioAtual(req, tenantId);
+      await registrarEvento(
+        tenantId, chamadoId, "apontamento",
+        `Apontamento lançado: ${pessoas_reais} pessoa(s) em "${item.item_nome}"`,
+        { item_id: servico_id, pessoas_reais, horas_extras: horas_extras || 0 },
+        u
+      );
+    }
+
     res.json({ ok: true, apontamento: apontamento[0], mensagem: "Apontamento salvo com sucesso" });
   } catch (err) {
     console.error("❌ Erro ao salvar apontamento:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// recalcularAplicacaoItem — deriva quantidade_aplicada e status_aplicacao
+// a partir da tabela de eventos (chamado_material_aplicacoes). Nunca
+// confia em incrementos parciais: sempre recalcula do zero, porque é
+// idempotente e evita drift se algum UPDATE falhar no meio.
+// ─────────────────────────────────────────────────────────────────────────
+async function recalcularAplicacaoItem(chamadoItemId, tenantId) {
+  const eventos = await DB.select(
+    "chamado_material_aplicacoes",
+    { chamado_item_id: chamadoItemId, tenant_id: tenantId },
+    tenantId
+  );
+
+  const aplicado = eventos
+    .filter(e => e.tipo_evento === "aplicacao")
+    .reduce((s, e) => s + (parseFloat(e.quantidade) || 0), 0);
+  const revertido = eventos
+    .filter(e => e.tipo_evento === "reversao")
+    .reduce((s, e) => s + (parseFloat(e.quantidade) || 0), 0);
+  const liquido = Math.max(0, aplicado - revertido);
+
+  const item = await DB.selectOne("chamado_itens", { id: chamadoItemId }, tenantId);
+  if (!item) return null;
+
+  const planejada = parseFloat(item.quantidade) || 0;
+
+  // 'nao_aplicado' é setado por uma rota específica — se já está assim,
+  // respeita a decisão do usuário e não deixa o cálculo sobrescrever.
+  if (item.status_aplicacao === "nao_aplicado") {
+    await DB.update("chamado_itens", chamadoItemId, {
+      quantidade_aplicada: liquido,
+    }, tenantId);
+    return { quantidade_aplicada: liquido, status_aplicacao: "nao_aplicado" };
+  }
+
+  let status;
+  if (liquido <= 0) status = "pendente";
+  else if (liquido < planejada) status = "parcial";
+  else status = "aplicado";
+
+  await DB.update("chamado_itens", chamadoItemId, {
+    quantidade_aplicada: liquido,
+    status_aplicacao: status,
+  }, tenantId);
+
+  return { quantidade_aplicada: liquido, status_aplicacao: status };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/cotacoes/chamados/:id/materiais/:itemId/aplicar
+//
+// Registra a aplicação física de um material na OS. Sem lastro formal
+// (compra emergencial), aceita com motivo + valor estimado, mas o registro
+// aparece no relatório de divergências. Não bloqueia operação em campo
+// por ausência de RM — ver claude/redesenho-os-rm-rc.md, seção
+// "aplicação com lastro vs emergencial".
+// ─────────────────────────────────────────────────────────────────────────
+router.post("/chamados/:id/materiais/:itemId/aplicar", tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { id: chamadoId, itemId } = req.params;
+  const {
+    quantidade, serializado, numeros_serie, lote, observacoes,
+    origem_lastro, motivo_emergencia, valor_estimado, evidencia_url,
+  } = req.body;
+  const idemKey = req.headers["idempotency-key"] || null;
+
+  try {
+    // ── Idempotência ──
+    if (idemKey) {
+      const existentes = await DB.select(
+        "chamado_material_aplicacoes",
+        { tenant_id: tenantId, idempotency_key: idemKey },
+        tenantId
+      );
+      if (existentes.length > 0) {
+        return res.status(200).json({
+          ok: true,
+          aplicacao: existentes[0],
+          idempotente: true,
+          mensagem: "Aplicação já registrada (requisição duplicada ignorada).",
+        });
+      }
+    }
+
+    // ── Validações ──
+    const os = await DB.selectOne("chamados", { id: chamadoId, tenant_id: tenantId }, tenantId);
+    if (!os) return res.status(404).json({ erro: "OS não encontrada" });
+    if ((os.tipo_documento || "os") !== "os") {
+      return res.status(400).json({ erro: "Só é possível aplicar material em Ordem de Serviço" });
+    }
+
+    if (os.concluida_em) {
+      return res.status(400).json({ erro: `${os.numero} está concluída — não aceita novas aplicações` });
+    }
+    if (os.cancelada_em) {
+      return res.status(400).json({ erro: `${os.numero} está cancelada — não aceita novas aplicações` });
+    }
+
+    // Auto-transição: primeira aplicação muda 'aberta' → 'em_andamento'
+    if (os.status === "aberta") {
+      await DB.update("chamados", chamadoId, { status: "em_andamento" }, tenantId);
+      const u = await usuarioAtual(req, tenantId);
+      await registrarEvento(
+        tenantId, chamadoId, "status_alterado",
+        "Status alterado: Aberta → Em andamento (primeira aplicação registrada)",
+        { de: "aberta", para: "em_andamento" },
+        u
+      );
+    }
+
+    const item = await DB.selectOne("chamado_itens", { id: itemId, chamado_id: chamadoId, tenant_id: tenantId }, tenantId);
+    if (!item) return res.status(404).json({ erro: "Item não encontrado nesta OS" });
+    if (item.tipo !== "material") return res.status(400).json({ erro: "Aplicação só se aplica a material" });
+    if (item.status === "cancelado") return res.status(400).json({ erro: "Item cancelado na OS" });
+
+    const q = parseFloat(quantidade);
+    if (!q || q <= 0) return res.status(400).json({ erro: "quantidade deve ser maior que zero" });
+
+    const jaAplicado = parseFloat(item.quantidade_aplicada) || 0;
+    const planejado = parseFloat(item.quantidade) || 0;
+    if (jaAplicado + q > planejado) {
+      return res.status(400).json({
+        erro: `A quantidade a aplicar (${q}) excede o pendente do item (${planejado - jaAplicado})`,
+      });
+    }
+
+    const lastroValidos = ["rm", "emergencial", "estoque_proprio"];
+    if (!lastroValidos.includes(origem_lastro)) {
+      return res.status(400).json({ erro: "origem_lastro inválido — use 'rm', 'emergencial' ou 'estoque_proprio'" });
+    }
+    if (origem_lastro !== "rm" && !motivo_emergencia) {
+      return res.status(400).json({ erro: "motivo_emergencia é obrigatório quando a origem não é RM" });
+    }
+
+    // ── Validação de série (antes do RPC) ──
+    const ehSerializado = !!serializado || !!item.serializado;
+    const series = Array.isArray(numeros_serie)
+      ? numeros_serie.map(s => String(s || "").trim().toUpperCase()).filter(Boolean)
+      : [];
+    if (ehSerializado) {
+      if (series.length !== q) {
+        return res.status(400).json({ erro: `Quantidade de nºs de série (${series.length}) difere da quantidade aplicada (${q})` });
+      }
+      if (new Set(series).size !== series.length) {
+        return res.status(400).json({ erro: "Há números de série repetidos nesta aplicação" });
+      }
+
+      const aplicacoesDoTenant = await DB.select(
+        "chamado_material_aplicacoes",
+        { tenant_id: tenantId, tipo_evento: "aplicacao" },
+        tenantId
+      );
+      const reversoesDoTenant = await DB.select(
+        "chamado_material_aplicacoes",
+        { tenant_id: tenantId, tipo_evento: "reversao" },
+        tenantId
+      );
+      const idsRevertidos = new Set(reversoesDoTenant.map(r => String(r.aplicacao_origem_id)));
+      const aplicacoesOutrasOs = aplicacoesDoTenant.filter(
+        a => String(a.chamado_id) !== String(chamadoId) && !idsRevertidos.has(String(a.id))
+      );
+
+      if (aplicacoesOutrasOs.length > 0) {
+        const idsAtivos = aplicacoesOutrasOs.map(a => a.id);
+        const todasSeries = await DB.select("chamado_material_aplicacao_series", { tenant_id: tenantId }, tenantId);
+        const payloadSet = new Set(series.map(s => s.toUpperCase()));
+        const conflitos = todasSeries
+          .filter(s => idsAtivos.includes(s.aplicacao_id) && payloadSet.has(String(s.numero_serie).toUpperCase()))
+          .map(s => {
+            const aplic = aplicacoesOutrasOs.find(a => a.id === s.aplicacao_id);
+            return { numero_serie: s.numero_serie, chamado_id: aplic?.chamado_id };
+          });
+        if (conflitos.length > 0) {
+          const c = conflitos[0];
+          return res.status(400).json({
+            erro: `Nº de série ${c.numero_serie} já está aplicado em outra OS (id ${c.chamado_id})`,
+          });
+        }
+      }
+    }
+
+    // ── Vínculo com RM ──
+    let retiradaItemId = null;
+    if (origem_lastro === "rm") {
+      const retiradaItens = await DB.select("solicitacao_retirada_itens", { tenant_id: tenantId, origem_os_item_id: itemId }, tenantId);
+      const validos = retiradaItens.filter(r => r.status !== "cancelado");
+      if (validos.length === 0) {
+        return res.status(400).json({
+          erro: "Não há RM vinculada a este item. Registre como 'emergencial' ou 'estoque_proprio'.",
+        });
+      }
+      retiradaItemId = validos[0].id;
+    }
+
+    // Busca o nome do usuário para gravar junto ao registro de aplicação.
+    // A coluna "nome" mora na tabela usuarios (o JWT só carrega id/email).
+    let operadorNome = null;
+    if (req.userId) {
+      try {
+        const u = await DB.selectOne("usuarios", { id: req.userId }, tenantId);
+        operadorNome = u?.nome || null;
+      } catch (_) { /* silencioso — se falhar, fica só email */ }
+    }
+
+    // ── RPC atômico (aplicação + séries numa transação) ──
+    let aplicacaoId;
+    try {
+      aplicacaoId = await DB.rpc("aplicar_material", {
+        p_tenant_id: tenantId,
+        p_chamado_id: parseInt(chamadoId),
+        p_chamado_item_id: parseInt(itemId),
+        p_quantidade: q,
+        p_origem_lastro: origem_lastro,
+        p_motivo_emergencia: motivo_emergencia || null,
+        p_valor_estimado: valor_estimado != null ? parseFloat(valor_estimado) : null,
+        p_evidencia_url: evidencia_url || null,
+        p_lote: lote || null,
+        p_observacoes: observacoes || null,
+        p_operador_id: req.userId || null,
+        p_operador_email: req.userEmail || null,
+        p_operador_nome: operadorNome,
+        p_idempotency_key: idemKey,
+        p_series: ehSerializado ? series : null,
+      });
+    } catch (rpcErr) {
+      // O índice único uq_aplic_series_ativo é a última linha de defesa
+      // contra race condition (dois técnicos aplicando o mesmo SN ao mesmo
+      // tempo). Se chegou aqui, foi isso — a validação amigável acima já
+      // tinha passado.
+      if (rpcErr.message.includes("uq_aplic_series_ativo")) {
+        return res.status(409).json({
+          erro: "Um dos números de série foi aplicado por outra requisição simultânea. Recarregue e tente novamente.",
+        });
+      }
+      throw rpcErr;
+    }
+
+    // Se veio retiradaItemId, atualiza (fora do RPC — não precisa atomicidade,
+    // é só um vínculo informativo; se falhar, não invalida a aplicação)
+    if (retiradaItemId) {
+      try {
+        await DB.update("chamado_material_aplicacoes", aplicacaoId, { retirada_item_id: retiradaItemId }, tenantId);
+      } catch (e) { console.warn("⚠ Falha ao vincular RM (não bloqueante):", e.message); }
+    }
+
+    {
+      const u = await usuarioAtual(req, tenantId);
+      await registrarEvento(
+        tenantId, chamadoId, "aplicacao",
+        `Aplicação registrada: ${q} un de "${item.item_nome}"`,
+        {
+          item_id: itemId,
+          quantidade: q,
+          origem_lastro,
+          numeros_serie: ehSerializado ? series : [],
+        },
+        u
+      );
+    }
+
+    // ── Recalcula e devolve ──
+    const status = await recalcularAplicacaoItem(itemId, tenantId);
+    const aplicacao = await DB.selectOne("chamado_material_aplicacoes", { id: aplicacaoId }, tenantId);
+    const seriesSalvas = ehSerializado
+      ? await DB.select("chamado_material_aplicacao_series", { aplicacao_id: aplicacaoId, tenant_id: tenantId }, tenantId)
+      : [];
+
+    res.status(201).json({
+      ok: true,
+      aplicacao,
+      series: seriesSalvas.map(s => s.numero_serie),
+      item: { id: itemId, ...status },
+      mensagem: "Aplicação registrada",
+    });
+  } catch (err) {
+    console.error("❌ Erro ao aplicar material:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/cotacoes/chamados/aplicacoes/:aplicacaoId/reverter
+//
+// Estorno de uma aplicação. Nunca deleta — insere uma linha tipo
+// 'reversao' apontando pra aplicação original (mesmo modelo do SAP, que
+// usa movimento 262 para estornar 261). O histórico completo fica
+// preservado para garantia/seguradora/auditoria.
+// ─────────────────────────────────────────────────────────────────────────
+router.post("/chamados/aplicacoes/:aplicacaoId/reverter", tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { aplicacaoId } = req.params;
+  const { motivo, observacoes } = req.body;
+
+  try {
+    if (!motivo) return res.status(400).json({ erro: "motivo é obrigatório" });
+
+    const original = await DB.selectOne(
+      "chamado_material_aplicacoes",
+      { id: aplicacaoId, tenant_id: tenantId },
+      tenantId
+    );
+    if (!original) return res.status(404).json({ erro: "Aplicação não encontrada" });
+    if (original.tipo_evento !== "aplicacao") {
+      return res.status(400).json({ erro: "Só é possível reverter uma aplicação (não uma reversão)" });
+    }
+
+    // Trava de conclusão / cancelamento: OS concluída ou cancelada não
+    // aceita reversão.
+    const osDaAplicacao = await DB.selectOne("chamados", { id: original.chamado_id, tenant_id: tenantId }, tenantId);
+    if (osDaAplicacao?.concluida_em) {
+      return res.status(400).json({ erro: `${osDaAplicacao.numero} está concluída — não aceita reversão` });
+    }
+    if (osDaAplicacao?.cancelada_em) {
+      return res.status(400).json({ erro: `${osDaAplicacao.numero} está cancelada — não aceita reversão` });
+    }
+
+    // Busca o nome do usuário (mesma lógica do handler aplicar).
+    let operadorNome = null;
+    if (req.userId) {
+      try {
+        const u = await DB.selectOne("usuarios", { id: req.userId }, tenantId);
+        operadorNome = u?.nome || null;
+      } catch (_) { /* silencioso */ }
+    }
+
+
+    // RPC atômico (reversão + desativar séries numa transação)
+    let reversaoId;
+    try {
+      reversaoId = await DB.rpc("reverter_aplicacao", {
+        p_tenant_id: tenantId,
+        p_aplicacao_id: parseInt(aplicacaoId),
+        p_motivo: motivo,
+        p_observacoes: observacoes || null,
+        p_operador_id: req.userId || null,
+        p_operador_email: req.userEmail || null,
+        p_operador_nome: operadorNome,
+      });
+    } catch (rpcErr) {
+      if (rpcErr.message.includes("já foi revertida")) {
+        return res.status(400).json({ erro: "Esta aplicação já foi revertida anteriormente" });
+      }
+      if (rpcErr.message.includes("Só é possível reverter")) {
+        return res.status(400).json({ erro: "Só é possível reverter uma aplicação (não uma reversão)" });
+      }
+      throw rpcErr;
+    }
+
+    const reversao = await DB.selectOne("chamado_material_aplicacoes", { id: reversaoId }, tenantId);
+    {
+      const u = await usuarioAtual(req, tenantId);
+      await registrarEvento(
+        tenantId, original.chamado_id, "reversao",
+        `Reversão de aplicação: ${original.quantidade} un — motivo: ${motivo}`,
+        { aplicacao_origem_id: aplicacaoId, motivo },
+        u
+      );
+    }
+    const status = await recalcularAplicacaoItem(original.chamado_item_id, tenantId);
+
+    res.json({
+      ok: true,
+      reversao,
+      item: { id: original.chamado_item_id, ...status },
+      mensagem: "Aplicação revertida. Histórico preservado.",
+    });
+  } catch (err) {
+    console.error("❌ Erro ao reverter aplicação:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/cotacoes/chamados/:id/materiais/:itemId/marcar-nao-aplicado
+//
+// O técnico determina que a peça não foi aplicada (ex: retirou errado,
+// descobriu que era outro modelo). Marca o item da OS como 'nao_aplicado'
+// e cancela a linha correspondente na RM, devolvendo o saldo ao estoque.
+// ─────────────────────────────────────────────────────────────────────────
+router.post("/chamados/:id/materiais/:itemId/marcar-nao-aplicado", tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { id: chamadoId, itemId } = req.params;
+  const { motivo } = req.body;
+
+  try {
+    const item = await DB.selectOne(
+      "chamado_itens",
+      { id: itemId, chamado_id: chamadoId, tenant_id: tenantId },
+      tenantId
+    );
+    if (!item) return res.status(404).json({ erro: "Item não encontrado" });
+    if (item.tipo !== "material") return res.status(400).json({ erro: "Só material" });
+
+    // Trava de conclusão: OS concluída não aceita mudança de status do item.
+    const osDoItem = await DB.selectOne("chamados", { id: chamadoId, tenant_id: tenantId }, tenantId);
+    if (osDoItem?.concluida_em) {
+      return res.status(400).json({ erro: `${osDoItem.numero} está concluída — não aceita alterações` });
+    }
+    if (osDoItem?.cancelada_em) {
+      return res.status(400).json({ erro: `${osDoItem.numero} está cancelada — não aceita alterações` });
+    }
+
+    const aplicado = parseFloat(item.quantidade_aplicada) || 0;
+    if (aplicado > 0) {
+      return res.status(400).json({
+        erro: "Item já tem aplicação registrada. Reverta as aplicações antes de marcar como não aplicado.",
+      });
+    }
+
+    // Cancela linha da RM vinculada, se houver (devolve saldo)
+    const rmLinks = await DB.raw(`
+      SELECT sri.id
+      FROM solicitacao_retirada_itens sri
+      JOIN solicitacoes_retirada sr ON sr.id = sri.solicitacao_retirada_id
+      WHERE sri.tenant_id = $1 AND sri.origem_os_item_id = $2
+        AND sr.origem_os_id = $3 AND sri.status != 'cancelado'
+    `, [tenantId, itemId, chamadoId]);
+
+    for (const rm of rmLinks) {
+      await DB.update("solicitacao_retirada_itens", rm.id, {
+        status: "cancelado",
+        motivo_cancelamento: motivo || "Marcado como não aplicado na OS",
+      }, tenantId);
+    }
+
+    await DB.update("chamado_itens", itemId, {
+      status_aplicacao: "nao_aplicado",
+    }, tenantId);
+
+    res.json({
+      ok: true,
+      item: { id: itemId, status_aplicacao: "nao_aplicado" },
+      rmCanceladas: rmLinks.length,
+      mensagem: rmLinks.length > 0
+        ? `Item marcado como não aplicado. ${rmLinks.length} linha(s) da RM cancelada(s) — saldo devolvido.`
+        : "Item marcado como não aplicado.",
+    });
+  } catch (err) {
+    console.error("❌ Erro ao marcar como não aplicado:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/cotacoes/chamados/:id/materiais/:itemId/aplicacoes
+//
+// Histórico completo de aplicações e reversões de um item — alimenta o
+// painel expandido na tela de detalhe da OS. Devolve cada evento com os
+// SNs que ele carrega, em ordem cronológica decrescente.
+// ─────────────────────────────────────────────────────────────────────────
+router.get("/chamados/:id/materiais/:itemId/aplicacoes", tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { id: chamadoId, itemId } = req.params;
+
+  try {
+    const eventos = await DB.raw(`
+      SELECT *
+      FROM chamado_material_aplicacoes
+      WHERE tenant_id = $1 AND chamado_id = $2 AND chamado_item_id = $3
+      ORDER BY data_evento DESC, id DESC
+    `, [tenantId, chamadoId, itemId]);
+
+    // Carrega SNs de cada aplicação
+    const aplicacaoIds = eventos.map(e => e.id);
+    let series = [];
+    if (aplicacaoIds.length > 0) {
+      series = await DB.raw(`
+        SELECT aplicacao_id, numero_serie
+        FROM chamado_material_aplicacao_series
+        WHERE tenant_id = $1 AND aplicacao_id = ANY($2)
+        ORDER BY id
+      `, [tenantId, aplicacaoIds]);
+    }
+
+    const seriesPorAplicacao = {};
+    series.forEach(s => {
+      if (!seriesPorAplicacao[s.aplicacao_id]) seriesPorAplicacao[s.aplicacao_id] = [];
+      seriesPorAplicacao[s.aplicacao_id].push(s.numero_serie);
+    });
+
+    // Marca quais aplicações já foram revertidas (pra UI esconder o botão)
+    const revertidasIds = new Set(
+      eventos.filter(e => e.tipo_evento === "reversao" && e.aplicacao_origem_id)
+             .map(e => String(e.aplicacao_origem_id))
+    );
+
+    const aplicacoes = eventos.map(e => ({
+      ...e,
+      numeros_serie: seriesPorAplicacao[e.id] || [],
+      pode_reverter: e.tipo_evento === "aplicacao" && !revertidasIds.has(String(e.id)),
+    }));
+
+    res.json({ ok: true, aplicacoes });
+  } catch (err) {
+    console.error("❌ Erro ao listar aplicações:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// validarOSNaoConcluida — usado como guard em toda rota que altera a OS
+// ou seus itens. Depois de concluída, a OS vira imutável (rastreabilidade
+// e auditoria — mesma regra do bloqueado_em das RCs).
+// Lança erro que os handlers convertem em 400.
+// ─────────────────────────────────────────────────────────────────────────
+async function validarOSNaoConcluida(chamadoId, tenantId) {
+  const os = await DB.selectOne("chamados", { id: chamadoId, tenant_id: tenantId }, tenantId);
+  if (!os) throw new Error("OS não encontrada");
+  if (os.concluida_em) {
+    throw new Error(`${os.numero} já está concluída desde ${new Date(os.concluida_em).toLocaleString('pt-BR')} — não pode ser editada`);
+  }
+  if (os.cancelada_em) {
+    throw new Error(`${os.numero} está cancelada desde ${new Date(os.cancelada_em).toLocaleString('pt-BR')} — não pode ser editada`);
+  }
+  return os;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/cotacoes/chamados/:id/concluir
+//
+// Fecha a OS. Valida que todos os materiais foram resolvidos
+// (aplicados ou explicitamente marcados como não aplicados) e grava um
+// snapshot consolidado — horas planejadas, horas reais, custo de
+// materiais. Depois disso, a OS fica imutável.
+// ─────────────────────────────────────────────────────────────────────────
+router.post("/chamados/:id/concluir", tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { id: chamadoId } = req.params;
+
+  try {
+    const os = await DB.selectOne("chamados", { id: chamadoId, tenant_id: tenantId }, tenantId);
+    if (!os) return res.status(404).json({ erro: "OS não encontrada" });
+    if ((os.tipo_documento || "os") !== "os") {
+      return res.status(400).json({ erro: "Só Ordens de Serviço podem ser concluídas por aqui" });
+    }
+    if (os.concluida_em) {
+      return res.status(400).json({ erro: `${os.numero} já está concluída` });
+    }
+    if (os.cancelada_em) {
+      return res.status(400).json({ erro: `${os.numero} está cancelada — não pode ser concluída` });
+    }
+
+    // ── Itens da OS ──
+    const todosItens = await DB.select("chamado_itens", { chamado_id: chamadoId, tenant_id: tenantId }, tenantId);
+    const itensAtivos = todosItens.filter(it => it.status !== "cancelado");
+    const materiais = itensAtivos.filter(it => it.tipo === "material");
+    const servicos = itensAtivos.filter(it => it.tipo === "servico");
+
+    // ── Bloqueio: material pendente ou parcial ──
+    const materiaisPendentes = materiais.filter(m => {
+      const aplicado = Number(m.quantidade_aplicada) || 0;
+      const planejado = Number(m.quantidade) || 0;
+      if (m.status_aplicacao === "nao_aplicado") return false;
+      return aplicado < planejado;
+    });
+
+    if (materiaisPendentes.length > 0) {
+      return res.status(400).json({
+        erro: `Não é possível concluir: ${materiaisPendentes.length} material(is) sem confirmação de aplicação. Aplique ou marque como "não aplicado" antes de fechar a OS.`,
+        materiais_pendentes: materiaisPendentes.map(m => ({
+          id: m.id,
+          item_nome: m.item_nome,
+          quantidade: m.quantidade,
+          quantidade_aplicada: m.quantidade_aplicada,
+          status_aplicacao: m.status_aplicacao,
+        })),
+      });
+    }
+
+    // ── Aviso (não bloqueia): serviço sem apontamento ──
+    const apontamentos = await DB.select("chamado_apontamentos", { tenant_id: tenantId }, tenantId);
+    const idsServicos = servicos.map(s => s.id);
+    const apontamentosPorItem = {};
+    apontamentos.filter(a => idsServicos.includes(a.chamado_item_id))
+      .forEach(a => { apontamentosPorItem[a.chamado_item_id] = a; });
+
+    const servicosSemApontamento = servicos.filter(s => !apontamentosPorItem[s.id]);
+
+    // ── Snapshot: horas ──
+    function horasHomem(ini, fim, pessoas) {
+      if (!ini || !fim || !pessoas) return 0;
+      const diffMs = new Date(fim) - new Date(ini);
+      if (isNaN(diffMs) || diffMs <= 0) return 0;
+      return (diffMs / 3600000) * Number(pessoas);
+    }
+
+    const horasPlanejadas = servicos.reduce((soma, s) =>
+      soma + horasHomem(s.data_inicio_prevista, s.data_fim_prevista, s.qtd_pessoas_planejada), 0);
+
+    const horasReais = servicos.reduce((soma, s) => {
+      const ap = apontamentosPorItem[s.id];
+      if (!ap) return soma;
+      const h = horasHomem(ap.data_inicio_real, ap.data_fim_real, ap.pessoas_reais);
+      return soma + h + (Number(ap.horas_extras) || 0);
+    }, 0);
+
+    // ── Snapshot: custo de materiais ──
+    // Soma o valor_estimado das aplicações NÃO revertidas. Obs: só
+    // captura compras emergenciais — material via RM não tem preço
+    // armazenado aqui ainda (viria do PO). Documentado na UI.
+    const aplicacoes = await DB.select("chamado_material_aplicacoes", { chamado_id: chamadoId, tenant_id: tenantId }, tenantId);
+    const reversoes = aplicacoes.filter(a => a.tipo_evento === "reversao");
+    const idsRevertidos = new Set(reversoes.map(r => String(r.aplicacao_origem_id)));
+    const aplicacoesAtivas = aplicacoes.filter(a =>
+      a.tipo_evento === "aplicacao" && !idsRevertidos.has(String(a.id))
+    );
+
+    const custoMateriais = aplicacoesAtivas.reduce((soma, a) => {
+      if (a.valor_estimado == null) return soma;
+      return soma + (Number(a.valor_estimado) * Number(a.quantidade));
+    }, 0);
+
+    // ── Busca nome do operador ──
+    let operadorNome = null;
+    if (req.userId) {
+      try {
+        const u = await DB.selectOne("usuarios", { id: req.userId }, tenantId);
+        operadorNome = u?.nome || null;
+      } catch (_) {}
+    }
+
+    // (Nada a fazer antes — o evento de conclusão é registrado depois do
+    // update, junto com o snapshot.)
+    // ── Persiste ──
+    await DB.update("chamados", chamadoId, {
+      status: "finalizado",
+      concluida_em: new Date().toISOString(),
+      concluida_por: req.userId || null,
+      concluida_por_nome: operadorNome,
+      snapshot_horas_planejadas: Number(horasPlanejadas.toFixed(2)),
+      snapshot_horas_reais: Number(horasReais.toFixed(2)),
+      snapshot_custo_materiais: Number(custoMateriais.toFixed(2)),
+      snapshot_total_aplicacoes: aplicacoesAtivas.length,
+    }, tenantId);
+
+    const osAtualizada = await DB.selectOne("chamados", { id: chamadoId }, tenantId);
+
+    // Registra evento de conclusão
+    {
+      const u = await usuarioAtual(req, tenantId);
+      await registrarEvento(
+        tenantId, chamadoId, "conclusao",
+        `OS concluída. ${aplicacoesAtivas.length} aplicação(ões), ${Number(horasReais.toFixed(1))}h-homem realizadas.`,
+        { total_aplicacoes: aplicacoesAtivas.length, horas_reais: Number(horasReais.toFixed(2)) },
+        u
+      );
+    }
+
+    res.json({
+      ok: true,
+      chamado: osAtualizada,
+      resumo: {
+        horas_planejadas: Number(horasPlanejadas.toFixed(2)),
+        horas_reais: Number(horasReais.toFixed(2)),
+        custo_materiais: Number(custoMateriais.toFixed(2)),
+        total_aplicacoes: aplicacoesAtivas.length,
+        servicos_sem_apontamento: servicosSemApontamento.map(s => s.item_nome || s.nome),
+      },
+      mensagem: `${os.numero} concluída com sucesso`,
+    });
+  } catch (err) {
+    console.error("❌ Erro ao concluir OS:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/cotacoes/chamados/:id/salvar-como-template
+//
+// Snapshot dos itens de uma OS vira um novo template reutilizável.
+// Não copia datas, status de aplicação, nem vínculos (RM/RC) — só o
+// "esqueleto" do que aquela OS planejou.
+// ─────────────────────────────────────────────────────────────────────────
+router.post("/chamados/:id/salvar-como-template", tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { id: chamadoId } = req.params;
+  const { nome, descricao } = req.body;
+
+  try {
+    if (!nome || !nome.trim()) {
+      return res.status(400).json({ erro: "nome é obrigatório" });
+    }
+
+    const os = await DB.selectOne("chamados", { id: chamadoId, tenant_id: tenantId }, tenantId);
+    if (!os) return res.status(404).json({ erro: "OS não encontrada" });
+
+    const itens = await DB.select("chamado_itens", { chamado_id: chamadoId, tenant_id: tenantId }, tenantId);
+    const ativos = itens.filter(it => it.status !== "cancelado");
+    if (ativos.length === 0) {
+      return res.status(400).json({ erro: "OS não tem itens ativos para salvar como modelo" });
+    }
+
+    // Nome do usuário
+    let operadorNome = null;
+    if (req.userId) {
+      try {
+        const u = await DB.selectOne("usuarios", { id: req.userId }, tenantId);
+        operadorNome = u?.nome || null;
+      } catch (_) {}
+    }
+
+    const template = await DB.insert("os_templates", {
+      tenant_id: tenantId,
+      nome: nome.trim(),
+      descricao: descricao || null,
+      categoria: os.categoria || null,
+      urgencia: os.urgencia || null,
+      ativo: true,
+      criado_por: req.userId || null,
+      criado_por_nome: operadorNome,
+    }, tenantId);
+
+    const itensCriados = [];
+    for (const it of ativos.sort((a, b) => (a.posicao ?? 0) - (b.posicao ?? 0))) {
+      const base = {
+        tenant_id: tenantId,
+        template_id: template.id,
+        tipo: it.tipo,
+        numero_base: it.numero_base ?? null,
+        posicao: it.posicao ?? null,
+        descricao: it.descricao || null,
+      };
+      const payload = it.tipo === "material" ? {
+        ...base,
+        item_nome: it.item_nome,
+        codigo: it.codigo || null,
+        item_catalogo_id: it.item_catalogo_id || null,
+        quantidade: it.quantidade,
+        tipo_item: it.tipo_item || null,
+        serializado: !!it.serializado,
+      } : {
+        ...base,
+        item_nome: it.item_nome || it.nome,
+        qtd_pessoas_planejada: it.qtd_pessoas_planejada || 1,
+      };
+      itensCriados.push(await DB.insert("os_template_itens", payload, tenantId));
+    }
+
+    res.status(201).json({
+      ok: true,
+      template: { ...template, total_itens: itensCriados.length },
+      mensagem: `Modelo "${template.nome}" criado com ${itensCriados.length} item(ns)`,
+    });
+  } catch (err) {
+    console.error("❌ Erro ao salvar template:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/cotacoes/chamados/templates
+//
+// Lista os templates do tenant. Não traz os itens — só o cabeçalho, para
+// o seletor ficar leve. Use GET /templates/:id para detalhes.
+// ─────────────────────────────────────────────────────────────────────────
+router.get("/chamados/templates", tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  try {
+    const templates = await DB.select("os_templates", { tenant_id: tenantId, ativo: true }, tenantId);
+    templates.sort((a, b) => (a.nome || "").localeCompare(b.nome || ""));
+
+    // Conta itens por template
+    const todosItens = await DB.select("os_template_itens", { tenant_id: tenantId }, tenantId);
+    const contagem = {};
+    todosItens.forEach(it => {
+      contagem[it.template_id] = (contagem[it.template_id] || 0) + 1;
+    });
+
+    res.json(templates.map(t => ({ ...t, total_itens: contagem[t.id] || 0 })));
+  } catch (err) {
+    console.error("❌ Erro ao listar templates:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+router.get("/chamados/templates/:templateId", tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { templateId } = req.params;
+  try {
+    const template = await DB.selectOne("os_templates", { id: templateId, tenant_id: tenantId }, tenantId);
+    if (!template) return res.status(404).json({ erro: "Template não encontrado" });
+
+    const itens = await DB.select("os_template_itens", { template_id: templateId, tenant_id: tenantId }, tenantId);
+    itens.sort((a, b) => {
+      const pa = a.posicao ?? a.numero_base ?? Number.MAX_SAFE_INTEGER;
+      const pb = b.posicao ?? b.numero_base ?? Number.MAX_SAFE_INTEGER;
+      if (pa !== pb) return pa - pb;
+      return Number(a.id) - Number(b.id);
+    });
+
+    res.json({ ...template, itens });
+  } catch (err) {
+    console.error("❌ Erro ao buscar template:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+router.delete("/chamados/templates/:templateId", tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { templateId } = req.params;
+  try {
+    const t = await DB.selectOne("os_templates", { id: templateId, tenant_id: tenantId }, tenantId);
+    if (!t) return res.status(404).json({ erro: "Template não encontrado" });
+
+    await DB.update("os_templates", templateId, { ativo: false, atualizado_em: new Date().toISOString() }, tenantId);
+    res.json({ ok: true, mensagem: `Modelo "${t.nome}" removido` });
+  } catch (err) {
+    console.error("❌ Erro ao remover template:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+router.put("/chamados/templates/:templateId", tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { templateId } = req.params;
+  const { nome, descricao, categoria, urgencia } = req.body;
+  try {
+    const t = await DB.selectOne("os_templates", { id: templateId, tenant_id: tenantId }, tenantId);
+    if (!t) return res.status(404).json({ erro: "Template não encontrado" });
+
+    const update = { atualizado_em: new Date().toISOString() };
+    if (nome !== undefined) update.nome = nome.trim();
+    if (descricao !== undefined) update.descricao = descricao;
+    if (categoria !== undefined) update.categoria = categoria;
+    if (urgencia !== undefined) update.urgencia = urgencia;
+
+    const atualizado = await DB.update("os_templates", templateId, update, tenantId);
+    res.json({ ok: true, template: atualizado });
+  } catch (err) {
+    console.error("❌ Erro ao atualizar template:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/cotacoes/chamados/templates-globais
+//
+// Lista os modelos globais do SaaS. Busca fuzzy via pg_trgm — tolera
+// erros de digitação ("vollvo" acha "volvo"). Filtros opcionais por
+// tipo de equipamento, marca e categoria.
+// ─────────────────────────────────────────────────────────────────────────
+router.get("/chamados/templates-globais", tenantMiddleware, async (req, res) => {
+  try {
+    const termo = req.query.q || null;
+    const tipoEquip = req.query.tipo_equipamento || null;
+    const marca = req.query.marca || null;
+    const categoria = req.query.categoria || null;
+    const limit = parseInt(req.query.limit) || 100;
+
+    const resultados = await DB.rpc("buscar_templates_globais", {
+      p_termo: termo,
+      p_tipo_equipamento: tipoEquip,
+      p_marca: marca,
+      p_categoria: categoria,
+      p_limit: limit,
+    });
+
+    res.json(resultados || []);
+  } catch (err) {
+    console.error("❌ Erro ao listar templates globais:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/cotacoes/chamados/templates-globais/:id
+//
+// Detalhes de um modelo global, com todos os itens.
+// ─────────────────────────────────────────────────────────────────────────
+router.get("/chamados/templates-globais/:id", tenantMiddleware, async (req, res) => {
+  try {
+    const template = await DB.selectOne("templates_globais", { id: req.params.id, ativo: true }, null);
+    if (!template) return res.status(404).json({ erro: "Modelo não encontrado" });
+
+    const itens = await DB.select("templates_globais_itens", { template_global_id: req.params.id }, null);
+    itens.sort((a, b) => {
+      const pa = a.posicao ?? a.numero_base ?? Number.MAX_SAFE_INTEGER;
+      const pb = b.posicao ?? b.numero_base ?? Number.MAX_SAFE_INTEGER;
+      if (pa !== pb) return pa - pb;
+      return Number(a.id) - Number(b.id);
+    });
+
+    res.json({ ...template, itens });
+  } catch (err) {
+    console.error("❌ Erro ao buscar template global:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/cotacoes/chamados/templates-globais-meta/filtros
+//
+// Lista os valores distintos de tipo_equipamento e marca pra popular
+// os dropdowns de filtro no frontend, sem hardcode.
+// ─────────────────────────────────────────────────────────────────────────
+router.get("/chamados/templates-globais-meta/filtros", tenantMiddleware, async (req, res) => {
+  try {
+    const todos = await DB.select("templates_globais", { ativo: true }, null);
+
+    const tiposEquip = [...new Set(todos.map(t => t.tipo_equipamento).filter(Boolean))].sort();
+    const marcas = [...new Set(todos.map(t => t.marca).filter(Boolean))].sort();
+
+    res.json({ tipos_equipamento: tiposEquip, marcas });
+  } catch (err) {
+    console.error("❌ Erro ao listar filtros:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/cotacoes/chamados/templates-globais
+//
+// Cria/atualiza um modelo global. Endpoint ADMIN — só a curadoria do
+// SaaS deve usar. Aceita o formato JSON que você gerar com IA.
+//
+// Body: { nome, descricao, categoria, urgencia, tipo_equipamento, marca,
+//         modelo, intervalo_descricao, intervalo_km, itens: [...] }
+// ─────────────────────────────────────────────────────────────────────────
+router.post("/chamados/templates-globais", tenantMiddleware, async (req, res) => {
+  try {
+    const {
+      nome, descricao, categoria, urgencia,
+      tipo_equipamento, marca, modelo,
+      ano_inicio, ano_fim,
+      intervalo_descricao, intervalo_km, intervalo_dias,
+      itens,
+    } = req.body;
+
+    if (!nome || !nome.trim()) {
+      return res.status(400).json({ erro: "nome é obrigatório" });
+    }
+    if (!Array.isArray(itens) || itens.length === 0) {
+      return res.status(400).json({ erro: "itens é obrigatório (mínimo 1)" });
+    }
+
+    // Busca nome do operador pra registrar quem publicou
+    let operadorNome = null;
+    if (req.userId) {
+      try {
+        const u = await DB.selectOne("usuarios", { id: req.userId }, req.tenantId);
+        operadorNome = u?.nome || null;
+      } catch (_) {}
+    }
+
+    const template = await DB.insert("templates_globais", {
+      nome: nome.trim(),
+      descricao: descricao || null,
+      categoria: categoria || null,
+      urgencia: urgencia || null,
+      tipo_equipamento: tipo_equipamento || null,
+      marca: marca || null,
+      modelo: modelo || null,
+      ano_inicio: ano_inicio || null,
+      ano_fim: ano_fim || null,
+      intervalo_descricao: intervalo_descricao || null,
+      intervalo_km: intervalo_km || null,
+      intervalo_dias: intervalo_dias || null,
+      origem: "oficial",
+      publicado_por_nome: operadorNome || "Curadoria QuotaFlow",
+    }, null);
+
+    const itensCriados = [];
+    for (const [i, it] of itens.entries()) {
+      const base = {
+        template_global_id: template.id,
+        tipo: it.tipo === "servico" ? "servico" : "material",
+        numero_base: it.numero_base ?? (i + 1),
+        posicao: it.posicao ?? (i + 1),
+        descricao: it.descricao || null,
+      };
+      const payload = base.tipo === "material" ? {
+        ...base,
+        item_nome: it.item_nome,
+        codigo: it.codigo || null,
+        quantidade: it.quantidade || 1,
+        tipo_item: it.tipo_item || null,
+        serializado: !!it.serializado,
+      } : {
+        ...base,
+        item_nome: it.item_nome,
+        qtd_pessoas_planejada: it.qtd_pessoas_planejada || 1,
+      };
+      itensCriados.push(await DB.insert("templates_globais_itens", payload, null));
+    }
+
+    res.status(201).json({
+      ok: true,
+      template: { ...template, total_itens: itensCriados.length },
+      mensagem: `Modelo "${template.nome}" publicado com ${itensCriados.length} item(ns)`,
+    });
+  } catch (err) {
+    console.error("❌ Erro ao criar template global:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/cotacoes/chamados/templates-globais/:id/propor-melhoria
+//
+// Registra uma sugestão de melhoria do cliente no modelo global.
+// Fase 3 do roadmap — endpoint fica pronto, UI vem depois.
+// ─────────────────────────────────────────────────────────────────────────
+router.post("/chamados/templates-globais/:id/propor-melhoria", tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { id: templateId } = req.params;
+  const { tipo, mensagem } = req.body;
+
+  try {
+    if (!mensagem || !mensagem.trim()) {
+      return res.status(400).json({ erro: "mensagem é obrigatória" });
+    }
+
+    const template = await DB.selectOne("templates_globais", { id: templateId, ativo: true }, null);
+    if (!template) return res.status(404).json({ erro: "Modelo não encontrado" });
+
+    let operadorNome = null;
+    if (req.userId) {
+      try {
+        const u = await DB.selectOne("usuarios", { id: req.userId }, tenantId);
+        operadorNome = u?.nome || null;
+      } catch (_) {}
+    }
+
+    const sugestao = await DB.insert("template_sugestoes", {
+      tenant_id: tenantId,
+      template_global_id: templateId,
+      tipo: tipo || "melhoria",
+      mensagem: mensagem.trim(),
+      status: "pendente",
+      criado_por: req.userId || null,
+      criado_por_nome: operadorNome,
+    }, tenantId);
+
+    res.status(201).json({
+      ok: true,
+      sugestao,
+      mensagem: "Sugestão registrada. Nossa equipe vai avaliar em breve.",
+    });
+  } catch (err) {
+    console.error("❌ Erro ao registrar sugestão:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// registrarEvento — grava um item na timeline da OS. Chamado sempre que
+// algo relevante muda (criação, add/remove de item, aplicação, etc).
+// Falha silenciosa: se der erro, loga mas não quebra o fluxo principal.
+// ─────────────────────────────────────────────────────────────────────────
+async function registrarEvento(tenantId, chamadoId, tipo, descricao, dados, usuario) {
+  try {
+    await DB.insert("chamado_eventos", {
+      tenant_id: tenantId,
+      chamado_id: chamadoId,
+      tipo,
+      descricao,
+      dados: dados || null,
+      criado_por: usuario?.id || null,
+      criado_por_nome: usuario?.nome || null,
+    }, tenantId);
+  } catch (err) {
+    console.warn("⚠ Falha ao registrar evento (não bloqueante):", err.message);
+  }
+}
+
+// Helper para pegar nome+email+id do usuário atual de forma reutilizável.
+async function usuarioAtual(req, tenantId) {
+  let nome = null;
+  if (req.userId) {
+    try {
+      const u = await DB.selectOne("usuarios", { id: req.userId }, tenantId);
+      nome = u?.nome || null;
+    } catch (_) {}
+  }
+  return { id: req.userId || null, nome, email: req.userEmail || null };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// calcularPercentualConclusao — média simples dos itens ativos.
+// Material: aplicado/planejado, ou 1 se status='nao_aplicado'.
+// Serviço:  1 se tem apontamento, senão 0.
+// Itens cancelados não entram na conta.
+// Retorna 0 quando não há itens ativos.
+// ─────────────────────────────────────────────────────────────────────────
+async function calcularPercentualConclusao(chamadoId, tenantId) {
+  const itens = await DB.select("chamado_itens", { chamado_id: chamadoId, tenant_id: tenantId }, tenantId);
+  const ativos = itens.filter(it => it.status !== "cancelado");
+  if (ativos.length === 0) return 0;
+
+  const apontamentos = await DB.select("chamado_apontamentos", { tenant_id: tenantId }, tenantId);
+  const idsItens = ativos.map(it => it.id);
+  const apontamentosPorItem = {};
+  apontamentos.filter(a => idsItens.includes(a.chamado_item_id))
+    .forEach(a => { apontamentosPorItem[a.chamado_item_id] = a; });
+
+  let soma = 0;
+  for (const it of ativos) {
+    if (it.tipo === "material") {
+      if (it.status_aplicacao === "nao_aplicado") { soma += 1; continue; }
+      const plan = parseFloat(it.quantidade) || 0;
+      const apl = parseFloat(it.quantidade_aplicada) || 0;
+      soma += plan > 0 ? Math.min(1, apl / plan) : 0;
+    } else {
+      soma += apontamentosPorItem[it.id] ? 1 : 0;
+    }
+  }
+  return Math.round((soma / ativos.length) * 100);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/cotacoes/chamados/:id/cancelar
+//
+// Cancela uma OS com justificativa obrigatória. OS cancelada é imutável
+// (mesmos guards das concluídas). Não apaga nada — só marca o estado.
+// ─────────────────────────────────────────────────────────────────────────
+router.post("/chamados/:id/cancelar", tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { id: chamadoId } = req.params;
+  const { motivo } = req.body;
+
+  try {
+    if (!motivo || !motivo.trim()) {
+      return res.status(400).json({ erro: "motivo do cancelamento é obrigatório" });
+    }
+
+    const os = await DB.selectOne("chamados", { id: chamadoId, tenant_id: tenantId }, tenantId);
+    if (!os) return res.status(404).json({ erro: "OS não encontrada" });
+    if ((os.tipo_documento || "os") !== "os") {
+      return res.status(400).json({ erro: "Só Ordens de Serviço podem ser canceladas por aqui" });
+    }
+    if (os.concluida_em) {
+      return res.status(400).json({ erro: `${os.numero} já está concluída — não pode ser cancelada` });
+    }
+    if (os.cancelada_em) {
+      return res.status(400).json({ erro: `${os.numero} já está cancelada` });
+    }
+
+    const u = await usuarioAtual(req, tenantId);
+
+    await DB.update("chamados", chamadoId, {
+      status: "cancelada",
+      cancelada_em: new Date().toISOString(),
+      cancelada_por: u.id,
+      cancelada_por_nome: u.nome,
+      motivo_cancelamento: motivo.trim(),
+    }, tenantId);
+
+    await registrarEvento(
+      tenantId, chamadoId, "cancelamento",
+      `OS cancelada. Motivo: ${motivo.trim()}`,
+      { motivo: motivo.trim() },
+      u
+    );
+
+    const atualizada = await DB.selectOne("chamados", { id: chamadoId }, tenantId);
+    res.json({ ok: true, chamado: atualizada, mensagem: `${os.numero} cancelada` });
+  } catch (err) {
+    console.error("❌ Erro ao cancelar OS:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/cotacoes/chamados/:id/eventos
+//
+// Timeline da OS, ordem cronológica decrescente (mais recente primeiro).
+// ─────────────────────────────────────────────────────────────────────────
+router.get("/chamados/:id/eventos", tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { id: chamadoId } = req.params;
+  try {
+    const eventos = await DB.select("chamado_eventos", { chamado_id: chamadoId, tenant_id: tenantId }, tenantId);
+    eventos.sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em));
+    res.json(eventos);
+  } catch (err) {
+    console.error("❌ Erro ao listar eventos:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/cotacoes/chamados/:id/percentual
+//
+// Devolve o % de conclusão calculado. Útil pro frontend atualizar o badge
+// sem precisar baixar todos os itens.
+// ─────────────────────────────────────────────────────────────────────────
+router.get("/chamados/:id/percentual", tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { id: chamadoId } = req.params;
+  try {
+    const percentual = await calcularPercentualConclusao(chamadoId, tenantId);
+    res.json({ percentual });
+  } catch (err) {
+    console.error("❌ Erro ao calcular percentual:", err.message);
     res.status(500).json({ erro: err.message });
   }
 });

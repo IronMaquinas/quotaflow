@@ -274,7 +274,7 @@ const perfil = PERFIS[usuario.perfil];
     {id:"home",          l:"Início",                  perfis:["tecnico","comprador","gestor","admin"]},
     {id: "ordem_servico",l: "🛠️ Ordem de Serviço",    perfis: ["tecnico", "comprador", "gestor", "admin"]},
     {id:"recebimento",   l: "📥 Recebimento",         perfis: ["comprador", "gestor", "admin"]},
-    {id:"tecnico",       l:"🔧 Chamado",              perfis:["tecnico","comprador","gestor","admin"]},
+    {id:"tecnico",       l:"🔧 Requisição de Compras",perfis:["tecnico","comprador","gestor","admin"]},
     {id:"compradora",    l:"📋 Compras",              perfis:["comprador","gestor","admin"]},
     {id:"spot",          l:"⚡ Canal Spot",            perfis:["comprador","gestor","admin"]}, 
     {id:"retirada",      l:"📤 Retirada",             perfis:["tecnico","comprador","gestor","admin"]},
@@ -450,7 +450,7 @@ const perfil = PERFIS[usuario.perfil];
 
         {temAcesso(tela) && tela === "ordem_servico" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
-            <TelaOrdemServico C={C} s={s} equipamentos={equipamentos.dados || []} />
+            <TelaOrdemServico C={C} s={s} equipamentos={equipamentos.dados || []} fmtBRL={fmtBRL} fmtD={fmtD} />
           </div>
         )}
 

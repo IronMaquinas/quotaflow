@@ -61,6 +61,19 @@ class DB {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
+  // RPC: chama funções Postgres definidas no SQL Editor do Supabase.
+  // Diferente dos métodos acima, roda DENTRO de uma transação real do
+  // banco — se a função levantar exceção no meio, tudo é desfeito
+  // automaticamente. Usado pra operações que precisam ser atômicas
+  // (aplicar/reverter material, por exemplo — ver migration 015).
+  // ─────────────────────────────────────────────────────────────────────────
+  static async rpc(fnName, params) {
+    const { data, error } = await supabase.rpc(fnName, params);
+    if (error) throw new Error(`RPC ${fnName} failed: ${error.message}`);
+    return data;
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // RAW: suporte para as consultas usadas nas rotas (SEM JOINS)
   // ─────────────────────────────────────────────────────────────────────────
   static async raw(sql, params = []) {
