@@ -50,550 +50,32 @@ import { useEquipamentos } from "../../hooks/useEquipamentos";
 import apiService from "../../services/apiService";
 import BarcodeScannerInput from "../common/BarcodeScannerInput";
 
-// ─────────────────────────────────────────────────────────────────────────
-// HOOK: useEstoque — isolado de propósito, é a única parte do arquivo que
-// fala com endpoints que ainda não existem no backend.
-// ─────────────────────────────────────────────────────────────────────────
-function useEstoque() {
-  const [consultando, setConsultando] = useState({});
-
-  const consultarSaldo = useCallback(async (itemCatalogoId, quantidadeNecessaria) => {
-    if (!itemCatalogoId) return { status: "nao_verificado", disponivel: null };
-    setConsultando(prev => ({ ...prev, [itemCatalogoId]: true }));
-    try {
-      // TODO(backend): GET /estoque/saldo?item_catalogo_id=X -> { disponivel, reservado, fisico }
-      // FIX: apiService.get(endpoint, params) recebe os query params DIRETO
-      // (sem wrapper { params: {...} } — isso é convenção do axios, não
-      // deste apiService). Com o wrapper, a URL saía como
-      // "?params=[object Object]" e a consulta de saldo sempre falhava
-      // silenciosamente (caía no catch abaixo, retornando "nao_verificado").
-      const resp = await apiService.get('/estoque/saldo', { item_catalogo_id: itemCatalogoId });
-      const disponivel = resp?.disponivel ?? 0;
-      const qtd = Number(quantidadeNecessaria) || 1;
-      let status = "sem_estoque";
-      if (disponivel >= qtd) status = "atende";
-      else if (disponivel > 0) status = "parcial";
-      return { status, disponivel };
-    } catch (err) {
-      console.warn("⚠️ /estoque/saldo indisponível:", err.message);
-      return { status: "nao_verificado", disponivel: null };
-    } finally {
-      setConsultando(prev => ({ ...prev, [itemCatalogoId]: false }));
-    }
-  }, []);
-
-  const reservar = useCallback(async (itemCatalogoId, quantidade, chamadoId) => {
-    try {
-      // TODO(backend): POST /estoque/reservas { item_catalogo_id, quantidade, chamado_id }
-      return await apiService.post('/estoque/reservas', { item_catalogo_id: itemCatalogoId, quantidade, chamado_id: chamadoId });
-    } catch (err) {
-      console.warn("⚠️ /estoque/reservas indisponível:", err.message);
-      return null;
-    }
-  }, []);
-
-  return { consultando, consultarSaldo, reservar };
-}
-
-// NOVO HOOK — isolar o consumo de material da OS da mesma forma que
-// useEstoque() isola a consulta de saldo. Fala com os endpoints
-// /cotacoes/chamados/:id/materiais/... que criaremos no backend.
-function useMaterialAplicacoes() {
-  const [salvando, setSalvando] = useState(false);
-
-  const aplicar = useCallback(async (chamadoId, chamadoItemId, payload) => {
-    setSalvando(true);
-    try {
-      // Idempotency-Key evita duplicação se a rede oscilar e o frontend
-      // reenviar o mesmo submit (ver discussão sobre campo offline).
-      const idemKey = payload._idempotencyKey || crypto.randomUUID();
-      const resp = await apiService.post(
-        `/cotacoes/chamados/${chamadoId}/materiais/${chamadoItemId}/aplicar`,
-        { ...payload, _idempotencyKey: undefined },
-        { headers: { "Idempotency-Key": idemKey } }
-      );
-      return resp;
-    } finally {
-      setSalvando(false);
-    }
-  }, []);
-
-  const reverter = useCallback(async (aplicacaoId, motivo) => {
-    setSalvando(true);
-    try {
-      return await apiService.post(
-        `/cotacoes/chamados/aplicacoes/${aplicacaoId}/reverter`,
-        { motivo }
-      );
-    } finally {
-      setSalvando(false);
-    }
-  }, []);
-
-  const listarHistorico = useCallback(async (chamadoId, chamadoItemId) => {
-    return await apiService.get(
-      `/cotacoes/chamados/${chamadoId}/materiais/${chamadoItemId}/aplicacoes`
-    );
-  }, []);
-
-  return { aplicar, reverter, listarHistorico, salvando };
-}
-
-// Deriva o status visual a partir da quantidade aplicada vs planejada.
-// O backend também devolve esse status, mas o frontend recalcula após
-// cada operação otimista pra UI não precisar esperar round-trip.
-function derivarStatusAplicacao(item) {
-  const planejada = Number(item.quantidade) || 0;
-  const aplicada = Number(item.quantidade_aplicada) || 0;
-  if (item.status_aplicacao === "nao_aplicado") return "nao_aplicado";
-  if (item.status_aplicacao === "revertido") return "revertido";
-  if (aplicada <= 0) return "pendente";
-  if (aplicada < planejada) return "parcial";
-  return "aplicado";
-}
-
-// ─────────────────────────────────────────────────────────────────────────
-// calcularStatusPrazo — deriva o estado da OS em relação à data_fim_prevista.
-//
-// Granularidade adaptativa:
-//   |diff| < 24h  → mostra em HORAS (serviços rápidos, mesmo dia)
-//   24h ≤ |diff| < 7d → mostra em DIAS
-//   |diff| ≥ 7d   → "No prazo" sem número (evita ruído pro gestor)
-//
-// Estados:
-//   concluida  → finalizado (verde)
-//   cancelada  → cancelada (cinza)
-//   atrasada   → diff negativo (vermelho)
-//   atencao    → diff ≤ 24h (laranja)
-//   no_prazo   → diff > 24h (verde)
-//
-// Retorna null quando a OS não tem data_fim_prevista programada.
-// ─────────────────────────────────────────────────────────────────────────
-function calcularStatusPrazo(chamado, C) {
-  if (!chamado?.data_fim_prevista) return null;
-
-  if (chamado.status === "finalizado") {
-    return { tipo: "concluida", icon: "✅", c: C.success,
-             label: "Concluída", sub: "no prazo" };
-  }
-  if (chamado.status === "cancelada") {
-    return { tipo: "cancelada", icon: "⚫", c: C.muted,
-             label: "Cancelada", sub: null };
-  }
-
-  const agora = new Date();
-  const fim = new Date(chamado.data_fim_prevista);
-  const diffMs = fim - agora;
-  const diffHoras = diffMs / (1000 * 60 * 60);
-  const diffDias = diffMs / (1000 * 60 * 60 * 24);
-  const absHoras = Math.abs(diffHoras);
-  const absDias = Math.abs(diffDias);
-
-  // Formata uma quantidade de tempo em texto humano (h / dia / dias)
-  function fmtQtd(valorHoras) {
-    if (valorHoras < 24) {
-      const h = Math.max(1, Math.round(valorHoras));
-      return `${h}h`;
-    }
-    const d = Math.round(valorHoras / 24);
-    return `${d} dia${d > 1 ? "s" : ""}`;
-  }
-
-  // ── Atrasada ──
-  if (diffMs < 0) {
-    return { tipo: "atrasada", icon: "🔴", c: "#ef4444",
-             label: fmtQtd(absHoras), sub: "atrasada" };
-  }
-
-  // ── Atenção (dentro de 24h) ──
-  if (absHoras <= 24) {
-    if (absHoras < 1) {
-      const min = Math.max(1, Math.round(absHoras * 60));
-      return { tipo: "atencao", icon: "🟡", c: "#f59e0b",
-               label: `${min}min`, sub: "restante(s)" };
-    }
-    return { tipo: "atencao", icon: "🟡", c: "#f59e0b",
-             label: fmtQtd(absHoras), sub: "restante(s)" };
-  }
-
-  // ── No prazo, mas perto (1 a 7 dias) ──
-  if (absDias < 7) {
-    return { tipo: "no_prazo", icon: "🟢", c: C.success,
-             label: fmtQtd(absHoras), sub: "restante(s)" };
-  }
-
-  // ── No prazo, folgado (≥ 7 dias) — sem número ──
-  return { tipo: "no_prazo", icon: "🟢", c: C.success,
-           label: "No prazo", sub: null };
-}
-
-const aplicacaoCfg = {
-  pendente:     { icon: "⚪", label: "Pendente",     c: "#6b7280" },
-  parcial:      { icon: "🟡", label: "Parcial",      c: "#f59e0b" },
-  aplicado:     { icon: "🟢", label: "Aplicado",     c: "#22c55e" },
-  nao_aplicado: { icon: "⚫", label: "Não aplicado", c: "#6b7280" },
-  revertido:    { icon: "🔁", label: "Revertido",    c: "#a855f7" },
-};
-
-const estoqueCfg = {
-  atende:         { icon: "🟢", label: "Estoque atende à demanda" },
-  parcial:        { icon: "🟡", label: "Estoque atende parcialmente" },
-  sem_estoque:    { icon: "🔴", label: "Sem estoque — necessário comprar" },
-  nao_verificado: { icon: "⚪", label: "Selecione um item da lista para verificar o estoque" },
-  // Item reconhecido (bate com o cadastro de algum fornecedor), mas sem
-  // vínculo de estoque local — não há o que consultar. Nunca mostra
-  // fornecedor/preço aqui, só a confirmação de que o nome é conhecido.
-  reconhecido_sem_estoque_local: { icon: "🔵", label: "Item reconhecido — sem controle de estoque local para ele" },
-};
-
-const urgenciaCfgMap = { alta: { l: "Alta", c: "#ef4444" }, media: { l: "Média", c: "#f59e0b" }, baixa: { l: "Baixa", c: "#22c55e" } };
-const categoriaCfgMap = { corretiva: { l: "Corretiva", c: "#ef4444" }, preventiva: { l: "Preventiva", c: "#22c55e" }, preditiva: { l: "Preditiva", c: "#60a5fa" } };
-
-// ─────────────────────────────────────────────────────────────────────────
-// Fábricas de item — modelo unificado (discriminado por `tipo`)
-// ─────────────────────────────────────────────────────────────────────────
-function novoMaterial(origem) {
-  return {
-    id: Date.now() + Math.random(),
-    tipo: "material",
-    origem,               // "planejado" | "adicionado" — congelado, nunca muda
-    numero_base: null,    // inteiro congelado na emissão (só para origem="planejado")
-    status: "ativo",      // "ativo" | "cancelado"
-    item_nome: "", codigo: "", item_catalogo_id: null,
-    quantidade: 1, tipo_item: "", descricao: "",
-    status_estoque: "nao_verificado", saldo_disponivel: null,
-    serializado: false,
-  };
-}
-
-function novoServico(origem) {
-  return {
-    id: Date.now() + Math.random(),
-    tipo: "servico",
-    origem,
-    numero_base: null,
-    status: "ativo",
-    nome: "", descricao: "",
-    qtd_pessoas_planejada: 1,
-    data_inicio_prevista: "", data_fim_prevista: "",
-    apontamento: null, // { pessoas_reais, data_inicio_real, data_fim_real, horas_extras }
-  };
-}
-
-// --- FUNCTION PARA TRATAR A APLICAÇÃO DE MATERIAIS SERIALIZADOS NA ORDEM DE SERVIÇO
-function ModalAplicarMaterial({ chamado, item, salvando, onCancelar, onConfirmar, s, C }) {
-  const qtdPlanejada = Number(item.quantidade) || 0;
-  const qtdAplicada = Number(item.quantidade_aplicada) || 0;
-  const qtdPendente = Math.max(0, qtdPlanejada - qtdAplicada);
-  const temRM = !!item.requisicao_material?.numero;
-
-  const [quantidade, setQuantidade] = useState(qtdPendente);
-  const [serializado, setSerializado] = useState(!!item.serializado);
-  const [numerosSerie, setNumerosSerie] = useState([""]);
-  const [lote, setLote] = useState("");
-  const [observacoes, setObservacoes] = useState("");
-  const [confirmou, setConfirmou] = useState(false);
-  const [erro, setErro] = useState(null);
-
-  // ── Lastro ──
-  // Se o item tem RM vinculada, a origem é fixa em 'rm' (não escolhe).
-  // Se não tem, o técnico é obrigado a escolher entre emergencial ou
-  // estoque_proprio, com motivo — e o registro aparece no relatório de
-  // divergências do gestor (ver claude/redesenho-os-rm-rc.md).
-  const [origemLastro, setOrigemLastro] = useState(temRM ? "rm" : "emergencial");
-  const [motivoEmergencia, setMotivoEmergencia] = useState(temRM ? "" : "compra_cartao");
-  const [valorEstimado, setValorEstimado] = useState("");
-
-  useEffect(() => {
-    const n = Math.max(1, parseInt(quantidade) || 1);
-    setNumerosSerie(prev => {
-      const copy = [...prev];
-      while (copy.length < n) copy.push("");
-      return copy.slice(0, n);
-    });
-  }, [quantidade]);
-
-  function setSerie(idx, val) {
-    setNumerosSerie(prev => prev.map((s, i) => i === idx ? val : s));
-  }
-
-  function validar() {
-    const q = parseInt(quantidade);
-    if (!q || q <= 0) return "Informe uma quantidade maior que zero.";
-    if (q > qtdPendente) return `Só restam ${qtdPendente} unidade(s) pendente(s) neste item.`;
-    if (origemLastro !== "rm" && !motivoEmergencia) {
-      return "Selecione o motivo da origem não-RM (compra emergencial, estoque próprio etc).";
-    }
-    if (serializado) {
-      const vazios = numerosSerie.filter(s => !s.trim()).length;
-      if (vazios > 0) return `Preencha todos os ${q} número(s) de série.`;
-      const dup = numerosSerie.map(s => s.trim().toUpperCase());
-      if (new Set(dup).size !== dup.length) return "Há números de série repetidos dentro deste mesmo item.";
-    }
-    if (!confirmou) return "É preciso confirmar que as peças foram fisicamente instaladas.";
-    return null;
-  }
-
-  async function handleSalvar() {
-    const msg = validar();
-    if (msg) { setErro(msg); return; }
-    setErro(null);
-    await onConfirmar({
-      quantidade: parseInt(quantidade),
-      serializado,
-      numeros_serie: serializado ? numerosSerie.map(s => s.trim().toUpperCase()) : [],
-      lote: lote.trim() || null,
-      observacoes: observacoes.trim() || null,
-      origem_lastro: origemLastro,
-      motivo_emergencia: origemLastro !== "rm" ? motivoEmergencia : null,
-      valor_estimado: valorEstimado !== "" ? parseFloat(valorEstimado) : null,
-      _idempotencyKey: crypto.randomUUID(),
-    });
-  }
-
-  return (
-    <div style={{ position: "fixed", inset: 0, background: "#00000090",
-                  display: "flex", alignItems: "center",
-                  justifyContent: "center", zIndex: 340, padding: 20 }}>
-      <div style={{ ...s.card, width: 560, maxWidth: "100%",
-                    maxHeight: "90vh", display: "flex", flexDirection: "column" }}>
-
-        <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.border}` }}>
-          <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>
-            Aplicar material na OS
-          </div>
-          <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-            {chamado?.numero} · {item.item_nome}
-          </div>
-        </div>
-
-        <div style={{ padding: "18px 22px", overflowY: "auto", flex: 1 }}>
-          <div style={{ background: C.bg, borderRadius: 6, padding: "10px 12px",
-                        fontSize: 11, color: C.muted, marginBottom: 16 }}>
-            Planejado: <strong style={{ color: C.text }}>{qtdPlanejada}</strong> ·
-            Já aplicado: <strong style={{ color: C.text }}>{qtdAplicada}</strong> ·
-            Pendente: <strong style={{ color: C.accent }}>{qtdPendente}</strong>
-          </div>
-
-          <div style={{ marginBottom: 14 }}>
-            <label style={s.label}>QUANTIDADE A APLICAR AGORA</label>
-            <input type="number" min="1" max={qtdPendente}
-              value={quantidade}
-              onChange={e => setQuantidade(e.target.value)}
-              style={{ ...s.input, textAlign: "center", fontWeight: 600 }} />
-          </div>
-
-          {/* ── Lastro ── */}
-          {temRM ? (
-            <div style={{ background: `${C.accent}15`, border: `1px solid ${C.accent}40`,
-                          borderRadius: 6, padding: "10px 12px", marginBottom: 14,
-                          fontSize: 11, color: C.text }}>
-              <strong>📄 Lastro: RM {item.requisicao_material.numero}</strong>
-              <div style={{ color: C.muted, marginTop: 2, fontSize: 10 }}>
-                Peça vinculada à requisição de material desta OS.
-              </div>
-            </div>
-          ) : (
-            <div style={{ marginBottom: 14, background: "#f59e0b11",
-                          border: "1px solid #f59e0b40", borderRadius: 6,
-                          padding: "12px 14px" }}>
-              <div style={{ fontSize: 11, color: "#f59e0b", fontWeight: 600,
-                            marginBottom: 8 }}>
-                ⚠ Sem RM vinculada — registre a origem desta peça
-              </div>
-              <div style={{ fontSize: 10, color: C.muted, marginBottom: 10 }}>
-                Este registro aparecerá no relatório de divergências do gestor.
-                É esperado em compras emergenciais, mas precisa ter motivo declarado.
-              </div>
-
-              <label style={{ ...s.label, fontSize: 10 }}>COMO ESTA PEÇA CHEGOU *</label>
-              <select value={origemLastro}
-                onChange={e => setOrigemLastro(e.target.value)}
-                style={{ ...s.input, appearance: "none", marginBottom: 10 }}>
-                <option value="emergencial">Compra emergencial (loja física, cartão, cupom)</option>
-                <option value="estoque_proprio">Estoque próprio do técnico / doação</option>
-              </select>
-
-              <label style={{ ...s.label, fontSize: 10 }}>MOTIVO *</label>
-              <select value={motivoEmergencia}
-                onChange={e => setMotivoEmergencia(e.target.value)}
-                style={{ ...s.input, appearance: "none", marginBottom: 10 }}>
-                <option value="compra_cartao">Compra direta no cartão</option>
-                <option value="compra_dinheiro">Compra direta em dinheiro</option>
-                <option value="urgencia_operacional">Urgência operacional (equipamento parado)</option>
-                <option value="estoque_tecnico">Veio do estoque pessoal do técnico</option>
-                <option value="doacao">Doação / garantia do fornecedor</option>
-                <option value="outro">Outro (descrever nas observações)</option>
-              </select>
-
-              <label style={{ ...s.label, fontSize: 10 }}>VALOR PAGO (R$) — OPCIONAL</label>
-              <input type="number" min="0" step="0.01"
-                value={valorEstimado}
-                onChange={e => setValorEstimado(e.target.value)}
-                placeholder="Ex: 89.90"
-                style={{ ...s.input, textAlign: "right" }} />
-            </div>
-          )}
-
-          <label style={{ display: "flex", alignItems: "center", gap: 8,
-                          cursor: "pointer", marginBottom: 14,
-                          padding: "10px 12px", background: C.bg,
-                          borderRadius: 6 }}>
-            <input type="checkbox" checked={serializado}
-              onChange={e => setSerializado(e.target.checked)} />
-            <span style={{ fontSize: 12, color: C.text }}>
-              Este material é <strong>serializado</strong>
-            </span>
-          </label>
-
-          {serializado && (
-            <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 10, color: C.muted, marginBottom: 8,
-                            letterSpacing: "0.08em" }}>
-                NÚMEROS DE SÉRIE ({numerosSerie.length})
-              </div>
-              {numerosSerie.map((sn, i) => (
-                <div key={i} style={{ marginBottom: 8 }}>
-                  <div style={{ fontSize: 10, color: C.muted, marginBottom: 4 }}>
-                    #{i + 1}
-                  </div>
-                  <BarcodeScannerInput
-                    value={sn}
-                    onChange={v => setSerie(i, v)}
-                    placeholder="Ex: 8A32-11"
-                    autoFocus={i === 0}
-                    style={s.input}
-                  />
-                </div>
-              ))}
-              <div style={{ fontSize: 10, color: C.muted, marginTop: 6 }}>
-                Leia o código de barras ou digite manualmente — algumas peças
-                têm SN só gravado no metal, sem etiqueta.
-              </div>
-            </div>
-          )}
-
-          <div style={{ marginBottom: 14 }}>
-            <label style={s.label}>LOTE (OPCIONAL)</label>
-            <input type="text" value={lote}
-              onChange={e => setLote(e.target.value)}
-              placeholder="Ex: L2024-09"
-              style={s.input} />
-          </div>
-
-          <div style={{ marginBottom: 14 }}>
-            <label style={s.label}>OBSERVAÇÕES (OPCIONAL)</label>
-            <textarea value={observacoes}
-              onChange={e => setObservacoes(e.target.value)}
-              placeholder="Ex: substituição preventiva, avaria visível no rolamento antigo..."
-              style={{ ...s.input, minHeight: 60, resize: "vertical" }} />
-          </div>
-
-          <label style={{ display: "flex", alignItems: "flex-start", gap: 8,
-                          cursor: "pointer", padding: "12px",
-                          background: `${C.accent}15`,
-                          border: `1px solid ${C.accent}40`,
-                          borderRadius: 6 }}>
-            <input type="checkbox" checked={confirmou}
-              onChange={e => setConfirmou(e.target.checked)}
-              style={{ marginTop: 2 }} />
-            <span style={{ fontSize: 12, color: C.text, lineHeight: 1.5 }}>
-              Confirmo que esta(s) peça(s) foi(ram) <strong>fisicamente instalada(s)</strong>
-              {" "}no equipamento e que os números de série informados correspondem
-              ao que foi aplicado.
-            </span>
-          </label>
-
-          {erro && (
-            <div style={{ marginTop: 12, padding: "10px 12px",
-                          background: "#ef444415", border: "1px solid #ef444440",
-                          borderRadius: 6, fontSize: 11, color: "#ef4444" }}>
-              ⚠ {erro}
-            </div>
-          )}
-        </div>
-
-        <div style={{ display: "flex", gap: 10, padding: "14px 22px",
-                      borderTop: `1px solid ${C.border}` }}>
-          <button onClick={onCancelar} disabled={salvando}
-            style={{ ...s.btn(false), flex: 1, padding: "8px 16px" }}>
-            Cancelar
-          </button>
-          <button onClick={handleSalvar} disabled={salvando}
-            style={{ ...s.btn(true), flex: 1, padding: "8px 16px",
-                     opacity: salvando ? 0.5 : 1 }}>
-            {salvando ? "Registrando..." : "Confirmar aplicação"}
-          </button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// Horas-homem: sempre derivadas de (pessoas × duração), nunca digitadas.
-function calcularHorasHomem(dataInicio, dataFim, qtdPessoas) {
-  if (!dataInicio || !dataFim || !qtdPessoas) return null;
-  const ini = new Date(dataInicio);
-  const fim = new Date(dataFim);
-  const diffMs = fim - ini;
-  if (isNaN(diffMs) || diffMs <= 0) return null;
-  const horasCorridas = diffMs / (1000 * 60 * 60);
-  return {
-    horasCorridas: Number(horasCorridas.toFixed(1)),
-    horasHomem: Number((horasCorridas * qtdPessoas).toFixed(1)),
-  };
-}
-
-function computarNumeracao(itens) {
-  let ultimoBase = 0;
-  let contadorSufixo = 0;
-  return itens.map(item => {
-    if (item.origem === "planejado" && item.numero_base != null) {
-      ultimoBase = item.numero_base;
-      contadorSufixo = 0;
-      return { ...item, numeroExibicao: String(item.numero_base) };
-    }
-    contadorSufixo += 1;
-    return { ...item, numeroExibicao: `${ultimoBase}.${contadorSufixo}` };
-  });
-}
-
-// primeiro salvamento.
-function numerarRascunho(itens) {
-  return itens.map((item, i) => ({ ...item, numeroExibicao: String(i + 1) }));
-}
-
-function calcularJanelaAutomatica(itens) {
-  const datas = itens
-    .filter(it => it.tipo === "servico" && it.status !== "cancelado")
-    .flatMap(it => [it.data_inicio_prevista, it.data_fim_prevista].filter(Boolean));
-  if (datas.length === 0) return null;
-  const ordenadas = datas.map(d => new Date(d)).sort((a, b) => a - b);
-  return {
-    inicio: itens.filter(it => it.tipo === "servico" && it.data_inicio_prevista).map(it => it.data_inicio_prevista).sort()[0] || null,
-    fim: itens.filter(it => it.tipo === "servico" && it.data_fim_prevista).map(it => it.data_fim_prevista).sort().slice(-1)[0] || null,
-  };
-}
-
-function janelaValida(inicio, fim) {
-  if (!inicio || !fim) return true;
-  return new Date(fim) >= new Date(inicio);
-}
-
-function paraDatetimeLocal(isoString) {
-  if (!isoString) return "";
-  const d = new Date(isoString);
-  if (isNaN(d.getTime())) return "";
-  const pad = (n) => String(n).padStart(2, "0");
-  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
-}
-
-function paraISOComOffset(datetimeLocalStr) {
-  if (!datetimeLocalStr) return null;
-  const d = new Date(datetimeLocalStr);
-  if (isNaN(d.getTime())) return null;
-  return d.toISOString();
-}
+// ── Helpers, constantes e hooks extraídos (Rodada 1 da quebra) ──
+import {
+  aplicacaoCfg,
+  estoqueCfg,
+  urgenciaCfgMap,
+  categoriaCfgMap,
+  derivarStatusAplicacao,
+  calcularStatusPrazo,
+  novoMaterial,
+  novoServico,
+  calcularHorasHomem,
+  computarNumeracao,
+  numerarRascunho,
+  calcularJanelaAutomatica,
+  janelaValida,
+  paraDatetimeLocal,
+  paraISOComOffset,
+} from "./helpers";
+import { useEstoque, useMaterialAplicacoes } from "./hooks";
+import ModalAplicarMaterial from "./modais/ModalAplicarMaterial";
+import ModalCancelamento from "./modais/ModalCancelamento";
+import ModalReversao from "./modais/ModalReversao";
+import ModalConclusao from "./modais/ModalConclusao";
+import ModalSalvarTemplate from "./modais/ModalSalvarTemplate";
+import ModalCarregarTemplate from "./modais/ModalCarregarTemplate";
+import ModalApontamento from "./modais/ModalApontamento";
 
 export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
   const { chamados, loading, erro, carregar, criar, atualizar, deletar } = useChamados();
@@ -635,6 +117,7 @@ export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
 
   const [modalApontamento, setModalApontamento] = useState(null);
   const [modalConclusao, setModalConclusao] = useState(null);
+  const [modalCancelamento, setModalCancelamento] = useState(null);
 
   // ── Templates de OS (Modelos de Manutenção) — Fase 1: privados do tenant ──
   const [modalSalvarTemplate, setModalSalvarTemplate] = useState(null);
@@ -646,7 +129,6 @@ export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
   const [buscaTemplate, setBuscaTemplate] = useState("");
   const [templateSelecionado, setTemplateSelecionado] = useState(null);
   const [carregandoItensTemplate, setCarregandoItensTemplate] = useState(false);
-  const [apontamentoForm, setApontamentoForm] = useState({ pessoas_reais: 1, data_inicio_real: "", data_fim_real: "", horas_extras: 0 });
   // Quais itens do template estão marcados para carregar.
   // Chave = id do item (ou `idx_${i}` se não tiver id). Valor = boolean.
   const [itensSelecionadosTemplate, setItensSelecionadosTemplate] = useState({});
@@ -677,7 +159,65 @@ export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
 
   const [pendingFocusId, setPendingFocusId] = useState(null);
 
+    // ── Percentual de conclusão + timeline de eventos da OS ──
+  const [percentualConclusao, setPercentualConclusao] = useState(0);
+  const [eventosOS, setEventosOS] = useState([]);
+  const [carregandoEventos, setCarregandoEventos] = useState(false);
+
+  const carregarPercentual = useCallback(async (chamadoId) => {
+    try {
+      const r = await apiService.get(`/cotacoes/chamados/${chamadoId}/percentual`);
+      setPercentualConclusao(r?.percentual || 0);
+    } catch (e) {
+      setPercentualConclusao(0);
+    }
+  }, []);
+
+  const carregarEventos = useCallback(async (chamadoId) => {
+    setCarregandoEventos(true);
+    try {
+      const lista = await apiService.get(`/cotacoes/chamados/${chamadoId}/eventos`);
+      setEventosOS(Array.isArray(lista) ? lista : []);
+    } catch (e) {
+      setEventosOS([]);
+    } finally {
+      setCarregandoEventos(false);
+    }
+  }, []);
+
   useEffect(() => { carregar(); }, []);
+
+    // Carrega dados consolidados quando uma OS é selecionada (tela de detalhe):
+  //  - percentual de conclusão
+  //  - timeline de eventos
+  //  - histórico de aplicações de cada material (pro contador do botão
+  //    "Histórico (N)" já abrir certo, sem precisar clicar primeiro)
+  useEffect(() => {
+    if (!chamadoSel?.id) return;
+
+    carregarPercentual(chamadoSel.id);
+    carregarEventos(chamadoSel.id);
+
+    const materiais = (chamadoSel.itens || []).filter(it =>
+      it.tipo === "material" && it.status !== "cancelado"
+    );
+
+    Promise.all(materiais.map(async (item) => {
+      if (historicoPorItem[item.id]) return;
+      try {
+        const h = await listarHistorico(chamadoSel.id, item.id);
+        setHistoricoPorItem(prev => ({
+          ...prev,
+          [item.id]: { carregando: false, aplicacoes: h.aplicacoes || [] },
+        }));
+      } catch (_) {
+        setHistoricoPorItem(prev => ({
+          ...prev,
+          [item.id]: { carregando: false, aplicacoes: [] },
+        }));
+      }
+    }));
+  }, [chamadoSel?.id, carregarPercentual, carregarEventos, listarHistorico]);
 
   useEffect(() => {
     if (!pendingFocusId) return;
@@ -949,17 +489,7 @@ export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
     setShowDrop(false);
   };
 
-  function abrirModalApontamento(servico) {
-    setApontamentoForm({
-      pessoas_reais: servico.apontamento?.pessoas_reais || servico.qtd_pessoas_planejada || 1,
-      data_inicio_real: paraDatetimeLocal(servico.apontamento?.data_inicio_real),
-      data_fim_real: paraDatetimeLocal(servico.apontamento?.data_fim_real),
-      horas_extras: servico.apontamento?.horas_extras || 0,
-    });
-    setModalApontamento({ servicoId: servico.id });
-  }
-
-    // ── Busca de templates globais (server-side, com filtros e debounce) ──
+  // ── Busca de templates globais (server-side, com filtros e debounce) ──
   const carregarTemplatesGlobais = useCallback(async () => {
     setCarregandoGlobais(true);
     try {
@@ -1003,636 +533,65 @@ export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
     };
   }, [buscaGlobal, filtroTipoEquip, filtroMarca, abaTemplate, modalCarregarTemplate, carregarTemplatesGlobais]);
 
-  // salva apontamento de horas
-  async function salvarApontamento() {
-    if (!chamadoSel) return;
-    const itensAtualizados = (chamadoSel.itens || []).map(it =>
-      it.id === modalApontamento.servicoId ? { ...it, apontamento: { ...apontamentoForm } } : it
-    );
-    setChamadoSel(prev => ({ ...prev, itens: itensAtualizados }));
-
-    try {
-      await apiService.post(`/cotacoes/chamados/${chamadoSel.id}/apontamentos`, {
-        servico_id: modalApontamento.servicoId,
-        pessoas_reais: parseInt(apontamentoForm.pessoas_reais) || 1,
-        data_inicio_real: paraISOComOffset(apontamentoForm.data_inicio_real),
-        data_fim_real: paraISOComOffset(apontamentoForm.data_fim_real),
-        horas_extras: parseFloat(apontamentoForm.horas_extras) || 0,
-      });
-    } catch (e) {
-      alert("O apontamento ficou salvo só nesta tela — não foi possível gravar no servidor: " + e.message);
-    }
-    setModalApontamento(null);
-  }
-
   // ─────────────────────────────────────────────────────────────────────────
-  // MODAL — SALVAR OS COMO MODELO DE MANUTENÇÃO
+  // MODAL — SALVAR OS COMO MODELO (extraído em modais/ModalSalvarTemplate.jsx)
   // ─────────────────────────────────────────────────────────────────────────
   if (modalSalvarTemplate) {
     return (
-      <div style={{ position: "fixed", inset: 0, background: "#00000090",
-                    display: "flex", alignItems: "center",
-                    justifyContent: "center", zIndex: 370, padding: 20 }}>
-        <div style={{ ...s.card, width: 480, maxWidth: "100%" }}>
-
-          <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.border}` }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>
-              Salvar como modelo de manutenção
-            </div>
-            <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-              {chamadoSel.numero}
-            </div>
-          </div>
-
-          <div style={{ padding: "18px 22px" }}>
-            <div style={{ fontSize: 11, color: C.muted, marginBottom: 14,
-                          background: C.bg, borderRadius: 6, padding: "10px 12px" }}>
-              Os itens desta OS viram um <strong>modelo reutilizável</strong>. O
-              modelo é <strong>privado da sua empresa</strong> — só você e sua
-              equipe veem. Nenhum dado vai para outros clientes.
-            </div>
-
-            <div style={{ marginBottom: 14 }}>
-              <label style={s.label}>NOME DO MODELO *</label>
-              <input
-                type="text"
-                value={modalSalvarTemplate.nome}
-                onChange={e => setModalSalvarTemplate(m => ({ ...m, nome: e.target.value }))}
-                placeholder="Ex: Revisão 10.000km, Preventiva 90 dias..."
-                autoFocus
-                style={s.input} />
-            </div>
-
-            <div style={{ marginBottom: 14 }}>
-              <label style={s.label}>DESCRIÇÃO (OPCIONAL)</label>
-              <textarea
-                value={modalSalvarTemplate.descricao}
-                onChange={e => setModalSalvarTemplate(m => ({ ...m, descricao: e.target.value }))}
-                placeholder="Ex: Revisão padrão para caminhões da frota — 10.000km"
-                style={{ ...s.input, minHeight: 60, resize: "vertical" }} />
-            </div>
-
-            {modalSalvarTemplate.erro && (
-              <div style={{ padding: "10px 12px", background: "#ef444415",
-                            border: "1px solid #ef444440", borderRadius: 6,
-                            fontSize: 11, color: "#ef4444" }}>
-                ⚠ {modalSalvarTemplate.erro}
-              </div>
-            )}
-          </div>
-
-          <div style={{ display: "flex", gap: 10, padding: "14px 22px",
-                        borderTop: `1px solid ${C.border}` }}>
-            <button onClick={() => setModalSalvarTemplate(null)}
-              disabled={modalSalvarTemplate.salvando}
-              style={{ ...s.btn(false), flex: 1, padding: "8px 16px" }}>
-              Cancelar
-            </button>
-            <button
-              disabled={!modalSalvarTemplate.nome?.trim() || modalSalvarTemplate.salvando}
-              onClick={async () => {
-                setModalSalvarTemplate(m => ({ ...m, salvando: true, erro: null }));
-                try {
-                  await apiService.post(
-                    `/cotacoes/chamados/${chamadoSel.id}/salvar-como-template`,
-                    {
-                      nome: modalSalvarTemplate.nome.trim(),
-                      descricao: modalSalvarTemplate.descricao?.trim() || null,
-                    }
-                  );
-                  setModalSalvarTemplate(null);
-                  alert("Modelo salvo com sucesso. Ele já está disponível para novas OSs.");
-                } catch (e) {
-                  setModalSalvarTemplate(m => ({
-                    ...m, salvando: false,
-                    erro: e.message || "Erro ao salvar modelo",
-                  }));
-                }
-              }}
-              style={{ ...s.btn(true), flex: 1, padding: "8px 16px",
-                       opacity: (!modalSalvarTemplate.nome?.trim() || modalSalvarTemplate.salvando) ? 0.5 : 1 }}>
-              {modalSalvarTemplate.salvando ? "Salvando..." : "Salvar modelo"}
-            </button>
-          </div>
-        </div>
-      </div>
+      <ModalSalvarTemplate
+        chamado={chamadoSel}
+        nomeInicial={modalSalvarTemplate.nome}
+        descricaoInicial={modalSalvarTemplate.descricao}
+        salvando={!!modalSalvarTemplate.salvando}
+        erro={modalSalvarTemplate.erro}
+        s={s}
+        C={C}
+        onCancelar={() => setModalSalvarTemplate(null)}
+        onConfirmar={async ({ nome, descricao }) => {
+          setModalSalvarTemplate(m => ({ ...m, salvando: true, erro: null }));
+          try {
+            await apiService.post(
+              `/cotacoes/chamados/${chamadoSel.id}/salvar-como-template`,
+              { nome, descricao }
+            );
+            setModalSalvarTemplate(null);
+            alert("Modelo salvo com sucesso. Ele já está disponível para novas OSs.");
+          } catch (e) {
+            setModalSalvarTemplate(m => ({
+              ...m, salvando: false,
+              erro: e.message || "Erro ao salvar modelo",
+            }));
+          }
+        }}
+      />
     );
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // MODAL — CARREGAR MODELO DE MANUTENÇÃO (dentro do modal de Nova OS)
+  // MODAL — CARREGAR MODELO DE MANUTENÇÃO
+  // (componente extraído em modais/ModalCarregarTemplate.jsx)
   // ─────────────────────────────────────────────────────────────────────────
   if (modalCarregarTemplate) {
-    const templatesFiltrados = templatesDisponiveis.filter(t => {
-      if (!buscaTemplate.trim()) return true;
-      const termo = buscaTemplate.toLowerCase();
-      return (t.nome || "").toLowerCase().includes(termo)
-          || (t.descricao || "").toLowerCase().includes(termo);
-    });
-
     return (
-      <div style={{ position: "fixed", inset: 0, background: "#00000090",
-                    display: "flex", alignItems: "center",
-                    justifyContent: "center", zIndex: 380, padding: 20 }}>
-        <div style={{ ...s.card, width: 640, maxWidth: "100%",
-                      maxHeight: "85vh", display: "flex", flexDirection: "column" }}>
-
-          <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.border}` }}>
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
-              <div>
-                <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>
-                  {templateSelecionado ? "Confirmar carregamento" : "Modelos de manutenção"}
-                </div>
-                <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-                  {templateSelecionado
-                    ? templateSelecionado.nome
-                    : "Selecione um modelo para carregar os itens nesta OS"}
-                </div>
-              </div>
-              {templateSelecionado && (
-                <button
-                  onClick={() => setTemplateSelecionado(null)}
-                  style={{ background: "transparent", border: "none", color: C.accent,
-                           fontSize: 12, cursor: "pointer", fontFamily: "inherit",
-                           padding: 0 }}>
-                  ← Voltar
-                </button>
-              )}
-            </div>
-          </div>
-
-          {/* ═══════════════ ETAPA 1: LISTA + BUSCA ═══════════════ */}
-          {!templateSelecionado && (
-            <>
-              {/* Abas: Meus modelos / Banco de modelos */}
-              <div style={{ padding: "14px 22px 0 22px",
-                            borderBottom: `1px solid ${C.border}` }}>
-                <div style={{ display: "flex", gap: 4 }}>
-                  {[
-                    { id: "meus", label: "📋 Meus modelos" },
-                    { id: "globais", label: "🌎 Banco de modelos" },
-                  ].map(tab => (
-                    <button key={tab.id}
-                      onClick={() => {
-                        setAbaTemplate(tab.id);
-                        // Ao trocar de aba, limpa o preview e a seleção
-                        setTemplateSelecionado(null);
-                        setItensSelecionadosTemplate({});
-                      }}
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        borderBottom: abaTemplate === tab.id
-                          ? `2px solid ${C.accent}`
-                          : "2px solid transparent",
-                        color: abaTemplate === tab.id ? C.text : C.muted,
-                        fontSize: 12,
-                        fontWeight: abaTemplate === tab.id ? 600 : 400,
-                        cursor: "pointer",
-                        padding: "8px 14px 10px 14px",
-                        fontFamily: "inherit",
-                        marginBottom: -1,
-                      }}>
-                      {tab.label}
-                    </button>
-                  ))}
-                </div>
-              </div>
-
-              {/* Linha de filtros: busca + dropdowns (só na aba globais) */}
-              <div style={{ padding: "14px 22px 0 22px" }}>
-                <input
-                  type="text"
-                  value={abaTemplate === "meus" ? buscaTemplate : buscaGlobal}
-                  onChange={e => {
-                    if (abaTemplate === "meus") setBuscaTemplate(e.target.value);
-                    else setBuscaGlobal(e.target.value);
-                  }}
-                  placeholder={abaTemplate === "meus"
-                    ? "Buscar nos seus modelos..."
-                    : "Buscar no banco (tolerante a erros de digitação)..."}
-                  autoFocus
-                  style={{ ...s.input, padding: "8px 12px", fontSize: 12 }} />
-
-                {abaTemplate === "globais" && (
-                  <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr",
-                                gap: 8, marginTop: 8 }}>
-                    <select
-                      value={filtroTipoEquip}
-                      onChange={e => setFiltroTipoEquip(e.target.value)}
-                      style={{ ...s.input, padding: "8px 12px", fontSize: 12,
-                               appearance: "none" }}>
-                      <option value="">Todos os tipos de equipamento</option>
-                      {filtrosGlobaisDisponiveis.tipos_equipamento.map(t => (
-                        <option key={t} value={t}>
-                          {t.charAt(0).toUpperCase() + t.slice(1)}
-                        </option>
-                      ))}
-                    </select>
-                    <select
-                      value={filtroMarca}
-                      onChange={e => setFiltroMarca(e.target.value)}
-                      style={{ ...s.input, padding: "8px 12px", fontSize: 12,
-                               appearance: "none" }}>
-                      <option value="">Todas as marcas</option>
-                      {filtrosGlobaisDisponiveis.marcas.map(m => (
-                        <option key={m} value={m}>
-                          {m.charAt(0).toUpperCase() + m.slice(1)}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-                )}
-              </div>
-
-              <div style={{ padding: "14px 22px", overflowY: "auto", flex: 1 }}>
-                {/* ═══ Aba "Meus modelos" ═══ */}
-                {abaTemplate === "meus" && (
-                  carregandoTemplates ? (
-                    <div style={{ color: C.muted, textAlign: "center", padding: 20 }}>
-                      Carregando modelos...
-                    </div>
-                  ) : templatesDisponiveis.length === 0 ? (
-                    <div style={{ textAlign: "center", padding: "30px 20px",
-                                  background: C.bg, borderRadius: 8 }}>
-                      <div style={{ fontSize: 30, marginBottom: 10 }}>📋</div>
-                      <div style={{ fontSize: 13, color: C.text, marginBottom: 4 }}>
-                        Nenhum modelo cadastrado ainda
-                      </div>
-                      <div style={{ fontSize: 11, color: C.muted }}>
-                        Abra uma OS existente e clique em "Salvar como modelo" para
-                        criar seu primeiro modelo reutilizável.
-                      </div>
-                    </div>
-                  ) : templatesFiltrados.length === 0 ? (
-                    <div style={{ color: C.muted, textAlign: "center", padding: 20, fontSize: 12 }}>
-                      Nenhum modelo encontrado para "{buscaTemplate}"
-                    </div>
-                  ) : (
-                    templatesFiltrados.map(t => (
-                    <div key={t.id}
-                      onClick={async () => {
-                        setCarregandoItensTemplate(true);
-                        try {
-                          const completo = await apiService.get(
-                            `/cotacoes/chamados/templates/${t.id}`
-                          );
-                          setTemplateSelecionado({ ...completo, _origem: "privado" });
-
-                          // Marca todos os itens como selecionados por padrão
-                          const mapa = {};
-                          (completo.itens || []).forEach((it, i) => {
-                            mapa[it.id != null ? `id_${it.id}` : `idx_${i}`] = true;
-                          });
-                          setItensSelecionadosTemplate(mapa);
-                        } catch (e) {
-                          alert("Erro ao carregar itens do modelo: " + (e.message || "erro"));
-                        } finally {
-                          setCarregandoItensTemplate(false);
-                        }
-                      }}
-                      style={{ background: C.bg, border: `1px solid ${C.border}`,
-                               borderRadius: 8, padding: "14px 16px",
-                               marginBottom: 8, cursor: "pointer",
-                               transition: "background 0.15s" }}
-                      onMouseEnter={e => e.currentTarget.style.background = "#1e2a3f"}
-                      onMouseLeave={e => e.currentTarget.style.background = C.bg}>
-                      <div style={{ display: "flex", justifyContent: "space-between",
-                                    alignItems: "flex-start", gap: 10, marginBottom: 4 }}>
-                        <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>
-                          📋 {t.nome}
-                        </div>
-                        <span style={{ fontSize: 10, color: C.muted, flexShrink: 0 }}>
-                          {t.total_itens} item(ns)
-                        </span>
-                      </div>
-                      {t.descricao && (
-                        <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>
-                          {t.descricao}
-                        </div>
-                      )}
-                      <div style={{ display: "flex", gap: 8, fontSize: 10 }}>
-                        {t.categoria && (
-                          <span style={{ color: categoriaCfgMap[t.categoria]?.c || C.muted }}>
-                            {categoriaCfgMap[t.categoria]?.l || t.categoria}
-                          </span>
-                        )}
-                        {t.urgencia && (
-                          <span style={{ color: urgenciaCfgMap[t.urgencia]?.c || C.muted }}>
-                            · Urgência {urgenciaCfgMap[t.urgencia]?.l || t.urgencia}
-                          </span>
-                        )}
-                        {t.criado_por_nome && (
-                          <span style={{ color: C.muted, marginLeft: "auto" }}>
-                            por {t.criado_por_nome}
-                          </span>
-                        )}
-                      </div>
-                    </div>
-                  ))
-                  )
-                )}
-
-                {/* ═══ Aba "Banco de modelos" ═══ */}
-                {abaTemplate === "globais" && (
-                  carregandoGlobais ? (
-                    <div style={{ color: C.muted, textAlign: "center", padding: 20 }}>
-                      Buscando no banco de modelos...
-                    </div>
-                  ) : templatesGlobais.length === 0 ? (
-                    <div style={{ color: C.muted, textAlign: "center",
-                                  padding: 20, fontSize: 12 }}>
-                      {(buscaGlobal || filtroTipoEquip || filtroMarca)
-                        ? "Nenhum modelo encontrado para esta busca."
-                        : "Nenhum modelo publicado ainda. Novos modelos são adicionados periodicamente."}
-                    </div>
-                  ) : (
-                    templatesGlobais.map(t => (
-                      <div key={t.id}
-                        onClick={async () => {
-                          setCarregandoItensTemplate(true);
-                          try {
-                            const completo = await apiService.get(
-                              `/cotacoes/chamados/templates-globais/${t.id}`
-                            );
-                            setTemplateSelecionado({ ...completo, _origem: "global" });
-
-                            const mapa = {};
-                            (completo.itens || []).forEach((it, i) => {
-                              mapa[it.id != null ? `id_${it.id}` : `idx_${i}`] = true;
-                            });
-                            setItensSelecionadosTemplate(mapa);
-                          } catch (e) {
-                            alert("Erro ao carregar itens do modelo: " + (e.message || "erro"));
-                          } finally {
-                            setCarregandoItensTemplate(false);
-                          }
-                        }}
-                        style={{ background: C.bg, border: `1px solid ${C.border}`,
-                                 borderRadius: 8, padding: "14px 16px",
-                                 marginBottom: 8, cursor: "pointer",
-                                 transition: "background 0.15s" }}
-                        onMouseEnter={e => e.currentTarget.style.background = "#1e2a3f"}
-                        onMouseLeave={e => e.currentTarget.style.background = C.bg}>
-                        <div style={{ display: "flex", justifyContent: "space-between",
-                                      alignItems: "flex-start", gap: 10, marginBottom: 4 }}>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>
-                            📋 {t.nome}
-                          </div>
-                          <span style={{ fontSize: 10, color: C.muted, flexShrink: 0 }}>
-                            {t.total_itens} item(ns)
-                          </span>
-                        </div>
-                        {t.descricao && (
-                          <div style={{ fontSize: 11, color: C.muted, marginBottom: 6 }}>
-                            {t.descricao}
-                          </div>
-                        )}
-                        <div style={{ display: "flex", gap: 6, fontSize: 10,
-                                      flexWrap: "wrap", alignItems: "center" }}>
-                          {t.tipo_equipamento && (
-                            <span style={{ ...s.tag(C.accent), fontSize: 9 }}>
-                              {t.tipo_equipamento}
-                            </span>
-                          )}
-                          {t.marca && (
-                            <span style={{ ...s.tag("#a855f7"), fontSize: 9 }}>
-                              {t.marca}{t.modelo ? ` ${t.modelo}` : ""}
-                            </span>
-                          )}
-                          {t.categoria && (
-                            <span style={{ color: categoriaCfgMap[t.categoria]?.c || C.muted }}>
-                              {categoriaCfgMap[t.categoria]?.l || t.categoria}
-                            </span>
-                          )}
-                          {t.intervalo_descricao && (
-                            <span style={{ color: C.muted }}>
-                              · {t.intervalo_descricao}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))
-                  )
-                )}
-              </div>
-            </>
-          )}
-
-          {/* ═══════════════ ETAPA 2: PREVIEW + CONFIRMAÇÃO ═══════════════ */}
-          {templateSelecionado && (
-            <>
-              <div style={{ padding: "18px 22px", overflowY: "auto", flex: 1 }}>
-                <div style={{ background: C.bg, borderRadius: 6,
-                              padding: "10px 12px", marginBottom: 14, fontSize: 11 }}>
-                  {templateSelecionado.descricao && (
-                    <div style={{ color: C.text, marginBottom: 6 }}>
-                      {templateSelecionado.descricao}
-                    </div>
-                  )}
-                  <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
-                    {templateSelecionado.categoria && (
-                      <span style={{ color: categoriaCfgMap[templateSelecionado.categoria]?.c || C.muted }}>
-                        {categoriaCfgMap[templateSelecionado.categoria]?.l || templateSelecionado.categoria}
-                      </span>
-                    )}
-                    {templateSelecionado.urgencia && (
-                      <span style={{ color: urgenciaCfgMap[templateSelecionado.urgencia]?.c || C.muted }}>
-                        Urgência {urgenciaCfgMap[templateSelecionado.urgencia]?.l || templateSelecionado.urgencia}
-                      </span>
-                    )}
-                    <span style={{ color: C.muted }}>
-                      · {(templateSelecionado.itens || []).length} item(ns)
-                    </span>
-                  </div>
-                </div>
-
-                {templateSelecionado._origem === "global" && (
-                  <div style={{
-                    background: `${C.accent}10`,
-                    border: `1px solid ${C.accent}30`,
-                    borderRadius: 6,
-                    padding: "10px 12px",
-                    marginBottom: 14,
-                    fontSize: 11,
-                    color: C.text,
-                  }}>
-                    🌎 <strong>Modelo do Banco QuotaFlow</strong>
-                    <div style={{ color: C.muted, marginTop: 4, fontSize: 10 }}>
-                      Os materiais virão sem vínculo com seu catálogo — você pode
-                      associar cada um ao item correto depois de carregar a OS.
-                    </div>
-                    <button
-                      onClick={() => {
-                        // Fase 3 — a UI do formulário vem depois. Por ora, só
-                        // registra a intenção pra quando a gente implementar.
-                        alert(
-                          "Em breve você poderá sugerir melhorias neste modelo.\n\n" +
-                          "Por enquanto, entre em contato pelo suporte e nossa " +
-                          "curadoria avalia sua sugestão."
-                        );
-                      }}
-                      style={{
-                        background: "transparent",
-                        border: "none",
-                        color: C.accent,
-                        fontSize: 10,
-                        cursor: "pointer",
-                        fontFamily: "inherit",
-                        padding: 0,
-                        marginTop: 8,
-                        textDecoration: "underline",
-                      }}>
-                      💡 Propor melhoria neste modelo
-                    </button>
-                  </div>
-                )}
-
-                <div style={{ fontSize: 10, color: C.muted, letterSpacing: "0.08em",
-                              marginBottom: 10 }}>
-                  ITENS QUE SERÃO CARREGADOS
-                </div>
-
-                {(templateSelecionado.itens || []).map((it, idx) => {
-                  const isMaterial = it.tipo === "material";
-                  const chave = it.id != null ? `id_${it.id}` : `idx_${idx}`;
-                  const selecionado = !!itensSelecionadosTemplate[chave];
-
-                  return (
-                    <div key={it.id || idx} style={{
-                      background: C.bg,
-                      border: `1px solid ${selecionado ? C.accent : C.border}`,
-                      borderRadius: 6,
-                      padding: "10px 12px",
-                      marginBottom: 6,
-                      fontSize: 11,
-                      opacity: selecionado ? 1 : 0.5,
-                      cursor: "pointer",
-                      transition: "all 0.15s",
-                    }}
-                    onClick={() => setItensSelecionadosTemplate(prev => ({
-                      ...prev, [chave]: !prev[chave],
-                    }))}>
-                      <div style={{ display: "flex", alignItems: "center", gap: 8,
-                                    marginBottom: 4, flexWrap: "wrap" }}>
-                        <input type="checkbox"
-                          checked={selecionado}
-                          onChange={() => {}} // o onClick do wrapper já cuida
-                          style={{ flexShrink: 0, cursor: "pointer" }} />
-                        <span style={{ fontSize: 11, fontWeight: 700,
-                                       color: C.accent,
-                                       fontFamily: "'IBM Plex Mono',monospace" }}>
-                          #{it.numero_base ?? idx + 1}
-                        </span>
-                        <span style={{ fontSize: 12, fontWeight: 600, color: C.text }}>
-                          {isMaterial ? "📦" : "🛠"} {it.item_nome}
-                        </span>
-                        {it.codigo && (
-                          <span style={{ fontSize: 10, color: C.muted,
-                                         fontFamily: "'IBM Plex Mono',monospace" }}>
-                            {it.codigo}
-                          </span>
-                        )}
-                      </div>
-                      <div style={{ display: "flex", gap: 12, fontSize: 10, color: C.muted }}>
-                        {isMaterial ? (
-                          <>
-                            <span>Qtd: {it.quantidade}</span>
-                            {it.serializado && (
-                              <span style={{ color: "#a855f7" }}>🔢 serializado</span>
-                            )}
-                          </>
-                        ) : (
-                          <span>{it.qtd_pessoas_planejada || 1} pessoa(s) planejada(s)</span>
-                        )}
-                        {it.descricao && <span>· {it.descricao}</span>}
-                      </div>
-                    </div>
-                  );
-                })}
-
-                {form.itens.length > 0 && (
-                  <div style={{ marginTop: 14, padding: "10px 12px",
-                                background: "#f59e0b15", border: "1px solid #f59e0b40",
-                                borderRadius: 6, fontSize: 11, color: "#f59e0b" }}>
-                    ⚠ Esta OS já tem {form.itens.length} item(ns). Ao confirmar, eles
-                    serão <strong>substituídos</strong> pelos itens selecionados acima.
-                  </div>
-                )}
-              </div>
-
-              <div style={{ display: "flex", gap: 10, padding: "14px 22px",
-                            borderTop: `1px solid ${C.border}` }}>
-                <button onClick={() => setTemplateSelecionado(null)}
-                  style={{ ...s.btn(false), flex: 1, padding: "8px 16px" }}>
-                  ← Voltar
-                </button>
-                <button
-                  disabled={Object.values(itensSelecionadosTemplate).filter(Boolean).length === 0}
-                  onClick={() => {
-                    const itensDoTemplate = (templateSelecionado.itens || [])
-                      .filter((it, i) => {
-                        const chave = it.id != null ? `id_${it.id}` : `idx_${i}`;
-                        return !!itensSelecionadosTemplate[chave];
-                      })
-                      .map(it => {
-                        if (it.tipo === "material") {
-                          return {
-                            ...novoMaterial("planejado"),
-                            item_nome: it.item_nome || "",
-                            codigo: it.codigo || "",
-                            item_catalogo_id: it.item_catalogo_id || null,
-                            quantidade: it.quantidade || 1,
-                            tipo_item: it.tipo_item || "",
-                            descricao: it.descricao || "",
-                            serializado: !!it.serializado,
-                          };
-                        }
-                        return {
-                          ...novoServico("planejado"),
-                          nome: it.item_nome || "",
-                          descricao: it.descricao || "",
-                          qtd_pessoas_planejada: it.qtd_pessoas_planejada || 1,
-                        };
-                      });
-
-                    setForm(f => ({
-                      ...f,
-                      itens: itensDoTemplate,
-                      categoria: templateSelecionado.categoria || f.categoria,
-                      urgencia: templateSelecionado.urgencia || f.urgencia,
-                      descricaoGeral: f.descricaoGeral || templateSelecionado.descricao || "",
-                      servico_nome: f.servico_nome || templateSelecionado.nome || "",
-                    }));
-                    setModalCarregarTemplate(false);
-                    setTemplateSelecionado(null);
-                    setBuscaTemplate("");
-                    setItensSelecionadosTemplate({});
-                  }}
-                  style={{ ...s.btn(true), flex: 1, padding: "8px 16px",
-                           opacity: Object.values(itensSelecionadosTemplate).filter(Boolean).length === 0 ? 0.5 : 1,
-                           cursor: Object.values(itensSelecionadosTemplate).filter(Boolean).length === 0 ? "not-allowed" : "pointer" }}>
-                  ✅ Carregar {Object.values(itensSelecionadosTemplate).filter(Boolean).length} de {(templateSelecionado.itens || []).length} item(ns)
-                </button>
-              </div>
-            </>
-          )}
-
-          {/* Rodapé só na Etapa 1 (na Etapa 2 os botões ficam acima) */}
-          {!templateSelecionado && (
-            <div style={{ display: "flex", gap: 10, padding: "14px 22px",
-                          borderTop: `1px solid ${C.border}` }}>
-              <button onClick={() => {
-                setModalCarregarTemplate(false);
-                setBuscaTemplate("");
-              }}
-                style={{ ...s.btn(false), flex: 1, padding: "8px 16px" }}>
-                Cancelar
-              </button>
-            </div>
-          )}
-        </div>
-      </div>
+      <ModalCarregarTemplate
+        qtdItensExistentes={form.itens.length}
+        s={s}
+        C={C}
+        onCancelar={() => {
+          setModalCarregarTemplate(false);
+        }}
+        onConfirmar={({ itens, template }) => {
+          setForm(f => ({
+            ...f,
+            itens,
+            categoria: template.categoria || f.categoria,
+            urgencia: template.urgencia || f.urgencia,
+            descricaoGeral: f.descricaoGeral || template.descricao || "",
+            servico_nome: f.servico_nome || template.nome || "",
+          }));
+          setModalCarregarTemplate(false);
+        }}
+      />
     );
   }
 
@@ -2007,63 +966,36 @@ export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
   }
 
   // ─────────────────────────────────────────────────────────────────────────
-  // MODAL DE APONTAMENTO DE EXECUÇÃO
+  // MODAL — APONTAMENTO DE EXECUÇÃO (extraído em modais/ModalApontamento.jsx)
   // ─────────────────────────────────────────────────────────────────────────
   if (modalApontamento) {
     const servico = (chamadoSel?.itens || []).find(it => it.id === modalApontamento.servicoId);
-    const calc = calcularHorasHomem(apontamentoForm.data_inicio_real, apontamentoForm.data_fim_real, apontamentoForm.pessoas_reais);
-    const calcPlanejado = servico ? calcularHorasHomem(servico.data_inicio_prevista, servico.data_fim_prevista, servico.qtd_pessoas_planejada) : null;
-
+    if (!servico) {
+      setModalApontamento(null);
+      return null;
+    }
     return (
-      <div style={{ position: "fixed", inset: 0, background: "#00000090", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 320, padding: 20 }}>
-        <div style={{ ...s.card, width: 480, maxWidth: "100%", boxShadow: "0 24px 48px #00000060" }}>
-          <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.border}` }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>Apontamento de execução</div>
-            <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>{servico?.nome}</div>
-          </div>
-          <div style={{ padding: "18px 22px" }}>
-            {calcPlanejado && (
-              <div style={{ fontSize: 11, color: C.muted, marginBottom: 14, background: C.bg, borderRadius: 6, padding: "8px 10px" }}>
-                Planejado: {servico.qtd_pessoas_planejada} pessoa(s) · {calcPlanejado.horasHomem}h-homem
-              </div>
-            )}
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-              <div>
-                <label style={s.label}>PESSOAS QUE EXECUTARAM</label>
-                <input type="number" min="1" value={apontamentoForm.pessoas_reais} onChange={e => setApontamentoForm(f => ({ ...f, pessoas_reais: e.target.value }))} style={{ ...s.input, textAlign: "center" }} />
-              </div>
-              <div>
-                <label style={s.label}>HORAS EXTRAS</label>
-                <input type="number" min="0" step="0.5" value={apontamentoForm.horas_extras} onChange={e => setApontamentoForm(f => ({ ...f, horas_extras: e.target.value }))} style={{ ...s.input, textAlign: "center" }} />
-              </div>
-            </div>
-            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 12 }}>
-              <div>
-                <label style={s.label}>INÍCIO REAL</label>
-                <input type="datetime-local" value={apontamentoForm.data_inicio_real} onChange={e => setApontamentoForm(f => ({ ...f, data_inicio_real: e.target.value }))} style={s.input} />
-              </div>
-              <div>
-                <label style={s.label}>FIM REAL</label>
-                <input type="datetime-local" value={apontamentoForm.data_fim_real} onChange={e => setApontamentoForm(f => ({ ...f, data_fim_real: e.target.value }))} style={s.input} />
-              </div>
-            </div>
-            {calc && (
-              <div style={{ fontSize: 11, color: C.success, background: `${C.success}15`, borderRadius: 6, padding: "8px 10px" }}>
-                ⏱ {calc.horasCorridas}h corridas × {apontamentoForm.pessoas_reais} pessoa(s) = <strong>{calc.horasHomem}h-homem realizadas</strong>
-                {Number(apontamentoForm.horas_extras) > 0 && ` (+ ${apontamentoForm.horas_extras}h extras)`}
-              </div>
-            )}
-          </div>
-          <div style={{ display: "flex", gap: 10, padding: "14px 22px", borderTop: `1px solid ${C.border}` }}>
-            <button onClick={() => setModalApontamento(null)} style={{ ...s.btn(false), flex: 1, padding: "8px 16px" }}>Cancelar</button>
-            <button onClick={salvarApontamento} style={{ ...s.btn(true), flex: 1, padding: "8px 16px" }}>Salvar apontamento</button>
-          </div>
-        </div>
-      </div>
+      <ModalApontamento
+        chamado={chamadoSel}
+        item={servico}
+        s={s}
+        C={C}
+        onFechar={() => setModalApontamento(null)}
+        onAtualizarResumo={async () => {
+          await carregar();
+          const lista = await apiService.get("/cotacoes/chamados", { tipo_documento: "os" });
+          const fresh = Array.isArray(lista)
+            ? lista.find(c => String(c.id) === String(chamadoSel.id))
+            : null;
+          if (fresh) setChamadoSel(fresh);
+          await carregarPercentual(chamadoSel.id);
+          await carregarEventos(chamadoSel.id);
+        }}
+      />
     );
   }
 
-    // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
   // MODAL — APLICAR MATERIAL NA OS (MIGO-like)
   // ─────────────────────────────────────────────────────────────────────────
   if (modalAplicacao) {
@@ -2094,13 +1026,22 @@ export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
               : null;
             if (fresh) setChamadoSel(fresh);
 
-            // Invalida o cache do histórico deste item pra forçar
-            // refetch na próxima abertura do painel
-            setHistoricoPorItem(prev => {
-              const copy = { ...prev };
-              delete copy[modalAplicacao.item.id];
-              return copy;
-            });
+            // Recarrega o histórico deste item AGORA — assim o contador do
+            // botão "Histórico (N)" atualiza imediatamente após a aplicação,
+            // sem depender de F5 ou de o usuário clicar pra expandir.
+            try {
+              const h = await listarHistorico(chamadoSel.id, modalAplicacao.item.id);
+              setHistoricoPorItem(prev => ({
+                ...prev,
+                [modalAplicacao.item.id]: { carregando: false, aplicacoes: h.aplicacoes || [] },
+              }));
+            } catch (_) {
+              setHistoricoPorItem(prev => {
+                const copy = { ...prev };
+                delete copy[modalAplicacao.item.id];
+                return copy;
+              });
+            }
 
             setModalAplicacao(null);
           } catch (e) {
@@ -2111,314 +1052,125 @@ export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
     );
   }
 
-    // ─────────────────────────────────────────────────────────────────────────
-  // MODAL — REVERTER APLICAÇÃO (estorno, nunca deleta)
+  // ─────────────────────────────────────────────────────────────────────────
+  // MODAL — REVERTER APLICAÇÃO (componente extraído em modais/ModalReversao.jsx)
   // ─────────────────────────────────────────────────────────────────────────
   if (modalReversao) {
     return (
-      <div style={{ position: "fixed", inset: 0, background: "#00000090",
-                    display: "flex", alignItems: "center",
-                    justifyContent: "center", zIndex: 350, padding: 20 }}>
-        <div style={{ ...s.card, width: 460, maxWidth: "100%" }}>
+      <ModalReversao
+        contexto={modalReversao}
+        salvando={salvandoAplicacao}
+        s={s}
+        C={C}
+        onCancelar={() => setModalReversao(null)}
+        onConfirmar={async ({ motivo, observacoes }) => {
+          await reverter(modalReversao.aplicacaoId, { motivo, observacoes });
+          await carregar();
+          const listaAtualizada = await apiService.get(
+            "/cotacoes/chamados",
+            { tipo_documento: "os" }
+          );
+          const fresh = Array.isArray(listaAtualizada)
+            ? listaAtualizada.find(c => String(c.id) === String(chamadoSel.id))
+            : null;
+          if (fresh) setChamadoSel(fresh);
 
-          <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.border}` }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>
-              Reverter aplicação
-            </div>
-            <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-              {modalReversao.itemNome}
-            </div>
-          </div>
-
-          <div style={{ padding: "18px 22px" }}>
-            <div style={{ fontSize: 11, color: C.muted, marginBottom: 14,
-                          background: C.bg, borderRadius: 6, padding: "10px 12px" }}>
-              Esta operação <strong>não apaga</strong> o registro original — cria
-              um estorno rastreável. O histórico completo fica preservado para
-              garantia, seguradora e auditoria.
-            </div>
-
-            <div style={{ display: "flex", justifyContent: "space-between",
-                          fontSize: 11, marginBottom: 14,
-                          background: C.bg, borderRadius: 6, padding: "8px 12px" }}>
-              <span style={{ color: C.muted }}>Quantidade a estornar:</span>
-              <strong style={{ color: C.text }}>{modalReversao.quantidade} un</strong>
-            </div>
-
-            {modalReversao.numerosSerie?.length > 0 && (
-              <div style={{ fontSize: 11, color: C.textSub, marginBottom: 14,
-                            background: C.bg, padding: "8px 10px",
-                            borderRadius: 6, fontFamily: "'IBM Plex Mono',monospace" }}>
-                SN: {modalReversao.numerosSerie.join(", ")}
-              </div>
-            )}
-
-            <label style={s.label}>MOTIVO DA REVERSÃO *</label>
-            <select
-              value={modalReversao.motivo || ""}
-              onChange={e => setModalReversao(m => ({ ...m, motivo: e.target.value }))}
-              style={{ ...s.input, appearance: "none" }}>
-              <option value="">Selecione um motivo...</option>
-              <option value="peca_incorreta">Peça incorreta para o equipamento</option>
-              <option value="defeito_fabricacao">Defeito de fabricação</option>
-              <option value="erro_registro">Erro de registro / duplicidade</option>
-              <option value="nao_instalada">Peça não foi instalada</option>
-              <option value="outro">Outro (descrever nas observações)</option>
-            </select>
-
-            <div style={{ marginTop: 12 }}>
-              <label style={s.label}>OBSERVAÇÕES</label>
-              <textarea
-                value={modalReversao.observacoes || ""}
-                onChange={e => setModalReversao(m => ({ ...m, observacoes: e.target.value }))}
-                placeholder="Detalhes adicionais sobre a reversão"
-                style={{ ...s.input, minHeight: 60, resize: "vertical" }} />
-            </div>
-
-            {modalReversao.erro && (
-              <div style={{ marginTop: 12, padding: "10px 12px",
-                            background: "#ef444415", border: "1px solid #ef444440",
-                            borderRadius: 6, fontSize: 11, color: "#ef4444" }}>
-                ⚠ {modalReversao.erro}
-              </div>
-            )}
-          </div>
-
-          <div style={{ display: "flex", gap: 10, padding: "14px 22px",
-                        borderTop: `1px solid ${C.border}` }}>
-            <button onClick={() => setModalReversao(null)} disabled={salvandoAplicacao}
-              style={{ ...s.btn(false), flex: 1, padding: "8px 16px" }}>
-              Cancelar
-            </button>
-            <button
-              disabled={!modalReversao.motivo || salvandoAplicacao}
-              onClick={async () => {
-                try {
-                  await reverter(modalReversao.aplicacaoId, {
-                    motivo: modalReversao.motivo,
-                    observacoes: modalReversao.observacoes || null,
-                  });
-                  await carregar();
-
-                  // Recarrega chamadoSel
-                  const listaAtualizada = await apiService.get(
-                    "/cotacoes/chamados",
-                    { tipo_documento: "os" }
-                  );
-                  const fresh = Array.isArray(listaAtualizada)
-                    ? listaAtualizada.find(c => String(c.id) === String(chamadoSel.id))
-                    : null;
-                  if (fresh) setChamadoSel(fresh);
-
-                  // Invalida cache do histórico
-                  setHistoricoPorItem(prev => {
-                    const copy = { ...prev };
-                    delete copy[modalReversao.chamadoItemId];
-                    return copy;
-                  });
-
-                  setModalReversao(null);
-                } catch (e) {
-                  setModalReversao(m => ({ ...m, erro: e.message || "Erro ao reverter" }));
-                }
-              }}
-              style={{ ...s.btn(true), flex: 1, padding: "8px 16px",
-                       background: "#ef4444", border: "1px solid #ef4444",
-                       opacity: (!modalReversao.motivo || salvandoAplicacao) ? 0.5 : 1 }}>
-              {salvandoAplicacao ? "Revertendo..." : "Confirmar reversão"}
-            </button>
-          </div>
-        </div>
-      </div>
+          // Recarrega o histórico do item revertido, pro contador
+          // atualizar na hora.
+          if (modalReversao.chamadoItemId) {
+            try {
+              const h = await listarHistorico(chamadoSel.id, modalReversao.chamadoItemId);
+              setHistoricoPorItem(prev => ({
+                ...prev,
+                [modalReversao.chamadoItemId]: { carregando: false, aplicacoes: h.aplicacoes || [] },
+              }));
+            } catch (_) {
+              setHistoricoPorItem(prev => {
+                const copy = { ...prev };
+                delete copy[modalReversao.chamadoItemId];
+                return copy;
+              });
+            }
+          }
+          setModalReversao(null);
+        }}
+      />
     );
   }
 
+    // ─────────────────────────────────────────────────────────────────────────
+  // MODAL — CANCELAR OS
+  // ─────────────────────────────────────────────────────────────────────────
+  if (modalCancelamento) {
+    return (
+      <ModalCancelamento
+        chamado={chamadoSel}
+        salvando={!!modalCancelamento.salvando}
+        s={s}
+        C={C}
+        onCancelar={() => setModalCancelamento(null)}
+        onConfirmar={async (motivo) => {
+          setModalCancelamento(m => ({ ...m, salvando: true }));
+          try {
+            await apiService.post(
+              `/cotacoes/chamados/${chamadoSel.id}/cancelar`,
+              { motivo }
+            );
+            await carregar();
+            const lista = await apiService.get("/cotacoes/chamados", { tipo_documento: "os" });
+            const fresh = Array.isArray(lista)
+              ? lista.find(c => String(c.id) === String(chamadoSel.id))
+              : null;
+            if (fresh) setChamadoSel(fresh);
+            await carregarEventos(chamadoSel.id);
+            setModalCancelamento(null);
+          } catch (e) {
+            setModalCancelamento(m => ({ ...m, salvando: false }));
+            throw e;
+          }
+        }}
+      />
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // MODAL — CONCLUIR OS (componente extraído em modais/ModalConclusao.jsx)
+  // ─────────────────────────────────────────────────────────────────────────
   if (modalConclusao) {
     return (
-      <div style={{ position: "fixed", inset: 0, background: "#00000090",
-                    display: "flex", alignItems: "center",
-                    justifyContent: "center", zIndex: 360, padding: 20 }}>
-        <div style={{ ...s.card, width: 520, maxWidth: "100%" }}>
-          <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.border}` }}>
-            <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>
-              Concluir Ordem de Serviço
-            </div>
-            <div style={{ fontSize: 12, color: C.muted, marginTop: 2 }}>
-              {chamadoSel.numero}
-            </div>
-          </div>
-          <div style={{ padding: "18px 22px" }}>
-            <div style={{ fontSize: 12, color: C.text, marginBottom: 14 }}>
-              Ao concluir, a OS fica <strong>bloqueada para edição</strong>. Um
-              resumo consolidado (horas, materiais, custo) é gravado no histórico.
-            </div>
-
-            <div style={{ background: C.bg, borderRadius: 6, padding: "12px 14px",
-                          marginBottom: 14, fontSize: 11 }}>
-              <div style={{ color: C.muted, fontSize: 10, marginBottom: 8,
-                            letterSpacing: "0.08em" }}>RESUMO</div>
-              {modalConclusao.resumo.materiais_aplicados > 0 && (
-                <div style={{ marginBottom: 4, color: C.text }}>
-                  📦 {modalConclusao.resumo.materiais_aplicados} material(is) aplicado(s)
-                  {modalConclusao.resumo.materiais_nao_aplicados > 0 && ` · ${modalConclusao.resumo.materiais_nao_aplicados} não aplicado(s)`}
-                </div>
-              )}
-              
-              {modalConclusao.resumo.materiais_pendentes?.length > 0 && (
-                <div style={{
-                  background: "#ef444415",
-                  border: "1px solid #ef444440",
-                  borderRadius: 6,
-                  padding: "10px 12px",
-                  marginBottom: 8,
-                }}>
-                  <div style={{ fontSize: 11, color: "#ef4444", fontWeight: 600,
-                                marginBottom: 6 }}>
-                    🚫 Não é possível concluir — {modalConclusao.resumo.materiais_pendentes.length} material(is) sem confirmação
-                  </div>
-                  <div style={{ fontSize: 10, color: C.text, marginBottom: 6 }}>
-                    {modalConclusao.resumo.materiais_pendentes.map((m, i) => (
-                      <div key={i} style={{ display: "flex", gap: 6 }}>
-                        <span style={{
-                          fontFamily: "'IBM Plex Mono',monospace",
-                          color: "#ef4444",
-                          fontWeight: 600,
-                          minWidth: 28,
-                        }}>
-                          #{m.numero_exibicao}
-                        </span>
-                        <span>
-                          {m.item_nome} — {m.quantidade_aplicada}/{m.quantidade} aplicado(s)
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ fontSize: 10, color: C.muted, fontStyle: "italic" }}>
-                    Aplique ou marque como "não aplicado" antes de fechar a OS.
-                  </div>
-                </div>
-              )}
-              
-              {modalConclusao.resumo.servicos_sem_apontamento > 0 && (
-                <div style={{
-                  background: "#f59e0b15",
-                  border: "1px solid #f59e0b40",
-                  borderRadius: 6,
-                  padding: "10px 12px",
-                  marginTop: 8,
-                }}>
-                  <div style={{ fontSize: 11, color: "#f59e0b", fontWeight: 600,
-                                marginBottom: 6 }}>
-                    ⚠ {modalConclusao.resumo.servicos_sem_apontamento} serviço(s) sem apontamento de horas
-                  </div>
-                  <div style={{ fontSize: 10, color: C.muted, marginBottom: 8 }}>
-                    {modalConclusao.resumo.servicos_pendentes_lista.map((s, i) => (
-                      <div key={i} style={{ display: "flex", gap: 6 }}>
-                        <span style={{
-                          fontFamily: "'IBM Plex Mono',monospace",
-                          color: "#f59e0b",
-                          fontWeight: 600,
-                          minWidth: 28,
-                        }}>
-                          #{s.numero_exibicao}
-                        </span>
-                        <span>{s.nome}</span>
-                      </div>
-                    ))}
-                  </div>
-                  {!modalConclusao.resumo.materiais_pendentes?.length && (
-                    <label style={{ display: "flex", alignItems: "flex-start",
-                                    gap: 8, cursor: "pointer" }}>
-                      <input type="checkbox"
-                        checked={!!modalConclusao.confirmouServicosPendentes}
-                        onChange={e => setModalConclusao(m => ({
-                          ...m, confirmouServicosPendentes: e.target.checked,
-                        }))}
-                        style={{ marginTop: 2 }} />
-                      <span style={{ fontSize: 11, color: C.text, lineHeight: 1.5 }}>
-                        Confirmo que estes serviços foram executados, ainda que o
-                        apontamento de horas não tenha sido lançado.
-                      </span>
-                    </label>
-                  )}
-                  {modalConclusao.resumo.materiais_pendentes?.length > 0 && (
-                    <div style={{ fontSize: 10, color: C.muted, fontStyle: "italic" }}>
-                      Resolva os materiais pendentes acima para poder confirmar
-                      os serviços.
-                    </div>
-                  )}
-                </div>
-              )}
-              <div style={{ marginBottom: 4, color: C.text }}>
-                ⏱ Horas-homem planejadas: <strong>{modalConclusao.resumo.horas_planejadas}h</strong>
-                {modalConclusao.resumo.horas_reais > 0 && ` · realizadas: ${modalConclusao.resumo.horas_reais}h`}
-              </div>
-              <div style={{ color: C.muted, fontSize: 10, marginTop: 8 }}>
-                Obs: o custo de materiais considera apenas compras emergenciais
-                (com valor informado). Materiais via RM ainda não têm preço
-                lançado no sistema.
-              </div>
-            </div>
-
-            {modalConclusao.erro && (
-              <div style={{ padding: "10px 12px", background: "#ef444415",
-                            border: "1px solid #ef444440", borderRadius: 6,
-                            fontSize: 11, color: "#ef4444" }}>
-                ⚠ {modalConclusao.erro}
-              </div>
-            )}
-          </div>
-          <div style={{ display: "flex", gap: 10, padding: "14px 22px",
-                        borderTop: `1px solid ${C.border}` }}>
-            <button onClick={() => setModalConclusao(null)}
-              style={{ ...s.btn(false), flex: 1, padding: "8px 16px" }}>
-              Cancelar
-            </button>
-            <button
-              disabled={
-                (modalConclusao.resumo.materiais_pendentes?.length > 0)
-                || (
-                  modalConclusao.resumo.servicos_sem_apontamento > 0
-                  && !modalConclusao.confirmouServicosPendentes
-                )
-              }
-              onClick={async () => {
-                try {
-                  await apiService.post(`/cotacoes/chamados/${chamadoSel.id}/concluir`, {});
-                  await carregar();
-                  const lista = await apiService.get("/cotacoes/chamados", { tipo_documento: "os" });
-                  const fresh = Array.isArray(lista) ? lista.find(c => String(c.id) === String(chamadoSel.id)) : null;
-                  if (fresh) setChamadoSel(fresh);
-                  setModalConclusao(null);
-                  alert("OS concluída com sucesso.");
-                } catch (e) {
-                  setModalConclusao(m => ({ ...m, erro: e.message || "Erro ao concluir" }));
-                }
-              }}
-              style={{
-                ...s.btn(true), flex: 1, padding: "8px 16px",
-                background: C.success,
-                border: `1px solid ${C.success}`,
-                opacity: (
-                  (modalConclusao.resumo.materiais_pendentes?.length > 0)
-                  || (
-                    modalConclusao.resumo.servicos_sem_apontamento > 0
-                    && !modalConclusao.confirmouServicosPendentes
-                  )
-                ) ? 0.5 : 1,
-                cursor: (
-                  (modalConclusao.resumo.materiais_pendentes?.length > 0)
-                  || (
-                    modalConclusao.resumo.servicos_sem_apontamento > 0
-                    && !modalConclusao.confirmouServicosPendentes
-                  )
-                ) ? "not-allowed" : "pointer",
-              }}>
-              Confirmar conclusão
-            </button>
-          </div>
-        </div>
-      </div>
+      <ModalConclusao
+        chamado={chamadoSel}
+        resumo={modalConclusao.resumo}
+        confirmouServicosPendentes={modalConclusao.confirmouServicosPendentes}
+        salvando={!!modalConclusao.salvando}
+        erro={modalConclusao.erro}
+        s={s}
+        C={C}
+        onToggleCheckbox={(val) => setModalConclusao(m => ({
+          ...m, confirmouServicosPendentes: val,
+        }))}
+        onCancelar={() => setModalConclusao(null)}
+        onConfirmar={async () => {
+          setModalConclusao(m => ({ ...m, salvando: true, erro: null }));
+          try {
+            await apiService.post(`/cotacoes/chamados/${chamadoSel.id}/concluir`, {});
+            await carregar();
+            const lista = await apiService.get("/cotacoes/chamados", { tipo_documento: "os" });
+            const fresh = Array.isArray(lista)
+              ? lista.find(c => String(c.id) === String(chamadoSel.id))
+              : null;
+            if (fresh) setChamadoSel(fresh);
+            await carregarEventos(chamadoSel.id);
+            await carregarPercentual(chamadoSel.id);
+            setModalConclusao(null);
+          } catch (e) {
+            setModalConclusao(m => ({
+              ...m, salvando: false,
+              erro: e.message || "Erro ao concluir",
+            }));
+          }
+        }}
+      />
     );
   }
 
@@ -2865,8 +1617,12 @@ export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
                       ) : <div style={{ color: C.muted }}>Ainda não apontado</div>}
                     </div>
                   </div>
-                  {!cancelado && !chamadoSel.concluida_em && (
-                    <button onClick={() => abrirModalApontamento(item)} style={{ ...s.btn(true), padding: "6px 12px", fontSize: 10, marginTop: 10 }}>                      {item.apontamento ? "✏️ Editar apontamento" : "📝 Lançar apontamento"}
+                  {!cancelado && !chamadoSel.concluida_em && !chamadoSel.cancelada_em && (
+                    <button onClick={() => setModalApontamento({ servicoId: item.id })}
+                      style={{ ...s.btn(true), padding: "6px 12px", fontSize: 10, marginTop: 10 }}>
+                      {item.apontamento_resumo?.total_sessoes > 0
+                        ? "✏️ Gerenciar apontamentos"
+                        : "📝 Lançar apontamento"}
                     </button>
                   )}
                 </div>
@@ -2931,7 +1687,7 @@ export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
             </button>
           )}
           
-          {!chamadoSel.concluida_em && (
+          {!chamadoSel.concluida_em && !chamadoSel.cancelada_em && (
             <>
               <button
                 onClick={() => {
@@ -2971,7 +1727,12 @@ export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
                 onClick={() => { if (window.confirm("Tem certeza que deseja excluir esta OS?")) deletar(chamadoSel.id).then(() => setTelaAtual("lista")); }}
                 style={{ ...s.btn(false), padding: "9px 20px", fontSize: 12, border: "1px solid #ef4444", color: "#ef4444" }}
               >🗑 Deletar</button>
-                            <button
+              <button
+                onClick={() => setModalCancelamento({ salvando: false })}
+                style={{ ...s.btn(false), padding: "9px 20px", fontSize: 12,
+                border: "1px solid #f59e0b", color: "#f59e0b" }}
+              >⚠️ Cancelar OS</button>
+              <button
                 onClick={() => setModalSalvarTemplate({
                   nome: chamadoSel.servico_nome || "",
                   descricao: chamadoSel.descricao_geral || "",

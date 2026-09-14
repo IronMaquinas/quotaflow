@@ -24,6 +24,7 @@ import TelaHistoricoMovimentacoes from './components/estoque/TelaHistoricoMovime
 import TelaAprovacaoRetirada from './components/estoque/TelaAprovacaoRetirada';
 import TelaRecebimento from './components/estoque/TelaRecebimento';
 import TelaOrdemServico from './components/estoque/TelaOrdemServico';
+import TelaConfiguracoes from './components/configuracoes/TelaConfiguracoes';
 
 import {
   useChamados,
@@ -293,6 +294,7 @@ const perfil = PERFIS[usuario.perfil];
     {id:"portalfornecedor", l:"🏢 Portal Fornecedor", perfis:["fornecedor","admin"]},
     {id:"catalogo",      l:"📦 Catálogo",             perfis:["comprador","gestor","admin"]},
     {id:"usuarios",      l:"👥 Usuários",             perfis:["admin"]},
+    {id:"configuracoes", l:"⚙️ Configurações",        perfis:["gestor","admin"]},
   ].filter(n=>n.perfis.includes(usuario.perfil));
 
   return(
@@ -575,10 +577,17 @@ const perfil = PERFIS[usuario.perfil];
           <div style={{flex:1,overflowY:"auto"}}>
             <TelaPortalFornecedor/>
           </div>}
+
         {temAcesso(tela) && tela === "usuarios" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
             <TelaUsuariosNova useUsuarios={useUsuarios} C={C} s={s} />
           </div>)}
+
+        {temAcesso(tela) && tela === "configuracoes" && (
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            <TelaConfiguracoes C={C} s={s} />
+          </div>)}
+
         {temAcesso(tela) && tela === "historico" && (
           <div style={{flex:1,overflowY:"auto"}}>
             <TelaHistoricoPrecosNova 
