@@ -64,10 +64,19 @@ function novaLinha(pessoasPadrao = 1) {
   };
 }
 
-// Converte data + "HH:MM" para ISO compatível com o backend
+// Converte data + "HH:MM" para ISO COM timezone do navegador.
+//
+// FIX (2026-09): antes retornava string sem timezone, e o Node interpretava
+// como UTC. Como o navegador está em BRT (UTC-3), o backend recebia 18:00
+// UTC, salvava como 21:00 UTC, e a leitura de volta subtraía 3h — o
+// técnico via 15:00 ao reabrir a sessão. Agora criamos um Date local
+// (o navegador entende "T18:00:00" como BRT) e mandamos .toISOString(),
+// que já vem com "Z" no final. O backend respeita o offset.
 function juntarDataHora(dataStr, horaStr) {
   if (!dataStr || !horaStr) return null;
-  return `${dataStr}T${horaStr}:00`;
+  const local = new Date(`${dataStr}T${horaStr}:00`);
+  if (isNaN(local.getTime())) return null;
+  return local.toISOString();
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -78,12 +87,11 @@ export default function ModalApontamento({
 }) {
   const [modo, setModo] = useState("lista"); // "lista" | "form"
   const [sessoes, setSessoes] = useState([]);
+  const [sessaoEditando, setSessaoEditando] = useState(null);
   const [resumo, setResumo] = useState(null);
   const [carregando, setCarregando] = useState(true);
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState(null);
-
-  const [sessaoEditando, setSessaoEditando] = useState(null);
 
   // Lista de linhas (1 sessão = 1 linha)
   const [linhas, setLinhas] = useState([novaLinha(item.qtd_pessoas_planejada || 1)]);
@@ -257,7 +265,18 @@ export default function ModalApontamento({
         payload.data_inicio_real = juntarDataHora(l.data, l.inicio);
         payload.data_fim_real = juntarDataHora(l.data, l.fim);
 
-        await apiService.post(`/cotacoes/chamados/${chamado.id}/apontamentos`, payload);
+        if (sessaoEditando) {
+          // Edição: usa PUT no apontamento existente, modo auto (recalcula)
+          await apiService.put(
+            `/cotacoes/chamados/apontamentos/${sessaoEditando.id}`,
+            {
+              ...payload,
+              modo: "auto",
+            }
+          );
+        } else {
+          await apiService.post(`/cotacoes/chamados/${chamado.id}/apontamentos`, payload);
+        }
         sucesso++;
       } catch (e) {
         falhas.push(`${l.data}: ${e.message || "erro"}`);
@@ -286,6 +305,53 @@ export default function ModalApontamento({
     setObservacoes("");
     setErro(null);
     setModo("form");
+  }
+
+  // Abre o form pré-preenchido com os dados de uma sessão existente.
+  // Usa o MESMO form da criação (só 1 linha, sem "adicionar outro dia"),
+  // pra manter a UX consistente e o backend recalculando via modo auto.
+  function abrirEdicao(sessao) {
+    setSessaoEditando(sessao);
+
+    // Extrai data e hora do ISO armazenado
+    const di = sessao.data_inicio_real ? new Date(sessao.data_inicio_real) : null;
+    const df = sessao.data_fim_real ? new Date(sessao.data_fim_real) : null;
+
+    const pad = (n) => String(n).padStart(2, "0");
+    const dataParaInput = (d) => d && !isNaN(d.getTime())
+      ? `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`
+      : hojeInputDate();
+    const horaParaInput = (d) => d && !isNaN(d.getTime())
+      ? `${pad(d.getHours())}:${pad(d.getMinutes())}`
+      : "08:00";
+
+    setLinhas([{
+      _id: Date.now() + Math.random(),
+      data: dataParaInput(di || new Date(sessao.lancado_em)),
+      pessoas_reais: sessao.pessoas_reais || 1,
+      inicio: horaParaInput(di),
+      fim: horaParaInput(df),
+      hD: sessao.horas_normais_diurnas || "",
+      hN: sessao.horas_normais_noturnas || "",
+      hE: sessao.horas_excepcionais || "",
+      hXD: sessao.horas_extras_diurnas || "",
+      hXN: sessao.horas_extras_noturnas || "",
+      preview: null,
+      calculando: false,
+      erroLinha: null,
+    }]);
+
+    setObservacoes(sessao.observacoes || "");
+    setErro(null);
+    setModo("form");
+
+    // Dispara o preview automaticamente pra mostrar o estado calculado
+    setTimeout(() => {
+      setLinhas(prev => {
+        if (prev[0]) agendarCalculo(prev[0]._id);
+        return prev;
+      });
+    }, 50);
   }
 
   function voltarParaLista() {
@@ -444,7 +510,14 @@ export default function ModalApontamento({
                         {sessao.status === "cancelado" ? (
                           <span style={{ ...s.tag("#ef4444"), fontSize: 9 }}>CANCELADA</span>
                         ) : (
-                          <div style={{ display: "flex", gap: 6, flexShrink: 0 }}>
+                          <div style={{ display: "flex", gap: 8, flexShrink: 0 }}>
+                            <button onClick={() => abrirEdicao(sessao)}
+                              disabled={salvando}
+                              style={{ background: "transparent", border: "none",
+                                       color: C.accent, fontSize: 10,
+                                       cursor: "pointer", padding: 0, fontFamily: "inherit" }}>
+                              Editar
+                            </button>
                             <button onClick={() => cancelarSessao(sessao)}
                               disabled={salvando}
                               style={{ background: "transparent", border: "none",
@@ -581,13 +654,15 @@ export default function ModalApontamento({
                 </div>
               ))}
 
-              <button onClick={adicionarLinha} disabled={salvando}
-                style={{ background: "transparent", border: `1px dashed ${C.border}`,
-                         borderRadius: 8, padding: "10px 14px", width: "100%",
-                         color: C.accent, fontSize: 11, fontWeight: 600,
-                         cursor: "pointer", fontFamily: "inherit", marginBottom: 14 }}>
-                + Adicionar outro dia
-              </button>
+              {!sessaoEditando && (
+                <button onClick={adicionarLinha} disabled={salvando}
+                  style={{ background: "transparent", border: `1px dashed ${C.border}`,
+                           borderRadius: 8, padding: "10px 14px", width: "100%",
+                           color: C.accent, fontSize: 11, fontWeight: 600,
+                           cursor: "pointer", fontFamily: "inherit", marginBottom: 14 }}>
+                  + Adicionar outro dia
+                </button>
+              )}
 
               <div style={{ marginBottom: 14 }}>
                 <label style={s.label}>
@@ -617,7 +692,9 @@ export default function ModalApontamento({
                            opacity: salvando ? 0.5 : 1 }}>
                   {salvando
                     ? "Salvando..."
-                    : `Lançar ${linhas.length} sessão${linhas.length > 1 ? "s" : ""}`}
+                    : sessaoEditando
+                      ? "Salvar alterações"
+                      : `Lançar ${linhas.length} sessão${linhas.length > 1 ? "s" : ""}`}
                 </button>
               </div>
             </>
