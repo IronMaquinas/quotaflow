@@ -76,6 +76,7 @@ import ModalConclusao from "./modais/ModalConclusao";
 import ModalSalvarTemplate from "./modais/ModalSalvarTemplate";
 import ModalCarregarTemplate from "./modais/ModalCarregarTemplate";
 import ModalApontamento from "./modais/ModalApontamento";
+import ModalReportarNC from "./modais/ModalReportarNC";
 
 export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
   const { chamados, loading, erro, carregar, criar, atualizar, deletar } = useChamados();
@@ -118,6 +119,13 @@ export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
   const [modalApontamento, setModalApontamento] = useState(null);
   const [modalConclusao, setModalConclusao] = useState(null);
   const [modalCancelamento, setModalCancelamento] = useState(null);
+  // Modal de reportar NC
+  const [modalNC, setModalNC] = useState(null);
+  // { item, origem: "os_material" | "os_servico" }
+
+  // NCs vinculadas à OS atual
+  const [ncsDoChamado, setNcsDoChamado] = useState([]);
+  const [painelNCExpandido, setPainelNCExpandido] = useState(null);
 
   // ── Templates de OS (Modelos de Manutenção) — Fase 1: privados do tenant ──
   const [modalSalvarTemplate, setModalSalvarTemplate] = useState(null);
@@ -218,6 +226,18 @@ export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
       }
     }));
   }, [chamadoSel?.id, carregarPercentual, carregarEventos, listarHistorico]);
+
+  // Carrega NCs vinculadas a esta OS. Usado pra mostrar a faixa de alerta
+  // no cabeçalho e bloquear conclusão.
+  useEffect(() => {
+    if (!chamadoSel?.id) {
+      setNcsDoChamado([]);
+      return;
+    }
+    apiService.get(`/nao-conformidades?chamado_id=${chamadoSel.id}`)
+      .then(lista => setNcsDoChamado(Array.isArray(lista) ? lista : []))
+      .catch(() => setNcsDoChamado([]));
+  }, [chamadoSel?.id]);
 
   useEffect(() => {
     if (!pendingFocusId) return;
@@ -1099,6 +1119,36 @@ export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
   }
 
     // ─────────────────────────────────────────────────────────────────────────
+  // MODAL — REPORTAR NÃO CONFORMIDADE
+  // ─────────────────────────────────────────────────────────────────────────
+  if (modalNC) {
+    return (
+      <ModalReportarNC
+        chamado={chamadoSel}
+        item={modalNC.item}
+        origem={modalNC.origem}
+        s={s}
+        C={C}
+        onCancelar={() => setModalNC(null)}
+        onConfirmar={async (payload) => {
+          await apiService.post("/nao-conformidades", payload);
+          setModalNC(null);
+          // Recarrega a lista de NCs do chamado pra atualizar a faixa
+          const lista = await apiService.get(
+            `/nao-conformidades?chamado_id=${chamadoSel.id}`
+          );
+          setNcsDoChamado(Array.isArray(lista) ? lista : []);
+          // Recarrega os eventos da OS (a NC não gera evento automático,
+          // mas garante que a timeline esteja atualizada caso o backend
+          // passe a registrar)
+          carregarEventos(chamadoSel.id);
+          alert("NC registrada. A OS não poderá ser concluída até que ela seja resolvida.");
+        }}
+      />
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // MODAL — CANCELAR OS
   // ─────────────────────────────────────────────────────────────────────────
   if (modalCancelamento) {
@@ -1422,6 +1472,90 @@ export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
               ))}
             </div>
           )}
+
+          {/* Faixa de NCs ativas — bloqueia conclusão da OS enquanto existirem */}
+          {/* Badge de NCs + painel colapsável (quando aplicável) */}
+          {(() => {
+            const ncsAtivas = ncsDoChamado.filter(nc =>
+              ["aberta", "em_analise", "em_execucao"].includes(nc.status)
+            );
+            if (ncsAtivas.length === 0) return null;
+
+            // Expande por padrão se ≤ 3 NCs, colapsa se ≥ 4 (decisão do
+            // usuário tem prioridade depois que ele mexe no toggle).
+            const expandidoPorPadrao = ncsAtivas.length <= 3;
+            const expandido = painelNCExpandido === null
+              ? expandidoPorPadrao
+              : painelNCExpandido;
+
+            return (
+              <>
+                {/* Badge clicável — fica ao lado dos badges de urgência/categoria */}
+                <div style={{ marginTop: 8 }}>
+                  <button
+                    onClick={() => setPainelNCExpandido(!expandido)}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      gap: 6,
+                      background: "#f59e0b22",
+                      border: "1px solid #f59e0b",
+                      color: "#f59e0b",
+                      borderRadius: 20,
+                      padding: "4px 12px",
+                      fontSize: 11,
+                      fontWeight: 600,
+                      cursor: "pointer",
+                      fontFamily: "inherit",
+                    }}>
+                    ⚠️ {ncsAtivas.length} NC{ncsAtivas.length > 1 ? "s" : ""} ativa{ncsAtivas.length > 1 ? "s" : ""}
+                    <span style={{ fontSize: 9, opacity: 0.8 }}>
+                      {expandido ? "▼" : "▶"}
+                    </span>
+                  </button>
+                </div>
+
+                {/* Painel expandido */}
+                {expandido && (
+                  <div style={{
+                    background: "#f59e0b15",
+                    border: "1px solid #f59e0b40",
+                    borderRadius: 8,
+                    padding: "12px 16px",
+                    marginTop: 8,
+                    fontSize: 12,
+                    color: C.text,
+                  }}>
+                    <div style={{ marginBottom: 8 }}>
+                      ⚠️ <strong>Não é possível concluir a OS</strong> enquanto
+                      houver NC ativa.
+                    </div>
+                    <div style={{ display: "flex", flexDirection: "column",
+                                  gap: 4 }}>
+                      {ncsAtivas.map(nc => (
+                        <div key={nc.id} style={{ display: "flex", gap: 8,
+                                                  alignItems: "center", flexWrap: "wrap" }}>
+                          <span style={{
+                            ...s.tag("#f59e0b"),
+                            fontSize: 10,
+                            fontFamily: "'IBM Plex Mono',monospace",
+                          }}>
+                            {nc.numero_nc} · {nc.status}
+                          </span>
+                          {nc.criado_por_nome && (
+                            <span style={{ fontSize: 10, color: C.muted }}>
+                              aberta por {nc.criado_por_nome}
+                              {nc.criado_em && ` · ${fmtD(nc.criado_em)}`}
+                            </span>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </>
+            );
+          })()}
         </div>
 
         <div style={{ ...s.card, padding: "16px 18px", marginBottom: 20 }}>
@@ -1478,15 +1612,21 @@ export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
                     </div>
                   </div>
 
-                  {!cancelado && !chamadoSel.concluida_em && (
-                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-                      {temPendencia && (
-                        <button
-                          onClick={() => setModalAplicacao({ item })}
-                          style={{ ...s.btn(true), padding: "6px 12px", fontSize: 11 }}>
-                          ✅ Confirmar aplicação
-                        </button>
-                      )}
+                {!cancelado && !chamadoSel.concluida_em && !chamadoSel.cancelada_em && (
+                  <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                    {temPendencia && (
+                      <button
+                        onClick={() => setModalAplicacao({ item })}
+                        style={{ ...s.btn(true), padding: "6px 12px", fontSize: 11 }}>
+                        ✅ Confirmar aplicação
+                      </button>
+                    )}
+                    <button
+                      onClick={() => setModalNC({ item, origem: "os_material" })}
+                      style={{ ...s.btn(false), padding: "6px 12px", fontSize: 11,
+                               borderColor: "#f59e0b", color: "#f59e0b" }}>
+                      ⚠️ Reportar problema
+                    </button>
                       {!temPendencia && qtdAplicada > 0 && statusAplic === "aplicado" && (
                         <span style={{ fontSize: 11, color: C.success, padding: "6px 0" }}>✅ Consumo completo</span>
                       )}
@@ -1618,12 +1758,20 @@ export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
                     </div>
                   </div>
                   {!cancelado && !chamadoSel.concluida_em && !chamadoSel.cancelada_em && (
-                    <button onClick={() => setModalApontamento({ servicoId: item.id })}
-                      style={{ ...s.btn(true), padding: "6px 12px", fontSize: 10, marginTop: 10 }}>
-                      {item.apontamento_resumo?.total_sessoes > 0
-                        ? "✏️ Gerenciar apontamentos"
-                        : "📝 Lançar apontamento"}
-                    </button>
+                    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10 }}>
+                      <button onClick={() => setModalApontamento({ servicoId: item.id })}
+                        style={{ ...s.btn(true), padding: "6px 12px", fontSize: 10 }}>
+                        {item.apontamento_resumo?.total_sessoes > 0
+                          ? "✏️ Gerenciar apontamentos"
+                          : "📝 Lançar apontamento"}
+                      </button>
+                      <button
+                        onClick={() => setModalNC({ item, origem: "os_servico" })}
+                        style={{ ...s.btn(false), padding: "6px 12px", fontSize: 10,
+                                 borderColor: "#f59e0b", color: "#f59e0b" }}>
+                        ⚠️ Reportar problema
+                      </button>
+                    </div>
                   )}
                 </div>
               );

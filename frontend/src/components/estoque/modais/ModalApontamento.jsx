@@ -50,14 +50,18 @@ function hojeInputDate() {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
 }
 
-function novaLinha(pessoasPadrao = 1) {
+function novaLinha(pessoasPadrao = 1, usuarioLogado = null) {
+  const participantes = usuarioLogado
+    ? [{ id: usuarioLogado.id, nome: usuarioLogado.nome, tipo: "usuario", lider: true }]
+    : [];
   return {
     _id: Date.now() + Math.random(),
     data: hojeInputDate(),
-    pessoas_reais: pessoasPadrao,
+    pessoas_reais: participantes.length > 0 ? participantes.length : pessoasPadrao,
     inicio: "08:00",
     fim: "18:00",
     hD: "", hN: "", hE: "", hXD: "", hXN: "",
+    participantes,
     preview: null,
     calculando: false,
     erroLinha: null,
@@ -97,6 +101,14 @@ export default function ModalApontamento({
   const [linhas, setLinhas] = useState([novaLinha(item.qtd_pessoas_planejada || 1)]);
 
   const [observacoes, setObservacoes] = useState("");
+  const [usuariosTenant, setUsuariosTenant] = useState([]);
+
+  const usuarioLogado = (() => {
+    try {
+      return JSON.parse(localStorage.getItem("usuario") || "null");
+    } catch (_) { return null; }
+  })();
+
 
   // Ref sempre atualizada com o valor atual de `linhas`. Usada pra ler o
   // snapshot mais recente dentro de callbacks async sem depender de
@@ -125,8 +137,55 @@ export default function ModalApontamento({
 
   useEffect(() => { carregarSessoes(); }, [carregarSessoes]);
 
+  useEffect(() => {
+    apiService.get("/usuarios")
+      .then(lista => {
+        const todos = Array.isArray(lista) ? lista : [];
+        // Só time operacional — técnico, gestor e admin. Comprador não
+        // executa OS, fornecedor é usuário externo do portal.
+        setUsuariosTenant(
+          todos.filter(u => ["tecnico", "gestor", "admin"].includes(u.perfil))
+        );
+      })
+      .catch(() => setUsuariosTenant([]));
+  }, []);
+
   function atualizarLinha(id, campo, valor) {
     setLinhas(prev => prev.map(l => l._id === id ? { ...l, [campo]: valor } : l));
+  }
+
+    function adicionarParticipante(linhaId, novo) {
+    setLinhas(prev => prev.map(l => {
+      if (l._id !== linhaId) return l;
+      const jaTem = (l.participantes || []).some(p =>
+        (novo.id && p.id === novo.id) || (!novo.id && p.nome === novo.nome)
+      );
+      if (jaTem) return l;
+      const participantes = [...(l.participantes || []), novo];
+      return { ...l, participantes, pessoas_reais: participantes.length };
+    }));
+  }
+
+  function removerParticipante(linhaId, idx) {
+    setLinhas(prev => prev.map(l => {
+      if (l._id !== linhaId) return l;
+      const participantes = (l.participantes || []).filter((_, i) => i !== idx);
+      // Se o líder foi removido, promove o próximo
+      if (participantes.length > 0 && !participantes.some(p => p.lider)) {
+        participantes[0].lider = true;
+      }
+      return { ...l, participantes, pessoas_reais: participantes.length || 1 };
+    }));
+  }
+
+  function definirLider(linhaId, idx) {
+    setLinhas(prev => prev.map(l => {
+      if (l._id !== linhaId) return l;
+      const participantes = (l.participantes || []).map((p, i) => ({
+        ...p, lider: i === idx,
+      }));
+      return { ...l, participantes };
+    }));
   }
 
   // Atualiza campo E agenda recálculo. Chamado pelos inputs.
@@ -258,6 +317,7 @@ export default function ModalApontamento({
         const payload = {
           servico_id: item.id,
           pessoas_reais: parseInt(l.pessoas_reais),
+          participantes: l.participantes || [],
           observacoes: observacoes?.trim() || null,
         };
 
@@ -301,7 +361,7 @@ export default function ModalApontamento({
 
   function abrirNovaSessao() {
     setSessaoEditando(null);
-    setLinhas([novaLinha(item.qtd_pessoas_planejada || 1)]);
+    setLinhas([novaLinha(item.qtd_pessoas_planejada || 1, usuarioLogado)]);
     setObservacoes("");
     setErro(null);
     setModo("form");
@@ -336,6 +396,7 @@ export default function ModalApontamento({
       hE: sessao.horas_excepcionais || "",
       hXD: sessao.horas_extras_diurnas || "",
       hXN: sessao.horas_extras_noturnas || "",
+      participantes: sessao.participantes || [],
       preview: null,
       calculando: false,
       erroLinha: null,
@@ -503,8 +564,15 @@ export default function ModalApontamento({
                           <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
                             {fmtHorasSessao(sessao)}
                           </div>
+                          {(sessao.participantes || []).length > 0 && (
+                            <div style={{ fontSize: 10, color: C.textSub, marginTop: 2 }}>
+                              👥 {(sessao.participantes || [])
+                                .map(p => p.lider ? `${p.nome} (líder)` : p.nome)
+                                .join(", ")}
+                            </div>
+                          )}
                           <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
-                            {fmtData(sessao.lancado_em)}
+                            Lançado por {sessao.lancado_por_nome || "—"} · {fmtData(sessao.lancado_em)}
                           </div>
                         </div>
                         {sessao.status === "cancelado" ? (
@@ -627,7 +695,83 @@ export default function ModalApontamento({
                     </div>
                   </div>
 
-                  {/* Preview inline (só no modo janela) */}
+                                    {/* Participantes */}
+                  <div style={{ marginTop: 10, marginBottom: 10 }}>
+                    <label style={{ ...s.label, fontSize: 10 }}>
+                      👥 QUEM EXECUTOU ({(linha.participantes || []).length})
+                    </label>
+
+                    {(linha.participantes || []).length > 0 && (
+                      <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 8 }}>
+                        {(linha.participantes || []).map((p, i) => (
+                          <span key={i} style={{
+                            display: "inline-flex", alignItems: "center", gap: 6,
+                            background: p.lider ? `${C.accent}22` : C.surface,
+                            border: `1px solid ${p.lider ? C.accent : C.border}`,
+                            borderRadius: 20, padding: "4px 10px",
+                            fontSize: 11, color: C.text,
+                          }}>
+                            {p.lider && <span title="Líder">⭐</span>}
+                            {p.tipo === "livre" && <span title="Nome livre">👤</span>}
+                            {p.nome}
+                            {!p.lider && (linha.participantes || []).length > 1 && (
+                              <button onClick={() => definirLider(linha._id, i)}
+                                title="Marcar como líder"
+                                style={{ background: "transparent", border: "none",
+                                         color: C.muted, fontSize: 10, cursor: "pointer",
+                                         padding: 0, fontFamily: "inherit" }}>⭐</button>
+                            )}
+                            <button onClick={() => removerParticipante(linha._id, i)}
+                              style={{ background: "transparent", border: "none",
+                                       color: "#ef4444", fontSize: 12, cursor: "pointer",
+                                       padding: 0, lineHeight: 1, fontFamily: "inherit" }}>×</button>
+                          </span>
+                        ))}
+                      </div>
+                    )}
+
+                    <div style={{ display: "flex", gap: 6 }}>
+                      <select
+                        onChange={e => {
+                          const id = e.target.value;
+                          if (!id) return;
+                          const u = usuariosTenant.find(x => String(x.id) === String(id));
+                          if (u) adicionarParticipante(linha._id, {
+                            id: u.id, nome: u.nome, tipo: "usuario", lider: false,
+                          });
+                          e.target.value = "";
+                        }}
+                        style={{ ...s.input, fontSize: 11, flex: 1, appearance: "none" }}>
+                        <option value="">+ Adicionar usuário da equipe...</option>
+                        {usuariosTenant
+                          .filter(u => ["tecnico", "gestor", "admin"].includes(u.perfil))
+                          .filter(u => !(linha.participantes || []).some(p => p.id === u.id))
+                          .map(u => (
+                            <option key={u.id} value={u.id}>
+                              {u.nome} · {u.perfil}
+                            </option>
+                          ))}
+                      </select>
+                      <input type="text" placeholder="Nome livre (Enter)"
+                        onKeyDown={e => {
+                          if (e.key === "Enter" && e.currentTarget.value.trim()) {
+                            adicionarParticipante(linha._id, {
+                              id: null,
+                              nome: e.currentTarget.value.trim(),
+                              tipo: "livre",
+                              lider: false,
+                            });
+                            e.currentTarget.value = "";
+                          }
+                        }}
+                        style={{ ...s.input, fontSize: 11, flex: 1 }} />
+                    </div>
+                    <div style={{ fontSize: 9, color: C.muted, marginTop: 4 }}>
+                      Use "nome livre" para terceirizados, temporários ou equipes externas.
+                    </div>
+                  </div>
+
+                  {/* Preview inline */}
                       {linha.calculando && (
                         <div style={{ fontSize: 10, color: C.muted,
                                       fontStyle: "italic", marginTop: 4 }}>

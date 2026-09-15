@@ -573,22 +573,87 @@ router.get("/chamados", tenantMiddleware, async (req, res) => {
       }
     });
 
-    // 3b. Buscar apontamentos (execução real) dos itens de serviço — tabela
-    // separada (chamado_apontamentos, migration 003) porque representa o
-    // REALIZADO, distinto do PLANEJADO que já mora em chamado_itens. Sem
-    // isso, o apontamento salvo só existiria na memória do navegador até o
-    // próximo F5, quando pareceria ter "sumido" mesmo já estando no banco.
+    // 3b. Buscar apontamentos (execução real) dos itens de serviço.
+    //
+    // FIX (2026-09): DB.raw com "chamado_item_id = ANY($1)" caía no fallback
+    // genérico do wrapper (só filtrava por tenant_id), retornando apontamentos
+    // de TODOS os itens do tenant. Trocado por DB.select + filtro em JS.
+    //
+    // Múltiplas sessões (migration 018): antes havia 1 apontamento por item
+    // (UNIQUE em chamado_item_id), agora cada sessão é uma linha independente.
+    // Por isso guardamos o array COMPLETO de sessões ativas por item + um
+    // resumo consolidado, em vez de só a última linha.
     const itemIds = itens.map(it => it.id);
     let apontamentos = [];
     if (itemIds.length > 0) {
-      apontamentos = await DB.raw(`
-        SELECT chamado_item_id, pessoas_reais, data_inicio_real, data_fim_real, horas_extras, lancado_por, lancado_em
-        FROM chamado_apontamentos
-        WHERE chamado_item_id = ANY($1) AND tenant_id = $2
-      `, [itemIds, req.tenantId]);
+      const todosApontamentos = await DB.select(
+        "chamado_apontamentos",
+        { tenant_id: req.tenantId },
+        req.tenantId
+      );
+      apontamentos = todosApontamentos.filter(ap =>
+        itemIds.includes(ap.chamado_item_id) && ap.status !== "cancelado"
+      );
+
+      // Resolve nomes dos lançadores em batch
+      const uuidsLancadores = [...new Set(apontamentos.map(a => a.lancado_por).filter(Boolean))];
+      if (uuidsLancadores.length > 0) {
+        const usuarios = await DB.select("usuarios", { tenant_id: req.tenantId }, req.tenantId);
+        const nomePorId = {};
+        usuarios.forEach(u => { nomePorId[u.id] = u.nome; });
+        apontamentos = apontamentos.map(a => ({
+          ...a,
+          lancado_por_nome: a.lancado_por ? (nomePorId[a.lancado_por] || null) : null,
+        }));
+      }
     }
-    const apontamentoPorItem = {};
-    apontamentos.forEach(ap => { apontamentoPorItem[ap.chamado_item_id] = ap; });
+
+    // Agrupa sessões por item + monta resumo consolidado
+    const apontamentosPorItem = {};
+    apontamentos.forEach(ap => {
+      const k = ap.chamado_item_id;
+      if (!apontamentosPorItem[k]) apontamentosPorItem[k] = [];
+      apontamentosPorItem[k].push(ap);
+    });
+
+    // Calcula o resumo de cada item de serviço (soma de horas por categoria)
+    const resumoApontamentoPorItem = {};
+    for (const item of itens) {
+      if (item.tipo !== "servico") continue;
+      const sessoes = apontamentosPorItem[item.id] || [];
+      const soma = (campo) => sessoes.reduce((s, a) => s + (parseFloat(a[campo]) || 0), 0);
+
+      const diurnas = soma("horas_normais_diurnas");
+      const noturnas = soma("horas_normais_noturnas");
+      const excepcionais = soma("horas_excepcionais");
+      const total = diurnas + noturnas + excepcionais;
+
+      // Horas planejadas = qtd_pessoas × duração da janela prevista
+      let planejadas = null;
+      if (item.data_inicio_prevista && item.data_fim_prevista) {
+        const diffMs = new Date(item.data_fim_prevista) - new Date(item.data_inicio_prevista);
+        if (!isNaN(diffMs) && diffMs > 0) {
+          planejadas = (diffMs / 3600000) * (Number(item.qtd_pessoas_planejada) || 1);
+        }
+      }
+
+      const concluidoManual = !!item.servico_concluido_manual;
+      const concluido = concluidoManual
+        || (planejadas != null ? total >= planejadas : sessoes.length > 0);
+
+      resumoApontamentoPorItem[item.id] = {
+        total: Number(total.toFixed(2)),
+        diurnas: Number(diurnas.toFixed(2)),
+        noturnas: Number(noturnas.toFixed(2)),
+        excepcionais: Number(excepcionais.toFixed(2)),
+        total_sessoes: sessoes.length,
+        horas_planejadas: planejadas != null ? Number(planejadas.toFixed(2)) : null,
+        servico_concluido: concluido,
+        servico_concluido_manual: concluidoManual,
+        servico_concluido_em: item.servico_concluido_em || null,
+        servico_concluido_por_nome: item.servico_concluido_por_nome || null,
+      };
+    }
 
     // Agrupar itens por chamado
     const itensPorChamado = {};
@@ -598,9 +663,16 @@ router.get("/chamados", tenantMiddleware, async (req, res) => {
       }
       itensPorChamado[item.chamado_id].push({
         ...item,
-        apontamento: apontamentoPorItem[item.id] || null,
-        // Só faz sentido pra item de material (é o que pode virar RM).
-        requisicao_material: item.tipo === "material" ? (rmPorOrigemItem[item.id] || null) : undefined
+        // Compat: `apontamento` continua apontando pra última sessão (código
+        // legado pode usar). Para o frontend novo, usar `apontamento_resumo`.
+        apontamento: (apontamentosPorItem[item.id] || [])[0] || null,
+        // Novo: array completo de sessões ativas + resumo consolidado
+        apontamentos: apontamentosPorItem[item.id] || [],
+        apontamento_resumo: resumoApontamentoPorItem[item.id] || null,
+        requisicao_material: item.tipo === "material" ? (rmPorOrigemItem[item.id] || null) : undefined,
+        servico_concluido_manual: item.servico_concluido_manual || false,
+        servico_concluido_em: item.servico_concluido_em || null,
+        servico_concluido_por_nome: item.servico_concluido_por_nome || null,
       });
     });
 
@@ -2129,110 +2201,146 @@ router.post('/:cotacaoId/fornecedor/:fornecedorId/renegociar', tenantMiddleware,
   }
 });
 
-// ───────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────
 // POST /api/cotacoes/chamados/:id/apontamentos
-// Grava a execução real de um item de serviço (chamado_apontamentos,
-// migration 003) — distinto do planejado, que fica em chamado_itens
-// (qtd_pessoas_planejada, data_inicio/fim_prevista). Substitui o fluxo
-// anterior do frontend, que embutia { apontamento: {...} } dentro do item
-// e mandava tudo junto pro PUT /chamados/:id genérico (esse PUT nunca leu
-// esse campo — o apontamento só existia na memória do navegador até o
-// próximo F5).
 //
-// UPSERT em vez de sempre inserir: a migration criou
-// UNIQUE(chamado_item_id) porque o modal de apontamento edita um valor
-// único por serviço, sem histórico de versões — reabrir e salvar de novo
-// deve atualizar o mesmo registro, não duplicar nem dar erro de
-// constraint. Se no futuro quiser rastrear cada edição (não só o valor
-// atual), é preciso remover esse UNIQUE e inserir uma linha nova a cada
-// lançamento — decisão de produto que ainda não foi tomada.
+// Insere uma NOVA sessão de execução em um item de serviço. Antes
+// substituía (UNIQUE), agora empilha — o serviço é executado em várias
+// sessões ao longo do tempo (decisão do usuário, 2026-09).
+//
+// Body:
+//   servico_id,
+//   pessoas_reais,
+//   data_inicio_real, data_fim_real,
+//   horas_normais_diurnas, horas_normais_noturnas, horas_excepcionais,
+//   observacoes (opcional)
+// ─────────────────────────────────────────────────────────────────────────
 router.post("/chamados/:id/apontamentos", tenantMiddleware, async (req, res) => {
   try {
     const tenantId = req.tenantId;
     const { id: chamadoId } = req.params;
-    const { servico_id, pessoas_reais, data_inicio_real, data_fim_real, horas_extras } = req.body;
+    const {
+      servico_id, pessoas_reais,
+      data_inicio_real, data_fim_real,
+      horas_normais_diurnas, horas_normais_noturnas, horas_excepcionais,
+      horas_extras_diurnas, horas_extras_noturnas,
+      modo,
+      participantes,
+      observacoes,
+    } = req.body;
 
     if (!servico_id) {
       return res.status(400).json({ erro: "servico_id é obrigatório" });
     }
     if (!pessoas_reais || pessoas_reais <= 0) {
-      return res.status(400).json({ erro: "pessoas_reais é obrigatório e deve ser maior que zero" });
+      return res.status(400).json({ erro: "pessoas_reais deve ser maior que zero" });
     }
 
-    // Confirma que o item pertence mesmo a este chamado (e a este tenant) —
-    // sem isso, um servico_id de outra OS passaria despercebido.
+    let hD = parseFloat(horas_normais_diurnas) || 0;
+    let hN = parseFloat(horas_normais_noturnas) || 0;
+    let hE = parseFloat(horas_excepcionais) || 0;
+    let hXD = parseFloat(horas_extras_diurnas) || 0;
+    let hXN = parseFloat(horas_extras_noturnas) || 0;
+
+    // Modo automático: backend calcula tudo a partir de inicio/fim + config
+    if (modo === "auto") {
+      if (!data_inicio_real || !data_fim_real) {
+        return res.status(400).json({ erro: "Modo auto exige data_inicio_real e data_fim_real" });
+      }
+      const jornadas = await DB.select("tenant_jornadas", { tenant_id: tenantId, ativo: true }, tenantId);
+      const jornada = jornadas.find(j => j.padrao) || jornadas[0] || null;
+      const feriados = await DB.select("tenant_feriados", { tenant_id: tenantId }, tenantId);
+
+      if (!jornada) {
+        return res.status(400).json({ erro: "Sem jornada configurada — use modo manual" });
+      }
+
+      const calc = calcularSessaoAPartirDeHorarios(data_inicio_real, data_fim_real, pessoas_reais, jornada, feriados);
+      if (!calc) {
+        return res.status(400).json({ erro: "Janela inválida para cálculo automático" });
+      }
+
+      hD = calc.normais_diurnas;
+      hN = calc.normais_noturnas;
+      hE = calc.excepcionais;
+      hXD = calc.extras_diurnas;
+      hXN = calc.extras_noturnas;
+    }
+
+    if (hD + hN + hE + hXD + hXN <= 0) {
+      return res.status(400).json({ erro: "Informe ao menos 1 hora em alguma categoria" });
+    }
+
     const item = await DB.selectOne("chamado_itens", {
       id: servico_id, chamado_id: chamadoId, tenant_id: tenantId
     }, tenantId);
-    if (!item) {
-      return res.status(404).json({ erro: "Item de serviço não encontrado nesta OS" });
-    }
-    if (item.tipo !== "servico") {
-      return res.status(400).json({ erro: "Apontamento só se aplica a itens do tipo serviço" });
-    }
+    if (!item) return res.status(404).json({ erro: "Item de serviço não encontrado nesta OS" });
+    if (item.tipo !== "servico") return res.status(400).json({ erro: "Apontamento só se aplica a itens do tipo serviço" });
 
-    // Busca a OS pra: (a) validar se está concluída/cancelada,
-    // (b) auto-transicionar 'aberta' → 'em_andamento'.
+    // Guards de estado
     const osAp = await DB.selectOne("chamados", { id: chamadoId, tenant_id: tenantId }, tenantId);
-    if (osAp?.concluida_em) {
-      return res.status(400).json({ erro: `${osAp.numero} está concluída — não aceita apontamentos` });
-    }
-    if (osAp?.cancelada_em) {
-      return res.status(400).json({ erro: `${osAp.numero} está cancelada — não aceita apontamentos` });
-    }
-    if (osAp?.status === "aberta") {
-      await DB.update("chamados", chamadoId, { status: "em_andamento" }, tenantId);
-      const u = await usuarioAtual(req, tenantId);
-      await registrarEvento(
-        tenantId, chamadoId, "status_alterado",
-        "Status alterado: Aberta → Em andamento (primeiro apontamento registrado)",
-        { de: "aberta", para: "em_andamento" },
-        u
-      );
-    }
+    if (osAp?.concluida_em) return res.status(400).json({ erro: `${osAp.numero} está concluída — não aceita apontamentos` });
+    if (osAp?.cancelada_em) return res.status(400).json({ erro: `${osAp.numero} está cancelada — não aceita apontamentos` });
 
-    // Validação de janela, espelhando a mesma regra já aplicada no
-    // planejado (fim não pode ser anterior ao início).
     if (data_inicio_real && data_fim_real && new Date(data_fim_real) < new Date(data_inicio_real)) {
       return res.status(400).json({ erro: "data_fim_real não pode ser anterior a data_inicio_real" });
     }
 
-    const dados = {
+    // Auto-transição 'aberta' → 'em_andamento' na primeira sessão
+    if (osAp?.status === "aberta") {
+      await DB.update("chamados", chamadoId, { status: "em_andamento" }, tenantId);
+    }
+
+    const u = await usuarioAtual(req, tenantId);
+    const agora = new Date();
+
+    const apontamento = await DB.insert("chamado_apontamentos", {
       tenant_id: tenantId,
       chamado_item_id: servico_id,
       pessoas_reais,
       data_inicio_real: data_inicio_real || null,
       data_fim_real: data_fim_real || null,
-      horas_extras: horas_extras || 0,
+      horas_normais_diurnas: hD,
+      horas_normais_noturnas: hN,
+      horas_excepcionais: hE,
+      horas_extras_diurnas: hXD,
+      horas_extras_noturnas: hXN,
+      calculo_automatico: modo === "auto",
+      participantes: Array.isArray(participantes) ? participantes : [],
+      horas_extras: 0, // campo legado, mantido por compat
       lancado_por: req.userId || null,
-      lancado_em: new Date()
-    };
+      lancado_em: agora,
+      observacoes: observacoes || null,
+    }, tenantId);
 
-    const apontamento = await DB.raw(`
-      INSERT INTO chamado_apontamentos
-        (tenant_id, chamado_item_id, pessoas_reais, data_inicio_real, data_fim_real, horas_extras, lancado_por, lancado_em)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-      ON CONFLICT (chamado_item_id) DO UPDATE SET
-        pessoas_reais = EXCLUDED.pessoas_reais,
-        data_inicio_real = EXCLUDED.data_inicio_real,
-        data_fim_real = EXCLUDED.data_fim_real,
-        horas_extras = EXCLUDED.horas_extras,
-        lancado_por = EXCLUDED.lancado_por,
-        lancado_em = EXCLUDED.lancado_em
-      RETURNING *
-    `, [dados.tenant_id, dados.chamado_item_id, dados.pessoas_reais, dados.data_inicio_real, dados.data_fim_real, dados.horas_extras, dados.lancado_por, dados.lancado_em]);
+    // Evento na timeline da OS
+    const partesHoras = [];
+    if (hD > 0) partesHoras.push(`${hD}h diurnas`);
+    if (hN > 0) partesHoras.push(`${hN}h noturnas`);
+    if (hE > 0) partesHoras.push(`${hE}h excepcionais`);
+    if (hXD > 0) partesHoras.push(`${hXD}h extras diurnas`);
+    if (hXN > 0) partesHoras.push(`${hXN}h extras noturnas`);
 
-    {
-      const u = await usuarioAtual(req, tenantId);
-      await registrarEvento(
-        tenantId, chamadoId, "apontamento",
-        `Apontamento lançado: ${pessoas_reais} pessoa(s) em "${item.item_nome}"`,
-        { item_id: servico_id, pessoas_reais, horas_extras: horas_extras || 0 },
-        u
-      );
-    }
+    await registrarEvento(
+      tenantId, chamadoId, "apontamento",
+      `Sessão lançada em "${item.item_nome}": ${pessoas_reais} pessoa(s) · ${partesHoras.join(", ")}${modo === "auto" ? " (cálculo automático)" : ""}`,
+      { apontamento_id: apontamento.id, servico_id, pessoas_reais, hD, hN, hE, hXD, hXN },
+      u
+    );
 
-    res.json({ ok: true, apontamento: apontamento[0], mensagem: "Apontamento salvo com sucesso" });
+    const resumo = await calcularHorasApontadasItem(servico_id, tenantId);
+    const concluido = await servicoEstaConcluido(
+      await DB.selectOne("chamado_itens", { id: servico_id }, tenantId),
+      tenantId
+    );
+
+    res.status(201).json({
+      ok: true,
+      apontamento,
+      resumo,
+      servico_concluido: concluido,
+      mensagem: "Sessão registrada",
+    });
   } catch (err) {
     console.error("❌ Erro ao salvar apontamento:", err.message);
     res.status(500).json({ erro: err.message });
@@ -2694,12 +2802,22 @@ router.get("/chamados/:id/materiais/:itemId/aplicacoes", tenantMiddleware, async
   const { id: chamadoId, itemId } = req.params;
 
   try {
-    const eventos = await DB.raw(`
-      SELECT *
-      FROM chamado_material_aplicacoes
-      WHERE tenant_id = $1 AND chamado_id = $2 AND chamado_item_id = $3
-      ORDER BY data_evento DESC, id DESC
-    `, [tenantId, chamadoId, itemId]);
+    const todosEventos = await DB.select(
+      "chamado_material_aplicacoes",
+      { tenant_id: tenantId },
+      tenantId
+    );
+    const eventos = todosEventos
+      .filter(e =>
+        String(e.chamado_id) === String(chamadoId)
+        && String(e.chamado_item_id) === String(itemId)
+      )
+      .sort((a, b) => {
+        const da = new Date(a.data_evento).getTime();
+        const db = new Date(b.data_evento).getTime();
+        if (db !== da) return db - da;
+        return Number(b.id) - Number(a.id);
+      });
 
     // Carrega SNs de cada aplicação
     const aplicacaoIds = eventos.map(e => e.id);
@@ -2779,6 +2897,25 @@ router.post("/chamados/:id/concluir", tenantMiddleware, async (req, res) => {
     }
     if (os.cancelada_em) {
       return res.status(400).json({ erro: `${os.numero} está cancelada — não pode ser concluída` });
+    }
+
+    // ── Bloqueio: NC ativa vinculada a esta OS ──
+    // NC "ativa" = status em aberta/em_analise/em_execucao. Depois de
+    // resolvida ou cancelada, deixa de bloquear.
+    const ncsDaOS = await DB.select("nao_conformidades", { tenant_id: tenantId, chamado_id: chamadoId }, tenantId);
+    const ncsBloqueantes = ncsDaOS.filter(nc =>
+      ["aberta", "em_analise", "em_execucao"].includes(nc.status)
+    );
+    if (ncsBloqueantes.length > 0) {
+      return res.status(400).json({
+        erro: `Não é possível concluir: ${ncsBloqueantes.length} Não Conformidade(s) ativa(s) vinculada(s) a esta OS. Resolva ou cancele antes de fechar.`,
+        ncs_bloqueantes: ncsBloqueantes.map(nc => ({
+          id: nc.id,
+          numero_nc: nc.numero_nc,
+          status: nc.status,
+          descricao_problema: nc.descricao_problema,
+        })),
+      });
     }
 
     // ── Itens da OS ──
@@ -3323,16 +3460,71 @@ async function usuarioAtual(req, tenantId) {
 // Itens cancelados não entram na conta.
 // Retorna 0 quando não há itens ativos.
 // ─────────────────────────────────────────────────────────────────────────
+// ─────────────────────────────────────────────────────────────────────────
+// calcularHorasApontadasItem — soma as horas de todas as sessões ativas
+// de um item de serviço. Retorna { total, porCategoria }.
+// ─────────────────────────────────────────────────────────────────────────
+async function calcularHorasApontadasItem(chamadoItemId, tenantId) {
+  const todas = await DB.select("chamado_apontamentos", { tenant_id: tenantId }, tenantId);
+  const ativas = todas.filter(a =>
+    String(a.chamado_item_id) === String(chamadoItemId)
+    && a.status === "ativo"
+  );
+
+  const soma = (campo) => ativas.reduce((s, a) => s + (parseFloat(a[campo]) || 0), 0);
+  const diurnas = soma("horas_normais_diurnas");
+  const noturnas = soma("horas_normais_noturnas");
+  const excepcionais = soma("horas_excepcionais");
+  const extrasDiurnas = soma("horas_extras_diurnas");
+  const extrasNoturnas = soma("horas_extras_noturnas");
+
+  const total = diurnas + noturnas + excepcionais + extrasDiurnas + extrasNoturnas;
+
+  return {
+    total: Number(total.toFixed(2)),
+    diurnas: Number(diurnas.toFixed(2)),
+    noturnas: Number(noturnas.toFixed(2)),
+    excepcionais: Number(excepcionais.toFixed(2)),
+    extras_diurnas: Number(extrasDiurnas.toFixed(2)),
+    extras_noturnas: Number(extrasNoturnas.toFixed(2)),
+    totalSessoes: ativas.length,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// servicoEstaConcluido — regra híbrida (decisão "C"):
+//   1. Marcação manual (servico_concluido_manual = true), OU
+//   2. Soma de horas apontadas ≥ horas planejadas
+//
+// Horas planejadas = qtd_pessoas_planejada × duração prevista. Se a
+// duração prevista não está preenchida, considera as horas já apontadas
+// suficientes se houver pelo menos 1 sessão ativa (fallback seguro).
+// ─────────────────────────────────────────────────────────────────────────
+function horasPlanejadasServico(item) {
+  if (!item.data_inicio_prevista || !item.data_fim_prevista) return null;
+  const diffMs = new Date(item.data_fim_prevista) - new Date(item.data_inicio_prevista);
+  if (isNaN(diffMs) || diffMs <= 0) return null;
+  const horas = diffMs / 3600000;
+  return horas * (Number(item.qtd_pessoas_planejada) || 1);
+}
+
+async function servicoEstaConcluido(item, tenantId) {
+  if (item.servico_concluido_manual) return true;
+
+  const apontado = await calcularHorasApontadasItem(item.id, tenantId);
+  const planejado = horasPlanejadasServico(item);
+
+  if (planejado == null) {
+    // Sem janela prevista — considera concluído se tem pelo menos 1 sessão
+    return apontado.totalSessoes > 0;
+  }
+  return apontado.total >= planejado;
+}
+
 async function calcularPercentualConclusao(chamadoId, tenantId) {
   const itens = await DB.select("chamado_itens", { chamado_id: chamadoId, tenant_id: tenantId }, tenantId);
   const ativos = itens.filter(it => it.status !== "cancelado");
   if (ativos.length === 0) return 0;
-
-  const apontamentos = await DB.select("chamado_apontamentos", { tenant_id: tenantId }, tenantId);
-  const idsItens = ativos.map(it => it.id);
-  const apontamentosPorItem = {};
-  apontamentos.filter(a => idsItens.includes(a.chamado_item_id))
-    .forEach(a => { apontamentosPorItem[a.chamado_item_id] = a; });
 
   let soma = 0;
   for (const it of ativos) {
@@ -3342,10 +3534,117 @@ async function calcularPercentualConclusao(chamadoId, tenantId) {
       const apl = parseFloat(it.quantidade_aplicada) || 0;
       soma += plan > 0 ? Math.min(1, apl / plan) : 0;
     } else {
-      soma += apontamentosPorItem[it.id] ? 1 : 0;
+      // Serviço: híbrido (manual OU horas ≥ planejado)
+      const concluido = await servicoEstaConcluido(it, tenantId);
+      if (concluido) {
+        soma += 1;
+      } else {
+        // Contribuição parcial proporcional às horas já apontadas
+        const apontado = await calcularHorasApontadasItem(it.id, tenantId);
+        const planejado = horasPlanejadasServico(it);
+        if (planejado && planejado > 0) {
+          soma += Math.min(0.99, apontado.total / planejado);
+        }
+        // Se não tem planejado, fica 0 (não dá pra medir parcial)
+      }
     }
   }
   return Math.round((soma / ativos.length) * 100);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// calcularSessaoAPartirDeHorarios — distribui as horas de uma sessão nas
+// 5 categorias (normais diurnas/noturnas + extras diurnas/noturnas +
+// excepcionais), consultando a jornada configurada do tenant.
+//
+// Algoritmo:
+//  1. Se o dia é feriado OU regra do dia = 'excepcional' → tudo excepcional
+//  2. Senão, itera minuto a minuto:
+//     - pula intervalo (se descontar_intervalo=true)
+//     - classifica diurno (5h-22h) vs noturno (22h-5h)
+//     - classifica normal (dentro da janela da jornada) vs extra (fora)
+//
+// Retorna null se:
+//   - fim <= inicio
+//   - sessão cruza mais de 24h
+// ─────────────────────────────────────────────────────────────────────────
+function formatYYYYMMDD(d) {
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+}
+
+function calcularSessaoAPartirDeHorarios(inicioStr, fimStr, pessoas, jornada, feriados) {
+  const inicio = new Date(inicioStr);
+  const fim = new Date(fimStr);
+  if (isNaN(inicio) || isNaN(fim) || fim <= inicio) return null;
+
+  const totalMin = Math.floor((fim - inicio) / 60000);
+  if (totalMin <= 0 || totalMin > 24 * 60) return null;
+
+  // ── Detecta dia excepcional (usa a data do INÍCIO) ──
+  const dia = inicio.getDay();
+  const camposRegra = ["regra_domingo", "regra_segunda", "regra_terca",
+                       "regra_quarta", "regra_quinta", "regra_sexta", "regra_sabado"];
+  const regraDia = jornada?.[camposRegra[dia]] || "normal";
+  const dataStr = formatYYYYMMDD(inicio);
+  const ehFeriado = (feriados || []).some(f => (f.data || "").slice(0, 10) === dataStr);
+  const ehExcepcional = regraDia === "excepcional" || ehFeriado;
+
+  // ── Itera minuto a minuto ──
+  let minDiurnasNormal = 0, minNoturnasNormal = 0;
+  let minDiurnasExtra = 0, minNoturnasExtra = 0;
+  let minExcepcionais = 0;
+  let minIntervaloDescontado = 0;
+
+  const cursor = new Date(inicio);
+  for (let i = 0; i < totalMin; i++) {
+    const minDia = cursor.getHours() * 60 + cursor.getMinutes();
+
+    // Pula intervalo
+    if (jornada?.possui_intervalo && jornada?.descontar_intervalo
+        && jornada.intervalo_inicio_min != null && jornada.intervalo_fim_min != null
+        && minDia >= jornada.intervalo_inicio_min && minDia < jornada.intervalo_fim_min) {
+      minIntervaloDescontado++;
+      cursor.setMinutes(cursor.getMinutes() + 1);
+      continue;
+    }
+
+    if (ehExcepcional) {
+      minExcepcionais++;
+    } else {
+      const ehNoturno = minDia >= 1320 || minDia < 300; // 22h-5h
+      const foraDaJanela = jornada
+        ? (minDia < jornada.hora_inicio_min || minDia >= jornada.hora_fim_min)
+        : false;
+
+      if (foraDaJanela) {
+        if (ehNoturno) minNoturnasExtra++;
+        else minDiurnasExtra++;
+      } else {
+        if (ehNoturno) minNoturnasNormal++;
+        else minDiurnasNormal++;
+      }
+    }
+    cursor.setMinutes(cursor.getMinutes() + 1);
+  }
+
+  const h = (min) => Number((min / 60).toFixed(2));
+
+  return {
+    normais_diurnas:  h(minDiurnasNormal),
+    normais_noturnas: h(minNoturnasNormal),
+    extras_diurnas:   h(minDiurnasExtra),
+    extras_noturnas:  h(minNoturnasExtra),
+    excepcionais:     h(minExcepcionais),
+    total:            h(minDiurnasNormal + minNoturnasNormal + minDiurnasExtra
+                        + minNoturnasExtra + minExcepcionais),
+    total_com_intervalo: h(totalMin),
+    minutos_intervalo_descontados: minIntervaloDescontado,
+    eh_excepcional:   ehExcepcional,
+    regra_dia:        regraDia,
+    eh_feriado:       ehFeriado,
+    pessoas:          Number(pessoas) || 1,
+  };
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -3433,6 +3732,299 @@ router.get("/chamados/:id/percentual", tenantMiddleware, async (req, res) => {
     res.json({ percentual });
   } catch (err) {
     console.error("❌ Erro ao calcular percentual:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/cotacoes/chamados/:id/servicos/:itemId/apontamentos
+//
+// Lista todas as sessões ativas de um item de serviço, com resumo
+// consolidado (horas por categoria, total, planejado, % de conclusão).
+// ─────────────────────────────────────────────────────────────────────────
+router.get("/chamados/:id/servicos/:itemId/apontamentos", tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { id: chamadoId, itemId } = req.params;
+
+  try {
+    const item = await DB.selectOne("chamado_itens", { id: itemId, chamado_id: chamadoId, tenant_id: tenantId }, tenantId);
+    if (!item) return res.status(404).json({ erro: "Item não encontrado" });
+
+    const todas = await DB.select("chamado_apontamentos", { tenant_id: tenantId }, tenantId);
+    let sessoes = todas
+      .filter(a => String(a.chamado_item_id) === String(itemId))
+      .sort((a, b) => new Date(b.lancado_em || b.criado_em) - new Date(a.lancado_em || a.criado_em));
+
+    // Resolve o nome de quem lançou cada sessão (lancado_por é UUID;
+    // gravamos só o ID no banco por questão de integridade referencial).
+    // Lookup em batch pra não fazer N queries.
+    const uuidsLancadores = [...new Set(sessoes.map(s => s.lancado_por).filter(Boolean))];
+    if (uuidsLancadores.length > 0) {
+      const usuarios = await DB.select("usuarios", { tenant_id: tenantId }, tenantId);
+      const nomePorId = {};
+      usuarios.forEach(u => { nomePorId[u.id] = u.nome; });
+      sessoes = sessoes.map(s => ({
+        ...s,
+        lancado_por_nome: s.lancado_por ? (nomePorId[s.lancado_por] || null) : null,
+      }));
+    }
+
+    const resumo = await calcularHorasApontadasItem(itemId, tenantId);
+    const planejado = horasPlanejadasServico(item);
+    const concluido = await servicoEstaConcluido(item, tenantId);
+
+    res.json({
+      sessoes,
+      resumo: {
+        ...resumo,
+        horas_planejadas: planejado != null ? Number(planejado.toFixed(2)) : null,
+        servico_concluido: concluido,
+        servico_concluido_manual: !!item.servico_concluido_manual,
+        servico_concluido_em: item.servico_concluido_em,
+        servico_concluido_por_nome: item.servico_concluido_por_nome,
+      },
+    });
+  } catch (err) {
+    console.error("❌ Erro ao listar apontamentos:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// PUT /api/cotacoes/chamados/apontamentos/:apontamentoId
+//
+// Edita uma sessão existente. Só permitido enquanto a OS não estiver
+// concluída nem cancelada. Registra o evento na timeline.
+// ─────────────────────────────────────────────────────────────────────────
+router.put("/chamados/apontamentos/:apontamentoId", tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { apontamentoId } = req.params;
+  const {
+    pessoas_reais, data_inicio_real, data_fim_real,
+    horas_normais_diurnas, horas_normais_noturnas, horas_excepcionais,
+    horas_extras_diurnas, horas_extras_noturnas,
+    participantes,   
+    modo, // "auto" | "manual"
+    observacoes,
+  } = req.body;
+
+  try {
+    const ap = await DB.selectOne("chamado_apontamentos", { id: apontamentoId, tenant_id: tenantId }, tenantId);
+    if (!ap) return res.status(404).json({ erro: "Apontamento não encontrado" });
+    if (ap.status === "cancelado") return res.status(400).json({ erro: "Apontamento já cancelado" });
+
+    const item = await DB.selectOne("chamado_itens", { id: ap.chamado_item_id, tenant_id: tenantId }, tenantId);
+    const os = await DB.selectOne("chamados", { id: item?.chamado_id, tenant_id: tenantId }, tenantId);
+    if (os?.concluida_em) return res.status(400).json({ erro: `${os.numero} está concluída — não aceita edições` });
+    if (os?.cancelada_em) return res.status(400).json({ erro: `${os.numero} está cancelada — não aceita edições` });
+
+    const u = await usuarioAtual(req, tenantId);
+
+    const upd = {
+      atualizado_em: new Date(),
+      atualizado_por: u.id,
+      atualizado_por_nome: u.nome,
+    };
+    if (pessoas_reais !== undefined) upd.pessoas_reais = parseInt(pessoas_reais) || 1;
+    if (data_inicio_real !== undefined) upd.data_inicio_real = data_inicio_real || null;
+    if (data_fim_real !== undefined) upd.data_fim_real = data_fim_real || null;
+    if (observacoes !== undefined) upd.observacoes = observacoes || null;
+    if (participantes !== undefined) upd.participantes = Array.isArray(participantes) ? participantes : [];
+
+    // Modo auto: recalcula tudo a partir da janela + config do tenant.
+    // Mesmo comportamento do POST — mantém consistência entre criar e editar.
+    if (modo === "auto" && (data_inicio_real || upd.data_inicio_real) && (data_fim_real || upd.data_fim_real)) {
+      const inicioFinal = data_inicio_real !== undefined ? data_inicio_real : ap.data_inicio_real;
+      const fimFinal = data_fim_real !== undefined ? data_fim_real : ap.data_fim_real;
+      const pessoasFinal = pessoas_reais !== undefined ? parseInt(pessoas_reais) : ap.pessoas_reais;
+
+      const jornadas = await DB.select("tenant_jornadas", { tenant_id: tenantId, ativo: true }, tenantId);
+      const jornada = jornadas.find(j => j.padrao) || jornadas[0] || null;
+      const feriados = await DB.select("tenant_feriados", { tenant_id: tenantId }, tenantId);
+
+      if (!jornada) {
+        return res.status(400).json({ erro: "Sem jornada configurada — edite em modo manual" });
+      }
+
+      const calc = calcularSessaoAPartirDeHorarios(inicioFinal, fimFinal, pessoasFinal, jornada, feriados);
+      if (!calc) {
+        return res.status(400).json({ erro: "Janela inválida para cálculo automático" });
+      }
+
+      upd.horas_normais_diurnas = calc.normais_diurnas;
+      upd.horas_normais_noturnas = calc.normais_noturnas;
+      upd.horas_excepcionais = calc.excepcionais;
+      upd.horas_extras_diurnas = calc.extras_diurnas;
+      upd.horas_extras_noturnas = calc.extras_noturnas;
+      upd.calculo_automatico = true;
+    } else {
+      if (horas_normais_diurnas !== undefined) upd.horas_normais_diurnas = parseFloat(horas_normais_diurnas) || 0;
+      if (horas_normais_noturnas !== undefined) upd.horas_normais_noturnas = parseFloat(horas_normais_noturnas) || 0;
+      if (horas_excepcionais !== undefined) upd.horas_excepcionais = parseFloat(horas_excepcionais) || 0;
+      if (horas_extras_diurnas !== undefined) upd.horas_extras_diurnas = parseFloat(horas_extras_diurnas) || 0;
+      if (horas_extras_noturnas !== undefined) upd.horas_extras_noturnas = parseFloat(horas_extras_noturnas) || 0;
+      if (modo === "manual") upd.calculo_automatico = false;
+    }
+
+    const atualizado = await DB.update("chamado_apontamentos", apontamentoId, upd, tenantId);
+
+    await registrarEvento(
+      tenantId, item.chamado_id, "apontamento_editado",
+      `Sessão editada em "${item.item_nome}"`,
+      { apontamento_id: apontamentoId },
+      u
+    );
+
+    const resumo = await calcularHorasApontadasItem(ap.chamado_item_id, tenantId);
+    res.json({ ok: true, apontamento: atualizado, resumo });
+  } catch (err) {
+    console.error("❌ Erro ao editar apontamento:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// DELETE /api/cotacoes/chamados/apontamentos/:apontamentoId
+//
+// Soft delete — marca como cancelado, não apaga. Histórico preservado.
+// ─────────────────────────────────────────────────────────────────────────
+router.delete("/chamados/apontamentos/:apontamentoId", tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { apontamentoId } = req.params;
+  const { motivo } = req.body || {};
+
+  try {
+    const ap = await DB.selectOne("chamado_apontamentos", { id: apontamentoId, tenant_id: tenantId }, tenantId);
+    if (!ap) return res.status(404).json({ erro: "Apontamento não encontrado" });
+    if (ap.status === "cancelado") return res.status(400).json({ erro: "Apontamento já cancelado" });
+
+    const item = await DB.selectOne("chamado_itens", { id: ap.chamado_item_id, tenant_id: tenantId }, tenantId);
+    const os = await DB.selectOne("chamados", { id: item?.chamado_id, tenant_id: tenantId }, tenantId);
+    if (os?.concluida_em) return res.status(400).json({ erro: `${os.numero} está concluída — não aceita edições` });
+    if (os?.cancelada_em) return res.status(400).json({ erro: `${os.numero} está cancelada — não aceita edições` });
+
+    const u = await usuarioAtual(req, tenantId);
+
+    await DB.update("chamado_apontamentos", apontamentoId, {
+      status: "cancelado",
+      cancelado_em: new Date(),
+      cancelado_por: u.id,
+      cancelado_por_nome: u.nome,
+      motivo_cancelamento: motivo || "Cancelada pelo usuário",
+    }, tenantId);
+
+    await registrarEvento(
+      tenantId, item.chamado_id, "apontamento_cancelado",
+      `Sessão cancelada em "${item.item_nome}"${motivo ? ` — motivo: ${motivo}` : ""}`,
+      { apontamento_id: apontamentoId },
+      u
+    );
+
+    const resumo = await calcularHorasApontadasItem(ap.chamado_item_id, tenantId);
+    res.json({ ok: true, resumo });
+  } catch (err) {
+    console.error("❌ Erro ao cancelar apontamento:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// PUT /api/cotacoes/chamados/:id/servicos/:itemId/concluir-manual
+//
+// Marca o serviço como concluído manualmente, mesmo que a soma de horas
+// esteja abaixo do planejado (o técnico sabe que acabou antes).
+// Body: { concluido: true|false }
+// ─────────────────────────────────────────────────────────────────────────
+router.put("/chamados/:id/servicos/:itemId/concluir-manual", tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { id: chamadoId, itemId } = req.params;
+  const { concluido } = req.body;
+
+  try {
+    const item = await DB.selectOne("chamado_itens", { id: itemId, chamado_id: chamadoId, tenant_id: tenantId }, tenantId);
+    if (!item) return res.status(404).json({ erro: "Item não encontrado" });
+    if (item.tipo !== "servico") return res.status(400).json({ erro: "Só se aplica a serviços" });
+
+    const os = await DB.selectOne("chamados", { id: chamadoId, tenant_id: tenantId }, tenantId);
+    if (os?.concluida_em) return res.status(400).json({ erro: `${os.numero} está concluída` });
+    if (os?.cancelada_em) return res.status(400).json({ erro: `${os.numero} está cancelada` });
+
+    const u = await usuarioAtual(req, tenantId);
+
+    if (concluido === false) {
+      await DB.update("chamado_itens", itemId, {
+        servico_concluido_manual: false,
+        servico_concluido_em: null,
+        servico_concluido_por: null,
+        servico_concluido_por_nome: null,
+      }, tenantId);
+      await registrarEvento(tenantId, chamadoId, "servico_reaberto",
+        `Serviço "${item.item_nome}" marcado como NÃO concluído`, {}, u);
+    } else {
+      await DB.update("chamado_itens", itemId, {
+        servico_concluido_manual: true,
+        servico_concluido_em: new Date(),
+        servico_concluido_por: u.id,
+        servico_concluido_por_nome: u.nome,
+      }, tenantId);
+      await registrarEvento(tenantId, chamadoId, "servico_concluido_manual",
+        `Serviço "${item.item_nome}" marcado como concluído manualmente`, {}, u);
+    }
+
+    const resumo = await calcularHorasApontadasItem(itemId, tenantId);
+    const concluidoFinal = await servicoEstaConcluido(
+      await DB.selectOne("chamado_itens", { id: itemId }, tenantId),
+      tenantId
+    );
+
+    res.json({ ok: true, resumo, servico_concluido: concluidoFinal });
+  } catch (err) {
+    console.error("❌ Erro ao marcar conclusão manual:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/cotacoes/chamados/:id/servicos/:itemId/preview-apontamento
+//
+// Recebe inicio, fim, pessoas e devolve o cálculo automático sem gravar.
+// Usado pelo frontend pra mostrar o preview no modal.
+// ─────────────────────────────────────────────────────────────────────────
+router.post("/chamados/:id/servicos/:itemId/preview-apontamento", tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { id: chamadoId, itemId } = req.params;
+  const { inicio, fim, pessoas } = req.body;
+
+  try {
+    if (!inicio || !fim) {
+      return res.status(400).json({ erro: "inicio e fim são obrigatórios" });
+    }
+
+    const item = await DB.selectOne("chamado_itens", { id: itemId, chamado_id: chamadoId, tenant_id: tenantId }, tenantId);
+    if (!item) return res.status(404).json({ erro: "Item não encontrado" });
+    if (item.tipo !== "servico") return res.status(400).json({ erro: "Só se aplica a serviços" });
+
+    // Carrega jornada + feriados
+    const jornadas = await DB.select("tenant_jornadas", { tenant_id: tenantId, ativo: true }, tenantId);
+    const jornada = jornadas.find(j => j.padrao) || jornadas[0] || null;
+    const feriados = await DB.select("tenant_feriados", { tenant_id: tenantId }, tenantId);
+
+    if (!jornada) {
+      return res.json({
+        modo: "manual",
+        mensagem: "Sem jornada configurada — o apontamento será manual",
+        calculo: null,
+      });
+    }
+
+    const calculo = calcularSessaoAPartirDeHorarios(inicio, fim, pessoas || 1, jornada, feriados);
+    if (!calculo) {
+      return res.status(400).json({ erro: "Janela inválida (fim deve ser maior que início, máx 24h)" });
+    }
+
+    res.json({ modo: "auto", calculo });
+  } catch (err) {
+    console.error("❌ Erro no preview de apontamento:", err.message);
     res.status(500).json({ erro: err.message });
   }
 });
