@@ -247,7 +247,7 @@ export default function TelaGerarRequisicaoMaterial({ C, s, fmtD }) {
             Nenhuma OS com material pendente
           </div>
           <div style={{ fontSize: 12, color: C.muted }}>
-            Toda OS com material a comprar já teve sua RM gerada.
+            Toda OS com material a comprar já teve sua RC gerada.
           </div>
         </div>
       )}

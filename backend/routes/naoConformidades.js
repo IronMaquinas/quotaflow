@@ -130,7 +130,8 @@ router.post('/', tenantMiddleware, async (req, res) => {
       inspetor_id: u.id,
       criado_por_nome: u.nome,
       motivo_recusa: descricao_problema.trim(),
-      criado_em: new Date(),
+      // criado_em NÃO é enviado — o Postgres preenche com NOW() em UTC,
+      // evitando o problema de serialização que desloca 3h (BRT → UTC).
     }, tenantId);
 
     // Anexos (fotos como data URI)
@@ -195,8 +196,37 @@ router.get('/', tenantMiddleware, async (req, res) => {
         (nc.numero_nc || "").toLowerCase().includes(termo)
         || (nc.descricao_problema || "").toLowerCase().includes(termo)
         || (nc.fornecedor_nome || "").toLowerCase().includes(termo)
+        || (nc.criado_por_nome || "").toLowerCase().includes(termo)
       );
     }
+
+    // Enriquecer com contexto (número da OS + nome do equipamento) pra
+    // evitar que o frontend precise fazer N chamadas pra montar a lista.
+    const chamadoIds = [...new Set(ncs.map(nc => nc.chamado_id).filter(Boolean))];
+    const equipamentoIds = [...new Set(ncs.map(nc => nc.equipamento_id).filter(Boolean))];
+
+    let chamadosPorId = {};
+    if (chamadoIds.length > 0) {
+      const chamados = await DB.select("chamados", { tenant_id: tenantId }, tenantId);
+      chamados
+        .filter(c => chamadoIds.includes(c.id))
+        .forEach(c => { chamadosPorId[c.id] = c; });
+    }
+
+    let equipamentosPorId = {};
+    if (equipamentoIds.length > 0) {
+      const equipamentos = await DB.select("equipamentos", { tenant_id: tenantId }, tenantId);
+      equipamentos
+        .filter(e => equipamentoIds.includes(e.id))
+        .forEach(e => { equipamentosPorId[e.id] = e; });
+    }
+
+    ncs = ncs.map(nc => ({
+      ...nc,
+      chamado_numero: nc.chamado_id ? (chamadosPorId[nc.chamado_id]?.numero || null) : null,
+      equipamento_nome: nc.equipamento_id ? (equipamentosPorId[nc.equipamento_id]?.nome || null) : null,
+      equipamento_tag: nc.equipamento_id ? (equipamentosPorId[nc.equipamento_id]?.tag || null) : null,
+    }));
 
     ncs.sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em));
     res.json(ncs);
@@ -227,7 +257,30 @@ router.get('/:id', tenantMiddleware, async (req, res) => {
     anexos.sort((a, b) => new Date(a.criado_em) - new Date(b.criado_em));
     planoAcao.sort((a, b) => new Date(a.criado_em) - new Date(b.criado_em));
 
-    res.json({ ...nc, anexos, eventos, plano_acao: planoAcao });
+    // Enriquecer com número da OS e equipamento pra rastreabilidade na UI
+    let chamado_numero = null;
+    let equipamento_nome = null;
+    let equipamento_tag = null;
+
+    if (nc.chamado_id) {
+      try {
+        const ch = await DB.selectOne("chamados", { id: nc.chamado_id, tenant_id: tenantId }, tenantId);
+        chamado_numero = ch?.numero || null;
+      } catch (_) {}
+    }
+    if (nc.equipamento_id) {
+      try {
+        const eq = await DB.selectOne("equipamentos", { id: nc.equipamento_id, tenant_id: tenantId }, tenantId);
+        equipamento_nome = eq?.nome || null;
+        equipamento_tag = eq?.tag || null;
+      } catch (_) {}
+    }
+
+    res.json({
+      ...nc,
+      anexos, eventos, plano_acao: planoAcao,
+      chamado_numero, equipamento_nome, equipamento_tag,
+    });
   } catch (err) {
     console.error("❌ Erro ao buscar NC:", err.message);
     res.status(500).json({ erro: err.message });
@@ -293,7 +346,7 @@ router.put('/:id', tenantMiddleware, async (req, res) => {
 router.put('/:id/status', tenantMiddleware, async (req, res) => {
   const tenantId = req.tenantId;
   const { id } = req.params;
-  const { status, solucao_aplicada, motivo } = req.body;
+  const { status, solucao_aplicada, motivo, atribuir_a_mim } = req.body;
 
   try {
     const statusValidos = ["aberta", "em_analise", "em_execucao", "resolvida", "cancelada"];
@@ -309,6 +362,15 @@ router.put('/:id/status', tenantMiddleware, async (req, res) => {
     }
 
     const upd = { status, atualizado_em: new Date().toISOString() };
+
+    // Atribuição de responsável: quando o usuário clica em "Pegar para
+    // análise", o frontend manda atribuir_a_mim=true e o backend grava
+    // o usuário logado como responsável pela tratativa.
+    if (atribuir_a_mim) {
+      const u = await usuarioAtual(req, tenantId);
+      upd.responsavel_id = u.id;
+      upd.responsavel_nome = u.nome;
+    }
 
     if (status === "resolvida") {
       if (!solucao_aplicada || !solucao_aplicada.trim()) {
@@ -584,6 +646,329 @@ router.post('/:id/comentario', tenantMiddleware, async (req, res) => {
     res.json({ ok: true, mensagem: "Comentário registrado" });
   } catch (err) {
     console.error("❌ Erro ao adicionar comentário:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// PUT /api/nao-conformidades/:id/transferir
+//
+// Transfere a responsabilidade pra outro usuário OU devolve pra fila
+// (sem responsável, volta pro status 'aberta'). Registra evento na timeline.
+//
+// Body:
+//   responsavel_id: UUID | null   (null = devolver pra fila)
+//   responsavel_nome: string      (obrigatório se responsavel_id != null)
+//   observacao: string            (opcional)
+// ─────────────────────────────────────────────────────────────────────────
+router.put('/:id/transferir', tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { id } = req.params;
+  const { responsavel_id, responsavel_nome, observacao } = req.body;
+
+  try {
+    const nc = await DB.selectOne("nao_conformidades", { id, tenant_id: tenantId }, tenantId);
+    if (!nc) return res.status(404).json({ erro: "NC não encontrada" });
+    if (["resolvida", "cancelada"].includes(nc.status)) {
+      return res.status(400).json({ erro: "NC já encerrada — não pode ser transferida" });
+    }
+
+    const u = await usuarioAtual(req, tenantId);
+    const devolverParaFila = !responsavel_id;
+
+    const upd = { atualizado_em: new Date().toISOString() };
+
+    if (devolverParaFila) {
+      upd.responsavel_id = null;
+      upd.responsavel_nome = null;
+      // Devolver volta pro estado original — qualquer pessoa pode pegar de novo.
+      upd.status = "aberta";
+    } else {
+      if (!responsavel_nome) {
+        return res.status(400).json({ erro: "responsavel_nome é obrigatório" });
+      }
+      upd.responsavel_id = responsavel_id;
+      upd.responsavel_nome = responsavel_nome;
+      // Se estava 'aberta' e alguém assume via transferência, vira 'em_analise'.
+      if (nc.status === "aberta") upd.status = "em_analise";
+    }
+
+    await DB.update("nao_conformidades", id, upd, tenantId);
+
+    const descricao = devolverParaFila
+      ? `NC devolvida para a fila${observacao ? ` — ${observacao}` : ""}`
+      : `NC transferida de ${nc.responsavel_nome || "fila"} para ${responsavel_nome}${observacao ? ` — ${observacao}` : ""}`;
+
+    await registrarEventoNC(
+      tenantId, id, "transferencia",
+      descricao,
+      {
+        de: nc.responsavel_nome || null,
+        para: devolverParaFila ? null : responsavel_nome,
+        observacao: observacao || null,
+      },
+      u
+    );
+
+    const atualizada = await DB.selectOne("nao_conformidades", { id }, tenantId);
+    res.json({ ok: true, nc: atualizada, mensagem: devolverParaFila ? "Devolvida para a fila" : `Transferida para ${responsavel_nome}` });
+  } catch (err) {
+    console.error("❌ Erro ao transferir NC:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// HELPERS DE PERMISSÃO
+//
+// No MVP, "qualidade" é mapeado pra gestor/admin. Quando virarmos SaaS
+// maior, "qualidade" vira papel próprio.
+// ─────────────────────────────────────────────────────────────────────────
+async function perfilDoUsuario(req, tenantId) {
+  try {
+    const u = await DB.selectOne("usuarios", { id: req.userId, tenant_id: tenantId }, tenantId);
+    return u?.perfil || null;
+  } catch (_) { return null; }
+}
+
+function podeDirecionar(perfil) {
+  return ["gestor", "admin"].includes(perfil);
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// PUT /api/nao-conformidades/:id/direcionar
+//
+// Qualidade revisa e roteia pra uma área. Muda status aberta → em_analise.
+// Body: { area_responsavel, responsavel_id, responsavel_nome, observacao? }
+// ─────────────────────────────────────────────────────────────────────────
+router.put('/:id/direcionar', tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { id } = req.params;
+  const { area_responsavel, responsavel_id, responsavel_nome, observacao } = req.body;
+
+  try {
+    const perfil = await perfilDoUsuario(req, tenantId);
+    if (!podeDirecionar(perfil)) {
+      return res.status(403).json({ erro: "Apenas gestor ou admin podem direcionar NCs" });
+    }
+
+    const areasValidas = ["qualidade","engenharia","suprimentos","producao","manutencao"];
+    if (!area_responsavel || !areasValidas.includes(area_responsavel)) {
+      return res.status(400).json({ erro: `area_responsavel obrigatória. Use: ${areasValidas.join(", ")}` });
+    }
+
+    const nc = await DB.selectOne("nao_conformidades", { id, tenant_id: tenantId }, tenantId);
+    if (!nc) return res.status(404).json({ erro: "NC não encontrada" });
+    if (nc.status !== "aberta") {
+      return res.status(400).json({ erro: `NC está "${nc.status}" — só é possível direcionar a partir de "aberta"` });
+    }
+
+    const u = await usuarioAtual(req, tenantId);
+
+    await DB.update("nao_conformidades", id, {
+      status: "em_analise",
+      area_responsavel,
+      responsavel_id: responsavel_id || null,
+      responsavel_nome: responsavel_nome || null,
+      atualizado_em: new Date().toISOString(),
+    }, tenantId);
+
+    await registrarEventoNC(
+      tenantId, id, "direcionamento",
+      `NC direcionada para ${area_responsavel}${responsavel_nome ? ` · responsável: ${responsavel_nome}` : ""}${observacao ? ` — ${observacao}` : ""}`,
+      { area: area_responsavel, responsavel_id, responsavel_nome, observacao: observacao || null },
+      u
+    );
+
+    const atualizada = await DB.selectOne("nao_conformidades", { id }, tenantId);
+    res.json({ ok: true, nc: atualizada, mensagem: `NC direcionada para ${area_responsavel}` });
+  } catch (err) {
+    console.error("❌ Erro ao direcionar NC:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// PUT /api/nao-conformidades/:id/registrar-disposicao
+//
+// Responsável da área define o que fazer + atribui executante.
+// Muda status em_analise → em_execucao.
+// Body: { disposicao, acao_corretiva, executante_id, executante_nome }
+// ─────────────────────────────────────────────────────────────────────────
+router.put('/:id/registrar-disposicao', tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { id } = req.params;
+  const {
+    disposicao, acao_corretiva, executante_id, executante_nome,
+    area_responsavel,
+  } = req.body;
+
+  try {
+    const disposicoesValidas = ["devolucao","retrabalho","descarte","uso_como_esta"];
+    if (!disposicao || !disposicoesValidas.includes(disposicao)) {
+      return res.status(400).json({ erro: `disposicao obrigatória. Use: ${disposicoesValidas.join(", ")}` });
+    }
+    if (!acao_corretiva || !acao_corretiva.trim()) {
+      return res.status(400).json({ erro: "acao_corretiva é obrigatória" });
+    }
+    if (!executante_id || !executante_nome) {
+      return res.status(400).json({ erro: "executante é obrigatório" });
+    }
+
+    const nc = await DB.selectOne("nao_conformidades", { id, tenant_id: tenantId }, tenantId);
+    if (!nc) return res.status(404).json({ erro: "NC não encontrada" });
+    if (nc.status !== "em_analise") {
+      return res.status(400).json({ erro: `NC está "${nc.status}" — só é possível registrar disposição em "em_analise"` });
+    }
+
+    // Validação de permissão: quem registra tem que ser o responsável atual,
+    // OU gestor/admin. Técnico "qualquer" não pode.
+    const perfil = await perfilDoUsuario(req, tenantId);
+    const ehResponsavel = String(nc.responsavel_id) === String(req.userId);
+    if (!ehResponsavel && !podeDirecionar(perfil)) {
+      return res.status(403).json({ erro: "Só o responsável atual, gestor ou admin podem registrar disposição" });
+    }
+
+    const u = await usuarioAtual(req, tenantId);
+
+    // Área pode ser alterada nessa transição (a NC migra entre áreas).
+    // Se não vier, mantém a área atual da NC.
+    const areasValidas = ["qualidade","engenharia","suprimentos","producao","manutencao"];
+    const areaFinal = area_responsavel && areasValidas.includes(area_responsavel)
+      ? area_responsavel
+      : nc.area_responsavel;
+
+    await DB.update("nao_conformidades", id, {
+      status: "em_execucao",
+      disposicao,
+      acao_corretiva: acao_corretiva.trim(),
+      executante_id,
+      executante_nome,
+      area_responsavel: areaFinal,
+      atualizado_em: new Date().toISOString(),
+    }, tenantId);
+
+    const mudouArea = areaFinal !== nc.area_responsavel;
+    await registrarEventoNC(
+      tenantId, id, "disposicao_definida",
+      `Disposição registrada: ${disposicao} · Ação: "${acao_corretiva.trim().slice(0, 80)}" · Executor: ${executante_nome}${mudouArea ? ` · Área: ${nc.area_responsavel || "—"} → ${areaFinal}` : ""}`,
+      { disposicao, acao_corretiva, executante_id, executante_nome, area_anterior: nc.area_responsavel, area_nova: areaFinal },
+      u
+    );
+
+    const atualizada = await DB.selectOne("nao_conformidades", { id }, tenantId);
+    res.json({ ok: true, nc: atualizada, mensagem: "Disposição registrada" });
+  } catch (err) {
+    console.error("❌ Erro ao registrar disposição:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// PUT /api/nao-conformidades/:id/devolver-validacao
+//
+// Executante termina a ação e devolve pra qualidade validar.
+// Muda status em_execucao → aguardando_validacao.
+// Body: { observacao? } (o que foi feito na prática)
+// ─────────────────────────────────────────────────────────────────────────
+router.put('/:id/devolver-validacao', tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { id } = req.params;
+  const { observacao } = req.body;
+
+  try {
+    const nc = await DB.selectOne("nao_conformidades", { id, tenant_id: tenantId }, tenantId);
+    if (!nc) return res.status(404).json({ erro: "NC não encontrada" });
+    if (nc.status !== "em_execucao") {
+      return res.status(400).json({ erro: `NC está "${nc.status}" — só é possível devolver em "em_execucao"` });
+    }
+
+    const perfil = await perfilDoUsuario(req, tenantId);
+    const ehExecutante = String(nc.executante_id) === String(req.userId);
+    if (!ehExecutante && !podeDirecionar(perfil)) {
+      return res.status(403).json({ erro: "Só o executante, gestor ou admin podem devolver para validação" });
+    }
+
+    const u = await usuarioAtual(req, tenantId);
+
+    await DB.update("nao_conformidades", id, {
+      status: "aguardando_validacao",
+      devolvida_validacao_em: new Date().toISOString(),
+      devolvida_validacao_por: u.id,
+      devolvida_validacao_por_nome: u.nome,
+      atualizado_em: new Date().toISOString(),
+    }, tenantId);
+
+    await registrarEventoNC(
+      tenantId, id, "devolucao_validacao",
+      `Ação executada e devolvida para validação${observacao ? ` — ${observacao}` : ""}`,
+      { observacao: observacao || null },
+      u
+    );
+
+    const atualizada = await DB.selectOne("nao_conformidades", { id }, tenantId);
+    res.json({ ok: true, nc: atualizada, mensagem: "Devolvida para validação da qualidade" });
+  } catch (err) {
+    console.error("❌ Erro ao devolver para validação:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// PUT /api/nao-conformidades/:id/encerrar
+//
+// Qualidade encerra com causa raiz. Muda aguardando_validacao → resolvida.
+// Body: { causa_raiz, cinco_porques? (array de strings), observacao? }
+// ─────────────────────────────────────────────────────────────────────────
+router.put('/:id/encerrar', tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { id } = req.params;
+  const { causa_raiz, cinco_porques, observacao } = req.body;
+
+  try {
+    const perfil = await perfilDoUsuario(req, tenantId);
+    if (!podeDirecionar(perfil)) {
+      return res.status(403).json({ erro: "Apenas gestor ou admin podem encerrar NCs" });
+    }
+
+    if (!causa_raiz || !causa_raiz.trim()) {
+      return res.status(400).json({ erro: "causa_raiz é obrigatória para encerrar" });
+    }
+
+    const nc = await DB.selectOne("nao_conformidades", { id, tenant_id: tenantId }, tenantId);
+    if (!nc) return res.status(404).json({ erro: "NC não encontrada" });
+    if (nc.status !== "aguardando_validacao") {
+      return res.status(400).json({ erro: `NC está "${nc.status}" — só é possível encerrar em "aguardando_validacao"` });
+    }
+
+    const u = await usuarioAtual(req, tenantId);
+
+    const upd = {
+      status: "resolvida",
+      causa_raiz: causa_raiz.trim(),
+      encerrada_por: u.id,
+      encerrada_por_nome: u.nome,
+      encerrada_em: new Date().toISOString(),
+      resolvida_em: new Date().toISOString(),
+      resolvida_por: u.id,
+      resolvida_por_nome: u.nome,
+      atualizado_em: new Date().toISOString(),
+    };
+    if (Array.isArray(cinco_porques)) upd.cinco_porques = cinco_porques;
+
+    await DB.update("nao_conformidades", id, upd, tenantId);
+
+    await registrarEventoNC(
+      tenantId, id, "encerramento",
+      `NC encerrada. Causa raiz: ${causa_raiz.trim().slice(0, 120)}${observacao ? ` — ${observacao}` : ""}`,
+      { causa_raiz: causa_raiz.trim(), cinco_porques: cinco_porques || null, observacao: observacao || null },
+      u
+    );
+
+    const atualizada = await DB.selectOne("nao_conformidades", { id }, tenantId);
+    res.json({ ok: true, nc: atualizada, mensagem: "NC encerrada" });
+  } catch (err) {
+    console.error("❌ Erro ao encerrar NC:", err.message);
     res.status(500).json({ erro: err.message });
   }
 });

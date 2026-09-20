@@ -77,8 +77,13 @@ import ModalSalvarTemplate from "./modais/ModalSalvarTemplate";
 import ModalCarregarTemplate from "./modais/ModalCarregarTemplate";
 import ModalApontamento from "./modais/ModalApontamento";
 import ModalReportarNC from "./modais/ModalReportarNC";
+import ModalDetalheRC from "./modais/ModalDetalheRC";
+import ModalDetalheRM from "./modais/ModalDetalheRM";
 
-export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
+export default function TelaOrdemServico({
+  fmtBRL, fmtD, C, s,
+  chamadoInicialId, onOSAberta,
+}) {
   const { chamados, loading, erro, carregar, criar, atualizar, deletar } = useChamados();
   const { equipamentos } = useEquipamentos();
   const { consultarSaldo, consultando, reservar } = useEstoque();
@@ -122,6 +127,10 @@ export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
   // Modal de reportar NC
   const [modalNC, setModalNC] = useState(null);
   // { item, origem: "os_material" | "os_servico" }
+
+  // ID da RC aberta no mini-modal de detalhe
+  const [rcAbertaId, setRcAbertaId] = useState(null);
+  const [rmAbertaId, setRmAbertaId] = useState(null);
 
   // NCs vinculadas à OS atual
   const [ncsDoChamado, setNcsDoChamado] = useState([]);
@@ -195,7 +204,37 @@ export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
 
   useEffect(() => { carregar(); }, []);
 
-    // Carrega dados consolidados quando uma OS é selecionada (tela de detalhe):
+  // Abre automaticamente uma OS específica quando vem de outra tela
+  // (ex: usuário clicou em "Ver OS-XXXX" a partir de uma NC). Faz o fetch
+  // fresco pra garantir que o objeto tem itens/anexos carregados — o
+  // snapshot local `chamados` pode estar desatualizado.
+  useEffect(() => {
+    if (!chamadoInicialId) return;
+    let cancelado = false;
+
+    (async () => {
+      try {
+        const lista = await apiService.get("/cotacoes/chamados", { tipo_documento: "os" });
+        if (cancelado) return;
+        const target = Array.isArray(lista)
+          ? lista.find(c => String(c.id) === String(chamadoInicialId))
+          : null;
+        if (target) {
+          setChamadoSel(target);
+          setTelaAtual("detalhe");
+        }
+      } catch (e) {
+        console.warn("Erro ao abrir OS via NC:", e.message);
+      } finally {
+        if (!cancelado) onOSAberta?.();
+      }
+    })();
+
+    return () => { cancelado = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chamadoInicialId]);
+
+  // Carrega dados consolidados quando uma OS é selecionada (tela de detalhe):
   //  - percentual de conclusão
   //  - timeline de eventos
   //  - histórico de aplicações de cada material (pro contador do botão
@@ -1118,7 +1157,38 @@ export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
     );
   }
 
-    // ─────────────────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────────────
+  // MINI-MODAL — DETALHE DA RM (retirada física)
+  // ─────────────────────────────────────────────────────────────────────────
+  if (rmAbertaId) {
+    return (
+      <ModalDetalheRM
+        rmId={rmAbertaId}
+        onFechar={() => setRmAbertaId(null)}
+        s={s}
+        C={C}
+        fmtD={fmtD}
+      />
+    );
+  }
+
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // MINI-MODAL — DETALHE DA RC
+  // ─────────────────────────────────────────────────────────────────────────
+  if (rcAbertaId) {
+    return (
+      <ModalDetalheRC
+        rcId={rcAbertaId}
+        onFechar={() => setRcAbertaId(null)}
+        s={s}
+        C={C}
+        fmtD={fmtD}
+      />
+    );
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   // MODAL — REPORTAR NÃO CONFORMIDADE
   // ─────────────────────────────────────────────────────────────────────────
   if (modalNC) {
@@ -1392,22 +1462,37 @@ export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
     // Não fazemos nenhuma chamada extra à API para montar isso — é só uma
     // leitura direta do que já veio no objeto do chamado. Se o backend não
     // preencher esses campos, a seção simplesmente não aparece.
-    const rmsVinculadas = [];
+    // Vínculos de material: cada item.requisicao_material aponta pra um
+    // documento filho (chamados) que pode ser RC (compra) OU RM (retirada
+    // física). O frontend distingue pelo prefixo do número — se um dia
+    // virar problema, o backend pode passar `tipo_documento` no vínculo.
+    const rcVinculadas = [];
+    const rmVinculadas = [];
     const vistos = new Set();
+
     for (const it of numerados) {
-      const rm = it.requisicao_material;
-      if (rm && rm.id != null && !vistos.has(rm.id)) {
-        vistos.add(rm.id);
-        rmsVinculadas.push(rm);
+      const v = it.requisicao_material;
+      if (v && v.id != null && !vistos.has(v.id)) {
+        vistos.add(v.id);
+        const numero = v.numero || "";
+        if (numero.startsWith("RC-")) rcVinculadas.push(v);
+        else if (numero.startsWith("RM-")) rmVinculadas.push(v);
       }
     }
+
+    // Vínculos no topo do chamado (raros, mas podem vir)
     const rcNoTopo = chamadoSel.requisicao_compra || null;
     const rmNoTopo = chamadoSel.requisicao_material || null;
+    if (rcNoTopo && rcNoTopo.id != null && !vistos.has(rcNoTopo.id)) {
+      vistos.add(rcNoTopo.id);
+      rcVinculadas.push(rcNoTopo);
+    }
     if (rmNoTopo && rmNoTopo.id != null && !vistos.has(rmNoTopo.id)) {
       vistos.add(rmNoTopo.id);
-      rmsVinculadas.push(rmNoTopo);
+      rmVinculadas.push(rmNoTopo);
     }
-    const temVinculo = rmsVinculadas.length > 0 || rcNoTopo;
+
+    const temVinculo = rcVinculadas.length > 0 || rmVinculadas.length > 0;
 
     return (
       <div style={{ padding: "22px 24px", overflowY: "auto", height: "100%" }}>
@@ -1464,11 +1549,37 @@ export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
           {/* Badge simples de RC/RM geradas a partir desta OS — ver comentário acima */}
           {temVinculo && (
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 4 }}>
-              {rcNoTopo && rcNoTopo.numero && (
-                <span style={{ ...s.tag(C.accent), fontSize: 10 }}>📄 RC gerada: {rcNoTopo.numero}</span>
-              )}
-              {rmsVinculadas.map(rm => (
-                <span key={rm.id} style={{ ...s.tag(C.accent), fontSize: 10 }}>📄 RM gerada: {rm.numero || `#${rm.id}`}</span>
+              {rcVinculadas.map(rc => (
+                <button
+                  key={rc.id}
+                  onClick={() => setRcAbertaId(rc.id)}
+                  title="Ver detalhes da RC"
+                  style={{
+                    ...s.tag(C.accent),
+                    fontSize: 10,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    background: `${C.accent}22`,
+                    border: `1px solid ${C.accent}`,
+                  }}>
+                  📄 RC: {rc.numero || `#${rc.id}`}
+                </button>
+              ))}
+              {rmVinculadas.map(rm => (
+                <button
+                  key={rm.id}
+                  onClick={() => setRmAbertaId(rm.id)}
+                  title="Ver detalhes da RM"
+                  style={{
+                    ...s.tag("#22c55e"),
+                    fontSize: 10,
+                    cursor: "pointer",
+                    fontFamily: "inherit",
+                    background: "#22c55e22",
+                    border: "1px solid #22c55e",
+                  }}>
+                  📄 RM: {rm.numero || `#${rm.id}`}
+                </button>
               ))}
             </div>
           )}
@@ -1477,7 +1588,7 @@ export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
           {/* Badge de NCs + painel colapsável (quando aplicável) */}
           {(() => {
             const ncsAtivas = ncsDoChamado.filter(nc =>
-              ["aberta", "em_analise", "em_execucao"].includes(nc.status)
+              ["aberta", "em_analise", "em_execucao", "aguardando_validacao"].includes(nc.status)
             );
             if (ncsAtivas.length === 0) return null;
 
@@ -1535,13 +1646,20 @@ export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
                       {ncsAtivas.map(nc => (
                         <div key={nc.id} style={{ display: "flex", gap: 8,
                                                   alignItems: "center", flexWrap: "wrap" }}>
-                          <span style={{
-                            ...s.tag("#f59e0b"),
-                            fontSize: 10,
-                            fontFamily: "'IBM Plex Mono',monospace",
-                          }}>
-                            {nc.numero_nc} · {nc.status}
-                          </span>
+                      <span style={{
+                        ...s.tag("#f59e0b"),
+                        fontSize: 10,
+                        fontFamily: "'IBM Plex Mono',monospace",
+                      }}>
+                        {nc.numero_nc} · {({
+                          aberta: "Aberta",
+                          em_analise: "Em análise",
+                          em_execucao: "Em execução",
+                          aguardando_validacao: "Aguard. validação",
+                          resolvida: "Resolvida",
+                          cancelada: "Cancelada",
+                        })[nc.status] || nc.status}
+                      </span>
                           {nc.criado_por_nome && (
                             <span style={{ fontSize: 10, color: C.muted }}>
                               aberta por {nc.criado_por_nome}
@@ -1593,9 +1711,42 @@ export default function TelaOrdemServico({ fmtBRL, fmtD, C, s }) {
                     </div>
                   </div>
 
-                  {item.requisicao_material?.numero && (
-                    <div style={{ fontSize: 10, color: C.accent, marginBottom: 8 }}>↳ RM vinculada: {item.requisicao_material.numero}</div>
-                  )}
+                  {item.requisicao_material?.numero && (() => {
+                    const numero = item.requisicao_material.numero;
+                    const isRC = numero.startsWith("RC-");
+                    const isRM = numero.startsWith("RM-");
+                    const cor = isRC ? C.accent : isRM ? "#22c55e" : C.muted;
+                    const label = isRC ? "RC vinculada" : isRM ? "RM vinculada" : "Vínculo";
+                    const v = item.requisicao_material;
+                    const clickable = (isRC || isRM) && v.id != null;
+                    const onClickHandler = isRC
+                      ? () => setRcAbertaId(v.id)
+                      : () => setRmAbertaId(v.id);
+                    const titulo = isRC ? "Ver detalhes da RC" : "Ver detalhes da RM";
+                    return (
+                      <div style={{ fontSize: 10, color: cor, marginBottom: 8 }}>
+                        {clickable ? (
+                          <button
+                            onClick={onClickHandler}
+                            title={titulo}
+                            style={{
+                              background: "transparent",
+                              border: "none",
+                              color: cor,
+                              fontSize: 10,
+                              fontFamily: "inherit",
+                              padding: 0,
+                              cursor: "pointer",
+                              textDecoration: "underline",
+                            }}>
+                            ↳ {label}: {numero}
+                          </button>
+                        ) : (
+                          <span>↳ {label}: {numero}</span>
+                        )}
+                      </div>
+                    );
+                  })()}
 
                   <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 8, fontSize: 11, marginBottom: 10 }}>
                     <div style={{ background: C.bg, borderRadius: 6, padding: "6px 10px" }}>

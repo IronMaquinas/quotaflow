@@ -25,6 +25,7 @@ import TelaAprovacaoRetirada from './components/estoque/TelaAprovacaoRetirada';
 import TelaRecebimento from './components/estoque/TelaRecebimento';
 import TelaOrdemServico from './components/estoque/TelaOrdemServico';
 import TelaConfiguracoes from './components/configuracoes/TelaConfiguracoes';
+import TelaNaoConformidades from "./components/naoConformidades/TelaNaoConformidades";
 
 import {
   useChamados,
@@ -149,6 +150,7 @@ export default function App() {
   const benchmark = useBenchmark();
   const relatorio = useRelatorio();
   const [tela,setTela]=useState("home");
+  const [osParaAbrir, setOsParaAbrir] = useState(null);
   const [totalPendencias, setTotalPendencias] = useState(0);
   const [participaBench,setParticipaBench]=useState(true);
   const email = useEmail();
@@ -294,6 +296,7 @@ const perfil = PERFIS[usuario.perfil];
     {id:"portalfornecedor", l:"🏢 Portal Fornecedor", perfis:["fornecedor","admin"]},
     {id:"catalogo",      l:"📦 Catálogo",             perfis:["comprador","gestor","admin"]},
     {id:"usuarios",      l:"👥 Usuários",             perfis:["admin"]},
+    {id:"nao_conformidades", l:"⚠️ Não Conformidades", perfis:["tecnico","gestor","admin"]},
     {id:"configuracoes", l:"⚙️ Configurações",        perfis:["gestor","admin"]},
   ].filter(n=>n.perfis.includes(usuario.perfil));
 
@@ -452,7 +455,15 @@ const perfil = PERFIS[usuario.perfil];
 
         {temAcesso(tela) && tela === "ordem_servico" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
-            <TelaOrdemServico C={C} s={s} equipamentos={equipamentos.dados || []} fmtBRL={fmtBRL} fmtD={fmtD} />
+            <TelaOrdemServico
+              C={C}
+              s={s}
+              equipamentos={equipamentos.dados || []}
+              fmtBRL={fmtBRL}
+              fmtD={fmtD}
+              chamadoInicialId={osParaAbrir}
+              onOSAberta={() => setOsParaAbrir(null)}
+            />
           </div>
         )}
 
@@ -586,6 +597,19 @@ const perfil = PERFIS[usuario.perfil];
         {temAcesso(tela) && tela === "configuracoes" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
             <TelaConfiguracoes C={C} s={s} />
+          </div>)}
+
+        {temAcesso(tela) && tela === "nao_conformidades" && (
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            <TelaNaoConformidades
+              C={C}
+              s={s}
+              fmtD={fmtD}
+              onIrParaOS={(chamadoId) => {
+                setOsParaAbrir(chamadoId);
+                setTela("ordem_servico");
+              }}
+            />
           </div>)}
 
         {temAcesso(tela) && tela === "historico" && (

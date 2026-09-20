@@ -49,7 +49,6 @@ export default function TelaCotacoesNovaComAbas({ fmtBRL, fmtD, C, s }) {
   const [carregandoAutomatico, setCarregandoAutomatico] = useState(false);
   const [enviadoAutomatico, setEnviadoAutomatico] = useState(false);
   // ─── NOVO: ESTADO PARA VISUALIZAR RESPOSTAS ────────────────
-  const [telaRespostas, setTelaRespostas] = useState(false);
   const [statusCotacao, setStatusCotacao] = useState(null);
   const [carregandoStatus, setCarregandoStatus] = useState(false);
 
@@ -339,7 +338,7 @@ const handleVisualizarRespostas = async (cotacaoId) => {
     const status = await cotacoesService.obterStatusCotacao(token, cotacaoId);
     
     setStatusCotacao(status);
-    setTelaMonitorar(true);  // ← MUDE ISTO (era setTelaRespostas)
+    setTelaMonitorar(true);
     
   } catch (err) {
     console.error("❌ Erro:", err);
@@ -351,7 +350,7 @@ const handleVisualizarRespostas = async (cotacaoId) => {
 
 // ─── CRIAR ORDEM DE VENDA ───────────────────────────
 const handleCriarOrdenVenda = async (cotacaoId, fornecedorId, dadosAdicionais = {}) => {
-  if (!window.confirm(`Deseja emitir a OV para este fornecedor?`)) {
+  if (!window.confirm(`Deseja emitir a OC para este fornecedor?`)) {
     return;
   }
 
@@ -365,10 +364,10 @@ const handleCriarOrdenVenda = async (cotacaoId, fornecedorId, dadosAdicionais = 
     );
     
     await listarCotacoes();
-    setTelaRespostas(false);
+    setTelaMonitorar(false);
     setStatusCotacao(null);
     
-    alert(`✅ Ordem de Venda ${resultado.numero} criada com sucesso!`);
+    alert(`✅ Ordem de Compra ${resultado.numero} criada com sucesso!`);
   } catch (err) {
     alert("Erro ao criar OV: " + err.message);
   } finally {
@@ -462,16 +461,17 @@ const handleAbrirCotacao = async (cotacao) => {
   // ─── RENDER: MODAL NOVA COTAÇÃO ─────────────────────────────
   if (modal === "nova") {
       const chamadosSemCotacao = chamados.filter((ch) => {
-        // 🔥 Se estiver editando (cotação em rascunho), traga o chamado vinculado
-        // — vale pra cotação antiga (contra OS) ou nova (contra RM).
+        // Se estiver editando (rascunho), traz o chamado vinculado
         if (editandoId && String(cotacaoEditando?.chamado_id) === String(ch.id)) return true;
 
-        // Fase D: a partir de agora só RM pode virar cotação/RC — a OS
-        // primeiro precisa virar RM na tela "Gerar Requisição de Material".
+        // Só RM pode virar cotação/RC (a OS precisa virar RM antes)
         if ((ch.tipo_documento || "os") !== "requisicao_material") return false;
 
-        // 🔥 Se não estiver editando, traga apenas os chamados sem cotação
-        return !cotacoes.some((c) => String(c.chamado_id) === String(ch.id));
+        // Exclui chamados que já têm QUALQUER cotação ativa.
+        // Cotação com status 'cancelado' não bloqueia nova tentativa.
+        return !cotacoes.some((c) => 
+          String(c.chamado_id) === String(ch.id) && c.status !== 'cancelado'
+        );
       });
 
     return (
@@ -794,12 +794,45 @@ const handleAbrirCotacao = async (cotacao) => {
                                 .filter(Boolean);
 
                               // 4. ✅ MOSTRAR TODOS (recomendados + manuais)
-                              const todosFornecedores = [...recomendados, ...manuais];
+                              // Normaliza os dois formatos:
+                              //   - recomendados (backend): { fornecedor_nome, preco_unitario }
+                              //   - manuais (frontend):     { nome, preco }
+                              // Sem isso, o render lia forn.preco (undefined) e exibia R$ 0,00.
+                              const recomendadosNorm = recomendados.map(f => ({
+                                fornecedor_id: f.fornecedor_id,
+                                nome: f.fornecedor_nome || f.nome || "Fornecedor",
+                                preco: parseFloat(f.preco_unitario || f.preco || 0),
+                              }));
+                              const manuaisNorm = manuais.map(f => ({
+                                fornecedor_id: f.fornecedor_id,
+                                nome: f.nome || "Fornecedor",
+                                preco: parseFloat(f.preco || 0),
+                              }));
+                              const todosFornecedores = [...recomendadosNorm, ...manuaisNorm];
 
                               if (todosFornecedores.length === 0) {
-                                return (
+                                return item.sem_catalogo ? (
+                                  <div style={{
+                                    fontSize: 11,
+                                    color: "#f59e0b",
+                                    background: "#f59e0b11",
+                                    border: "1px solid #f59e0b33",
+                                    borderRadius: 4,
+                                    padding: "6px 10px",
+                                    lineHeight: 1.4,
+                                  }}>
+                                    💡 <strong>Este item não está vinculado ao catálogo</strong> — não há como
+                                    sugerir fornecedores automaticamente.
+                                    <br />
+                                    <span style={{ opacity: 0.8 }}>
+                                      Selecione fornecedores manualmente abaixo. Para preenchimento
+                                      automático nas próximas cotações, associe o item ao catálogo de
+                                      um fornecedor cadastrado.
+                                    </span>
+                                  </div>
+                                ) : (
                                   <span style={{ fontSize: 11, color: C.muted, fontStyle: "italic" }}>
-                                    Nenhum fornecedor encontrado
+                                    Nenhum fornecedor recomendado. Adicione fornecedores manualmente.
                                   </span>
                                 );
                               }
@@ -834,8 +867,7 @@ const handleAbrirCotacao = async (cotacao) => {
                                     style={{ cursor: "pointer", width: 14, height: 14 }}
                                   />
                                   <span>{forn.nome} - {fmtBRL(forn.preco || 0)}</span>
-                                  {!recomendados.some((f) => f.fornecedor_id === forn.fornecedor_id) && (
-                                    <span
+                                  {!recomendadosNorm.some((f) => f.fornecedor_id === forn.fornecedor_id) && (                                    <span
                                       style={{
                                         fontSize: 8,
                                         background: C.warn + "33",
@@ -1088,141 +1120,26 @@ const handleAbrirCotacao = async (cotacao) => {
     );
   }
 
-  // ─── NOVO: TELA DE RESPOSTAS ───────────────────────────────
-  if (telaRespostas && statusCotacao) {
+  // ─── TELA DE MONITORAMENTO DE RESPOSTAS ────────────────────
+  // Early return: quando o usuário clica em "Ver Cotação", sai da
+  // listagem e renderiza o monitoramento. É 1 renderização única,
+  // fora do map (bug histórico: estava dentro do map e renderizava
+  // N vezes, uma por cotação da lista).
+  if (telaMonitorar && statusCotacao) {
     return (
-      <div style={{ padding: "22px 24px", overflowY: "auto", height: "100%" }}>
-        {/* Header */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
-          <div>
-            <div style={{ fontSize: 11, color: C.muted, letterSpacing: "0.1em", marginBottom: 4 }}>
-              RESPOSTAS RECEBIDAS
-            </div>
-            <div style={{ fontSize: 20, fontWeight: 700, color: C.text }}>
-              Cotação {statusCotacao.cotacao.numero || `#${statusCotacao.cotacao.id}`}
-            </div>
-          </div>
-          <button
-            onClick={() => {
-              setTelaRespostas(false);
-              setStatusCotacao(null);
-            }}
-            style={{
-              ...s.btn(false, C.muted),
-              padding: "10px 16px",
-              fontSize: 12,
-            }}
-          >
-            ← Voltar
-          </button>
-        </div>
-
-        {/* Resumo */}
-        <div style={{
-          ...s.card,
-          padding: "16px 18px",
-          marginBottom: 20,
-          display: "grid",
-          gridTemplateColumns: "repeat(3, 1fr)",
-          gap: 12
-        }}>
-          <div>
-            <div style={{ fontSize: 10, color: C.muted }}>TOTAL FORNECEDORES</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: C.text, marginTop: 4 }}>
-              {statusCotacao.fornecedores.total}
-            </div>
-          </div>
-          <div>
-            <div style={{ fontSize: 10, color: C.muted }}>✅ RESPONDIDOS</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: C.success, marginTop: 4 }}>
-              {statusCotacao.fornecedores.respondidos}
-            </div>
-          </div>
-          <div>
-            <div style={{ fontSize: 10, color: C.muted }}>⏳ PENDENTES</div>
-            <div style={{ fontSize: 18, fontWeight: 700, color: C.warn, marginTop: 4 }}>
-              {statusCotacao.fornecedores.pendentes}
-            </div>
-          </div>
-        </div>
-
-        {/* Melhor proposta destaque */}
-        {statusCotacao.melhorProposta && (
-          <div style={{
-            ...s.card,
-            padding: "16px 18px",
-            marginBottom: 20,
-            borderLeft: `4px solid ${C.success}`
-          }}>
-            <div style={{ fontSize: 12, color: C.success, fontWeight: 600, marginBottom: 8 }}>
-              🏆 MELHOR PROPOSTA
-            </div>
-            <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>
-              {statusCotacao.melhorProposta.fornecedor_nome}
-            </div>
-            <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>
-              {fmtBRL(statusCotacao.melhorProposta.valor)} | Prazo: {statusCotacao.melhorProposta.prazo} dias
-            </div>
-          </div>
-        )}
-
-        {/* Lista de respostas */}
-        <div style={{ marginBottom: 20 }}>
-          <div style={{ fontSize: 12, fontWeight: 600, color: C.muted, marginBottom: 12 }}>
-            TODAS AS PROPOSTAS
-          </div>
-          {statusCotacao.fornecedores.respostas.map((forn) => (
-            <div
-              key={forn.id}
-              style={{
-                ...s.card,
-                padding: "12px 16px",
-                marginBottom: 8,
-                display: "flex",
-                justifyContent: "space-between",
-                alignItems: "center",
-                opacity: forn.status === 'respondido' ? 1 : 0.5
-              }}
-            >
-              <div>
-                <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>
-                  {forn.fornecedor_nome}
-                </div>
-                <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>
-                  {forn.status === 'respondido' ? (
-                    <>
-                      {fmtBRL(forn.valor)} • Prazo: {forn.prazo} dias
-                    </>
-                  ) : (
-                    <>
-                      ⏳ Aguardando resposta...
-                    </>
-                  )}
-                </div>
-              </div>
-              {forn.status === 'respondido' && !statusCotacao.ordemVenda && (
-                <button
-                  onClick={() => handleCriarOrdenVenda(statusCotacao.cotacao.id, forn.fornecedor_id)}
-                  disabled={enviando}
-                  style={{
-                    ...s.btn(true, C.success),
-                    padding: "6px 12px",
-                    fontSize: 11,
-                    opacity: enviando ? 0.5 : 1
-                  }}
-                >
-                  {enviando ? "..." : "📋 Emitir OV"}
-                </button>
-              )}
-              {statusCotacao.ordemVenda && (
-                <div style={{ fontSize: 11, color: C.success, fontWeight: 600 }}>
-                  ✅ OV Emitida
-                </div>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
+      <TelaMonitorarRespostas
+        cotacaoId={statusCotacao.cotacao.id}
+        token={token}
+        fmtBRL={fmtBRL}
+        C={C}
+        s={s}
+        onVoltar={() => {
+          setTelaMonitorar(false);
+          setStatusCotacao(null);
+          listarCotacoes();
+        }}
+        onFinalizarOV={handleCriarOrdenVenda}
+      />
     );
   }
 
@@ -1346,160 +1263,8 @@ const handleAbrirCotacao = async (cotacao) => {
             const chamado = chamadosSeguro.find((ch) => String(ch.id) === String(cotacao.chamado_id));
 
             // Fallback: se não encontrar, usa o ID da cotação
-            const numeroChamado = chamado?.numero || `Chamado ${cotacao.chamado_id}`;
+            const numeroChamado = chamado?.numero || null;
             const descricaoChamado = chamado?.descricao || chamado?.peca || "Chamado sem descrição";
-
-            // ─── NOVO: TELA DE VISUALIZAÇÃO DE RESPOSTAS ───────────────
-            if (telaRespostas && statusCotacao) {
-              return (
-                <div style={{ padding: "22px 24px", overflowY: "auto", height: "100%" }}>
-                  {/* Header */}
-                  <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", marginBottom: 22 }}>
-                    <div>
-                      <div style={{ fontSize: 11, color: C.muted, letterSpacing: "0.1em", marginBottom: 4 }}>
-                        RESPOSTAS RECEBIDAS
-                      </div>
-                      <div style={{ fontSize: 20, fontWeight: 700, color: C.text }}>
-                        Cotação {statusCotacao.cotacao.numero}
-                      </div>
-                    </div>
-                    <button
-                      onClick={() => setTelaRespostas(false)}
-                      style={{
-                        ...s.btn(false, C.muted),
-                        padding: "10px 16px",
-                        fontSize: 12,
-                      }}
-                    >
-                      ← Voltar
-                    </button>
-                  </div>
-
-                  {/* Resumo */}
-                  <div style={{
-                    ...s.card,
-                    padding: "16px 18px",
-                    marginBottom: 20,
-                    display: "grid",
-                    gridTemplateColumns: "repeat(3, 1fr)",
-                    gap: 12
-                  }}>
-                    <div>
-                      <div style={{ fontSize: 10, color: C.muted }}>TOTAL FORNECEDORES</div>
-                      <div style={{ fontSize: 18, fontWeight: 700, color: C.text, marginTop: 4 }}>
-                        {statusCotacao.fornecedores.total}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 10, color: C.muted }}>✅ RESPONDIDOS</div>
-                      <div style={{ fontSize: 18, fontWeight: 700, color: C.success, marginTop: 4 }}>
-                        {statusCotacao.fornecedores.respondidos}
-                      </div>
-                    </div>
-                    <div>
-                      <div style={{ fontSize: 10, color: C.muted }}>⏳ PENDENTES</div>
-                      <div style={{ fontSize: 18, fontWeight: 700, color: C.warn, marginTop: 4 }}>
-                        {statusCotacao.fornecedores.pendentes}
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Melhor proposta destaque */}
-                  {statusCotacao.melhorProposta && (
-                    <div style={{
-                      ...s.card,
-                      padding: "16px 18px",
-                      marginBottom: 20,
-                      borderLeft: `4px solid ${C.success}`
-                    }}>
-                      <div style={{ fontSize: 12, color: C.success, fontWeight: 600, marginBottom: 8 }}>
-                        🏆 MELHOR PROPOSTA
-                      </div>
-                      <div style={{ fontSize: 14, fontWeight: 600, color: C.text }}>
-                        {statusCotacao.melhorProposta.fornecedor_nome}
-                      </div>
-                      <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>
-                        R$ {statusCotacao.melhorProposta.valor?.toFixed(2)} | Prazo: {statusCotacao.melhorProposta.prazo} dias
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Lista de respostas */}
-                  <div style={{ marginBottom: 20 }}>
-                    <div style={{ fontSize: 12, fontWeight: 600, color: C.muted, marginBottom: 12 }}>
-                      TODAS AS PROPOSTAS
-                    </div>
-                    {statusCotacao.fornecedores.respostas.map((forn) => (
-                      <div
-                        key={forn.id}
-                        style={{
-                          ...s.card,
-                          padding: "12px 16px",
-                          marginBottom: 8,
-                          display: "flex",
-                          justifyContent: "space-between",
-                          alignItems: "center",
-                          opacity: forn.status === 'respondido' ? 1 : 0.5
-                        }}
-                      >
-                        <div>
-                          <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>
-                            {forn.fornecedor_nome}
-                          </div>
-                          <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>
-                            {forn.status === 'respondido' ? (
-                              <>
-                                R$ {forn.valor?.toFixed(2)} • Prazo: {forn.prazo} dias
-                              </>
-                            ) : (
-                              <>
-                                ⏳ Aguardando resposta...
-                              </>
-                            )}
-                          </div>
-                        </div>
-                        {forn.status === 'respondido' && !statusCotacao.ordemVenda && (
-                          <button
-                            onClick={() => handleCriarOrdenVenda(statusCotacao.cotacao.id, forn.fornecedor_id)}
-                            disabled={enviando}
-                            style={{
-                              ...s.btn(true, C.success),
-                              padding: "6px 12px",
-                              fontSize: 11,
-                              opacity: enviando ? 0.5 : 1
-                            }}
-                          >
-                            {enviando ? "..." : "📋 Emitir OV"}
-                          </button>
-                        )}
-                        {statusCotacao.ordemVenda && (
-                          <div style={{ fontSize: 11, color: C.success, fontWeight: 600 }}>
-                            ✅ OV Emitida
-                          </div>
-                        )}
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              );
-            }
-            if (telaMonitorar && statusCotacao) {
-              return (
-                <TelaMonitorarRespostas
-                  cotacaoId={statusCotacao.cotacao.id}
-                  token={token}
-                  fmtBRL={fmtBRL}
-                  C={C}
-                  s={s}
-                  onVoltar={() => {
-                    setTelaMonitorar(false);
-                    setStatusCotacao(null);
-                    listarCotacoes();
-                  }}
-                  onFinalizarOV={handleCriarOrdenVenda}
-                />
-              );
-            }
 
             return (
               <div
@@ -1517,7 +1282,7 @@ const handleAbrirCotacao = async (cotacao) => {
               >
                 <div>
                   <div style={{ fontSize: 12, fontWeight: 600, color: C.accent }}>
-                    {numeroChamado}
+                    {numeroChamado ? numeroChamado : <span style={{ opacity: 0.4 }}>—</span>}
                   </div>
                   <div style={{ fontSize: 12, color: C.text, marginTop: 4 }}>
                     {/* 🔥 USE ?. PARA EVITAR ERRO QUANDO chamado for undefined */}

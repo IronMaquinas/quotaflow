@@ -41,14 +41,39 @@ export default function TelaPortalFornecedor() {
   // Inicializar linhas quando cotacao carregar
   useEffect(() => {
     if (cotacao && cotacao.itens) {
-      const initialLinhas = cotacao.itens.map((item) => ({
-        id: item.id,
-        valor: '',
-        frete: 'CIF',
-        grupo: null,
-        valorFreteInd: '',
-      }));
+      // FIX (2026-09): se o backend marcou `ja_respondida`, popular as
+      // linhas com os valores que o fornecedor já enviou (vêm em
+      // `itens_respondidos`). Sem isso, a tela de comprovante abria com
+      // os campos vazios e o fornecedor não conseguia conferir o que
+      // tinha enviado.
+      const jaResp = cotacao.ja_respondida === true;
+      const porItem = {};
+      if (jaResp && Array.isArray(cotacao.itens_respondidos)) {
+        cotacao.itens_respondidos.forEach(ir => {
+          porItem[ir.cotacao_item_id] = ir;
+        });
+      }
+
+      const initialLinhas = cotacao.itens.map((item) => {
+        const resp = porItem[item.id];
+        return {
+          id: item.id,
+          valor: resp?.valor != null ? String(resp.valor) : '',
+          frete: resp?.modalidade || 'CIF',
+          grupo: null,
+          valorFreteInd: resp?.frete != null ? String(resp.frete) : '',
+        };
+      });
       setLinhas(initialLinhas);
+
+      // Se já respondida, pula direto pro comprovante
+      if (jaResp) {
+        setStep('enviado');
+        if (cotacao.respostasExistentes) {
+          setPrazoGeral(String(cotacao.respostasExistentes.prazo || ''));
+          setObs(cotacao.respostasExistentes.obs || '');
+        }
+      }
     }
   }, [cotacao]);
 
@@ -145,7 +170,14 @@ export default function TelaPortalFornecedor() {
           quantidade: itemOriginal?.quantidade || 1,
           valor_unitario: parseFloat(l.valor || 0),
           frete: l.frete,
-          valor_frete: l.frete === 'FOB' ? (l.grupo ? null : parseFloat(l.valorFreteInd || 0)) : 0,
+          // FIX (2026-09): quando o item está em grupo FOB, enviar o
+          // frete RATEADO (mesmo cálculo que a UI já faz via freteRateado)
+          // em vez de null. Sem isso, o backend grava 0 e o comprador vê
+          // frete zerado no monitoramento. O rateio é a mesma proporção
+          // que o portal já usa pra exibir o custo total do item.
+          valor_frete: l.frete === 'FOB'
+            ? parseFloat(freteRateado(l) || 0)
+            : 0,
           grupo_frete: l.grupo || null,
         };
       }),
@@ -167,15 +199,22 @@ export default function TelaPortalFornecedor() {
     }
   };
 
-  // --- TELA DE ENVIADO ---
   if (step === 'enviado') {
+    const veioDoBackend = cotacao?.ja_respondida === true;
     return (
       <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', gap: 20, padding: 40 }}>
-        <div style={{ fontSize: 52 }}>🎉</div>
-        <div style={{ fontSize: 20, fontWeight: 700, color: '#1f2937' }}>Proposta enviada com sucesso!</div>
+        <div style={{ fontSize: 52 }}>{veioDoBackend ? '✅' : '🎉'}</div>
+        <div style={{ fontSize: 20, fontWeight: 700, color: '#1f2937' }}>
+          {veioDoBackend ? 'Você já respondeu esta cotação' : 'Proposta enviada com sucesso!'}
+        </div>
+        {veioDoBackend && cotacao.respondida_em && (
+          <div style={{ fontSize: 13, color: '#6b7280', marginTop: -12 }}>
+            Respondida em {fmtD(cotacao.respondida_em)}
+          </div>
+        )}
         <div style={{ background: '#1e293b', padding: '20px 28px', borderRadius: 12, minWidth: 320 }}>
           <div style={{ fontSize: 11, color: '#6b7280', marginBottom: 12, letterSpacing: '0.08em' }}>
-            RESUMO — {cotacao.numero_cotacao || cotacao.id}
+            {veioDoBackend ? 'SUA PROPOSTA' : 'RESUMO'} — {cotacao.numero_cotacao || cotacao.id}
           </div>
           {cotacao.itens.map((it, i) => {
             const l = linhas.find((l) => l.id === it.id);
@@ -213,7 +252,9 @@ export default function TelaPortalFornecedor() {
           <div style={{ fontSize: 12, color: '#6b7280', marginTop: 8 }}>Prazo: {prazoGeral} dias úteis</div>
         </div>
         <div style={{ fontSize: 13, color: '#6b7280', textAlign: 'center', maxWidth: 360 }}>
-          Um e-mail de confirmação foi enviado para você com todos os dados desta proposta.
+          {veioDoBackend
+            ? 'Para alterar sua proposta, entre em contato com o comprador. Esta página é apenas o comprovante do que foi enviado.'
+            : 'Um e-mail de confirmação foi enviado para você com todos os dados desta proposta.'}
         </div>
       </div>
     );

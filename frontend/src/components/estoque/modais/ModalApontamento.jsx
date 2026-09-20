@@ -141,13 +141,14 @@ export default function ModalApontamento({
     apiService.get("/usuarios")
       .then(lista => {
         const todos = Array.isArray(lista) ? lista : [];
-        // Só time operacional — técnico, gestor e admin. Comprador não
-        // executa OS, fornecedor é usuário externo do portal.
-        setUsuariosTenant(
-          todos.filter(u => ["tecnico", "gestor", "admin"].includes(u.perfil))
+        // Ampliado pra incluir comprador: ele é quem executa devoluções
+        // (área Suprimentos). O filtro real acontece por área no mini-modal
+        // de disposição, não aqui.
+        setUsuariosElegiveis(
+          todos.filter(u => ["tecnico", "gestor", "admin", "comprador"].includes(u.perfil))
         );
       })
-      .catch(() => setUsuariosTenant([]));
+      .catch(() => setUsuariosElegiveis([]));
   }, []);
 
   function atualizarLinha(id, campo, valor) {

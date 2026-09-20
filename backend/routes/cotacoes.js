@@ -15,20 +15,15 @@ async function gerarNumeroChamado(tenant_id) {
   const prefix = `RC-${ano}-`;
 
   // Buscar o maior número usando id DESC
-  const result = await DB.raw(`
-    SELECT numero FROM chamados
-    WHERE tenant_id = $1 AND numero LIKE $2
-    ORDER BY id DESC
-    LIMIT 1
-  `, [tenant_id, `${prefix}%`]);
-
-  let seq = 1;
-  if (result.length > 0 && result[0].numero) {
-    const match = result[0].numero.match(/(\d+)$/);
-    if (match) {
-      seq = parseInt(match[1]) + 1;
-    }
-  }
+  const todos = await DB.select('chamados', { tenant_id }, tenant_id);
+  const doPrefixo = todos
+    .map(c => c.numero)
+    .filter(n => n && n.startsWith(prefix))
+    .map(n => {
+      const m = n.match(/(\d+)$/);
+      return m ? parseInt(m[1]) : 0;
+    });
+  let seq = doPrefixo.length > 0 ? Math.max(...doPrefixo) + 1 : 1;
 
   let novoNumero = `${prefix}${String(seq).padStart(4, "0")}`;
 
@@ -52,20 +47,16 @@ async function gerarNumeroOS(tenant_id) {
   const ano = new Date().getFullYear();
   const prefix = `OS-${ano}-`;
 
-  const result = await DB.raw(`
-    SELECT numero FROM chamados
-    WHERE tenant_id = $1 AND numero LIKE $2
-    ORDER BY id DESC
-    LIMIT 1
-  `, [tenant_id, `${prefix}%`]);
-
-  let seq = 1;
-  if (result.length > 0 && result[0].numero) {
-    const match = result[0].numero.match(/(\d+)$/);
-    if (match) {
-      seq = parseInt(match[1]) + 1;
-    }
-  }
+  // FIX (2026-09): db.raw ignorava LIKE. Trocado por db.select + filtro em JS.
+  const todos = await DB.select('chamados', { tenant_id }, tenant_id);
+  const doPrefixo = todos
+    .map(c => c.numero)
+    .filter(n => n && n.startsWith(prefix))
+    .map(n => {
+      const m = n.match(/(\d+)$/);
+      return m ? parseInt(m[1]) : 0;
+    });
+  let seq = doPrefixo.length > 0 ? Math.max(...doPrefixo) + 1 : 1;
 
   let novoNumero = `${prefix}${String(seq).padStart(4, "0")}`;
 
@@ -81,58 +72,35 @@ async function gerarNumeroOS(tenant_id) {
   return novoNumero;
 }
 
+// routes/cotacoes.js
 async function gerarNumeroCotacao(tenant_id) {
-  const ano = new Date().getFullYear();
-  const prefix = `COT-${ano}-`;
-
-  const result = await DB.raw(`
-    SELECT numero FROM cotacoes
-    WHERE tenant_id = $1 AND numero LIKE $2
-    ORDER BY numero DESC
-    LIMIT 1
-  `, [tenant_id, `${prefix}%`]);
-
-  let seq = 1;
-  if (result.length > 0 && result[0].numero) {
-    const match = result[0].numero.match(/(\d+)$/);
-    if (match) {
-      seq = parseInt(match[1]) + 1;
-    }
-  }
-
-  let novoNumero = `${prefix}${String(seq).padStart(4, "0")}`;
-  let existe = true;
-  let tentativas = 0;
-  while (existe && tentativas < 100) {
-    const check = await DB.raw(`
-      SELECT id FROM cotacoes WHERE tenant_id = $1 AND numero = $2
-    `, [tenant_id, novoNumero]);
-    if (check.length === 0) {
-      existe = false;
-    } else {
-      seq++;
-      novoNumero = `${prefix}${String(seq).padStart(4, "0")}`;
-      tentativas++;
-    }
-  }
-
-  return novoNumero;
+  // FIX (2026-09): wrapper que delega pro service. Antes essa função
+  // duplicava a lógica de geração de número — agora existe só no
+  // CotacaoService pra manter uma fonte única da verdade. Se um dia
+  // a regra de numeração mudar, muda em 1 lugar só.
+  return await cotacaoService.gerarNumeroCotacao(tenant_id);
 }
 
-async function gerarNumeroRM(tenant_id) {
+// ─────────────────────────────────────────────────────────────────────────
+// gerarNumeroRC — RC-{ano}-000X. Sequência independente das cotações,
+// gerada a partir dos registros de `chamados` com tipo_documento =
+// 'requisicao_material'. Reconstruída em 2026-09 após ter sido apagada
+// acidentalmente num refactor de gerador de número.
+// ─────────────────────────────────────────────────────────────────────────
+async function gerarNumeroRC(tenant_id) {
   const ano = new Date().getFullYear();
   const prefix = `RC-${ano}-`;
 
-  const todasRM = await DB.select(
+  const todasRC = await DB.select(
     "chamados",
     { tenant_id, tipo_documento: "requisicao_material" },
     tenant_id
   );
 
   let maiorSeq = 0;
-  todasRM.forEach((rm) => {
-    if (rm.numero && rm.numero.startsWith(prefix)) {
-      const match = rm.numero.match(/(\d+)$/);
+  todasRC.forEach((rc) => {
+    if (rc.numero && rc.numero.startsWith(prefix)) {
+      const match = rc.numero.match(/(\d+)$/);
       if (match) {
         const n = parseInt(match[1], 10);
         if (n > maiorSeq) maiorSeq = n;
@@ -143,8 +111,7 @@ async function gerarNumeroRM(tenant_id) {
   let seq = maiorSeq + 1;
   let novoNumero = `${prefix}${String(seq).padStart(4, "0")}`;
 
-  // Rede de segurança contra corrida (duas requisições simultâneas
-  // calculando o mesmo "próximo número" antes de qualquer uma commitar).
+  // Rede de segurança contra corrida
   let existe = await DB.selectOne("chamados", { numero: novoNumero }, tenant_id);
   let tentativas = 0;
   while (existe && tentativas < 100) {
@@ -158,7 +125,7 @@ async function gerarNumeroRM(tenant_id) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-// gerarNumeroRET — mesma lógica de RET-{ano}-000X que já existe em
+// gerarNumeroRM — mesma lógica de RM-{ano}-000X que já existe em
 // routes/estoque/solicitacoes.js (POST /), extraída aqui porque o split
 // automático da OS agora também precisa criar RET diretamente, sem passar
 // pelo endpoint HTTP daquele arquivo (evita round-trip interno e mantém a
@@ -167,7 +134,7 @@ async function gerarNumeroRM(tenant_id) {
 // convivem, cada request de retirada (manual ou auto-gerada) recalcula o
 // próximo número livre do tenant.
 // ─────────────────────────────────────────────────────────────────────────
-async function gerarNumeroRET(tenant_id) {
+async function gerarNumeroRM(tenant_id) {
   const ultimas = await DB.select("solicitacoes_retirada", { tenant_id }, tenant_id);
   let ultimaSequencia = 0;
   ultimas.forEach((s) => {
@@ -179,7 +146,7 @@ async function gerarNumeroRET(tenant_id) {
   });
   const ano = new Date().getFullYear();
   const sequencia = ultimaSequencia + 1;
-  return `RET-${ano}-${String(sequencia).padStart(4, "0")}`;
+  return `RM-${ano}-${String(sequencia).padStart(4, "0")}`;
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -373,8 +340,8 @@ async function dividirESalvarMateriais(itensMaterialInseridos, os, tenantId) {
   let ret = null;
 
   if (paraRC.length > 0 || paraReposicao.length > 0) {
-    const numeroRC = await gerarNumeroRM(tenantId); // já gera prefixo RC- (ver acima)
-    rc = await DB.insert("chamados", {
+    const numeroRC = await gerarNumeroRC(tenantId);
+      rc = await DB.insert("chamados", {
       tenant_id: tenantId,
       numero: numeroRC,
       tipo_documento: "requisicao_material",
@@ -455,12 +422,11 @@ async function dividirESalvarMateriais(itensMaterialInseridos, os, tenantId) {
   }
 
   if (paraRM.length > 0) {
-    const numeroRET = await gerarNumeroRET(tenantId);
+    const numeroRM = await gerarNumeroRM(tenantId);
     ret = await DB.insert("solicitacoes_retirada", {
       tenant_id: tenantId,
-      numero_solicitacao: numeroRET,
+      numero_solicitacao: numeroRM,
       status: "pendente",
-      criado_em: new Date(),
       motivo: `Materiais com estoque disponível da ${os.numero}`,
       solicitante_id: os.tecnico_id || null,
       origem_os_id: os.id,
@@ -486,7 +452,6 @@ async function dividirESalvarMateriais(itensMaterialInseridos, os, tenantId) {
         quantidade,
         unidade_medida: item.unidade_medida,
         status: "pendente",
-        criado_em: new Date(),
         origem_os_item_id: item.id
       }, tenantId);
     }
@@ -523,13 +488,11 @@ router.get("/chamados", tenantMiddleware, async (req, res) => {
     const chamadoIds = todosChamados.map(ch => ch.id);
     const equipamentoIds = chamados.map(ch => ch.equipamento_id).filter(Boolean);
 
+    // FIX (2026-09): db.raw ignorava ANY($1). Trocado por db.select.
     let equipamentos = [];
     if (equipamentoIds.length > 0) {
-      equipamentos = await DB.raw(`
-        SELECT id, nome, tag
-        FROM equipamentos
-        WHERE id = ANY($1) AND tenant_id = $2
-      `, [equipamentoIds, req.tenantId]);
+      const todosEquip = await DB.select('equipamentos', { tenant_id: req.tenantId }, req.tenantId);
+      equipamentos = todosEquip.filter(e => equipamentoIds.includes(e.id));
     }
 
     // Agrupar equipamentos por ID
@@ -563,15 +526,66 @@ router.get("/chamados", tenantMiddleware, async (req, res) => {
         });
     }
 
-    const rmPorOrigemItem = {};
+    // Vínculos de material por item da OS. Duas origens:
+    //
+    //  1) RC (compra): mora em `chamado_itens`, com `origem_os_item_id`
+    //     apontando pro item da OS que a originou. Já mapeado abaixo.
+    //
+    //  2) RM (retirada): mora em `solicitacao_retirada_itens`, com o mesmo
+    //     campo `origem_os_item_id`, mas vinculada a `solicitacoes_retirada`
+    //     (não a `chamados`). FIX (2026-09): antes esse lado não era lido,
+    //     então RM nunca aparecia como vínculo — só RC. Bug histórico.
+    const vinculoPorOrigemItem = {};
+
+    // ── RC (chamados) ──
     itens.forEach(it => {
       if (it.origem_os_item_id && it.status !== "cancelado") {
-        const rm = chamadosPorId[it.chamado_id];
-        if (rm) {
-          rmPorOrigemItem[it.origem_os_item_id] = { id: rm.id, numero: rm.numero };
+        const rc = chamadosPorId[it.chamado_id];
+        if (rc) {
+          vinculoPorOrigemItem[it.origem_os_item_id] = {
+            id: rc.id,
+            numero: rc.numero,
+            tipo_documento: rc.tipo_documento || "requisicao_material",
+          };
         }
       }
     });
+
+    // ── RM (solicitacoes_retirada) ──
+    // Calcula a lista local de ids em vez de depender de `itemIds` (que é
+    // declarado 30 linhas à frente, na seção de apontamentos). Manter o
+    // bloco autocontido evita esse tipo de acoplamento frágil.
+    const idsDeItensDaOs = itens.map(it => it.id);
+    if (idsDeItensDaOs.length > 0) {
+      const todosRetiradaItens = await DB.select(
+        "solicitacao_retirada_itens",
+        { tenant_id: req.tenantId },
+        req.tenantId
+      );
+      const retiradaItensRelevantes = todosRetiradaItens.filter(sri =>
+        idsDeItensDaOs.includes(sri.origem_os_item_id) && sri.status !== "cancelado"
+      );
+
+      if (retiradaItensRelevantes.length > 0) {
+        const retiradaCabecIds = [...new Set(retiradaItensRelevantes.map(sri => sri.solicitacao_retirada_id))];
+        const todasRetiradas = await DB.select("solicitacoes_retirada", { tenant_id: req.tenantId }, req.tenantId);
+        const retiradaPorId = {};
+        todasRetiradas
+          .filter(r => retiradaCabecIds.includes(r.id))
+          .forEach(r => { retiradaPorId[r.id] = r; });
+
+        retiradaItensRelevantes.forEach(sri => {
+          const cabec = retiradaPorId[sri.solicitacao_retirada_id];
+          if (cabec && !vinculoPorOrigemItem[sri.origem_os_item_id]) {
+            vinculoPorOrigemItem[sri.origem_os_item_id] = {
+              id: cabec.id,
+              numero: cabec.numero_solicitacao,
+              tipo_documento: "requisicao_material_saida", // RM
+            };
+          }
+        });
+      }
+    }
 
     // 3b. Buscar apontamentos (execução real) dos itens de serviço.
     //
@@ -669,7 +683,9 @@ router.get("/chamados", tenantMiddleware, async (req, res) => {
         // Novo: array completo de sessões ativas + resumo consolidado
         apontamentos: apontamentosPorItem[item.id] || [],
         apontamento_resumo: resumoApontamentoPorItem[item.id] || null,
-        requisicao_material: item.tipo === "material" ? (rmPorOrigemItem[item.id] || null) : undefined,
+        requisicao_material: item.tipo === "material"
+          ? (vinculoPorOrigemItem[item.id] || null)
+          : undefined,
         servico_concluido_manual: item.servico_concluido_manual || false,
         servico_concluido_em: item.servico_concluido_em || null,
         servico_concluido_por_nome: item.servico_concluido_por_nome || null,
@@ -936,7 +952,7 @@ router.post("/chamados/rc-manual", tenantMiddleware, async (req, res) => {
       }
     }
 
-    const numero = await gerarNumeroRM(req.tenantId); // já gera prefixo RC-
+    const numero = await gerarNumeroRC(req.tenantId);
 
     const rc = await DB.insert("chamados", {
       tenant_id: req.tenantId,
@@ -1111,13 +1127,22 @@ router.get("/", tenantMiddleware, async (req, res) => {
 
     // 2. Buscar chamados separadamente
     const chamadoIds = cotacoes.map(c => c.chamado_id).filter(Boolean);
+    // FIX (2026-09): db.raw ignorava ANY($1). Trocado por db.select + filtro.
     let chamados = [];
     if (chamadoIds.length > 0) {
-      chamados = await DB.raw(`
-        SELECT id, numero, peca, categoria_item, servico_nome, urgencia, descricao, status as chamado_status
-        FROM chamados
-        WHERE id = ANY($1) AND tenant_id = $2
-      `, [chamadoIds, req.tenantId]);
+      const todosChamados = await DB.select('chamados', { tenant_id: req.tenantId }, req.tenantId);
+      chamados = todosChamados
+        .filter(c => chamadoIds.includes(c.id))
+        .map(c => ({
+          id: c.id,
+          numero: c.numero,
+          peca: c.peca,
+          categoria_item: c.categoria_item,
+          servico_nome: c.servico_nome,
+          urgencia: c.urgencia,
+          descricao: c.descricao,
+          chamado_status: c.status,
+        }));
     }
 
     // Agrupar chamados por ID
@@ -1128,16 +1153,20 @@ router.get("/", tenantMiddleware, async (req, res) => {
 
     // 3. Buscar fornecedores de todas as cotações
     const cotacaoIds = cotacoes.map(c => c.id);
+    // FIX (2026-09): db.raw não lida com ANY($1) — o wrapper serializava o
+    // array como string "1,2" e o Postgres rejeitava com "invalid input
+    // syntax for type bigint". Trocado por db.select + filtro em JS.
     let fornecedores = [];
     if (cotacaoIds.length > 0) {
-      fornecedores = await DB.raw(`
-        SELECT
-          id, cotacao_id, fornecedor_nome, fornecedor_email, status,
-          valor, prazo, frete, valor_frete, obs, data_resposta
-        FROM cotacao_fornecedores
-        WHERE cotacao_id = ANY($1) AND tenant_id = $2
-        ORDER BY data_resposta DESC NULLS LAST
-      `, [cotacaoIds, req.tenantId]);
+      const todosFornecedores = await DB.select('cotacao_fornecedores',
+        { tenant_id: req.tenantId }, req.tenantId);
+      fornecedores = todosFornecedores
+        .filter(f => cotacaoIds.includes(f.cotacao_id))
+        .sort((a, b) => {
+          const da = a.data_resposta ? new Date(a.data_resposta).getTime() : 0;
+          const db = b.data_resposta ? new Date(b.data_resposta).getTime() : 0;
+          return db - da;
+        });
     }
 
     // Agrupar fornecedores por cotação
@@ -1221,7 +1250,27 @@ router.post("/", tenantMiddleware, async (req, res) => {
         status: "pendente"
       });
 
-      await enviarEmailCotacao(chamado, f, token, process.env.FRONTEND_URL).catch(e => console.error(e.message));
+      // FIX (2026-09): enviarEmailCotacao(email, assunto, corpo) tem 3 args.
+      // A chamada antiga passava (chamado, fornecedor, token, url) — o
+      // primeiro arg ia como destinatário, e o email saía quebrado.
+      {
+        const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, '');
+        const linkPortal = `${frontendUrl}/#/portal/cotacao/${cotacao.id}/${token}`;
+        const corpo = `
+          <h2>Requisição de Cotação</h2>
+          <p>Prezado(a) <strong>${f.nome}</strong>,</p>
+          <p>Você foi convidado a cotar os itens da requisição <strong>${chamado.numero || cotacao.id}</strong>.</p>
+          <p><a href="${linkPortal}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:white;text-decoration:none;border-radius:6px;">Abrir portal e responder</a></p>
+          <p>Ou copie o link:<br/><small>${linkPortal}</small></p>
+          <hr/>
+          <p><small>Esta é uma mensagem automática. Não responda.</small></p>
+        `;
+        await enviarEmailCotacao(
+          f.email,
+          `Cotação ${cotacao.numero || cotacao.id} - ${chamado.servico_nome || 'Requisição de Compra'}`,
+          corpo
+        ).catch(e => console.error(e.message));
+      }
     }
 
     // Trava a RC pra adição de novos itens a partir de agora — rastreabilidade:
@@ -1292,8 +1341,11 @@ router.put("/:id/finalizar", tenantMiddleware, async (req, res) => {
       finalizado_em: new Date().toISOString()
     }, req.tenantId);
 
-    const todos = await DB.raw(`SELECT * FROM cotacao_fornecedores WHERE cotacao_id = $1 AND tenant_id = $2`, [req.params.id, req.tenantId]);
-    for (const f of todos) {
+    // FIX (2026-09): db.raw caía no fallback (ignorava WHERE) — poderia
+    // retornar fornecedores de outras cotações. Trocado por db.select.
+    const todosFornecedores = await DB.select('cotacao_fornecedores',
+      { tenant_id: req.tenantId }, req.tenantId);
+    const todos = todosFornecedores.filter(f => String(f.cotacao_id) === String(req.params.id));    for (const f of todos) {
       const ganhou = f.id === fornecedor_id;
       await enviarEmailResultado(chamado, f, ganhou).catch(e => console.error(e.message));
     }
@@ -1869,8 +1921,6 @@ router.get('/:cotacaoId/status', tenantMiddleware, async (req, res) => {
       return res.status(400).json({ erro: 'cotacaoId é obrigatório' });
     }
 
-    console.log(`🔍 Obtendo status da cotação ${cotacaoId}`);
-
     const status = await cotacaoService.obterStatusCotacao(
       req.tenantId,
       parseInt(cotacaoId)
@@ -1895,15 +1945,13 @@ router.put('/:cotacaoId/fornecedor/:fornecedorId/atualizar-resposta', tenantMidd
   try {
     const { cotacaoId, fornecedorId } = req.params;
     // 🔥 ADICIONE frete_renegociado
-    const { valor, prazo, valor_frete, obs, valor_renegociado, frete_renegociado } = req.body;
+    const { valor, prazo, valor_frete, obs, valor_renegociado, frete_renegociado, itens } = req.body;
 
     if (!cotacaoId || !fornecedorId) {
       return res.status(400).json({
         erro: 'cotacaoId e fornecedorId são obrigatórios'
       });
     }
-
-    console.log(`📝 Atualizando resposta: cotação ${cotacaoId}, fornecedor ${fornecedorId}`);
 
     const atualizado = await cotacaoService.atualizarRespostaFornecedor(
       req.tenantId,
@@ -1915,7 +1963,8 @@ router.put('/:cotacaoId/fornecedor/:fornecedorId/atualizar-resposta', tenantMidd
         valor_frete,
         obs,
         valor_renegociado,
-        frete_renegociado
+        frete_renegociado,
+        itens
       }
     );
 
@@ -2036,6 +2085,17 @@ router.get('/:cotacaoId/monitorar', tenantMiddleware, async (req, res) => {
     // 3. Buscar fornecedores vinculados
     const fornecedores = await DB.select('cotacao_fornecedores', { cotacao_id: cotacaoId }, tenantId);
 
+    // FIX (2026-09): buscar também os itens respondidos (cotacao_fornecedor_itens)
+    // porque o preço é POR ITEM, não agregado por fornecedor. Sem isso, o
+    // mesmo valor total (ex: 268) aparecia em todas as linhas do item.
+    const todosItensRespondidos = await DB.select('cotacao_fornecedor_itens',
+      { tenant_id: tenantId }, tenantId);
+    const itensRespondidosPorForn = {};
+    todosItensRespondidos.forEach(it => {
+      const k = `${it.cotacao_fornecedor_id}__${it.cotacao_item_id}`;
+      itensRespondidosPorForn[k] = it;
+    });
+
     // ✅ NOVO: Estruturar por ITEM usando fornecedores_ids do próprio item!
     const itensEstruturados = itensComDados.map(item => {
       // 🔥 USAR O fornecedores_ids DO PRÓPRIO ITEM
@@ -2045,20 +2105,75 @@ router.get('/:cotacaoId/monitorar', tenantMiddleware, async (req, res) => {
 
       const fornecedoresComResposta = fornecedoresIds.map(fornecedorId => {
         const forn = fornecedores.find(f => f.fornecedor_id === fornecedorId);
-        return forn ? {
+        if (!forn) return null;
+
+        // FIX (2026-09): pegar o valor POR ITEM (cotacao_fornecedor_itens),
+        // não o total agregado do fornecedor. Sem isso, o mesmo total
+        // aparecia em todas as linhas de item.
+        const chave = `${forn.id}__${item.id}`;
+        const itemRespondido = itensRespondidosPorForn[chave];
+
+        const valorItem = itemRespondido?.valor != null ? parseFloat(itemRespondido.valor) : null;
+        const freteItem = itemRespondido?.frete != null ? parseFloat(itemRespondido.frete) : null;
+
+        // FIX (2026-09, CIF/FOB): em CIF o frete já está incluso no
+        // valor unitário — não entra no total. Em FOB entra normalmente.
+        // O `freteItem` bruto continua no objeto de retorno (o monitor
+        // mostra como informação visual), mas o cálculo do total usa o
+        // valor "efetivo" pra modalidade.
+        const modalidade = itemRespondido?.frete_modalidade || 'CIF';
+        const ehCIF = modalidade === 'CIF';
+        const freteEfetivo = ehCIF ? 0 : (freteItem || 0);
+        const totalItem = valorItem != null ? valorItem + freteEfetivo : null;
+
+        // FIX (2026-09): renegociação e economia agora são calculadas no
+        // NÍVEL DO ITEM (a partir de cotacao_fornecedor_itens). Antes liam
+        // do cabeçalho (forn.valor_renegociado / forn.economia), o que
+        // fazia o mesmo valor agregado do fornecedor aparecer repetido em
+        // todos os itens dele.
+        const valorRenegItem = itemRespondido?.valor_renegociado != null
+          ? parseFloat(itemRespondido.valor_renegociado)
+          : null;
+        const freteRenegItem = itemRespondido?.frete_renegociado != null
+          ? parseFloat(itemRespondido.frete_renegociado)
+          : null;
+
+        // FIX (2026-09): o campo `origem_preenchimento` só é gravado como
+        // 'manual' (quando o comprador edita). Quando o fornecedor responde
+        // via portal, o campo fica `null` — que é o caso "veio do link".
+        // Por isso o teste é "diferente de manual" em vez de "igual a link".
+        const ehRespostaViaLink = itemRespondido?.origem_preenchimento !== 'manual';
+        const economiaItem = (ehRespostaViaLink && valorItem != null && valorRenegItem != null)
+          ? valorItem - valorRenegItem
+          : null;
+        // Em CIF não existe economia de frete — o frete está dentro do
+        // valor unitário, e o que economiza (ou não) é o valor, não o
+        // frete. Só calcula economia de frete quando é FOB.
+        const economiaFreteItem = (!ehCIF && ehRespostaViaLink && freteItem != null && freteRenegItem != null)
+          ? freteItem - freteRenegItem
+          : null;
+
+        return {
           id: forn.id,
           fornecedor_id: forn.fornecedor_id,
           nome: forn.fornecedor_nome,
           email: forn.fornecedor_email,
+          token_acesso: forn.token_acesso,
           status: forn.status,
-          valor: forn.valor || null,
-          frete: forn.valor_frete || null,
+          valor: valorItem,
+          frete: freteItem,
+          frete_modalidade: itemRespondido?.frete_modalidade || forn.frete || null,
           prazo: forn.prazo || null,
           obs: forn.obs || null,
           data_resposta: forn.data_resposta,
-          total: forn.valor ? (forn.valor + (forn.valor_frete || 0)) : null,
+          total: totalItem,
+          valor_renegociado: valorRenegItem,
+          frete_renegociado: freteRenegItem,
+          economia: economiaItem,
+          economia_frete: economiaFreteItem,
+          origem_preenchimento: itemRespondido?.origem_preenchimento || null,
           posicao: null
-        } : null;
+        };
       }).filter(Boolean);
 
       // Calcular posições
@@ -2088,9 +2203,19 @@ router.get('/:cotacaoId/monitorar', tenantMiddleware, async (req, res) => {
     const pendentes = fornecedores.length - respondidos;
 
     // 7. Encontrar melhor proposta geral
-    const melhorProposta = fornecedores
-      .filter(f => f.status === 'respondido' && f.valor)
-      .reduce((a, b) => (a.valor + (a.valor_frete || 0)) < (b.valor + (b.valor_frete || 0)) ? a : b, null);
+    // FIX (2026-09): o reduce com `null` inicial estourava ao ler `a.valor`
+    // na primeira iteração quando havia 2+ fornecedores respondidos. Com 1
+    // só, o reduce retornava direto sem chamar o callback — por isso só
+    // aparecia agora. `respondidosComValor` usa nome distinto pra não
+    // colidir com o `respondidos` (contagem) acima.
+    const respondidosComValor = fornecedores.filter(f => f.status === 'respondido' && f.valor != null);
+    const melhorProposta = respondidosComValor.length > 0
+      ? respondidosComValor.reduce((a, b) => {
+          const totalA = (parseFloat(a.valor) || 0) + (parseFloat(a.valor_frete) || 0);
+          const totalB = (parseFloat(b.valor) || 0) + (parseFloat(b.valor_frete) || 0);
+          return totalA < totalB ? a : b;
+        })
+      : null;
 
     return res.json({
       cotacao: {
@@ -2153,17 +2278,23 @@ router.get('/metricas-negociacao', tenantMiddleware, async (req, res) => {
   try {
     const tenantId = req.tenantId;
 
-    const dados = await DB.raw(`
-      SELECT
-        COUNT(*) as total_negociacoes,
-        SUM(CASE WHEN economia > 0 THEN 1 ELSE 0 END) as negociacoes_sucesso,
-        AVG(economia) as economia_media,
-        SUM(economia) as economia_total
-      FROM cotacao_fornecedores
-      WHERE tenant_id = $1 AND valor_renegociado IS NOT NULL
-    `, [tenantId]);
+    // FIX (2026-09): db.raw ignorava valor_renegociado IS NOT NULL. Trocado
+    // por select + agregação em JS.
+    const todos = await DB.select('cotacao_fornecedores', { tenant_id: tenantId }, tenantId);
+    const renegociados = todos.filter(f => f.valor_renegociado != null);
 
-    res.json(dados[0]);
+    const economias = renegociados.map(f => parseFloat(f.economia) || 0);
+    const total = economias.length;
+    const comSucesso = economias.filter(e => e > 0).length;
+    const somaEconomia = economias.reduce((s, e) => s + e, 0);
+    const mediaEconomia = total > 0 ? somaEconomia / total : 0;
+
+    res.json({
+      total_negociacoes: total,
+      negociacoes_sucesso: comSucesso,
+      economia_media: mediaEconomia,
+      economia_total: somaEconomia,
+    });
   } catch (err) {
     console.error('❌ Erro ao calcular métricas:', err.message);
     res.status(500).json({ erro: err.message });
@@ -2292,7 +2423,6 @@ router.post("/chamados/:id/apontamentos", tenantMiddleware, async (req, res) => 
     }
 
     const u = await usuarioAtual(req, tenantId);
-    const agora = new Date();
 
     const apontamento = await DB.insert("chamado_apontamentos", {
       tenant_id: tenantId,
@@ -2307,9 +2437,10 @@ router.post("/chamados/:id/apontamentos", tenantMiddleware, async (req, res) => 
       horas_extras_noturnas: hXN,
       calculo_automatico: modo === "auto",
       participantes: Array.isArray(participantes) ? participantes : [],
-      horas_extras: 0, // campo legado, mantido por compat
+      horas_extras: 0,
+      status: "ativo",
       lancado_por: req.userId || null,
-      lancado_em: agora,
+      // lancado_em NÃO é enviado — DEFAULT NOW() do Postgres grava UTC correto.
       observacoes: observacoes || null,
     }, tenantId);
 
@@ -2757,13 +2888,21 @@ router.post("/chamados/:id/materiais/:itemId/marcar-nao-aplicado", tenantMiddlew
     }
 
     // Cancela linha da RM vinculada, se houver (devolve saldo)
-    const rmLinks = await DB.raw(`
-      SELECT sri.id
-      FROM solicitacao_retirada_itens sri
-      JOIN solicitacoes_retirada sr ON sr.id = sri.solicitacao_retirada_id
-      WHERE sri.tenant_id = $1 AND sri.origem_os_item_id = $2
-        AND sr.origem_os_id = $3 AND sri.status != 'cancelado'
-    `, [tenantId, itemId, chamadoId]);
+    // FIX (2026-09): db.raw ignorava 3 filtros além de tenant_id — retornava
+    // linhas de retirada de qualquer item/OS do tenant. Trocado por
+    // db.select + filtro em JS.
+    const todosRmItens = await DB.select('solicitacao_retirada_itens', { tenant_id: tenantId }, tenantId);
+    const idsRetiradas = [...new Set(todosRmItens.map(r => r.solicitacao_retirada_id))];
+    const todasRetiradas = await DB.select('solicitacoes_retirada', { tenant_id: tenantId }, tenantId);
+    const retiradasPorId = {};
+    todasRetiradas.filter(r => idsRetiradas.includes(r.id)).forEach(r => { retiradasPorId[r.id] = r; });
+
+    const rmLinks = todosRmItens.filter(sri => {
+      const sr = retiradasPorId[sri.solicitacao_retirada_id];
+      return String(sri.origem_os_item_id) === String(itemId)
+        && sr && String(sr.origem_os_id) === String(chamadoId)
+        && sri.status !== 'cancelado';
+    }).map(sri => ({ id: sri.id }));
 
     for (const rm of rmLinks) {
       await DB.update("solicitacao_retirada_itens", rm.id, {
@@ -2821,14 +2960,16 @@ router.get("/chamados/:id/materiais/:itemId/aplicacoes", tenantMiddleware, async
 
     // Carrega SNs de cada aplicação
     const aplicacaoIds = eventos.map(e => e.id);
+    // FIX (2026-09): db.raw ignorava ANY($2) — retornava séries de todas as
+    // aplicações do tenant. Trocado por db.select + filtro.
     let series = [];
     if (aplicacaoIds.length > 0) {
-      series = await DB.raw(`
-        SELECT aplicacao_id, numero_serie
-        FROM chamado_material_aplicacao_series
-        WHERE tenant_id = $1 AND aplicacao_id = ANY($2)
-        ORDER BY id
-      `, [tenantId, aplicacaoIds]);
+      const todasSeries = await DB.select('chamado_material_aplicacao_series',
+        { tenant_id: tenantId }, tenantId);
+      series = todasSeries
+        .filter(s => aplicacaoIds.includes(s.aplicacao_id))
+        .sort((a, b) => a.id - b.id)
+        .map(s => ({ aplicacao_id: s.aplicacao_id, numero_serie: s.numero_serie }));
     }
 
     const seriesPorAplicacao = {};
@@ -2904,7 +3045,7 @@ router.post("/chamados/:id/concluir", tenantMiddleware, async (req, res) => {
     // resolvida ou cancelada, deixa de bloquear.
     const ncsDaOS = await DB.select("nao_conformidades", { tenant_id: tenantId, chamado_id: chamadoId }, tenantId);
     const ncsBloqueantes = ncsDaOS.filter(nc =>
-      ["aberta", "em_analise", "em_execucao"].includes(nc.status)
+      ["aberta", "em_analise", "em_execucao", "aguardando_validacao"].includes(nc.status)
     );
     if (ncsBloqueantes.length > 0) {
       return res.status(400).json({
@@ -4025,6 +4166,261 @@ router.post("/chamados/:id/servicos/:itemId/preview-apontamento", tenantMiddlewa
     res.json({ modo: "auto", calculo });
   } catch (err) {
     console.error("❌ Erro no preview de apontamento:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/cotacoes/:cotacaoId/emitir-ocs
+//
+// Emite uma OC por fornecedor único. Substitui o fluxo antigo que só
+// emitia OC pro "melhor fornecedor geral" e ignorava que cada item pode
+// ter um vencedor diferente.
+//
+// Body: { selecoes: [{ cotacao_item_id, fornecedor_id, justificativa?,
+//                      sugerido_fornecedor_id?, valor_sugerido? }] }
+// ─────────────────────────────────────────────────────────────────────────
+router.post('/:cotacaoId/emitir-ocs', tenantMiddleware, async (req, res) => {
+  try {
+    const { cotacaoId } = req.params;
+    const { selecoes } = req.body;
+
+    if (!Array.isArray(selecoes) || selecoes.length === 0) {
+      return res.status(400).json({ erro: 'selecoes é obrigatório (mínimo 1)' });
+    }
+
+    // Nome do usuário pra auditoria
+    let usuarioNome = null;
+    try {
+      const u = await DB.selectOne("usuarios", { id: req.userId, tenant_id: req.tenantId }, req.tenantId);
+      usuarioNome = u?.nome || null;
+    } catch (_) {}
+
+    const resultado = await cotacaoService.emitirOCs(
+      req.tenantId,
+      parseInt(cotacaoId),
+      selecoes,
+      req.userId,
+      usuarioNome
+    );
+
+    res.json({ ok: true, ...resultado });
+  } catch (err) {
+    console.error('❌ Erro ao emitir OCs:', err);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/cotacoes/:cotacaoId/adicionar-fornecedores
+//
+// Adiciona 1+ fornecedores a uma cotação existente. Aceita lote.
+// Ignora fornecedores que já estão na cotação (idempotente por fornecedor).
+// Bloqueia se a cotação está finalizada ou cancelada.
+// ─────────────────────────────────────────────────────────────────────────
+router.post('/:cotacaoId/adicionar-fornecedores', tenantMiddleware, async (req, res) => {
+  try {
+    const { cotacaoId } = req.params;
+    const { fornecedor_ids, cotacao_item_ids } = req.body;
+    const tenantId = req.tenantId;
+
+    if (!Array.isArray(fornecedor_ids) || fornecedor_ids.length === 0) {
+      return res.status(400).json({ erro: 'fornecedor_ids é obrigatório (mínimo 1)' });
+    }
+
+    // 1. Valida cotação
+    const cotacao = await DB.selectOne('cotacoes', { id: cotacaoId }, tenantId);
+    if (!cotacao) {
+      return res.status(404).json({ erro: 'Cotação não encontrada' });
+    }
+    if (['finalizada', 'cancelada'].includes(cotacao.status)) {
+      return res.status(400).json({
+        erro: `Cotação ${cotacao.status} não aceita novos fornecedores`
+      });
+    }
+
+    // 2. Filtra fornecedores já vinculados
+    const jaVinculados = await DB.select('cotacao_fornecedores', { cotacao_id: cotacaoId }, tenantId);
+    const idsJaVinculados = new Set(jaVinculados.map(f => String(f.fornecedor_id)));
+
+    // 3. Insere um por um
+    const { v4: uuidv4 } = require('uuid');
+    const adicionados = [];
+    const ignorados = [];
+
+    for (const fornId of fornecedor_ids) {
+      if (idsJaVinculados.has(String(fornId))) {
+        ignorados.push({ id: fornId, motivo: 'já está na cotação' });
+        continue;
+      }
+
+      const fornecedor = await DB.selectOne('fornecedores', { id: fornId }, tenantId);
+      if (!fornecedor) {
+        ignorados.push({ id: fornId, motivo: 'fornecedor não encontrado' });
+        continue;
+      }
+
+      const contatos = fornecedor.contatos ? JSON.parse(fornecedor.contatos) : [];
+      const emailComercial = contatos?.[0]?.email || fornecedor.email;
+      const token = uuidv4();
+
+      const inserido = await DB.insert('cotacao_fornecedores', {
+        tenant_id: tenantId,
+        cotacao_id: cotacaoId,
+        fornecedor_id: fornId,
+        fornecedor_nome: fornecedor.nome,
+        fornecedor_email: emailComercial,
+        token,
+        status: 'pendente',
+      }, tenantId);
+
+      adicionados.push({
+        id: inserido.id,
+        fornecedor_id: fornId,
+        fornecedor_nome: fornecedor.nome,
+        fornecedor_email: emailComercial,
+        status: 'pendente',
+        token,
+      });
+    }
+
+    // FIX (2026-09): propagar para os itens TODOS os fornecedores
+    // selecionados nesta request — não só os "novos no cabeçalho". Sem
+    // isso, tentar vincular um fornecedor já cadastrado a itens que ele
+    // ainda não cotava não fazia nada (idsAdicionados ficava vazio).
+    const idsAdicionados = fornecedor_ids;
+
+    // FIX (2026-09): ordenar por id — DB.select não garante ordem, e cada
+    // chamada devolvia os itens embaralhados, fazendo o frontend mudar a
+    // ordem de exibição a cada save.
+    const todosItensBrutos = await DB.select('cotacao_itens', { cotacao_id: cotacaoId }, tenantId);
+    const todosItens = todosItensBrutos.sort((a, b) => Number(a.id) - Number(b.id));
+
+    const itensAlvo = Array.isArray(cotacao_item_ids) && cotacao_item_ids.length > 0
+      ? todosItens.filter(it => cotacao_item_ids.includes(it.id))
+      : todosItens;
+
+    for (const item of itensAlvo) {
+      // Normaliza (pode vir como array nativo, string JSON, ou null)
+      let atuais = [];
+      if (Array.isArray(item.fornecedores_ids)) {
+        atuais = item.fornecedores_ids;
+      } else if (typeof item.fornecedores_ids === 'string') {
+        try { atuais = JSON.parse(item.fornecedores_ids); } catch (_) { atuais = []; }
+      }
+
+      const combinados = [...new Set([...atuais, ...idsAdicionados])];
+
+      await DB.update('cotacao_itens', item.id, {
+        fornecedores_ids: combinados,
+      }, tenantId);
+    }
+
+    // ── Notificar apenas os fornecedores NOVOS por email ──
+    // Quem já estava na cotação (em `ignorados`) não recebe nada — seria
+    // duplicidade. Cada envio é isolado em try/catch: se um email falhar,
+    // os outros continuam.
+    let emailsEnviados = 0;
+    const falhasEmail = [];
+    if (adicionados.length > 0) {
+      const chamado = await DB.selectOne('chamados', { id: cotacao.chamado_id }, tenantId);
+      if (chamado) {
+        const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, '');
+        for (const forn of adicionados) {
+          try {
+            const linkPortal = `${frontendUrl}/#/portal/cotacao/${cotacao.id}/${forn.token}`;
+            const corpo = `
+              <h2>Requisição de Cotação</h2>
+              <p>Prezado(a) <strong>${forn.fornecedor_nome}</strong>,</p>
+              <p>Você foi convidado a cotar itens da requisição <strong>${chamado.numero || cotacao.id}</strong>.</p>
+              <p><a href="${linkPortal}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:white;text-decoration:none;border-radius:6px;">Abrir portal e responder</a></p>
+              <p>Ou copie o link:<br/><small>${linkPortal}</small></p>
+              <hr/>
+              <p><small>Esta é uma mensagem automática. Não responda.</small></p>
+            `;
+            await enviarEmailCotacao(
+              forn.fornecedor_email,
+              `Cotação ${cotacao.numero || cotacao.id} - ${chamado.servico_nome || 'Requisição de Compra'}`,
+              corpo
+            );
+            emailsEnviados++;
+          } catch (e) {
+            console.error(`⚠️ Falha email ${forn.fornecedor_nome}:`, e.message);
+            falhasEmail.push({ fornecedor: forn.fornecedor_nome, erro: e.message });
+          }
+        }
+      }
+    }
+
+    res.json({
+      ok: true,
+      adicionados,
+      ignorados,
+      itensAtualizados: itensAlvo.length,
+      emailsEnviados,
+      falhasEmail,
+      mensagem: `${adicionados.length} fornecedor(es) adicionado(s)${ignorados.length > 0 ? ` · ${ignorados.length} ignorado(s)` : ''} · aplicados em ${itensAlvo.length} item(ns) · ${emailsEnviados} email(ns) enviado(s)`,
+    });
+  } catch (err) {
+    console.error('❌ Erro ao adicionar fornecedores:', err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/cotacoes/:cotacaoId/fornecedores/:fornecedorId/reenviar-email
+//
+// Reenvia o email de cotação pro fornecedor com o MESMO token — não
+// invalida o anterior, não muda status. Útil quando o fornecedor diz
+// que não recebeu, o email caiu em spam, ou o comprador quer só reforçar.
+// ─────────────────────────────────────────────────────────────────────────
+router.post('/:cotacaoId/fornecedores/:fornecedorId/reenviar-email', tenantMiddleware, async (req, res) => {
+  try {
+    const { cotacaoId, fornecedorId } = req.params;
+    const tenantId = req.tenantId;
+
+    const cotacao = await DB.selectOne('cotacoes', { id: cotacaoId }, tenantId);
+    if (!cotacao) return res.status(404).json({ erro: 'Cotação não encontrada' });
+
+    const fornecedorCot = await DB.selectOne('cotacao_fornecedores', {
+      cotacao_id: cotacaoId,
+      fornecedor_id: fornecedorId,
+    }, tenantId);
+    if (!fornecedorCot) {
+      return res.status(404).json({ erro: 'Fornecedor não está nesta cotação' });
+    }
+    if (!fornecedorCot.token) {
+      return res.status(400).json({ erro: 'Fornecedor sem token de acesso — recrie a cotação' });
+    }
+
+    const chamado = await DB.selectOne('chamados', { id: cotacao.chamado_id }, tenantId);
+    if (!chamado) return res.status(404).json({ erro: 'RC vinculada não encontrada' });
+
+    {
+      const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, '');
+      const linkPortal = `${frontendUrl}/#/portal/cotacao/${cotacao.id}/${fornecedorCot.token}`;
+      const corpo = `
+        <h2>Requisição de Cotação (reenvio)</h2>
+        <p>Prezado(a) <strong>${fornecedorCot.fornecedor_nome}</strong>,</p>
+        <p>Segue novamente o link para responder a requisição <strong>${chamado.numero || cotacao.id}</strong>.</p>
+        <p><a href="${linkPortal}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:white;text-decoration:none;border-radius:6px;">Abrir portal e responder</a></p>
+        <p>Ou copie o link:<br/><small>${linkPortal}</small></p>
+        <hr/>
+        <p><small>Esta é uma mensagem automática. Não responda.</small></p>
+      `;
+      await enviarEmailCotacao(
+        fornecedorCot.fornecedor_email,
+        `Cotação ${cotacao.numero || cotacao.id} - ${chamado.servico_nome || 'Requisição de Compra'}`,
+        corpo
+      );
+    }
+
+    res.json({
+      ok: true,
+      mensagem: `Email reenviado para ${fornecedorCot.fornecedor_email}`,
+    });
+  } catch (err) {
+    console.error('❌ Erro ao reenviar email:', err.message);
     res.status(500).json({ erro: err.message });
   }
 });

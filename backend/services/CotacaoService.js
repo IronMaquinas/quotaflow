@@ -25,13 +25,15 @@ class CotacaoService {
     const itens = await Promise.all(
       itensRaw.map(async (item) => {
         // Tentar encontrar item no catálogo
-        const catalogoItem = await this.db.raw(
-          `SELECT id, categoria, marca, modelo, tipo_fabricante, ano_fabricacao_inicio, ano_fabricacao_fim
-           FROM catalogo_itens
-           WHERE tenant_id = $1 AND nome ILIKE $2 AND ativo = true
-           LIMIT 1`,
-          [tenantId, `%${item.item_nome}%`]
+        // FIX (2026-09): db.raw caía no fallback (ignorava ILIKE e LIMIT).
+        // Trocado por select + filtro em JS com match parcial.
+        const todosCatalogoAtu = await this.db.select('catalogo_itens',
+          { tenant_id: tenantId, ativo: true }, tenantId);
+        const termo = (item.item_nome || '').toLowerCase();
+        const match = todosCatalogoAtu.find(c =>
+          (c.nome || '').toLowerCase().includes(termo)
         );
+        const catalogoItem = match ? [match] : [];
 
         return {
           ...item,
@@ -74,15 +76,14 @@ class CotacaoService {
   async criarCotacaoCategoria(tenantId, chamadoId, categoria, itensCategoria, usuarioId) {
     console.log(`  📝 Criando cotação para ${categoria} (${itensCategoria.length} itens)`);
 
-    // Gerar número único para cotação
-    const numeroCotacao = `COT-${chamadoId}-${Date.now()}`;
+    // Gerar número único para cotação — mesmo padrão COT-{ano}-000X
+    const numeroCotacao = await this.gerarNumeroCotacao(tenantId);
 
     // Criar cotação
     const cotacao = await this.db.insert('cotacoes', {
       tenant_id: tenantId,
       chamado_id: chamadoId,
-      numero_cotacao: numeroCotacao,
-      categoria: categoria,
+      numero: numeroCotacao,
       status: 'pendente',
       criado_por: usuarioId
     });
@@ -163,43 +164,69 @@ class CotacaoService {
   // 3. BUSCAR FORNECEDORES PARA UM ITEM
   // ───────────────────────────────────────────────────────────────────────
   async buscarFornecedoresItem(tenantId, categoria, marca = null, modelo = null, tipoFabricante = null) {
-    let query = `
-      SELECT DISTINCT
-        fi.id as fornecedor_item_id,
-        fi.fornecedor_id,
-        f.nome as fornecedor_nome,
-        f.email as fornecedor_email,
-        fi.preco_unitario,
-        fi.descricao_fornecedor,
-        fi.data_tabela,
-        c.marca,
-        c.modelo,
-        c.tipo_fabricante,
-        f.tipo,
-        f.tenant_id as fornecedor_tenant_id
-      FROM fornecedor_itens fi
-      JOIN fornecedores f ON fi.fornecedor_id = f.id
-      JOIN catalogo_itens c ON fi.item_catalogo_id = c.id
-      WHERE fi.ativo = true
-        AND f.ativo = true
-        AND c.categoria = $1
-        AND (f.tipo = 'global' OR f.tenant_id = $2)
-    `;
+    // FIX (2026-09): db.raw caía no fallback genérico (ignorava WHERE), e a
+    // query montada por concatenação também tinha o bug do `if (modelo)`
+    // aninhado em `if (marca)` — só aplicava modelo quando marca vinha junto.
+    // Reescrito com db.select + filtro em JS. Também corrigido o `if` aninhado.
 
-    const params = [categoria, tenantId];
+    // 1. Buscar todos os itens de fornecedor ativos do tenant
+    const todosItens = await this.db.select('fornecedor_itens',
+      { tenant_id: tenantId, ativo: true }, tenantId);
 
-    if (marca) {
-      query += ` AND (c.marca = $${params.length + 1} OR c.marca IS NULL)`;
-      params.push(marca);
-      if (modelo) {
-        query += ` AND (c.modelo = $${params.length + 1} OR c.modelo IS NULL)`;
-        params.push(modelo);
-      }
-    }
+    // 2. Buscar todos os fornecedores ativos
+    const todosForns = await this.db.select('fornecedores',
+      { tenant_id: tenantId, ativo: true }, tenantId);
+    const fornsPorId = {};
+    todosForns.forEach(f => { fornsPorId[f.id] = f; });
 
-    query += ` ORDER BY fi.preco_unitario ASC LIMIT 10`;
-    const fornecedores = await this.db.raw(query, params);
-    return fornecedores;
+    // 3. Buscar todo o catálogo do tenant
+    const todoCatalogo = await this.db.select('catalogo_itens',
+      { tenant_id: tenantId }, tenantId);
+    const catalogoPorId = {};
+    todoCatalogo.forEach(c => { catalogoPorId[c.id] = c; });
+
+    // 4. Cruzar + filtrar
+    const resultados = todosItens
+      .map(fi => {
+        const cat = catalogoPorId[fi.item_catalogo_id];
+        if (!cat) return null;
+
+        // Categoria é obrigatória (WHERE original tinha `c.categoria = $1`)
+        if (cat.categoria !== categoria) return null;
+
+        // Filtros opcionais — respeitam o padrão `campo = valor OR campo IS NULL`
+        // do SQL original (só rejeitam quando AMBOS existem e são diferentes)
+        if (marca && cat.marca && cat.marca !== marca) return null;
+        if (modelo && cat.modelo && cat.modelo !== modelo) return null;
+        if (tipoFabricante && cat.tipo_fabricante && cat.tipo_fabricante !== tipoFabricante) return null;
+
+        // Fornecedor precisa existir e ser ativo
+        const f = fornsPorId[fi.fornecedor_id];
+        if (!f) return null;
+
+        // Regra: fornecedor global OU do próprio tenant
+        if (f.tipo !== 'global' && f.tenant_id !== tenantId) return null;
+
+        return {
+          fornecedor_item_id: fi.id,
+          fornecedor_id: fi.fornecedor_id,
+          fornecedor_nome: f.nome,
+          fornecedor_email: f.email,
+          preco_unitario: fi.preco_unitario,
+          descricao_fornecedor: fi.descricao_fornecedor,
+          data_tabela: fi.data_tabela,
+          marca: cat.marca,
+          modelo: cat.modelo,
+          tipo_fabricante: cat.tipo_fabricante,
+          tipo: f.tipo,
+          fornecedor_tenant_id: f.tenant_id,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => (parseFloat(a.preco_unitario) || 0) - (parseFloat(b.preco_unitario) || 0))
+      .slice(0, 10); // LIMIT 10 do SQL original
+
+    return resultados;
   }
 
   // ───────────────────────────────────────────────────────────────────────
@@ -208,39 +235,30 @@ class CotacaoService {
   async listar(tenantId, filtros = {}) {
     const { status = null, chamado_id = null, limite = 50, pagina = 1 } = filtros;
 
-    let query = `
-      SELECT 
-        c.id,
-        c.numero_cotacao,
-        c.categoria,
-        c.status,
-        c.chamado_id,
-        COUNT(DISTINCT ci.id) as total_itens,
-        COUNT(DISTINCT cf.id) as total_fornecedores,
-        c.criado_em,
-        c.enviado_em
-      FROM cotacoes c
-      LEFT JOIN cotacao_itens ci ON c.id = ci.cotacao_id
-      LEFT JOIN cotacao_fornecedores cf ON c.id = cf.cotacao_id
-      WHERE c.tenant_id = $1
-    `;
+    // FIX (2026-09): reescrito sem db.raw — o wrapper ignorava os filtros
+    // além de tenant_id. Agora monta tudo com db.select + agregação em JS.
+    let cotacoes = await this.db.select('cotacoes', { tenant_id: tenantId }, tenantId);
+    if (status) cotacoes = cotacoes.filter(c => c.status === status);
+    if (chamado_id) cotacoes = cotacoes.filter(c => String(c.chamado_id) === String(chamado_id));
 
-    const params = [tenantId];
+    cotacoes.sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em));
+    cotacoes = cotacoes.slice((pagina - 1) * limite, pagina * limite);
 
-    if (status) {
-      query += ` AND c.status = $${params.length + 1}`;
-      params.push(status);
-    }
+    // Enriquece com contagens
+    const ids = cotacoes.map(c => c.id);
+    const todosItens = ids.length > 0
+      ? await this.db.select('cotacao_itens', { tenant_id: tenantId }, tenantId)
+      : [];
+    const todosFornecedores = ids.length > 0
+      ? await this.db.select('cotacao_fornecedores', { tenant_id: tenantId }, tenantId)
+      : [];
 
-    if (chamado_id) {
-      query += ` AND c.chamado_id = $${params.length + 1}`;
-      params.push(chamado_id);
-    }
-
-    query += ` GROUP BY c.id ORDER BY c.criado_em DESC LIMIT ${limite} OFFSET ${(pagina - 1) * limite}`;
-
-    const cotacoes = await this.db.raw(query, params);
-    return cotacoes;
+    return cotacoes.map(c => ({
+      ...c,
+      numero_cotacao: c.numero || c.numero_cotacao,
+      total_itens: todosItens.filter(i => i.cotacao_id === c.id).length,
+      total_fornecedores: todosFornecedores.filter(f => f.cotacao_id === c.id).length,
+    }));
   }
 
   // ───────────────────────────────────────────────────────────────────────
@@ -446,10 +464,9 @@ class CotacaoService {
     }
 
     const fornecedorIdsArray = fornecedores.map(f => f.fornecedor_id);
-    const fornecedoresData = await this.db.raw(`
-      SELECT id, nome, email FROM fornecedores
-      WHERE tenant_id = $1 AND id = ANY($2::int[])
-    `, [tenantId, fornecedorIdsArray]);
+    // FIX (2026-09): db.raw ignorava o ANY($2), devolvia todos os fornecedores.
+    const todosFornecedores = await this.db.select('fornecedores', { tenant_id: tenantId }, tenantId);
+    const fornecedoresData = todosFornecedores.filter(f => fornecedorIdsArray.includes(f.id));
 
     const fornecedorMap = {};
     fornecedoresData.forEach(f => { fornecedorMap[f.id] = f; });
@@ -674,7 +691,7 @@ class CotacaoService {
     // Gera token seguro para acesso público
     const timestamp = Date.now();
     const random = Math.random().toString(36).substring(2, 15);
-    return `COT-${cotacaoId}-FOR-${fornecedorId}-${timestamp}-${random}`;
+    return `${cotacaoId}-FOR-${fornecedorId}-${timestamp}-${random}`;
   }
 
   // ───────────────────────────────────────────────────────────────────────
@@ -767,13 +784,13 @@ class CotacaoService {
     console.log(`👥 ${fornecedores.length} fornecedor(es) encontrado(s)`);
 
     // 3. Criar cotação em rascunho
-    const numeroCotacao = `COT-${chamadoId}-${Date.now()}`;
+    const numeroCotacao = await this.gerarNumeroCotacao(tenantId);
     const cotacao = await this.db.insert('cotacoes', {
       tenant_id: tenantId,
       chamado_id: chamadoId,
-      numero_cotacao: numeroCotacao,
+      numero: numeroCotacao,
       status: 'rascunho',
-      modo: 'automatica',  // 🆕 Campo novo!
+      modo: 'automatica',
       criado_por: usuarioId
     });
 
@@ -807,25 +824,38 @@ class CotacaoService {
   // BUSCAR FORNECEDORES DE UM ITEM (Helper)
   // ───────────────────────────────────────────────────────────────────────
   async buscarFornecedoresPorItem(tenantId, itemCatalogoId) {
-    const fornecedores = await this.db.raw(`
-      SELECT DISTINCT
-        fi.id as fornecedor_item_id,
-        fi.fornecedor_id,
-        f.nome as fornecedor_nome,
-        f.email as fornecedor_email,
-        fi.preco_unitario,
-        fi.estoque_status,
-        fi.tempo_entrega_dias,
-        f.tipo,
-        f.tenant_id as fornecedor_tenant_id
-      FROM fornecedor_itens fi
-      JOIN fornecedores f ON fi.fornecedor_id = f.id
-      WHERE fi.item_catalogo_id = $1
-        AND fi.ativo = true
-        AND f.ativo = true
-        AND (f.tipo = 'global' OR f.tenant_id = $2)
-      ORDER BY fi.preco_unitario ASC
-    `, [itemCatalogoId, tenantId]);
+    // FIX (2026-09): db.raw caía no fallback (ignorava WHERE item_catalogo_id),
+    // retornando TODOS os fornecedor_itens do tenant. Trocado por select +
+    // filtro em JS.
+    const todosItens = await this.db.select('fornecedor_itens',
+      { tenant_id: tenantId, ativo: true }, tenantId);
+    const itensDoItem = todosItens.filter(fi => String(fi.item_catalogo_id) === String(itemCatalogoId));
+
+    const todosFornecedores = await this.db.select('fornecedores',
+      { tenant_id: tenantId, ativo: true }, tenantId);
+    const fornecedoresPorId = {};
+    todosFornecedores.forEach(f => { fornecedoresPorId[f.id] = f; });
+
+    const fornecedores = itensDoItem
+      .map(fi => {
+        const f = fornecedoresPorId[fi.fornecedor_id];
+        if (!f) return null;
+        // Regra: fornecedor global OU do próprio tenant
+        if (f.tipo !== 'global' && f.tenant_id !== tenantId) return null;
+        return {
+          fornecedor_item_id: fi.id,
+          fornecedor_id: fi.fornecedor_id,
+          fornecedor_nome: f.nome,
+          fornecedor_email: f.email,
+          preco_unitario: fi.preco_unitario,
+          estoque_status: fi.estoque_status,
+          tempo_entrega_dias: fi.tempo_entrega_dias,
+          tipo: f.tipo,
+          fornecedor_tenant_id: f.tenant_id,
+        };
+      })
+      .filter(Boolean)
+      .sort((a, b) => (parseFloat(a.preco_unitario) || 0) - (parseFloat(b.preco_unitario) || 0));
 
     return fornecedores.map(f => ({
       fornecedorId: f.fornecedor_id,
@@ -1025,11 +1055,19 @@ class CotacaoService {
 
       for (const item of itensCategoria) {
 
-        // 1. Buscar fornecedor_itens (com filtro por item_catalogo_id)
-        const fornecedorItens = await this.db.select('fornecedor_itens', { 
-          item_catalogo_id: item.item_catalogo_id, 
-          ativo: 1 // 🔥 MUDE PARA 1
-        }, tenantId);
+        // FIX (2026-09): item sem vínculo de catálogo (item_catalogo_id null)
+        // não tem fornecedores mapeáveis. Antes, o DB.select do wrapper
+        // ignorava filtros com valor null, e a query virava "WHERE tenant_id
+        // AND ativo = 1" — devolvia o catálogo INTEIRO do tenant. Agora
+        // pulamos a busca quando não há catálogo vinculado, retornando
+        // array vazio + flag `sem_catalogo` pra UI mostrar aviso.
+        let fornecedorItens = [];
+        if (item.item_catalogo_id != null) {
+          fornecedorItens = await this.db.select('fornecedor_itens', {
+            item_catalogo_id: item.item_catalogo_id,
+            ativo: 1
+          }, tenantId);
+        }
 
         let fornecedores = [];
 
@@ -1071,7 +1109,8 @@ class CotacaoService {
         // Adicionar o item ao resultado
         resultado[categoria].push({
           ...item,
-          fornecedores: fornecedoresFormatados
+          fornecedores,
+          sem_catalogo: item.item_catalogo_id == null,
         });
       }
     }
@@ -1104,13 +1143,15 @@ class CotacaoService {
       throw new Error('Dados inválidos: chamado_id e itens são obrigatórios');
     }
 
-    // ✅ VERIFICA SE JÁ EXISTE UMA COTAÇÃO (RASCUNHO)
-    const existente = await this.db.raw(`
-      SELECT * FROM cotacoes 
-      WHERE chamado_id = $1 AND tenant_id = $2 
-      AND status = 'rascunho'
-      LIMIT 1
-    `, [chamado_id, tenantId]);
+    // FIX (2026-09): trocar db.raw por db.select + filtro em JS. O db.raw
+    // caía no fallback genérico (só filtrava por tenant_id), então o WHERE
+    // "chamado_id = X AND status = 'rascunho'" era ignorado — devolvia
+    // QUALQUER cotação do tenant. Resultado: criar cotação pra RC nova
+    // reaproveitava a cotação de outra RC e misturava os itens.
+    const todasCotacoes = await this.db.select('cotacoes', { tenant_id: tenantId }, tenantId);
+    const existente = todasCotacoes.filter(c =>
+      String(c.chamado_id) === String(chamado_id) && c.status === 'rascunho'
+    );
 
     // 🔥 SE EXISTIR, ATUALIZAR (não criar nova)
     if (existente.length > 0) {
@@ -1123,11 +1164,12 @@ class CotacaoService {
       
       await this.db.update('cotacoes', cotacaoExistente.id, updateData, tenantId);
       
-      // 🔥 DELETAR FORNECEDORES ANTIGOS
-      await this.db.raw(`
-        DELETE FROM cotacao_fornecedores 
-        WHERE cotacao_id = $1 AND tenant_id = $2
-      `, [cotacaoExistente.id, tenantId]);
+      // Deletar fornecedores antigos DA COTAÇÃO (não do tenant todo).
+      const fornsAntigos = await this.db.select('cotacao_fornecedores',
+        { cotacao_id: cotacaoExistente.id, tenant_id: tenantId }, tenantId);
+      for (const f of fornsAntigos) {
+        await this.db.delete('cotacao_fornecedores', f.id, tenantId);
+      }
 
       // 🔥 VINCULAR FORNECEDORES
       const fornecedoresUnicos = new Set();
@@ -1147,11 +1189,12 @@ class CotacaoService {
         }, tenantId);
       }
 
-      // 🔥 DELETAR ITENS ANTIGOS
-      await this.db.raw(`
-        DELETE FROM cotacao_itens 
-        WHERE cotacao_id = $1 AND tenant_id = $2
-      `, [cotacaoExistente.id, tenantId]);
+      // Deletar itens antigos DA COTAÇÃO (não do tenant todo).
+      const itensAntigos = await this.db.select('cotacao_itens',
+        { cotacao_id: cotacaoExistente.id, tenant_id: tenantId }, tenantId);
+      for (const it of itensAntigos) {
+        await this.db.delete('cotacao_itens', it.id, tenantId);
+      }
 
       // Adicionar novos itens
       for (const item of itens) {
@@ -1174,9 +1217,14 @@ class CotacaoService {
     }
 
     // ✅ SE NÃO EXISTIR, CRIAR NOVA
+    // FIX (2026-09): gerar numero único no padrão COT-{ano}-000X. Antes
+    // o INSERT omitia o campo, e toda cotação automática nascia com
+    // `numero: NULL`.
+    const numeroCotacao = await this.gerarNumeroCotacao(tenantId);
     const cotacao = await this.db.insert('cotacoes', {
       tenant_id: tenantId,
       chamado_id: chamado_id,
+      numero: numeroCotacao,
       status: 'rascunho',
       modo: 'automatica',
       notas: notas || null,
@@ -1244,10 +1292,14 @@ class CotacaoService {
     }
 
     // ✅ Remove itens antigos (ou atualiza)
-    await this.db.raw(`
-      DELETE FROM cotacao_itens 
-      WHERE cotacao_id = $1 AND tenant_id = $2
-    `, [cotacaoId, tenantId]);
+    // FIX (2026-09): db.raw caía no fallback genérico e ignorava o WHERE
+    // cotacao_id — apagava TODOS os cotacao_itens do tenant. Trocado por
+    // select + delete loop.
+    const itensAntigosAtu = await this.db.select('cotacao_itens',
+      { cotacao_id: cotacaoId, tenant_id: tenantId }, tenantId);
+    for (const ia of itensAntigosAtu) {
+      await this.db.delete('cotacao_itens', ia.id, tenantId);
+    }
 
     // ✅ Adiciona novos itens com fornecedores_ids (com dados reais do chamado)
     for (const item of itens) {
@@ -1300,175 +1352,232 @@ class CotacaoService {
   // ───────────────────────────────────────────────────────────────────────
   // CRIAR ORDEM DE VENDA COM TODOS OS ITENS DO FORNECEDOR
   // ───────────────────────────────────────────────────────────────────────
-async criarOrdenVenda(tenantId, cotacaoId, fornecedorId, usuarioId = null, dados = {}) {
-  try {
-    // 1. Buscar cotação
-    const cotacao = await this.db.selectOne('cotacoes', { id: cotacaoId }, tenantId);
-    if (!cotacao) throw new Error(`Cotação ${cotacaoId} não encontrada`);
-
-    // 2. Buscar resposta do fornecedor
-    const resposta = await this.db.selectOne('cotacao_fornecedores', {
-      cotacao_id: cotacaoId,
-      fornecedor_id: fornecedorId
-    }, tenantId);
-
-    if (!resposta) throw new Error(`Fornecedor ${fornecedorId} não encontrado na cotação`);
-    if (resposta.status !== 'respondido') throw new Error(`Fornecedor ainda não respondeu esta cotação`);
-
-    // 3. Buscar itens da cotação (SEM LEFT JOIN)
-    const itens = await this.db.select('cotacao_itens', { cotacao_id: cotacaoId }, tenantId);
-
-    // 4. Buscar itens do chamado para obter nomes
-    const chamadoItemIds = itens.map(i => i.chamado_item_id);
-    const chamadoItens = chamadoItemIds.length > 0 
-      ? await this.db.raw(`
-          SELECT * FROM chamado_itens 
-          WHERE id = ANY($1) AND tenant_id = $2
-        `, [chamadoItemIds, tenantId]) 
-      : [];
-
-    // 5. Buscar nomes dos itens
-    const itensComNomes = itens.map(item => {
-      const chamadoItem = chamadoItens.find(ci => ci.id === item.chamado_item_id);
-      return {
-        ...item,
-        nome_item: chamadoItem?.item_nome || 'Item sem nome',
-        item_catalogo_id: chamadoItem?.item_catalogo_id || item.item_catalogo_id || null,
-      };
-    });
-
-    // 6. VALORES FINAIS (renegociados se existirem)
-    const valorFinal = dados.valor || resposta.valor_renegociado || resposta.valor || 0;
-    const freteFinal = dados.frete || resposta.frete_renegociado || resposta.valor_frete || 0;
-    const economia = (resposta.valor || 0) - (resposta.valor_renegociado || resposta.valor || 0) + 
-                     (resposta.valor_frete || 0) - (resposta.frete_renegociado || resposta.valor_frete || 0);
-
-    // 7. Gerar número único para OV
-    const numeroOV = await this.gerarNumeroOrdenVenda(tenantId);
-
-    // 8. Criar ordem de venda
-    const ordemVenda = await this.db.insert('ordens_venda', {
-      tenant_id: tenantId,
-      cotacao_id: cotacaoId,
-      fornecedor_id: fornecedorId,
-      numero: numeroOV,
-      status: 'pendente',
-      valor_total: valorFinal + freteFinal,
-      valor_frete: freteFinal,
-      prazo_entrega: resposta.prazo,
-      criado_em: new Date(),
-      criado_por: usuarioId && typeof usuarioId === 'string' ? usuarioId : null,
-      // 🔥 RASTREABILIDADE:
-      origem_ov_numero: cotacao.origem_ov_numero || null,
-      // 🔥 VALORES RENEGOCIADOS:
-      valor_original: resposta.valor || 0,
-      frete_original: resposta.valor_frete || 0,
-      economia: economia
-    }, tenantId);
-
-    // 9. Criar itens da OV (com valores renegociados)
-    for (const item of itensComNomes) {
-      await this.db.insert('ordem_venda_itens', {
-        tenant_id: tenantId,
-        ordem_venda_id: ordemVenda.id,
-        cotacao_item_id: item.id,
-        chamado_item_id: item.chamado_item_id,
-        item_catalogo_id: item.item_catalogo_id,
-        nome_item: item.nome_item,
-        quantidade: item.quantidade,
-        valor_unitario: valorFinal / (itens.length || 1),
-        valor_total: valorFinal,
-        criado_em: new Date()
-      }, tenantId);
-    }
-
-    // 10. ENVIAR E-MAIL DE CONFIRMAÇÃO
+  async criarOrdenVenda(tenantId, cotacaoId, fornecedorId, usuarioId = null, dados = {}) {
     try {
-      const { enviarEmailCotacao } = require('./emailService');
-      const fornecedor = await this.db.selectOne('fornecedores', { id: fornecedorId }, tenantId);
-      const empresa = await this.db.selectOne('tenants', { id: tenantId });
+      // 1. Buscar cotação
+      const cotacao = await this.db.selectOne('cotacoes', { id: cotacaoId }, tenantId);
+      if (!cotacao) throw new Error(`Cotação ${cotacaoId} não encontrada`);
 
-      if (fornecedor?.email) {
-        const assunto = `Ordem de Venda ${numeroOV} - Quotaflow`;
-        const listaItens = itensComNomes.map(i => 
-          `<li>${i.nome_item || 'Item'} - Qtd: ${i.quantidade} - Valor: R$ ${(valorFinal / (itens.length || 1)).toFixed(2)}</li>`
-        ).join('');
+      // 2. Buscar resposta do fornecedor
+      const resposta = await this.db.selectOne('cotacao_fornecedores', {
+        cotacao_id: cotacaoId,
+        fornecedor_id: fornecedorId
+      }, tenantId);
 
-        const corpo = `
-          <h2>Ordem de Venda #${numeroOV}</h2>
-          <p>Prezado(a) ${fornecedor.nome},</p>
-          <p>Confirmamos a emissão da Ordem de Venda para os itens abaixo:</p>
-          <ul>${listaItens}</ul>
-          <p><strong>Valor Total:</strong> R$ ${(valorFinal + freteFinal).toFixed(2)}</p>
-          <p><strong>Prazo de Entrega:</strong> ${resposta.prazo} dias</p>
-          <p>Em breve o comprador entrará em contato para os próximos passos.</p>
-          <p>Agradecemos pela parceria!</p>
-          <hr>
-          <p><small>Esta é uma mensagem automática. Não responda este e-mail.</small></p>
-        `;
+      if (!resposta) throw new Error(`Fornecedor ${fornecedorId} não encontrado na cotação`);
+      if (resposta.status !== 'respondido') throw new Error(`Fornecedor ainda não respondeu esta cotação`);
 
-        await enviarEmailCotacao(fornecedor.email, assunto, corpo);
-        console.log(`✅ E-mail de OV enviado para ${fornecedor.email}`);
+      // 3. Buscar itens da cotação (SEM LEFT JOIN)
+      const itens = await this.db.select('cotacao_itens', { cotacao_id: cotacaoId }, tenantId);
+
+      // 4. Buscar itens do chamado para obter nomes
+      const chamadoItemIds = itens.map(i => i.chamado_item_id);
+      // FIX (2026-09): db.raw ignorava o ANY($1).
+      const todosChamadoItens = chamadoItemIds.length > 0
+        ? await this.db.select('chamado_itens', { tenant_id: tenantId }, tenantId)
+        : [];
+      const chamadoItens = todosChamadoItens.filter(ci => chamadoItemIds.includes(ci.id));
+
+      // 5. Buscar nomes dos itens
+      const itensComNomes = itens.map(item => {
+        const chamadoItem = chamadoItens.find(ci => ci.id === item.chamado_item_id);
+        return {
+          ...item,
+          nome_item: chamadoItem?.item_nome || 'Item sem nome',
+          item_catalogo_id: chamadoItem?.item_catalogo_id || item.item_catalogo_id || null,
+        };
+      });
+
+      // 6. VALORES FINAIS (renegociados se existirem)
+      const valorFinal = dados.valor || resposta.valor_renegociado || resposta.valor || 0;
+      const freteFinal = dados.frete || resposta.frete_renegociado || resposta.valor_frete || 0;
+      const economia = (resposta.valor || 0) - (resposta.valor_renegociado || resposta.valor || 0) + 
+                      (resposta.valor_frete || 0) - (resposta.frete_renegociado || resposta.valor_frete || 0);
+
+      // 7. Trava: já existe OV emitida pra esta cotação + fornecedor?
+      // Sem isso, cada clique em "Finalizar" gera uma nova OV em cima da
+      // mesma cotação — bug observado em 2026-09 (2 OVs pra cotação 10).
+      const ovExistente = await this.db.selectOne('ordens_venda', {
+        cotacao_id: cotacaoId,
+        fornecedor_id: fornecedorId
+      }, tenantId);
+
+      if (ovExistente) {
+        throw new Error(
+          `OV ${ovExistente.numero} já foi emitida para este fornecedor nesta cotação. ` +
+          `Se precisar reemitir, cancele a OV anterior primeiro.`
+        );
       }
-    } catch (err) {
-      console.error('❌ Falha ao enviar e-mail de OV:', err.message);
-    }
 
-    // 11. Atualizar status da cotação
-    await this.db.update('cotacoes', cotacaoId, {
-      status: 'finalizada',
-      finalizado_em: new Date()
-    }, tenantId);
+      // 8. Gerar número único para OV
+      const numeroOV = await this.gerarNumeroOrdenVenda(tenantId);
 
-    // 12. Atualizar status do chamado
-    const chamado = await this.db.selectOne('chamados', { id: cotacao.chamado_id }, tenantId);
-    if (chamado) {
-      await this.db.update('chamados', chamado.id, {
+      // 8.1 Criar ordem de venda
+      const ordemVenda = await this.db.insert('ordens_venda', {
+        tenant_id: tenantId,
+        cotacao_id: cotacaoId,
+        fornecedor_id: fornecedorId,
+        numero: numeroOV,
+        status: 'pendente',
+        valor_total: valorFinal + freteFinal,
+        valor_frete: freteFinal,
+        prazo_entrega: resposta.prazo,
+        criado_em: new Date(),
+        criado_por: usuarioId && typeof usuarioId === 'string' ? usuarioId : null,
+        // 🔥 RASTREABILIDADE:
+        origem_ov_numero: cotacao.origem_ov_numero || null,
+        // 🔥 VALORES RENEGOCIADOS:
+        valor_original: resposta.valor || 0,
+        frete_original: resposta.valor_frete || 0,
+        economia: economia
+      }, tenantId);
+
+      // Marca a cotação como finalizada — assim a RC deixa de aparecer no
+      // dropdown de "Nova Cotação". Sem isso, o usuário podia emitir a mesma
+      // RC em OV indefinidamente (bug observado em 2026-09).
+      await this.db.update('cotacoes', cotacaoId, {
         status: 'finalizado',
+        finalizado_em: new Date().toISOString()
+      }, tenantId);
+
+
+      // 9. Criar itens da OV (com valores renegociados)
+      for (const item of itensComNomes) {
+        await this.db.insert('ordem_venda_itens', {
+          tenant_id: tenantId,
+          ordem_venda_id: ordemVenda.id,
+          cotacao_item_id: item.id,
+          chamado_item_id: item.chamado_item_id,
+          item_catalogo_id: item.item_catalogo_id,
+          nome_item: item.nome_item,
+          quantidade: item.quantidade,
+          valor_unitario: valorFinal / (itens.length || 1),
+          valor_total: valorFinal,
+          criado_em: new Date()
+        }, tenantId);
+      }
+
+      // 10. ENVIAR E-MAIL DE CONFIRMAÇÃO
+      try {
+        const { enviarEmailCotacao } = require('./emailService');
+        const fornecedor = await this.db.selectOne('fornecedores', { id: fornecedorId }, tenantId);
+        const empresa = await this.db.selectOne('tenants', { id: tenantId });
+
+        if (fornecedor?.email) {
+          const assunto = `Ordem de Venda ${numeroOV} - Quotaflow`;
+          const listaItens = itensComNomes.map(i => 
+            `<li>${i.nome_item || 'Item'} - Qtd: ${i.quantidade} - Valor: R$ ${(valorFinal / (itens.length || 1)).toFixed(2)}</li>`
+          ).join('');
+
+          const corpo = `
+            <h2>Ordem de Venda #${numeroOV}</h2>
+            <p>Prezado(a) ${fornecedor.nome},</p>
+            <p>Confirmamos a emissão da Ordem de Venda para os itens abaixo:</p>
+            <ul>${listaItens}</ul>
+            <p><strong>Valor Total:</strong> R$ ${(valorFinal + freteFinal).toFixed(2)}</p>
+            <p><strong>Prazo de Entrega:</strong> ${resposta.prazo} dias</p>
+            <p>Em breve o comprador entrará em contato para os próximos passos.</p>
+            <p>Agradecemos pela parceria!</p>
+            <hr>
+            <p><small>Esta é uma mensagem automática. Não responda este e-mail.</small></p>
+          `;
+
+          await enviarEmailCotacao(fornecedor.email, assunto, corpo);
+          console.log(`✅ E-mail de OV enviado para ${fornecedor.email}`);
+        }
+      } catch (err) {
+        console.error('❌ Falha ao enviar e-mail de OV:', err.message);
+      }
+
+      // 11. Atualizar status da cotação
+      await this.db.update('cotacoes', cotacaoId, {
+        status: 'finalizada',
         finalizado_em: new Date()
       }, tenantId);
-    }
 
-    return {
-      ordem_venda_id: ordemVenda.id,
-      numero: numeroOV,
-      status: 'pendente',
-      fornecedor_id: fornecedorId,
-      valor_total: valorFinal + freteFinal,
-      valor_frete: freteFinal,
-      valor_original: resposta.valor || 0,
-      economia: economia,
-      prazo_entrega: resposta.prazo,
-      quantidade_itens: itens.length,
-      mensagem: `Ordem de Venda criada com sucesso para ${itens.length} item(ns)`
-    };
-  } catch (err) {
-    console.error(`❌ Erro ao criar OV:`, err.message);
-    throw err;
+      // 12. Atualizar status do chamado
+      const chamado = await this.db.selectOne('chamados', { id: cotacao.chamado_id }, tenantId);
+      if (chamado) {
+        await this.db.update('chamados', chamado.id, {
+          status: 'finalizado',
+          finalizado_em: new Date()
+        }, tenantId);
+      }
+
+      return {
+        ordem_venda_id: ordemVenda.id,
+        numero: numeroOV,
+        status: 'pendente',
+        fornecedor_id: fornecedorId,
+        valor_total: valorFinal + freteFinal,
+        valor_frete: freteFinal,
+        valor_original: resposta.valor || 0,
+        economia: economia,
+        prazo_entrega: resposta.prazo,
+        quantidade_itens: itens.length,
+        mensagem: `Ordem de Venda criada com sucesso para ${itens.length} item(ns)`
+      };
+    } catch (err) {
+      console.error(`❌ Erro ao criar OV:`, err.message);
+      throw err;
+    }
   }
-}
+
+  // ─────────────────────────────────────────────────────────────────────────
+  // gerarNumeroCotacao — COT-{ano}-{0001}. Centralizado aqui no service
+  // pra ser reutilizado por salvarCotacao, criarCotacaoCategoria e
+  // criarAutomatica (antes cada uma gerava número inline com formato
+  // diferente — COT-{chamadoId}-{timestamp}). O routes/cotacoes.js
+  // continua com um wrapper que delega pra cá.
+  // ─────────────────────────────────────────────────────────────────────────
+  async gerarNumeroCotacao(tenantId) {
+    const ano = new Date().getFullYear();
+    const prefix = `COT-${ano}-`;
+
+    const todasCotacoes = await this.db.select('cotacoes', { tenant_id: tenantId }, tenantId);
+    const doPrefixo = todasCotacoes
+      .map(c => c.numero)
+      .filter(n => n && n.startsWith(prefix))
+      .map(n => {
+        const m = n.match(/(\d+)$/);
+        return m ? parseInt(m[1]) : 0;
+      });
+    let seq = doPrefixo.length > 0 ? Math.max(...doPrefixo) + 1 : 1;
+
+    let novoNumero = `${prefix}${String(seq).padStart(4, "0")}`;
+    let tentativas = 0;
+    while (todasCotacoes.some(c => c.numero === novoNumero) && tentativas < 100) {
+      seq++;
+      novoNumero = `${prefix}${String(seq).padStart(4, "0")}`;
+      tentativas++;
+    }
+    return novoNumero;
+  }
+
 
   // ───────────────────────────────────────────────────────────────────────
   // GERAR NÚMERO ÚNICO PARA ORDEM DE VENDA
   // ───────────────────────────────────────────────────────────────────────
   async gerarNumeroOrdenVenda(tenantId) {
     const ano = new Date().getFullYear();
-    const mes = String(new Date().getMonth() + 1).padStart(2, '0');
-    const prefix = `OV-${ano}${mes}-`;
+    // Prefixo alinhado com OS/RC/RM: só ano. Consistência visual entre os
+    // documentos do sistema.
+    const prefix = `OC-${ano}-`;
 
-    const resultado = await this.db.raw(`
-      SELECT numero FROM ordens_venda
-      WHERE tenant_id = $1 AND numero LIKE $2
-      ORDER BY numero DESC
-      LIMIT 1
-    `, [tenantId, `${prefix}%`]);
+    // FIX (2026-09): db.raw caía no fallback (ignorava LIKE), então a
+    // numeração não avançava. Trocado por select + filtro em JS.
+    const todas = await this.db.select('ordens_venda', { tenant_id: tenantId }, tenantId);
+    const doPrefixo = todas
+      .map(o => o.numero)
+      .filter(n => n && n.startsWith(prefix))
+      .map(n => {
+        const match = n.match(/(\d+)$/);
+        return match ? parseInt(match[1]) : 0;
+      });
 
     let seq = 1;
-    if (resultado.length > 0) {
-      const match = resultado[0].numero.match(/(\d+)$/);
-      if (match) {
-        seq = parseInt(match[1]) + 1;
-      }
+    if (doPrefixo.length > 0) {
+      seq = Math.max(...doPrefixo) + 1;
     }
 
     return `${prefix}${String(seq).padStart(4, '0')}`;
@@ -1489,10 +1598,11 @@ async obterStatusCotacao(tenantId, cotacaoId) {
     const chamadoItemIds = itens.map(i => i.chamado_item_id);
     // const chamadoItens = chamadoItemIds.length > 0 ? await this.db.select('chamado_itens', {}, tenantId).then(todos => todos.filter(ci => chamadoItemIds.includes(ci.id))) : [];
     // teste substituindo a função acima por essa embaixo:
-    const chamadoItens = chamadoItemIds.length > 0 ? await this.db.raw(`
-      SELECT * FROM chamado_itens 
-      WHERE id = ANY($1) AND tenant_id = $2
-    `, [chamadoItemIds, tenantId]) : [];
+    // FIX (2026-09): db.raw ignorava o ANY($1).
+    const todosChamadoItens = chamadoItemIds.length > 0
+      ? await this.db.select('chamado_itens', { tenant_id: tenantId }, tenantId)
+      : [];
+    const chamadoItens = todosChamadoItens.filter(ci => chamadoItemIds.includes(ci.id));
 
     // 🔥 ESTRUTURAR ITENS
     const itensEstruturados = itens.map(item => {
@@ -1507,6 +1617,7 @@ async obterStatusCotacao(tenantId, cotacaoId) {
         codigo: chamadoItens.find(ci => ci.id === item.chamado_item_id)?.codigo || '',
         fornecedores: fornecedoresDoItem.map((f, idx) => ({
           id: f.id,
+          token_acesso: f.token_acesso,
           fornecedor_id: f.fornecedor_id,
           nome: f.fornecedor_nome,
           email: f.fornecedor_email,
@@ -1570,14 +1681,137 @@ async obterStatusCotacao(tenantId, cotacaoId) {
         throw new Error(`Fornecedor ${fornecedorId} não encontrado nesta cotação`);
       }
 
-      // 🔥 CALCULAR ECONOMIA TOTAL
+      // ── Fase 1: renegociação POR ITEM ──
+      // Quando o comprador abre o modal e edita cada item individualmente,
+      // o frontend envia `dados.itens = [{ cotacao_item_id, valor,
+      // valor_frete, valor_renegociado, frete_renegociado, ... }, ...]`.
+      // Cada item é atualizado em `cotacao_fornecedor_itens`. Se a linha
+      // ainda não existir (fornecedor não respondeu via link), cria uma
+      // nova com `origem_preenchimento: 'manual'`.
+      //
+      // Se o payload NÃO tiver `itens` (chamador antigo), cai no fluxo
+      // legado logo abaixo — que ainda funciona pra retrocompat.
+      if (Array.isArray(dados.itens) && dados.itens.length > 0) {
+        // 1. Carrega linhas existentes em cotacao_fornecedor_itens deste
+        //    fornecedor (só as do próprio tenant).
+        const todasItensResp = await this.db.select('cotacao_fornecedor_itens',
+          { tenant_id: tenantId }, tenantId);
+        const linhasExistentes = todasItensResp.filter(
+          ir => ir.cotacao_fornecedor_id === atual.id
+        );
+        const porItemId = {};
+        linhasExistentes.forEach(ir => { porItemId[ir.cotacao_item_id] = ir; });
+
+        // 2. Aplica cada item do payload
+        for (const itPayload of dados.itens) {
+          const cotItemId = parseInt(itPayload.cotacao_item_id, 10);
+          if (isNaN(cotItemId)) continue;
+
+          const valor = itPayload.valor != null ? parseFloat(itPayload.valor) : null;
+          const valorFrete = itPayload.valor_frete != null ? parseFloat(itPayload.valor_frete) : null;
+          const valorReneg = itPayload.valor_renegociado != null ? parseFloat(itPayload.valor_renegociado) : null;
+          const freteReneg = itPayload.frete_renegociado != null ? parseFloat(itPayload.frete_renegociado) : null;
+
+          if (porItemId[cotItemId]) {
+            // UPDATE na linha existente (fornecedor respondeu via link)
+            // FIX (2026-09, CIF/FOB): o UPDATE antigo omitia
+            // `frete_modalidade` — mesmo que o comprador trocasse CIF↔FOB
+            // no modal, o banco mantinha o valor do fornecedor. Agora
+            // propaga; cai pro valor atual se o payload não mandar o campo
+            // (compat com chamadores antigos).
+            await this.db.update('cotacao_fornecedor_itens', porItemId[cotItemId].id, {
+              valor: valor != null ? valor : porItemId[cotItemId].valor,
+              frete: valorFrete != null ? valorFrete : porItemId[cotItemId].frete,
+              valor_renegociado: valorReneg,
+              frete_renegociado: freteReneg,
+              frete_modalidade: itPayload.frete_modalidade
+                ? itPayload.frete_modalidade
+                : porItemId[cotItemId].frete_modalidade,
+            }, tenantId);
+          } else {
+            // INSERT novo (comprador preencheu manualmente, fornecedor não
+            // respondeu via link)
+            await this.db.insert('cotacao_fornecedor_itens', {
+              tenant_id: tenantId,
+              cotacao_fornecedor_id: atual.id,
+              cotacao_item_id: cotItemId,
+              chamado_item_id: itPayload.chamado_item_id || null,
+              valor: valor,
+              frete: valorFrete,
+              valor_renegociado: valorReneg,
+              frete_renegociado: freteReneg,
+              frete_modalidade: itPayload.frete_modalidade || null,
+              origem_preenchimento: 'manual',
+              prazo: dados.prazo != null ? parseInt(dados.prazo) : null,
+              criado_em: new Date().toISOString(),
+            }, tenantId);
+          }
+        }
+
+        // 3. Recalcula agregados do cabeçalho (valor, frete, economia)
+        const todasItensResp2 = await this.db.select('cotacao_fornecedor_itens',
+          { tenant_id: tenantId }, tenantId);
+        const linhasDoForn = todasItensResp2.filter(
+          ir => ir.cotacao_fornecedor_id === atual.id
+        );
+
+        const soma = (arr, campo) =>
+          arr.reduce((s, ir) => s + (parseFloat(ir[campo]) || 0), 0);
+
+        const valorTotal = soma(linhasDoForn, 'valor');
+        const freteTotal = soma(linhasDoForn, 'frete');
+
+        // Renegociado total: se o item tem renegociado, usa; senão, usa o
+        // valor original daquele item.
+        const valorRenegTotal = linhasDoForn.reduce((s, ir) => {
+          const v = ir.valor_renegociado != null
+            ? parseFloat(ir.valor_renegociado)
+            : (parseFloat(ir.valor) || 0);
+          return s + v;
+        }, 0);
+        const freteRenegTotal = linhasDoForn.reduce((s, ir) => {
+          const f = ir.frete_renegociado != null
+            ? parseFloat(ir.frete_renegociado)
+            : (parseFloat(ir.frete) || 0);
+          return s + f;
+        }, 0);
+
+        // Economia = (valor original + frete original) − (reneg total + frete reneg total)
+        const economiaTotal =
+          (valorTotal + freteTotal) - (valorRenegTotal + freteRenegTotal);
+
+        await this.db.update('cotacao_fornecedores', atual.id, {
+          valor: valorTotal,
+          valor_frete: freteTotal,
+          prazo: dados.prazo !== undefined ? parseInt(dados.prazo) : atual.prazo,
+          obs: dados.obs || atual.obs,
+          valor_renegociado: valorRenegTotal > 0 ? valorRenegTotal : null,
+          frete_renegociado: freteRenegTotal > 0 ? freteRenegTotal : null,
+          economia: economiaTotal > 0 ? economiaTotal : null,
+          economia_frete: null,
+          status: 'respondido',
+          data_resposta: atual.data_resposta || new Date()
+        }, tenantId);
+
+        return {
+          fornecedor_id: fornecedorId,
+          valor: valorTotal,
+          valor_frete: freteTotal,
+          itens_atualizados: dados.itens.length,
+          economia_total: economiaTotal,
+        };
+      }
+
+      // ── Fallback: payload antigo (sem array `itens`) ──
+      // Compatibilidade com chamadores que ainda mandam só os campos
+      // avulsos no nível do cabeçalho. Deve ser removido quando todos
+      // os clientes migrarem pra `dados.itens`.
       const economia = dados.valor_renegociado ? (atual.valor || 0) - dados.valor_renegociado : null;
-      // 🔥 CALCULAR ECONOMIA DO FRETE
       const economia_frete = dados.frete_renegociado ? (atual.valor_frete || 0) - dados.frete_renegociado : null;
 
       await this.db.update('cotacao_fornecedores', atual.id, {
-        valor: dados.valor || atual.valor,
-        prazo: dados.prazo || atual.prazo,
+        valor: dados.valor !== undefined ? dados.valor : atual.valor,
+        prazo: dados.prazo !== undefined ? dados.prazo : atual.prazo,
         valor_frete: dados.valor_frete !== undefined ? dados.valor_frete : atual.valor_frete,
         obs: dados.obs || atual.obs,
         valor_renegociado: dados.valor_renegociado !== undefined ? dados.valor_renegociado : atual.valor_renegociado,
@@ -1604,6 +1838,206 @@ async obterStatusCotacao(tenantId, cotacaoId) {
       throw err;
     }
   }
+
+  // ─────────────────────────────────────────────────────────────────────────
+// emitirOCs — emite uma OC por fornecedor, agrupando todos os itens
+// selecionados para aquele fornecedor em uma única OC.
+//
+// Substitui o fluxo antigo (criarOrdenVenda) que gerava 1 OC só com o
+// "melhor fornecedor geral", ignorando que cada item pode ter um vencedor
+// diferente.
+//
+// Body esperado:
+//   selecoes: [
+//     { cotacao_item_id, fornecedor_id, justificativa?, sugerido_fornecedor_id?, valor_sugerido? }
+//   ]
+// ─────────────────────────────────────────────────────────────────────────
+async emitirOCs(tenantId, cotacaoId, selecoes, usuarioId = null, usuarioNome = null) {
+  const cotacao = await this.db.selectOne('cotacoes', { id: cotacaoId }, tenantId);
+  if (!cotacao) throw new Error(`Cotação ${cotacaoId} não encontrada`);
+
+  // 1. Carregar itens da cotação
+  const cotacaoItens = await this.db.select('cotacao_itens',
+    { cotacao_id: cotacaoId, tenant_id: tenantId }, tenantId);
+  const cotacaoItensPorId = {};
+  cotacaoItens.forEach(ci => { cotacaoItensPorId[ci.id] = ci; });
+
+  if (Object.keys(cotacaoItensPorId).length === 0) {
+    throw new Error('Cotação não tem itens');
+  }
+
+  // 2. Validar seleções
+  const selecoesValidadas = [];
+  const itensVistos = new Set();
+  for (const s of selecoes) {
+    const ci = cotacaoItensPorId[s.cotacao_item_id];
+    if (!ci) throw new Error(`Item ${s.cotacao_item_id} não pertence a esta cotação`);
+    if (itensVistos.has(s.cotacao_item_id)) {
+      throw new Error(`Item ${s.cotacao_item_id} selecionado mais de uma vez`);
+    }
+    itensVistos.add(s.cotacao_item_id);
+
+    const resposta = await this.db.selectOne('cotacao_fornecedores', {
+      cotacao_id: cotacaoId,
+      fornecedor_id: s.fornecedor_id
+    }, tenantId);
+    if (!resposta) throw new Error(`Fornecedor ${s.fornecedor_id} não está nesta cotação`);
+    if (resposta.status !== 'respondido') {
+      throw new Error(`Fornecedor ${resposta.fornecedor_nome} ainda não respondeu`);
+    }
+    selecoesValidadas.push({ ...s, cotacao_item: ci, resposta });
+  }
+
+  // 3. Validar cobertura: todos os itens da cotação precisam ter uma seleção
+  if (selecoesValidadas.length !== Object.keys(cotacaoItensPorId).length) {
+    throw new Error(
+      `Faltam ${Object.keys(cotacaoItensPorId).length - selecoesValidadas.length} item(ns) sem fornecedor selecionado`
+    );
+  }
+
+  // 4. Agrupar por fornecedor
+  const porFornecedor = {};
+  for (const s of selecoesValidadas) {
+    if (!porFornecedor[s.fornecedor_id]) {
+      porFornecedor[s.fornecedor_id] = {
+        fornecedor_id: s.fornecedor_id,
+        resposta: s.resposta,
+        itens: [],
+      };
+    }
+    porFornecedor[s.fornecedor_id].itens.push(s);
+  }
+
+  // 5. Buscar todos os chamado_itens (uma vez)
+  const chamadoItemIds = selecoesValidadas.map(s => s.cotacao_item.chamado_item_id);
+  const todosChamadoItens = await this.db.select('chamado_itens', { tenant_id: tenantId }, tenantId);
+  const chamadoItensMap = {};
+  todosChamadoItens.forEach(ci => {
+    if (chamadoItemIds.includes(ci.id)) chamadoItensMap[ci.id] = ci;
+  });
+
+  // 6. Criar uma OC por fornecedor
+  const ocsCriadas = [];
+  for (const grupo of Object.values(porFornecedor)) {
+    const fornId = grupo.fornecedor_id;
+    const resposta = grupo.resposta;
+
+    // Trava anti-duplicação (mesma cotação + fornecedor)
+    const ovExistente = await this.db.selectOne('ordens_venda', {
+      cotacao_id: cotacaoId,
+      fornecedor_id: fornId
+    }, tenantId);
+    if (ovExistente) {
+      throw new Error(
+        `OC ${ovExistente.numero} já foi emitida para ${resposta.fornecedor_nome} nesta cotação`
+      );
+    }
+
+    // Calcular totais (usa renegociado quando existir)
+    let valorTotal = 0;
+    let freteTotal = 0;
+    const itensParaOC = grupo.itens.map(s => {
+      const ci = s.cotacao_item;
+      const chamadoItem = chamadoItensMap[ci.chamado_item_id];
+      const valorItem = resposta.valor_renegociado != null
+        ? resposta.valor_renegociado
+        : resposta.valor;
+      const freteItem = resposta.frete_renegociado != null
+        ? resposta.frete_renegociado
+        : resposta.valor_frete;
+      const v = parseFloat(valorItem) || 0;
+      const f = parseFloat(freteItem) || 0;
+      const qtd = parseInt(ci.quantidade) || 1;
+      valorTotal += v * qtd;
+      freteTotal += f;
+      return {
+        cotacao_item_id: ci.id,
+        chamado_item_id: ci.chamado_item_id,
+        item_catalogo_id: chamadoItem?.item_catalogo_id || null,
+        nome_item: chamadoItem?.item_nome || 'Item sem nome',
+        quantidade: qtd,
+        valor_unitario: v,
+        valor_total: v * qtd,
+      };
+    });
+
+    // Gerar número e criar OC
+    const numeroOC = await this.gerarNumeroOrdenVenda(tenantId);
+    const oc = await this.db.insert('ordens_venda', {
+      tenant_id: tenantId,
+      cotacao_id: cotacaoId,
+      fornecedor_id: fornId,
+      numero: numeroOC,
+      status: 'pendente',
+      valor_total: valorTotal + freteTotal,
+      valor_frete: freteTotal,
+      prazo_entrega: resposta.prazo,
+      criado_em: new Date(),
+      criado_por: usuarioId,
+      origem_ov_numero: cotacao.origem_ov_numero || null,
+      valor_original: resposta.valor || 0,
+      frete_original: resposta.valor_frete || 0,
+    }, tenantId);
+
+    // Inserir itens
+    for (const item of itensParaOC) {
+      await this.db.insert('ordem_venda_itens', {
+        tenant_id: tenantId,
+        ordem_venda_id: oc.id,
+        cotacao_item_id: item.cotacao_item_id,
+        chamado_item_id: item.chamado_item_id,
+        item_catalogo_id: item.item_catalogo_id,
+        nome_item: item.nome_item,
+        quantidade: item.quantidade,
+        valor_unitario: item.valor_unitario,
+        valor_total: item.valor_total,
+        criado_em: new Date(),
+      }, tenantId);
+    }
+
+    // Salvar seleção + justificativa (auditoria)
+    for (const s of grupo.itens) {
+      const sugeridoId = s.sugerido_fornecedor_id || null;
+      const eraSugestao = sugeridoId != null
+        && String(s.fornecedor_id) === String(sugeridoId);
+      await this.db.insert('cotacao_fornecedor_item_selecionado', {
+        tenant_id: tenantId,
+        cotacao_id: cotacaoId,
+        cotacao_item_id: s.cotacao_item_id,
+        fornecedor_id: s.fornecedor_id,
+        justificativa: s.justificativa || null,
+        sugerido_fornecedor_id: sugeridoId,
+        era_sugestao: eraSugestao,
+        valor_escolhido: resposta.valor_renegociado != null
+          ? resposta.valor_renegociado
+          : resposta.valor,
+        valor_sugerido: s.valor_sugerido != null ? s.valor_sugerido : null,
+        criado_por: usuarioId,
+        criado_por_nome: usuarioNome,
+        criado_em: new Date().toISOString(),
+      }, tenantId);
+    }
+
+    ocsCriadas.push({
+      id: oc.id,
+      numero: oc.numero,
+      fornecedor_id: fornId,
+      fornecedor_nome: resposta.fornecedor_nome,
+      valor_total: valorTotal + freteTotal,
+      itens: itensParaOC,
+    });
+  }
+
+  // 7. Marcar cotação como finalizada
+  await this.db.update('cotacoes', cotacaoId, {
+    status: 'finalizada',
+    finalizado_em: new Date().toISOString(),
+  }, tenantId);
+
+  return { ocs: ocsCriadas, total: ocsCriadas.length };
+}
+
+
 }
 
 module.exports = CotacaoService;

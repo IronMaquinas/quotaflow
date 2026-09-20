@@ -336,6 +336,11 @@ export default function TelaChamadosNova({ fmtBRL, fmtD, C, s, equipamentos }) {
     });
 
     const serializarItem = (it) => ({
+      // FIX (2026-09): incluir o `id` real do item. Sem isso, o PUT não
+      // reconhece o item existente e cria duplicata (o antigo fica no banco
+      // + o novo entra). Em criação, o id temporário (fracionário) do
+      // frontend é tratado como novo pelo backend — insere corretamente.
+      id: it.id,
       tipo: "material",
       origem: "planejado",
       status: "ativo",

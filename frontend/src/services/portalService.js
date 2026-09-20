@@ -31,8 +31,15 @@ export const portalService = {
 
     const data = await response.json();
 
-    // A resposta do backend tem a estrutura: { cotacao, fornecedor, empresa, itens, respostasExistentes }
+    // FIX (2026-09): versão enxuta — NÃO espalhar `...data.cotacao` nem
+    // adicionar `empresa`/`fornecedor` como objetos soltos no retorno.
+    // Isso jogava os campos crus do tenant (id, slug, cnpj, plano...)
+    // no estado, e algum JSX renderizava `{cotacao.empresa}` direto,
+    // quebrando com "Objects are not valid as a React child".
+    // Mantemos apenas o que a tela realmente usa + os campos novos do
+    // "já respondida" (que são primitivos/array — seguros pro React).
     return {
+      // Aliases legados (compatíveis com a tela que já funcionava)
       id: data.cotacao?.id,
       numero_cotacao: data.cotacao?.numero,
       itens: (data.itens || []).map(item => ({
@@ -44,7 +51,22 @@ export const portalService = {
         quantidade: item.quantidade,
         categoria: item.categoria,
         urgencia: item.urgencia,
-      }))
+      })),
+
+      // Campos do "já respondida" — backend pode retornar em root OU
+      // aninhado dentro de `cotacao` dependendo da versão do patch.
+      // Aceitamos os dois pra não quebrar em nenhum caso.
+      ja_respondida:
+        data.ja_respondida === true || data.cotacao?.ja_respondida === true,
+      respondida_em:
+        data.respondida_em || data.cotacao?.respondida_em || null,
+      itens_respondidos:
+        (Array.isArray(data.itens_respondidos) && data.itens_respondidos) ||
+        (Array.isArray(data.cotacao?.itens_respondidos) && data.cotacao.itens_respondidos) ||
+        [],
+
+      // Respostas existentes (pra preencher prazo/obs no modo "já respondida")
+      respostasExistentes: data.respostasExistentes || null,
     };
   },
 

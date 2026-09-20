@@ -1,3 +1,19 @@
+// ─────────────────────────────────────────────────────────────────────────
+// ⚠️ ATENÇÃO — LIMITAÇÃO CRÍTICA DO DB.raw
+// ─────────────────────────────────────────────────────────────────────────
+// Este método reconhece APENAS alguns padrões específicos de query (ex:
+// "FROM chamados c LEFT JOIN equipamentos"). Qualquer outro SQL cai no
+// fallback genérico, que SÓ FILTRA POR tenant_id — ignorando silenciosamente
+// WHERE com LIKE, ANY, IN, JOIN, comparações, IS NOT NULL etc.
+//
+// REGRA: se a query precisa filtrar por qualquer coisa além de tenant_id,
+// use DB.select + filtro em JS. NÃO use DB.raw com WHERE "esperto".
+//
+// Histórico: em 2026-09 esse padrão causou 10+ bugs sutis (numeração
+// repetida, itens duplicados, cotações misturadas, séries vazando entre
+// tenants). Ver comentários "FIX (2026-09)" nos arquivos de rotas.
+// ─────────────────────────────────────────────────────────────────────────
+
 // ════════════════════════════════════════════════════════════════════════════════
 // db.js: CLIENTE SUPABASE (REST) - SEM JOINS AMBÍGUOS
 // ════════════════════════════════════════════════════════════════════════════════

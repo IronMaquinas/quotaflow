@@ -18,6 +18,9 @@ export function usePortal(token) {
       setLoading(true);
       setErro(null);
       const data = await portalService.buscarCotacao(token);
+       console.log("🔍 DEBUG usePortal — response:", data);
+      console.log("🔍 DEBUG usePortal — ja_respondida (root):", data?.ja_respondida);
+      console.log("🔍 DEBUG usePortal — ja_respondida (nested):", data?.cotacao?.ja_respondida);
       setCotacao(data);
     } catch (err) {
       // 🔥 SE FOR ERRO DE TOKEN AUSENTE, IGNORA (NÃO MOSTRA ERRO)

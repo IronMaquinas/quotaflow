@@ -192,6 +192,59 @@ export const cotacoesService = {
     return response.json();
   },
 
+    async reenviarEmailFornecedor(accessToken, cotacaoId, fornecedorId) {
+    const response = await fetch(
+      `${API_URL}/cotacoes/${cotacaoId}/fornecedores/${fornecedorId}/reenviar-email`,
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+      }
+    );
+    if (!response.ok) {
+      const erro = await response.json();
+      throw new Error(erro.erro || "Erro ao reenviar email");
+    }
+    return response.json();
+  },
+
+  async adicionarFornecedores(accessToken, cotacaoId, fornecedorIds, cotacaoItemIds = []) {
+    const response = await fetch(`${API_URL}/cotacoes/${cotacaoId}/adicionar-fornecedores`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        fornecedor_ids: fornecedorIds,
+        cotacao_item_ids: cotacaoItemIds,
+      }),
+    });
+    if (!response.ok) {
+      const erro = await response.json();
+      throw new Error(erro.erro || "Erro ao adicionar fornecedores");
+    }
+    return response.json();
+  },
+
+  async emitirOCs(accessToken, cotacaoId, selecoes) {
+    const response = await fetch(`${API_URL}/cotacoes/${cotacaoId}/emitir-ocs`, {
+      method: "POST",
+      headers: {
+        "Authorization": `Bearer ${accessToken}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ selecoes }),
+    });
+    if (!response.ok) {
+      const erro = await response.json();
+      throw new Error(erro.erro || "Erro ao emitir OCs");
+    }
+    return response.json();
+  },
+
   async criarOrdenVenda(accessToken, cotacaoId, fornecedorId) {
     const response = await fetch(`${API_URL}/cotacoes/${cotacaoId}/ordem-venda`, {
       method: "POST",
@@ -211,7 +264,12 @@ export const cotacoesService = {
   },
 
   async obterStatusCotacao(accessToken, cotacaoId) {
-  const response = await fetch(`${API_URL}/cotacoes/${cotacaoId}/status`, {
+  // FIX (2026-09): o endpoint /status chamava obterStatusCotacao, que lia
+  // o valor AGREGADO do cabeçalho (cotacao_fornecedores.valor) e repetia
+  // em todas as linhas de item. O endpoint /monitorar já tem a versão
+  // correta (valor POR ITEM de cotacao_fornecedor_itens) — trocamos pra
+  // ele. A assinatura de resposta é idêntica, nada mais no frontend muda.
+  const response = await fetch(`${API_URL}/cotacoes/${cotacaoId}/monitorar`, {
       method: "GET",
       headers: {
         "Authorization": `Bearer ${accessToken}`,

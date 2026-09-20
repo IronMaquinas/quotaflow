@@ -96,12 +96,42 @@ router.get('/portal/cotacao/:cotacaoId/:token', async (req, res) => {
       tenantId
     );
 
+    // FIX (2026-09): detectar se já foi respondida e devolver os itens
+    // com valores — pro frontend poder mostrar a tela de comprovante
+    // em vez de um formulário vazio. Sem isso, o fornecedor reabre o
+    // link, preenche tudo de novo, e recebe "cotação já respondida" ao
+    // enviar (UX ruim + perda de tempo).
+    let jaRespondida = false;
+    let itensRespondidos = [];
+    if (cotacaoFornecedorData.status === 'respondido') {
+      jaRespondida = true;
+      const todosItensResp = await DB.select('cotacao_fornecedor_itens',
+        { tenant_id: tenantId }, tenantId);
+      itensRespondidos = todosItensResp
+        .filter(ir => ir.cotacao_fornecedor_id === cotacaoFornecedorData.id)
+        .map(ir => ({
+          cotacao_item_id: ir.cotacao_item_id,
+          valor: ir.valor,
+          frete: ir.frete,
+          modalidade: ir.frete_modalidade,
+        }));
+    }
+
     return res.json({
-      cotacao,
+      cotacao: {
+        ...cotacao,
+        // FIX (2026-09): os campos abaixo ficam DENTRO de `cotacao` para
+        // o hook usePortal já os expor ao componente. Na versão anterior
+        // ficavam no nível raiz e o frontend procurava em `cotacao.*` —
+        // nunca achava, e o "já respondida" nunca bloqueava.
+        ja_respondida: jaRespondida,
+        respondida_em: cotacaoFornecedorData.data_resposta || null,
+        itens_respondidos: itensRespondidos,
+      },
       fornecedor,
       empresa,
       itens: itensFormatados,
-      respostasExistentes: respostasExistentes[0] || null
+      respostasExistentes: respostasExistentes[0] || null,
     });
 
   } catch (erro) {
@@ -266,13 +296,79 @@ router.post('/portal/cotacao/:cotacaoId/:token/responder', async (req, res) => {
       const empresa = await DB.selectOne('tenants', { id: tenantId });
       const cotacao = await DB.selectOne('cotacoes', { id: cotacaoId }, tenantId);
 
+      // FIX (2026-09): detalhar item a item no email de confirmação. Antes
+      // o fornecedor só via "Valor total" e não tinha como conferir se a
+      // proposta gravada bate com o que ele digitou no portal.
+      const chamadoItemIds = respostas
+        .map(r => itensCotacaoPorId.get(parseInt(r.itemId, 10))?.chamado_item_id)
+        .filter(Boolean);
+      const todosChamadoItens = chamadoItemIds.length > 0
+        ? await DB.select('chamado_itens', { tenant_id: tenantId }, tenantId)
+        : [];
+      const chamadoItemPorId = {};
+      todosChamadoItens
+        .filter(ci => chamadoItemIds.includes(ci.id))
+        .forEach(ci => { chamadoItemPorId[ci.id] = ci; });
+
+      const linhasHtml = respostas.map(r => {
+        const itemId = parseInt(r.itemId, 10);
+        const itemCot = itensCotacaoPorId.get(itemId);
+        const chamadoItem = itemCot ? chamadoItemPorId[itemCot.chamado_item_id] : null;
+        const nome = chamadoItem?.item_nome || `Item ${r.itemId}`;
+        const codigo = chamadoItem?.codigo || '';
+        const qtd = parseInt(r.quantidade) || 1;
+        const valorUnit = parseFloat(r.valor_unitario || 0);
+        const freteItem = parseFloat(r.valor_frete || 0);
+        const modalidade = r.frete || '';
+        const subtotal = (valorUnit * qtd) + freteItem;
+        return `
+          <tr>
+            <td style="padding:8px;border-bottom:1px solid #eee;">
+              ${nome}${codigo ? ` <small style="color:#888">(${codigo})</small>` : ''}
+            </td>
+            <td style="padding:8px;border-bottom:1px solid #eee;text-align:center;">${qtd}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">R$ ${valorUnit.toFixed(2).replace('.', ',')}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;">R$ ${freteItem.toFixed(2).replace('.', ',')}${modalidade ? ` <small style="color:#888">(${modalidade})</small>` : ''}</td>
+            <td style="padding:8px;border-bottom:1px solid #eee;text-align:right;font-weight:600;">R$ ${subtotal.toFixed(2).replace('.', ',')}</td>
+          </tr>
+        `;
+      }).join('');
+
+      const valorItensTotal = respostas.reduce((s, r) =>
+        s + (parseFloat(r.valor_unitario || 0) * (parseInt(r.quantidade) || 1)), 0);
+      const freteTotal = respostas.reduce((s, r) =>
+        s + parseFloat(r.valor_frete || 0), 0);
+      const totalGeral = valorItensTotal + freteTotal;
+
       const assunto = `Proposta enviada com sucesso - Cotação ${cotacao.numero || cotacaoId}`;
       const corpo = `
         <h2>Proposta enviada!</h2>
-        <p>Olá ${fornecedor?.nome || 'Fornecedor'},</p>
+        <p>Olá <strong>${fornecedor?.nome || 'Fornecedor'}</strong>,</p>
         <p>Sua proposta para a cotação <strong>${cotacao.numero || cotacaoId}</strong> foi enviada com sucesso para ${empresa?.nome || 'a empresa'}.</p>
-        <p><strong>Valor total:</strong> R$ ${valorTotal.toFixed(2).replace('.', ',')}</p>
+        <table style="width:100%;border-collapse:collapse;margin:16px 0;font-size:14px;">
+          <thead>
+            <tr style="background:#f5f5f5;">
+              <th style="padding:8px;text-align:left;border-bottom:2px solid #ddd;">Item</th>
+              <th style="padding:8px;text-align:center;border-bottom:2px solid #ddd;">Qtd</th>
+              <th style="padding:8px;text-align:right;border-bottom:2px solid #ddd;">Valor unit.</th>
+              <th style="padding:8px;text-align:right;border-bottom:2px solid #ddd;">Frete</th>
+              <th style="padding:8px;text-align:right;border-bottom:2px solid #ddd;">Subtotal</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${linhasHtml}
+          </tbody>
+        </table>
+        <p style="text-align:right;"><strong>Subtotal dos itens:</strong> R$ ${valorItensTotal.toFixed(2).replace('.', ',')}</p>
+        <p style="text-align:right;"><strong>Frete:</strong> R$ ${freteTotal.toFixed(2).replace('.', ',')}</p>
+        <p style="text-align:right;font-size:16px;"><strong>Total: R$ ${totalGeral.toFixed(2).replace('.', ',')}</strong></p>
         <p><strong>Prazo:</strong> ${parseInt(respostas[0]?.prazo || 0)} dias úteis</p>
+        ${respostas[0]?.observacoes ? `
+          <div style="background:#f5f5f5;border-left:4px solid #2563eb;padding:12px;margin:16px 0;">
+            <p style="margin:0;font-size:13px;color:#555;"><strong>Suas observações:</strong></p>
+            <p style="margin:6px 0 0 0;font-style:italic;">${respostas[0].observacoes}</p>
+          </div>
+        ` : ''}
         <p>Aguardamos o retorno do comprador.</p>
         <hr>
         <p><small>Esta é uma mensagem automática. Não responda este e-mail.</small></p>
