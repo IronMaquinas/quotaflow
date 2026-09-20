@@ -807,6 +807,76 @@ export default function TelaMonitorarRespostas({
     return Object.values(mapa).sort((a, b) => b.total - a.total);
   })();
 
+  // Panorama executivo da RC — 3 atos:
+  //   1. Sem o QuotaFlow = pior cotação de cada item (o que o comprador
+  //      veria se só tivesse 1 fornecedor na mesa)
+  //   2. Com o QuotaFlow = menor cotação de cada item (piso tornado
+  //      visível pela plataforma ao agregar múltiplas ofertas)
+  //   3. Após negociação = o que o comprador fechou (respeita seleção no
+  //      radio + renegociação, CIF/FOB)
+  //
+  // Saving do Sistema = (1) − (2) — mérito da plataforma.
+  // Saving do Comprador = (2) − (3) — mérito (ou custo) do comprador.
+  //   PODE SER NEGATIVO quando ele escolhe um fornecedor pior que o
+  //   menor disponível, mesmo após renegociar. Isso é intencional: o
+  //   painel comunica o custo da decisão, não só o brilho da negociação.
+  //
+  // Itens sem nenhuma resposta não entram em (1) nem em (2) — não há
+  // cotação pra comparar. Aparecem só nos contadores de pendência.
+  const panoramaRC = (() => {
+    let semQuotaflow = 0;
+    let comQuotaflow = 0;
+    let aposNegociacao = 0;
+
+    // Total efetivo = valor + frete (frete só entra em FOB)
+    const totalEfetivo = (f) => {
+      const ehCIF = (f.frete_modalidade || 'CIF') === 'CIF';
+      const v = parseFloat(f.valor) || 0;
+      const fr = ehCIF ? 0 : (parseFloat(f.frete) || 0);
+      return v + fr;
+    };
+
+    itens.forEach(item => {
+      const respondidos = (item.fornecedores || [])
+        .filter(f => f.status === 'respondido' && f.valor != null);
+      if (respondidos.length === 0) return;
+
+      const totais = respondidos.map(f => totalEfetivo(f));
+      semQuotaflow += Math.max(...totais);
+      comQuotaflow += Math.min(...totais);
+
+      // Fechado do item: valor efetivo do fornecedor selecionado,
+      // respeitando renegociação se houver.
+      const fornIdSel = selecoesPorItem[item.id];
+      if (fornIdSel != null) {
+        const fornSel = respondidos.find(
+          f => String(f.fornecedor_id) === String(fornIdSel)
+        );
+        if (fornSel) {
+          const ehCIF = (fornSel.frete_modalidade || 'CIF') === 'CIF';
+          const vUnit = fornSel.valor_renegociado != null
+            ? (parseFloat(fornSel.valor_renegociado) || 0)
+            : (parseFloat(fornSel.valor) || 0);
+          const fUnit = ehCIF
+            ? 0
+            : (fornSel.frete_renegociado != null
+                ? (parseFloat(fornSel.frete_renegociado) || 0)
+                : (parseFloat(fornSel.frete) || 0));
+          const qtd = parseFloat(item.quantidade) || 1;
+          aposNegociacao += (vUnit + fUnit) * qtd;
+        }
+      }
+    });
+
+    return {
+      semQuotaflow,
+      comQuotaflow,
+      aposNegociacao,
+      savingSistema: semQuotaflow - comQuotaflow,
+      savingComprador: comQuotaflow - aposNegociacao,
+    };
+  })();
+
   const itensSemSelecao = itens.filter(item => selecoesPorItem[item.id] == null).length;
 
   // Função para determinar cor da borda baseado na posição
@@ -851,34 +921,9 @@ export default function TelaMonitorarRespostas({
         </div>
       </div>
 
-      {/* RESUMO */}
-      <div style={{
-        ...s.card,
-        padding: "16px 18px",
-        marginBottom: 20,
-        display: "grid",
-        gridTemplateColumns: "repeat(3, 1fr)",
-        gap: 12
-      }}>
-        <div>
-          <div style={{ fontSize: 10, color: C.muted }}>TOTAL</div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: C.text, marginTop: 4 }}>
-            {resumo.total}
-          </div>
-        </div>
-        <div>
-          <div style={{ fontSize: 10, color: C.muted }}>✅ RESPONDIDOS</div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: C.success, marginTop: 4 }}>
-            {resumo.respondidos}
-          </div>
-        </div>
-        <div>
-          <div style={{ fontSize: 10, color: C.muted }}>⏳ PENDENTES</div>
-          <div style={{ fontSize: 18, fontWeight: 700, color: C.warn, marginTop: 4 }}>
-            {resumo.pendentes}
-          </div>
-        </div>
-      </div>
+      {/* (Card cinza de resumo removido — o panorama executivo agora vive
+          dentro do card de VENCEDORES POR ITEM, com escopo mais rico e
+          contadores no rodapé. Ver bloco PANORAMA DA RC mais abaixo.) */}
 
       {/* VENCEDORES POR ITEM — agregação dos fornecedores que o comprador
           marcou no radio, por total efetivo (renegociado + FOB). Substitui
@@ -1017,6 +1062,138 @@ export default function TelaMonitorarRespostas({
               </div>
             );
           })}
+
+          {/* ─── PANORAMA DA RC — 3 atos ──────────────────────── */}
+          <div style={{
+            marginTop: 16,
+            paddingTop: 14,
+            borderTop: `1px solid ${C.border}66`,
+          }}>
+            <div style={{
+              fontSize: 10,
+              color: C.muted,
+              letterSpacing: "0.08em",
+              fontWeight: 600,
+              marginBottom: 12,
+            }}>
+              PANORAMA DA RC
+            </div>
+
+            <div style={{
+              display: "grid",
+              gridTemplateColumns: "1fr 1fr 1fr",
+              gap: 12,
+              marginBottom: 12,
+            }}>
+              {/* Coluna 1 — SEM o QuotaFlow (range de mercado) */}
+              <div>
+                <div style={{
+                  fontSize: 9, color: C.muted, letterSpacing: "0.05em",
+                  fontWeight: 600, marginBottom: 4,
+                }}>
+                  SEM O QUOTAFLOW
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: C.text }}>
+                  {fmtBRL(panoramaRC.semQuotaflow)}
+                </div>
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
+                  pior cotação disponível
+                </div>
+              </div>
+
+              {/* Coluna 2 — COM o QuotaFlow (piso disponível) */}
+              <div>
+                <div style={{
+                  fontSize: 9, color: "#22c55e", letterSpacing: "0.05em",
+                  fontWeight: 600, marginBottom: 4,
+                }}>
+                  COM O QUOTAFLOW
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "#22c55e" }}>
+                  {fmtBRL(panoramaRC.comQuotaflow)}
+                </div>
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
+                  menor cotação disponível
+                </div>
+              </div>
+
+              {/* Coluna 3 — APÓS a negociação (desembolso final) */}
+              <div>
+                <div style={{
+                  fontSize: 9, color: "#f59e0b", letterSpacing: "0.05em",
+                  fontWeight: 600, marginBottom: 4,
+                }}>
+                  APÓS NEGOCIAÇÃO
+                </div>
+                <div style={{ fontSize: 16, fontWeight: 700, color: "#f59e0b" }}>
+                  {fmtBRL(panoramaRC.aposNegociacao)}
+                </div>
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
+                  fechado pelo comprador
+                </div>
+              </div>
+            </div>
+
+            {/* Savings — Sistema (verde) x Comprador (âmbar/vermelho) */}
+            <div style={{
+              display: "flex",
+              gap: 20,
+              flexWrap: "wrap",
+              padding: "10px 12px",
+              background: "#00000040",
+              borderRadius: 8,
+              marginBottom: 12,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ fontSize: 11, color: "#22c55e", fontWeight: 600 }}>
+                  💰 Saving do Sistema:
+                </span>
+                <span style={{ fontSize: 13, color: "#22c55e", fontWeight: 700 }}>
+                  {panoramaRC.savingSistema > 0
+                    ? `+${fmtBRL(panoramaRC.savingSistema)}`
+                    : fmtBRL(0)}
+                </span>
+              </div>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{
+                  fontSize: 11,
+                  color: panoramaRC.savingComprador < 0 ? "#ef4444" : "#f59e0b",
+                  fontWeight: 600,
+                }}>
+                  ✍️ Saving do Comprador:
+                </span>
+                <span style={{
+                  fontSize: 13,
+                  fontWeight: 700,
+                  color: panoramaRC.savingComprador < 0 ? "#ef4444" : "#f59e0b",
+                }}>
+                  {panoramaRC.savingComprador === 0
+                    ? "—"
+                    : panoramaRC.savingComprador > 0
+                      ? `+${fmtBRL(panoramaRC.savingComprador)}`
+                      : fmtBRL(panoramaRC.savingComprador)}
+                </span>
+              </div>
+            </div>
+
+            {/* Contadores */}
+            <div style={{
+              fontSize: 10,
+              color: C.muted,
+              display: "flex",
+              gap: 12,
+              flexWrap: "wrap",
+            }}>
+              <span>📦 {resumo.total} {resumo.total === 1 ? "item" : "itens"}</span>
+              <span>✅ {resumo.respondidos} {resumo.respondidos === 1 ? "respondido" : "respondidos"}</span>
+              {resumo.pendentes > 0 && (
+                <span style={{ color: C.warn }}>
+                  ⏳ {resumo.pendentes} {resumo.pendentes === 1 ? "pendente" : "pendentes"}
+                </span>
+              )}
+            </div>
+          </div>
+
           {itensSemSelecao > 0 && (
             <div style={{
               fontSize: 11,
