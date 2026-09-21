@@ -1980,6 +1980,207 @@ router.put('/:cotacaoId/fornecedor/:fornecedorId/atualizar-resposta', tenantMidd
 });
 
 // ───────────────────────────────────────────────────────────────────────
+// POST /api/cotacoes/:cotacaoId/itens/:cotacaoItemId/cancelar
+//
+// Remove um item da cotação atual (marca o chamado_item da RC como
+// cancelado). Não apaga nada — histórico preservado em chamado_itens,
+// cotacao_itens e cotacao_fornecedor_itens. O motivo é obrigatório e
+// fica registrado na timeline da RC.
+//
+// Travas:
+//   1. Item já tem OC emitida (linha em ordem_venda_itens) → bloqueia
+//   2. Item é o último ativo da RC → bloqueia (cancele a RC inteira)
+//   3. Cotação não está em andamento → bloqueia
+//
+// Body: { motivo }
+// ───────────────────────────────────────────────────────────────────────
+router.post('/:cotacaoId/itens/:cotacaoItemId/cancelar', tenantMiddleware, async (req, res) => {
+  try {
+    const { cotacaoId, cotacaoItemId } = req.params;
+    const { motivo } = req.body;
+    const tenantId = req.tenantId;
+
+    if (!motivo || !motivo.trim()) {
+      return res.status(400).json({ erro: 'motivo é obrigatório' });
+    }
+
+    // 1. Cotação precisa existir e estar em andamento
+    const cotacao = await DB.selectOne('cotacoes', { id: cotacaoId }, tenantId);
+    if (!cotacao) return res.status(404).json({ erro: 'Cotação não encontrada' });
+    if (['finalizada', 'cancelada'].includes(cotacao.status)) {
+      return res.status(400).json({
+        erro: `Cotação ${cotacao.status} não permite remoção de itens`
+      });
+    }
+
+    // 2. Item precisa pertencer a esta cotação
+    const cotacaoItem = await DB.selectOne('cotacao_itens', {
+      id: cotacaoItemId,
+      cotacao_id: cotacaoId,
+    }, tenantId);
+    if (!cotacaoItem) {
+      return res.status(404).json({ erro: 'Item não encontrado nesta cotação' });
+    }
+    if (!cotacaoItem.chamado_item_id) {
+      return res.status(400).json({ erro: 'Item sem vínculo com a RC' });
+    }
+
+    // 3. Trava 1 — já tem OC emitida?
+    const todosOcItens = await DB.select('ordem_venda_itens', { tenant_id: tenantId }, tenantId);
+    const ocItemVinculado = todosOcItens.find(
+      oi => String(oi.cotacao_item_id) === String(cotacaoItemId)
+    );
+    if (ocItemVinculado) {
+      const oc = await DB.selectOne('ordens_venda', { id: ocItemVinculado.ordem_venda_id }, tenantId);
+      return res.status(400).json({
+        erro: `Item já faz parte da OC ${oc?.numero || ocItemVinculado.ordem_venda_id}. Cancele a OC antes de remover o item.`,
+        oc_id: ocItemVinculado.ordem_venda_id,
+        oc_numero: oc?.numero || null,
+      });
+    }
+
+    // 4. Trava 2 — último item ativo da RC?
+    const itensDaRc = await DB.select('chamado_itens', {
+      chamado_id: cotacao.chamado_id,
+      tenant_id: tenantId,
+    }, tenantId);
+    const itensAtivos = itensDaRc.filter(it => it.status !== 'cancelado');
+    if (itensAtivos.length <= 1) {
+      return res.status(400).json({
+        erro: 'Este é o último item ativo da RC. Cancele a RC inteira em vez de remover o último item.'
+      });
+    }
+
+    // 5. Cancela o chamado_item (histórico preservado)
+    const u = await usuarioAtual(req, tenantId);
+    await DB.update('chamado_itens', cotacaoItem.chamado_item_id, {
+      status: 'cancelado',
+      cancelado_em: new Date().toISOString(),
+      cancelado_por: u.id,
+      cancelado_por_nome: u.nome,
+      motivo_cancelamento: motivo.trim(),
+    }, tenantId);
+
+    // 6. Evento na timeline da RC
+    await registrarEvento(
+      tenantId,
+      cotacao.chamado_id,
+      'item_cancelado_cotacao',
+      `Item "${cotacaoItem.item_nome || cotacaoItem.nome || `#${cotacaoItemId}`}" removido da cotação ${cotacao.numero}. Motivo: ${motivo.trim()}`,
+      {
+        cotacao_id: Number(cotacaoId),
+        cotacao_item_id: Number(cotacaoItemId),
+        chamado_item_id: cotacaoItem.chamado_item_id,
+        motivo: motivo.trim(),
+      },
+      u
+    );
+
+    res.json({
+      ok: true,
+      chamado_item_id: cotacaoItem.chamado_item_id,
+      cotacao_item_id: Number(cotacaoItemId),
+      mensagem: 'Item removido da cotação',
+    });
+  } catch (err) {
+    console.error('❌ Erro ao cancelar item da cotação:', err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ───────────────────────────────────────────────────────────────────────
+// POST /api/cotacoes/:cotacaoId/itens/:cotacaoItemId/restaurar
+//
+// Desfaz um cancelamento de item da cotação. Mesmo padrão de "reverter
+// aplicação" — nunca deleta evento, registra a restauração na timeline.
+//
+// Travas:
+//   1. Cotação precisa aceitar edição (não finalizada/cancelada)
+//   2. Item precisa estar cancelado
+//   3. Item não pode ter OC emitida (mesma trava do cancelar)
+//
+// Body: { motivo? }  (opcional — restaurar é ação corretiva)
+// ───────────────────────────────────────────────────────────────────────
+router.post('/:cotacaoId/itens/:cotacaoItemId/restaurar', tenantMiddleware, async (req, res) => {
+  try {
+    const { cotacaoId, cotacaoItemId } = req.params;
+    const { motivo } = req.body || {};
+    const tenantId = req.tenantId;
+
+    const cotacao = await DB.selectOne('cotacoes', { id: cotacaoId }, tenantId);
+    if (!cotacao) return res.status(404).json({ erro: 'Cotação não encontrada' });
+    if (['finalizada', 'cancelada'].includes(cotacao.status)) {
+      return res.status(400).json({
+        erro: `Cotação ${cotacao.status} não permite restaurar itens`
+      });
+    }
+
+    const cotacaoItem = await DB.selectOne('cotacao_itens', {
+      id: cotacaoItemId,
+      cotacao_id: cotacaoId,
+    }, tenantId);
+    if (!cotacaoItem) {
+      return res.status(404).json({ erro: 'Item não encontrado nesta cotação' });
+    }
+
+    const chamadoItem = await DB.selectOne('chamado_itens', {
+      id: cotacaoItem.chamado_item_id,
+      tenant_id: tenantId,
+    }, tenantId);
+    if (!chamadoItem) {
+      return res.status(404).json({ erro: 'Item da RC não encontrado' });
+    }
+    if (chamadoItem.status !== 'cancelado') {
+      return res.status(400).json({ erro: 'Item não está cancelado' });
+    }
+
+    // Trava: se por algum motivo já tem OC pra este item, não restaura
+    const todosOcItens = await DB.select('ordem_venda_itens', { tenant_id: tenantId }, tenantId);
+    const ocItemVinculado = todosOcItens.find(
+      oi => String(oi.cotacao_item_id) === String(cotacaoItemId)
+    );
+    if (ocItemVinculado) {
+      return res.status(400).json({
+        erro: `Item já faz parte de uma OC — não é possível restaurar.`
+      });
+    }
+
+    const u = await usuarioAtual(req, tenantId);
+    await DB.update('chamado_itens', chamadoItem.id, {
+      status: 'ativo',
+      cancelado_em: null,
+      cancelado_por: null,
+      cancelado_por_nome: null,
+      motivo_cancelamento: null,
+    }, tenantId);
+
+    await registrarEvento(
+      tenantId,
+      cotacao.chamado_id,
+      'item_restaurado_cotacao',
+      `Item "${cotacaoItem.item_nome || cotacaoItem.nome || `#${cotacaoItemId}`}" restaurado na cotação ${cotacao.numero}.${motivo && motivo.trim() ? ` Motivo: ${motivo.trim()}` : ''}`,
+      {
+        cotacao_id: Number(cotacaoId),
+        cotacao_item_id: Number(cotacaoItemId),
+        chamado_item_id: chamadoItem.id,
+        motivo: motivo && motivo.trim() ? motivo.trim() : null,
+      },
+      u
+    );
+
+    res.json({
+      ok: true,
+      chamado_item_id: chamadoItem.id,
+      cotacao_item_id: Number(cotacaoItemId),
+      mensagem: 'Item restaurado',
+    });
+  } catch (err) {
+    console.error('❌ Erro ao restaurar item da cotação:', err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ───────────────────────────────────────────────────────────────────────
 // POST /api/cotacoes/:cotacaoId/fornecedores
 // Vincula fornecedor a uma cotação
 // ───────────────────────────────────────────────────────────────────────
@@ -2073,12 +2274,24 @@ router.get('/:cotacaoId/monitorar', tenantMiddleware, async (req, res) => {
 
     // 2c. Juntar informações
     const itensComDados = itens.map(item => {
-      const chamadoItem = chamadoItens.find(ci => ci.id === item.chamado_item_id);
+      // FIX (2026-09): bigint do Postgres pode voltar como STRING ("10")
+      // enquanto item.chamado_item_id vem como number (10) — o `===` falha
+      // e o item cancelado nunca é identificado. Cast pra String nos dois
+      // lados (mesma defesa já usada no PUT /chamados/:id).
+      const chamadoItem = chamadoItens.find(
+        ci => String(ci.id) === String(item.chamado_item_id)
+      );
       return {
         ...item,
         item_nome: chamadoItem?.item_nome || 'Sem nome',
         codigo: chamadoItem?.codigo || '',
-        categoria: chamadoItem?.categoria || ''
+        categoria: chamadoItem?.categoria || '',
+        // Fase "Remover item da RC": expõe o status pra o frontend pintar
+        // o item de cinza quando cancelado, sem escondê-lo (histórico).
+        chamado_item_status: chamadoItem?.status || 'ativo',
+        motivo_cancelamento: chamadoItem?.motivo_cancelamento || null,
+        cancelado_por_nome: chamadoItem?.cancelado_por_nome || null,
+        cancelado_em: chamadoItem?.cancelado_em || null,
       };
     });
 
@@ -2194,7 +2407,14 @@ router.get('/:cotacaoId/monitorar', tenantMiddleware, async (req, res) => {
         quantidade: item.quantidade,
         categoria: item.categoria,
         codigo: item.codigo,
-        fornecedores: fornecedoresComResposta
+        fornecedores: fornecedoresComResposta,
+        // Fase "Remover item da RC": propagar os campos de cancelamento
+        // decorados em `itensComDados` — sem isso, o frontend nunca vê
+        // o item como cancelado e a UI fica "ativa" mesmo após remover.
+        chamado_item_status: item.chamado_item_status || 'ativo',
+        motivo_cancelamento: item.motivo_cancelamento || null,
+        cancelado_por_nome: item.cancelado_por_nome || null,
+        cancelado_em: item.cancelado_em || null,
       };
     });
 

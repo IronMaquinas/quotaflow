@@ -285,6 +285,44 @@ export const cotacoesService = {
     return response.json();
   },
 
+  async restaurarItemCotacao(accessToken, cotacaoId, cotacaoItemId, motivo = null) {
+    const response = await fetch(
+      `${API_URL}/cotacoes/${cotacaoId}/itens/${cotacaoItemId}/restaurar`,
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ motivo }),
+      }
+    );
+    if (!response.ok) {
+      const erro = await response.json();
+      throw new Error(erro.erro || "Erro ao restaurar item");
+    }
+    return response.json();
+  },
+
+  async cancelarItemCotacao(accessToken, cotacaoId, cotacaoItemId, motivo) {
+    const response = await fetch(
+      `${API_URL}/cotacoes/${cotacaoId}/itens/${cotacaoItemId}/cancelar`,
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ motivo }),
+      }
+    );
+    if (!response.ok) {
+      const erro = await response.json();
+      throw new Error(erro.erro || "Erro ao cancelar item");
+    }
+    return response.json();
+  },
+
   async atualizarRespostaFornecedor(accessToken, cotacaoId, fornecedorId, dados) {
     const response = await fetch(
       `${API_URL}/cotacoes/${cotacaoId}/fornecedor/${fornecedorId}/atualizar-resposta`,

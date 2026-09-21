@@ -43,6 +43,10 @@ export default function TelaMonitorarRespostas({
   // Chave = fornecedor_id (string). Colapsado por padrão — o card é
   // panorama, quem quiser detalhe clica.
   const [vencedoresExpandidos, setVencedoresExpandidos] = useState({});
+  // Modal de cancelamento de item da RC: { cotacao_item_id, item_nome } ou null
+  const [modalCancelarItem, setModalCancelarItem] = useState(null);
+  const [motivoCancelamento, setMotivoCancelamento] = useState('');
+  const [cancelandoItem, setCancelandoItem] = useState(false);
 
   // ─── CARREGAR DADOS ───────────────────────────────────────
   useEffect(() => {
@@ -167,8 +171,12 @@ export default function TelaMonitorarRespostas({
   const fornecedoresUnicos = [...new Set(Object.values(selecoesPorItem))];
 
   // Todos os itens têm seleção?
-  const todosItensComSelecao = dados?.itens?.length > 0
-    && dados.itens.every(item => selecoesPorItem[item.id] != null);
+  const todosItensComSelecao = (dados?.itens || [])
+    .filter(item => item.chamado_item_status !== 'cancelado')
+    .length > 0
+    && (dados?.itens || [])
+      .filter(item => item.chamado_item_status !== 'cancelado')
+      .every(item => selecoesPorItem[item.id] != null);
 
     // Abre o modal de adicionar fornecedor. Carrega a lista de fornecedores
   // do tenant (via /fornecedores) e filtra os que já estão nesta cotação.
@@ -191,8 +199,47 @@ export default function TelaMonitorarRespostas({
     }
   }
 
+  async function handleCancelarItem() {
+    if (!modalCancelarItem) return;
+    const modo = modalCancelarItem.modo || 'cancelar';
+    const ehRestaurar = modo === 'restaurar';
+
+    // Motivo é obrigatório pra remover (ação destrutiva), opcional pra
+    // restaurar (ação corretiva).
+    if (!ehRestaurar && !motivoCancelamento.trim()) {
+      alert('Informe o motivo da remoção.');
+      return;
+    }
+
+    setCancelandoItem(true);
+    try {
+      if (ehRestaurar) {
+        await cotacoesService.restaurarItemCotacao(
+          token,
+          cotacaoId,
+          modalCancelarItem.cotacao_item_id,
+          motivoCancelamento.trim() || null
+        );
+      } else {
+        await cotacoesService.cancelarItemCotacao(
+          token,
+          cotacaoId,
+          modalCancelarItem.cotacao_item_id,
+          motivoCancelamento.trim()
+        );
+      }
+      setModalCancelarItem(null);
+      setMotivoCancelamento('');
+      await carregarDados();
+    } catch (e) {
+      alert('Erro: ' + e.message);
+    } finally {
+      setCancelandoItem(false);
+    }
+  }
+
   function toggleAddFornecedor(fornId) {
-    setSelecionadosAdd(prev => {
+      setSelecionadosAdd(prev => {
       const jaMarcado = prev.includes(fornId);
       if (jaMarcado) {
         return prev.filter(x => x !== fornId);
@@ -782,6 +829,7 @@ export default function TelaMonitorarRespostas({
   const fornecedoresVencedores = (() => {
     const mapa = {};
     itens.forEach(item => {
+      if (item.chamado_item_status === 'cancelado') return;
       const fornIdSel = selecoesPorItem[item.id];
       if (fornIdSel == null) return;
       const forn = (item.fornecedores || []).find(
@@ -858,6 +906,7 @@ export default function TelaMonitorarRespostas({
     };
 
     itens.forEach(item => {
+      if (item.chamado_item_status === 'cancelado') return;
       const respondidos = (item.fornecedores || [])
         .filter(f => f.status === 'respondido' && f.valor != null);
       if (respondidos.length === 0) return;
@@ -898,7 +947,9 @@ export default function TelaMonitorarRespostas({
     };
   })();
 
-  const itensSemSelecao = itens.filter(item => selecoesPorItem[item.id] == null).length;
+  const itensSemSelecao = itens.filter(
+    item => item.chamado_item_status !== 'cancelado' && selecoesPorItem[item.id] == null
+  ).length;
 
   // Função para determinar cor da borda baseado na posição
   const getCorBorda = (posicao) => {
@@ -1264,11 +1315,107 @@ export default function TelaMonitorarRespostas({
                 <div style={{ textAlign: "left" }}>RENEGOCIADO</div>
                 <div style={{ textAlign: "left" }}>FRETE RENEGOCIADO</div>
                 <div style={{ textAlign: "left" }}>SAVING</div>
-                <div></div>
+                <div style={{ textAlign: "right" }}>
+                  {item.chamado_item_status !== 'cancelado' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMotivoCancelamento('');
+                        setModalCancelarItem({
+                          cotacao_item_id: item.id,
+                          item_nome: item.nome,
+                        });
+                      }}
+                      title="Remover este item da cotação"
+                      style={{
+                        background: "transparent",
+                        border: "none",
+                        color: "#ef4444",
+                        fontSize: 12,
+                        cursor: "pointer",
+                        fontFamily: "inherit",
+                        padding: "2px 6px",
+                        fontWeight: 700,
+                      }}
+                    >
+                      ✕
+                    </button>
+                  )}
+                </div>
               </div>
 
-              {/* LINHAS DE FORNECEDORES */}
-              {item.fornecedores.map((forn, fornIdx) => {
+              {/* Item cancelado — banner cinza com motivo + botão restaurar.
+                  Nome do item aparece AQUI porque as linhas de fornecedor
+                  somem (é lá que o nome mora quando está ativo). */}
+              {item.chamado_item_status === 'cancelado' && (
+                <div style={{
+                  padding: "14px 18px",
+                  background: "#111111",
+                  border: `1px dashed ${C.border}`,
+                  borderTop: "none",
+                  borderRadius: "0 0 6px 6px",
+                  color: C.muted,
+                  fontSize: 12,
+                  display: "flex",
+                  justifyContent: "space-between",
+                  alignItems: "flex-start",
+                  gap: 12,
+                }}>
+                  <div style={{ display: "flex", flexDirection: "column", gap: 4, flex: 1 }}>
+                    <div style={{ fontWeight: 600, color: "#ef4444", fontSize: 13 }}>
+                      ⛔ Item removido da cotação:{" "}
+                      <span style={{ color: C.text }}>{item.nome}</span>
+                      {item.codigo && (
+                        <span style={{ color: C.muted, fontSize: 11, marginLeft: 6, fontWeight: 500 }}>
+                          {item.codigo}
+                        </span>
+                      )}
+                    </div>
+                    {item.motivo_cancelamento && (
+                      <div>
+                        Motivo: <span style={{ color: C.text }}>{item.motivo_cancelamento}</span>
+                      </div>
+                    )}
+                    {item.cancelado_por_nome && (
+                      <div style={{ fontSize: 11 }}>
+                        Por {item.cancelado_por_nome}
+                        {item.cancelado_em && ` em ${new Date(item.cancelado_em).toLocaleString('pt-BR')}`}
+                      </div>
+                    )}
+                  </div>
+                  {cotacao.status !== 'finalizada' && cotacao.status !== 'cancelada' && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setMotivoCancelamento('');
+                        setModalCancelarItem({
+                          modo: 'restaurar',
+                          cotacao_item_id: item.id,
+                          item_nome: item.nome,
+                        });
+                      }}
+                      title="Restaurar este item na cotação"
+                      style={{
+                        background: "transparent",
+                        border: `1px solid ${C.accent}55`,
+                        borderRadius: 6,
+                        color: C.accent,
+                        fontSize: 11,
+                        cursor: "pointer",
+                        padding: "6px 12px",
+                        fontFamily: "inherit",
+                        fontWeight: 600,
+                        whiteSpace: "nowrap",
+                      }}
+                    >
+                      ↩ Restaurar
+                    </button>
+                  )}
+                </div>
+              )}
+
+              {/* LINHAS DE FORNECEDORES — só se o item está ativo */}
+              {item.chamado_item_status !== 'cancelado' && item.fornecedores.map((forn, fornIdx) => {
                 const isMelhor = forn.posicao === 1;
                 const is2Melhor = forn.posicao === 2;
                 const isTemResposta = forn.status === 'respondido';
@@ -1535,6 +1682,84 @@ export default function TelaMonitorarRespostas({
           ))}
         </div>
       </div>
+
+            {/* ─── MODAL: AÇÃO SOBRE ITEM (cancelar / restaurar) ─────── */}
+      {modalCancelarItem && (() => {
+        const modo = modalCancelarItem.modo || 'cancelar';
+        const ehRestaurar = modo === 'restaurar';
+        const btnLabel = ehRestaurar ? "Restaurar item" : "Remover item";
+        const btnLabelLoading = ehRestaurar ? "Restaurando..." : "Removendo...";
+        const corBotao = ehRestaurar ? C.accent : "#ef4444";
+        return (
+          <div style={{
+            position: "fixed", inset: 0, background: "#00000090",
+            display: "flex", alignItems: "center", justifyContent: "center",
+            zIndex: 500, padding: 20,
+          }}>
+            <div style={{ ...s.card, width: 460, maxWidth: "100%" }}>
+              <div style={{
+                padding: "18px 22px", borderBottom: `1px solid ${C.border}`,
+              }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>
+                  {ehRestaurar ? "Restaurar item na cotação" : "Remover item da cotação"}
+                </div>
+                <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>
+                  {modalCancelarItem.item_nome}
+                </div>
+              </div>
+              <div style={{ padding: "16px 22px" }}>
+                <div style={{ fontSize: 11, color: C.muted, marginBottom: 6 }}>
+                  MOTIVO {ehRestaurar ? "(OPCIONAL)" : "(OBRIGATÓRIO)"}
+                </div>
+                <textarea
+                  value={motivoCancelamento}
+                  onChange={e => setMotivoCancelamento(e.target.value)}
+                  placeholder={ehRestaurar
+                    ? "Ex: item reincorporado por decisão do gestor"
+                    : "Ex: decisão do gestor — compra adiada para o próximo mês"}
+                  autoFocus
+                  style={{
+                    ...s.input,
+                    width: "100%",
+                    minHeight: 80,
+                    resize: "vertical",
+                    fontSize: 12,
+                  }}
+                />
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 8 }}>
+                  {ehRestaurar
+                    ? "O item volta a aparecer ativo na cotação e na RC."
+                    : "O item não é apagado — fica registrado com o motivo na timeline da RC."}
+                </div>
+              </div>
+              <div style={{
+                padding: "14px 22px", borderTop: `1px solid ${C.border}`,
+                display: "flex", gap: 10,
+              }}>
+                <button
+                  onClick={() => { setModalCancelarItem(null); setMotivoCancelamento(''); }}
+                  disabled={cancelandoItem}
+                  style={{ ...s.btn(false, C.muted), flex: 1, padding: "8px 16px" }}
+                >
+                  Cancelar
+                </button>
+                <button
+                  onClick={handleCancelarItem}
+                  disabled={cancelandoItem || (!ehRestaurar && !motivoCancelamento.trim())}
+                  style={{
+                    ...s.btn(true, corBotao),
+                    flex: 1,
+                    padding: "8px 16px",
+                    opacity: (cancelandoItem || (!ehRestaurar && !motivoCancelamento.trim())) ? 0.5 : 1,
+                  }}
+                >
+                  {cancelandoItem ? btnLabelLoading : btnLabel}
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* ─── MODAL: ADICIONAR FORNECEDOR ─────────────────────────── */}
       {modalAddForn && (() => {
