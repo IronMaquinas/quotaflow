@@ -334,12 +334,19 @@ const statusLabels = {
 const handleVisualizarRespostas = async (cotacaoId) => {
   setCarregandoStatus(true);
   try {
-    
     const status = await cotacoesService.obterStatusCotacao(token, cotacaoId);
-    
+
+    // Guard: se a cotação ainda não está pronta (ex: nova cotação
+    // rascunho recém-criada pelo "Mover para nova RC"), não deixa
+    // `telaMonitorar=true` com `statusCotacao=null` — quebra o render
+    // em `statusCotacao.cotacao.id`.
+    if (!status || !status.cotacao) {
+      alert('Cotação não encontrada ou ainda não disponível. Recarregue a lista de Compras.');
+      return;
+    }
+
     setStatusCotacao(status);
     setTelaMonitorar(true);
-    
   } catch (err) {
     console.error("❌ Erro:", err);
     alert("Erro ao buscar status: " + err.message);
@@ -1137,8 +1144,17 @@ const handleAbrirCotacao = async (cotacao) => {
           setTelaMonitorar(false);
           setStatusCotacao(null);
           listarCotacoes();
+          // Fase "Mover para nova RC": depois de mover, uma RC nova
+          // apareceu no backend. Sem recarregar `chamados`, o card da
+          // cotação nova renderiza com "-" no lugar do número da RC.
+          carregarChamadosParaCotacao();
         }}
         onFinalizarOV={handleCriarOrdenVenda}
+        onAbrirCotacao={(cotacaoIdAlvo) => {
+          // Fase "Mover para nova RC": troca o monitor atual pelo da
+          // cotação nova, reaproveitando a função que já existe.
+          handleVisualizarRespostas(cotacaoIdAlvo);
+        }}
       />
     );
   }

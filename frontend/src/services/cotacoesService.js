@@ -285,6 +285,28 @@ export const cotacoesService = {
     return response.json();
   },
 
+  async moverItensCotacao(accessToken, cotacaoId, cotacaoItemIds, motivo) {
+    const response = await fetch(
+      `${API_URL}/cotacoes/${cotacaoId}/itens/mover`,
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          itens: cotacaoItemIds.map(id => ({ cotacao_item_id: id })),
+          motivo,
+        }),
+      }
+    );
+    if (!response.ok) {
+      const erro = await response.json();
+      throw new Error(erro.erro || "Erro ao mover itens");
+    }
+    return response.json();
+  },
+
   async restaurarItemCotacao(accessToken, cotacaoId, cotacaoItemId, motivo = null) {
     const response = await fetch(
       `${API_URL}/cotacoes/${cotacaoId}/itens/${cotacaoItemId}/restaurar`,

@@ -2181,6 +2181,342 @@ router.post('/:cotacaoId/itens/:cotacaoItemId/restaurar', tenantMiddleware, asyn
 });
 
 // ───────────────────────────────────────────────────────────────────────
+// POST /api/cotacoes/:cotacaoId/itens/mover
+//
+// Move 1+ itens da cotação atual para uma NOVA RC. Cria:
+//   - 1 nova RC (chamados, tipo_documento='requisicao_material')
+//   - 1 nova cotação rascunho vinculada a ela (pra reaproveitar o fluxo
+//     de abrir monitor da listagem — a nova RC já nasce "clicável")
+//   - N novos chamado_itens (cópia dos originais)
+//
+// Marca os itens originais como cancelados com rastreabilidade
+// (movido_para_rc_id, movido_para_rc_numero, movido_para_cotacao_id).
+//
+// Batch por design: aceita array `itens` pra quando o comprador puder
+// selecionar múltiplos. Hoje o frontend chama com 1 (o ✕ é por linha).
+//
+// Body: { itens: [{ cotacao_item_id }], motivo }
+// ───────────────────────────────────────────────────────────────────────
+router.post('/:cotacaoId/itens/mover', tenantMiddleware, async (req, res) => {
+  try {
+    const { cotacaoId } = req.params;
+    const { itens, motivo } = req.body;
+    const tenantId = req.tenantId;
+
+    if (!Array.isArray(itens) || itens.length === 0) {
+      return res.status(400).json({ erro: 'itens é obrigatório (mínimo 1)' });
+    }
+    if (!motivo || !motivo.trim()) {
+      return res.status(400).json({ erro: 'motivo é obrigatório' });
+    }
+
+    // 1. Validações gerais
+    const cotacao = await DB.selectOne('cotacoes', { id: cotacaoId }, tenantId);
+    if (!cotacao) return res.status(404).json({ erro: 'Cotação não encontrada' });
+    if (['finalizada', 'cancelada'].includes(cotacao.status)) {
+      return res.status(400).json({
+        erro: `Cotação ${cotacao.status} não permite mover itens`
+      });
+    }
+
+    const rcOriginal = await DB.selectOne('chamados', { id: cotacao.chamado_id }, tenantId);
+    if (!rcOriginal) return res.status(404).json({ erro: 'RC original não encontrada' });
+
+    // 2. Carrega todos os cotacao_itens do payload e valida
+    const itensValidados = [];
+    for (const entrada of itens) {
+      const cotacaoItemId = entrada?.cotacao_item_id;
+      if (!cotacaoItemId) {
+        return res.status(400).json({ erro: 'cotacao_item_id é obrigatório em cada item' });
+      }
+      const ci = await DB.selectOne('cotacao_itens', {
+        id: cotacaoItemId,
+        cotacao_id: cotacaoId,
+      }, tenantId);
+      if (!ci) return res.status(404).json({ erro: `Item ${cotacaoItemId} não pertence a esta cotação` });
+
+      const chamadoItem = await DB.selectOne('chamado_itens', {
+        id: ci.chamado_item_id,
+        tenant_id: tenantId,
+      }, tenantId);
+      if (!chamadoItem) return res.status(404).json({ erro: `Item ${cotacaoItemId} sem chamado_item vinculado` });
+      if (chamadoItem.status === 'cancelado') {
+        return res.status(400).json({ erro: `Item "${chamadoItem.item_nome}" já está cancelado` });
+      }
+
+      // Trava OC (mesma do cancelar)
+      const todosOcItens = await DB.select('ordem_venda_itens', { tenant_id: tenantId }, tenantId);
+      const ocVinc = todosOcItens.find(
+        oi => String(oi.cotacao_item_id) === String(cotacaoItemId)
+      );
+      if (ocVinc) {
+        const oc = await DB.selectOne('ordens_venda', { id: ocVinc.ordem_venda_id }, tenantId);
+        return res.status(400).json({
+          erro: `Item "${chamadoItem.item_nome}" já faz parte da OC ${oc?.numero || ocVinc.ordem_venda_id}. Cancele a OC antes de mover.`
+        });
+      }
+
+      itensValidados.push({ cotacaoItemId, chamadoItem });
+    }
+
+    // 3. Trava "último item ativo" — não pode mover se sobrar 0 ativos na RC
+    const itensDaRc = await DB.select('chamado_itens', {
+      chamado_id: cotacao.chamado_id,
+      tenant_id: tenantId,
+    }, tenantId);
+    const ativosRestantes = itensDaRc.filter(
+      it => it.status !== 'cancelado' &&
+            !itensValidados.some(v => v.chamadoItem.id === it.id)
+    );
+    if (ativosRestantes.length === 0) {
+      return res.status(400).json({
+        erro: 'Você está movendo todos os itens ativos. Cancele a RC inteira em vez de mover todos.'
+      });
+    }
+
+    // 4. Cria a nova RC (herda equipamento, urgência, categoria, serviço,
+    //    origem OS, técnico requisitante)
+    const novoNumeroRC = await gerarNumeroRC(tenantId);
+    const novaRc = await DB.insert('chamados', {
+      tenant_id: tenantId,
+      numero: novoNumeroRC,
+      tipo_documento: 'requisicao_material',
+      origem_os_id: rcOriginal.origem_os_id || null,
+      origem_os_numero: rcOriginal.origem_os_numero || null,
+      origem_rc_id: rcOriginal.id,
+      origem_rc_numero: rcOriginal.numero,
+      equipamento_id: rcOriginal.equipamento_id || null,
+      urgencia: rcOriginal.urgencia || 'media',
+      categoria: rcOriginal.categoria || 'corretiva',
+      status: 'aguardando_cotacao',
+      descricao: `Itens reagendados da ${rcOriginal.numero}`,
+      servico_nome: rcOriginal.servico_nome || rcOriginal.descricao || `Itens da ${rcOriginal.numero}`,
+      tecnico_id: rcOriginal.tecnico_id || null,
+      tecnico_nome: rcOriginal.tecnico_nome || null,
+      participa_benchmark: 1,
+    }, tenantId);
+
+    // 5. Cria cotação rascunho vinculada à nova RC (pra ficar clicável
+    //    na listagem de Compras, reaproveitando o fluxo do monitor)
+    const novoNumeroCot = await cotacaoService.gerarNumeroCotacao(tenantId);
+    const novaCotacao = await DB.insert('cotacoes', {
+      tenant_id: tenantId,
+      chamado_id: novaRc.id,
+      numero: novoNumeroCot,
+      status: 'rascunho',
+      origem_ov_numero: cotacao.origem_ov_numero || null,
+    }, tenantId);
+
+    // 6. Copia cada item pra nova RC e cria o cotacao_item correspondente.
+    //    Também guarda mapa cotacao_item_id_original → cotacao_item_id_novo,
+    //    usado no passo 7 pra copiar as respostas dos fornecedores.
+    const mapaCotacaoItemId = {}; // { id_antigo: id_novo }
+    const mapaChamadoItemParaCotacaoAntiga = {}; // { chamado_item_id_original: cotacao_item_id_original }
+
+    // Antes do loop: precisa saber qual cotacao_item_id antigo
+    // corresponde a cada chamado_item_id da cotação original.
+    const cotacaoItensOriginais = await DB.select('cotacao_itens', {
+      cotacao_id: cotacaoId,
+      tenant_id: tenantId,
+    }, tenantId);
+    cotacaoItensOriginais.forEach(ci => {
+      mapaChamadoItemParaCotacaoAntiga[ci.chamado_item_id] = ci.id;
+    });
+
+    for (const { chamadoItem } of itensValidados) {
+      const novoChamadoItem = await DB.insert('chamado_itens', {
+        tenant_id: tenantId,
+        chamado_id: novaRc.id,
+        tipo: chamadoItem.tipo,
+        origem: chamadoItem.origem,
+        status: 'ativo',
+        item_nome: chamadoItem.item_nome,
+        codigo: chamadoItem.codigo,
+        quantidade: chamadoItem.quantidade,
+        urgencia: chamadoItem.urgencia,
+        categoria: chamadoItem.categoria,
+        tipo_item: chamadoItem.tipo_item,
+        descricao: chamadoItem.descricao,
+        item_catalogo_id: chamadoItem.item_catalogo_id,
+        unidade_medida: chamadoItem.unidade_medida,
+        origem_os_item_id: chamadoItem.origem_os_item_id,
+        origem_rc_item_id: chamadoItem.id,
+      }, tenantId);
+
+      const novoCotacaoItem = await DB.insert('cotacao_itens', {
+        tenant_id: tenantId,
+        cotacao_id: novaCotacao.id,
+        chamado_item_id: novoChamadoItem.id,
+        quantidade: chamadoItem.quantidade,
+        fornecedores_ids: [], // preenchido no passo 7b
+      }, tenantId);
+
+      const cotacaoItemIdOriginal = mapaChamadoItemParaCotacaoAntiga[chamadoItem.id];
+      if (cotacaoItemIdOriginal) {
+        mapaCotacaoItemId[cotacaoItemIdOriginal] = novoCotacaoItem.id;
+      }
+    }
+
+    // 7. Herda fornecedores + respostas da cotação original (4b.2)
+    //    Só fornecedores que têm pelo menos 1 item respondido dentro do
+    //    conjunto movido. Copia cotacao_fornecedores com token NOVO
+    //    (a cotação é nova, e o comprador decide se reenvia email), mas
+    //    preserva data_resposta pra o comprador ver que é proposta antiga.
+    const fornecedoresOriginais = await DB.select('cotacao_fornecedores', {
+      cotacao_id: cotacaoId,
+      tenant_id: tenantId,
+    }, tenantId);
+
+    const itensRespostaOriginais = await DB.select('cotacao_fornecedor_itens', {
+      tenant_id: tenantId,
+    }, tenantId);
+
+    const mapaCotacaoFornId = {}; // { id_antigo: id_novo }
+    const novosFornecedoresIds = [];
+
+    for (const fornOrig of fornecedoresOriginais) {
+      // Tem resposta em algum item movido?
+      const respostasDosItensMovidos = itensRespostaOriginais.filter(ir =>
+        ir.cotacao_fornecedor_id === fornOrig.id &&
+        mapaCotacaoItemId[ir.cotacao_item_id] != null
+      );
+      if (respostasDosItensMovidos.length === 0) continue;
+
+      const novoToken = crypto.randomBytes(16).toString('hex');
+      const novoForn = await DB.insert('cotacao_fornecedores', {
+        tenant_id: tenantId,
+        cotacao_id: novaCotacao.id,
+        fornecedor_id: fornOrig.fornecedor_id,
+        fornecedor_nome: fornOrig.fornecedor_nome,
+        fornecedor_email: fornOrig.fornecedor_email,
+        token: novoToken,
+        status: fornOrig.status,
+        prazo: fornOrig.prazo,
+        obs: fornOrig.obs,
+        data_resposta: fornOrig.data_resposta || null,
+        enviado_em: null,
+        origem_cotacao_id: Number(cotacaoId),
+      }, tenantId);
+
+      mapaCotacaoFornId[fornOrig.id] = novoForn.id;
+      // IMPORTANTE: `cotacao_itens.fornecedores_ids` guarda
+      // `fornecedor_id` (entidade Fornecedor), NÃO o id da linha de
+      // `cotacao_fornecedores`. O /monitorar casa com
+      // `f.fornecedor_id === fornecedorId` — se a gente guardar o id
+      // da linha, o lookup falha e a lista de fornecedores vem vazia.
+      novosFornecedoresIds.push(fornOrig.fornecedor_id);
+
+      // 7b. Copia as respostas por item (remapeando cotacao_item_id)
+      for (const resp of respostasDosItensMovidos) {
+        const cotacaoItemIdNovo = mapaCotacaoItemId[resp.cotacao_item_id];
+        await DB.insert('cotacao_fornecedor_itens', {
+          tenant_id: tenantId,
+          cotacao_fornecedor_id: novoForn.id,
+          cotacao_item_id: cotacaoItemIdNovo,
+          valor: resp.valor,
+          frete: resp.frete,
+          valor_renegociado: resp.valor_renegociado,
+          frete_renegociado: resp.frete_renegociado,
+          frete_modalidade: resp.frete_modalidade,
+          prazo: resp.prazo,
+          chamado_item_id: resp.chamado_item_id,
+          // Marca como herdada — o modal de edição sobrescreve pra
+          // 'manual' quando o comprador mexer.
+          origem_preenchimento: 'herdada',
+          criado_em: new Date().toISOString(),
+        }, tenantId);
+      }
+    }
+
+    // 7c. Popula `fornecedores_ids` em cada cotacao_item novo, pra que a
+    //     tela de cotação saiba quem está vinculado sem precisar
+    //     reconstruir do zero.
+    if (novosFornecedoresIds.length > 0) {
+      const todosCotacaoItensNovos = await DB.select('cotacao_itens', {
+        cotacao_id: novaCotacao.id,
+        tenant_id: tenantId,
+      }, tenantId);
+      for (const ci of todosCotacaoItensNovos) {
+        await DB.update('cotacao_itens', ci.id, {
+          fornecedores_ids: novosFornecedoresIds,
+        }, tenantId);
+      }
+    }
+
+    // 7d. A cotação nova nasce como 'enviada' — herdou dados, mas o
+    //     comprador precisa revisar tudo antes de emitir OC. `enviada`
+    //     (não `respondida`) comunica "aguardando revisão", e o clique
+    //     na lista cai no monitor (só rascunho/pendente abrem o modal
+    //     de agrupamento automático).
+    await DB.update('cotacoes', novaCotacao.id, {
+      status: 'enviada',
+    }, tenantId);
+
+    // 7. Cancela os itens originais com rastreabilidade
+    const u = await usuarioAtual(req, tenantId);
+    for (const { chamadoItem } of itensValidados) {
+      await DB.update('chamado_itens', chamadoItem.id, {
+        status: 'cancelado',
+        cancelado_em: new Date().toISOString(),
+        cancelado_por: u.id,
+        cancelado_por_nome: u.nome,
+        motivo_cancelamento: motivo.trim(),
+        movido_para_rc_id: novaRc.id,
+        movido_para_rc_numero: novaRc.numero,
+        movido_para_cotacao_id: novaCotacao.id,
+      }, tenantId);
+    }
+
+    // 8. Eventos nas duas RCs
+    const nomesItens = itensValidados.map(v => `"${v.chamadoItem.item_nome}"`).join(', ');
+    await registrarEvento(
+      tenantId,
+      rcOriginal.id,
+      'itens_movidos_para_nova_rc',
+      `${itensValidados.length} ${itensValidados.length === 1 ? 'item' : 'itens'} ${nomesItens} movido(s) para ${novaRc.numero}. Motivo: ${motivo.trim()}`,
+      {
+        itens_movidos: itensValidados.map(v => v.chamadoItem.id),
+        nova_rc_id: novaRc.id,
+        nova_rc_numero: novaRc.numero,
+        nova_cotacao_id: novaCotacao.id,
+        motivo: motivo.trim(),
+      },
+      u
+    );
+
+    await registrarEvento(
+      tenantId,
+      novaRc.id,
+      'itens_recebidos_de_nova_rc',
+      `${itensValidados.length} ${itensValidados.length === 1 ? 'item' : 'itens'} recebido(s) da ${rcOriginal.numero}`,
+      {
+        rc_origem_id: rcOriginal.id,
+        rc_origem_numero: rcOriginal.numero,
+        cotacao_origem_id: cotacao.id,
+      },
+      u
+    );
+
+    res.json({
+      ok: true,
+      nova_rc: {
+        id: novaRc.id,
+        numero: novaRc.numero,
+      },
+      nova_cotacao: {
+        id: novaCotacao.id,
+        numero: novaCotacao.numero,
+      },
+      itens_movidos: itensValidados.length,
+      mensagem: `${itensValidados.length} ${itensValidados.length === 1 ? 'item movido' : 'itens movidos'} para ${novaRc.numero}`,
+    });
+  } catch (err) {
+    console.error('❌ Erro ao mover itens para nova RC:', err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ───────────────────────────────────────────────────────────────────────
 // POST /api/cotacoes/:cotacaoId/fornecedores
 // Vincula fornecedor a uma cotação
 // ───────────────────────────────────────────────────────────────────────
@@ -2292,6 +2628,10 @@ router.get('/:cotacaoId/monitorar', tenantMiddleware, async (req, res) => {
         motivo_cancelamento: chamadoItem?.motivo_cancelamento || null,
         cancelado_por_nome: chamadoItem?.cancelado_por_nome || null,
         cancelado_em: chamadoItem?.cancelado_em || null,
+        // Fase "Mover para nova RC": rastreabilidade exposta ao frontend.
+        movido_para_rc_id: chamadoItem?.movido_para_rc_id || null,
+        movido_para_rc_numero: chamadoItem?.movido_para_rc_numero || null,
+        movido_para_cotacao_id: chamadoItem?.movido_para_cotacao_id || null,
       };
     });
 
@@ -2415,6 +2755,9 @@ router.get('/:cotacaoId/monitorar', tenantMiddleware, async (req, res) => {
         motivo_cancelamento: item.motivo_cancelamento || null,
         cancelado_por_nome: item.cancelado_por_nome || null,
         cancelado_em: item.cancelado_em || null,
+        movido_para_rc_id: item.movido_para_rc_id || null,
+        movido_para_rc_numero: item.movido_para_rc_numero || null,
+        movido_para_cotacao_id: item.movido_para_cotacao_id || null,
       };
     });
 
@@ -2437,13 +2780,22 @@ router.get('/:cotacaoId/monitorar', tenantMiddleware, async (req, res) => {
         })
       : null;
 
+    // Fase "Mover para nova RC": busca o chamado pra expor `origem_rc_numero`
+    // no cabeçalho do monitor (banner de herança no topo da tela).
+    const chamadoDaCotacao = await DB.selectOne('chamados', { id: cotacao.chamado_id }, tenantId);
+
     return res.json({
       cotacao: {
         id: cotacao.id,
         numero: cotacao.numero,
         status: cotacao.status,
         criado_em: cotacao.criado_em,
-        enviado_em: cotacao.enviado_em
+        enviado_em: cotacao.enviado_em,
+        // Fase "Mover para nova RC": se a RC veio de outra, o número dela
+        // fica no cabeçalho do chamado (`origem_rc_numero`). Usado pelo
+        // banner "herança" no topo do monitor.
+        origem_rc_numero: chamadoDaCotacao?.origem_rc_numero || null,
+        origem_rc_id: chamadoDaCotacao?.origem_rc_id || null,
       },
       itens: itensEstruturados,
       resumo: {

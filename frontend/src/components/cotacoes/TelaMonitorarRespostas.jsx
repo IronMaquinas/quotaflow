@@ -9,7 +9,9 @@ export default function TelaMonitorarRespostas({
   C, 
   s, 
   onVoltar, 
-  onFinalizarOV 
+  onFinalizarOV,
+  onAbrirCotacao, // Fase "Mover para nova RC": callback pro pai abrir
+                   // o monitor de outra cotação (a nova RC rascunho)
 }) {
   const [dados, setDados] = useState(null);
   const [loading, setLoading] = useState(true);
@@ -203,11 +205,12 @@ export default function TelaMonitorarRespostas({
     if (!modalCancelarItem) return;
     const modo = modalCancelarItem.modo || 'cancelar';
     const ehRestaurar = modo === 'restaurar';
+    const ehMover = modo === 'mover';
 
-    // Motivo é obrigatório pra remover (ação destrutiva), opcional pra
-    // restaurar (ação corretiva).
+    // Motivo obrigatório pra remover/mover (destrutivo), opcional pra
+    // restaurar (corretivo).
     if (!ehRestaurar && !motivoCancelamento.trim()) {
-      alert('Informe o motivo da remoção.');
+      alert('Informe o motivo.');
       return;
     }
 
@@ -219,6 +222,13 @@ export default function TelaMonitorarRespostas({
           cotacaoId,
           modalCancelarItem.cotacao_item_id,
           motivoCancelamento.trim() || null
+        );
+      } else if (ehMover) {
+        await cotacoesService.moverItensCotacao(
+          token,
+          cotacaoId,
+          [modalCancelarItem.cotacao_item_id],
+          motivoCancelamento.trim()
         );
       } else {
         await cotacoesService.cancelarItemCotacao(
@@ -993,14 +1003,40 @@ export default function TelaMonitorarRespostas({
         </div>
       </div>
 
+      {/* BANNER DE HERANÇA — só quando esta cotação veio de outra RC */}
+      {cotacao.origem_rc_numero && (
+        <div style={{
+          ...s.card,
+          padding: "12px 16px",
+          marginBottom: 16,
+          background: "#1a2a3a",
+          borderLeft: `4px solid ${C.accent}`,
+          fontSize: 12,
+          color: C.text,
+          display: "flex",
+          alignItems: "flex-start",
+          gap: 10,
+        }}>
+          <span style={{ fontSize: 16, flexShrink: 0 }}>📦</span>
+          <div>
+            <div style={{ fontWeight: 600 }}>
+              Itens herdados da {cotacao.origem_rc_numero}
+            </div>
+            <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>
+              Fornecedores e valores vieram da cotação original. Revise
+              antes de emitir OC — propostas antigas podem estar vencidas.
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* (Card cinza de resumo removido — o panorama executivo agora vive
           dentro do card de VENCEDORES POR ITEM, com escopo mais rico e
           contadores no rodapé. Ver bloco PANORAMA DA RC mais abaixo.) */}
 
       {/* VENCEDORES POR ITEM — agregação dos fornecedores que o comprador
           marcou no radio, por total efetivo (renegociado + FOB). Substitui
-          o card antigo de "melhor proposta geral", que só elegia 1 vencedor
-          no agregado e ficava obsoleto a partir da Fase 1B. */}
+          o card antigo de "melhor proposta geral", que só elegia 1 vencedor */}
       {fornecedoresVencedores.length > 0 && (
         <div style={{
           ...s.card,
@@ -1382,6 +1418,32 @@ export default function TelaMonitorarRespostas({
                         {item.cancelado_em && ` em ${new Date(item.cancelado_em).toLocaleString('pt-BR')}`}
                       </div>
                     )}
+                    {item.movido_para_rc_numero && (
+                      <div style={{ fontSize: 11, marginTop: 2 }}>
+                        ↳ Reagendado na{" "}
+                        {item.movido_para_cotacao_id && onAbrirCotacao ? (
+                          <a
+                            href="#"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              onAbrirCotacao(item.movido_para_cotacao_id);
+                            }}
+                            style={{
+                              color: C.accent,
+                              textDecoration: "underline",
+                              cursor: "pointer",
+                              fontWeight: 600,
+                            }}
+                          >
+                            {item.movido_para_rc_numero}
+                          </a>
+                        ) : (
+                          <span style={{ color: C.accent, fontWeight: 600 }}>
+                            {item.movido_para_rc_numero}
+                          </span>
+                        )}
+                      </div>
+                    )}
                   </div>
                   {cotacao.status !== 'finalizada' && cotacao.status !== 'cancelada' && (
                     <button
@@ -1687,9 +1749,23 @@ export default function TelaMonitorarRespostas({
       {modalCancelarItem && (() => {
         const modo = modalCancelarItem.modo || 'cancelar';
         const ehRestaurar = modo === 'restaurar';
-        const btnLabel = ehRestaurar ? "Restaurar item" : "Remover item";
-        const btnLabelLoading = ehRestaurar ? "Restaurando..." : "Removendo...";
-        const corBotao = ehRestaurar ? C.accent : "#ef4444";
+        const ehMover = modo === 'mover';
+        const btnLabel = ehRestaurar
+          ? "Restaurar item"
+          : ehMover
+            ? "Mover para nova RC"
+            : "Remover item";
+        const btnLabelLoading = ehRestaurar
+          ? "Restaurando..."
+          : ehMover
+            ? "Movendo..."
+            : "Removendo...";
+        const corBotao = ehRestaurar ? C.accent : ehMover ? C.accent : "#ef4444";
+        const titulo = ehRestaurar
+          ? "Restaurar item na cotação"
+          : ehMover
+            ? "Mover item para nova RC"
+            : "Remover item da cotação";
         return (
           <div style={{
             position: "fixed", inset: 0, background: "#00000090",
@@ -1701,13 +1777,58 @@ export default function TelaMonitorarRespostas({
                 padding: "18px 22px", borderBottom: `1px solid ${C.border}`,
               }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>
-                  {ehRestaurar ? "Restaurar item na cotação" : "Remover item da cotação"}
+                  {titulo}
                 </div>
                 <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>
                   {modalCancelarItem.item_nome}
                 </div>
               </div>
               <div style={{ padding: "16px 22px" }}>
+                {!ehRestaurar && (
+                  <div style={{ marginBottom: 16 }}>
+                    <div style={{ fontSize: 11, color: C.muted, marginBottom: 8, letterSpacing: "0.05em" }}>
+                      O QUE FAZER COM ESTE ITEM?
+                    </div>
+                    {[
+                      { v: 'cancelar', l: 'Encerrar', d: 'Não será comprado agora' },
+                      { v: 'mover',    l: 'Mover para nova RC', d: 'Reagendar pra próxima compra' },
+                    ].map(opt => {
+                      const ativo = (modalCancelarItem.modo || 'cancelar') === opt.v;
+                      return (
+                        <label
+                          key={opt.v}
+                          style={{
+                            display: "flex",
+                            alignItems: "center",
+                            gap: 10,
+                            padding: "10px 12px",
+                            marginBottom: 6,
+                            background: ativo ? `${C.accent}15` : "transparent",
+                            border: `1px solid ${ativo ? C.accent : C.border}`,
+                            borderRadius: 6,
+                            cursor: "pointer",
+                          }}
+                        >
+                          <input
+                            type="radio"
+                            name="modo-cancelar-item"
+                            checked={ativo}
+                            onChange={() => setModalCancelarItem(prev => ({ ...prev, modo: opt.v }))}
+                            style={{ cursor: "pointer" }}
+                          />
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{ fontSize: 12, color: C.text, fontWeight: 600 }}>
+                              {opt.l}
+                            </div>
+                            <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
+                              {opt.d}
+                            </div>
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
                 <div style={{ fontSize: 11, color: C.muted, marginBottom: 6 }}>
                   MOTIVO {ehRestaurar ? "(OPCIONAL)" : "(OBRIGATÓRIO)"}
                 </div>

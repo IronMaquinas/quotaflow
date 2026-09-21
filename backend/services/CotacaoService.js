@@ -1337,13 +1337,44 @@ class CotacaoService {
     const cotacao = await this.db.selectOne('cotacoes', { id: cotacaoId, tenant_id: tenantId }, tenantId);
     if (!cotacao) throw new Error('Cotação não encontrada');
 
-    // 1. Exclui itens da cotação (com tenantId)
-    await this.db.delete('cotacao_itens', { cotacao_id: cotacaoId, tenant_id: tenantId }, tenantId);
+    // FIX (2026-09): o wrapper DB.delete só aceita ID único — não
+    // suporta WHERE composto. Antes passávamos `{ cotacao_id, tenant_id }`
+    // como se fosse id, e o Supabase serializava como "[object Object]"
+    // (erro: invalid input syntax for type integer). Agora iteramos,
+    // buscando os IDs primeiro e deletando um por um. Ordem respeita FK:
+    // primeiro respostas por item, depois fornecedores, depois itens, por
+    // último a cotação.
 
-    // 2. Exclui fornecedores da cotação (com tenantId)
-    await this.db.delete('cotacao_fornecedores', { cotacao_id: cotacaoId, tenant_id: tenantId }, tenantId);
+    // 1. Respostas por item — precisa vir ANTES dos fornecedores,
+    //    senão a FK de cotacao_fornecedor_itens bloqueia.
+    const fornecedoresDaCotacao = await this.db.select('cotacao_fornecedores',
+      { cotacao_id: cotacaoId, tenant_id: tenantId }, tenantId);
+    const fornecedoresIds = fornecedoresDaCotacao.map(f => f.id);
 
-    // 3. Exclui a cotação
+    if (fornecedoresIds.length > 0) {
+      const todasRespostas = await this.db.select('cotacao_fornecedor_itens',
+        { tenant_id: tenantId }, tenantId);
+      const respostasDaCotacao = todasRespostas.filter(r =>
+        fornecedoresIds.includes(r.cotacao_fornecedor_id)
+      );
+      for (const r of respostasDaCotacao) {
+        await this.db.delete('cotacao_fornecedor_itens', r.id, tenantId);
+      }
+    }
+
+    // 2. Fornecedores
+    for (const f of fornecedoresDaCotacao) {
+      await this.db.delete('cotacao_fornecedores', f.id, tenantId);
+    }
+
+    // 3. Itens da cotação
+    const itensDaCotacao = await this.db.select('cotacao_itens',
+      { cotacao_id: cotacaoId, tenant_id: tenantId }, tenantId);
+    for (const it of itensDaCotacao) {
+      await this.db.delete('cotacao_itens', it.id, tenantId);
+    }
+
+    // 4. A cotação em si
     await this.db.delete('cotacoes', cotacaoId, tenantId);
 
     return { ok: true };
