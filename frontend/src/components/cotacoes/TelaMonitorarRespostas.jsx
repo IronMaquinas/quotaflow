@@ -192,9 +192,30 @@ export default function TelaMonitorarRespostas({
   }
 
   function toggleAddFornecedor(fornId) {
-    setSelecionadosAdd(prev =>
-      prev.includes(fornId) ? prev.filter(x => x !== fornId) : [...prev, fornId]
-    );
+    setSelecionadosAdd(prev => {
+      const jaMarcado = prev.includes(fornId);
+      if (jaMarcado) {
+        return prev.filter(x => x !== fornId);
+      }
+      // Fix UX: se este fornecedor já está vinculado a alguns itens
+      // desta cotação, desmarca esses itens automaticamente ao marcar
+      // o fornecedor — o comprador normalmente quer adicionar SÓ nos
+      // itens onde ele ainda não responde. Se quiser remarcar algum,
+      // é só clicar de novo na linha do item.
+      const itensComEsseForn = new Set();
+      (dados?.itens || []).forEach(item => {
+        const temEsseForn = (item.fornecedores || []).some(
+          f => String(f.fornecedor_id) === String(fornId)
+        );
+        if (temEsseForn) itensComEsseForn.add(item.id);
+      });
+      if (itensComEsseForn.size > 0) {
+        setItensSelecionados(prevItens =>
+          prevItens.filter(id => !itensComEsseForn.has(id))
+        );
+      }
+      return [...prev, fornId];
+    });
   }
 
   function toggleItemAdd(cotacaoItemId) {
@@ -1515,21 +1536,50 @@ export default function TelaMonitorarRespostas({
         </div>
       </div>
 
-            {/* ─── MODAL: ADICIONAR FORNECEDOR ─────────────────────────── */}
+      {/* ─── MODAL: ADICIONAR FORNECEDOR ─────────────────────────── */}
       {modalAddForn && (() => {
-        // IDs que já estão na cotação
-        const idsJaNaCotacao = new Set(
-          (dados.itens || []).flatMap(i =>
-            (i.fornecedores || []).map(f => String(f.fornecedor_id))
-          )
-        );
+        // Quantos itens desta cotação o fornecedor já cota. Usado pro
+        // badge "JÁ EM N ITENS" e pra auto-desmarcar na hora do toggle.
+        const contagemPorFornecedor = {};
+        (dados?.itens || []).forEach(item => {
+          (item.fornecedores || []).forEach(f => {
+            const k = String(f.fornecedor_id);
+            contagemPorFornecedor[k] = (contagemPorFornecedor[k] || 0) + 1;
+          });
+        });
+
+        // Extração defensiva do CNPJ — o backend entrega `dados_cnpj`
+        // já parseado (JSON), mas o nome do campo interno pode variar
+        // (cnpj, CNPJ), e alguns cadastros antigos podem ter `cnpj` solto
+        // na raiz do fornecedor.
+        const cnpjDe = (f) =>
+          f.dados_cnpj?.cnpj || f.dados_cnpj?.CNPJ || f.cnpj || null;
+
+        const formatCnpj = (c) => {
+          if (!c) return null;
+          const digits = String(c).replace(/\D/g, "");
+          if (digits.length !== 14) return String(c);
+          return digits.replace(
+            /^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/,
+            "$1.$2.$3/$4-$5"
+          );
+        };
+
+        // Fix: tirei o filtro que sumia com fornecedor já vinculado.
+        // Agora todo mundo aparece; o badge "JÁ EM N ITENS" avisa, e a
+        // busca casa nome, e-mail e CNPJ (só dígitos, tolerante a
+        // pontuação).
         const disponiveisFiltrados = fornecedoresDisponiveis
-          .filter(f => !idsJaNaCotacao.has(String(f.id)))
           .filter(f => {
-            if (!buscaAdd.trim()) return true;
-            const t = buscaAdd.toLowerCase();
-            return (f.nome || "").toLowerCase().includes(t)
-                || (f.email || "").toLowerCase().includes(t);
+            const q = buscaAdd.trim();
+            if (!q) return true;
+            const qLower = q.toLowerCase();
+            const qDigits = q.replace(/\D/g, "");
+            const cnpjDigits = String(cnpjDe(f) || "").replace(/\D/g, "");
+            const matchNome = (f.nome || "").toLowerCase().includes(qLower);
+            const matchEmail = (f.email || "").toLowerCase().includes(qLower);
+            const matchCnpj = qDigits.length >= 3 && cnpjDigits.includes(qDigits);
+            return matchNome || matchEmail || matchCnpj;
           });
 
         return (
@@ -1557,7 +1607,7 @@ export default function TelaMonitorarRespostas({
               <div style={{ padding: "14px 22px 0" }}>
                 <input type="text" value={buscaAdd}
                   onChange={e => setBuscaAdd(e.target.value)}
-                  placeholder="Buscar por nome ou e-mail..."
+                  placeholder="Buscar por nome, e-mail ou CNPJ..."
                   autoFocus
                   style={{ ...s.input, padding: "8px 12px", fontSize: 12 }} />
               </div>
@@ -1570,36 +1620,9 @@ export default function TelaMonitorarRespostas({
                   FORNECEDORES
                 </div>
 
-                                {/* Seção informativa: fornecedores já vinculados */}
-                {(() => {
-                  const idsJaNaCotacao = new Set(
-                    (dados?.itens || []).flatMap(i =>
-                      (i.fornecedores || []).map(f => String(f.fornecedor_id))
-                    )
-                  );
-                  const jaVinculados = fornecedoresDisponiveis.filter(f =>
-                    idsJaNaCotacao.has(String(f.id))
-                  );
-                  if (jaVinculados.length === 0) return null;
-                  return (
-                    <div style={{
-                      marginTop: 10,
-                      background: `${C.success}10`,
-                      border: `1px solid ${C.success}33`,
-                      borderRadius: 6,
-                      padding: "8px 12px",
-                    }}>
-                      <div style={{ fontSize: 10, color: C.success,
-                                    letterSpacing: "0.05em", fontWeight: 600,
-                                    marginBottom: 6 }}>
-                        ✓ JÁ NESTA COTAÇÃO ({jaVinculados.length})
-                      </div>
-                      <div style={{ fontSize: 11, color: C.text, lineHeight: 1.5 }}>
-                        {jaVinculados.map(f => f.nome).join(" · ")}
-                      </div>
-                    </div>
-                  );
-                })()}
+                    {/* (Seção "JÁ NESTA COTAÇÃO" removida — agora
+                    cada fornecedor carrega o badge "JÁ EM N ITENS" na
+                    própria linha, que é mais preciso e não polui o topo.) */}
 
                 {carregandoForns ? (
                   <div style={{ color: C.muted, textAlign: "center", padding: 20 }}>
@@ -1616,6 +1639,8 @@ export default function TelaMonitorarRespostas({
                 ) : (
                   disponiveisFiltrados.map(f => {
                     const marcado = selecionadosAdd.includes(f.id);
+                    const jaEm = contagemPorFornecedor[String(f.id)] || 0;
+                    const cnpj = formatCnpj(cnpjDe(f));
                     return (
                       <label key={f.id} style={{
                         display: "flex", alignItems: "center", gap: 10,
@@ -1628,12 +1653,32 @@ export default function TelaMonitorarRespostas({
                           onChange={() => toggleAddFornecedor(f.id)}
                           style={{ cursor: "pointer" }} />
                         <div style={{ flex: 1, minWidth: 0 }}>
-                          <div style={{ fontSize: 12, color: C.text, fontWeight: 500 }}>
-                            {f.nome}
+                          <div style={{
+                            fontSize: 12, color: C.text, fontWeight: 500,
+                            display: "flex", alignItems: "center",
+                            gap: 6, flexWrap: "wrap",
+                          }}>
+                            <span>{f.nome}</span>
+                            {jaEm > 0 && (
+                              <span style={{
+                                fontSize: 9,
+                                color: C.success,
+                                background: `${C.success}22`,
+                                border: `1px solid ${C.success}55`,
+                                borderRadius: 4,
+                                padding: "1px 6px",
+                                fontWeight: 600,
+                                letterSpacing: "0.03em",
+                              }}>
+                                JÁ EM {jaEm} {jaEm === 1 ? "ITEM" : "ITENS"}
+                              </span>
+                            )}
                           </div>
-                          {f.email && (
-                            <div style={{ fontSize: 10, color: C.muted }}>
+                          {(f.email || cnpj) && (
+                            <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
                               {f.email}
+                              {f.email && cnpj && " · "}
+                              {cnpj}
                             </div>
                           )}
                         </div>
