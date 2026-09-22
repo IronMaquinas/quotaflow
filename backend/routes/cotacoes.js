@@ -1484,19 +1484,17 @@ router.put("/chamados/:id", tenantMiddleware, async (req, res) => {
       return String(n);
     }
 
-    // Trava de RC bloqueada: rejeita item novo (sem id existente) se este
-    // chamado já está com bloqueado_em setado. Não afeta OS (bloqueado_em
-    // só é setado em RC, nunca em OS) nem edição de item já existente.
+    // Trava de RC bloqueada: Fase "trava de edição em RC cotada" (2026-09).
+    // Antes, só bloqueava ADIÇÃO de item novo — edição de item existente
+    // (quantidade, nome) passava. Decisão de produto: alinhado com SAP MM,
+    // uma RC com cotação em andamento é IMUTÁVEL pelo requisitante. Se ele
+    // precisar alterar, contata o comprador (que pode restaurar/mover item
+    // pelo monitor, ou adicionar fornecedor à cotação existente). Não afeta
+    // OS (bloqueado_em só é setado em RC, nunca em OS).
     if (chamado.bloqueado_em) {
-      const temItemNovo = itens.some(item => {
-        const idNormalizado = normalizarIdExistente(item.id);
-        return idNormalizado === null || !idsExistentes.has(idNormalizado);
+      return res.status(400).json({
+        erro: `${chamado.numero} está em cotação desde ${new Date(chamado.bloqueado_em).toLocaleString('pt-BR')} e não pode mais ser editada. Para alterações, contate o comprador.`
       });
-      if (temItemNovo) {
-        return res.status(400).json({
-          erro: `${chamado.numero} está bloqueada para adição de novos itens (cotação já em andamento desde ${new Date(chamado.bloqueado_em).toLocaleString('pt-BR')})`
-        });
-      }
     }
 
     const itensSalvos = [];
@@ -1861,7 +1859,7 @@ router.put('/:id', tenantMiddleware, async (req, res) => {
   }
 });
 
-// DELETE /api/cotacoes/:id - Excluir (cancelar) cotação
+// DELETE /api/cotacoes/:id - Excluir cotação (hard delete — uso admin)
 router.delete('/:id', tenantMiddleware, async (req, res) => {
   try {
     const service = new CotacaoService(DB);
@@ -1869,6 +1867,73 @@ router.delete('/:id', tenantMiddleware, async (req, res) => {
     res.json({ ok: true, ...result });
   } catch (err) {
     console.error('❌ Erro ao excluir:', err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ───────────────────────────────────────────────────────────────────────
+// POST /api/cotacoes/:cotacaoId/cancelar
+//
+// Soft cancel: marca a cotação como 'cancelada' (não deleta), registra
+// o motivo na timeline da RC e DESBLOQUEIA a RC — o requisitante volta
+// a poder editar. Caminho recomendado pra UI (o hard delete do DELETE
+// /:id fica reservado pra uso administrativo).
+//
+// Body: { motivo }  (obrigatório)
+// ───────────────────────────────────────────────────────────────────────
+router.post('/:cotacaoId/cancelar', tenantMiddleware, async (req, res) => {
+  try {
+    const { cotacaoId } = req.params;
+    const { motivo } = req.body;
+    const tenantId = req.tenantId;
+
+    if (!motivo || !motivo.trim()) {
+      return res.status(400).json({ erro: 'motivo é obrigatório' });
+    }
+
+    const cotacao = await DB.selectOne('cotacoes', { id: cotacaoId }, tenantId);
+    if (!cotacao) return res.status(404).json({ erro: 'Cotação não encontrada' });
+    if (cotacao.status === 'cancelada') {
+      return res.status(400).json({ erro: 'Cotação já está cancelada' });
+    }
+    if (cotacao.status === 'finalizada') {
+      return res.status(400).json({ erro: 'Cotação finalizada não pode ser cancelada' });
+    }
+
+    // 1. Soft cancel na cotação
+    await DB.update('cotacoes', cotacaoId, {
+      status: 'cancelada',
+    }, tenantId);
+
+    // 2. Desbloqueia a RC e registra evento na timeline dela
+    if (cotacao.chamado_id) {
+      await DB.update('chamados', cotacao.chamado_id, {
+        bloqueado_em: null,
+        status: 'aguardando_cotacao',
+      }, tenantId);
+
+      const u = await usuarioAtual(req, tenantId);
+      await registrarEvento(
+        tenantId,
+        cotacao.chamado_id,
+        'cotacao_cancelada',
+        `Cotação ${cotacao.numero} cancelada. Motivo: ${motivo.trim()}`,
+        {
+          cotacao_id: cotacao.id,
+          cotacao_numero: cotacao.numero,
+          motivo: motivo.trim(),
+        },
+        u
+      );
+    }
+
+    res.json({
+      ok: true,
+      cotacao_id: cotacao.id,
+      mensagem: `Cotação ${cotacao.numero} cancelada. RC desbloqueada para edição.`,
+    });
+  } catch (err) {
+    console.error('❌ Erro ao cancelar cotação:', err.message);
     res.status(500).json({ erro: err.message });
   }
 });
@@ -2451,6 +2516,19 @@ router.post('/:cotacaoId/itens/mover', tenantMiddleware, async (req, res) => {
     await DB.update('cotacoes', novaCotacao.id, {
       status: 'enviada',
     }, tenantId);
+
+    // 7e. Bloqueia a nova RC SE ela herdou alguma resposta — do ponto de
+    //     vista do requisitante, a RC já passou pela etapa de cotação
+    //     (tem resposta), então não pode ser editada. Se herdou 0
+    //     fornecedores (item sem cotação original), a RC fica como
+    //     `aguardando_cotacao` e segue editável até o comprador cotar.
+    const temRespostaHerdada = novosFornecedoresIds.length > 0;
+    if (temRespostaHerdada) {
+      await DB.update('chamados', novaRc.id, {
+        status: 'cotando',
+        bloqueado_em: new Date(),
+      }, tenantId);
+    }
 
     // 7. Cancela os itens originais com rastreabilidade
     const u = await usuarioAtual(req, tenantId);

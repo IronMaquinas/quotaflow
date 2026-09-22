@@ -285,6 +285,25 @@ export const cotacoesService = {
     return response.json();
   },
 
+  async cancelarCotacao(accessToken, cotacaoId, motivo) {
+    const response = await fetch(
+      `${API_URL}/cotacoes/${cotacaoId}/cancelar`,
+      {
+        method: "POST",
+        headers: {
+          "Authorization": `Bearer ${accessToken}`,
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({ motivo }),
+      }
+    );
+    if (!response.ok) {
+      const erro = await response.json();
+      throw new Error(erro.erro || "Erro ao cancelar cotação");
+    }
+    return response.json();
+  },
+
   async moverItensCotacao(accessToken, cotacaoId, cotacaoItemIds, motivo) {
     const response = await fetch(
       `${API_URL}/cotacoes/${cotacaoId}/itens/mover`,

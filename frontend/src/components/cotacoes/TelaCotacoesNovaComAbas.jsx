@@ -327,7 +327,8 @@ const statusLabels = {
   'aberto': 'Aberto',
   'rascunho': 'Rascunho',
   'enviada': 'Enviada',
-  'respondida': 'Respondida'
+  'respondida': 'Respondida',
+  'cancelada': 'Cancelada',
 };
 
 // ─── NOVO: BUSCAR STATUS DA COTAÇÃO E ABRIR MONITORAMENTO ────────────
@@ -427,6 +428,15 @@ const handleAbrirCotacao = async (cotacao) => {
     
     // Abrir a tela de respostas direto!
     handleVisualizarRespostas(cotacao.id);
+  } else if (cotacao.status === 'cancelada') {
+    // Fase "Cancelar cotação": cotação cancelada não abre monitor nem
+    // modal de edição — o histórico fica preservado mas o comprador
+    // recotaria via "+ Nova Cotação" a partir da RC (que já foi
+    // desbloqueada quando a cotação foi cancelada).
+    alert(
+      `Cotação ${cotacao.numero} foi cancelada.\n\n` +
+      `A RC vinculada está desbloqueada. Use "+ Nova Cotação" para cotar novamente os itens.`
+    );
   } else {
     alert('Status desconhecido: ' + cotacao.status);
   }
@@ -475,9 +485,12 @@ const handleAbrirCotacao = async (cotacao) => {
         if ((ch.tipo_documento || "os") !== "requisicao_material") return false;
 
         // Exclui chamados que já têm QUALQUER cotação ativa.
-        // Cotação com status 'cancelado' não bloqueia nova tentativa.
+        // Cotação com status 'cancelada' não bloqueia nova tentativa.
+        // (FIX 2026-09: o backend grava 'cancelada' — feminino. Antes o
+        // filtro comparava com 'cancelado' e a comparação nunca batia,
+        // deixando a RC cancelada fora da lista de Nova Cotação.)
         return !cotacoes.some((c) => 
-          String(c.chamado_id) === String(ch.id) && c.status !== 'cancelado'
+          String(c.chamado_id) === String(ch.id) && c.status !== 'cancelada'
         );
       });
 

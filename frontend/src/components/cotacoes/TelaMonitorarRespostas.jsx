@@ -50,6 +50,12 @@ export default function TelaMonitorarRespostas({
   const [motivoCancelamento, setMotivoCancelamento] = useState('');
   const [cancelandoItem, setCancelandoItem] = useState(false);
 
+  // Cancelamento da COTAÇÃO INTEIRA (soft cancel + desbloqueia a RC).
+  // Diferente de `modalCancelarItem`, que trata 1 item específico.
+  const [modalCancelarCotacao, setModalCancelarCotacao] = useState(false);
+  const [motivoCancelamentoCotacao, setMotivoCancelamentoCotacao] = useState('');
+  const [cancelandoCotacao, setCancelandoCotacao] = useState(false);
+
   // ─── CARREGAR DADOS ───────────────────────────────────────
   useEffect(() => {
     carregarDados();
@@ -198,6 +204,29 @@ export default function TelaMonitorarRespostas({
       setFornecedoresDisponiveis([]);
     } finally {
       setCarregandoForns(false);
+    }
+  }
+
+  async function handleCancelarCotacao() {
+    if (!motivoCancelamentoCotacao.trim()) {
+      alert('Informe o motivo do cancelamento.');
+      return;
+    }
+    setCancelandoCotacao(true);
+    try {
+      await cotacoesService.cancelarCotacao(
+        token,
+        cotacaoId,
+        motivoCancelamentoCotacao.trim()
+      );
+      setModalCancelarCotacao(false);
+      setMotivoCancelamentoCotacao('');
+      // Volta pra lista — a cotação cancelada sai do monitor
+      onVoltar();
+    } catch (e) {
+      alert('Erro ao cancelar cotação: ' + e.message);
+    } finally {
+      setCancelandoCotacao(false);
     }
   }
 
@@ -1000,6 +1029,28 @@ export default function TelaMonitorarRespostas({
           >
             ← Voltar
           </button>
+          {!['finalizada', 'cancelada'].includes(cotacao.status) && (
+            <button
+              onClick={() => {
+                setMotivoCancelamentoCotacao('');
+                setModalCancelarCotacao(true);
+              }}
+              title="Cancelar esta cotação e liberar a RC para edição"
+              style={{
+                background: "transparent",
+                border: "1px solid #ef4444",
+                color: "#ef4444",
+                borderRadius: 6,
+                padding: "10px 16px",
+                fontSize: 12,
+                cursor: "pointer",
+                fontFamily: "inherit",
+                fontWeight: 600,
+              }}
+            >
+              🚫 Cancelar cotação
+            </button>
+          )}
         </div>
       </div>
 
@@ -1744,6 +1795,92 @@ export default function TelaMonitorarRespostas({
           ))}
         </div>
       </div>
+
+            {/* ─── MODAL: CANCELAR COTAÇÃO ─────────────────────────── */}
+      {modalCancelarCotacao && (
+        <div style={{
+          position: "fixed", inset: 0, background: "#00000090",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          zIndex: 500, padding: 20,
+        }}>
+          <div style={{ ...s.card, width: 500, maxWidth: "100%" }}>
+            <div style={{
+              padding: "18px 22px", borderBottom: `1px solid ${C.border}`,
+            }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: "#ef4444" }}>
+                🚫 Cancelar cotação {cotacao.numero}
+              </div>
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>
+                A cotação atual será <strong style={{ color: "#ef4444" }}>interrompida</strong> — fornecedores
+                deixam de poder responder pelo link, e a RC vinculada
+                volta a ficar editável para o requisitante.
+              </div>
+            </div>
+            <div style={{ padding: "16px 22px" }}>
+              <div style={{
+                background: "#2a1a1a",
+                border: "1px solid #ef444455",
+                borderRadius: 6,
+                padding: "10px 12px",
+                marginBottom: 16,
+                fontSize: 11,
+                color: C.muted,
+              }}>
+                <strong style={{ color: "#f59e0b" }}>⚠️ O que isso faz:</strong>
+                <ul style={{ margin: "6px 0 0 18px", padding: 0 }}>
+                  <li>Cotação marcada como cancelada (histórico preservado)</li>
+                  <li>Fornecedores não conseguem mais responder</li>
+                  <li>RC desbloqueada — requisitante pode editar novamente</li>
+                  <li>Uma nova cotação pode ser criada depois</li>
+                </ul>
+              </div>
+              <div style={{ fontSize: 11, color: C.muted, marginBottom: 6 }}>
+                MOTIVO (OBRIGATÓRIO)
+              </div>
+              <textarea
+                value={motivoCancelamentoCotacao}
+                onChange={e => setMotivoCancelamentoCotacao(e.target.value)}
+                placeholder="Ex: valores fora do orçamento, compra adiada pelo gestor, itens precisam ser revisados..."
+                autoFocus
+                style={{
+                  ...s.input,
+                  width: "100%",
+                  minHeight: 80,
+                  resize: "vertical",
+                  fontSize: 12,
+                }}
+              />
+            </div>
+            <div style={{
+              padding: "14px 22px", borderTop: `1px solid ${C.border}`,
+              display: "flex", gap: 10,
+            }}>
+              <button
+                onClick={() => {
+                  setModalCancelarCotacao(false);
+                  setMotivoCancelamentoCotacao('');
+                }}
+                disabled={cancelandoCotacao}
+                style={{ ...s.btn(false, C.muted), flex: 1, padding: "8px 16px" }}
+              >
+                Voltar sem cancelar
+              </button>
+              <button
+                onClick={handleCancelarCotacao}
+                disabled={cancelandoCotacao || !motivoCancelamentoCotacao.trim()}
+                style={{
+                  ...s.btn(true, "#ef4444"),
+                  flex: 1,
+                  padding: "8px 16px",
+                  opacity: (cancelandoCotacao || !motivoCancelamentoCotacao.trim()) ? 0.5 : 1,
+                }}
+              >
+                {cancelandoCotacao ? "Cancelando..." : "Confirmar cancelamento"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
             {/* ─── MODAL: AÇÃO SOBRE ITEM (cancelar / restaurar) ─────── */}
       {modalCancelarItem && (() => {

@@ -572,8 +572,12 @@ class CotacaoService {
       origem_ov_numero: origem_ov_numero || null
     }, tenantId);
 
+    // FIX (2026-09): enviarCotacao só setava `status: 'cotando'` — não
+    // gravava `bloqueado_em`, então a trava de edição de RC cotada não
+    // pegava. Alinhado com o POST /cotacoes (routes) que já grava os dois.
     await this.db.update('chamados', chamado.id, {
-      status: 'cotando'
+      status: 'cotando',
+      bloqueado_em: new Date(),
     }, tenantId);
 
     console.log(`✅ Cotação enviada e chamado atualizado`);
@@ -1342,15 +1346,15 @@ class CotacaoService {
     // como se fosse id, e o Supabase serializava como "[object Object]"
     // (erro: invalid input syntax for type integer). Agora iteramos,
     // buscando os IDs primeiro e deletando um por um. Ordem respeita FK:
-    // primeiro respostas por item, depois fornecedores, depois itens, por
-    // último a cotação.
+    // respostas por item → fornecedores → itens → cotação.
 
-    // 1. Respostas por item — precisa vir ANTES dos fornecedores,
-    //    senão a FK de cotacao_fornecedor_itens bloqueia.
+    // 1. Fornecedores desta cotação (pra ter os IDs antes de deletar
+    //    as respostas por item)
     const fornecedoresDaCotacao = await this.db.select('cotacao_fornecedores',
       { cotacao_id: cotacaoId, tenant_id: tenantId }, tenantId);
     const fornecedoresIds = fornecedoresDaCotacao.map(f => f.id);
 
+    // 2. Respostas por item (antes dos fornecedores, senão FK bloqueia)
     if (fornecedoresIds.length > 0) {
       const todasRespostas = await this.db.select('cotacao_fornecedor_itens',
         { tenant_id: tenantId }, tenantId);
@@ -1362,20 +1366,30 @@ class CotacaoService {
       }
     }
 
-    // 2. Fornecedores
+    // 3. Fornecedores
     for (const f of fornecedoresDaCotacao) {
       await this.db.delete('cotacao_fornecedores', f.id, tenantId);
     }
 
-    // 3. Itens da cotação
+    // 4. Itens da cotação
     const itensDaCotacao = await this.db.select('cotacao_itens',
       { cotacao_id: cotacaoId, tenant_id: tenantId }, tenantId);
     for (const it of itensDaCotacao) {
       await this.db.delete('cotacao_itens', it.id, tenantId);
     }
 
-    // 4. A cotação em si
+    // 5. A cotação em si
     await this.db.delete('cotacoes', cotacaoId, tenantId);
+
+    // 6. Desbloqueia a RC — sem cotação ativa, o requisitante volta a
+    //    poder editar (mudança de status pra "aguardando_cotacao" é
+    //    semântica: aguardando nova decisão do comprador).
+    if (cotacao.chamado_id) {
+      await this.db.update('chamados', cotacao.chamado_id, {
+        bloqueado_em: null,
+        status: 'aguardando_cotacao',
+      }, tenantId);
+    }
 
     return { ok: true };
   }

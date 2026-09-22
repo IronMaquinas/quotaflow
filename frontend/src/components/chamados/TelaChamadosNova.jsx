@@ -656,9 +656,24 @@ export default function TelaChamadosNova({ fmtBRL, fmtD, C, s, equipamentos }) {
               const urgenciaCfg = urgenciaCfgMap[chamado.urgencia] || { l: chamado.urgencia, c: C.muted };
               const categoriaCfg = categoriaCfgMap[chamado.categoria] || { l: chamado.categoria, c: C.muted };
 
-              // origem_os_numero preenchido -> RC nasceu do split automático
-              // de uma OS. null/undefined -> RC manual, criada direto aqui.
-              const origemLabel = chamado.origem_os_numero ? `OS ${chamado.origem_os_numero}` : "Manual";
+              // Ordem de prioridade:
+              //   1. origem_rc_numero  -> RC veio de outra RC ("Mover para nova RC")
+              //   2. origem_os_numero  -> RC nasceu do split automático de uma OS
+              //   3. nenhum dos dois   -> RC manual, criada direto aqui
+              let origemLabel, origemTitle, origemCor;
+              if (chamado.origem_rc_numero) {
+                origemLabel = `RC ${chamado.origem_rc_numero}`;
+                origemTitle = `Itens movidos de outra RC`;
+                origemCor = "#f59e0b"; // âmbar — mesma família do "renegociado"
+              } else if (chamado.origem_os_numero) {
+                origemLabel = `OS ${chamado.origem_os_numero}`;
+                origemTitle = "Gerada automaticamente a partir desta OS";
+                origemCor = C.accent;
+              } else {
+                origemLabel = "Manual";
+                origemTitle = "Criada manualmente, sem OS de origem";
+                origemCor = C.muted;
+              }
 
               return (
                 <div key={chamado.id} style={{ display: "grid", gridTemplateColumns: "1fr 2fr 120px 100px 90px 90px 100px 100px", padding: "13px 18px", borderBottom: i < chamadosFiltered.length - 1 ? `1px solid ${C.border}22` : "none", alignItems: "center" }}>
@@ -671,7 +686,7 @@ export default function TelaChamadosNova({ fmtBRL, fmtD, C, s, equipamentos }) {
                   <div style={{ ...s.tag(urgenciaCfg.c), fontSize: 10 }}>{urgenciaCfg.l}</div>
                   <div style={{ ...s.tag(categoriaCfg.c), fontSize: 10 }}>{categoriaCfg.l}</div>
                   <div style={{ ...s.tag(statusCfg.c), fontSize: 10 }}>{statusCfg.l}</div>
-                  <div style={{ fontSize: 10, color: chamado.origem_os_numero ? C.accent : C.muted }} title={chamado.origem_os_numero ? "Gerada automaticamente a partir desta OS" : "Criada manualmente, sem OS de origem"}>
+                  <div style={{ fontSize: 10, color: origemCor }} title={origemTitle}>
                     {origemLabel}
                   </div>
                   <div style={{ display: "flex", gap: 6, justifyContent: "flex-end" }}>
@@ -694,11 +709,45 @@ export default function TelaChamadosNova({ fmtBRL, fmtD, C, s, equipamentos }) {
     const numerados = computarNumeracao(linhas);
     const urgenciaCfg = urgenciaCfgMap[chamadoSel.urgencia] || { l: chamadoSel.urgencia, c: C.muted };
     const categoriaCfg = categoriaCfgMap[chamadoSel.categoria] || { l: chamadoSel.categoria, c: C.muted };
-    const origemLabel = chamadoSel.origem_os_numero ? `OS ${chamadoSel.origem_os_numero}` : "Manual (sem OS de origem)";
+    const origemLabel = chamadoSel.origem_rc_numero
+      ? `RC ${chamadoSel.origem_rc_numero}`
+      : chamadoSel.origem_os_numero
+        ? `OS ${chamadoSel.origem_os_numero}`
+        : "Manual (sem OS de origem)";
 
     return (
       <div style={{ padding: "22px 24px", overflowY: "auto", height: "100%" }}>
         <button onClick={() => { setTelaAtual("lista"); setChamadoSel(null); }} style={{ background: "transparent", border: "none", color: C.accent, fontSize: 13, cursor: "pointer", fontFamily: "inherit", marginBottom: 16 }}>← Voltar para RCs</button>
+
+        {/* Banner de bloqueio — RC em cotação não pode mais ser editada
+            pelo requisitante (alinhado com SAP MM). Comprador pode mexer
+            via monitor (mover item, cancelar cotação). */}
+        {chamadoSel.bloqueado_em && (
+          <div style={{
+            ...s.card,
+            padding: "12px 16px",
+            marginBottom: 16,
+            background: "#2a1a1a",
+            borderLeft: `4px solid #f59e0b`,
+            fontSize: 12,
+            color: C.text,
+            display: "flex",
+            alignItems: "flex-start",
+            gap: 10,
+          }}>
+            <span style={{ fontSize: 16, flexShrink: 0 }}>🔒</span>
+            <div>
+              <div style={{ fontWeight: 600 }}>
+                RC em cotação desde {fmtD(chamadoSel.bloqueado_em)}
+              </div>
+              <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>
+                Edição bloqueada. Para alterações (quantidade, itens),
+                contate o comprador — ele pode ajustar via monitor ou
+                abrir nova RC.
+              </div>
+            </div>
+          </div>
+        )}
 
         <div style={{ marginBottom: 24 }}>
           <div style={{ fontSize: 11, color: C.muted, letterSpacing: "0.1em", marginBottom: 4 }}>DETALHES DA REQUISIÇÃO DE COMPRA</div>
@@ -708,8 +757,19 @@ export default function TelaChamadosNova({ fmtBRL, fmtD, C, s, equipamentos }) {
               <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
                 <span style={{ ...s.tag(urgenciaCfg.c), fontSize: 10 }}>{urgenciaCfg.l}</span>
                 <span style={{ ...s.tag(categoriaCfg.c), fontSize: 10 }}>{categoriaCfg.l}</span>
-                <span style={{ ...s.tag(chamadoSel.origem_os_numero ? C.accent : C.muted), fontSize: 10 }}>
-                  {chamadoSel.origem_os_numero ? `📄 Origem: ${origemLabel}` : "Origem: Manual"}
+                <span style={{
+                  ...s.tag(
+                    chamadoSel.origem_rc_numero ? "#f59e0b"
+                      : chamadoSel.origem_os_numero ? C.accent
+                      : C.muted
+                  ),
+                  fontSize: 10,
+                }}>
+                  {chamadoSel.origem_rc_numero
+                    ? `↩️ Origem: ${origemLabel}`
+                    : chamadoSel.origem_os_numero
+                      ? `📄 Origem: ${origemLabel}`
+                      : "Origem: Manual"}
                 </span>
               </div>
             </div>
@@ -753,6 +813,7 @@ export default function TelaChamadosNova({ fmtBRL, fmtD, C, s, equipamentos }) {
         <div style={{ display: "flex", gap: 10 }}>
           <button
             onClick={() => {
+              if (chamadoSel.bloqueado_em) return; // guard defensivo
               const itensForm = linhas.map(it => ({
                 ...novoMaterial(), id: it.id, numero_base: it.numero_base ?? null, status: it.status || "ativo",
                 item_nome: it.item_nome || "", codigo: it.codigo || "", item_catalogo_id: it.item_catalogo_id || null,
@@ -769,11 +830,36 @@ export default function TelaChamadosNova({ fmtBRL, fmtD, C, s, equipamentos }) {
               });
               setModal("editar");
             }}
-            style={{ ...s.btn(true), padding: "9px 20px", fontSize: 12 }}
+            disabled={!!chamadoSel.bloqueado_em}
+            title={chamadoSel.bloqueado_em
+              ? 'RC em cotação — edição bloqueada. Contate o comprador.'
+              : 'Editar esta RC'}
+            style={{
+              ...s.btn(true),
+              padding: "9px 20px",
+              fontSize: 12,
+              opacity: chamadoSel.bloqueado_em ? 0.5 : 1,
+              cursor: chamadoSel.bloqueado_em ? "not-allowed" : "pointer",
+            }}
           >✏️ Editar</button>
           <button
-            onClick={() => { if (window.confirm("Tem certeza que deseja excluir esta RC?")) deletar(chamadoSel.id).then(() => setTelaAtual("lista")); }}
-            style={{ ...s.btn(false), padding: "9px 20px", fontSize: 12, border: "1px solid #ef4444", color: "#ef4444" }}
+            onClick={() => {
+              if (chamadoSel.bloqueado_em) return;
+              if (window.confirm("Tem certeza que deseja excluir esta RC?")) deletar(chamadoSel.id).then(() => setTelaAtual("lista"));
+            }}
+            disabled={!!chamadoSel.bloqueado_em}
+            title={chamadoSel.bloqueado_em
+              ? 'RC em cotação — exclusão bloqueada. Contate o comprador.'
+              : 'Excluir esta RC'}
+            style={{
+              ...s.btn(false),
+              padding: "9px 20px",
+              fontSize: 12,
+              border: "1px solid #ef4444",
+              color: "#ef4444",
+              opacity: chamadoSel.bloqueado_em ? 0.5 : 1,
+              cursor: chamadoSel.bloqueado_em ? "not-allowed" : "pointer",
+            }}
           >🗑 Deletar</button>
         </div>
       </div>
