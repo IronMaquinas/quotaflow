@@ -177,12 +177,20 @@ quotaflow/
 Ver seção 5 para o fluxo completo. Resumo de tabelas:
 
 - **`chamados`** — serve tanto para OS quanto RM, discriminado por `tipo_documento` (`'os'` | `'requisicao_material'`, `NOT NULL DEFAULT 'os'`). Campos relevantes: `id | tenant_id | equipamento_id | numero | status | urgencia | categoria | descricao_geral | servico_nome | modo_programacao | data_inicio_prevista | data_fim_prevista | tipo_documento | origem_os_id | origem_os_numero | criado_em`. `origem_os_id`/`origem_os_numero` só são preenchidos em linhas RM, apontando pra OS-mãe.
-- **`chamado_itens`** — lista única de itens (material OU serviço, discriminado por `tipo`). Campos: `id | tenant_id | chamado_id | tipo | origem (planejado|adicionado) | status (ativo|cancelado) | numero_base | posicao | origem_os_item_id` + campos de material (`item_nome, codigo, item_catalogo_id, quantidade, tipo_item, descricao, status_estoque, saldo_disponivel`) + campos de serviço (`nome, descricao, qtd_pessoas_planejada, data_inicio_prevista, data_fim_prevista`). `origem_os_item_id` só preenchido em itens de RM, apontando pro item de material original da OS.
+  - **Rastreabilidade de "Mover para nova RC" (09/2026):** `origem_rc_id | origem_rc_numero` — quando a RC nasceu de outra RC (por reagendamento). Distinto de `origem_os_id`, que aponta pra OS-mãe.
+  - **Trava de edição (09/2026):** `bloqueado_em` — setado quando cotação é disparada ou quando a RC herda resposta via "Mover para nova RC". Requisitante não pode mais editar. Limpo quando a cotação é cancelada.
+- **`chamado_itens`** — lista única de itens (material OU serviço, discriminado por `tipo`). Campos: `id | tenant_id | chamado_id | tipo | origem (planejado|adicionado) | status (ativo|cancelado) | numero_base | posicao | origem_os_item_id` + campos de material (`item_nome, codigo, item_catalogo_id, quantidade, tipo_item, descricao, status_estoque, saldo_disponivel`) + campos de serviço (`nome, descricao, qtd_pessoas_planejada, data_inicio_prevista, data_fim_prevista`) + campos de aplicação (`quantidade_aplicada, status_aplicacao (pendente|parcial|aplicado|nao_aplicado)`) + campos de conclusão de serviço (`servico_concluido_manual, servico_concluido_em, servico_concluido_por, servico_concluido_por_nome`).
+  - **Soft cancel (Fase "Remover item da RC", 09/2026):** `cancelado_em | cancelado_por | cancelado_por_nome | motivo_cancelamento`. Item cancelado continua na lista com tarja, nunca é deletado. Restaurável enquanto a cotação não foi finalizada.
+  - **Rastreabilidade de "Mover para nova RC":** `movido_para_rc_id | movido_para_rc_numero | movido_para_cotacao_id` — quando o item saiu da RC original por reagendamento.
+  - **Rastreabilidade inversa:** `origem_rc_item_id` — quando o item foi recebido de outra RC via "Mover para nova RC".
+  - `origem_os_item_id` só preenchido em itens de RM, apontando pro item de material original da OS.
 - **`chamado_apontamentos`** — apontamento de execução por item de serviço, `UNIQUE(chamado_item_id)` (valor único, não histórico versionado — decisão de produto ainda em aberto se deve virar histórico).
 - **`cotacoes`** ⭐ — a RC. `id | tenant_id | chamado_id (aponta pra uma RM, não mais pra OS diretamente) | status | modo | numero | notas | confirmado_em | confirmado_por | enviado_em | finalizado_em | criado_em`.
 - **`cotacao_itens`** — `id | tenant_id | cotacao_id | chamado_item_id | item_catalogo_id | quantidade | preco_estimado | fornecedores_ids (ARRAY) | criado_em`.
-- **`cotacao_fornecedores`** ⭐ — `id | tenant_id | cotacao_id | fornecedor_id | fornecedor_nome | fornecedor_email | token | status | valor | prazo | frete (modalidade agregada: CIF/FOB/MISTO) | valor_frete | obs | data_resposta | enviado_em`.
-- **`cotacao_fornecedor_itens`** — detalhamento por item da resposta do fornecedor: `valor_unitario`, `frete_modalidade` (por item — pode variar dentro da mesma cotação, ex: peça leve por CIF/correio, peça pesada FOB por peso), `chamado_item_id` (derivado no backend, nunca vem do frontend).
+- **`cotacao_fornecedores`** ⯑ — `id | tenant_id | cotacao_id | fornecedor_id | fornecedor_nome | fornecedor_email | token | status | valor | prazo | frete (modalidade agregada: CIF/FOB/MISTO) | valor_frete | obs | data_resposta | enviado_em` + **renegociação por item (`valor_renegociado`, `frete_renegociado`, `economia`, `economia_frete`)** + **herança (Fase "Mover para nova RC", 09/2026):** `origem_cotacao_id` — aponta pra cotação de onde os dados foram herdados. `data_resposta` é preservada ao herdar (sinaliza que a proposta é antiga).
+- **`cotacao_fornecedor_itens`** — detalhamento por item da resposta do fornecedor: `valor_unitario | valor`, `frete | valor_frete`, `frete_modalidade` (por item — pode variar dentro da mesma cotação, ex: peça leve por CIF/correio, peça pesada FOB por peso), `chamado_item_id` (derivado no backend, nunca vem do frontend), `prazo` (prazo por item, desde 09/2026).
+  - **Renegociação (Fase 1B, 09/2026):** `valor_renegociado | frete_renegociado` — quando o comprador renegocia item a item no monitor.
+  - **Origem do preenchimento:** `origem_preenchimento` — `'link'` (fornecedor respondeu pelo portal), `'manual'` (comprador editou), `'herdada'` (veio via "Mover para nova RC"), ou `null` (compatibilidade com respostas antigas via portal). **Constraint CHECK expandida em 09/2026 para aceitar `'herdada'`.**
 - **`ordens_venda`** — `id | tenant_id | cotacao_id | fornecedor_id | numero | status | valor_total | valor_frete | prazo_entrega | criado_em | enviado_em | entregue_em`.
 - **`nao_conformidades`** — recebimento recusado: `numero_nc | ordem_venda_id | numero_pedido | fornecedor_nome | numero_nota_fiscal | data_recebimento | inspetor_id | motivo_recusa (NOT NULL) | quantidade (NOT NULL) | unidade_medida | lote | numero_serie | validade | criado_em`.
 
@@ -235,6 +243,11 @@ Separação estrutural em quatro documentos com rastreabilidade em cadeia, decid
 5. OV (Ordem de Venda) — TelaMonitorarRespostas.jsx / fluxo de cotação
    └─ Comprador compara respostas, emite OV pro fornecedor escolhido
    └─ ordens_venda criada, cotação finalizada
+   └─ (09/2026) Monitor tem: edição item-a-item com CIF/FOB, card "Vencedores
+      por Item" com acordeão, Panorama executivo em 3 atos (sem/com/após
+      QuotaFlow) com Saving do Sistema e Saving do Comprador
+   └─ (09/2026) Comprador pode remover/restaurar item, cancelar cotação (soft
+      cancel, desbloqueia RC), mover item para nova RC
 
 6. Recebimento
    └─ /entrada (com OV: 3-way match) ou sem OV (compra emergencial, flag "Compra sem OV")
@@ -245,6 +258,33 @@ Separação estrutural em quatro documentos com rastreabilidade em cadeia, decid
 ### Terminologia — RET vs. RM (não confundir)
 - **RET** (`RET-YYYY-NNNN`): retirar material que **já está fisicamente no almoxarifado**. Fluxo independente, sem FK real com OS.
 - **RM** (`RM-YYYY-NNNN`): requisitar material que **precisa ser comprado**. É o filho estrutural da OS nesta separação, alimenta a RC.
+
+### Fluxos auxiliares na RC/cotação (09/2026)
+
+**Remover/Restaurar item da RC** (durante cotação ativa):
+- Botão ✕ no header do item → modal com motivo obrigatório → item marcado como `cancelado` (soft), tarja cinza com motivo + autor + timestamp
+- Botão "↩ Restaurar" no item cancelado (motivo opcional, corretivo)
+- Travas: última OC emitida, último item ativo da RC, cotação finalizada/cancelada
+
+**Mover item para nova RC** (reagendamento):
+- Modal de remoção tem radio "Encerrar" (só cancela) vs. "Mover para nova RC" (cria RC nova)
+- Backend `POST /:cotacaoId/itens/mover` (batch): cria RC nova herdando equipamento, urgência, categoria, serviço, OS origem, técnico requisitante; cria cotação vinculada; copia `chamado_itens` + `cotacao_itens`
+- **Herança de cotação original:** copia `cotacao_fornecedores` (token novo, `data_resposta` preservado, `origem_cotacao_id`) + `cotacao_fornecedor_itens` remapeando IDs, com `origem_preenchimento: 'herdada'`
+- Cotação nova nasce como **`'enviada'`** (não `'respondida'` — comunica "aguardando revisão")
+- Nova RC é bloqueada se herdou ≥ 1 fornecedor com resposta (mesma regra de RC cotada)
+- Banner azul no monitor: "📦 Itens herdados da RC-X — Revise antes de emitir OC"
+- Item cancelado ganha link "↳ Reagendado na RC-Y" no banner
+
+**Cancelar cotação** (soft cancel, 09/2026):
+- Botão "🚫 Cancelar cotação" no header do monitor → modal com motivo obrigatório
+- Cotação vira `status: 'cancelada'` (não deletada), evento registrado na timeline da RC
+- RC é **desbloqueada** (`bloqueado_em: null`, `status: 'aguardando_cotacao'`) — requisitante volta a poder editar
+- Nova cotação pode ser criada depois via "+ Nova Cotação" (a RC cancelada aparece na lista)
+
+**Trava de edição em RC cotada:**
+- Backend `PUT /chamados/:id` bloqueia **qualquer** alteração quando `bloqueado_em` (antes só bloqueava adição de item novo) — alinhado com SAP MM
+- Frontend `TelaChamadosNova`: banner 🔒 + botões Editar/Deletar desabilitados
+- Fluxo legítimo: se requisitante precisa alterar, contata o comprador (que pode restaurar/mover item pelo monitor)
 
 ---
 
@@ -318,8 +358,31 @@ npm run dev
 - **Catálogo do fornecedor (marketplace)**: CRUD completo + import CSV, testado e confirmado funcionando pelo usuário em produção
 - **Busca unificada de item na OS** (catálogo local + marketplace, dual-source, sem curto-circuito), migração de Levenshtein client-side pra trigram server-side, com PN no hint — confirmado funcionando pelo usuário em produção (10/09/2026)
 
+### ✅ Em produção, confirmado (09-10/09/2026 e adições de 09/2026)
+
+**Cotações — Fase 1B e derivados:**
+- Edição de resposta do fornecedor **item a item** (antes era só cabeçalho — corrigido o vazamento de `valor_renegociado` entre itens e o cálculo inflado do SAVING)
+- **CIF/FOB por item** editável no modal (radio), com botões "Todos CIF / Todos FOB" em massa. Frete desabilitado em CIF. `/monitorar` respeita CIF (frete não soma no total nem na economia)
+- **Card "Vencedores por Item"** substituiu "Melhor Proposta Geral" — acordeão por fornecedor com itens ganhos, valores e savings
+- **Panorama executivo** em 3 atos: Sem o QuotaFlow (pior cotação) / Com o QuotaFlow (menor cotação) / Após Negociação (fechado). Exibe **Saving do Sistema** (range de mercado) e **Saving do Comprador** (pode ser **negativo** e fica vermelho, comunicando custo de decisão)
+
+**Fluxos auxiliares da RC (ver seção 5):**
+- Remover/Restaurar item da RC com soft cancel + evento na timeline
+- Mover item para nova RC com **herança de cotação** (fornecedores, respostas, renegociações) e rastreabilidade bidirecional
+- Cancelar cotação (soft cancel + desbloqueio automático da RC)
+- Trava de edição em RC cotada (banner + botões desabilitados + bloqueio no backend)
+
+**Fixes pontuais:**
+- `excluirCotacao`: wrapper `DB.delete` só aceita ID único — corrigido (antes gerava `[object Object]`)
+- Email de solicitação de cotação lia `cotacao.numero_cotacao` (inexistente) → `cotacao.numero` (corrigido "Solicitação de Cotação: undefined")
+- Email rodapé lia `cotacao.usuario_id` (inexistente) → `cotacao.criado_por`
+- `enviarCotacao` só gravava `status: 'cotando'` — agora também grava `bloqueado_em` (necessário para a trava)
+- Filtro "Nova Cotação" comparava com `'cancelado'` (typo) → `'cancelada'` (backend grava feminino)
+- `statusLabels` ganhou `'cancelada'`; `handleAbrirCotacao` trata cancelada com mensagem clara
+
 ### 🟡 Em progresso / próximo passo real
-- Tela única de consulta de estoque cobrindo consumíveis e peças/componentes juntos (hoje só existe pra consumíveis)
+- **#5 Custo de recebimento por NF** — campo `custo_recebimento_nf` em `tenants`, tela de configuração, 4ª seção no Panorama executivo. Diferencial competitivo central (nenhum ERP/SaaS faz isso na hora da decisão; SAP/Oracle tratam como rateio contábil pós-fato)
+- Tela única de consulta de estoque cobrindo consumíveis e peças/componentes juntos
 - Validar `TelaGerarRequisicaoMaterial.jsx` na prática com um comprador de verdade usando dados reais
 
 ### ❌ Não iniciado
@@ -343,6 +406,9 @@ Registradas para não repetir a investigação. Ver `schema-real-e-tabelas-orfas
 - **`pg_trgm`: `similarity(a,b) > limiar` no WHERE não é indexável** — força Seq Scan mesmo com índice GIN existente. Usar o operador `%` com `PERFORM set_limit(limiar)` antes, que É indexável (Bitmap Index Scan).
 - **`pg_trgm`: comparar contra nome+descrição concatenados dilui a similaridade de termos curtos** — uma descrição técnica longa faz um termo de busca curto (ex: "farol") cair abaixo do limiar mesmo quando o nome comercial sozinho bateria bem. Resolvido com busca em estágios: nome sozinho primeiro, descrição como fallback.
 - **Funções SQL `LANGUAGE sql` podem ser "inlined" pelo planner** (dentro de índice funcional ou corpo de outra função) — nomes não qualificados dentro do corpo são re-resolvidos contra o `search_path` da sessão CHAMADORA, não da criação, o que pode quebrar em contextos específicos (`function unaccent(text) does not exist... during inlining`) mesmo funcionando em chamada direta. Fix: `ALTER FUNCTION ... SET search_path = public;` (também desativa a inlineação como efeito colateral, prevenindo recorrência).
+- **`DB.delete(table, id, tenantId)` só aceita ID único — nunca WHERE composto.** Passar `{ cotacao_id, tenant_id }` como segundo argumento vira `DELETE WHERE id = [object Object]` e o Postgres rejeita. Pra deletar múltiplas linhas, iterar buscando os IDs antes (`for (const x of lista) await DB.delete(table, x.id, tenantId)`). Bug real em `excluirCotacao`, corrigido em 09/2026.
+- **`DB.insert` e `DB.update` não fazem cast de tipo.** Se `fornecedores_ids` é `integer[]` no banco, passar `JSON.stringify([1,2])` (ou um array de strings) quebra silenciosamente ou retorna erro de tipo. Sempre alinhar o tipo do payload com o tipo da coluna.
+- **Constraint CHECK em coluna enum-like precisa de migration pra aceitar valor novo.** `cotacao_fornecedor_itens.origem_preenchimento` aceitava só `'link'` e `'manual'` — tentar inserir `'herdada'` estourava `violates check constraint`. Padrão: `DROP CONSTRAINT` + `ADD CONSTRAINT ... CHECK (campo = ANY (ARRAY[...]))` incluindo o novo valor.
 
 ---
 
@@ -354,8 +420,16 @@ Registradas para não repetir a investigação. Ver `schema-real-e-tabelas-orfas
 ### Médio prazo — amarração de busca a Equipamento
 Problema identificado: um nome de item pode ser ambíguo entre veículos/modelos diferentes (ex: "lâmpada farol direito" pode servir a vários veículos, com PNs diferentes por fornecedor). `equipamentos.fabricante`/`modelo` e `catalogo_itens.marca`/`modelo`/`ano_fabricacao_*` já existem no schema — não precisam de migration — mas hoje estão majoritariamente vazios (nunca foram expostos em tela de cadastro nem usados em busca). Plano acordado: NÃO forçar preenchimento agora (contradiria a decisão de baixa fricção pros 80% dos clientes). Quando fizer sentido (catálogo com dado real preenchido), usar o Equipamento já selecionado no topo da OS como **reforço de ranking** (boost, não filtro rígido) contra `catalogo_itens.marca`/`modelo` — só se aplica ao catálogo local, o marketplace não tem esse campo. A checagem final de compatibilidade continua humana (comprador revisando a cotação, fornecedor validando ao responder).
 
+### Curto-médio prazo — fluxos de cotação (fila de trabalho atual)
+- **#5 Custo de recebimento por NF** (em desenvolvimento) — campo configurável em `tenants`, mostrado no Panorama executivo quando > 0. Sistema sugere consolidação quando 1 fornecedor majoritário cotou todos os itens dos outros (MVP). Saving negativo pós-recebimento também nos relatórios gerenciais — é mérito do comprador tomar decisão que beneficia o negócio, não só o departamento.
+- **#4c Validade das propostas** — portal ganha campo "validade em dias"; monitor mostra badge 🟢🟡🔴; panorama avisa se venceu. Justificativa: valores vencidos invalidam o cálculo de custo de recebimento (se a cotação tá vencida, o custo que ela produz é castelo de areia).
+- **Aging de RC** — RC aberta há 30/60/90 dias gera aviso de cancelamento definitivo (o comprador decide se cancela). Sentido falta no SAP, segundo o usuário.
+- **Requisitante abre nova RC referenciando RC bloqueada** — reusa muito do fluxo do `/mover` que já existe.
+- **Central de notificações** — eventos já são registrados em `chamado_eventos`; falta o dispatcher + UI. Depois de ter eventos suficientes pra valer a pena.
+- **Custo de recebimento v2** — otimização "set cover" (qual fornecedor absorve mais itens com o menor custo total). MVP só testa fornecedor majoritário.
+
 ### Longo prazo — normalização de catálogo entre fornecedores
-Sem normalização, dois fornecedores podem cadastrar o "mesmo" item físico com nomes/PNs diferentes (ex: "lâmpada farol direito" vs. "lâmpada do farol direito", cada um com seu próprio PN) — a busca hoje trata como itens distintos. Ideia levantada: campo opcional de compatibilidade (marca/modelo atendidos) no cadastro do fornecedor — **opcional, não pré-requisito de onboarding**, pra não repetir o erro de exigir rigor de cadastro dos 80% que não querem isso. Só vale a pena investir quando houver volume real de fornecedores cadastrados. Visão ainda mais distante, sem ação concreta: montadoras compartilhando BOM (lista de materiais) por equipamento.
+(sem alteração — mantém o texto atual)
 
 ### Deferidos (intencional, não é pendência ativa)
 - Estilo visual do seletor "Programação da OS"

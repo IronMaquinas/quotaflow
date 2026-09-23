@@ -26,6 +26,10 @@ export default function TelaCotacoesNovaComAbas({ fmtBRL, fmtD, C, s }) {
   const [telaAtual, setTelaAtual] = useState("lista");
   const [cotacaoSel, setCotacaoSel] = useState(null);
   const [filtro, setFiltro] = useState("todos");
+  // #4d — Filtro rápido por status_geral (aguardando | coletando |
+  // revalidar | pronta | saturada). Separado do `filtro` tradicional
+  // (rascunho / em_curso / etc) — os dois se combinam.
+  const [filtroRapido, setFiltroRapido] = useState("todos");
   const [busca, setBusca] = useState("");
   const [modal, setModal] = useState(null);
   const [enviando, setEnviando] = useState(false);
@@ -457,23 +461,62 @@ const handleAbrirCotacao = async (cotacao) => {
     }
   };
 
-  // ─── FILTRO COTAÇÕES (seu código original) ─────────────────
-  const cotacoesFiltered = cotacoesSeguro.filter((c) => {
-    if (filtro === "todos") return true;
-    if (filtro === "rascunho") return c.status === "rascunho";
-    if (filtro === "em_curso") return c.status === "enviada" || c.status === "respondida";
-    if (filtro === "respondida") return c.status === "respondida";
-    if (filtro === "finalizado") return c.status === "finalizada";
-    return false;
-  })
-  .filter((c) => {
-    const chamado = chamadosSeguro.find((ch) => String(ch.id) === String(c.chamado_id));
-    return (
-      !busca ||
-      (chamado?.peca && chamado.peca.toLowerCase().includes(busca.toLowerCase())) ||
-      (chamado?.codigo && chamado.codigo.toLowerCase().includes(busca.toLowerCase()))
-    );
-  });
+  // ─── #4d — Config visual do status geral ──────────────────
+  const STATUS_GERAL_CFG = {
+    aguardando: { cor: '#94a3b8', label: '⚪ Aguardando' },
+    coletando:  { cor: '#f59e0b', label: '🟡 Coletando' },
+    revalidar:  { cor: '#ef4444', label: '🔴 Revalidar' },
+    pronta:     { cor: '#22c55e', label: '🟢 Pronta p/ emitir' },
+    saturada:   { cor: '#a855f7', label: '✨ Saturada' },
+  };
+
+  // Cotações "ativas" pra fins do agregado — rascunho/finalizada/
+  // cancelada nunca entram nos filtros rápidos (não faz sentido
+  // "pronta pra emitir" em cima de rascunho).
+  const cotacoesAtivas = cotacoesSeguro.filter(
+    (c) => !['rascunho', 'finalizada', 'finalizado', 'cancelada'].includes(c.status)
+  );
+
+  // Contagens dos chips de filtro rápido (só cotação ativa)
+  const contagensRapidas = {
+    prontas:   cotacoesAtivas.filter(c => c.status_geral === 'pronta').length,
+    coletando: cotacoesAtivas.filter(c => c.status_geral === 'coletando').length,
+    revalidar: cotacoesAtivas.filter(c => c.status_geral === 'revalidar').length,
+    aguardando: cotacoesAtivas.filter(c => c.status_geral === 'aguardando').length,
+    saturada:  cotacoesAtivas.filter(c => c.status_geral === 'saturada').length,
+    // Aging: só conta a partir de 30d ("parada" mesmo, não "atenção")
+    paradas:   cotacoesAtivas.filter(c => Number(c.dias_parada) >= 30).length,
+  };
+
+  // ─── FILTRO COTAÇÕES ──────────────────────────────────────
+  const cotacoesFiltered = cotacoesSeguro
+    .filter((c) => {
+      // Filtro tradicional (rascunho / em_curso / finalizada / respondida)
+      if (filtro === "todos") return true;
+      if (filtro === "rascunho") return c.status === "rascunho";
+      if (filtro === "em_curso") return c.status === "enviada" || c.status === "respondida";
+      if (filtro === "respondida") return c.status === "respondida";
+      if (filtro === "finalizado") return c.status === "finalizada";
+      return false;
+    })
+    .filter((c) => {
+      // #4d — Filtro rápido (status_geral / aging). Só se aplica em
+      // cotação ativa; senão o filtro "pronta" mostraria rascunhos
+      // que nem têm status_geral calculado.
+      if (filtroRapido === "todos") return true;
+      if (['rascunho', 'finalizada', 'finalizado', 'cancelada'].includes(c.status)) return false;
+      // Filtro especial de aging
+      if (filtroRapido === "paradas") return Number(c.dias_parada) >= 30;
+      return c.status_geral === filtroRapido;
+    })
+    .filter((c) => {
+      const chamado = chamadosSeguro.find((ch) => String(ch.id) === String(c.chamado_id));
+      return (
+        !busca ||
+        (chamado?.peca && chamado.peca.toLowerCase().includes(busca.toLowerCase())) ||
+        (chamado?.codigo && chamado.codigo.toLowerCase().includes(busca.toLowerCase()))
+      );
+    });
 
   // ─── RENDER: MODAL NOVA COTAÇÃO ─────────────────────────────
   if (modal === "nova") {
@@ -1237,14 +1280,13 @@ const handleAbrirCotacao = async (cotacao) => {
               ? "Em Curso"
               : status === "finalizado"
               ? "Finalizadas"
-              : "Respondidas"; // ← ADICIONE ESTA LINHA
+              : "Respondidas";
 
-            // Adiciona contagem para rascunho, em_curso e respondida
             if (status === "rascunho") {
               const count = cotacoesSeguro.filter(c => c.status === 'rascunho').length;
               label += ` (${count})`;
             } else if (status === "em_curso") {
-              const count = cotacoesSeguro.filter(c => 
+              const count = cotacoesSeguro.filter(c =>
                 c.status === 'pendente' || c.status === 'enviada' || c.status === 'em_curso'
               ).length;
               label += ` (${count})`;
@@ -1268,6 +1310,52 @@ const handleAbrirCotacao = async (cotacao) => {
             );
           })}
         </div>
+      </div>
+
+      {/* #4d — Filtros rápidos por status_geral (só cotação ativa) */}
+      <div style={{
+        display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap",
+        alignItems: "center",
+      }}>
+        <span style={{
+          fontSize: 10, color: C.muted, letterSpacing: "0.06em",
+          fontWeight: 600, marginRight: 4,
+        }}>
+          RÁPIDO:
+        </span>
+        {[
+          { id: "todos",     label: "Todas",           count: cotacoesAtivas.length, cor: C.muted },
+          { id: "pronta",    label: "🟢 Prontas",      count: contagensRapidas.prontas, cor: '#22c55e' },
+          { id: "coletando", label: "🟡 Coletando",    count: contagensRapidas.coletando, cor: '#f59e0b' },
+          { id: "revalidar", label: "🔴 Revalidar",    count: contagensRapidas.revalidar, cor: '#ef4444' },
+          { id: "aguardando",label: "⚪ Aguardando",   count: contagensRapidas.aguardando, cor: '#94a3b8' },
+          { id: "saturada",  label: "✨ Saturadas",    count: contagensRapidas.saturada, cor: '#a855f7' },
+          { id: "paradas",   label: "🕰 Paradas",      count: contagensRapidas.paradas, cor: '#fb923c' },
+        ].map((chip) => {
+          const ativo = filtroRapido === chip.id;
+          return (
+            <button
+              key={chip.id}
+              onClick={() => setFiltroRapido(chip.id)}
+              disabled={chip.count === 0 && chip.id !== "todos"}
+              style={{
+                background: ativo ? `${chip.cor}22` : "transparent",
+                border: `1px solid ${ativo ? chip.cor : C.border}`,
+                borderRadius: 14,
+                color: ativo ? chip.cor : (chip.count === 0 && chip.id !== "todos" ? C.muted : C.text),
+                fontSize: 11,
+                fontWeight: ativo ? 700 : 500,
+                cursor: (chip.count === 0 && chip.id !== "todos") ? "not-allowed" : "pointer",
+                padding: "5px 12px",
+                fontFamily: "inherit",
+                opacity: (chip.count === 0 && chip.id !== "todos") ? 0.4 : 1,
+                transition: "all 0.15s",
+              }}
+            >
+              {chip.label} ({chip.count})
+            </button>
+          );
+        })}
       </div>
 
       {/* Lista de cotações */}
@@ -1296,54 +1384,202 @@ const handleAbrirCotacao = async (cotacao) => {
             const descricaoChamado = chamado?.descricao || chamado?.peca || "Chamado sem descrição";
 
             return (
-              <div
-                key={cotacao.id}
-                onClick={() => handleAbrirCotacao(cotacao)}
-                style={{ ...s.card, padding: "14px 18px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", transition: "all 0.2s" }}
-                onMouseEnter={(e) => {
-                  e.currentTarget.style.background = C.surface;
-                  e.currentTarget.style.borderColor = C.accent;
-                }}
-                onMouseLeave={(e) => {
-                  e.currentTarget.style.background = C.surface;
-                  e.currentTarget.style.borderColor = C.border;
-                }}
-              >
-                <div>
-                  <div style={{ fontSize: 12, fontWeight: 600, color: C.accent }}>
-                    {numeroChamado ? numeroChamado : <span style={{ opacity: 0.4 }}>—</span>}
-                  </div>
-                  <div style={{ fontSize: 12, color: C.text, marginTop: 4 }}>
-                    {/* 🔥 USE ?. PARA EVITAR ERRO QUANDO chamado for undefined */}
-                    {chamado?.servico_nome || chamado?.descricao || chamado?.itens?.[0]?.item_nome || 'Sem descrição'}
-                  </div>
-                  <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
-                    Cotação: {cotacao.numero || `#${cotacao.id}`} • {fmtD(cotacao.enviado_em)}
-                  </div>
-                </div>
+              (() => {
+                // #4d — Agregado por cotação. Calculado no backend
+                // (GET /cotacoes) — aqui só pinta.
+                const temAgregado = cotacao.total_itens_ativos > 0 && cotacao.niveis;
+                const sgCfg = STATUS_GERAL_CFG[cotacao.status_geral];
+                const cotacaoAtiva = !['rascunho', 'finalizada', 'finalizado', 'cancelada'].includes(cotacao.status);
 
-                <div style={{ display: "flex", gap: 12, alignItems: "center" }}>
-                  <div style={{ textAlign: "right" }}>
-                    <div style={{ fontSize: 10, color: C.muted }}>STATUS</div>
-                    <div style={{ fontSize: 11, fontWeight: 600, color: 
-                        cotacao.status === "rascunho" ? C.muted :
-                        cotacao.status === "pendente" ? C.warn :
-                        cotacao.status === "enviada" ? C.accent :
-                        cotacao.status === "finalizado" ? C.success :
-                        cotacao.status === "respondida" ? C.success :
-                        C.muted
+                // Cor da validade mais próxima (mesma regra do monitor)
+                let corValidadeProx = C.muted;
+                let labelValidadeProx = null;
+                if (cotacao.proxima_validade) {
+                  const em = new Date(cotacao.proxima_validade).getTime();
+                  const dias = Math.ceil((em - Date.now()) / 86400000);
+                  if (em <= Date.now()) { corValidadeProx = '#ef4444'; labelValidadeProx = 'vence hoje'; }
+                  else if (dias <= 7)   { corValidadeProx = '#f59e0b'; labelValidadeProx = `${dias}d`; }
+                  else                  { corValidadeProx = '#22c55e'; labelValidadeProx = `${dias}d`; }
+                }
+
+                // Polimento "🔄 Nª cotação" — quantas vezes esta mesma RC
+                // já foi cotada (1 = original, 2+ = recotação). O número
+                // da posição é derivado da ordem de criado_em; o comprador
+                // vê de imediato que aquela não é a primeira rodada.
+                const cotacoesDaMesmaRc = cotacoesSeguro
+                  .filter(c => String(c.chamado_id) === String(cotacao.chamado_id))
+                  .sort((a, b) => new Date(a.criado_em || 0) - new Date(b.criado_em || 0));
+                const posicaoNaRc = cotacoesDaMesmaRc.findIndex(
+                  c => String(c.id) === String(cotacao.id)
+                ) + 1;
+                const ehRecotacao = cotacoesDaMesmaRc.length > 1 && posicaoNaRc > 1;
+
+                return (
+                  <div
+                    key={cotacao.id}
+                    onClick={() => handleAbrirCotacao(cotacao)}
+                    style={{ ...s.card, padding: "14px 18px", cursor: "pointer", display: "flex", alignItems: "center", justifyContent: "space-between", transition: "all 0.2s" }}
+                    onMouseEnter={(e) => {
+                      e.currentTarget.style.background = C.surface;
+                      e.currentTarget.style.borderColor = C.accent;
+                    }}
+                    onMouseLeave={(e) => {
+                      e.currentTarget.style.background = C.surface;
+                      e.currentTarget.style.borderColor = C.border;
+                    }}
+                  >
+                    <div style={{ flex: 1, minWidth: 0 }}>
+                      <div style={{
+                        fontSize: 12,
+                        fontWeight: 600,
+                        color: C.accent,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 8,
+                        flexWrap: "wrap",
                       }}>
-                        {cotacao.status === "rascunho" ? "Rascunho" :
-                        cotacao.status === "pendente" ? "Pendente" :
-                        cotacao.status === "enviada" ? "Enviada" :
-                        cotacao.status === "finalizado" ? "Finalizado" :
-                        cotacao.status === "respondida" ? "Respondida" :
-                        cotacao.status}
+                        <span>
+                          {numeroChamado ? numeroChamado : <span style={{ opacity: 0.4 }}>—</span>}
+                        </span>
+                        {ehRecotacao && (
+                          <span
+                            title={`Esta RC já teve ${cotacoesDaMesmaRc.length} cotações — esta é a ${posicaoNaRc}ª`}
+                            style={{
+                              fontSize: 9,
+                              fontWeight: 700,
+                              color: "#a855f7",
+                              background: "#a855f722",
+                              border: "1px solid #a855f755",
+                              borderRadius: 4,
+                              padding: "1px 6px",
+                              letterSpacing: "0.03em",
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            🔄 {posicaoNaRc}ª cotação
+                          </span>
+                        )}
+                      </div>
+                      <div style={{ fontSize: 12, color: C.text, marginTop: 4 }}>
+                        {chamado?.servico_nome || chamado?.descricao || chamado?.itens?.[0]?.item_nome || 'Sem descrição'}
+                      </div>
+                      <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
+                        Cotação: {cotacao.numero || `#${cotacao.id}`} • {fmtD(cotacao.enviado_em)}
+                      </div>
+
+                      {/* #4d — Níveis + validade + vencidas */}
+                      {temAgregado && cotacaoAtiva && (
+                        <div style={{
+                          display: "flex", gap: 14, marginTop: 8,
+                          fontSize: 10, flexWrap: "wrap", color: C.muted,
+                          alignItems: "center",
+                        }}>
+                          <span>
+                            📦 {cotacao.total_itens_ativos}{" "}
+                            {cotacao.total_itens_ativos === 1 ? "item" : "itens"}
+                          </span>
+                          <span
+                            title="Itens com pelo menos 1 resposta — piso pra emitir"
+                            style={{
+                              color: cotacao.niveis.nivel1.ok === cotacao.total_itens_ativos
+                                ? '#22c55e' : C.muted,
+                              fontWeight: 600,
+                            }}
+                          >
+                            ✅ {cotacao.niveis.nivel1.ok}/{cotacao.total_itens_ativos} com 1+
+                          </span>
+                          <span
+                            title="Itens com pelo menos 2 respostas — concorrência real"
+                            style={{
+                              color: cotacao.niveis.nivel2.ok === cotacao.total_itens_ativos
+                                ? '#22c55e' : C.muted,
+                              fontWeight: 600,
+                            }}
+                          >
+                            ⚡ {cotacao.niveis.nivel2.ok}/{cotacao.total_itens_ativos} com 2+
+                          </span>
+                          <span
+                            title="Itens com pelo menos 3 respostas — disputa ativa"
+                            style={{
+                              color: cotacao.niveis.nivel3.ok === cotacao.total_itens_ativos
+                                ? '#22c55e' : C.muted,
+                              fontWeight: 600,
+                            }}
+                          >
+                            🔥 {cotacao.niveis.nivel3.ok}/{cotacao.total_itens_ativos} com 3+
+                          </span>
+                          {labelValidadeProx && (
+                            <span style={{ color: corValidadeProx, fontWeight: 600 }}>
+                              ⏱ {labelValidadeProx}
+                            </span>
+                          )}
+                          {cotacao.n_vencidas > 0 && (
+                            <span style={{ color: '#ef4444', fontWeight: 700 }}>
+                              ⚠ {cotacao.n_vencidas} vencida{cotacao.n_vencidas > 1 ? 's' : ''}
+                            </span>
+                          )}
+                          {/* Aging: há quanto tempo a cotação está parada.
+                              Só aparece a partir de 15d pra não poluir com
+                              cotação recém-criada. */}
+                          {(() => {
+                            const d = Number(cotacao.dias_parada);
+                            if (!Number.isFinite(d) || d < 15) return null;
+                            let cor = '#f59e0b', icone = '🕰';
+                            if (d >= 90)      { cor = '#a855f7'; icone = '⛔'; }
+                            else if (d >= 61) { cor = '#ef4444'; icone = '🕰'; }
+                            else if (d >= 31) { cor = '#fb923c'; icone = '🕰'; }
+                            return (
+                              <span
+                                title={`Cotação parada há ${d} dias desde o disparo`}
+                                style={{ color: cor, fontWeight: 700 }}
+                              >
+                                {icone} {d}d
+                              </span>
+                            );
+                          })()}
+                        </div>
+                      )}
+                    </div>
+
+                    <div style={{ display: "flex", gap: 12, alignItems: "center", flexShrink: 0 }}>
+                      <div style={{ textAlign: "right" }}>
+                        <div style={{ fontSize: 10, color: C.muted }}>STATUS</div>
+                        <div style={{ fontSize: 11, fontWeight: 600, color:
+                            cotacao.status === "rascunho" ? C.muted :
+                            cotacao.status === "pendente" ? C.warn :
+                            cotacao.status === "enviada" ? C.accent :
+                            cotacao.status === "finalizado" ? C.success :
+                            cotacao.status === "respondida" ? C.success :
+                            C.muted
+                          }}>
+                            {cotacao.status === "rascunho" ? "Rascunho" :
+                            cotacao.status === "pendente" ? "Pendente" :
+                            cotacao.status === "enviada" ? "Enviada" :
+                            cotacao.status === "finalizado" ? "Finalizado" :
+                            cotacao.status === "respondida" ? "Respondida" :
+                            cotacao.status}
+                        </div>
+                        {/* #4d — Badge status_geral (só quando faz sentido) */}
+                        {cotacaoAtiva && sgCfg && (
+                          <div
+                            title={`Nível 1: ${cotacao.niveis?.nivel1?.ok || 0}/${cotacao.total_itens_ativos || 0} · Nível 2: ${cotacao.niveis?.nivel2?.ok || 0}/${cotacao.total_itens_ativos || 0} · Nível 3: ${cotacao.niveis?.nivel3?.ok || 0}/${cotacao.total_itens_ativos || 0}`}
+                            style={{
+                              fontSize: 10,
+                              fontWeight: 700,
+                              marginTop: 4,
+                              color: sgCfg.cor,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            {sgCfg.label}
+                          </div>
+                        )}
+                      </div>
+                      <div style={{ color: C.muted, fontSize: 16 }}>→</div>
                     </div>
                   </div>
-                  <div style={{ color: C.muted, fontSize: 16 }}>→</div>
-                </div>
-              </div>
+                );
+              })()
             );
           })}
         </div>

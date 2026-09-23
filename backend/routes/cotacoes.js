@@ -1178,17 +1178,140 @@ router.get("/", tenantMiddleware, async (req, res) => {
       fornecedoresPorCotacao[f.cotacao_id].push(f);
     });
 
-    // 4. Montar resultado
-    const resultado = cotacoes.map(c => ({
-      ...c,
-      chamado_numero: chamadosPorID[c.chamado_id]?.numero || null,
-      chamado_peca: chamadosPorID[c.chamado_id]?.peca || null,
-      chamado_servico_nome: chamadosPorID[c.chamado_id]?.servico_nome || null,
-      chamado_urgencia: chamadosPorID[c.chamado_id]?.urgencia || null,
-      chamado_categoria: chamadosPorID[c.chamado_id]?.categoria_item || null,
-      chamado_status: chamadosPorID[c.chamado_id]?.chamado_status || null,
-      fornecedores: fornecedoresPorCotacao[c.id] || []
-    }));
+    // 3b. #4d — Dados auxiliares pro agregado por cotação.
+    // Uma leitura por tabela (sem loop N+1). Reaproveita o que o
+    // handler já carrega acima; só adiciona cotacao_fornecedor_itens
+    // (respostas por item) e chamado_itens (pra excluir cancelados
+    // do denominador).
+    const todosCotacaoItens = await DB.select('cotacao_itens', { tenant_id: req.tenantId }, req.tenantId);
+    const todosCotacaoFornecedorItens = await DB.select('cotacao_fornecedor_itens', { tenant_id: req.tenantId }, req.tenantId);
+
+    const chamadoItemIdsAgregado = todosCotacaoItens.map(ci => ci.chamado_item_id).filter(Boolean);
+    const todosChamadoItensAgregado = chamadoItemIdsAgregado.length > 0
+      ? (await DB.select('chamado_itens', { tenant_id: req.tenantId }, req.tenantId))
+          .filter(ci => chamadoItemIdsAgregado.includes(ci.id))
+      : [];
+    const chamadoItemPorIdAgregado = {};
+    todosChamadoItensAgregado.forEach(ci => { chamadoItemPorIdAgregado[ci.id] = ci; });
+
+    // 4. Montar resultado enriquecido (#4d)
+    const agoraMs = Date.now();
+
+    // 4a. Polimento — conta quantas cotações existem por RC (independente
+    // de status). Usado no card do Gerenciador pra sinalizar "🔄 Nª cotação"
+    // quando a mesma RC foi cotada mais de uma vez (ex: cotação cancelada →
+    // recotação, ou cotação da RC-2026-0004 duplicando com a 0003 por
+    // causa do fluxo /mover). Sem isso, duas linhas com mesmo número de RC
+    // parecem bug de duplicação à primeira vista.
+    const contagemPorChamado = {};
+    cotacoes.forEach(c => {
+      const k = String(c.chamado_id);
+      contagemPorChamado[k] = (contagemPorChamado[k] || 0) + 1;
+    });
+
+    const resultado = cotacoes.map(c => {
+      const itensDaCotacao = todosCotacaoItens.filter(
+        ci => String(ci.cotacao_id) === String(c.id)
+      );
+      const fornDaCotacao = fornecedoresPorCotacao[c.id] || [];
+      const fornIdsDaCotacao = new Set(fornDaCotacao.map(f => String(f.id)));
+
+      // Itens cancelados não contam no denominador
+      const itensAtivos = itensDaCotacao.filter(ci => {
+        const chIt = chamadoItemPorIdAgregado[ci.chamado_item_id];
+        return !chIt || chIt.status !== 'cancelado';
+      });
+      const total = itensAtivos.length;
+
+      // Pra cada item ativo, conta quantos fornecedores DESTA cotação
+      // têm resposta gravada (linha em cotacao_fornecedor_itens).
+      // Importante: NÃO usa o cabeçalho (cotacao_fornecedores.status)
+      // porque o fornecedor pode ter respondido só parte dos itens dele.
+      let n1 = 0, n2 = 0, n3 = 0, semResposta = 0;
+      itensAtivos.forEach(ci => {
+        const cnt = todosCotacaoFornecedorItens.filter(r =>
+          String(r.cotacao_item_id) === String(ci.id) &&
+          fornIdsDaCotacao.has(String(r.cotacao_fornecedor_id))
+        ).length;
+        if (cnt === 0) semResposta++;
+        if (cnt >= 1) n1++;
+        if (cnt >= 2) n2++;
+        if (cnt >= 3) n3++;
+      });
+
+      // Validade: menor validade_em entre os respondidos (que tenham
+      // o campo preenchido), e conta das já vencidas.
+      const respondidosComValidade = fornDaCotacao.filter(
+        f => f.status === 'respondido' && f.validade_em
+      );
+      let proximaValidade = null;
+      let nVencidas = 0;
+      if (respondidosComValidade.length > 0) {
+        let minTs = null;
+        respondidosComValidade.forEach(f => {
+          const t = new Date(f.validade_em).getTime();
+          if (isNaN(t)) return;
+          if (t < agoraMs) nVencidas++;
+          if (minTs === null || t < minTs) minTs = t;
+        });
+        if (minTs !== null) proximaValidade = new Date(minTs).toISOString();
+      }
+
+      // Status geral — derivado, ordem de prioridade:
+      //   1. sem nenhum respondente global → aguardando
+      //   2. algum item sem resposta        → coletando
+      //   3. todos cobertos + alguma vencida → revalidar
+      //   4. todos com ≥3                    → saturada
+      //   5. senão                           → pronta
+      const nenhumRespondido = !fornDaCotacao.some(f => f.status === 'respondido');
+      let statusGeral;
+      if (total === 0 || nenhumRespondido) statusGeral = 'aguardando';
+      else if (semResposta > 0) statusGeral = 'coletando';
+      else if (nVencidas > 0) statusGeral = 'revalidar';
+      else if (n3 === total && total > 0) statusGeral = 'saturada';
+      else statusGeral = 'pronta';
+
+      // Aging: há quanto tempo a cotação está "no limbo de suprimentos".
+      // Âncora = enviado_em (quando foi disparada) ou, se ainda não foi,
+      // criado_em. Ignora oscilações de última resposta — mede o processo,
+      // não a interação. Só vale pra cotação ativa; rascunho/finalizada/
+      // cancelada ficam com null.
+      const cotacaoAtiva = !['rascunho', 'finalizada', 'finalizado', 'cancelada'].includes(c.status);
+      let diasParada = null;
+      if (cotacaoAtiva) {
+        const ancora = c.enviado_em || c.criado_em;
+        if (ancora) {
+          const t = new Date(ancora).getTime();
+          if (!isNaN(t)) diasParada = Math.floor((agoraMs - t) / 86400000);
+        }
+      }
+
+      return {
+        ...c,
+        chamado_numero: chamadosPorID[c.chamado_id]?.numero || null,
+        chamado_peca: chamadosPorID[c.chamado_id]?.peca || null,
+        chamado_servico_nome: chamadosPorID[c.chamado_id]?.servico_nome || null,
+        chamado_urgencia: chamadosPorID[c.chamado_id]?.urgencia || null,
+        chamado_categoria: chamadosPorID[c.chamado_id]?.categoria_item || null,
+        chamado_status: chamadosPorID[c.chamado_id]?.chamado_status || null,
+        fornecedores: fornDaCotacao,
+        // #4d — agregado por cotação
+        niveis: {
+          nivel1: { ok: n1, total },
+          nivel2: { ok: n2, total },
+          nivel3: { ok: n3, total },
+        },
+        status_geral: statusGeral,
+        proxima_validade: proximaValidade,
+        n_vencidas: nVencidas,
+        total_itens_ativos: total,
+        // Polimento "🔄 Nª cotação": quantas cotações esta RC já teve
+        // (incluindo a atual). 1 = primeira; 2+ = recotação.
+        total_cotacoes_rc: contagemPorChamado[String(c.chamado_id)] || 1,
+        // Aging de RC (dias parada desde o disparo). null = não ativa.
+        dias_parada: diasParada,
+      };
+    });
 
     res.json(resultado);
   } catch (err) {
@@ -2686,7 +2809,26 @@ router.get('/:cotacaoId/monitorar', tenantMiddleware, async (req, res) => {
         )
       : [];
 
-    // 2c. Juntar informações
+    // FIX (2026-09): ordenar a fonte dos itens pelo `numero_base` do
+    // chamado_item pai (numeração "oficial" usada por requisitante e
+    // comprador: "o item 2 da RC"). Sem isso, o `DB.select` devolve em
+    // ordem indefinida e a tela embaralhava a cada reload. Fallback pra
+    // `posicao` e, por último, `id` do próprio cotacao_item.
+    const numeroBasePorChamadoItem = {};
+    chamadoItens.forEach(ci => {
+      numeroBasePorChamadoItem[String(ci.id)] = ci.numero_base ?? ci.posicao ?? null;
+    });
+    itens.sort((a, b) => {
+      const ra = numeroBasePorChamadoItem[String(a.chamado_item_id)] ?? a.id;
+      const rb = numeroBasePorChamadoItem[String(b.chamado_item_id)] ?? b.id;
+      return Number(ra) - Number(rb);
+    });
+
+    // 2c. Juntar informações — ordenadas pelo `numero_base` do chamado_item
+    // pai (a numeração "oficial" que requisitante e comprador usam pra se
+    // referir aos itens: "o item 2 da RC"). Sem isso, `DB.select` devolve
+    // os itens em ordem indefinida, e a cada reload a tela embaralhava.
+    // Fallback pra `posicao` e depois `id` quando `numero_base` é null.
     const itensComDados = itens.map(item => {
       // FIX (2026-09): bigint do Postgres pode voltar como STRING ("10")
       // enquanto item.chamado_item_id vem como number (10) — o `===` falha
@@ -2710,7 +2852,15 @@ router.get('/:cotacaoId/monitorar', tenantMiddleware, async (req, res) => {
         movido_para_rc_id: chamadoItem?.movido_para_rc_id || null,
         movido_para_rc_numero: chamadoItem?.movido_para_rc_numero || null,
         movido_para_cotacao_id: chamadoItem?.movido_para_cotacao_id || null,
+        // Guardado pra ordenação abaixo. Não vai no JSON final do item
+        // (é removido antes do return), só ajuda a montar a ordem correta.
+        _numero_base: chamadoItem?.numero_base ?? null,
+        _posicao: chamadoItem?.posicao ?? null,
       };
+    }).sort((a, b) => {
+      const ra = a._numero_base ?? a._posicao ?? a.id;
+      const rb = b._numero_base ?? b._posicao ?? b.id;
+      return Number(ra) - Number(rb);
     });
 
     // 3. Buscar fornecedores vinculados
@@ -2803,6 +2953,12 @@ router.get('/:cotacaoId/monitorar', tenantMiddleware, async (req, res) => {
           economia: economiaItem,
           economia_frete: economiaFreteItem,
           origem_preenchimento: itemRespondido?.origem_preenchimento || null,
+          // #4c — validade da proposta (cabeçalho do fornecedor, igual
+          // pra todos os itens dele). Sem esses dois campos, o badge
+          // 🟢/🟡/🔴 do monitor nunca aparecia — esta rota monta o map
+          // inline e não delega pro CotacaoService.obterStatusCotacao.
+          validade_dias: forn.validade_dias || null,
+          validade_em: forn.validade_em || null,
           posicao: null
         };
       }).filter(Boolean);
@@ -5071,6 +5227,88 @@ router.post('/:cotacaoId/fornecedores/:fornecedorId/reenviar-email', tenantMiddl
     });
   } catch (err) {
     console.error('❌ Erro ao reenviar email:', err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/cotacoes/:cotacaoId/fornecedores/:fornecedorId/revalidar
+// #4c — "Revalidar proposta": o comprador confirma (por telefone, WhatsApp
+// ou e-mail) que a proposta vencida continua válida. Renova `validade_em`
+// usando o `validade_dias` original da proposta. Registra evento em
+// chamado_eventos pra auditoria.
+//
+// Body: { como_confirmou: 'telefone'|'whatsapp'|'email'|'outro', observacao? }
+// ─────────────────────────────────────────────────────────────────────────
+router.post('/:cotacaoId/fornecedores/:fornecedorId/revalidar', tenantMiddleware, async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const cotacaoId = parseInt(req.params.cotacaoId, 10);
+    const fornecedorId = parseInt(req.params.fornecedorId, 10);
+    const { como_confirmou, observacao } = req.body || {};
+
+    const canais = ['telefone', 'whatsapp', 'email', 'outro'];
+    if (!canais.includes(como_confirmou)) {
+      return res.status(400).json({
+        erro: `Informe como confirmou (${canais.join(', ')})`,
+      });
+    }
+
+    // Localiza a resposta deste fornecedor nesta cotação
+    const cotacaoForn = await DB.selectOne('cotacao_fornecedores', {
+      cotacao_id: cotacaoId,
+      fornecedor_id: fornecedorId,
+      tenant_id: tenantId,
+    }, tenantId);
+
+    if (!cotacaoForn) {
+      return res.status(404).json({ erro: 'Fornecedor não está nesta cotação' });
+    }
+    if (cotacaoForn.status !== 'respondido') {
+      return res.status(400).json({ erro: 'Fornecedor ainda não respondeu — não há proposta a revalidar' });
+    }
+
+    const validadeDias = parseInt(cotacaoForn.validade_dias, 10) || 30;
+    const novaValidadeEm = new Date(Date.now() + validadeDias * 86400000).toISOString();
+
+    await DB.update('cotacao_fornecedores', cotacaoForn.id, {
+      validade_dias: validadeDias,
+      validade_em: novaValidadeEm,
+    }, tenantId);
+
+    // Registra na timeline da RC (chamado_eventos)
+    const cotacao = await DB.selectOne('cotacoes', { id: cotacaoId }, tenantId);
+    if (cotacao?.chamado_id) {
+      const usuario = req.userId
+        ? await DB.selectOne('usuarios', { id: req.userId }, tenantId)
+        : null;
+      await DB.insert('chamado_eventos', {
+        tenant_id: tenantId,
+        chamado_id: cotacao.chamado_id,
+        tipo: 'proposta_revalidada',
+        descricao: `Proposta do fornecedor ${cotacaoForn.fornecedor_nome || cotacaoForn.fornecedor_id} revalidada por ${validadeDias} dias (confirmado por ${como_confirmou}).`,
+        dados: JSON.stringify({
+          cotacao_id: cotacaoId,
+          fornecedor_id: fornecedorId,
+          como_confirmou,
+          observacao: observacao || null,
+          validade_dias: validadeDias,
+          nova_validade_em: novaValidadeEm,
+        }),
+        criado_por: req.userId || null,
+        criado_por_nome: usuario?.nome || null,
+        criado_em: new Date().toISOString(),
+      }, tenantId);
+    }
+
+    return res.json({
+      ok: true,
+      fornecedor_id: fornecedorId,
+      validade_dias: validadeDias,
+      validade_em: novaValidadeEm,
+    });
+  } catch (err) {
+    console.error('❌ Erro ao revalidar proposta:', err.message);
     res.status(500).json({ erro: err.message });
   }
 });

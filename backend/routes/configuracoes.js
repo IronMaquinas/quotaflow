@@ -198,4 +198,44 @@ router.delete('/feriados/:id', tenantMiddleware, async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/configuracoes/custo-recebimento
+// Devolve o custo médio de recebimento por NF do tenant.
+// 0 = feature desligada no frontend.
+// ─────────────────────────────────────────────────────────────────────────
+router.get('/custo-recebimento', tenantMiddleware, async (req, res) => {
+  try {
+    const tenant = await DB.selectOne('tenants', { id: req.tenantId });
+    const valor = parseFloat(tenant?.custo_recebimento_nf) || 0;
+    res.json({ custo_recebimento_nf: valor });
+  } catch (err) {
+    console.error("❌ Erro ao buscar custo de recebimento:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// PUT /api/configuracoes/custo-recebimento
+// Body: { custo_recebimento_nf: number >= 0 }
+// ─────────────────────────────────────────────────────────────────────────
+router.put('/custo-recebimento', tenantMiddleware, async (req, res) => {
+  try {
+    const raw = req.body?.custo_recebimento_nf;
+    const valor = parseFloat(raw);
+    if (raw == null || isNaN(valor) || valor < 0) {
+      return res.status(400).json({ erro: "Informe um valor numérico ≥ 0" });
+    }
+
+    // A tabela `tenants` é especial: o próprio id é o tenant_id.
+    // Por isso o update vai sem o 4º arg (mesmo padrão do selectOne
+    // usado em server.js e CotacaoService.js para essa tabela).
+    await DB.update('tenants', req.tenantId, { custo_recebimento_nf: valor });
+
+    res.json({ ok: true, custo_recebimento_nf: valor });
+  } catch (err) {
+    console.error("❌ Erro ao salvar custo de recebimento:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
 module.exports = router;

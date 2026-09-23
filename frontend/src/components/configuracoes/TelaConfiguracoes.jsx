@@ -47,6 +47,7 @@ export default function TelaConfiguracoes({ C, s }) {
         {[
           { id: "jornada", label: "⏰ Jornada de trabalho" },
           { id: "feriados", label: "📅 Feriados" },
+          { id: "custos", label: "💼 Custos operacionais" },
         ].map(tab => (
           <button key={tab.id}
             onClick={() => { setAbaAtiva(tab.id); setErro(null); }}
@@ -79,6 +80,7 @@ export default function TelaConfiguracoes({ C, s }) {
 
       {abaAtiva === "jornada" && <SecaoJornada C={C} s={s} onErro={setErro} />}
       {abaAtiva === "feriados" && <SecaoFeriados C={C} s={s} onErro={setErro} />}
+      {abaAtiva === "custos" && <SecaoCustosOperacionais C={C} s={s} onErro={setErro} />}
     </div>
   );
 }
@@ -565,6 +567,145 @@ function SecaoFeriados({ C, s, onErro }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// SEÇÃO: CUSTOS OPERACIONAIS
+// ─────────────────────────────────────────────────────────────────────────
+// Custo médio de recebimento por NF. Alimenta a 4ª seção do panorama
+// ("Impacto no Negócio") em TelaMonitorarRespostas — só quando > 0.
+// 0 = desligado; nenhuma tela do comprador é alterada.
+// ═════════════════════════════════════════════════════════════════════════
+function SecaoCustosOperacionais({ C, s, onErro }) {
+  const [carregando, setCarregando] = useState(true);
+  const [salvando, setSalvando] = useState(false);
+  const [sucesso, setSucesso] = useState(false);
+  const [valor, setValor] = useState("0");
+
+  useEffect(() => {
+    setCarregando(true);
+    apiService.get("/configuracoes/custo-recebimento")
+      .then(r => setValor(String(r?.custo_recebimento_nf ?? 0)))
+      .catch(e => onErro?.(e.message || "Erro ao carregar custo de recebimento"))
+      .finally(() => setCarregando(false));
+  }, [onErro]);
+
+  async function salvar() {
+    setSucesso(false);
+    onErro?.(null);
+    const v = parseFloat(String(valor).replace(",", "."));
+    if (isNaN(v) || v < 0) {
+      onErro?.("Informe um valor numérico ≥ 0");
+      return;
+    }
+    setSalvando(true);
+    try {
+      await apiService.put("/configuracoes/custo-recebimento", { custo_recebimento_nf: v });
+      setValor(String(v));
+      setSucesso(true);
+      setTimeout(() => setSucesso(false), 3000);
+    } catch (e) {
+      onErro?.(e.message || "Erro ao salvar");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  if (carregando) {
+    return <div style={{ color: C.muted, padding: 20 }}>Carregando configuração...</div>;
+  }
+
+  const vNum = parseFloat(String(valor).replace(",", ".")) || 0;
+  const desligado = vNum <= 0;
+
+  return (
+    <div style={{ maxWidth: 720 }}>
+      <div style={{ ...s.card, padding: "18px 20px", marginBottom: 16 }}>
+        <div style={{ fontSize: 12, color: C.textSub, fontWeight: 600, marginBottom: 6 }}>
+          CUSTO DE RECEBIMENTO POR NF
+        </div>
+        <div style={{ fontSize: 11, color: C.muted, marginBottom: 14, lineHeight: 1.6 }}>
+          Quanto custa, em média, <strong>receber 1 nota fiscal</strong> na sua empresa?
+          Considere o custo total do processo:
+          <ul style={{ margin: "6px 0 0 18px", padding: 0 }}>
+            <li>Horas-homem da equipe de recebimento</li>
+            <li>Análise fiscal e conferência de documentos</li>
+            <li>Liberação de acesso e descarga do caminhão</li>
+            <li>Conferência física do material</li>
+          </ul>
+        </div>
+
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+          <div style={{ flex: 1, maxWidth: 240 }}>
+            <label style={s.label}>VALOR POR NF (R$)</label>
+            <input
+              type="text"
+              inputMode="decimal"
+              value={valor}
+              onChange={e => setValor(e.target.value)}
+              placeholder="0,00"
+              style={{ ...s.input, textAlign: "right" }}
+            />
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
+              Deixe <strong>0</strong> para desativar esta análise.
+            </div>
+          </div>
+          <button
+            onClick={salvar}
+            disabled={salvando}
+            style={{ ...s.btn(true), padding: "10px 24px", fontSize: 13,
+                     opacity: salvando ? 0.5 : 1 }}
+          >
+            {salvando ? "Salvando..." : "Salvar"}
+          </button>
+          {sucesso && (
+            <span style={{ fontSize: 12, color: C.success, fontWeight: 600 }}>
+              ✅ Configuração salva
+            </span>
+          )}
+        </div>
+      </div>
+
+      {/* Card explicativo — o "porquê" da feature */}
+      <div style={{
+        ...s.card,
+        padding: "14px 18px",
+        background: desligado ? "#00000030" : "#0f2f1a33",
+        border: `1px solid ${desligado ? C.border : "#22c55e40"}`,
+      }}>
+        <div style={{
+          fontSize: 11,
+          color: desligado ? C.muted : "#22c55e",
+          fontWeight: 700,
+          marginBottom: 8,
+          letterSpacing: "0.05em",
+        }}>
+          {desligado ? "🔒 ANÁLISE DESLIGADA" : "💡 ANÁLISE ATIVA"}
+        </div>
+        <div style={{ fontSize: 11, color: C.text, lineHeight: 1.7 }}>
+          {desligado ? (
+            <>
+              Sem este valor, o sistema <strong>não considera</strong> o custo
+              de recebimento no momento da emissão de OC. O comprador pode
+              dividir um pedido em várias NFs "economizando" por item e, sem
+              perceber, fazendo o negócio perder dinheiro. Recomendamos
+              preencher assim que tiver uma estimativa.
+            </>
+          ) : (
+            <>
+              A partir de agora, ao emitir uma OC, o sistema compara o custo
+              adicional de recebimento com a economia real de produto.
+              Se um comprador dividir um pedido entre 2 fornecedores para
+              economizar R$ 100 em um item, mas isso exigir 1 NF extra de
+              R$ {vNum.toFixed(2)}, o panorama sinaliza que{" "}
+              <strong>o negócio perdeu dinheiro</strong> — e sugere consolidação
+              quando um fornecedor majoritário cotou todos os itens.
+            </>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

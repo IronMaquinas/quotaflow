@@ -1,6 +1,26 @@
 // ─────────────────────────────────────────────────────────────────────────
 // ⚠️ ATENÇÃO — LIMITAÇÃO CRÍTICA DO DB.raw
 // ─────────────────────────────────────────────────────────────────────────
+//
+// ⚠️ ATENÇÃO #2 — DB.select IGNORA FILTROS NULOS SILENCIOSAMENTE
+// ─────────────────────────────────────────────────────────────────────────
+// No loop de `where`, valores `null`/`undefined` são descartados:
+//
+//   for (const [key, value] of Object.entries(where)) {
+//     if (value !== undefined && value !== null) {
+//       query = query.eq(key, value);
+//     }
+//   }
+//
+// Consequência real (2026-09): um link /portal/cotacao/9/null fazia
+// DB.select({ cotacao_id: 9, token_acesso: 'null' }); o PostgREST
+// interpreta `?token_acesso=eq.null` como `IS NULL`, e devolvia um
+// fornecedor órfão (com token NULL) da mesma cotação — vazando dados
+// de outro fornecedor.
+//
+// REGRA: ao filtrar por coluna que pode ser NULL, NÃO confie no
+// wrapper. Busque só por uma chave NOT NULL (ex: cotacao_id) e
+// filtre o resto em JS com comparação explícita.
 // Este método reconhece APENAS alguns padrões específicos de query (ex:
 // "FROM chamados c LEFT JOIN equipamentos"). Qualquer outro SQL cai no
 // fallback genérico, que SÓ FILTRA POR tenant_id — ignorando silenciosamente

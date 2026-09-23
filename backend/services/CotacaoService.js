@@ -488,10 +488,13 @@ class CotacaoService {
     };
 
     // ✅ BUSCAR COMPRADOR
-    const comprador = await this.db.selectOne('usuarios', { id: cotacao.usuario_id }, tenantId);
+    const comprador = await this.db.selectOne('usuarios', { id: cotacao.criado_por }, tenantId);
       
     // ✅ MONTAR ASSUNTO E RODAPÉ
-    const assunto = `Solicitação de Cotação - ${cotacao.numero_cotacao}`;    
+    // FIX (2026-09): `numero_cotacao` não existe no objeto — o campo é
+    // `numero`. O email saía com "Solicitação de Cotação: undefined" no
+    // corpo (o subject usava `numero` e por isso parecia funcionar).
+    const assunto = `Solicitação de Cotação - ${cotacao.numero}`;   
     
     const rodape = `
     ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -544,7 +547,7 @@ class CotacaoService {
         }).join('');
 
         const corpo = `
-          <h2>Solicitação de Cotação: ${cotacao.numero_cotacao}</h2>
+          <h2>Solicitação de Cotação: ${cotacao.numero}</h2>
           <p>Prezado(a) ${fornecedorInfo.nome},</p>
           <p>Você recebeu uma solicitação de cotação para os seguintes itens:</p>
           <ul>
@@ -1183,13 +1186,19 @@ class CotacaoService {
       
       for (const fornecedorId of fornecedoresUnicos) {
         const fornecedor = await this.db.selectOne('fornecedores', { id: fornecedorId }, tenantId);
+        // FIX (2026-09): gerar token_acesso no INSERT. Antes o token só
+        // nascia no enviarCotacao — se o comprador copiasse o link antes
+        // de enviar, saía .../null, o PostgREST interpretava 'null' como
+        // IS NULL e devolvia outro fornecedor da mesma cotação.
+        const token = this.gerarTokenFornecedor(cotacaoExistente.id, fornecedorId);
         await this.db.insert('cotacao_fornecedores', {
           tenant_id: tenantId,
           cotacao_id: cotacaoExistente.id,
           fornecedor_id: fornecedorId,
           fornecedor_nome: fornecedor?.nome || 'Fornecedor',
           fornecedor_email: fornecedor?.email || null,
-          status: 'pendente'
+          status: 'pendente',
+          token_acesso: token,
         }, tenantId);
       }
 
@@ -1243,13 +1252,15 @@ class CotacaoService {
     
     for (const fornecedorId of fornecedoresUnicos) {
       const fornecedor = await this.db.selectOne('fornecedores', { id: fornecedorId }, tenantId);
+      const token = this.gerarTokenFornecedor(cotacao.id, fornecedorId);
       await this.db.insert('cotacao_fornecedores', {
         tenant_id: tenantId,
         cotacao_id: cotacao.id,
         fornecedor_id: fornecedorId,
         fornecedor_nome: fornecedor?.nome || 'Fornecedor',
         fornecedor_email: fornecedor?.email || null,
-        status: 'pendente'
+        status: 'pendente',
+        token_acesso: token,
       }, tenantId);
     }
 
@@ -1678,6 +1689,9 @@ async obterStatusCotacao(tenantId, cotacaoId) {
           frete_renegociado: f.frete_renegociado || null,
           economia: f.economia || null,
           economia_frete: f.economia_frete || null,
+          // #4c — Validade da proposta
+          validade_dias: f.validade_dias || null,
+          validade_em: f.validade_em || null,
           posicao: idx + 1
         }))
       };
@@ -1825,6 +1839,14 @@ async obterStatusCotacao(tenantId, cotacaoId) {
         const economiaTotal =
           (valorTotal + freteTotal) - (valorRenegTotal + freteRenegTotal);
 
+        // #4c — Revalidação implícita: se o comprador tocou a resposta
+        // (renegociou valor, ajustou prazo), a proposta volta a valer.
+        // Renova `validade_em` a partir de hoje, mantendo o `validade_dias`
+        // que o fornecedor declarou originalmente. Sem isso, editar um
+        // item renegociado não tirava o badge 🔴 vermelho — enganoso.
+        const validadeDiasAtual = parseInt(atual.validade_dias, 10) || 30;
+        const novaValidadeEm = new Date(Date.now() + validadeDiasAtual * 86400000).toISOString();
+
         await this.db.update('cotacao_fornecedores', atual.id, {
           valor: valorTotal,
           valor_frete: freteTotal,
@@ -1835,7 +1857,9 @@ async obterStatusCotacao(tenantId, cotacaoId) {
           economia: economiaTotal > 0 ? economiaTotal : null,
           economia_frete: null,
           status: 'respondido',
-          data_resposta: atual.data_resposta || new Date()
+          data_resposta: atual.data_resposta || new Date(),
+          validade_dias: validadeDiasAtual,
+          validade_em: novaValidadeEm,
         }, tenantId);
 
         return {

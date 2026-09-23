@@ -2,6 +2,86 @@ import { useState, useEffect } from "react";
 import { cotacoesService } from "../../services/cotacoesService";
 import apiService from "../../services/apiService";
 
+// ─────────────────────────────────────────────────────────────────────────
+// calcularMinimoFornecedores — set cover mínimo via DP com bitmask.
+//
+// Dado um Map<itemId, Set<fornecedorId>> (quem respondeu o quê),
+// devolve { n, cover } onde `n` é o número mínimo de fornecedores
+// capazes de cobrir todos os itens e `cover` é um desses conjuntos.
+//
+// Complexidade: O(2^itens × fornecedores). Para RC com ≤ 20 itens é
+// instantâneo. Acima disso cai num greedy (aproximado, mas o `n` nunca
+// fica abaixo do mínimo real).
+// ─────────────────────────────────────────────────────────────────────────
+function calcularMinimoFornecedores(respostasPorItem) {
+  const itensIds = [...respostasPorItem.keys()];
+  const nItens = itensIds.length;
+  if (nItens === 0) return { n: 0, cover: [] };
+
+  const fornsSet = new Set();
+  respostasPorItem.forEach(s => s.forEach(f => fornsSet.add(f)));
+  const fornsArr = [...fornsSet];
+  const nForns = fornsArr.length;
+  if (nForns === 0) return { n: 0, cover: [] };
+
+  // Fallback greedy — RC grande (raro).
+  if (nItens > 20) {
+    const cobertos = new Set();
+    const cover = [];
+    while (cobertos.size < nItens) {
+      let melhor = null;
+      let melhorNovos = 0;
+      for (const f of fornsArr) {
+        let novos = 0;
+        itensIds.forEach(id => {
+          if (!cobertos.has(id) && respostasPorItem.get(id).has(f)) novos++;
+        });
+        if (novos > melhorNovos) { melhorNovos = novos; melhor = f; }
+      }
+      if (!melhor || melhorNovos === 0) break;
+      cover.push(melhor);
+      itensIds.forEach(id => {
+        if (respostasPorItem.get(id).has(melhor)) cobertos.add(id);
+      });
+    }
+    return { n: cover.length, cover };
+  }
+
+  // DP com bitmask.
+  const maskForn = fornsArr.map(f => {
+    let m = 0;
+    itensIds.forEach((id, i) => {
+      if (respostasPorItem.get(id).has(f)) m |= (1 << i);
+    });
+    return m;
+  });
+  const fullMask = (1 << nItens) - 1;
+  const dp = new Array(1 << nItens).fill(Infinity);
+  const parent = new Array(1 << nItens).fill(null);
+  dp[0] = 0;
+
+  for (let mask = 0; mask <= fullMask; mask++) {
+    if (dp[mask] === Infinity) continue;
+    for (let s = 0; s < nForns; s++) {
+      const nm = mask | maskForn[s];
+      if (dp[nm] > dp[mask] + 1) {
+        dp[nm] = dp[mask] + 1;
+        parent[nm] = { from: mask, forn: fornsArr[s] };
+      }
+    }
+  }
+
+  if (dp[fullMask] === Infinity) return { n: nForns, cover: fornsArr };
+
+  const cover = [];
+  let cur = fullMask;
+  while (cur !== 0 && parent[cur]) {
+    cover.push(parent[cur].forn);
+    cur = parent[cur].from;
+  }
+  return { n: dp[fullMask], cover };
+}
+
 export default function TelaMonitorarRespostas({ 
   cotacaoId, 
   token, 
@@ -56,9 +136,27 @@ export default function TelaMonitorarRespostas({
   const [motivoCancelamentoCotacao, setMotivoCancelamentoCotacao] = useState('');
   const [cancelandoCotacao, setCancelandoCotacao] = useState(false);
 
+  // Custo de recebimento por NF do tenant (vem de /configuracoes/custo-recebimento).
+  // 0 = feature desligada — nenhuma seção nova aparece no panorama.
+  const [custoRecebimentoNF, setCustoRecebimentoNF] = useState(0);
+
+  // #4c — Modal "Revalidar proposta": { fornecedor_id, nome } ou null
+  const [modalRevalidar, setModalRevalidar] = useState(null);
+  const [comoConfirmou, setComoConfirmou] = useState('telefone');
+  const [obsRevalidar, setObsRevalidar] = useState('');
+  const [revalidando, setRevalidando] = useState(false);
+
   // ─── CARREGAR DADOS ───────────────────────────────────────
   useEffect(() => {
     carregarDados();
+  }, []);
+
+  // Carrega o custo de recebimento configurado pelo tenant (uma vez).
+  // Falha silenciosa: cai em 0, seção some.
+  useEffect(() => {
+    apiService.get("/configuracoes/custo-recebimento")
+      .then(r => setCustoRecebimentoNF(parseFloat(r?.custo_recebimento_nf) || 0))
+      .catch(() => setCustoRecebimentoNF(0));
   }, []);
 
   const carregarDados = async () => {
@@ -986,6 +1084,222 @@ export default function TelaMonitorarRespostas({
     };
   })();
 
+  // #4c — Classifica a validade de uma proposta em 4 estados.
+  //   sem_validade → proposta antiga (pré-migration)
+  //   ok           → faltam > 7 dias
+  //   atencao      → faltam ≤ 7 dias
+  //   vencida      → hoje > validade_em
+  // Declarado DEPOIS de fornecedoresVencedores/itens — usa os dois.
+  const statusValidade = (forn) => {
+    if (!forn?.validade_em) return { nivel: 'sem_validade' };
+    const em = new Date(forn.validade_em).getTime();
+    if (isNaN(em)) return { nivel: 'sem_validade' };
+    const agora = Date.now();
+
+    // Vencida: dias desde o vencimento, floor (pra não inflar).
+    // "venceu hoje mesmo" → 0d, exibido como "hoje".
+    if (em <= agora) {
+      const dias = Math.floor((agora - em) / 86400000);
+      return { nivel: 'vencida', dias };
+    }
+
+    // Ainda válida: arredonda pra CIMA. Falta 0,1 dia → "1d";
+    // falta 6,99 dias → "7d". Sem isso, uma proposta que o fornecedor
+    // declarou "7 dias" aparecia como "6d" segundos depois de salva —
+    // porque `Math.floor(6,99...) = 6`. UX ruim.
+    const dias = Math.ceil((em - agora) / 86400000);
+    if (dias <= 7) return { nivel: 'atencao', dias };
+    return { nivel: 'ok', dias };
+  };
+
+  const badgeValidade = (forn) => {
+    const st = statusValidade(forn);
+    if (st.nivel === 'sem_validade') return null;
+    return {
+      ok:      { cor: '#22c55e', label: `🟢 ${st.dias}d` },
+      atencao: { cor: '#f59e0b', label: `🟡 ${st.dias}d` },
+      vencida: {
+        cor: '#ef4444',
+        label: st.dias === 0
+          ? `🔴 vence hoje`
+          : `🔴 vencida há ${st.dias}d`,
+      },
+    }[st.nivel];
+  };
+
+  // Existe alguma proposta VENCEDORA com validade vencida?
+  const temPropostaVencida = (() => {
+    for (const v of (fornecedoresVencedores || [])) {
+      for (const item of itens) {
+        const f = (item.fornecedores || []).find(x =>
+          String(x.fornecedor_id) === String(v.fornecedor_id)
+        );
+        if (f && statusValidade(f).nivel === 'vencida') {
+          return { fornecedor_id: v.fornecedor_id, nome: v.nome, validade_em: f.validade_em };
+        }
+      }
+    }
+    return null;
+  })();
+
+  async function revalidarFornecedor(forn) {
+    if (!comoConfirmou) {
+      alert('Informe como confirmou.');
+      return;
+    }
+    setRevalidando(true);
+    try {
+      await apiService.post(
+        `/cotacoes/${cotacaoId}/fornecedores/${forn.fornecedor_id}/revalidar`,
+        { como_confirmou: comoConfirmou, observacao: obsRevalidar || null }
+      );
+      setModalRevalidar(null);
+      setComoConfirmou('telefone');
+      setObsRevalidar('');
+      await carregarDados();
+    } catch (e) {
+      alert('Erro ao revalidar: ' + e.message);
+    } finally {
+      setRevalidando(false);
+    }
+  }
+
+  // ─── IMPACTO NO NEGÓCIO (4ª seção do panorama) ──────────────
+  // Só existe quando o tenant configurou custo_recebimento_nf > 0.
+  //
+  // Conceito-chave: o custo de recebimento NÃO é n_escolhidos × custo.
+  // O 1º recebimento acontece de qualquer jeito, e mais: se nenhum
+  // fornecedor cobre todos os itens, N fornecedores são OBRIGATÓRIOS
+  // (set cover mínimo). Só conta como "evitável" o que passa do mínimo.
+  //
+  //   n_min     = tamanho da cobertura mínima (set cover)
+  //   n_escolhidos = fornecedores de fato usados pelo comprador
+  //   custo_evitavel = max(0, n_escolhidos − n_min) × custo
+  //
+  // O "Saving do Negócio" compara:
+  //   baseline = comQuotaflow + n_min × custo  (produto ideal + NFs mínimas)
+  //   atual    = aposNegociacao + n_escolhidos × custo
+  //   saving   = baseline − atual
+  const impactoNegocio = (() => {
+    if (!custoRecebimentoNF || custoRecebimentoNF <= 0) return null;
+
+    // #4c — Se alguma proposta VENCEDORA está vencida, não calcula:
+    // o preço de produto não vale mais, e o custo de recebimento em cima
+    // de preço inválido é enganoso. Mostra nota pedindo revalidação.
+    if (temPropostaVencida) return null;
+
+    // Passo 1: para cada item ativo, quem respondeu.
+    const respostasPorItem = new Map();
+    itens.forEach(item => {
+      if (item.chamado_item_status === 'cancelado') return;
+      const respondidos = (item.fornecedores || [])
+        .filter(f => f.status === 'respondido' && f.valor != null)
+        .map(f => f.fornecedor_id);
+      if (respondidos.length > 0) respostasPorItem.set(item.id, new Set(respondidos));
+    });
+    if (respostasPorItem.size === 0) return null;
+
+    // Passo 2: set cover mínimo (DP com bitmask, ≤ 20 itens;
+    // acima disso, greedy aproximado).
+    const minCover = calcularMinimoFornecedores(respostasPorItem);
+    const nMin = minCover.n;
+    const nEscolhidos = fornecedoresVencedores.length;
+    if (nEscolhidos === 0) return null;
+
+    const recebAtual = nEscolhidos * custoRecebimentoNF;
+    const recebMinimo = nMin * custoRecebimentoNF;
+    const recebEvitavel = Math.max(0, recebAtual - recebMinimo);
+
+    const desembolsoProduto = panoramaRC.aposNegociacao;
+    const desembolsoConsolidado = desembolsoProduto + recebAtual;
+
+    const baselineTotal = panoramaRC.comQuotaflow + recebMinimo;
+    const savingNegocio = baselineTotal - desembolsoConsolidado;
+
+    // Passo 3: sugestão — só quando o comprador usou MAIS fornecedores
+    // do que o mínimo E o total do min-cover é mais barato.
+    let sugestao = null;
+    if (nEscolhidos > nMin && minCover.cover && minCover.cover.length > 0) {
+      const coverSet = new Set(minCover.cover.map(String));
+
+      let produtoMinCover = 0;
+      let cobreTudo = true;
+      itens.forEach(item => {
+        if (item.chamado_item_status === 'cancelado') return;
+        const candidatos = (item.fornecedores || []).filter(f =>
+          f.status === 'respondido'
+          && f.valor != null
+          && coverSet.has(String(f.fornecedor_id))
+        );
+        if (candidatos.length === 0) { cobreTudo = false; return; }
+
+        const totEfetivo = (f) => {
+          const ehCIF = (f.frete_modalidade || 'CIF') === 'CIF';
+          const v = f.valor_renegociado != null
+            ? parseFloat(f.valor_renegociado)
+            : (parseFloat(f.valor) || 0);
+          const fr = ehCIF
+            ? 0
+            : (f.frete_renegociado != null
+                ? (parseFloat(f.frete_renegociado) || 0)
+                : (parseFloat(f.frete) || 0));
+          return (v || 0) + (fr || 0);
+        };
+        const melhor = candidatos.reduce((a, b) => totEfetivo(a) <= totEfetivo(b) ? a : b);
+        produtoMinCover += totEfetivo(melhor) * (parseFloat(item.quantidade) || 1);
+      });
+
+      if (cobreTudo) {
+        const totalConsolidado = produtoMinCover + recebMinimo;
+        const liquido = desembolsoConsolidado - totalConsolidado;
+        if (liquido > 0) {
+          // Resolver os NOMES dos fornecedores do min-cover — o JSX precisa
+          // deles pra montar a frase "Consolidar em X". Sem isso, o texto
+          // saía com "Consolidar em  custaria..." (nome undefined).
+          // Busca em `item.fornecedores[]` porque é onde tem o campo `.nome`
+          // preenchido (em `fornecedoresVencedores` só tem os escolhidos,
+          // não necessariamente o min-cover).
+          const nomesCover = [];
+          itens.forEach(item => {
+            (item.fornecedores || []).forEach(f => {
+              if (
+                coverSet.has(String(f.fornecedor_id))
+                && !nomesCover.find(x => String(x.id) === String(f.fornecedor_id))
+              ) {
+                nomesCover.push({ id: f.fornecedor_id, nome: f.nome });
+              }
+            });
+          });
+
+          sugestao = {
+            nMin,
+            fornecedores: minCover.cover,
+            nomesCover,
+            nomeUnico: nomesCover.length === 1 ? nomesCover[0].nome : null,
+            produto: produtoMinCover,
+            recebimento: recebMinimo,
+            total: totalConsolidado,
+            liquido,
+            deltaProduto: produtoMinCover - desembolsoProduto,
+            deltaRecebimento: recebEvitavel,
+          };
+        }
+      }
+    }
+
+    return {
+      nMin,
+      nEscolhidos,
+      recebAtual,
+      recebMinimo,
+      recebEvitavel,
+      desembolsoProduto,
+      desembolsoConsolidado,
+      savingNegocio,
+      sugestao,
+    };
+  })();
+
   const itensSemSelecao = itens.filter(
     item => item.chamado_item_status !== 'cancelado' && selecoesPorItem[item.id] == null
   ).length;
@@ -1098,6 +1412,61 @@ export default function TelaMonitorarRespostas({
           <div style={{ fontSize: 12, color: C.success, fontWeight: 600, marginBottom: 12 }}>
             🏆 VENCEDORES POR ITEM
           </div>
+
+          {/* #4c — Banner âmbar quando alguma proposta vencedora venceu */}
+          {temPropostaVencida && cotacao.status !== 'finalizada' && cotacao.status !== 'cancelada' && (
+            <div style={{
+              background: "#3f2a0a",
+              border: "1px solid #f59e0b55",
+              borderRadius: 6,
+              padding: "10px 12px",
+              marginBottom: 12,
+              fontSize: 11,
+              color: C.text,
+              lineHeight: 1.6,
+              display: "flex",
+              gap: 8,
+              alignItems: "flex-start",
+            }}>
+              <span style={{ fontSize: 14, flexShrink: 0 }}>⚠️</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontWeight: 600, color: "#f59e0b" }}>
+                  Proposta do <strong>{temPropostaVencida.nome}</strong> venceu em{" "}
+                  {new Date(temPropostaVencida.validade_em).toLocaleDateString('pt-BR')}
+                </div>
+                <div style={{ color: C.muted, marginTop: 3 }}>
+                  Revalide com o fornecedor antes de emitir OC. A análise de
+                  impacto no negócio fica suspensa enquanto houver proposta
+                  vencida.
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setComoConfirmou('telefone');
+                  setObsRevalidar('');
+                  setModalRevalidar({
+                    fornecedor_id: temPropostaVencida.fornecedor_id,
+                    nome: temPropostaVencida.nome,
+                  });
+                }}
+                style={{
+                  background: "transparent",
+                  border: `1px solid #22c55e`,
+                  borderRadius: 6,
+                  color: "#22c55e",
+                  fontSize: 11,
+                  cursor: "pointer",
+                  padding: "4px 10px",
+                  fontFamily: "inherit",
+                  fontWeight: 600,
+                  whiteSpace: "nowrap",
+                }}
+              >
+                ⚡ Revalidar
+              </button>
+            </div>
+          )}
           {fornecedoresVencedores.map((v, idx) => {
             const aberto = !!vencedoresExpandidos[String(v.fornecedor_id)];
             return (
@@ -1335,6 +1704,171 @@ export default function TelaMonitorarRespostas({
               </div>
             </div>
 
+            {/* #4c — Nota substituindo a seção quando há proposta vencida */}
+            {custoRecebimentoNF > 0 && temPropostaVencida && (
+              <div style={{
+                marginTop: 12,
+                marginBottom: 12,
+                padding: "10px 12px",
+                background: "#2a1a1a",
+                border: "1px solid #ef444455",
+                borderRadius: 8,
+                fontSize: 11,
+                color: C.muted,
+                lineHeight: 1.6,
+              }}>
+                <strong style={{ color: "#ef4444" }}>⚠️ Impacto no negócio suspenso</strong>
+                <div style={{ marginTop: 4 }}>
+                  Há proposta vencedora vencida ({temPropostaVencida.nome}).
+                  Revalide com o fornecedor para retomar a análise.
+                </div>
+              </div>
+            )}
+
+            {/* ─── IMPACTO NO NEGÓCIO (só se custo_recebimento_nf > 0) ─── */}
+            {impactoNegocio && (
+              <div style={{
+                marginTop: 12,
+                marginBottom: 12,
+                padding: "12px 14px",
+                background: "#1a1410",
+                border: "1px solid #f59e0b40",
+                borderRadius: 8,
+              }}>
+                <div style={{
+                  fontSize: 10,
+                  color: "#f59e0b",
+                  letterSpacing: "0.08em",
+                  fontWeight: 700,
+                  marginBottom: 10,
+                }}>
+                  💼 IMPACTO NO NEGÓCIO
+                </div>
+
+                <div style={{
+                  display: "grid",
+                  gridTemplateColumns: "1fr 1fr",
+                  gap: 12,
+                  fontSize: 11,
+                }}>
+                  <div>
+                    <div style={{ color: C.muted, fontSize: 10, marginBottom: 2 }}>
+                      RECEBIMENTO PREVISTO
+                    </div>
+                    <div style={{ color: C.text, fontWeight: 600 }}>
+                      {impactoNegocio.nEscolhidos}{" "}
+                      {impactoNegocio.nEscolhidos === 1 ? "fornecedor" : "fornecedores"}{" "}
+                      × {fmtBRL(custoRecebimentoNF)} ={" "}
+                      <span style={{ color: "#f59e0b" }}>
+                        {fmtBRL(impactoNegocio.recebAtual)}
+                      </span>
+                    </div>
+                    <div style={{ color: C.muted, fontSize: 10, marginTop: 2 }}>
+                      mínimo possível: {impactoNegocio.nMin}{" "}
+                      {impactoNegocio.nMin === 1 ? "fornecedor" : "fornecedores"}{" "}
+                      ({impactoNegocio.recebEvitavel > 0
+                        ? <>R$ <span style={{ color: "#ef4444" }}>{impactoNegocio.recebEvitavel.toFixed(2).replace('.', ',')}</span> evitáveis</>
+                        : "sem consolidação possível"}
+                      )
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{ color: C.muted, fontSize: 10, marginBottom: 2 }}>
+                      DESEMBOLSO CONSOLIDADO
+                    </div>
+                    <div style={{ color: C.text, fontWeight: 600 }}>
+                      {fmtBRL(impactoNegocio.desembolsoProduto)} +{" "}
+                      {fmtBRL(impactoNegocio.recebAtual)} ={" "}
+                      <span style={{ color: "#f59e0b" }}>
+                        {fmtBRL(impactoNegocio.desembolsoConsolidado)}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+
+                <div style={{
+                  marginTop: 10,
+                  paddingTop: 10,
+                  borderTop: `1px solid ${C.border}66`,
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "space-between",
+                  gap: 10,
+                  flexWrap: "wrap",
+                }}>
+                  <span style={{ fontSize: 11, color: C.muted }}>
+                    Saving consolidado vs. menor cotado
+                  </span>
+                  <span style={{
+                    fontSize: 15,
+                    fontWeight: 700,
+                    color: impactoNegocio.savingNegocio < 0 ? "#ef4444" : "#22c55e",
+                  }}>
+                    {impactoNegocio.savingNegocio > 0 ? "+" : ""}
+                    {fmtBRL(impactoNegocio.savingNegocio)}
+                  </span>
+                </div>
+
+                <div style={{
+                  fontSize: 10,
+                  color: C.muted,
+                  marginTop: 6,
+                  fontStyle: "italic",
+                }}>
+                  {impactoNegocio.savingNegocio < 0
+                    ? `O ganho do comprador vira custo ao dividir em ${impactoNegocio.nEscolhidos} NFs.`
+                    : `O ganho do comprador cobre o custo de recebimento em ${impactoNegocio.nEscolhidos} NFs.`}
+                </div>
+
+                {/* Sugestão de consolidação — só quando um majoritário
+                    cotou todos os itens ganhos e o líquido é positivo. */}
+                {impactoNegocio.sugestao && (
+                  <div style={{
+                    marginTop: 12,
+                    padding: "10px 12px",
+                    background: "#0f2f1a",
+                    border: "1px solid #22c55e40",
+                    borderRadius: 6,
+                    fontSize: 11,
+                    color: C.text,
+                    lineHeight: 1.6,
+                  }}>
+                    <div style={{
+                      color: "#22c55e",
+                      fontWeight: 700,
+                      marginBottom: 4,
+                      fontSize: 10,
+                      letterSpacing: "0.05em",
+                    }}>
+                      💡 SUGESTÃO DO QUOTAFLOW
+                    </div>
+                    {impactoNegocio.sugestao.nomeUnico ? (
+                      <>Consolidar em <strong>{impactoNegocio.sugestao.nomeUnico}</strong>{" "}custaria{" "}</>
+                    ) : (
+                      <>
+                        Consolidar em <strong>{impactoNegocio.sugestao.nomesCover.length} fornecedores</strong>{" "}
+                        (<span style={{ color: C.muted }}>
+                          {impactoNegocio.sugestao.nomesCover.map(n => n.nome).join(" + ")}
+                        </span>){" "}custaria{" "}
+                      </>
+                    )}
+                    {impactoNegocio.sugestao.deltaProduto > 0
+                      ? <><strong>+{fmtBRL(impactoNegocio.sugestao.deltaProduto)}</strong> em produto</>
+                      : impactoNegocio.sugestao.deltaProduto < 0
+                        ? <><strong>{fmtBRL(impactoNegocio.sugestao.deltaProduto)}</strong> em produto (mais barato)</>
+                        : <>o mesmo preço de produto</>}
+                    , mas evita{" "}
+                    <strong>{fmtBRL(impactoNegocio.sugestao.deltaRecebimento)}</strong>{" "}
+                    em recebimento. Líquido:{" "}
+                    <strong style={{ color: "#22c55e" }}>
+                      +{fmtBRL(impactoNegocio.sugestao.liquido)}
+                    </strong>{" "}
+                    de ganho pro negócio. Vale a pena considerar.
+                  </div>
+                )}
+              </div>
+            )}
+
             {/* Contadores */}
             <div style={{
               fontSize: 10,
@@ -1381,7 +1915,7 @@ export default function TelaMonitorarRespostas({
               {/* HEADER DO ITEM */}
               <div style={{
                 display: "grid",
-                gridTemplateColumns: "36px minmax(100px, 1fr) 40px minmax(110px, 1fr) 80px 80px 80px 60px 110px 110px 90px 80px",
+                gridTemplateColumns: "36px minmax(100px, 1fr) 40px minmax(110px, 1fr) 80px 80px 80px 60px 100px 110px 110px 90px 80px",
                 padding: "12px 14px",
                 background: C.bg,
                 borderRadius: "6px 6px 0 0",
@@ -1399,6 +1933,7 @@ export default function TelaMonitorarRespostas({
                 <div style={{ textAlign: "left" }}>FRETE</div>
                 <div style={{ textAlign: "left" }}>TOTAL</div>
                 <div style={{ textAlign: "left" }}>PRAZO</div>
+                <div style={{ textAlign: "left" }}>VALIDADE</div>
                 <div style={{ textAlign: "left" }}>RENEGOCIADO</div>
                 <div style={{ textAlign: "left" }}>FRETE RENEGOCIADO</div>
                 <div style={{ textAlign: "left" }}>SAVING</div>
@@ -1543,7 +2078,7 @@ export default function TelaMonitorarRespostas({
                   <div key={forn.id}>
                     <div style={{
                       display: "grid",
-                      gridTemplateColumns: "36px minmax(100px, 1fr) 40px minmax(110px, 1fr) 80px 80px 80px 60px 110px 110px 90px 80px",
+                      gridTemplateColumns: "36px minmax(100px, 1fr) 40px minmax(110px, 1fr) 80px 80px 80px 60px 100px 110px 110px 90px 80px",
                       gap: 6,
                       padding: "12px 14px",
                       background: selecionado ? `${C.accent}11` : (itemIdx % 2 === 0 ? C.bg : "transparent"),
@@ -1656,6 +2191,63 @@ export default function TelaMonitorarRespostas({
                         {isTemResposta ? `${forn.prazo}d` : '—'}
                       </div>
 
+                      {/* VALIDADE — badge + revalidar (#4c) */}
+                      <div style={{
+                        textAlign: "left",
+                        fontSize: 10,
+                        display: "flex",
+                        alignItems: "center",
+                        gap: 6,
+                      }}>
+                        {isTemResposta ? (() => {
+                          const badge = badgeValidade(forn);
+                          const vencida = badge && statusValidade(forn).nivel === 'vencida';
+                          return (
+                            <>
+                              {badge ? (
+                                <span style={{
+                                  color: badge.cor,
+                                  fontWeight: 600,
+                                  whiteSpace: "nowrap",
+                                }}>
+                                  {badge.label}
+                                </span>
+                              ) : (
+                                <span style={{ color: C.muted }}>—</span>
+                              )}
+                              {vencida && cotacao.status !== 'finalizada' && cotacao.status !== 'cancelada' && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setComoConfirmou('telefone');
+                                    setObsRevalidar('');
+                                    setModalRevalidar({
+                                      fornecedor_id: forn.fornecedor_id,
+                                      nome: forn.nome,
+                                    });
+                                  }}
+                                  title="Confirmar com o fornecedor que a proposta continua válida"
+                                  style={{
+                                    background: "transparent",
+                                    border: `1px solid #22c55e55`,
+                                    borderRadius: 4,
+                                    color: "#22c55e",
+                                    fontSize: 10,
+                                    cursor: "pointer",
+                                    padding: "2px 6px",
+                                    fontFamily: "inherit",
+                                    fontWeight: 600,
+                                    whiteSpace: "nowrap",
+                                  }}
+                                >
+                                  ⚡
+                                </button>
+                              )}
+                            </>
+                          );
+                        })() : '—'}
+                      </div>
+
                       {/* RENEGOCIADO */}
                       <div style={{ textAlign: "right", fontSize: 12, color: '#f59e0b', fontWeight: 600 }}>
                         {forn.valor_renegociado ? fmtBRL(forn.valor_renegociado) : '—'}
@@ -1709,10 +2301,23 @@ export default function TelaMonitorarRespostas({
                         </button>
                       )}
 
-                      {/* Copiar link — sempre disponível */}
+                      {/* Copiar link — bloqueado se token ainda não gerado */}
                       <button
                         onClick={(e) => {
                           e.stopPropagation();
+                          // FIX (2026-09): sem token_acesso, o link saía
+                          // .../null e vazava dados de outro fornecedor
+                          // (PostgREST interpreta 'null' como IS NULL).
+                          if (!forn.token_acesso) {
+                            alert(
+                              "⚠️ Este fornecedor ainda não tem link gerado.\n\n" +
+                              "Isso acontece quando a cotação foi criada antes " +
+                              "desta correção. Envie a cotação (botão 'Enviar') " +
+                              "ou gere um novo rascunho — o token é gerado no " +
+                              "momento do envio."
+                            );
+                            return;
+                          }
                           const url = `${window.location.origin}/#/portal/cotacao/${cotacaoId}/${forn.token_acesso}`;
                           navigator.clipboard.writeText(url)
                             .then(() => alert(`✅ Link copiado:\n${url}\n\nCole no WhatsApp/email do fornecedor.`))
@@ -1720,12 +2325,14 @@ export default function TelaMonitorarRespostas({
                               prompt("Copie o link abaixo:", url);
                             });
                         }}
-                        title="Copiar link do portal do fornecedor"
+                        title={forn.token_acesso
+                          ? "Copiar link do portal do fornecedor"
+                          : "Token ainda não gerado — envie a cotação primeiro"}
                         style={{
                           background: "transparent",
-                          border: `1px solid ${C.border}`,
+                          border: `1px solid ${forn.token_acesso ? C.border : "#ef444455"}`,
                           borderRadius: 6,
-                          color: C.muted,
+                          color: forn.token_acesso ? C.muted : "#ef4444",
                           fontSize: 11,
                           cursor: "pointer",
                           padding: "6px 10px",
@@ -1796,7 +2403,123 @@ export default function TelaMonitorarRespostas({
         </div>
       </div>
 
-            {/* ─── MODAL: CANCELAR COTAÇÃO ─────────────────────────── */}
+      {/* ─── MODAL: REVALIDAR PROPOSTA (#4c) ────────────────── */}
+      {modalRevalidar && (
+        <div style={{
+          position: "fixed", inset: 0, background: "#00000090",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          zIndex: 500, padding: 20,
+        }}>
+          <div style={{ ...s.card, width: 480, maxWidth: "100%" }}>
+            <div style={{
+              padding: "18px 22px", borderBottom: `1px solid ${C.border}`,
+            }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>
+                ⚡ Revalidar proposta
+              </div>
+              <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>
+                {modalRevalidar.nome}
+              </div>
+            </div>
+            <div style={{ padding: "16px 22px" }}>
+              <div style={{
+                background: "#0f2f1a33",
+                border: "1px solid #22c55e40",
+                borderRadius: 6,
+                padding: "10px 12px",
+                marginBottom: 16,
+                fontSize: 11,
+                color: C.muted,
+                lineHeight: 1.6,
+              }}>
+                Registre que você confirmou com o fornecedor que a proposta
+                continua válida. O sistema renova a validade pelo mesmo
+                período declarado originalmente, e a análise de impacto
+                no negócio volta a rodar.
+              </div>
+
+              <div style={{ fontSize: 11, color: C.muted, marginBottom: 6, letterSpacing: "0.05em" }}>
+                COMO CONFIRMOU? (OBRIGATÓRIO)
+              </div>
+              <div style={{ display: "flex", gap: 6, marginBottom: 16, flexWrap: "wrap" }}>
+                {[
+                  { v: "telefone", l: "📞 Telefone" },
+                  { v: "whatsapp", l: "💬 WhatsApp" },
+                  { v: "email",    l: "📧 E-mail" },
+                  { v: "outro",    l: "🔗 Outro" },
+                ].map(opt => {
+                  const ativo = comoConfirmou === opt.v;
+                  return (
+                    <button
+                      key={opt.v}
+                      type="button"
+                      onClick={() => setComoConfirmou(opt.v)}
+                      style={{
+                        background: ativo ? `${C.accent}22` : "transparent",
+                        border: `1px solid ${ativo ? C.accent : C.border}`,
+                        borderRadius: 6,
+                        color: ativo ? C.accent : C.muted,
+                        fontSize: 11,
+                        cursor: "pointer",
+                        padding: "6px 12px",
+                        fontFamily: "inherit",
+                        fontWeight: 600,
+                      }}
+                    >
+                      {opt.l}
+                    </button>
+                  );
+                })}
+              </div>
+
+              <div style={{ fontSize: 11, color: C.muted, marginBottom: 6, letterSpacing: "0.05em" }}>
+                OBSERVAÇÃO (OPCIONAL)
+              </div>
+              <textarea
+                value={obsRevalidar}
+                onChange={e => setObsRevalidar(e.target.value)}
+                placeholder="Ex: fornecedor confirmou que mantém preço por mais 30 dias"
+                style={{
+                  ...s.input,
+                  width: "100%",
+                  minHeight: 60,
+                  resize: "vertical",
+                  fontSize: 12,
+                }}
+              />
+              <div style={{ fontSize: 10, color: C.muted, marginTop: 8 }}>
+                Fica registrado na timeline da RC quem revalidou e como.
+              </div>
+            </div>
+            <div style={{
+              padding: "14px 22px", borderTop: `1px solid ${C.border}`,
+              display: "flex", gap: 10,
+            }}>
+              <button
+                onClick={() => { setModalRevalidar(null); setObsRevalidar(''); }}
+                disabled={revalidando}
+                style={{ ...s.btn(false, C.muted), flex: 1, padding: "8px 16px" }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={() => revalidarFornecedor(modalRevalidar)}
+                disabled={revalidando || !comoConfirmou}
+                style={{
+                  ...s.btn(true, "#22c55e"),
+                  flex: 1,
+                  padding: "8px 16px",
+                  opacity: (revalidando || !comoConfirmou) ? 0.5 : 1,
+                }}
+              >
+                {revalidando ? "Revalidando..." : "⚡ Revalidar"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── MODAL: CANCELAR COTAÇÃO ─────────────────────────── */}
       {modalCancelarCotacao && (
         <div style={{
           position: "fixed", inset: 0, background: "#00000090",
