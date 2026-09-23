@@ -7,6 +7,7 @@ import TelaSignup from "./TelaSignup";
 import App from "./App";
 import { useAuth } from "./hooks/useAuth";
 import TelaFornecedor from "./components/portal/TelaFornecedor";
+import TelaPortalFornecedor from "./components/portal/TelaPortalFornecedor";
 
 console.log('🚀 main.jsx executando');
 
@@ -26,8 +27,24 @@ function Router() {
     return () => window.removeEventListener("hashchange", handleHashChange);
   }, []);
 
-  // 🔥 ROTA PÚBLICA DO PORTAL
-  if (currentPage === "portal" || currentPage === "/portal" || currentPage.startsWith("portal/") || currentPage.startsWith("/portal/")) {
+  // 🔥 ROTA TOKENIZADA — link direto de email/WhatsApp, sem login.
+  // Monta o formulário de resposta direto, sem passar pelo hub do
+  // fornecedor (que tem sidebar, menu, etc). Precisa vir ANTES do
+  // check geral de /portal abaixo, senão cai no hub e perde o token.
+  if (
+    currentPage.startsWith("portal/cotacao/") ||
+    currentPage.startsWith("/portal/cotacao/")
+  ) {
+    return <TelaPortalFornecedor />;
+  }
+
+  // 🔥 ROTA DO HUB DO FORNECEDOR LOGADO (e demais rotas /portal/...)
+  if (
+    currentPage === "portal" ||
+    currentPage === "/portal" ||
+    currentPage.startsWith("portal/") ||
+    currentPage.startsWith("/portal/")
+  ) {
     return <TelaFornecedor />;
   }
 
