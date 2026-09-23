@@ -89,16 +89,11 @@ export const portalService = {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        // FIX (2026-09): fornecedorId nunca era usado pelo backend real
-        // (routes/portalFornecedor.js identifica o fornecedor pelo token,
-        // não por esse campo) — removido o hardcode '1' que só confundia.
-        // FIX (2026-09, grave): "valor" nunca chegava no backend porque o
-        // campo aqui era "valor_unitario" (o que o backend de fato lê,
-        // depois da correção) — antes disso o preço de cada item era
-        // sempre perdido. "chamadoItemId: item.id" também nunca
-        // funcionava, porque o item aqui não tem campo .id (só item_id);
-        // o backend agora deriva chamado_item_id sozinho a partir do
-        // itemId, então não precisa mais vir daqui.
+        // #4c — Validade da proposta, obrigatória no portal. O backend
+        // valida (1..365) e usa default 30 se chegar fora da faixa, mas
+        // a UI já bloqueia o "Revisar" sem isso — esse campo só chega
+        // preenchido.
+        validade_dias: parseInt(dados.validade_dias || 30),
         respostas: dados.itens.map(item => ({
           itemId: item.item_id,
           valor_unitario: parseFloat(item.valor_unitario || 0),

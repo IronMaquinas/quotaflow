@@ -24,17 +24,29 @@ router.get('/portal/cotacao/:cotacaoId/:token', async (req, res) => {
       return res.status(400).json({ message: 'ID da cotação inválido' });
     }
 
-    // 🔥 BUSCAR POR token_acesso (NÃO por token!)
-    const cotacaoFornecedor = await DB.select(
-      'cotacao_fornecedores',
-      { cotacao_id: cotacaoId, token_acesso: token }
-    );
-
-    if (cotacaoFornecedor.length === 0) {
-      return res.status(403).json({ message: 'Acesso negado. Token inválido ou expirado.' });
+    // FIX (2026-09): rejeita explicitamente token inválido ANTES de
+    // consultar o banco. Sem isso, 'null' (string que vem de link
+    // quebrado) virava ?token_acesso=eq.null no PostgREST, que
+    // interpreta como IS NULL — devolvia fornecedores órfãos.
+    if (!token || token === 'null' || token === 'undefined' || String(token).trim() === '') {
+      return res.status(403).json({ message: 'Acesso negado. Token inválido.' });
     }
 
-    const cotacaoFornecedorData = cotacaoFornecedor[0];
+    // FIX (2026-09): DB.select com valor nulo/undefined SILENCIOSAMENTE
+    // descarta o filtro (ver if value !== null no db.js). Aqui buscamos
+    // só por cotacao_id e filtramos token_acesso em JS — assim se o
+    // filtro falhar do lado do wrapper, não vaza fornecedor errado.
+    const todosFornsDaCotacao = await DB.select(
+      'cotacao_fornecedores',
+      { cotacao_id: cotacaoId }
+    );
+    const cotacaoFornecedorData = todosFornsDaCotacao.find(
+      cf => String(cf.token_acesso) === String(token)
+    );
+
+    if (!cotacaoFornecedorData) {
+      return res.status(403).json({ message: 'Acesso negado. Token inválido ou expirado.' });
+    }
     const tenantId = cotacaoFornecedorData.tenant_id;
     const fornecedorId = cotacaoFornecedorData.fornecedor_id;
 
@@ -101,36 +113,53 @@ router.get('/portal/cotacao/:cotacaoId/:token', async (req, res) => {
     // em vez de um formulário vazio. Sem isso, o fornecedor reabre o
     // link, preenche tudo de novo, e recebe "cotação já respondida" ao
     // enviar (UX ruim + perda de tempo).
-    let jaRespondida = false;
-    let itensRespondidos = [];
-    if (cotacaoFornecedorData.status === 'respondido') {
-      jaRespondida = true;
-      const todosItensResp = await DB.select('cotacao_fornecedor_itens',
-        { tenant_id: tenantId }, tenantId);
-      itensRespondidos = todosItensResp
-        .filter(ir => ir.cotacao_fornecedor_id === cotacaoFornecedorData.id)
-        .map(ir => ({
-          cotacao_item_id: ir.cotacao_item_id,
-          valor: ir.valor,
-          frete: ir.frete,
-          modalidade: ir.frete_modalidade,
-        }));
-    }
+    // Respostas por item — SEMPRE que houver, independente do status
+    // global do fornecedor. Um fornecedor pode ter respondido 2 itens via
+    // portal, ter sido adicionado manualmente pelo comprador no 3º, e
+    // continuar com status='respondido' (foi respondido, mas não 100%).
+    // A tela do portal precisa saber item a item o que está respondido e
+    // o que ainda aguarda o fornecedor — antes disso, ela mostrava R$ 0,00
+    // no item sem resposta e bloqueava edição (bug real em 09/2026).
+    const todosItensResp = await DB.select('cotacao_fornecedor_itens',
+      { tenant_id: tenantId }, tenantId);
+    const respostasDoFornecedor = todosItensResp.filter(
+      ir => ir.cotacao_fornecedor_id === cotacaoFornecedorData.id
+    );
+
+    const itensRespondidos = respostasDoFornecedor.map(ir => ({
+      cotacao_item_id: ir.cotacao_item_id,
+      valor: ir.valor,
+      frete: ir.frete,
+      modalidade: ir.frete_modalidade,
+    }));
+
+    // `ja_respondida` continua existindo pra compatibilidade (frontend
+    // pode usar pra mostrar cabeçalho "Proposta enviada em X"), MAS deixa
+    // de ser o gate de edição. O gate agora é por item (`respondido: bool`
+    // em cada item de `itensFormatados`), abaixo.
+    const jaRespondida = cotacaoFornecedorData.status === 'respondido';
+
+    // Marca item a item se já tem resposta, e — importante — envia o
+    // valor real (não `0`) quando não tem. O frontend do portal usa esse
+    // flag pra decidir se a linha está editável.
+    const cotacaoItemIdsRespondidos = new Set(
+      respostasDoFornecedor.map(ir => String(ir.cotacao_item_id))
+    );
+    const itensFormatadosComEstado = itensFormatados.map(it => ({
+      ...it,
+      respondido: cotacaoItemIdsRespondidos.has(String(it.cotacao_item_id)),
+    }));
 
     return res.json({
       cotacao: {
         ...cotacao,
-        // FIX (2026-09): os campos abaixo ficam DENTRO de `cotacao` para
-        // o hook usePortal já os expor ao componente. Na versão anterior
-        // ficavam no nível raiz e o frontend procurava em `cotacao.*` —
-        // nunca achava, e o "já respondida" nunca bloqueava.
         ja_respondida: jaRespondida,
         respondida_em: cotacaoFornecedorData.data_resposta || null,
         itens_respondidos: itensRespondidos,
       },
       fornecedor,
       empresa,
-      itens: itensFormatados,
+      itens: itensFormatadosComEstado,
       respostasExistentes: respostasExistentes[0] || null,
     });
 
@@ -150,31 +179,49 @@ router.get('/portal/cotacao/:cotacaoId/:token', async (req, res) => {
 router.post('/portal/cotacao/:cotacaoId/:token/responder', async (req, res) => {
   try {
     const { cotacaoId, token } = req.params;
-    const { respostas } = req.body;
+    const { respostas, validade_dias } = req.body;
 
     if (!Array.isArray(respostas) || respostas.length === 0) {
       return res.status(400).json({ message: 'Nenhuma resposta enviada.' });
     }
 
-    // 🔥 1. VALIDAR TOKEN (use token_acesso!)
-    const cotacaoFornecedor = await DB.select(
-      'cotacao_fornecedores',
-      { cotacao_id: cotacaoId, token_acesso: token }
-    );
+    // #4c — Validade da proposta (obrigatório no portal, default 30 no backend).
+    // Fornecedor que não se manifesta não está prometendo nada; forçar um
+    // prazo conservador é melhor que deixar em branco (armadilha silenciosa).
+    let validadeDias = parseInt(validade_dias, 10);
+    if (!Number.isFinite(validadeDias) || validadeDias < 1) validadeDias = 30;
+    if (validadeDias > 365) validadeDias = 365;
 
-    if (cotacaoFornecedor.length === 0) {
+    // 🔥 1. VALIDAR TOKEN (use token_acesso!)
+    // FIX (2026-09): mesmo tratamento defensivo do GET — rejeita token
+    // inválido antes, e filtra em JS depois pra não depender do wrapper.
+    if (!token || token === 'null' || token === 'undefined' || String(token).trim() === '') {
       return res.status(403).json({ message: 'Acesso negado. Token inválido.' });
     }
 
-    const fornData = cotacaoFornecedor[0];
+    const todosFornsDaCotacao = await DB.select(
+      'cotacao_fornecedores',
+      { cotacao_id: cotacaoId }
+    );
+    const fornData = todosFornsDaCotacao.find(
+      cf => String(cf.token_acesso) === String(token)
+    );
+
+    if (!fornData) {
+      return res.status(403).json({ message: 'Acesso negado. Token inválido.' });
+    }
+
+    const cotacaoFornecedor = [fornData]; // mantém compat com o código abaixo
     const tenantId = fornData.tenant_id;
     const fornecedorId = fornData.fornecedor_id;
     const cotacaoFornecedorId = fornData.id;
 
-    // 🔥 2. VALIDAR SE O FORNECEDOR JÁ RESPONDEU
-    if (fornData.status === 'respondido') {
-      return res.status(400).json({ message: 'Esta cotação já foi respondida.' });
-    }
+    // #4c — Fornecedor pode responder em MÚLTIPLAS RODADAS (ex: respondeu
+    // 2 itens pelo portal, foi adicionado manualmente pelo comprador no 3º
+    // e volta pra completar). A trava agora é POR ITEM: rejeita só se TODOS
+    // os itens convidados já têm resposta — nesse caso, a via pra alterar
+    // é o comprador colocar em renegociação. A checagem detalhada acontece
+    // depois, quando soubermos quais itens vieram no payload.
 
     // FIX (2026-09, grave — resposta em item de outro fornecedor): nada
     // validava que os cotacao_item_id enviados no body realmente pertencem
@@ -208,84 +255,129 @@ router.post('/portal/cotacao/:cotacaoId/:token/responder', async (req, res) => {
       }
     }
 
-    // 🔥 3. CALCULAR VALOR TOTAL (item + frete)
-    const valorTotal = respostas.reduce((acc, r) => {
-      const valor = parseFloat(r.valor_unitario || 0);
-      const frete = parseFloat(r.valor_frete || 0);
-      return acc + (valor * (r.quantidade || 1)) + frete;
-    }, 0);
+    // 🔥 3+5. UPSERT ITEM A ITEM (não mais INSERT cego)
+    // Fase "resposta em múltiplas rodadas" (2026-09): antes, o POST
+    // sempre INSERIA uma linha nova por item. Se o fornecedor já tinha
+    // respondido o item 15 e voltasse pra completar o item 17, ele
+    // duplicava o 15 em vez de ignorar. Agora busca a linha existente
+    // (por cotacao_fornecedor_id + cotacao_item_id) e faz UPDATE, senão
+    // INSERT. Upsert idempotente: reenviar o mesmo payload não duplica.
+    const itensCotacaoPorId = new Map(itensCotacao.map(item => [item.id, item]));
 
-    // FIX (2026-09): resumo agregado da modalidade — se todos os itens
-    // desta resposta vierem na mesma modalidade, grava essa modalidade;
-    // se vier misto no mesmo pedido (ex: peça leve em CIF e peça pesada
-    // em FOB, cenário real de operação já vivido pelo usuário), grava
-    // "MISTO" em vez de mostrar só a modalidade do primeiro item e
-    // esconder a mistura. O detalhe certo, item a item, está em
-    // cotacao_fornecedor_itens.frete_modalidade — este campo aqui é só
-    // um resumo pra quem lista cotações sem abrir o detalhe.
-    const valorFreteTotal = respostas.reduce((acc, r) => acc + parseFloat(r.valor_frete || 0), 0);
-    const modalidadesUsadas = [...new Set(respostas.map(r => r.frete).filter(Boolean))];
-    const modalidadeResumo = modalidadesUsadas.length === 1
-      ? modalidadesUsadas[0]
-      : (modalidadesUsadas.length > 1 ? 'MISTO' : null);
-
-    // 🔥 4. ATUALIZAR COTAÇÃO_FORNECEDORES
-    await DB.update(
-      'cotacao_fornecedores',
-      cotacaoFornecedorId,
-      {
-        status: 'respondido',
-        valor: valorTotal,
-        data_resposta: new Date(),
-        obs: respostas[0]?.observacoes || '',
-        prazo: parseInt(respostas[0]?.prazo || 0),
-        frete: modalidadeResumo,
-        valor_frete: valorFreteTotal,
-        token_acesso: uuidv4()
-      },
+    const todasRespostasExistentes = await DB.select(
+      'cotacao_fornecedor_itens',
+      { tenant_id: tenantId },
       tenantId
     );
-
-    // 🔥 5. INSERIR ITENS RESPONDIDOS
-    // FIX (2026-09, grave — perda de dado): o payload real manda o preço
-    // do item em "valor_unitario", mas o código lia "resposta.valor"
-    // (campo que o frontend nunca envia) — todo item era gravado com
-    // valor 0, mesmo o total da cotação (valorTotal acima) saindo certo.
-    // Confirmado com teste real. Também gravava "frete" (modalidade,
-    // string) via parseFloat na coluna numérica errada — agora vai pra
-    // coluna nova frete_modalidade, e "frete" (numérico, valor do frete
-    // deste item) vem do valor_frete do payload.
-    // FIX (2026-09): "chamadoItemId" nunca é enviado pelo frontend (o
-    // TelaPortalFornecedor.jsx não tem esse campo — só manda item_id, que
-    // é o id de cotacao_itens). Em vez de depender do frontend mandar um
-    // campo que ele não tem, busca chamado_item_id no próprio
-    // itensCotacao já carregado acima pra validação.
-    const itensCotacaoPorId = new Map(itensCotacao.map(item => [item.id, item]));
+    const respostasDoFornecedor = todasRespostasExistentes.filter(
+      ir => ir.cotacao_fornecedor_id === cotacaoFornecedorId
+    );
+    const respostaPorItemId = {};
+    respostasDoFornecedor.forEach(r => {
+      respostaPorItemId[String(r.cotacao_item_id)] = r;
+    });
 
     for (const resposta of respostas) {
       const itemId = parseInt(resposta.itemId, 10);
       const itemOriginal = itensCotacaoPorId.get(itemId);
-      await DB.insert(
-        'cotacao_fornecedor_itens',
-        {
+      const dadosItem = {
+        valor: parseFloat(resposta.valor_unitario || 0),
+        prazo: parseInt(resposta.prazo ?? respostas[0]?.prazo ?? 0),
+        frete: parseFloat(resposta.valor_frete || 0),
+        frete_modalidade: resposta.frete || null,
+      };
+
+      const linhaExistente = respostaPorItemId[String(itemId)];
+      if (linhaExistente) {
+        // UPDATE — item já tinha resposta (rodada anterior)
+        await DB.update('cotacao_fornecedor_itens', linhaExistente.id, {
+          ...dadosItem,
+          origem_preenchimento: 'manual', // passou por edição
+          atualizado_em: new Date().toISOString(),
+        }, tenantId);
+      } else {
+        // INSERT — primeira vez que este item é respondido
+        await DB.insert('cotacao_fornecedor_itens', {
           tenant_id: tenantId,
           cotacao_fornecedor_id: cotacaoFornecedorId,
           cotacao_item_id: itemId,
           chamado_item_id: resposta.chamadoItemId || itemOriginal?.chamado_item_id || null,
-          valor: parseFloat(resposta.valor_unitario || 0),
-          prazo: parseInt(resposta.prazo ?? respostas[0]?.prazo ?? 0),
-          frete: parseFloat(resposta.valor_frete || 0),
-          frete_modalidade: resposta.frete || null,
-          criado_em: new Date().toISOString()
-        },
-        tenantId
-      );
+          ...dadosItem,
+          criado_em: new Date().toISOString(),
+        }, tenantId);
+      }
     }
 
+    // 🔥 4. RECALCULAR CABEÇALHO com base no estado COMPLETO do fornecedor
+    // (não só no payload atual). Sem isso, um envio parcial zerava o
+    // valor agregado do fornecedor — perdia o que ele tinha respondido
+    // antes.
+    const respostasAtualizadas = await DB.select(
+      'cotacao_fornecedor_itens',
+      { tenant_id: tenantId },
+      tenantId
+    );
+    const linhasDoFornecedorAgora = respostasAtualizadas.filter(
+      ir => ir.cotacao_fornecedor_id === cotacaoFornecedorId
+    );
+
+    const soma = (campo) => linhasDoFornecedorAgora.reduce(
+      (s, ir) => s + (parseFloat(ir[campo]) || 0), 0
+    );
+    const valorTotal = soma('valor');
+    const valorFreteTotal = soma('frete');
+
+    const modalidadesUsadas = [...new Set(
+      linhasDoFornecedorAgora.map(r => r.frete_modalidade).filter(Boolean)
+    )];
+    const modalidadeResumo = modalidadesUsadas.length === 1
+      ? modalidadesUsadas[0]
+      : (modalidadesUsadas.length > 1 ? 'MISTO' : null);
+
+    // Quantos itens ESTE fornecedor foi convidado a cotar: itens cujo
+    // fornecedores_ids inclui ele, OU itens que ele já respondeu (caso
+    // tenha sido adicionado manualmente pelo comprador depois — nesse
+    // caso o fornecedores_ids do item já inclui, mas por segurança).
+    const itensEsperadosDoFornecedor = itensCotacao.filter(item => {
+      const ids = Array.isArray(item.fornecedores_ids) ? item.fornecedores_ids : [];
+      return ids.includes(fornecedorId) || respostaPorItemId[String(item.id)];
+    });
+    const itemIdsRespondidosAgora = new Set(
+      linhasDoFornecedorAgora.map(r => String(r.cotacao_item_id))
+    );
+    const itensPendentes = itensEsperadosDoFornecedor.filter(
+      item => !itemIdsRespondidosAgora.has(String(item.id))
+    );
+    const statusCabecalho = itensPendentes.length === 0 ? 'respondido' : 'pendente';
+
+    // 🔥 4b. ATUALIZAR CABEÇALHO DO FORNECEDOR
+    // Token NÃO é regenerado se já existia — trocar invalidaria qualquer
+    // link antigo que o comprador colou em email/whatsapp. Só gera novo
+    // se por algum motivo não tinha.
+    await DB.update(
+      'cotacao_fornecedores',
+      cotacaoFornecedorId,
+      {
+        status: statusCabecalho,
+        valor: valorTotal,
+        data_resposta: new Date(),
+        obs: respostas[0]?.observacoes || fornData.obs || '',
+        prazo: parseInt(respostas[0]?.prazo || fornData.prazo || 0),
+        frete: modalidadeResumo,
+        valor_frete: valorFreteTotal,
+        validade_dias: validadeDias,
+        validade_em: new Date(Date.now() + validadeDias * 86400000).toISOString(),
+        token_acesso: fornData.token_acesso || uuidv4(),
+      },
+      tenantId
+    );
+
     // 🔥 6. VERIFICAR SE TODOS OS FORNECEDORES RESPONDERAM
+    // Agora conta por cabeçalho — só fica "respondido" quando o fornecedor
+    // preencheu todos os itens esperados dele.
     const total = await DB.select('cotacao_fornecedores', { cotacao_id: cotacaoId });
-    const respondidos = await DB.select('cotacao_fornecedores', { cotacao_id: cotacaoId, status: 'respondido' });
-    if (total.length === respondidos.length) {
+    const respondidos = total.filter(f => f.status === 'respondido');
+    if (total.length === respondidos.length && total.length > 0) {
       await DB.update('cotacoes', cotacaoId, { status: 'respondida' }, tenantId);
     }
 
@@ -340,7 +432,7 @@ router.post('/portal/cotacao/:cotacaoId/:token/responder', async (req, res) => {
         s + parseFloat(r.valor_frete || 0), 0);
       const totalGeral = valorItensTotal + freteTotal;
 
-      const assunto = `Proposta enviada com sucesso - Cotação ${cotacao.numero || cotacaoId}`;
+      const assunto = `Proposta enviada com sucesso - Cotação ${cotacao.numero || '[sem número]'}`;
       const corpo = `
         <h2>Proposta enviada!</h2>
         <p>Olá <strong>${fornecedor?.nome || 'Fornecedor'}</strong>,</p>
@@ -401,16 +493,24 @@ router.get('/portal/cotacao/:cotacaoId/:token/status', async (req, res) => {
     const { cotacaoId, token } = req.params;
 
     // 🔥 Validar token_acesso (NÃO token)
-    const cotacaoFornecedor = await DB.select(
-      'cotacao_fornecedores',
-      { cotacao_id: cotacaoId, token_acesso: token }
-    );
-
-    if (cotacaoFornecedor.length === 0) {
+    if (!token || token === 'null' || token === 'undefined' || String(token).trim() === '') {
       return res.status(403).json({ message: 'Acesso negado' });
     }
 
-    const { tenant_id: tenantId } = cotacaoFornecedor[0];
+    const todosFornsDaCotacao = await DB.select(
+      'cotacao_fornecedores',
+      { cotacao_id: cotacaoId }
+    );
+    const fornData = todosFornsDaCotacao.find(
+      cf => String(cf.token_acesso) === String(token)
+    );
+
+    if (!fornData) {
+      return res.status(403).json({ message: 'Acesso negado' });
+    }
+
+    const cotacaoFornecedor = [fornData]; // mantém compat com o restante
+    const { tenant_id: tenantId } = fornData;
 
     // FIX (2026-09): mesmo bug do "[0]" em cima de DB.selectOne — o valor
     // já vem como objeto direto, não array.

@@ -19,6 +19,10 @@ const inputStyle = {
   padding: '8px 12px',
   fontSize: 13,
   width: '100%',
+  // FIX (2026-09): sem box-sizing, `width: 100% + padding + border`
+  // estoura o container (textarea de Observações saía da tela). Incluir
+  // no base do inputStyle corrige de uma vez TODOS os inputs do portal.
+  boxSizing: 'border-box',
   fontFamily: 'inherit',
   outline: 'none',
   transition: 'border .2s',
@@ -35,6 +39,8 @@ export default function TelaPortalFornecedor() {
   const [linhas, setLinhas] = useState([]);
   const [grupos, setGrupos] = useState([]);
   const [prazoGeral, setPrazoGeral] = useState('');
+  // #4c — Validade da proposta (dias). Obrigatório, default 30.
+  const [validadeDias, setValidadeDias] = useState('30');
   const [obs, setObs] = useState('');
   const [step, setStep] = useState('preencher'); // preencher | revisar | enviado
 
@@ -66,12 +72,38 @@ export default function TelaPortalFornecedor() {
       });
       setLinhas(initialLinhas);
 
-      // Se já respondida, pula direto pro comprovante
-      if (jaResp) {
+      // Fase "resposta em múltiplas rodadas" (2026-09): só cai no
+      // comprovante se TODOS os itens já têm resposta. Se o fornecedor
+      // respondeu 2 de 3 (ex: comprador adicionou ele manualmente no 3º
+      // depois), mantém o form aberto pra ele completar o que falta —
+      // os itens já respondidos ficam como read-only, o pendente como
+      // input editável.
+      const itensComRespostaIds = new Set(
+        (cotacao.itens_respondidos || []).map(ir => String(ir.cotacao_item_id))
+      );
+      const itensPendentes = cotacao.itens.filter(
+        it => !itensComRespostaIds.has(String(it.id))
+      );
+      const tudoRespondido = jaResp && itensPendentes.length === 0;
+
+      if (tudoRespondido) {
         setStep('enviado');
         if (cotacao.respostasExistentes) {
           setPrazoGeral(String(cotacao.respostasExistentes.prazo || ''));
           setObs(cotacao.respostasExistentes.obs || '');
+          if (cotacao.respostasExistentes.validade_dias) {
+            setValidadeDias(String(cotacao.respostasExistentes.validade_dias));
+          }
+        }
+      } else if (jaResp && itensPendentes.length > 0) {
+        // Modo misto — permanece em 'preencher', mas aproveita
+        // prazo/obs/validade que já foram preenchidos antes.
+        if (cotacao.respostasExistentes) {
+          setPrazoGeral(String(cotacao.respostasExistentes.prazo || ''));
+          setObs(cotacao.respostasExistentes.obs || '');
+          if (cotacao.respostasExistentes.validade_dias) {
+            setValidadeDias(String(cotacao.respostasExistentes.validade_dias));
+          }
         }
       }
     }
@@ -147,7 +179,10 @@ export default function TelaPortalFornecedor() {
 
   // Validação
   const linhasOK = linhas.filter((l) => l.valor);
-  const podeRevisar = linhasOK.length === linhas.length && prazoGeral && prazoGeral > 0;
+  const validadeOk = parseInt(validadeDias, 10) > 0 && parseInt(validadeDias, 10) <= 365;
+  const podeRevisar = linhasOK.length === linhas.length
+    && prazoGeral && prazoGeral > 0
+    && validadeOk;
 
   // Totais
   const totalPecas = linhas.reduce((s, l) => s + parseFloat(l.valor || 0), 0);
@@ -160,9 +195,32 @@ export default function TelaPortalFornecedor() {
 
   // Handler para enviar resposta
   const handleEnviar = async () => {
+    // Fase "resposta em múltiplas rodadas" (2026-09): só envia itens
+    // AINDA NÃO respondidos. Itens já respondidos ficam read-only na UI
+    // e não devem voltar no payload — senão, um state local desatualizado
+    // sobrescreveria o valor antigo com 0. Alteração de valor já enviado
+    // é via renegociação pelo comprador, não pelo portal.
+    const itensComRespostaIds = new Set(
+      (cotacao.itens_respondidos || []).map(ir => String(ir.cotacao_item_id))
+    );
+    const linhasPendentes = linhas.filter(
+      l => !itensComRespostaIds.has(String(l.id))
+    );
+
+    if (linhasPendentes.length === 0) {
+      alert('Todos os itens desta cotação já foram respondidos.');
+      return;
+    }
+
+    const linhasPendentesSemValor = linhasPendentes.filter(l => !l.valor);
+    if (linhasPendentesSemValor.length > 0) {
+      alert(`Preencha o valor unitário dos ${linhasPendentesSemValor.length} item(ns) pendente(s) antes de enviar.`);
+      return;
+    }
+
     // Monta payload no formato esperado pelo backend
     const payload = {
-      itens: linhas.map((l) => {
+      itens: linhasPendentes.map((l) => {
         const itemOriginal = cotacao.itens.find((i) => i.id === l.id);
         return {
           item_id: l.id,
@@ -170,11 +228,6 @@ export default function TelaPortalFornecedor() {
           quantidade: itemOriginal?.quantidade || 1,
           valor_unitario: parseFloat(l.valor || 0),
           frete: l.frete,
-          // FIX (2026-09): quando o item está em grupo FOB, enviar o
-          // frete RATEADO (mesmo cálculo que a UI já faz via freteRateado)
-          // em vez de null. Sem isso, o backend grava 0 e o comprador vê
-          // frete zerado no monitoramento. O rateio é a mesma proporção
-          // que o portal já usa pra exibir o custo total do item.
           valor_frete: l.frete === 'FOB'
             ? parseFloat(freteRateado(l) || 0)
             : 0,
@@ -182,8 +235,9 @@ export default function TelaPortalFornecedor() {
         };
       }),
       prazo_entrega: parseInt(prazoGeral),
+      // #4c — validade obrigatória (portalService traduz pro backend)
+      validade_dias: parseInt(validadeDias, 10),
       observacoes: obs,
-      // Também envia grupos para referência (opcional)
       grupos_frete: grupos.map((g) => ({
         id: g.id,
         nome: g.nome,
@@ -249,7 +303,10 @@ export default function TelaPortalFornecedor() {
             <span style={{ color: '#f3f4f6' }}>Total do pedido</span>
             <span style={{ color: '#10b981' }}>{fmtBRL(totalGeral)}</span>
           </div>
-          <div style={{ fontSize: 12, color: '#6b7280', marginTop: 8 }}>Prazo: {prazoGeral} dias úteis</div>
+            <div style={{ fontSize: 12, color: '#6b7280', marginTop: 8 }}>
+            Prazo: {prazoGeral} dias úteis
+            {validadeDias && ` · Validade: ${validadeDias} dias`}
+          </div>
         </div>
         <div style={{ fontSize: 13, color: '#6b7280', textAlign: 'center', maxWidth: 360 }}>
           {veioDoBackend
@@ -372,7 +429,9 @@ export default function TelaPortalFornecedor() {
             <span style={{ color: '#f3f4f6' }}>Total do pedido</span>
             <span style={{ color: '#10b981' }}>{fmtBRL(totalGeral)}</span>
           </div>
-          <div style={{ fontSize: 12, color: '#6b7280', marginTop: 6 }}>Prazo: {prazoGeral} dias úteis</div>
+          <div style={{ fontSize: 12, color: '#6b7280', marginTop: 6 }}>
+            Prazo: {prazoGeral} dias úteis · Validade: {validadeDias} dias
+          </div>
         </div>
 
         <div style={{ display: 'flex', gap: 10 }}>
@@ -399,7 +458,7 @@ export default function TelaPortalFornecedor() {
 
   // --- TELA PRINCIPAL DE PREENCHIMENTO ---
   return (
-    <div style={{ maxWidth: 760, margin: '0 auto', padding: '28px 20px', overflowY: 'auto' }}>
+    <div style={{ maxWidth: 900, margin: '0 auto', padding: '28px 20px', overflowY: 'auto' }}>
       {/* Header */}
       <div
         style={{
@@ -458,8 +517,46 @@ export default function TelaPortalFornecedor() {
         Se múltiplos itens compartilham o mesmo volume de entrega, agrupe-os e informe o frete do grupo — o sistema rateia automaticamente pelo valor de cada item.
       </div>
 
-      {/* Tabela de itens */}
-      <div style={{ background: '#1e293b', borderRadius: 12, overflow: 'hidden', marginBottom: 14 }}>
+      {/* Aviso quando o fornecedor já respondeu parcialmente — modo misto.
+          Aparece só se tem pelo menos 1 item respondido e 1 pendente. */}
+      {(() => {
+        const respondidosCount = (cotacao.itens_respondidos || []).length;
+        const pendentesCount = cotacao.itens.length - respondidosCount;
+        if (respondidosCount === 0 || pendentesCount === 0) return null;
+        return (
+          <div
+            style={{
+              background: '#3f2a0a',
+              border: '1px solid #f59e0b55',
+              borderRadius: 8,
+              padding: '12px 16px',
+              marginBottom: 16,
+              fontSize: 12,
+              color: '#f59e0b',
+              display: 'flex',
+              gap: 10,
+              alignItems: 'flex-start',
+            }}
+          >
+            <span style={{ fontSize: 16 }}>⚠️</span>
+            <div>
+              <strong>Você já respondeu {respondidosCount} de {cotacao.itens.length} itens.</strong>
+              <div style={{ color: '#d1d5db', marginTop: 4 }}>
+                Preencha os <strong>{pendentesCount} item(ns) pendente(s)</strong> abaixo.
+                Os já respondidos estão bloqueados — pra alterar algum valor já enviado,
+                entre em contato com o comprador e solicite uma renegociação.
+              </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Tabela de itens — overflow X: em telas estreitas, o grid de
+          colunas tem largura mínima (ver minWidth no header abaixo) e
+          habilita scroll horizontal. Antes era `overflow: 'hidden'`,
+          que CORTava os inputs em telas pequenas, deixando o fornecedor
+          sem acesso ao campo de valor. */}
+      <div style={{ background: '#1e293b', borderRadius: 12, overflowX: 'auto', overflowY: 'hidden', marginBottom: 14 }}>
         <div
           style={{
             padding: '12px 16px',
@@ -474,7 +571,11 @@ export default function TelaPortalFornecedor() {
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: '2fr 50px 120px 130px 160px 110px',
+            gridTemplateColumns: 'minmax(220px, 2.2fr) 40px 110px 100px 150px 130px',
+            // Largura mínima garante que em telas estreitas o card role
+            // horizontalmente em vez de comprimir as colunas a ponto de
+            // os inputs ficarem inacessíveis.
+            minWidth: 810,
             padding: '9px 16px',
             background: '#0f172a',
             borderBottom: '1px solid #2d3748',
@@ -495,17 +596,31 @@ export default function TelaPortalFornecedor() {
           const l = linhas.find((l) => l.id === it.id);
           const ct = custoItem(l);
           const fr = freteRateado(l);
+          // Fase "resposta em múltiplas rodadas" (2026-09): item que já
+          // tem resposta fica read-only. O `pointerEvents: none` desabilita
+          // TODOS os controles da linha (input, radios CIF/FOB, select de
+          // grupo). Sem isso, o fornecedor editaria o que já foi enviado,
+          // e o payload reenviaria valores — bagunçando o histórico.
+          const jaRespondido = (cotacao.itens_respondidos || []).some(
+            ir => String(ir.cotacao_item_id) === String(it.id)
+          );
           return (
             <div
               key={it.id}
               style={{
                 display: 'grid',
-                gridTemplateColumns: '2fr 50px 120px 130px 160px 110px',
+                gridTemplateColumns: 'minmax(220px, 2.2fr) 40px 110px 100px 150px 130px',
                 padding: '12px 16px',
                 borderBottom: i < cotacao.itens.length - 1 ? '1px solid #2d3748' : 'none',
                 alignItems: 'center',
                 gap: 8,
+                // Linha já respondida: sem fundo verde pesado, só a barra
+                // lateral esquerda como sinal. Fundo verde competia muito
+                // com o badge e cansava a vista.
                 background: l?.valor ? 'transparent' : '#0d111a',
+                opacity: jaRespondido ? 0.92 : 1,
+                pointerEvents: jaRespondido ? 'none' : 'auto',
+                borderLeft: jaRespondido ? '3px solid #10b981' : 'none',
               }}
             >
               <div>
@@ -521,13 +636,45 @@ export default function TelaPortalFornecedor() {
                   >
                     {URG_CONFIG[it.urgencia]?.l || it.urgencia}
                   </span>
-                  <span style={{ fontSize: 13, color: '#f3f4f6', fontWeight: 500 }}>{it.peca || it.nome}</span>
+                  <span
+                    title={it.peca || it.nome}
+                    style={{
+                      fontSize: 13,
+                      color: '#f3f4f6',
+                      fontWeight: 500,
+                      whiteSpace: 'nowrap',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      minWidth: 0,
+                    }}
+                  >
+                    {it.peca || it.nome}
+                  </span>
+                  {jaRespondido && (
+                    <span
+                      title="Este item já foi respondido. Para alterar, contate o comprador."
+                      style={{
+                        fontSize: 9,
+                        padding: '2px 6px',
+                        borderRadius: 4,
+                        background: '#0f2f1a',
+                        color: '#10b981',
+                        border: '1px solid #10b98155',
+                        fontWeight: 700,
+                        letterSpacing: '0.05em',
+                      }}
+                    >
+                      ✓ JÁ RESPONDIDO
+                    </span>
+                  )}
                 </div>
                 <div style={{ fontSize: 10, color: '#3b82f6', marginTop: 2, fontFamily: "'IBM Plex Mono', monospace" }}>
                   {it.codigo} · {it.equipamento || ''}
                 </div>
               </div>
-              <span style={{ fontSize: 13, color: '#d1d5db', fontWeight: 600 }}>{it.quantidade}x</span>
+              <span style={{ fontSize: 12, color: '#9ca3af', fontWeight: 600, textAlign: 'center' }}>
+                {it.quantidade}x
+              </span>
               <input
                 type="number"
                 value={l?.valor || ''}
@@ -573,11 +720,22 @@ export default function TelaPortalFornecedor() {
               </div>
               <div>
                 {l?.frete === 'FOB' ? (
-                  <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
+                  // Select + input de frete individual LADO A LADO. Antes
+                  // ficavam empilhados, e o input solto embaixo parecia
+                  // desconectado do select. Agora ficam visualmente
+                  // agrupados na mesma linha.
+                  <div style={{ display: 'flex', gap: 4, alignItems: 'center' }}>
                     <select
                       value={l?.grupo || ''}
                       onChange={(e) => setLinha(it.id, 'grupo', e.target.value || null)}
-                      style={{ ...inputStyle, padding: '7px 8px', fontSize: 12, appearance: 'none' }}
+                      style={{
+                        ...inputStyle,
+                        flex: 1,
+                        minWidth: 0,
+                        padding: '7px 8px',
+                        fontSize: 12,
+                        appearance: 'none',
+                      }}
                     >
                       <option value="">Individual</option>
                       {grupos.map((g) => (
@@ -587,26 +745,30 @@ export default function TelaPortalFornecedor() {
                       ))}
                     </select>
                     {!l?.grupo && (
-                      <input
-                        type="number"
-                        value={l?.valorFreteInd || ''}
-                        onChange={(e) => setLinha(it.id, 'valorFreteInd', e.target.value)}
-                        placeholder="Frete R$ 0,00"
-                        style={{
-                          ...inputStyle,
-                          padding: '6px 8px',
-                          fontSize: 12,
-                          border: `1px solid ${l?.valorFreteInd ? '#f59e0b' : '#2d3748'}`,
-                          background: l?.valorFreteInd ? '#3f2a0a' : '#0f172a',
-                        }}
-                      />
+                      <>
+                        <span style={{ fontSize: 10, color: '#6b7280' }}>R$</span>
+                        <input
+                          type="number"
+                          value={l?.valorFreteInd || ''}
+                          onChange={(e) => setLinha(it.id, 'valorFreteInd', e.target.value)}
+                          placeholder="0,00"
+                          style={{
+                            ...inputStyle,
+                            width: 72,
+                            padding: '6px 8px',
+                            fontSize: 12,
+                            border: `1px solid ${l?.valorFreteInd ? '#f59e0b' : '#2d3748'}`,
+                            background: l?.valorFreteInd ? '#3f2a0a' : '#0f172a',
+                          }}
+                        />
+                      </>
                     )}
                   </div>
                 ) : (
                   <span style={{ fontSize: 11, color: '#6b7280' }}>— (CIF incluso)</span>
                 )}
               </div>
-              <div style={{ textAlign: 'right' }}>
+              <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
                 {ct != null ? (
                   <>
                     <div style={{ fontSize: 14, fontWeight: 700, color: '#10b981' }}>{fmtBRL(ct)}</div>
@@ -718,9 +880,11 @@ export default function TelaPortalFornecedor() {
         </div>
       </div>
 
-      {/* Prazo geral + obs */}
+      {/* Prazo geral + validade + obs */}
       <div style={{ background: '#1e293b', borderRadius: 12, padding: '16px 18px', marginBottom: 16 }}>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 2fr', gap: 14 }}>
+                {/* `auto-fit + minmax` empilha os 3 blocos em telas estreitas
+            sem precisar de media query. Em desktop, mantém as 3 colunas. */}
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: 6 }}>
           <div>
             <label style={{ fontSize: 11, color: '#6b7280', letterSpacing: '0.08em', marginBottom: 4, display: 'block' }}>
               PRAZO DE ENTREGA (DIAS ÚTEIS) *
@@ -736,14 +900,38 @@ export default function TelaPortalFornecedor() {
           </div>
           <div>
             <label style={{ fontSize: 11, color: '#6b7280', letterSpacing: '0.08em', marginBottom: 4, display: 'block' }}>
+              VALIDADE DA PROPOSTA (DIAS) *
+            </label>
+            <input
+              type="number"
+              min="1"
+              max="365"
+              value={validadeDias}
+              onChange={(e) => setValidadeDias(e.target.value)}
+              placeholder="Ex: 30"
+              style={{
+                ...inputStyle,
+                fontSize: 16,
+                fontWeight: 600,
+                borderColor: validadeOk ? '#2d3748' : '#ef4444',
+              }}
+            />
+            <div style={{ fontSize: 11, color: validadeOk ? '#6b7280' : '#ef4444', marginTop: 4 }}>
+              {validadeOk
+                ? 'Por quantos dias estes preços se mantêm'
+                : 'Informe entre 1 e 365 dias'}
+            </div>
+          </div>
+          <div style={{ minWidth: 0 }}>
+            <label style={{ fontSize: 11, color: '#6b7280', letterSpacing: '0.08em', marginBottom: 4, display: 'block' }}>
               OBSERVAÇÕES GERAIS (OPCIONAL)
             </label>
             <textarea
               value={obs}
               onChange={(e) => setObs(e.target.value)}
               rows={2}
-              placeholder="Condições de pagamento, validade da proposta, marcas alternativas..."
-              style={{ ...inputStyle, resize: 'none' }}
+              placeholder="Condições de pagamento, marcas alternativas..."
+              style={{ ...inputStyle, resize: 'none', boxSizing: 'border-box', width: '100%' }}
             />
           </div>
         </div>
@@ -781,6 +969,7 @@ export default function TelaPortalFornecedor() {
           <div style={{ fontSize: 12, color: '#6b7280', textAlign: 'right' }}>
             {linhasOK.length}/{linhas.length} itens preenchidos
             {!prazoGeral && ' · prazo obrigatório'}
+            {prazoGeral && !validadeOk && ' · validade obrigatória'}
           </div>
           <button
             onClick={() => podeRevisar && setStep('revisar')}
