@@ -3,42 +3,9 @@ const express = require('express');
 const router = express.Router();
 const { DB } = require('../../db');
 const tenantMiddleware = require('../../middleware/tenantMiddleware');
+const ValidacaoXmlService = require('../../services/ValidacaoXmlService');
 
 const SISTEMA_UUID = '00000000-0000-0000-0000-000000000000';
-
-  // ─── HELPERS ───────────────────────────────────────────────
-  const normalizarTexto = (texto) => {
-    return texto
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9\s]/g, ' ')
-      .trim();
-  };
-
-  const calcularLevenshtein = (a, b) => {
-    a = normalizarTexto(a);
-    b = normalizarTexto(b);
-    
-    const m = a.length, n = b.length;
-    const dp = Array(m + 1).fill(null).map(() => Array(n + 1).fill(0));
-    
-    for (let i = 0; i <= m; i++) dp[i][0] = i;
-    for (let j = 0; j <= n; j++) dp[0][j] = j;
-    
-    for (let i = 1; i <= m; i++) {
-      for (let j = 1; j <= n; j++) {
-        const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-        dp[i][j] = Math.min(
-          dp[i][j - 1] + 1,
-          dp[i - 1][j] + 1,
-          dp[i - 1][j - 1] + cost
-        );
-      }
-    }
-    
-    return dp[m][n];
-  };
 
   //--- GERAR NÚMERO DO RECEBIMENTO ---
 async function gerarNumeroRecebimento(tenantId) {
@@ -830,99 +797,25 @@ router.post('/entrada', tenantMiddleware, async (req, res) => {
 });
 
 // POST /api/estoque/movimentacoes/validar-xml
+// POST /api/estoque/movimentacoes/validar-xml
 router.post('/validar-xml', tenantMiddleware, async (req, res) => {
   try {
     const tenantId = req.tenantId;
     const { ordem_venda_id, xml } = req.body;
-    
-    // 🔥 LOG 1: Ver o que está chegando
-    
-    // Proteção essencial caso o payload venha vazio
+
     if (!xml || !xml.itens_xml) {
       return res.status(400).json({ erro: "Dados do XML não recebidos ou incompletos na requisição." });
     }
-    
-    // 1. Buscar OC e filial
-    const ov = await DB.selectOne('ordens_venda', { id: ordem_venda_id }, tenantId);
-    const filial = ov?.filial_id ? await DB.selectOne('tenant_filiais', { id: ov.filial_id }, tenantId) : null;
-    const tenant = await DB.selectOne('tenants', { id: tenantId });
-    
-    // 2. Validar CNPJ do Destinatário
-    const cnpjDestinatario = xml.cnpj_destinatario || '';
-    const cnpjEsperado = filial?.cnpj_filial || tenant?.cnpj || '';
-    const cnpjDestStatus = cnpjDestinatario === cnpjEsperado ? 'ok' : 'divergente';
-    
-    // 3. Validar CNPJ do Emitente vs Fornecedor
-    const cnpjEmitente = xml.cnpj_emitente || '';
-    const fornecedor = ov ? await DB.selectOne('fornecedores', { id: ov.fornecedor_id }, tenantId) : null;
-    const cnpjFornecedor = fornecedor?.cnpj || '';
-    const cnpjStatus = cnpjEmitente === cnpjFornecedor ? 'ok' : 'divergente';
-    
-    // 4. Validar Itens (com match mais rigoroso)
-    const itensOV = ov ? await DB.select('ordem_venda_itens', { ordem_venda_id: ov.id }, tenantId) : [];
-    const validacoes = [];
 
-    for (const itemOV of itensOV) {
-      const itemXML = xml.itens_xml.find(item => {
-        const descXML = normalizarTexto(item.descricao || '');
-        const descOV = normalizarTexto(itemOV.item_nome || '');
-        
-        const skuMatch = itemOV.item_catalogo_id && item.codigo === itemOV.item_catalogo_id;
-        const descMatch = descOV.length > 3 && descXML.includes(descOV);
-        const levenshteinMatch = calcularLevenshtein(descOV, descXML) <= 3;
-        
-        return skuMatch || descMatch || levenshteinMatch;
-      });
-      
-      if (!itemXML) {
-        // 🔥 Buscar o primeiro item da NFe que NÃO está associado
-        const itemNFePendente = xml.itens_xml.find(item => 
-          !validacoes.some(v => v.item_nfe === item.descricao)
-        );
-        
-        validacoes.push({ 
-          item: itemOV.item_nome, 
-          item_nfe: itemNFePendente?.descricao || 'Não encontrado', 
-          status: 'match_fallback', 
-          mensagem: 'Item não encontrado. Associe manualmente.' 
-        });
-      } else if (parseInt(itemOV.quantidade || 0) !== parseInt(itemXML.quantidade || 0)) {
-        validacoes.push({ 
-          item: itemOV.item_nome, 
-          item_nfe: itemXML.descricao || '', 
-          status: 'divergencia_quantidade', 
-          mensagem: `Qtd: OV ${itemOV.quantidade} vs XML ${itemXML.quantidade}` 
-        });
-      } else if (parseFloat(itemOV.valor_unitario || 0) !== parseFloat(itemXML.valorUnitario || 0)) {
-        validacoes.push({ 
-          item: itemOV.item_nome, 
-          item_nfe: itemXML.descricao || '', 
-          status: 'divergencia_valor', 
-          mensagem: `Valor: OV ${itemOV.valor_unitario} vs XML ${itemXML.valorUnitario}` 
-        });
-      } else {
-        validacoes.push({ 
-          item: itemOV.item_nome, 
-          item_nfe: itemXML.descricao || '', 
-          status: 'ok', 
-          mensagem: 'Item validado' 
-        });
-      }
-    }
-    
-    // 🔥 LOG 4: Ver o que será retornado
-    console.log('🔍 [validar-xml] VALIDAÇÕES:', JSON.stringify(validacoes, null, 2));
-    
-    // 5. Retornar resultado (SEM PESO)
-    return res.json({
-      validacao: {
-        cnpj: cnpjEmitente === cnpjFornecedor ? '✅ CNPJ Emitente válido' : `❌ CNPJ Emitente divergente (Esperado: ${cnpjFornecedor})`,
-        cnpj_status: cnpjStatus,
-        cnpj_destinatario: cnpjDestStatus === 'ok' ? `✅ CNPJ Destinatário válido (${filial?.nome_filial || 'Matriz'})` : `❌ CNPJ Destinatário divergente (Esperado: ${cnpjEsperado})`,
-        itens: validacoes,
-        totalDivergencias: validacoes.filter(v => v.status !== 'ok').length + (cnpjStatus !== 'ok' ? 1 : 0) + (cnpjDestStatus !== 'ok' ? 1 : 0)
-      }
-    });
+    // Lógica toda vive no ValidacaoXmlService — aqui é só wrapper HTTP.
+    // Mesma regra usada pelo portal do fornecedor (upload no hub, M2).
+    const resultado = await ValidacaoXmlService.validarXmlContraOc(
+      xml,
+      ordem_venda_id,
+      tenantId
+    );
+
+    return res.json(resultado);
   } catch (err) {
     console.error('❌ Erro ao validar XML:', err.message);
     return res.status(500).json({ erro: err.message });
