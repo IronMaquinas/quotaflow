@@ -220,6 +220,7 @@ export default function TelaMonitorarRespostas({
           chamado_item_id: item.chamado_item_id || null,
           item_nome: item.nome,
           item_codigo: item.codigo || null,
+          item_numero_base: item.numero_base ?? null,
           item_quantidade: item.quantidade || 0,
           frete_modalidade: forn.frete_modalidade || 'CIF',
           valor: forn.valor != null ? String(forn.valor) : '',
@@ -720,7 +721,19 @@ export default function TelaMonitorarRespostas({
                   }}
                 >
                   <div style={{ fontSize: 12, color: C.text, fontWeight: 500 }}>
-                    <div>{linha.item_nome}</div>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                      {linha.item_numero_base != null && (
+                        <span style={{
+                          fontSize: 11,
+                          fontWeight: 700,
+                          color: C.accent,
+                          fontFamily: "'IBM Plex Mono', monospace",
+                        }}>
+                          #{linha.item_numero_base}
+                        </span>
+                      )}
+                      <span>{linha.item_nome}</span>
+                    </div>
                     {linha.item_codigo && (
                       <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
                         {linha.item_codigo}
@@ -1002,6 +1015,7 @@ export default function TelaMonitorarRespostas({
         cotacao_item_id: item.id,
         item_nome: item.nome,
         item_codigo: item.codigo || null,
+        item_numero_base: item.numero_base ?? null,
         quantidade: qtd,
         valor_unit: valorUnit,
         frete_unit: freteUnit,
@@ -1556,6 +1570,17 @@ export default function TelaMonitorarRespostas({
                         }}
                       >
                         <div style={{ color: C.text }}>
+                          {it.item_numero_base != null && (
+                            <span style={{
+                              fontSize: 10,
+                              fontWeight: 700,
+                              color: C.accent,
+                              fontFamily: "'IBM Plex Mono', monospace",
+                              marginRight: 6,
+                            }}>
+                              #{it.item_numero_base}
+                            </span>
+                          )}
                           <span>{it.item_nome}</span>
                           {it.item_codigo && (
                             <span style={{ fontSize: 10, color: C.muted, marginLeft: 6 }}>
@@ -2109,7 +2134,19 @@ export default function TelaMonitorarRespostas({
                             fontWeight: 600,
                             color: C.text,
                           }}>
-                            <div>{item.nome}</div>
+                            <div style={{ display: 'flex', alignItems: 'baseline', gap: 6 }}>
+                              {item.numero_base != null && (
+                                <span style={{
+                                  fontSize: 11,
+                                  fontWeight: 700,
+                                  color: C.accent,
+                                  fontFamily: "'IBM Plex Mono', monospace",
+                                }}>
+                                  #{item.numero_base}
+                                </span>
+                              )}
+                              <span>{item.nome}</span>
+                            </div>
                             {item.codigo && (
                               <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
                                 {item.codigo}

@@ -2987,6 +2987,11 @@ router.get('/:cotacaoId/monitorar', tenantMiddleware, async (req, res) => {
         quantidade: item.quantidade,
         categoria: item.categoria,
         codigo: item.codigo,
+        // FIX (2026-09): numeração "oficial" do item (a que requisitante
+        // e comprador usam pra se referir: "o item 2 da RC"). Sem isso o
+        // monitor não mostra o #N em nenhuma das views (grade, modal,
+        // acordeão).
+        numero_base: item._numero_base ?? null,
         fornecedores: fornecedoresComResposta,
         // Fase "Remover item da RC": propagar os campos de cancelamento
         // decorados em `itensComDados` — sem isso, o frontend nunca vê
