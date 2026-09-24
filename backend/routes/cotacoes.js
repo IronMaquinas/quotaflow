@@ -2529,6 +2529,12 @@ router.post('/:cotacaoId/itens/mover', tenantMiddleware, async (req, res) => {
         unidade_medida: chamadoItem.unidade_medida,
         origem_os_item_id: chamadoItem.origem_os_item_id,
         origem_rc_item_id: chamadoItem.id,
+        // FIX (2026-09): preserva a numeração "oficial" do item (a que
+        // requisitante e comprador usam pra se referir: "o item 2 da RC").
+        // Antes, o clone nascia com numero_base=null e o modal do
+        // fornecedor mostrava "#-" no lugar do número.
+        numero_base: chamadoItem.numero_base ?? null,
+        posicao: chamadoItem.posicao ?? null,
       }, tenantId);
 
       const novoCotacaoItem = await DB.insert('cotacao_itens', {
