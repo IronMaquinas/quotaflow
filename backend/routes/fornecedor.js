@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const { DB } = require('../db');
 const fornecedorMiddleware = require('../middleware/fornecedorMiddleware');
+const PortalRespostaService = require('../services/PortalRespostaService');
 
 // ─── ROTAS PROTEGIDAS PARA FORNECEDOR ───
 
@@ -203,17 +204,348 @@ router.post('/catalogo', fornecedorMiddleware, async (req, res) => {
   }
 });
 
-// DELETE /api/fornecedor/catalogo/:id - Remover produto do catálogo
-// FIX (2026-09): DB.update só sabe filtrar por tenant_id (um valor único,
-// vira "AND tenant_id = $N"), mas esta rota passava um OBJETO
-// { fornecedor_id: fornecedorId } nesse parâmetro — quebrava com erro de
-// tipo do Postgres ("invalid input syntax for type integer"), então a
-// exclusão nunca funcionou. Pior: como o erro só estourava DEPOIS da
-// tentativa, não existia nenhuma verificação real de que o item pertence a
-// este fornecedor — se não fosse o erro de tipo, qualquer fornecedor
-// autenticado poderia desativar item de catálogo de outro fornecedor só
-// adivinhando o id. Agora busca o item primeiro e confirma o dono antes de
-// desativar.
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/fornecedor/minhas-cotacoes
+//
+// Hub do fornecedor logado: lista TODAS as cotações que ele participou,
+// com status derivado (aguardando minha resposta / em análise / venceu /
+// não selecionada / cancelada) e informação da empresa compradora.
+//
+// NUNCA vaza: valor de concorrente, nome de quem ganhou (só diz se ELE
+// ganhou), valores de outras cotações. O fornecedor vê o que é dele.
+// ─────────────────────────────────────────────────────────────────────────
+router.get('/minhas-cotacoes', fornecedorMiddleware, async (req, res) => {
+  try {
+    // 1. Todas as linhas de cotacao_fornecedores deste fornecedor.
+    // DB.select com tenant_id=null não filtra por tenant (fornecedor é global).
+    const todasCF = await DB.select('cotacao_fornecedores', {}, null);
+    const minhas = todasCF.filter(
+      cf => String(cf.fornecedor_id) === String(req.fornecedorId)
+    );
+
+    if (minhas.length === 0) {
+      return res.json({ cotacoes: [] });
+    }
+
+    // 2. Cotações-mãe
+    const cotacaoIds = [...new Set(minhas.map(m => m.cotacao_id))];
+    const todasCotacoes = await DB.select('cotacoes', {}, null);
+    const cotacoesPorId = {};
+    todasCotacoes
+      .filter(c => cotacaoIds.includes(c.id))
+      .forEach(c => { cotacoesPorId[c.id] = c; });
+
+    // 3. Chamados (RCs) e tenants (empresas compradoras)
+    const chamadoIds = [...new Set(
+      Object.values(cotacoesPorId)
+        .map(c => c.chamado_id)
+        .filter(Boolean)
+    )];
+    const todosChamados = await DB.select('chamados', {}, null);
+    const chamadosPorId = {};
+    todosChamados
+      .filter(ch => chamadoIds.includes(ch.id))
+      .forEach(ch => { chamadosPorId[ch.id] = ch; });
+
+    const tenantIds = [...new Set(
+      Object.values(chamadosPorId).map(ch => ch.tenant_id).filter(Boolean)
+    )];
+    const todosTenants = await DB.select('tenants', {}, null);
+    const tenantsPorId = {};
+    todosTenants
+      .filter(t => tenantIds.includes(t.id))
+      .forEach(t => { tenantsPorId[t.id] = t; });
+
+    // 4. Ordens de venda — pra saber se ELE ganhou
+    const todasOvs = await DB.select('ordens_venda', {}, null);
+    const ovsDoFornecedor = todasOvs.filter(
+      ov => String(ov.fornecedor_id) === String(req.fornecedorId)
+    );
+
+    // 4b. Buscar respostas por item deste fornecedor — pra detectar
+    // renegociação real (valor ou frete renegociado em QUALQUER item
+    // dele). Só marca "renegociado" quando houve mudança; abrir o
+    // modal e salvar sem mexer não conta.
+    const cfIds = minhas.map(m => m.id);
+    const todosCFI = await DB.select('cotacao_fornecedor_itens', {}, null);
+    const renegociadosPorCf = {};
+    todosCFI
+      .filter(cfi => cfIds.includes(cfi.cotacao_fornecedor_id))
+      .forEach(cfi => {
+        if (cfi.valor_renegociado != null || cfi.frete_renegociado != null) {
+          renegociadosPorCf[cfi.cotacao_fornecedor_id] = true;
+        }
+      });
+
+    // Helper: deriva status de validade a partir do `validade_em`.
+    //   🟢 ok      → > 15 dias
+    //   🟡 proxima → <= 15 dias
+    //   🔴 urgente → <= 5 dias
+    //   ⚫ vencida → já passou
+    function calcularValidade(validadeEm) {
+      if (!validadeEm) return { status: null, dias: null };
+      const diffMs = new Date(validadeEm) - new Date();
+      const dias = Math.ceil(diffMs / 86400000);
+      let status;
+      if (dias < 0) status = 'vencida';
+      else if (dias <= 5) status = 'urgente';
+      else if (dias <= 15) status = 'proxima';
+      else status = 'ok';
+      return { status, dias };
+    }
+
+    // 5. Montar retorno com status derivado
+    const resultado = minhas.map(cf => {
+      const cotacao = cotacoesPorId[cf.cotacao_id];
+      if (!cotacao) return null;
+
+      const chamado = chamadosPorId[cotacao.chamado_id];
+      const empresa = chamado ? tenantsPorId[chamado.tenant_id] : null;
+
+      // Status derivado — a ordem importa:
+      //   1. cotação cancelada
+      //   2. cotação finalizada: ganhou (tem OC) ou perdeu
+      //   3. sem resposta minha → aguardando
+      //   4. com resposta minha, cotação em curso → em análise
+      let badge, cor;
+      if (cotacao.status === 'cancelada') {
+        badge = 'Cancelada';
+        cor = '#6b7280';
+      } else if (cotacao.status === 'finalizada') {
+        const minhaOv = ovsDoFornecedor.find(
+          ov => String(ov.cotacao_id) === String(cotacao.id)
+        );
+        if (minhaOv) {
+          badge = 'Você venceu';
+          cor = '#10b981';
+        } else {
+          badge = 'Não selecionada';
+          cor = '#9ca3af';
+        }
+      } else if (cf.status === 'pendente') {
+        badge = 'Aguardando você';
+        cor = '#f59e0b';
+      } else {
+        badge = 'Em análise';
+        cor = '#3b82f6';
+      }
+
+      const validade = calcularValidade(cf.validade_em);
+
+      return {
+        cotacao_fornecedor_id: cf.id,
+        cotacao_id: cotacao.id,
+        cotacao_numero: cotacao.numero,
+        chamado_id: chamado?.id || null,
+        chamado_numero: chamado?.numero || null,
+        empresa_nome: empresa?.nome || '—',
+        status_cotacao: cotacao.status,
+        status_badge: badge,
+        status_cor: cor,
+        minha_resposta_status: cf.status,
+        respondida_em: cf.data_resposta || null,
+        prazo_entrega: cf.prazo || null,
+        validade_dias: cf.validade_dias || null,
+        validade_em: cf.validade_em || null,
+        validade_status: validade.status,
+        validade_dias_restantes: validade.dias,
+        tem_renegociacao: !!renegociadosPorCf[cf.id],
+        token_acesso: cf.token_acesso || null,
+        obs: cf.obs || null,
+      };
+    }).filter(Boolean);
+
+    // 6. Ordenar: pendentes primeiro, depois por data desc
+    const pesoStatus = {
+      'Aguardando você': 0,
+      'Em análise': 1,
+      'Você venceu': 2,
+      'Não selecionada': 3,
+      'Cancelada': 4,
+    };
+    resultado.sort((a, b) => {
+      const pa = pesoStatus[a.status_badge] ?? 99;
+      const pb = pesoStatus[b.status_badge] ?? 99;
+      if (pa !== pb) return pa - pb;
+      return new Date(b.respondida_em || 0) - new Date(a.respondida_em || 0);
+    });
+
+    res.json({ cotacoes: resultado });
+  } catch (err) {
+    console.error('❌ Erro em /minhas-cotacoes:', err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/fornecedor/minhas-cotacoes/:cotacaoFornecedorId
+//
+// Detalhe de UMA cotação do fornecedor logado. Retorna:
+//   - Cabeçalho (números, empresa, status, datas, validade)
+//   - Lista de itens do que ele viu (só os que ele foi convidado, ou que
+//     ele já respondeu — o resto é invisível)
+//   - O que ELE respondeu por item (valor, frete, modalidade, renegociado)
+//
+// NUNCA vaza: valor de outro fornecedor, quem ganhou (só "você venceu"
+// ou "não selecionada"), nome do vencedor, quantos concorrentes.
+//
+// Valida ownership: se `cotacaoFornecedorId` não pertencer ao fornecedor
+// logado, retorna 403.
+// ─────────────────────────────────────────────────────────────────────────
+router.get('/minhas-cotacoes/:cotacaoFornecedorId', fornecedorMiddleware, async (req, res) => {
+  try {
+    const cfId = parseInt(req.params.cotacaoFornecedorId, 10);
+    if (!cfId || isNaN(cfId)) {
+      return res.status(400).json({ erro: 'ID inválido' });
+    }
+
+    // 1. Buscar cotacao_fornecedores e validar ownership
+    const cf = await DB.selectOne('cotacao_fornecedores', { id: cfId }, null);
+    if (!cf) {
+      return res.status(404).json({ erro: 'Cotação não encontrada' });
+    }
+    if (String(cf.fornecedor_id) !== String(req.fornecedorId)) {
+      return res.status(403).json({ erro: 'Acesso negado a esta cotação' });
+    }
+
+    // 2. Cotação-mãe
+    const cotacao = await DB.selectOne('cotacoes', { id: cf.cotacao_id }, null);
+    if (!cotacao) return res.status(404).json({ erro: 'Cotação não encontrada' });
+
+    // 3. Chamado (RC) e empresa compradora
+    const chamado = cotacao.chamado_id
+      ? await DB.selectOne('chamados', { id: cotacao.chamado_id }, null)
+      : null;
+    const empresa = chamado?.tenant_id
+      ? await DB.selectOne('tenants', { id: chamado.tenant_id }, null)
+      : null;
+
+    // 4. Status derivado (mesma lógica da lista, pra consistência)
+    let badge, cor;
+    if (cotacao.status === 'cancelada') {
+      badge = 'Cancelada'; cor = '#6b7280';
+    } else if (cotacao.status === 'finalizada') {
+      const ovs = await DB.select('ordens_venda', {}, null);
+      const minhaOv = ovs.find(ov =>
+        String(ov.fornecedor_id) === String(req.fornecedorId) &&
+        String(ov.cotacao_id) === String(cotacao.id)
+      );
+      badge = minhaOv ? 'Você venceu' : 'Não selecionada';
+      cor = minhaOv ? '#10b981' : '#9ca3af';
+    } else if (cf.status === 'pendente') {
+      badge = 'Aguardando você'; cor = '#f59e0b';
+    } else {
+      badge = 'Em análise'; cor = '#3b82f6';
+    }
+
+    // 5. Itens da cotação + dados do chamado_item
+    const todosCI = await DB.select('cotacao_itens', {}, null);
+    const itensDaCotacao = todosCI.filter(ci => ci.cotacao_id === cotacao.id);
+
+    const chamadoItemIds = itensDaCotacao.map(ci => ci.chamado_item_id).filter(Boolean);
+    const todosChamadoItens = await DB.select('chamado_itens', {}, null);
+    const chamadosPorId = {};
+    todosChamadoItens
+      .filter(ch => chamadoItemIds.includes(ch.id))
+      .forEach(ch => { chamadosPorId[ch.id] = ch; });
+
+    // 6. Minhas respostas
+    const todosCFI = await DB.select('cotacao_fornecedor_itens', {}, null);
+    const minhasRespostas = todosCFI.filter(cfi => cfi.cotacao_fornecedor_id === cfId);
+    const respostasPorItem = {};
+    minhasRespostas.forEach(r => { respostasPorItem[String(r.cotacao_item_id)] = r; });
+
+    // 7. Montar lista de itens visíveis pra ele:
+    //    - itens onde ele foi convidado (fornecedores_ids inclui ele), OU
+    //    - itens onde ele já tem resposta (defensivo — não deve acontecer
+    //      se a validação do POST está funcionando, mas não custa cobrir)
+    const itens = itensDaCotacao
+      .filter(ci => {
+        const ids = Array.isArray(ci.fornecedores_ids) ? ci.fornecedores_ids : [];
+        const fuiConvidado = ids.includes(Number(req.fornecedorId));
+        const tenhoResposta = respostasPorItem[String(ci.id)] != null;
+        return fuiConvidado || tenhoResposta;
+      })
+      .map(ci => {
+        const cham = chamadosPorId[ci.chamado_item_id];
+        const resp = respostasPorItem[String(ci.id)];
+        const ids = Array.isArray(ci.fornecedores_ids) ? ci.fornecedores_ids : [];
+        return {
+          cotacao_item_id: ci.id,
+          numero_base: cham?.numero_base ?? null,
+          nome: cham?.item_nome || 'Item sem nome',
+          codigo: cham?.codigo || '',
+          descricao: cham?.descricao || '',
+          quantidade: ci.quantidade || 1,
+          fui_convidado: ids.includes(Number(req.fornecedorId)),
+          eu_respondi: resp != null,
+          meu_valor: resp?.valor != null ? parseFloat(resp.valor) : null,
+          meu_frete: resp?.frete != null ? parseFloat(resp.frete) : null,
+          minha_modalidade: resp?.frete_modalidade || null,
+          meu_valor_renegociado: resp?.valor_renegociado != null ? parseFloat(resp.valor_renegociado) : null,
+          meu_frete_renegociado: resp?.frete_renegociado != null ? parseFloat(resp.frete_renegociado) : null,
+        };
+      })
+      .sort((a, b) => {
+        const ra = a.numero_base ?? 9999;
+        const rb = b.numero_base ?? 9999;
+        if (ra !== rb) return ra - rb;
+        return a.cotacao_item_id - b.cotacao_item_id;
+      });
+
+    // Contato do comprador — mesma regra de visibilidade do
+    // PortalRespostaService: só quando a cotação está viva. Como este
+    // endpoint monta o payload na mão (não usa o service), replicamos
+    // aqui a derivação via policies do tenant.
+    const comprador = cotacao.criado_por
+      ? await DB.selectOne('usuarios', { id: cotacao.criado_por }, null)
+      : null;
+
+    const usarEmpresaNome = (empresa?.comunicacao_nome_policy || 'empresa') === 'empresa';
+    const usarEmpresaTel  = (empresa?.comunicacao_telefone_policy || 'empresa') === 'empresa';
+    const usarEmpresaMail = (empresa?.comunicacao_email_policy || 'empresa') === 'empresa';
+
+    const cotacaoViva = !['cancelada', 'finalizada'].includes(cotacao.status)
+      && cf.status !== 'finalizado';
+
+    const contato = cotacaoViva ? {
+      nome: usarEmpresaNome ? (empresa?.nome || null) : (comprador?.nome || empresa?.nome || null),
+      telefone: usarEmpresaTel
+        ? (empresa?.telefone || null)
+        : (comprador?.telefone || empresa?.telefone || null),
+      email: usarEmpresaMail
+        ? (empresa?.email_contato || empresa?.email_admin || null)
+        : (comprador?.email || empresa?.email_contato || empresa?.email_admin || null),
+    } : null;
+
+    res.json({
+      cabecalho: {
+        cotacao_fornecedor_id: cf.id,
+        cotacao_id: cotacao.id,
+        cotacao_numero: cotacao.numero,
+        chamado_numero: chamado?.numero || null,
+        empresa_nome: empresa?.nome || '—',
+        status_cotacao: cotacao.status,
+        status_badge: badge,
+        status_cor: cor,
+        minha_resposta_status: cf.status,
+        respondida_em: cf.data_resposta || null,
+        prazo_entrega: cf.prazo || null,
+        validade_dias: cf.validade_dias || null,
+        validade_em: cf.validade_em || null,
+        minha_obs: cf.obs || null,
+        total_itens: itens.length,
+        total_respondidos: itens.filter(i => i.eu_respondi).length,
+      },
+      itens,
+      contato,
+    });
+  } catch (err) {
+    console.error('❌ Erro em /minhas-cotacoes/:id:', err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
 router.delete('/catalogo/:id', fornecedorMiddleware, async (req, res) => {
   try {
     const fornecedorId = req.fornecedorId;
@@ -232,6 +564,90 @@ router.delete('/catalogo/:id', fornecedorMiddleware, async (req, res) => {
   } catch (err) {
     console.error('❌ Erro ao remover produto:', err.message);
     res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/fornecedor/cotacoes/:cotacaoFornecedorId
+//
+// Porta AUTENTICADA do carregamento de resposta. Mesma semântica do
+// GET /portal/cotacao/:cot/:token, mas resolve o `fornData` por id +
+// ownership do JWT em vez de token na URL. Reusa o
+// PortalRespostaService — a lógica (filtro de itens, join de chamado,
+// estado item-a-item) é exatamente a mesma.
+// ─────────────────────────────────────────────────────────────────────────
+router.get('/cotacoes/:cotacaoFornecedorId', fornecedorMiddleware, async (req, res) => {
+  try {
+    const cfId = parseInt(req.params.cotacaoFornecedorId, 10);
+    if (!cfId || isNaN(cfId)) {
+      return res.status(400).json({ erro: 'ID inválido' });
+    }
+
+    const fornData = await DB.selectOne('cotacao_fornecedores', { id: cfId }, null);
+    if (!fornData) {
+      return res.status(404).json({ erro: 'Cotação não encontrada' });
+    }
+    if (String(fornData.fornecedor_id) !== String(req.fornecedorId)) {
+      return res.status(403).json({ erro: 'Acesso negado a esta cotação' });
+    }
+
+    const payload = await PortalRespostaService.carregarParaResposta(fornData);
+    return res.json(payload);
+
+  } catch (erro) {
+    console.error('❌ Erro em GET /fornecedor/cotacoes/:cfId:', erro.message);
+    return res.status(500).json({ erro: erro.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/fornecedor/cotacoes/:cotacaoFornecedorId/responder
+//
+// Porta AUTENTICADA do envio de resposta. Mesmo payload do portal público
+// (respostas[], validade_dias), mas autentica por JWT em vez de token.
+// Valida ownership e chama o mesmo responderPortal — mesma regra, mesma
+// auditoria, mesmos eventos.
+// ─────────────────────────────────────────────────────────────────────────
+router.post('/cotacoes/:cotacaoFornecedorId/responder', fornecedorMiddleware, async (req, res) => {
+  try {
+    const cfId = parseInt(req.params.cotacaoFornecedorId, 10);
+    if (!cfId || isNaN(cfId)) {
+      return res.status(400).json({ erro: 'ID inválido' });
+    }
+
+    const { respostas, validade_dias } = req.body;
+    if (!Array.isArray(respostas) || respostas.length === 0) {
+      return res.status(400).json({ erro: 'Nenhuma resposta enviada.' });
+    }
+
+    let validadeDias = parseInt(validade_dias, 10);
+    if (!Number.isFinite(validadeDias) || validadeDias < 1) validadeDias = 30;
+    if (validadeDias > 365) validadeDias = 365;
+
+    const fornData = await DB.selectOne('cotacao_fornecedores', { id: cfId }, null);
+    if (!fornData) {
+      return res.status(404).json({ erro: 'Cotação não encontrada' });
+    }
+    if (String(fornData.fornecedor_id) !== String(req.fornecedorId)) {
+      return res.status(403).json({ erro: 'Acesso negado a esta cotação' });
+    }
+
+    const { valorTotal } = await PortalRespostaService.responderPortal(
+      fornData,
+      respostas,
+      validadeDias
+    );
+
+    return res.json({
+      sucesso: true,
+      message: 'Resposta registrada com sucesso!',
+      valorTotal,
+    });
+
+  } catch (erro) {
+    console.error('❌ Erro em POST /fornecedor/cotacoes/:cfId/responder:', erro.message);
+    // Erros de validação (item não permitido, etc) sobem como 400 amigável
+    return res.status(400).json({ erro: erro.message });
   }
 });
 

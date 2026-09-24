@@ -234,18 +234,58 @@ export default function TelaGestaoCotacoesFornecedor({ C, s, usuario }) {
 
               {/* Coluna 2: status */}
               <div>
-                <span style={{
-                  fontSize: 11, padding: '4px 10px', borderRadius: 4,
-                  background: `${c.status_cor}22`,
-                  color: c.status_cor,
-                  border: `1px solid ${c.status_cor}55`,
-                  fontWeight: 600,
-                }}>
-                  {c.status_badge}
-                </span>
+                <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <span style={{
+                    fontSize: 11, padding: '4px 10px', borderRadius: 4,
+                    background: `${c.status_cor}22`,
+                    color: c.status_cor,
+                    border: `1px solid ${c.status_cor}55`,
+                    fontWeight: 600,
+                  }}>
+                    {c.status_badge}
+                  </span>
+                  {c.tem_renegociacao && (
+                    <span
+                      title="O comprador renegociou os valores desta proposta"
+                      style={{
+                        fontSize: 10, padding: '3px 8px', borderRadius: 4,
+                        background: '#f59e0b22',
+                        color: '#f59e0b',
+                        border: '1px solid #f59e0b55',
+                        fontWeight: 600,
+                        letterSpacing: '0.03em',
+                      }}
+                    >
+                      🔄 Renegociado
+                    </span>
+                  )}
+                </div>
+
+                {/* Validade com cor por urgência — só quando a proposta
+                    está viva (pendente ou em análise). A cor comunica
+                    "você tem tempo" vs "corre". */}
                 {c.validade_em && ['Aguardando você', 'Em análise'].includes(c.status_badge) && (
-                  <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
-                    Proposta válida até {fmtD(c.validade_em)}
+                  <div style={{
+                    fontSize: 10,
+                    marginTop: 4,
+                    color:
+                      c.validade_status === 'vencida' ? '#ef4444'
+                      : c.validade_status === 'urgente' ? '#ef4444'
+                      : c.validade_status === 'proxima' ? '#f59e0b'
+                      : '#6b7280',
+                    fontWeight: c.validade_status === 'vencida' ? 700 : 500,
+                  }}>
+                    {c.validade_status === 'vencida' ? '⚫ Vencida' :
+                     c.validade_status === 'urgente' ? '🔴 ' :
+                     c.validade_status === 'proxima' ? '🟡 ' :
+                     '🟢 '}
+                    {c.validade_status === 'vencida'
+                      ? `há ${Math.abs(c.validade_dias_restantes)} dia(s)`
+                      : c.validade_dias_restantes === 0
+                        ? 'vence hoje'
+                        : c.validade_dias_restantes === 1
+                          ? 'vence amanhã'
+                          : `vence em ${c.validade_dias_restantes} dias`}
                   </div>
                 )}
               </div>
