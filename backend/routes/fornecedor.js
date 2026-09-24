@@ -294,6 +294,40 @@ router.get('/minhas-cotacoes', fornecedorMiddleware, async (req, res) => {
       return { status, dias };
     }
 
+    // 4c. Carregar itens que o fornecedor foi convidado a cotar em cada
+    // cotação — pro filtro de busca casar por nome de item ou PN.
+    // Só itens onde ele está em `fornecedores_ids` (não vaza item de
+    // outro fornecedor).
+    const cotacaoIdsDoForn = [...new Set(minhas.map(m => m.cotacao_id))];
+    const todosCI = await DB.select('cotacao_itens', {}, null);
+    const ciDoFornecedor = todosCI.filter(ci => {
+      if (!cotacaoIdsDoForn.includes(ci.cotacao_id)) return false;
+      const ids = Array.isArray(ci.fornecedores_ids) ? ci.fornecedores_ids : [];
+      return ids.includes(Number(req.fornecedorId));
+    });
+
+    const chamadoItemIdsTodos = ciDoFornecedor
+      .map(ci => ci.chamado_item_id)
+      .filter(Boolean);
+    const todosChamadoItensList = await DB.select('chamado_itens', {}, null);
+    const chamadoItemPorId = {};
+    todosChamadoItensList
+      .filter(ch => chamadoItemIdsTodos.includes(ch.id))
+      .forEach(ch => { chamadoItemPorId[ch.id] = ch; });
+
+    const itensResumoPorCotacao = {};
+    ciDoFornecedor.forEach(ci => {
+      const ch = chamadoItemPorId[ci.chamado_item_id];
+      if (!ch) return;
+      if (!itensResumoPorCotacao[ci.cotacao_id]) {
+        itensResumoPorCotacao[ci.cotacao_id] = [];
+      }
+      itensResumoPorCotacao[ci.cotacao_id].push({
+        nome: ch.item_nome || '',
+        codigo: ch.codigo || '',
+      });
+    });
+
     // 5. Montar retorno com status derivado
     const resultado = minhas.map(cf => {
       const cotacao = cotacoesPorId[cf.cotacao_id];
@@ -350,6 +384,7 @@ router.get('/minhas-cotacoes', fornecedorMiddleware, async (req, res) => {
         validade_status: validade.status,
         validade_dias_restantes: validade.dias,
         tem_renegociacao: !!renegociadosPorCf[cf.id],
+        itens_resumo: itensResumoPorCotacao[cotacao.id] || [],
         token_acesso: cf.token_acesso || null,
         obs: cf.obs || null,
       };

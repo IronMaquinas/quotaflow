@@ -13,6 +13,18 @@ import apiService from '../../services/apiService';
 import { fmtBRL, fmtD } from '../../utils/formatters';
 import ModalResponderCotacao from './ModalResponderCotacao';
 
+// Normaliza texto pra busca: remove acentos (NFD + strip de combining
+// marks) + lowercase. Faz "lampada" casar com "Lâmpada", "arref" casar
+// com "ARREF", "bomba" casar com "Bomba". Mesmo princípio do
+// `unaccent()` que já existe no backend via pg_trgm — só que aqui é
+// client-side (a lista do hub já está toda carregada).
+function normalizarBusca(texto) {
+  return String(texto || '')
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
+}
+
 const FILTROS = [
   { id: 'todas',       label: 'Todas' },
   { id: 'aguardando',  label: 'Aguardando você' },
@@ -69,10 +81,17 @@ export default function TelaGestaoCotacoesFornecedor({ C, s, usuario }) {
     if (filtro === 'encerradas' &&
         !['Você venceu', 'Não selecionada', 'Cancelada'].includes(c.status_badge)) return false;
 
-    // Busca livre
+    // Busca livre — casa contra números de COT/RC, nome da empresa e
+    // também nome/PN de qualquer item da cotação. Normaliza acentos dos
+    // 2 lados pra "lampada" casar com "Lâmpada" e "arref" com "ARREF".
     if (busca.trim()) {
-      const q = busca.toLowerCase();
-      const haystack = `${c.cotacao_numero} ${c.chamado_numero} ${c.empresa_nome}`.toLowerCase();
+      const q = normalizarBusca(busca);
+      const itensTexto = (c.itens_resumo || [])
+        .map(it => `${it.nome || ''} ${it.codigo || ''}`)
+        .join(' ');
+      const haystack = normalizarBusca(
+        `${c.cotacao_numero} ${c.chamado_numero} ${c.empresa_nome} ${itensTexto}`
+      );
       if (!haystack.includes(q)) return false;
     }
     return true;
@@ -172,7 +191,7 @@ export default function TelaGestaoCotacoesFornecedor({ C, s, usuario }) {
         <div style={{ flex: 1 }} />
         <input
           type="text"
-          placeholder="Buscar por COT, RC ou empresa..."
+          placeholder="Buscar por COT, RC, empresa, item ou PN..."
           value={busca}
           onChange={e => setBusca(e.target.value)}
           style={{
