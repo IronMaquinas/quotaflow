@@ -3,6 +3,9 @@ const router = express.Router();
 const { DB } = require('../db');
 const fornecedorMiddleware = require('../middleware/fornecedorMiddleware');
 const PortalRespostaService = require('../services/PortalRespostaService');
+const ValidacaoXmlService = require('../services/ValidacaoXmlService');
+const NfeXmlParser = require('../services/NfeXmlParser');
+const { supabase } = require('../db');
 
 // ─── ROTAS PROTEGIDAS PARA FORNECEDOR ───
 
@@ -683,6 +686,510 @@ router.post('/cotacoes/:cotacaoFornecedorId/responder', fornecedorMiddleware, as
     console.error('❌ Erro em POST /fornecedor/cotacoes/:cfId/responder:', erro.message);
     // Erros de validação (item não permitido, etc) sobem como 400 amigável
     return res.status(400).json({ erro: erro.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// M1 — MEUS PEDIDOS (OCs emitidas pro fornecedor logado)
+//
+// Lista e detalhe das ordens_venda do fornecedor. Read-only — o fornecedor
+// não muda status da OC (isso é decisão do comprador). Confirmação e
+// upload de XML entram em M2.
+//
+// Zero vazamento: só OVs do próprio req.fornecedorId.
+// ─────────────────────────────────────────────────────────────────────────
+
+function derivarStatusPedido(ov) {
+  if (ov.status === 'cancelada') return { badge: 'Cancelada', cor: '#6b7280' };
+  if (ov.status_recebimento === 'concluido') return { badge: 'Entregue', cor: '#10b981' };
+  if (ov.xml_anexado_em) return { badge: 'Em trânsito', cor: '#3b82f6' };
+  if (ov.fornecedor_confirmou_em) return { badge: 'Em preparação', cor: '#f59e0b' };
+  return { badge: 'Aguardando confirmação', cor: '#9ca3af' };
+}
+
+// GET /api/fornecedor/meus-pedidos
+router.get('/meus-pedidos', fornecedorMiddleware, async (req, res) => {
+  try {
+    const todasOvs = await DB.select('ordens_venda', {}, null);
+    const minhas = todasOvs.filter(
+      ov => String(ov.fornecedor_id) === String(req.fornecedorId)
+    );
+    if (minhas.length === 0) return res.json({ pedidos: [] });
+
+    // Cotações-mãe
+    const cotacaoIds = [...new Set(minhas.map(o => o.cotacao_id).filter(Boolean))];
+    const todasCotacoes = await DB.select('cotacoes', {}, null);
+    const cotacoesPorId = {};
+    todasCotacoes
+      .filter(c => cotacaoIds.includes(c.id))
+      .forEach(c => { cotacoesPorId[c.id] = c; });
+
+    // RCs
+    const chamadoIds = [...new Set(
+      Object.values(cotacoesPorId).map(c => c.chamado_id).filter(Boolean)
+    )];
+    const todosChamados = await DB.select('chamados', {}, null);
+    const chamadosPorId = {};
+    todosChamados
+      .filter(ch => chamadoIds.includes(ch.id))
+      .forEach(ch => { chamadosPorId[ch.id] = ch; });
+
+    // Empresas (tenants)
+    const tenantIds = [...new Set(
+      Object.values(chamadosPorId).map(ch => ch.tenant_id).filter(Boolean)
+    )];
+    const todosTenants = await DB.select('tenants', {}, null);
+    const tenantsPorId = {};
+    todosTenants
+      .filter(t => tenantIds.includes(t.id))
+      .forEach(t => { tenantsPorId[t.id] = t; });
+
+    // Itens — só pra contagem
+    const ovIds = minhas.map(o => o.id);
+    const todosItens = await DB.select('ordem_venda_itens', {}, null);
+    const itensPorOv = {};
+    todosItens
+      .filter(it => ovIds.includes(it.ordem_venda_id))
+      .forEach(it => {
+        if (!itensPorOv[it.ordem_venda_id]) itensPorOv[it.ordem_venda_id] = [];
+        itensPorOv[it.ordem_venda_id].push(it);
+      });
+
+    const pedidos = minhas.map(ov => {
+      const cot = cotacoesPorId[ov.cotacao_id];
+      const cham = cot ? chamadosPorId[cot.chamado_id] : null;
+      const emp = cham ? tenantsPorId[cham.tenant_id] : null;
+      const st = derivarStatusPedido(ov);
+      const itens = itensPorOv[ov.id] || [];
+
+      return {
+        ordem_venda_id: ov.id,
+        numero: ov.numero,
+        empresa_nome: emp?.nome || '—',
+        cotacao_numero: cot?.numero || null,
+        chamado_numero: cham?.numero || null,
+        valor_total: ov.valor_total || 0,
+        valor_frete: ov.valor_frete || 0,
+        prazo_entrega: ov.prazo_entrega || null,
+        data_entrega_prevista: ov.data_entrega_prevista || null,
+        criado_em: ov.criado_em,
+        enviado_em: ov.enviado_em,
+        status_interno: ov.status,
+        status_recebimento: ov.status_recebimento,
+        fornecedor_confirmou_em: ov.fornecedor_confirmou_em,
+        xml_anexado_em: ov.xml_anexado_em,
+        status_badge: st.badge,
+        status_cor: st.cor,
+        total_itens: itens.length,
+      };
+    }).sort((a, b) => new Date(b.criado_em || 0) - new Date(a.criado_em || 0));
+
+    return res.json({ pedidos });
+  } catch (err) {
+    console.error('❌ Erro em /meus-pedidos:', err.message);
+    return res.status(500).json({ erro: err.message });
+  }
+});
+
+// GET /api/fornecedor/meus-pedidos/:ordemVendaId
+router.get('/meus-pedidos/:ordemVendaId', fornecedorMiddleware, async (req, res) => {
+  try {
+    const ovId = parseInt(req.params.ordemVendaId, 10);
+    if (!ovId || isNaN(ovId)) {
+      return res.status(400).json({ erro: 'ID inválido' });
+    }
+
+    const ov = await DB.selectOne('ordens_venda', { id: ovId }, null);
+    if (!ov) return res.status(404).json({ erro: 'Pedido não encontrado' });
+    if (String(ov.fornecedor_id) !== String(req.fornecedorId)) {
+      return res.status(403).json({ erro: 'Acesso negado a este pedido' });
+    }
+
+    const cot = ov.cotacao_id
+      ? await DB.selectOne('cotacoes', { id: ov.cotacao_id }, null)
+      : null;
+    const cham = cot?.chamado_id
+      ? await DB.selectOne('chamados', { id: cot.chamado_id }, null)
+      : null;
+    const tenant = cham?.tenant_id
+      ? await DB.selectOne('tenants', { id: cham.tenant_id }, null)
+      : null;
+    const itens = await DB.select('ordem_venda_itens', { ordem_venda_id: ovId }, null);
+
+    const st = derivarStatusPedido(ov);
+
+    // Contato do comprador — mesmo padrão do /minhas-cotacoes (policies
+    // do tenant, respeitando 'empresa' vs 'usuario'). Só quando a OC está
+    // viva (não cancelada, não concluída).
+    let contato = null;
+    const pedidoVivo = ov.status !== 'cancelada' && ov.status_recebimento !== 'concluido';
+    if (pedidoVivo && tenant) {
+      const comprador = cot?.criado_por
+        ? await DB.selectOne('usuarios', { id: cot.criado_por }, tenant.id)
+        : null;
+      const usarEmpresaNome = (tenant.comunicacao_nome_policy || 'empresa') === 'empresa';
+      const usarEmpresaTel = (tenant.comunicacao_telefone_policy || 'empresa') === 'empresa';
+      const usarEmpresaMail = (tenant.comunicacao_email_policy || 'empresa') === 'empresa';
+
+      contato = {
+        nome: usarEmpresaNome
+          ? tenant.nome
+          : (comprador?.nome || tenant.nome),
+        telefone: usarEmpresaTel
+          ? tenant.telefone
+          : (comprador?.telefone || tenant.telefone),
+        email: usarEmpresaMail
+          ? (tenant.email_contato || tenant.email_admin)
+          : (comprador?.email || tenant.email_contato || tenant.email_admin),
+      };
+    }
+
+    // NF-e atual — a última não-substituída. Se o fornecedor já anexou
+    // (ou reenviou), vem preenchida; senão null. O frontend usa isso pra
+    // decidir entre mostrar o banner da NF ou o botão "Anexar".
+    const nfesDoPedido = await DB.select('ordem_venda_xmls', { ordem_venda_id: ovId }, null);
+    const nfeAtual = (nfesDoPedido || [])
+      .filter(x => x.status !== 'substituido')
+      .sort((a, b) => new Date(b.criado_em || 0) - new Date(a.criado_em || 0))[0] || null;
+
+    return res.json({
+      cabecalho: {
+        ordem_venda_id: ov.id,
+        numero: ov.numero,
+        empresa_nome: tenant?.nome || '—',
+        cotacao_numero: cot?.numero || null,
+        chamado_numero: cham?.numero || null,
+        valor_total: ov.valor_total || 0,
+        valor_frete: ov.valor_frete || 0,
+        prazo_entrega: ov.prazo_entrega || null,
+        data_entrega_prevista: ov.data_entrega_prevista || null,
+        endereco_entrega: ov.endereco_entrega || null,
+        condicao_pagamento: ov.condicao_pagamento || null,
+        criado_em: ov.criado_em,
+        enviado_em: ov.enviado_em,
+        fornecedor_confirmou_em: ov.fornecedor_confirmou_em,
+        xml_anexado_em: ov.xml_anexado_em,
+        status_interno: ov.status,
+        status_recebimento: ov.status_recebimento,
+        status_badge: st.badge,
+        status_cor: st.cor,
+      },
+      nfe_atual: nfeAtual ? {
+        id: nfeAtual.id,
+        numero_nf: nfeAtual.numero_nf,
+        chave_acesso: nfeAtual.chave_acesso,
+        status: nfeAtual.status,
+        divergencias_count: nfeAtual.divergencias_count || 0,
+        enviado_em: nfeAtual.criado_em,
+        validacao: nfeAtual.validacao,
+        resumo: nfeAtual.xml_resumo,
+      } : null,
+      itens: (itens || []).map(it => ({
+        id: it.id,
+        nome: it.nome_item || '—',
+        quantidade: it.quantidade,
+        valor_unitario: parseFloat(it.valor_unitario) || 0,
+        valor_total: parseFloat(it.valor_total) || 0,
+        unidade_medida: it.unidade_medida || 'UN',
+        status_recebimento: it.status_recebimento || null,
+        quantidade_recebida: parseFloat(it.quantidade_recebida) || 0,
+      })),
+      contato,
+    });
+  } catch (err) {
+    console.error('❌ Erro em /meus-pedidos/:id:', err.message);
+    return res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// M2 — UPLOAD E DOWNLOAD DE NF-e PELO FORNECEDOR
+//
+// 3 rotas:
+//   POST  /meus-pedidos/:ovId/anexar-nfe       — multipart, XML cru
+//   GET   /meus-pedidos/:ovId/nfe/:xmlId       — download autenticado
+//   GET   /meus-pedidos/:ovId/nfes             — histórico de versões
+//
+// Regras:
+//   • Só o fornecedor dono da OC pode anexar/baixar
+//   • Idempotente: mesma chave de acesso = retorna o existente (200)
+//   • Reenvio: nova chave substitui a atual, mas mantém histórico
+//   • XML cru vai pro bucket nfe-xmls (Supabase Storage), privado
+//   • Validação roda sincronamente e o resultado é persistido
+// ─────────────────────────────────────────────────────────────────────────
+
+const BUCKET_NFE = 'nfe-xmls';
+
+// POST /api/fornecedor/meus-pedidos/:ordemVendaId/anexar-nfe
+router.post('/meus-pedidos/:ordemVendaId/anexar-nfe', fornecedorMiddleware, async (req, res) => {
+  try {
+    const ovId = parseInt(req.params.ordemVendaId, 10);
+    if (!ovId || isNaN(ovId)) {
+      return res.status(400).json({ erro: 'ID inválido' });
+    }
+
+    // 1. Validar ownership
+    const ov = await DB.selectOne('ordens_venda', { id: ovId }, null);
+    if (!ov) return res.status(404).json({ erro: 'Pedido não encontrado' });
+    if (String(ov.fornecedor_id) !== String(req.fornecedorId)) {
+      return res.status(403).json({ erro: 'Acesso negado a este pedido' });
+    }
+    if (ov.status === 'cancelada') {
+      return res.status(400).json({ erro: 'Pedido cancelado — não aceita NF-e.' });
+    }
+
+    // 2. Arquivo multipart
+    const arquivo = req.files?.arquivo;
+    if (!arquivo) {
+      return res.status(400).json({ erro: 'Arquivo XML é obrigatório (campo "arquivo").' });
+    }
+    if (arquivo.size > 2 * 1024 * 1024) {
+      return res.status(400).json({ erro: 'XML acima de 2MB — envie o arquivo original da SEFAZ.' });
+    }
+
+    const xmlRaw = arquivo.data.toString('utf8');
+
+    // 3. Parse server-side
+    let parsed;
+    try {
+      parsed = NfeXmlParser.parseNfeXml(xmlRaw);
+    } catch (err) {
+      return res.status(400).json({ erro: `XML inválido: ${err.message}` });
+    }
+
+    if (!parsed.chave_acesso || parsed.chave_acesso.length !== 44) {
+      return res.status(400).json({
+        erro: 'Chave de acesso (44 dígitos) não encontrada no XML.',
+        warnings: parsed.warnings,
+      });
+    }
+
+    // 4. Idempotência — mesma chave, mesma OC = retorna o existente
+    const todosXmls = await DB.select('ordem_venda_xmls', { ordem_venda_id: ovId }, null);
+    const existente = todosXmls.find(x => x.chave_acesso === parsed.chave_acesso);
+    if (existente) {
+      // Devolve o mesmo shape do 201 — o frontend não precisa saber que
+      // é idempotente pra renderizar direito (só mostra mensagem diferente).
+      return res.status(200).json({
+        ok: true,
+        idempotente: true,
+        xml_id: existente.id,
+        numero_nf: existente.numero_nf,
+        chave_acesso: existente.chave_acesso,
+        status: existente.status,
+        divergencias_count: existente.divergencias_count || 0,
+        validacao: existente.validacao,
+        xml_resumo: existente.xml_resumo,
+        mensagem: 'Esta NF-e já está anexada a este pedido.',
+      });
+    }
+
+    // 5. Upload pro Storage
+    // Path: tenant-{tenantId}/ov-{ovId}/{chave}-{timestamp}.xml
+    // Timestamp garante unicidade mesmo se a mesma chave for reenviada
+    // em outro tenant (não deve acontecer, mas Storage exige path único).
+    const path = `tenant-${ov.tenant_id}/ov-${ovId}/${parsed.chave_acesso}-${Date.now()}.xml`;
+    const { data: uploadData, error: uploadError } = await supabase.storage
+      .from(BUCKET_NFE)
+      .upload(path, Buffer.from(parsed.xml_raw, 'utf8'), {
+        contentType: 'application/xml',
+        upsert: false,
+      });
+
+    if (uploadError) {
+      console.error('❌ Erro upload Storage:', uploadError.message);
+      return res.status(500).json({ erro: `Falha ao gravar XML no storage: ${uploadError.message}` });
+    }
+
+    // 6. Validação contra a OC
+    const resultado = await ValidacaoXmlService.validarXmlContraOc(
+      parsed,
+      ovId,
+      ov.tenant_id
+    );
+    const validacao = resultado.validacao;
+    const totalDiv = parseInt(validacao.totalDivergencias || 0);
+    const statusXml = totalDiv === 0 ? 'ok' : 'divergencia';
+
+    // 7. Marca versões anteriores como 'substituido' (mantém histórico)
+    const atual = todosXmls.find(x => x.status !== 'substituido');
+    if (atual) {
+      await DB.update('ordem_venda_xmls', atual.id, {
+        status: 'substituido',
+        atualizado_em: new Date().toISOString(),
+      }, null);
+    }
+
+    // 8. Insere nova linha
+    const novo = await DB.insert('ordem_venda_xmls', {
+      tenant_id: ov.tenant_id,
+      ordem_venda_id: ovId,
+      chave_acesso: parsed.chave_acesso,
+      numero_nf: parsed.numero_nf,
+      storage_path: uploadData.path,
+      xml_resumo: {
+        emitente: parsed.nome_emitente,
+        cnpj_emitente: parsed.cnpj_emitente,
+        destinatario: parsed.nome_destinatario,
+        cnpj_destinatario: parsed.cnpj_destinatario,
+        valor_total: parsed.valor_total,
+        valor_produtos: parsed.valor_produtos,
+        valor_frete: parsed.valor_frete,
+        data_emissao: parsed.data_emissao,
+        itens: parsed.itens.map(it => ({
+          numero: it.numero,
+          codigo: it.codigo,
+          descricao: it.descricao,
+          quantidade: it.quantidade,
+          valor_unitario: it.valor_unitario,
+          valor_total: it.valor_total,
+        })),
+      },
+      validacao,
+      status: statusXml,
+      divergencias_count: totalDiv,
+      enviado_por_user_id: req.userId,
+      criado_em: new Date().toISOString(),
+      atualizado_em: new Date().toISOString(),
+    }, null);
+
+    // 9. Atualiza cabeçalho da OC
+    await DB.update('ordens_venda', ovId, {
+      xml_anexado_em: new Date().toISOString(),
+      xml_validacao_status: statusXml === 'ok' ? 'ok' : 'divergencia',
+      atualizado_em: new Date().toISOString(),
+    }, null);
+
+    // 10. Email pro comprador — best-effort (não bloqueia resposta)
+    try {
+      const chamadoDaOv = ov.cotacao_id
+        ? await DB.selectOne('cotacoes', { id: ov.cotacao_id }, null)
+        : null;
+      const cham = chamadoDaOv?.chamado_id
+        ? await DB.selectOne('chamados', { id: chamadoDaOv.chamado_id }, null)
+        : null;
+      const comprador = chamadoDaOv?.criado_por
+        ? await DB.selectOne('usuarios', { id: chamadoDaOv.criado_por }, ov.tenant_id)
+        : null;
+
+      if (comprador?.email) {
+        const { enviarEmailCotacao } = require('../services/emailService');
+        const assunto = totalDiv === 0
+          ? `NF-e anexada — ${ov.numero} · validação OK`
+          : `NF-e anexada — ${ov.numero} · ${totalDiv} divergência(s)`;
+
+        const corpo = `
+          <h2>NF-e anexada pelo fornecedor</h2>
+          <p><strong>Fornecedor:</strong> ${parsed.nome_emitente}</p>
+          <p><strong>OC:</strong> ${ov.numero}</p>
+          <p><strong>NF-e:</strong> ${parsed.numero_nf} — chave ${parsed.chave_acesso}</p>
+          <p><strong>Valor total:</strong> R$ ${parsed.valor_total.toFixed(2).replace('.', ',')}</p>
+          <p style="font-size:16px;margin-top:16px;">
+            ${totalDiv === 0
+              ? '✅ <strong style="color:#10b981;">Validação 100% OK.</strong> Pedido pronto para recebimento.'
+              : `⚠️ <strong style="color:#f59e0b;">${totalDiv} divergência(s) detectada(s).</strong> Revise antes do recebimento.`}
+          </p>
+          <p>Abra o QuotaFlow → Recebimento para conferir os detalhes.</p>
+          <hr/>
+          <p><small>Mensagem automática do QuotaFlow.</small></p>
+        `;
+
+        await enviarEmailCotacao(comprador.email, assunto, corpo);
+      }
+    } catch (mailErr) {
+      console.warn('⚠ Falha ao notificar comprador (não bloqueante):', mailErr.message);
+    }
+
+    return res.status(201).json({
+      ok: true,
+      xml_id: novo.id,
+      numero_nf: parsed.numero_nf,
+      chave_acesso: parsed.chave_acesso,
+      status: statusXml,
+      divergencias_count: totalDiv,
+      validacao,
+      xml_resumo: novo.xml_resumo,
+      mensagem: statusXml === 'ok'
+        ? 'NF-e anexada e validada com sucesso.'
+        : `NF-e anexada com ${totalDiv} divergência(s).`,
+    });
+
+  } catch (err) {
+    console.error('❌ Erro em /meus-pedidos/:id/anexar-nfe:', err.message);
+    return res.status(500).json({ erro: err.message });
+  }
+});
+
+// GET /api/fornecedor/meus-pedidos/:ordemVendaId/nfes
+router.get('/meus-pedidos/:ordemVendaId/nfes', fornecedorMiddleware, async (req, res) => {
+  try {
+    const ovId = parseInt(req.params.ordemVendaId, 10);
+    if (!ovId || isNaN(ovId)) return res.status(400).json({ erro: 'ID inválido' });
+
+    const ov = await DB.selectOne('ordens_venda', { id: ovId }, null);
+    if (!ov) return res.status(404).json({ erro: 'Pedido não encontrado' });
+    if (String(ov.fornecedor_id) !== String(req.fornecedorId)) {
+      return res.status(403).json({ erro: 'Acesso negado a este pedido' });
+    }
+
+    const todos = await DB.select('ordem_venda_xmls', { ordem_venda_id: ovId }, null);
+    const lista = (todos || [])
+      .sort((a, b) => new Date(b.criado_em || 0) - new Date(a.criado_em || 0))
+      .map(x => ({
+        id: x.id,
+        chave_acesso: x.chave_acesso,
+        numero_nf: x.numero_nf,
+        status: x.status,
+        divergencias_count: x.divergencias_count || 0,
+        enviado_em: x.criado_em,
+      }));
+
+    return res.json({ nfes: lista });
+  } catch (err) {
+    console.error('❌ Erro em /meus-pedidos/:id/nfes:', err.message);
+    return res.status(500).json({ erro: err.message });
+  }
+});
+
+// GET /api/fornecedor/meus-pedidos/:ordemVendaId/nfe/:xmlId
+// Download autenticado via signed URL (bucket é privado).
+router.get('/meus-pedidos/:ordemVendaId/nfe/:xmlId', fornecedorMiddleware, async (req, res) => {
+  try {
+    const ovId = parseInt(req.params.ordemVendaId, 10);
+    const xmlId = parseInt(req.params.xmlId, 10);
+    if (!ovId || !xmlId) return res.status(400).json({ erro: 'IDs inválidos' });
+
+    const ov = await DB.selectOne('ordens_venda', { id: ovId }, null);
+    if (!ov) return res.status(404).json({ erro: 'Pedido não encontrado' });
+    if (String(ov.fornecedor_id) !== String(req.fornecedorId)) {
+      return res.status(403).json({ erro: 'Acesso negado' });
+    }
+
+    const xmlRow = await DB.selectOne('ordem_venda_xmls', { id: xmlId }, null);
+    if (!xmlRow || xmlRow.ordem_venda_id !== ovId) {
+      return res.status(404).json({ erro: 'XML não encontrado para este pedido' });
+    }
+    if (!xmlRow.storage_path) {
+      return res.status(404).json({ erro: 'XML sem arquivo no storage.' });
+    }
+
+    const { data: signed, error: signErr } = await supabase.storage
+      .from(BUCKET_NFE)
+      .createSignedUrl(xmlRow.storage_path, 60 * 60); // 1h
+
+    if (signErr || !signed?.signedUrl) {
+      return res.status(500).json({ erro: `Falha ao gerar link: ${signErr?.message || 'sem URL'}` });
+    }
+
+    return res.json({
+      url: signed.signedUrl,
+      expira_em_segundos: 3600,
+      numero_nf: xmlRow.numero_nf,
+      chave_acesso: xmlRow.chave_acesso,
+    });
+  } catch (err) {
+    console.error('❌ Erro em download XML:', err.message);
+    return res.status(500).json({ erro: err.message });
   }
 });
 

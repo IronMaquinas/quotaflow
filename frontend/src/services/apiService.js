@@ -133,6 +133,58 @@ class ApiService {
     return this.request("POST", endpoint, body, params);
   }
 
+  // ─────────────────────────────────────────────────────────────────────
+  // UPLOAD MULTIPART
+  //
+  // O método `post()` serializa body como JSON, o que quebra FormData
+  // (o browser precisa setar o boundary do multipart automaticamente,
+  // sem Content-Type manual). Este método dedicado:
+  //   • Não seta Content-Type (o browser cuida)
+  //   • Não faz JSON.stringify (o FormData é passado direto)
+  //   • Mantém Authorization
+  //   • Mesmo tratamento de erro do request()
+  // ─────────────────────────────────────────────────────────────────────
+  async upload(endpoint, formData) {
+    try {
+      const token = this.getToken();
+      if (!token) {
+        throw new Error('Autenticação necessária - faça login primeiro');
+      }
+
+      const url = `${this.baseURL}${endpoint}`;
+
+      const headers = {};
+      if (this.token) {
+        headers["Authorization"] = `Bearer ${this.token}`;
+      }
+
+      const response = await fetch(url, {
+        method: 'POST',
+        headers,
+        body: formData,
+      });
+
+      const contentType = response.headers.get("content-type");
+      let data = null;
+      if (contentType && contentType.includes("application/json")) {
+        data = await response.json();
+      }
+
+      if (!response.ok) {
+        if (response.status === 401 || response.status === 403) {
+          this.logout();
+          window.location.href = "/";
+        }
+        throw new Error(data?.erro || `HTTP ${response.status}: ${response.statusText}`);
+      }
+
+      return data || {};
+    } catch (error) {
+      console.error(`[API Upload Error] ${endpoint}:`, error.message);
+      throw error;
+    }
+  }
+
   async patch(endpoint, body, params = {}) {
     return this.request("PATCH", endpoint, body, params);
   }

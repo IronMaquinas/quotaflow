@@ -22,6 +22,37 @@
 const { DB } = require('../db');
 
 // ─────────────────────────────────────────────────────────────────────────
+// normalizarEntradaXml
+//
+// Aceita 2 formatos de XML já parseado:
+//   1. Legacy (frontend do recebimento): { cnpj_emitente, cnpj_destinatario,
+//      itens_xml: [{ descricao, quantidade, valorUnitario, codigo }] }
+//   2. Parser server-side (NfeXmlParser): { cnpj_emitente, cnpj_destinatario,
+//      itens: [{ descricao, quantidade, valor_unitario, codigo }] }
+//
+// Devolve sempre no formato legacy, que é o que o `validarXmlContraOc`
+// consome. Assim o frontend antigo continua funcionando sem mudança, e
+// o novo fluxo do fornecedor manda o output do parser direto.
+// ─────────────────────────────────────────────────────────────────────────
+function normalizarEntradaXml(xmlData) {
+  const itensBrutos = xmlData.itens_xml || xmlData.itens || [];
+  const itens_xml = itensBrutos.map(it => ({
+    descricao: it.descricao || '',
+    codigo: it.codigo || '',
+    quantidade: it.quantidade,
+    // `valor_unitario` (parser) vs `valorUnitario` (legacy frontend)
+    valorUnitario: it.valorUnitario != null ? it.valorUnitario : it.valor_unitario,
+    valorTotal: it.valorTotal != null ? it.valorTotal : it.valor_total,
+  }));
+
+  return {
+    cnpj_emitente: xmlData.cnpj_emitente || '',
+    cnpj_destinatario: xmlData.cnpj_destinatario || '',
+    itens_xml,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // Helpers locais — antes viviam inline no handler. Ficam no service pra
 // o handler não precisar mais deles (o wrapper é fino).
 // ─────────────────────────────────────────────────────────────────────────
@@ -76,9 +107,14 @@ const calcularLevenshtein = (a, b) => {
 //
 // Devolve: { validacao: { cnpj, cnpj_status, cnpj_destinatario, itens, totalDivergencias } }
 // ─────────────────────────────────────────────────────────────────────────
-async function validarXmlContraOc(xmlData, ordemVendaId, tenantId) {
-  if (!xmlData || !xmlData.itens_xml) {
-    throw new Error('Dados do XML não recebidos ou incompletos.');
+async function validarXmlContraOc(xmlDataRaw, ordemVendaId, tenantId) {
+  if (!xmlDataRaw) {
+    throw new Error('Dados do XML não recebidos.');
+  }
+  const xmlData = normalizarEntradaXml(xmlDataRaw);
+  if (!xmlData.itens_xml.length) {
+    // Sem itens não dá pra validar nada relevante — aceita vazio, mas
+    // a validação vai devolver `match_fallback` em todos os itens da OV.
   }
 
   // 1. Buscar OC e filial
@@ -106,9 +142,13 @@ async function validarXmlContraOc(xmlData, ordemVendaId, tenantId) {
   const validacoes = [];
 
   for (const itemOV of itensOV) {
+    // FIX (2026-09): a coluna real em ordem_venda_itens é `nome_item`,
+    // não `item_nome`. Suportar os 2 nomes pra não quebrar se um dia
+    // o schema mudar de volta.
+    const nomeOV = itemOV.nome_item || itemOV.item_nome || '';
     const itemXML = xmlData.itens_xml.find(item => {
       const descXML = normalizarTexto(item.descricao || '');
-      const descOV = normalizarTexto(itemOV.item_nome || '');
+      const descOV = normalizarTexto(nomeOV);
 
       const skuMatch = itemOV.item_catalogo_id && item.codigo === itemOV.item_catalogo_id;
       const descMatch = descOV.length > 3 && descXML.includes(descOV);
@@ -122,28 +162,28 @@ async function validarXmlContraOc(xmlData, ordemVendaId, tenantId) {
         !validacoes.some(v => v.item_nfe === item.descricao)
       );
       validacoes.push({
-        item: itemOV.item_nome,
+        item: nomeOV,
         item_nfe: itemNFePendente?.descricao || 'Não encontrado',
         status: 'match_fallback',
         mensagem: 'Item não encontrado. Associe manualmente.',
       });
     } else if (parseInt(itemOV.quantidade || 0) !== parseInt(itemXML.quantidade || 0)) {
       validacoes.push({
-        item: itemOV.item_nome,
+        item: nomeOV,
         item_nfe: itemXML.descricao || '',
         status: 'divergencia_quantidade',
         mensagem: `Qtd: OV ${itemOV.quantidade} vs XML ${itemXML.quantidade}`,
       });
     } else if (parseFloat(itemOV.valor_unitario || 0) !== parseFloat(itemXML.valorUnitario || 0)) {
       validacoes.push({
-        item: itemOV.item_nome,
+        item: nomeOV,
         item_nfe: itemXML.descricao || '',
         status: 'divergencia_valor',
         mensagem: `Valor: OV ${itemOV.valor_unitario} vs XML ${itemXML.valorUnitario}`,
       });
     } else {
       validacoes.push({
-        item: itemOV.item_nome,
+        item: nomeOV,
         item_nfe: itemXML.descricao || '',
         status: 'ok',
         mensagem: 'Item validado',
@@ -171,4 +211,4 @@ async function validarXmlContraOc(xmlData, ordemVendaId, tenantId) {
   };
 }
 
-module.exports = { validarXmlContraOc, normalizarTexto, calcularLevenshtein };
+module.exports = { validarXmlContraOc, normalizarEntradaXml, normalizarTexto, calcularLevenshtein };
