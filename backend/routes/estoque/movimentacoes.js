@@ -1460,12 +1460,18 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
           numero_nc: numeroNC,
           ordem_venda_id: item.ordem_venda_id,
           numero_pedido: ovParaNC?.numero || null,
+          // FK do fornecedor — vem da OC (nunca digitado). O `nome` fica
+          // como snapshot pra histórico, mas a FK é a fonte de verdade.
+          fornecedor_id: ovParaNC?.fornecedor_id || null,
           fornecedor_nome: fornecedorParaNC?.nome || null,
           numero_nota_fiscal: item.numero_nota_fiscal || null,
           inspetor_id: req.userId,
           motivo_recusa: justificativa,
           quantidade: parseFloat(item.quantidade_recebida_fisica || 0),
           unidade_medida: item.unidade_medida || 'UN',
+          // M4: entra no fluxo do fornecedor — notificação é disparada
+          // no passo 8 (email + status).
+          fornecedor_tratativa_status: ovParaNC?.fornecedor_id ? 'nao_notificado' : null,
           criado_em: new Date()
         }, tenantId);
       } catch (e) {

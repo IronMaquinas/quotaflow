@@ -35,6 +35,7 @@ const buscaFornecedoresRouter = require('./routes/buscaFornecedores');
 const catalogoBuscaRouter = require('./routes/catalogoBusca');
 const naoConformidadesRoutes = require('./routes/naoConformidades');
 const configuracoesRoutes = require('./routes/configuracoes');
+const fornecedorNCRoutes = require('./routes/fornecedorNC');
 
 // ── Middlewares ──────────────────────────────
 const allowedOrigins = [
@@ -71,6 +72,7 @@ app.use('/api', require('./routes/portalFornecedor'));
 app.use('/api/ordens-venda', tenantMiddleware, ordensVendaRoutes);
 app.use('/api/fornecedor', fornecedorRoutes); // Fornecedor anunciante com perfil de fornecedor exclusivo
 app.use('/api/fornecedor', fornecedorProdutosRouter); // Upload/listagem de produtos do fornecedor (mesmo domínio de fornecedorRoutes)
+app.use('/api/fornecedor/nao-conformidades', fornecedorNCRoutes);
 app.use('/api/busca-fornecedores', tenantMiddleware, buscaFornecedoresRouter);
 app.use('/api/catalogo', tenantMiddleware, catalogoBuscaRouter);
 app.use('/api/estoque/itens', tenantMiddleware, itensConsumoRoutes);

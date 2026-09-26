@@ -1247,7 +1247,7 @@ const handleAbrirCotacao = async (cotacao) => {
               fontSize: 12,
             }}
           >
-            📝 Nova Cotação (Automática)
+            📝 Nova Requisição de Compras
           </button>
         </div>
       </div>

@@ -12,6 +12,7 @@ import TelaHistoricoPrecosNova from './components/historico/TelaHistoricoPrecosN
 import TelaInteligenciaNova from './components/inteligencia/TelaInteligenciaNova';
 import TelaBenchmarkNova from './components/benchmark/TelaBenchmarkNova';
 import TelaPortalFornecedor from './components/portal/TelaPortalFornecedor';
+import TelaGestaoCotacoesFornecedor from './components/fornecedores/TelaGestaoCotacoesFornecedor';
 import TelaLogin from './TelaLogin';
 import apiService from './services/apiService';
 import TelaCatalogo from "./components/catalogo/TelaCatalogo";
@@ -586,7 +587,12 @@ const perfil = PERFIS[usuario.perfil];
         )}
         {temAcesso(tela) && tela === "portalfornecedor" &&
           <div style={{flex:1,overflowY:"auto"}}>
-            <TelaPortalFornecedor/>
+            {/* Fase "hub do fornecedor" (2026-09): esta tela antes montava
+                TelaPortalFornecedor sem token de cotação — nunca funcionava.
+                Agora é o hub de gestão: lista todas as cotações do
+                fornecedor logado com status derivado. O TelaPortalFornecedor
+                continua existindo pro link tokenizado (rota /#/portal/cotacao/..). */}
+            <TelaGestaoCotacoesFornecedor C={C} s={s} usuario={usuario} />
           </div>}
 
         {temAcesso(tela) && tela === "usuarios" && (

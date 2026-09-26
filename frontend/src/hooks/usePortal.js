@@ -70,3 +70,72 @@ export function usePortal(token) {
     recarregar: carregar,
   };
 }
+
+// ────────────────────────────────────────────────────────────────────────
+// usePortalAutenticado — espelho do usePortal pra uso dentro do hub do
+// fornecedor logado. Em vez do token na URL, recebe cotacaoFornecedorId
+// e bate nos endpoints autenticados (JWT no header). Mesmo shape de
+// retorno, pra que o <FormularioRespostaCotacao /> funcione igual nos
+// 2 modos sem saber a diferença.
+// ────────────────────────────────────────────────────────────────────────
+export function usePortalAutenticado(cotacaoFornecedorId) {
+  const [cotacao, setCotacao] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [erro, setErro] = useState(null);
+  const [respondendo, setRespondendo] = useState(false);
+  const [respostaEnviada, setRespostaEnviada] = useState(false);
+
+  const carregar = useCallback(async () => {
+    if (!cotacaoFornecedorId) {
+      setLoading(false);
+      return;
+    }
+    try {
+      setLoading(true);
+      setErro(null);
+      const data = await portalService.buscarCotacaoAutenticado(cotacaoFornecedorId);
+      setCotacao(data);
+    } catch (err) {
+      setErro(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [cotacaoFornecedorId]);
+
+  const enviarResposta = useCallback(async (dadosResposta) => {
+    if (!cotacaoFornecedorId) return;
+    try {
+      setRespondendo(true);
+      setErro(null);
+      const resultado = await portalService.responderCotacaoAutenticado(
+        cotacaoFornecedorId,
+        dadosResposta
+      );
+      setRespostaEnviada(true);
+      return resultado;
+    } catch (err) {
+      setErro(err.message);
+      throw err;
+    } finally {
+      setRespondendo(false);
+    }
+  }, [cotacaoFornecedorId]);
+
+  useEffect(() => {
+    if (!cotacaoFornecedorId) {
+      setLoading(false);
+      return;
+    }
+    carregar();
+  }, [cotacaoFornecedorId]);
+
+  return {
+    cotacao,
+    loading,
+    erro,
+    respondendo,
+    respostaEnviada,
+    enviarResposta,
+    recarregar: carregar,
+  };
+}

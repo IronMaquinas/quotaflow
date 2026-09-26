@@ -108,8 +108,28 @@ router.post('/', tenantMiddleware, async (req, res) => {
     const disposicoesValidas = ["pendente", "devolucao", "retrabalho", "descarte", "uso_como_esta"];
     const disposicaoFinal = disposicao && disposicoesValidas.includes(disposicao) ? disposicao : "pendente";
 
+    // M4: resolver OC/fornecedor uma vez — dentro do try pra capturar
+    // erro do DB sem travar o handler.
+    const ovParaNC = req.body.ordem_venda_id
+      ? await DB.selectOne("ordens_venda", { id: req.body.ordem_venda_id, tenant_id: tenantId }, tenantId)
+      : null;
+
     const u = await usuarioAtual(req, tenantId);
     const numeroNC = await gerarNumeroNC(tenantId);
+
+    // M4: aceita fornecedor_id no body (o frontend do recebimento passa
+    // direto da OC). Se não vier e tiver chamado_id, tenta resolver via
+    // OC daquele chamado.
+    let fornecedorIdFinal = req.body.fornecedor_id || null;
+    if (!fornecedorIdFinal && chamado_id) {
+      try {
+        const cot = await DB.selectOne("cotacoes", { chamado_id, tenant_id: tenantId }, tenantId);
+        if (cot) {
+          const ov = await DB.selectOne("ordens_venda", { cotacao_id: cot.id, tenant_id: tenantId }, tenantId);
+          fornecedorIdFinal = ov?.fornecedor_id || null;
+        }
+      } catch (_) {}
+    }
 
     const nc = await DB.insert("nao_conformidades", {
       tenant_id: tenantId,
@@ -130,8 +150,8 @@ router.post('/', tenantMiddleware, async (req, res) => {
       inspetor_id: u.id,
       criado_por_nome: u.nome,
       motivo_recusa: descricao_problema.trim(),
-      // criado_em NÃO é enviado — o Postgres preenche com NOW() em UTC,
-      // evitando o problema de serialização que desloca 3h (BRT → UTC).
+      fornecedor_id: fornecedorIdFinal,
+      fornecedor_tratativa_status: fornecedorIdFinal ? "nao_notificado" : null,
     }, tenantId);
 
     // Anexos (fotos como data URI)
@@ -158,9 +178,44 @@ router.post('/', tenantMiddleware, async (req, res) => {
     await registrarEventoNC(
       tenantId, nc.id, "criacao",
       `NC criada (origem: ${origemFinal}) — ${descricao_problema.trim().slice(0, 100)}`,
-      { origem: origemFinal, anexos: anexosInseridos.length },
+      { origem: origemFinal, anexos: anexosInseridos.length, visivel_fornecedor: !!fornecedorIdFinal },
       u
     );
+
+    // M4: se tem fornecedor, marca evento como visível e dispara email.
+    // Best-effort — não bloqueia resposta.
+    if (fornecedorIdFinal) {
+      try {
+        const forn = await DB.selectOne("fornecedores", { id: fornecedorIdFinal, tenant_id: tenantId }, tenantId);
+        const emailDestino = forn?.email;
+        if (emailDestino) {
+          const { enviarEmailCotacao } = require("../services/emailService");
+          const baseUrl = (process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/+$/, "");
+          const linkNC = `${baseUrl}/#/portal`;
+          const corpo = `
+            <h2>Não Conformidade registrada</h2>
+            <p>Olá <strong>${forn.nome || "Fornecedor"}</strong>,</p>
+            <p>Foi registrada uma <strong>Não Conformidade</strong> contra um recebimento seu:</p>
+            <ul>
+              <li><strong>NC:</strong> ${numeroNC}</li>
+              ${ovParaNC?.numero ? `<li><strong>Pedido:</strong> ${ovParaNC.numero}</li>` : ""}
+              ${req.body.numero_nota_fiscal ? `<li><strong>NF:</strong> ${req.body.numero_nota_fiscal}</li>` : ""}
+              <li><strong>Motivo:</strong> ${descricao_problema.trim()}</li>
+            </ul>
+            <p>Acesse o Portal do Fornecedor para ver os detalhes, responder e anexar evidências:</p>
+            <p><a href="${linkNC}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:white;text-decoration:none;border-radius:6px;">Abrir Portal do Fornecedor</a></p>
+            <hr/>
+            <p><small>Mensagem automática do QuotaFlow.</small></p>
+          `;
+          await enviarEmailCotacao(emailDestino, `Não Conformidade ${numeroNC} — ${forn.nome}`, corpo);
+          await DB.update("nao_conformidades", nc.id, {
+            fornecedor_tratativa_status: "notificado",
+          }, tenantId);
+        }
+      } catch (mailErr) {
+        console.warn("⚠ Falha ao notificar fornecedor (não bloqueante):", mailErr.message);
+      }
+    }
 
     res.status(201).json({
       ok: true,

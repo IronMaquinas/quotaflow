@@ -3,6 +3,8 @@ import { useState, useEffect } from 'react';
 import TelaPortalFornecedor from './TelaPortalFornecedor';
 import TelaCatalogoFornecedor from './TelaCatalogoFornecedor';
 import TelaOrdensVenda from '../ordensvenda/TelaOrdensVenda';
+import TelaMeusPedidosFornecedor from '../fornecedores/TelaMeusPedidosFornecedor';
+import TelaGestaoCotacoesFornecedor from '../fornecedores/TelaGestaoCotacoesFornecedor';
 
 const C = {
   bg: "#0a0e14",
@@ -29,7 +31,7 @@ const fmtBRL = v => v != null ? `R$ ${Number(v).toFixed(2).replace('.', ',')}` :
 const fmtD = d => d ? new Date(d).toLocaleDateString('pt-BR') : '—';
 
 export default function TelaFornecedor() {
-  const [tela, setTela] = useState('oportunidades');
+  const [tela, setTela] = useState('cotacoes');
   const [usuario, setUsuario] = useState(null);
   
   useEffect(() => {
@@ -38,9 +40,10 @@ export default function TelaFornecedor() {
   }, []);
 
   const menuItens = [
+    { id: 'cotacoes',      label: '📋 Minhas Cotações' },
+    { id: 'pedidos',       label: '📦 Meus Pedidos' },
     { id: 'oportunidades', label: '⚡ Oportunidades Spot' },
-    { id: 'catalogo', label: '📦 Catálogo' },
-    { id: 'ordens', label: '📋 Ordens de Venda' },
+    { id: 'catalogo',      label: '📦 Catálogo' },
   ];
 
   const logout = () => {
@@ -132,9 +135,10 @@ export default function TelaFornecedor() {
 
         {/* ─── CONTEÚDO ─── */}
         <div style={{ flex: 1, overflowY: 'auto', background: C.bg }}>
-          {tela === 'oportunidades' && <TelaPortalFornecedor />}
-          {tela === 'catalogo' && <TelaCatalogoFornecedor C={C} s={s} fmtBRL={fmtBRL} />}
-          {tela === 'ordens' && <TelaOrdensVenda C={C} s={s} fmtBRL={fmtBRL} fmtD={fmtD} />}
+        {tela === 'cotacoes' && <TelaGestaoCotacoesFornecedor C={C} s={s} usuario={usuario} />}
+        {tela === 'pedidos' && <TelaMeusPedidosFornecedor C={C} s={s} usuario={usuario} />}
+        {tela === 'oportunidades' && <TelaPortalFornecedor />}
+        {tela === 'catalogo' && <TelaCatalogoFornecedor C={C} s={s} fmtBRL={fmtBRL} />}
         </div>
       </div>
     </div>
