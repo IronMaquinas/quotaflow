@@ -391,17 +391,42 @@ router.get('/ordem-venda/:ovId', tenantMiddleware, async (req, res) => {
     // 2. Buscar itens da OV
     const itens = await DB.select('ordem_venda_itens', { ordem_venda_id: ovId }, tenantId);
 
-    // 3. Buscar itens de consumo (para saber o SKU e saldo)
+    // 3. NF-e atual (última não-substituída) da OC — preenchida quando
+    //    o fornecedor já anexou o XML via hub. O frontend usa pra:
+    //      • Mostrar o banner "NF-e validada digitalmente"
+    //      • Esconder o botão de upload manual no fluxo fiscal
+    //      • Pré-marcar itens que já passaram na validação automática
+    const nfesDaOv = await DB.select('ordem_venda_xmls', { ordem_venda_id: ovId }, tenantId);
+    const nfeAtual = (nfesDaOv || [])
+      .filter(x => x.status !== 'substituido')
+      .sort((a, b) => new Date(b.criado_em || 0) - new Date(a.criado_em || 0))[0] || null;
+
+    // Mapa item-OC → status na validação fiscal (a validação guarda o
+    // nome do item da OC, não o id). Uso pra marcar `fiscal_auto_aprovado`
+    // por item.
+    const itensOkNaValidacao = new Set(
+      (nfeAtual?.validacao?.itens || [])
+        .filter(v => v.status === 'ok')
+        .map(v => String(v.item || '').trim().toLowerCase())
+    );
+
+    // 4. Buscar itens de consumo (para saber o SKU e saldo)
     const itensCompletos = await Promise.all(itens.map(async (item) => {
       const itemConsumo = await DB.selectOne('itens_consumo', { catalogo_item_id: item.item_catalogo_id, tenant_id: tenantId }, tenantId);
+      const nomeItem = item.nome_item || 'Item sem nome';
+      const fiscalOk = itensOkNaValidacao.has(String(nomeItem).trim().toLowerCase());
       return {
         ...item,
-        item_nome: itemConsumo?.nome || item.nome_item || 'Item sem nome',
+        item_nome: itemConsumo?.nome || nomeItem,
         sku: itemConsumo?.sku || item.sku || '—',
         saldo_atual: itemConsumo?.saldo_atual || 0,
         unidade_medida: itemConsumo?.unidade_medida || item.unidade_medida || 'UN',
         quantidade_recebida: item.quantidade_recebida || 0,
-        quantidade_pendente: (item.quantidade || 0) - (item.quantidade_recebida || 0)
+        quantidade_pendente: (item.quantidade || 0) - (item.quantidade_recebida || 0),
+        // Fase M3: a validação automática já conferiu este item.
+        // O botão "1. Fiscal" no frontend vira "✅ Fiscal OK" e o
+        // comprador só precisa confirmar (ou revisar se quiser).
+        fiscal_auto_aprovado: fiscalOk,
       };
     }));
 
@@ -412,7 +437,23 @@ router.get('/ordem-venda/:ovId', tenantMiddleware, async (req, res) => {
         numero: ov.numero,
         status: ov.status,
         fornecedor_id: ov.fornecedor_id,
-        valor_total: ov.valor_total
+        valor_total: ov.valor_total,
+        xml_anexado_em: ov.xml_anexado_em,
+        xml_validacao_status: ov.xml_validacao_status,
+        // FIX M3: `nfe_atual` DENTRO de ordem_venda — o frontend faz
+        // setOrdemVendaSel(response.ordem_venda), então o campo tem que
+        // estar no mesmo objeto. Antes vinha como chave irmã, e o banner
+        // nunca aparecia.
+        nfe_atual: nfeAtual ? {
+          id: nfeAtual.id,
+          numero_nf: nfeAtual.numero_nf,
+          chave_acesso: nfeAtual.chave_acesso,
+          status: nfeAtual.status,
+          divergencias_count: nfeAtual.divergencias_count || 0,
+          enviado_em: nfeAtual.criado_em,
+          validacao: nfeAtual.validacao,
+          resumo: nfeAtual.xml_resumo,
+        } : null,
       },
       itens: itensCompletos
     });
@@ -1331,6 +1372,24 @@ router.get('/ordens-venda', tenantMiddleware, async (req, res) => {
         i.status_contagem === 'em_andamento'
       ).length;
 
+      // Fase M3: buscar a NF-e atual pra o card da lista mostrar badge.
+      //   • Sem XML                       → "aguardando_fornecedor"
+      //   • XML com status 'ok'           → "validada"
+      //   • XML com status 'divergencia'  → "divergencia"
+      // Não buscamos os itens da validação aqui (só o resumo) — o
+      // detalhe da OV faz isso quando o usuário clica.
+      const nfesDaOv = await DB.select('ordem_venda_xmls', {
+        ordem_venda_id: ov.id,
+      }, tenantId);
+      const nfeAtual = (nfesDaOv || [])
+        .filter(x => x.status !== 'substituido')
+        .sort((a, b) => new Date(b.criado_em || 0) - new Date(a.criado_em || 0))[0] || null;
+
+      let nfe_status = 'sem_nfe';
+      if (nfeAtual) {
+        nfe_status = nfeAtual.status === 'ok' ? 'validada' : 'divergencia';
+      }
+
       // Injeta as propriedades calculadas depois do spread (...ov) para o JSON não sumir
       return {
         ...ov,
@@ -1339,7 +1398,10 @@ router.get('/ordens-venda', tenantMiddleware, async (req, res) => {
         total_itens: itens?.length || 0,
         status_recebimento: statusRealCalculado,
         itens_divergentes: itensDivergentes,
-        itensDivergentes: itensDivergentes
+        itensDivergentes: itensDivergentes,
+        nfe_status,
+        nfe_numero: nfeAtual?.numero_nf || null,
+        nfe_divergencias: nfeAtual?.divergencias_count || 0,
       };
     }));
 
@@ -1544,5 +1606,53 @@ function calcularStatusOV(itens) {
   
   return 'pendente'; 
 }
+
+// ─────────────────────────────────────────────────────────────────────
+// GET /api/estoque/movimentacoes/nfe/:xmlId/download
+//
+// Download autenticado do XML da NF-e pelo COMPRADOR (tenant). Diferente
+// da rota do fornecedor (que filtra por fornecedor_id), essa filtra por
+// tenant — o comprador só baixa XML de OC do próprio tenant.
+//
+// Retorna uma signed URL do Supabase Storage (bucket privado `nfe-xmls`)
+// com validade de 1h.
+// ─────────────────────────────────────────────────────────────────────
+router.get('/nfe/:xmlId/download', tenantMiddleware, async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const xmlId = parseInt(req.params.xmlId, 10);
+    if (!xmlId || isNaN(xmlId)) {
+      return res.status(400).json({ erro: 'ID inválido' });
+    }
+
+    const xmlRow = await DB.selectOne('ordem_venda_xmls', { id: xmlId }, tenantId);
+    if (!xmlRow) return res.status(404).json({ erro: 'XML não encontrado' });
+    if (String(xmlRow.tenant_id) !== String(tenantId)) {
+      return res.status(403).json({ erro: 'Acesso negado' });
+    }
+    if (!xmlRow.storage_path) {
+      return res.status(404).json({ erro: 'XML sem arquivo no storage.' });
+    }
+
+    const { supabase } = require('../../db');
+    const { data: signed, error: signErr } = await supabase.storage
+      .from('nfe-xmls')
+      .createSignedUrl(xmlRow.storage_path, 60 * 60); // 1h
+
+    if (signErr || !signed?.signedUrl) {
+      return res.status(500).json({ erro: `Falha ao gerar link: ${signErr?.message || 'sem URL'}` });
+    }
+
+    return res.json({
+      url: signed.signedUrl,
+      expira_em_segundos: 3600,
+      numero_nf: xmlRow.numero_nf,
+      chave_acesso: xmlRow.chave_acesso,
+    });
+  } catch (err) {
+    console.error('❌ Erro em download XML (comprador):', err.message);
+    return res.status(500).json({ erro: err.message });
+  }
+});
 
 module.exports = router;

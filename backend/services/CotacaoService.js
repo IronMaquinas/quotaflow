@@ -1509,6 +1509,10 @@ class CotacaoService {
           quantidade: item.quantidade,
           valor_unitario: valorFinal / (itens.length || 1),
           valor_total: valorFinal,
+          // M6: legado — mantido para consistência caso essa função
+          // seja chamada por engano. O campo pode estar null se
+          // `item.codigo_fornecedor` não existir no fluxo antigo.
+          codigo_fornecedor: item.codigo_fornecedor || null,
           criado_em: new Date()
         }, tenantId);
       }
@@ -2002,6 +2006,18 @@ async emitirOCs(tenantId, cotacaoId, selecoes, usuarioId = null, usuarioNome = n
       );
     }
 
+    // M6: carregar os codigo_fornecedor das respostas desse fornecedor
+    // (por cotacao_item_id). É o cProd que ele usa pra cada item — vai
+    // ser propagado pra OC pra depois alimentar o match de NFe por PN.
+    const respostasFornItens = await this.db.select('cotacao_fornecedor_itens',
+      { cotacao_fornecedor_id: resposta.id }, tenantId);
+    const codigoPorItem = {};
+    respostasFornItens.forEach(ri => {
+      if (ri.codigo_fornecedor) {
+        codigoPorItem[String(ri.cotacao_item_id)] = ri.codigo_fornecedor;
+      }
+    });
+
     // Calcular totais (usa renegociado quando existir)
     let valorTotal = 0;
     let freteTotal = 0;
@@ -2027,6 +2043,7 @@ async emitirOCs(tenantId, cotacaoId, selecoes, usuarioId = null, usuarioNome = n
         quantidade: qtd,
         valor_unitario: v,
         valor_total: v * qtd,
+        codigo_fornecedor: codigoPorItem[String(ci.id)] || null,
       };
     });
 
@@ -2060,6 +2077,8 @@ async emitirOCs(tenantId, cotacaoId, selecoes, usuarioId = null, usuarioNome = n
         quantidade: item.quantidade,
         valor_unitario: item.valor_unitario,
         valor_total: item.valor_total,
+        // M6: cProd do fornecedor (para match de NFe por PN na fase fiscal).
+        codigo_fornecedor: item.codigo_fornecedor || null,
         criado_em: new Date(),
       }, tenantId);
     }

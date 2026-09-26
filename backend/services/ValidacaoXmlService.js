@@ -141,22 +141,78 @@ async function validarXmlContraOc(xmlDataRaw, ordemVendaId, tenantId) {
   const itensOV = await DB.select('ordem_venda_itens', { ordem_venda_id: ov.id }, tenantId);
   const validacoes = [];
 
+  // M6: buscar chamado_itens pra ter o `codigo` (PN do fabricante) como
+  // referência no match por PN. Alguns itens só terão o cProd do fornecedor
+  // (ordem_venda_itens.codigo_fornecedor), outros só o código da RC.
+  const chamadoItemIdsDaOv = itensOV.map(i => i.chamado_item_id).filter(Boolean);
+  const todosChamadoItensVal = await DB.select('chamado_itens', { tenant_id: tenantId }, tenantId);
+  const chamadoItemPorIdVal = {};
+  todosChamadoItensVal
+    .filter(ci => chamadoItemIdsDaOv.includes(ci.id))
+    .forEach(ci => { chamadoItemPorIdVal[ci.id] = ci; });
+
   for (const itemOV of itensOV) {
-    // FIX (2026-09): a coluna real em ordem_venda_itens é `nome_item`,
-    // não `item_nome`. Suportar os 2 nomes pra não quebrar se um dia
-    // o schema mudar de volta.
     const nomeOV = itemOV.nome_item || itemOV.item_nome || '';
-    const itemXML = xmlData.itens_xml.find(item => {
-      const descXML = normalizarTexto(item.descricao || '');
-      const descOV = normalizarTexto(nomeOV);
+    const chamadoItem = chamadoItemPorIdVal[itemOV.chamado_item_id];
+    const pnRc = chamadoItem?.codigo ? String(chamadoItem.codigo).trim() : null;
+    const pnFornecedor = itemOV.codigo_fornecedor
+      ? String(itemOV.codigo_fornecedor).trim()
+      : null;
 
-      const skuMatch = itemOV.item_catalogo_id && item.codigo === itemOV.item_catalogo_id;
-      const descMatch = descOV.length > 3 && descXML.includes(descOV);
-      const levenshteinMatch = calcularLevenshtein(descOV, descXML) <= 3;
+    // M6: match em 5 estágios, com prioridade decrescente de confiança.
+    let itemXML = null;
+    let tipoMatch = null;
 
-      return skuMatch || descMatch || levenshteinMatch;
-    });
+    // Estágio 1 — cProd == vínculo do fornecedor (mais forte).
+    if (pnFornecedor) {
+      const cand = xmlData.itens_xml.find(
+        it => String(it.codigo || '').trim() === pnFornecedor
+      );
+      if (cand) { itemXML = cand; tipoMatch = 'match_exato_pn_fornecedor'; }
+    }
 
+    // Estágio 2 — cProd == PN do fabricante cadastrado na RC.
+    // Cobre o caso "fornecedor usou o mesmo código que o comprador" —
+    // a maioria dos commodities.
+    if (!itemXML && pnRc) {
+      const cand = xmlData.itens_xml.find(
+        it => String(it.codigo || '').trim() === pnRc
+      );
+      if (cand) { itemXML = cand; tipoMatch = 'match_exato_pn_rc'; }
+    }
+
+    // Estágio 3 — nome normalizado exato.
+    if (!itemXML) {
+      const descOVNorm = normalizarTexto(nomeOV);
+      const cand = xmlData.itens_xml.find(
+        it => normalizarTexto(it.descricao || '') === descOVNorm
+      );
+      if (cand) { itemXML = cand; tipoMatch = 'match_exato_nome'; }
+    }
+
+    // Estágio 4 — SKU exato do catálogo.
+    if (!itemXML && itemOV.item_catalogo_id) {
+      const cand = xmlData.itens_xml.find(
+        it => it.codigo === itemOV.item_catalogo_id
+      );
+      if (cand) { itemXML = cand; tipoMatch = 'match_exato_sku'; }
+    }
+
+    // Estágio 5 — Levenshtein ≤ 3 (fuzzy, aceita com alerta).
+    if (!itemXML) {
+      const descOVNorm = normalizarTexto(nomeOV);
+      const cand = xmlData.itens_xml.find(item => {
+        const descXML = normalizarTexto(item.descricao || '');
+        const jaAssociado = validacoes.some(v =>
+          v.item_nfe === item.descricao && v.status !== 'match_fallback'
+        );
+        if (jaAssociado) return false;
+        return calcularLevenshtein(descOVNorm, descXML) <= 3;
+      });
+      if (cand) { itemXML = cand; tipoMatch = 'match_fuzzy'; }
+    }
+
+    // Validação da linha
     if (!itemXML) {
       const itemNFePendente = xmlData.itens_xml.find(item =>
         !validacoes.some(v => v.item_nfe === item.descricao)
@@ -165,28 +221,49 @@ async function validarXmlContraOc(xmlDataRaw, ordemVendaId, tenantId) {
         item: nomeOV,
         item_nfe: itemNFePendente?.descricao || 'Não encontrado',
         status: 'match_fallback',
-        mensagem: 'Item não encontrado. Associe manualmente.',
+        tipo_match: 'match_fallback',
+        pn_rc: pnRc,
+        pn_fornecedor: pnFornecedor,
+        mensagem: (pnRc || pnFornecedor)
+          ? `Nenhum item da NFe tem o código "${pnFornecedor || pnRc}". Associe manualmente ou confirme com o fornecedor.`
+          : 'Item não encontrado. Associe manualmente ou peça pro fornecedor informar o código do produto na cotação.',
       });
     } else if (parseInt(itemOV.quantidade || 0) !== parseInt(itemXML.quantidade || 0)) {
       validacoes.push({
         item: nomeOV,
         item_nfe: itemXML.descricao || '',
         status: 'divergencia_quantidade',
-        mensagem: `Qtd: OV ${itemOV.quantidade} vs XML ${itemXML.quantidade}`,
+        tipo_match: tipoMatch,
+        pn_rc: pnRc,
+        pn_fornecedor: pnFornecedor,
+        mensagem: `Qtd: OC ${itemOV.quantidade} vs NFe ${itemXML.quantidade}`,
       });
     } else if (parseFloat(itemOV.valor_unitario || 0) !== parseFloat(itemXML.valorUnitario || 0)) {
       validacoes.push({
         item: nomeOV,
         item_nfe: itemXML.descricao || '',
         status: 'divergencia_valor',
-        mensagem: `Valor: OV ${itemOV.valor_unitario} vs XML ${itemXML.valorUnitario}`,
+        tipo_match: tipoMatch,
+        pn_rc: pnRc,
+        pn_fornecedor: pnFornecedor,
+        mensagem: `Valor: OC ${itemOV.valor_unitario} vs NFe ${itemXML.valorUnitario}`,
       });
     } else {
+      const mensagens = {
+        match_exato_pn_fornecedor: 'Item validado pelo código do fornecedor (cProd).',
+        match_exato_pn_rc: 'Item validado pelo PN cadastrado na RC.',
+        match_exato_nome: 'Item validado por nome exato.',
+        match_exato_sku: 'Item validado por SKU do catálogo.',
+        match_fuzzy: 'Nome parecido — confira se é a peça certa.',
+      };
       validacoes.push({
         item: nomeOV,
         item_nfe: itemXML.descricao || '',
         status: 'ok',
-        mensagem: 'Item validado',
+        tipo_match: tipoMatch,
+        pn_rc: pnRc,
+        pn_fornecedor: pnFornecedor,
+        mensagem: mensagens[tipoMatch] || 'Item validado.',
       });
     }
   }

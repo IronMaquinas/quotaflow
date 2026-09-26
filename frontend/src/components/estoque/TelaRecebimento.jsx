@@ -50,6 +50,10 @@ export default function TelaRecebimento({ C, s, fmtD }) {
   // ─── ESTADOS PARA MIRO / MIGO ─────────────────────────────
   const [itemConferenciaFiscal, setItemConferenciaFiscal] = useState(null);
   const [itemConferenciaFisica, setItemConferenciaFisica] = useState(null);
+  // M3: aba ativa no modal fiscal. Só usada em modo auto (item com NF-e
+  // já validada pelo fornecedor). 'conferencia' = tabela OC × NF-e;
+  // 'danfe' = DANFE visual completa.
+  const [abaModalFiscal, setAbaModalFiscal] = useState('conferencia');
 
   const [itemTratativaQuarentena, setItemTratativaQuarentena] = useState(null);
   const [justificativaTratativa, setJustificativaTratativa] = useState('');
@@ -379,7 +383,25 @@ export default function TelaRecebimento({ C, s, fmtD }) {
   };
 
   // ─── FUNÇÕES PARA MIRO (FISCAL) ────────────────────────────
+  // Normaliza pra match de nome (mesma regra do backend).
+  const _normNome = (s) => String(s || '')
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase().trim();
+
+  // M3: quando o item já foi auto-aprovado pela validação da NF-e do
+  // fornecedor, o modal abre PRÉ-PREENCHIDO com os dados da NF. Sem
+  // upload, sem digitação — o comprador só confere e confirma.
+  const acharItemNaNfe = (item) => {
+    const nfe = ordemVendaSel?.nfe_atual;
+    if (!nfe?.resumo?.itens) return null;
+    const alvo = _normNome(item.item_nome);
+    return nfe.resumo.itens.find(x => _normNome(x.descricao) === alvo) || null;
+  };
+
   const abrirConferenciaFiscal = (item) => {
+    const nfe = ordemVendaSel?.nfe_atual;
+    const itemNfe = (nfe && nfe.status === 'ok') ? acharItemNaNfe(item) : null;
+
     // 🔥 Se já foi salvo em quarentena, carregar os dados salvos
     if (item.status_quarentena === 'rejeitado') {
       setItemConferenciaFiscal({
@@ -394,20 +416,49 @@ export default function TelaRecebimento({ C, s, fmtD }) {
         motivo_divergencia: item.motivo_divergencia || '',
         numero_recebimento_ov: item.numero_recebimento_ov || ''
       });
-    } else {
-      // 🔥 Se for novo (sem quarentena), criar objeto vazio
+      return;
+    }
+
+    // M3: item bateu na validação + NF-e do fornecedor presente = abre
+    // com os dados já prontos (número NF, valores, quantidade). O
+    // comprador só confirma.
+    if (itemNfe && nfe.status === 'ok') {
+      setAbaModalFiscal('conferencia'); // reseta a aba ao abrir
       setItemConferenciaFiscal({
         ...item,
         valor_total_ov: item.valor_total || (item.valor_unitario * item.quantidade) || 0,
-        numero_nota_fiscal: '',
-        quantidade_nf: '',
-        valor_nf: '',
+        numero_nota_fiscal: nfe.numero_nf || '',
+        quantidade_nf: itemNfe.quantidade || item.quantidade,
+        valor_nf: itemNfe.valor_total || (itemNfe.valor_unitario * itemNfe.quantidade),
         impostos: '',
         data_vencimento_pagamento: '',
         unidade_medida: item.unidade_medida || 'UN',
-        motivo_divergencia: ''
+        motivo_divergencia: '',
+        // Marca que o modal abriu em modo auto — o JSX usa pra esconder
+        // o upload e mostrar o banner verde.
+        _fiscal_auto: true,
+        _nfe_origem: {
+          numero_nf: nfe.numero_nf,
+          chave_acesso: nfe.chave_acesso,
+          enviado_em: nfe.enviado_em,
+        },
       });
+      return;
     }
+
+    // Fallback: sem NF-e, ou XML com divergência — abre vazio, fluxo
+    // manual normal.
+    setItemConferenciaFiscal({
+      ...item,
+      valor_total_ov: item.valor_total || (item.valor_unitario * item.quantidade) || 0,
+      numero_nota_fiscal: '',
+      quantidade_nf: '',
+      valor_nf: '',
+      impostos: '',
+      data_vencimento_pagamento: '',
+      unidade_medida: item.unidade_medida || 'UN',
+      motivo_divergencia: '',
+    });
   };
 
   // Função para aprovar item manualmente
@@ -749,6 +800,14 @@ const handleValidarXML = async () => {
     }
   };
 
+  // M3: constantes derivadas do modal fiscal — calculadas sempre que o
+  // componente renderiza. Só usadas quando o modal está aberto.
+  const modoAutoFiscal = itemConferenciaFiscal?._fiscal_auto === true;
+  const nfeModalFiscal = ordemVendaSel?.nfe_atual;
+  const itemNfeModalFiscal = modoAutoFiscal && nfeModalFiscal
+    ? acharItemNaNfe(itemConferenciaFiscal)
+    : null;
+
   if (loading) return <div style={{ padding: 20, color: C.muted }}>Carregando...</div>;
 
 return (
@@ -884,7 +943,28 @@ return (
                             </div>
                             <div style={{ fontSize: 12, color: C.muted }}>
                               {ov.fornecedor_nome} · {ov.itens?.length || 0} itens
-                        </div>
+                            </div>
+                            {/* M3: linha de status da NF-e do fornecedor.
+                                Fica discreta, embaixo do fornecedor, sem
+                                competir com o status principal à direita. */}
+                            {ov.nfe_status === 'validada' && (
+                              <div style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 4,
+                                fontSize: 10, color: C.success, marginTop: 4,
+                                fontWeight: 600,
+                              }}>
+                                ✅ NF-e {ov.nfe_numero} validada
+                              </div>
+                            )}
+                            {ov.nfe_status === 'divergencia' && (
+                              <div style={{
+                                display: 'inline-flex', alignItems: 'center', gap: 4,
+                                fontSize: 10, color: '#f59e0b', marginTop: 4,
+                                fontWeight: 600,
+                              }}>
+                                ⚠️ NF-e {ov.nfe_numero} · {ov.nfe_divergencias} divergência(s)
+                              </div>
+                            )}
                           </div>
                         </div>
                       </div>
@@ -993,6 +1073,87 @@ return (
           </button>
         </div>
 
+        {/* ─── M3: banner da NF-e do fornecedor ─────────────────────
+            Quando o fornecedor anexa o XML no hub, ele já foi validado
+            contra essa OC. O comprador não precisa reenviar — só conferir
+            o físico. Isso reduz de ~15 min de digitação pra ~30s de
+            confirmação, principalmente em mobile. */}
+        {ordemVendaSel.nfe_atual && ordemVendaSel.nfe_atual.status === 'ok' && (
+          <div style={{
+            background: '#0f2f1a',
+            border: `1px solid ${C.success}55`,
+            borderRadius: 8,
+            padding: '12px 16px',
+            marginBottom: 12,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            flexWrap: 'wrap',
+          }}>
+            <span style={{ fontSize: 22 }}>✅</span>
+            <div style={{ flex: 1, minWidth: 240 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: C.success }}>
+                NF-e {ordemVendaSel.nfe_atual.numero_nf} validada digitalmente
+              </div>
+              <div style={{ fontSize: 11, color: C.textSub, marginTop: 3 }}>
+                Chave <span style={{ fontFamily: "'IBM Plex Mono', monospace", fontSize: 10 }}>
+                  {ordemVendaSel.nfe_atual.chave_acesso}
+                </span>
+              </div>
+              <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                Validada em {new Date(ordemVendaSel.nfe_atual.enviado_em).toLocaleString('pt-BR')}
+              </div>
+              <div style={{ fontSize: 12, color: C.text, marginTop: 6, fontStyle: 'italic' }}>
+                Favor conferir o conteúdo físico no recebimento.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {ordemVendaSel.nfe_atual && ordemVendaSel.nfe_atual.status === 'divergencia' && (
+          <div style={{
+            background: '#2e1c0c',
+            border: '1px solid #f59e0b55',
+            borderRadius: 8,
+            padding: '12px 16px',
+            marginBottom: 12,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            flexWrap: 'wrap',
+          }}>
+            <span style={{ fontSize: 22 }}>⚠️</span>
+            <div style={{ flex: 1, minWidth: 240 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, color: '#f59e0b' }}>
+                NF-e {ordemVendaSel.nfe_atual.numero_nf} com {ordemVendaSel.nfe_atual.divergencias_count} divergência(s)
+              </div>
+              <div style={{ fontSize: 11, color: C.textSub, marginTop: 3 }}>
+                O fornecedor anexou uma NF-e que não bateu 100% com a OC.
+                Revise os itens ao conferir o físico.
+              </div>
+            </div>
+          </div>
+        )}
+
+        {!ordemVendaSel.nfe_atual && (
+          <div style={{
+            background: '#1e2535',
+            border: `1px dashed ${C.border}`,
+            borderRadius: 8,
+            padding: '10px 16px',
+            marginBottom: 12,
+            fontSize: 11,
+            color: C.muted,
+            display: 'flex',
+            alignItems: 'center',
+            gap: 8,
+          }}>
+            <span style={{ fontSize: 14 }}>⏳</span>
+            Fornecedor ainda não anexou a NF-e. Você pode seguir com a
+            conferência fiscal manual (upload de XML pelo botão "1. Fiscal").
+          </div>
+        )}
+
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {itensOV.map(item => (
             <div key={item.id} style={{ ...s.card, padding: '14px 18px' }}>
@@ -1025,17 +1186,38 @@ return (
                     📜 Histórico
                   </button>
 
+                  {/* M3: quando o fornecedor anexou NF-e e o item bateu na
+                      validação automática, o botão vira "✅ Fiscal OK" (verde).
+                      Um clique confirma o fiscal — sem upload, sem digitação.
+                      O modal abre em modo "revisão" (com os dados da NF-e
+                      pré-carregados) pra quem quiser conferir de novo. */}
                   <button
                     onClick={() => abrirConferenciaFiscal(item)}
+                    title={
+                      item.miro_por ? 'Conferência fiscal já registrada'
+                      : item.fiscal_auto_aprovado ? 'NF-e validada digitalmente — clique para revisar e confirmar'
+                      : 'Registrar conferência fiscal (upload de XML ou manual)'
+                    }
                     style={{
-                      ...s.btn(true, item.status_quarentena === 'rejeitado' ? C.danger : C.accent),
+                      ...s.btn(
+                        true,
+                        item.status_quarentena === 'rejeitado' ? C.danger
+                          : item.fiscal_auto_aprovado ? C.success
+                          : C.accent
+                      ),
                       padding: '8px 14px',
                       fontSize: 11,
                       opacity: item.miro_por ? 0.6 : 1,
                       cursor: item.miro_por ? 'default' : 'pointer'
                     }}
                   >
-                    {item.numero_recebimento_ov ? `✅ ${item.numero_recebimento_ov}` : (item.miro_por ? `✅ ${item.numero_recebimento_miro || 'Fiscal'}` : '📄 1. Fiscal')}
+                    {item.numero_recebimento_ov
+                      ? `✅ ${item.numero_recebimento_ov}`
+                      : item.miro_por
+                        ? `✅ ${item.numero_recebimento_miro || 'Fiscal'}`
+                        : item.fiscal_auto_aprovado
+                          ? '✅ Fiscal OK'
+                          : '📄 1. Fiscal'}
                   </button>
 
                   <button
@@ -1115,10 +1297,15 @@ return (
       </div>
     )}
 
-      {/* MODAL: CONFERÊNCIA FISCAL (MIRO) */}
+      {/* MODAL: CONFERÊNCIA FISCAL (MIRO) — 2 modos:
+          • auto:   item já auto-aprovado pela NF-e do fornecedor.
+                    Mostra tabela OC × NF-e + aba "Ver NFe" completa.
+                    Sem upload, sem digitação.
+          • manual: fluxo legado — upload XML + validação.
+      */}
       {itemConferenciaFiscal && (
         <div style={{ position: 'fixed', inset: 0, background: '#00000090', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 20 }}>
-          <div style={{ ...s.card, width: 560, maxWidth: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+          <div style={{ ...s.card, width: modoAutoFiscal ? 720 : 560, maxWidth: '100%', maxHeight: '88vh', display: 'flex', flexDirection: 'column' }}>
             <div style={{ padding: '18px 22px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>
                 📄 Conferência Fiscal — {itemConferenciaFiscal.item_nome}
@@ -1126,14 +1313,411 @@ return (
               <button onClick={() => setItemConferenciaFiscal(null)} style={{ background: 'transparent', border: 'none', color: C.muted, fontSize: 20, cursor: 'pointer' }}>×</button>
             </div>
 
-            <div style={{ padding: '20px 22px', overflowY: 'auto' }}>
-              {itemConferenciaFiscal.numero_recebimento_ov && (
+            {modoAutoFiscal && nfeModalFiscal && (
+              <div style={{
+                padding: '10px 22px', background: '#0f2f1a',
+                borderBottom: `1px solid ${C.border}`,
+                display: 'flex', alignItems: 'center', gap: 10, fontSize: 12,
+              }}>
+                <span style={{ fontSize: 18 }}>✅</span>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontWeight: 600, color: C.success }}>
+                    NF-e {nfeModalFiscal.numero_nf} validada digitalmente
+                  </div>
+                  <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
+                    Anexada em {new Date(nfeModalFiscal.enviado_em).toLocaleString('pt-BR')}
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {modoAutoFiscal && (
+              <div style={{
+                display: 'flex', gap: 4, padding: '8px 22px 0',
+                borderBottom: `1px solid ${C.border}`, background: C.bg,
+              }}>
+                <button
+                  onClick={() => setAbaModalFiscal('conferencia')}
+                  style={{
+                    background: 'transparent', border: 'none',
+                    borderBottom: abaModalFiscal === 'conferencia' ? `2px solid ${C.accent}` : '2px solid transparent',
+                    color: abaModalFiscal === 'conferencia' ? C.text : C.muted,
+                    fontSize: 12, fontWeight: abaModalFiscal === 'conferencia' ? 600 : 400,
+                    cursor: 'pointer', padding: '8px 14px 10px', fontFamily: 'inherit',
+                  }}
+                >
+                  📊 Conferência OC × NF-e
+                </button>
+                <button
+                  onClick={() => setAbaModalFiscal('danfe')}
+                  style={{
+                    background: 'transparent', border: 'none',
+                    borderBottom: abaModalFiscal === 'danfe' ? `2px solid ${C.accent}` : '2px solid transparent',
+                    color: abaModalFiscal === 'danfe' ? C.text : C.muted,
+                    fontSize: 12, fontWeight: abaModalFiscal === 'danfe' ? 600 : 400,
+                    cursor: 'pointer', padding: '8px 14px 10px', fontFamily: 'inherit',
+                  }}
+                >
+                  📄 Ver NFe completa
+                </button>
+              </div>
+            )}
+
+            <div style={{ padding: '20px 22px', overflowY: 'auto', flex: 1 }}>
+              {/* Banner do número do recebimento (só no fluxo manual) */}
+              {!modoAutoFiscal && itemConferenciaFiscal.numero_recebimento_ov && (
                 <div style={{ marginBottom: 16, background: '#0f2f1a', border: '1px solid #22c55e44', borderRadius: 8, padding: '8px 12px' }}>
                   <div style={{ fontSize: 11, color: '#6b7280' }}>NÚMERO DO DOCUMENTO DE RECEBIMENTO</div>
                   <div style={{ fontSize: 14, fontWeight: 700, color: '#22c55e' }}>{itemConferenciaFiscal.numero_recebimento_ov}</div>
                 </div>
               )}
 
+              {/* ═══════════════════════════════════════════════════
+                  MODO AUTO — Camada 1 (Conferência) ou Camada 2 (DANFE)
+                  ═══════════════════════════════════════════════════ */}
+                            {modoAutoFiscal && abaModalFiscal === 'conferencia' && itemNfeModalFiscal && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+                  <div style={{
+                    background: '#0f1e35',
+                    border: '1px solid #3b82f633',
+                    borderRadius: 8,
+                    padding: '10px 14px',
+                    fontSize: 11,
+                    color: '#d1d5db',
+                  }}>
+                    <strong style={{ color: '#3b82f6' }}>Conferência lado a lado</strong> — OC vs NF-e.
+                    O item bateu 100% na validação automática. Confira o físico e clique Confirmar.
+                  </div>
+
+                  {/* Tabela comparativa */}
+                  <div style={{
+                    border: `1px solid ${C.border}`,
+                    borderRadius: 8,
+                    overflow: 'hidden',
+                  }}>
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: '1.5fr 1fr 1fr 1fr 50px',
+                      gap: 8,
+                      padding: '10px 14px',
+                      background: C.bg,
+                      borderBottom: `1px solid ${C.border}`,
+                      fontSize: 10,
+                      color: C.muted,
+                      letterSpacing: '0.05em',
+                      fontWeight: 600,
+                    }}>
+                      <span>ITEM</span>
+                      <span style={{ textAlign: 'right' }}>OC</span>
+                      <span style={{ textAlign: 'right' }}>NF-e</span>
+                      <span style={{ textAlign: 'right' }}>DIFERENÇA</span>
+                      <span style={{ textAlign: 'center' }}>OK</span>
+                    </div>
+
+                    {[
+                      { label: 'Descrição', oc: itemConferenciaFiscal.item_nome, nfe: itemNfeModalFiscal.descricao, tipo: 'texto' },
+                      { label: 'Quantidade', oc: itemConferenciaFiscal.quantidade, nfe: itemNfeModalFiscal.quantidade, tipo: 'num' },
+                      { label: 'Valor unitário', oc: itemConferenciaFiscal.valor_unitario, nfe: itemNfeModalFiscal.valor_unitario, tipo: 'moeda' },
+                      { label: 'Valor total', oc: itemConferenciaFiscal.valor_total, nfe: itemNfeModalFiscal.valor_total, tipo: 'moeda' },
+                    ].map((row, i) => {
+                      const igual = row.tipo === 'texto'
+                        ? _normNome(row.oc) === _normNome(row.nfe)
+                        : Number(row.oc || 0) === Number(row.nfe || 0);
+                      const fmt = (v) => {
+                        if (row.tipo === 'moeda') return fmtBRL(v);
+                        if (row.tipo === 'num') return String(v ?? '—');
+                        return v ?? '—';
+                      };
+                      const dif = row.tipo === 'moeda'
+                        ? Number(row.oc || 0) - Number(row.nfe || 0)
+                        : (igual ? 0 : null);
+                      return (
+                        <div
+                          key={i}
+                          style={{
+                            display: 'grid',
+                            gridTemplateColumns: '1.5fr 1fr 1fr 1fr 50px',
+                            gap: 8,
+                            padding: '10px 14px',
+                            alignItems: 'center',
+                            background: !igual ? '#2e1c0c' : 'transparent',
+                            borderBottom: `1px solid ${C.border}22`,
+                            fontSize: 12,
+                          }}
+                        >
+                          <span style={{ color: C.textSub, fontSize: 11 }}>{row.label}</span>
+                          <span style={{ textAlign: 'right', color: C.text, fontWeight: 500 }}>{fmt(row.oc)}</span>
+                          <span style={{ textAlign: 'right', color: C.text, fontWeight: 500 }}>{fmt(row.nfe)}</span>
+                          <span style={{
+                            textAlign: 'right',
+                            color: dif === 0 || igual ? C.muted : '#f59e0b',
+                            fontWeight: 600,
+                            fontSize: 11,
+                          }}>
+                            {dif != null && dif !== 0 ? fmtBRL(Math.abs(dif)) : (igual ? '—' : '≠')}
+                          </span>
+                          <span style={{ textAlign: 'center', fontSize: 14 }}>
+                            {igual ? '✅' : '⚠️'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  <div style={{
+                    background: '#0f2f1a',
+                    border: '1px solid #22c55e44',
+                    borderRadius: 8,
+                    padding: '10px 14px',
+                    fontSize: 11,
+                    color: C.success,
+                    textAlign: 'center',
+                  }}>
+                    ✅ Item 100% conferido digitalmente. Falta só a conferência física.
+                  </div>
+                </div>
+              )}
+
+              {/* MODO AUTO — aba DANFE (Camada 2) */}
+              {modoAutoFiscal && abaModalFiscal === 'danfe' && nfeModalFiscal?.resumo && (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {/* Identificação */}
+                  <div style={{
+                    border: `1px solid ${C.border}`,
+                    borderRadius: 8,
+                    padding: '14px 16px',
+                    background: C.bg,
+                  }}>
+                    <div style={{
+                      fontSize: 10, color: C.muted,
+                      letterSpacing: '0.08em', marginBottom: 8, fontWeight: 600,
+                    }}>
+                      NOTA FISCAL ELETRÔNICA
+                    </div>
+                    <div style={{
+                      display: 'grid', gridTemplateColumns: '1fr 1fr',
+                      gap: 14, fontSize: 12,
+                    }}>
+                      <div>
+                        <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>Número / Série</div>
+                        <div style={{ color: C.text, fontWeight: 600 }}>
+                          {nfeModalFiscal.resumo.numero_nf || nfeModalFiscal.numero_nf} · Série {nfeModalFiscal.resumo.serie || '—'}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>Emissão</div>
+                        <div style={{ color: C.text, fontWeight: 600 }}>
+                          {nfeModalFiscal.resumo.data_emissao
+                            ? new Date(nfeModalFiscal.resumo.data_emissao).toLocaleString('pt-BR')
+                            : '—'}
+                        </div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>Natureza</div>
+                        <div style={{ color: C.text }}>{nfeModalFiscal.resumo.natureza_operacao || '—'}</div>
+                      </div>
+                      <div>
+                        <div style={{ fontSize: 10, color: C.muted, marginBottom: 2 }}>Chave de acesso</div>
+                        <div style={{
+                          color: C.text, fontFamily: "'IBM Plex Mono', monospace",
+                          fontSize: 10, wordBreak: 'break-all',
+                        }}>
+                          {nfeModalFiscal.chave_acesso}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Emitente / Destinatário */}
+                  <div style={{
+                    display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 14,
+                  }}>
+                    <div style={{
+                      border: `1px solid ${C.border}`, borderRadius: 8,
+                      padding: '12px 14px', background: C.bg,
+                    }}>
+                      <div style={{ fontSize: 10, color: C.muted, letterSpacing: '0.08em', marginBottom: 6, fontWeight: 600 }}>
+                        EMITENTE
+                      </div>
+                      <div style={{ fontSize: 12, color: C.text, fontWeight: 600 }}>
+                        {nfeModalFiscal.resumo.emitente || '—'}
+                      </div>
+                      <div style={{ fontSize: 10, color: C.muted, marginTop: 3, fontFamily: "'IBM Plex Mono', monospace" }}>
+                        CNPJ {nfeModalFiscal.resumo.cnpj_emitente || '—'}
+                      </div>
+                      {nfeModalFiscal.resumo.ie_emitente && (
+                        <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>
+                          IE {nfeModalFiscal.resumo.ie_emitente}
+                        </div>
+                      )}
+                    </div>
+                    <div style={{
+                      border: `1px solid ${C.border}`, borderRadius: 8,
+                      padding: '12px 14px', background: C.bg,
+                    }}>
+                      <div style={{ fontSize: 10, color: C.muted, letterSpacing: '0.08em', marginBottom: 6, fontWeight: 600 }}>
+                        DESTINATÁRIO
+                      </div>
+                      <div style={{ fontSize: 12, color: C.text, fontWeight: 600 }}>
+                        {nfeModalFiscal.resumo.destinatario || '—'}
+                      </div>
+                      <div style={{ fontSize: 10, color: C.muted, marginTop: 3, fontFamily: "'IBM Plex Mono', monospace" }}>
+                        CNPJ {nfeModalFiscal.resumo.cnpj_destinatario || '—'}
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Itens com detalhe fiscal */}
+                  <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, overflow: 'hidden' }}>
+                    <div style={{
+                      padding: '10px 14px', background: C.bg,
+                      borderBottom: `1px solid ${C.border}`,
+                      fontSize: 10, color: C.muted,
+                      letterSpacing: '0.08em', fontWeight: 600,
+                    }}>
+                      ITENS DA NOTA
+                    </div>
+                    <div style={{
+                      display: 'grid',
+                      gridTemplateColumns: '40px 1fr 70px 40px 90px 90px',
+                      gap: 8, padding: '8px 14px',
+                      background: C.bg, borderBottom: `1px solid ${C.border}22`,
+                      fontSize: 9, color: C.muted, fontWeight: 600,
+                      letterSpacing: '0.05em',
+                    }}>
+                      <span>#</span>
+                      <span>DESCRIÇÃO</span>
+                      <span>NCM</span>
+                      <span>CFOP</span>
+                      <span style={{ textAlign: 'right' }}>QTD × UNIT.</span>
+                      <span style={{ textAlign: 'right' }}>TOTAL</span>
+                    </div>
+                    {(nfeModalFiscal.resumo.itens || []).map((it, i) => (
+                      <div key={i} style={{
+                        display: 'grid',
+                        gridTemplateColumns: '40px 1fr 70px 40px 90px 90px',
+                        gap: 8, padding: '10px 14px',
+                        borderBottom: `1px solid ${C.border}22`,
+                        fontSize: 11, alignItems: 'center',
+                      }}>
+                        <span style={{
+                          color: C.accent, fontWeight: 700,
+                          fontFamily: "'IBM Plex Mono', monospace",
+                        }}>{it.numero}</span>
+                        <div style={{ minWidth: 0 }}>
+                          <div style={{ color: C.text, fontWeight: 500, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                            {it.descricao}
+                          </div>
+                          {it.codigo && (
+                            <div style={{ fontSize: 9, color: C.muted, fontFamily: "'IBM Plex Mono', monospace", marginTop: 2 }}>
+                              {it.codigo}
+                            </div>
+                          )}
+                        </div>
+                        <span style={{ fontSize: 10, color: C.textSub, fontFamily: "'IBM Plex Mono', monospace" }}>
+                          {it.ncm || '—'}
+                        </span>
+                        <span style={{ fontSize: 10, color: C.textSub, fontFamily: "'IBM Plex Mono', monospace" }}>
+                          {it.cfop || '—'}
+                        </span>
+                        <span style={{ textAlign: 'right', color: C.textSub, fontSize: 10 }}>
+                          {it.quantidade} × {fmtBRL(it.valor_unitario)}
+                        </span>
+                        <span style={{ textAlign: 'right', color: C.text, fontWeight: 600 }}>
+                          {fmtBRL(it.valor_total)}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Totais fiscais */}
+                  <div style={{
+                    border: `1px solid ${C.border}`, borderRadius: 8,
+                    padding: '14px 16px', background: C.bg,
+                  }}>
+                    <div style={{
+                      fontSize: 10, color: C.muted, letterSpacing: '0.08em',
+                      marginBottom: 10, fontWeight: 600,
+                    }}>
+                      TOTAIS
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 12 }}>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: C.muted }}>Produtos</span>
+                        <span style={{ color: C.text }}>{fmtBRL(nfeModalFiscal.resumo.valor_produtos)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: C.muted }}>Frete</span>
+                        <span style={{ color: C.text }}>{fmtBRL(nfeModalFiscal.resumo.valor_frete)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: C.muted }}>ICMS</span>
+                        <span style={{ color: C.text }}>{fmtBRL(nfeModalFiscal.resumo.valor_icms)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: C.muted }}>IPI</span>
+                        <span style={{ color: C.text }}>{fmtBRL(nfeModalFiscal.resumo.valor_ipi || 0)}</span>
+                      </div>
+                      <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                        <span style={{ color: C.muted }}>Desconto</span>
+                        <span style={{ color: C.text }}>{fmtBRL(nfeModalFiscal.resumo.valor_desconto || 0)}</span>
+                      </div>
+                      <div style={{
+                        display: 'flex', justifyContent: 'space-between',
+                        gridColumn: 'span 2', paddingTop: 8, marginTop: 4,
+                        borderTop: `1px solid ${C.border}44`,
+                        fontSize: 14, fontWeight: 700,
+                      }}>
+                        <span style={{ color: C.text }}>Total da Nota</span>
+                        <span style={{ color: C.success }}>{fmtBRL(nfeModalFiscal.resumo.valor_total)}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Transporte */}
+                  {(nfeModalFiscal.resumo.qtd_volumes || nfeModalFiscal.resumo.peso_bruto) && (
+                    <div style={{
+                      border: `1px solid ${C.border}`, borderRadius: 8,
+                      padding: '12px 14px', background: C.bg,
+                    }}>
+                      <div style={{
+                        fontSize: 10, color: C.muted, letterSpacing: '0.08em',
+                        marginBottom: 8, fontWeight: 600,
+                      }}>
+                        TRANSPORTE
+                      </div>
+                      <div style={{ display: 'flex', gap: 24, fontSize: 12, color: C.textSub }}>
+                        <div>
+                          <span style={{ color: C.muted }}>Volumes: </span>
+                          <strong style={{ color: C.text }}>{nfeModalFiscal.resumo.qtd_volumes || '—'}</strong>
+                        </div>
+                        <div>
+                          <span style={{ color: C.muted }}>Peso líquido: </span>
+                          <strong style={{ color: C.text }}>{nfeModalFiscal.resumo.peso_liquido || '—'} kg</strong>
+                        </div>
+                        <div>
+                          <span style={{ color: C.muted }}>Peso bruto: </span>
+                          <strong style={{ color: C.text }}>{nfeModalFiscal.resumo.peso_bruto || '—'} kg</strong>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+
+                  <div style={{
+                    fontSize: 10, color: C.muted, textAlign: 'center',
+                    fontStyle: 'italic',
+                  }}>
+                    Dados extraídos do XML assinado digitalmente pelo emissor.
+                    Para auditoria fiscal, baixe o XML original.
+                  </div>
+                </div>
+              )}
+
+              {/* ═══════════════════════════════════════════════════
+                  MODO MANUAL — fluxo legado (upload + validação)
+                  ═══════════════════════════════════════════════════ */}
+              {!modoAutoFiscal && (
+                <>
               {/* UPLOAD DE XML */}
               <div style={{ marginBottom: 16 }}>
                 <label style={s.label}>UPLOAD DE XML (NF-E)</label>
@@ -1382,10 +1966,52 @@ return (
                   />
                 </div>
               )}
+                </>
+              )}
             </div>
 
             <div style={{ display: 'flex', gap: 10, padding: '14px 22px', borderTop: `1px solid ${C.border}` }}>
               
+              {/* MODO AUTO: botões reduzidos — sem quarentena/salvar manual.
+                  O item já foi validado; aqui o comprador só confirma fiscal. */}
+              {modoAutoFiscal ? (
+                <>
+                  <button
+                    onClick={async () => {
+                      try {
+                        const url = await apiService.get(
+                          `/estoque/movimentacoes/nfe/${nfeModalFiscal.id}/download`
+                        );
+                        window.open(url.url, '_blank', 'noopener,noreferrer');
+                      } catch (e) {
+                        alert('Erro ao baixar XML: ' + e.message);
+                      }
+                    }}
+                    style={{
+                      ...s.btn(false, C.muted),
+                      flex: 1, padding: '10px 16px', fontSize: 12,
+                    }}
+                  >
+                    ⬇ Baixar XML
+                  </button>
+                  <button
+                    onClick={() => setItemConferenciaFiscal(null)}
+                    style={{ ...s.btn(false), flex: 1, padding: '10px 16px', fontSize: 12 }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={() => handleSalvarConferenciaFiscal('aprovado')}
+                    style={{
+                      ...s.btn(true, C.success),
+                      flex: 2, padding: '10px 16px', fontSize: 13, fontWeight: 700,
+                    }}
+                  >
+                    ✅ Confirmar Fiscal
+                  </button>
+                </>
+              ) : (
+                <>
               {/* 🔥 BOTÃO QUARENTENA - ATIVO QUANDO HÁ DIVERGÊNCIA */}
               <button
                 onClick={() => handleQuarentena()}
@@ -1418,6 +2044,8 @@ return (
               >
                 ✅ Salvar
               </button>
+                </>
+              )}
             </div>
 
             {/* 🔥 MENSAGEM DE ORIENTAÇÃO QUANDO HÁ DIVERGÊNCIA */}

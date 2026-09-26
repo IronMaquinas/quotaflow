@@ -1027,22 +1027,58 @@ router.post('/meus-pedidos/:ordemVendaId/anexar-nfe', fornecedorMiddleware, asyn
       chave_acesso: parsed.chave_acesso,
       numero_nf: parsed.numero_nf,
       storage_path: uploadData.path,
+      // DANFE completo — todos os campos que o parser já extrai, salvos
+      // pra alimentar a tela "Ver NFe" do recebimento sem precisar
+      // baixar e re-parsear o XML a cada request.
       xml_resumo: {
+        // Identificação
+        numero_nf: parsed.numero_nf,
+        serie: parsed.serie,
+        modelo: parsed.modelo,
+        natureza_operacao: parsed.natureza_operacao,
+        data_emissao: parsed.data_emissao,
+        versao_layout: parsed.versao_layout,
+
+        // Partes
         emitente: parsed.nome_emitente,
         cnpj_emitente: parsed.cnpj_emitente,
+        ie_emitente: parsed.ie_emitente,
         destinatario: parsed.nome_destinatario,
         cnpj_destinatario: parsed.cnpj_destinatario,
-        valor_total: parsed.valor_total,
+
+        // Totais
         valor_produtos: parsed.valor_produtos,
         valor_frete: parsed.valor_frete,
-        data_emissao: parsed.data_emissao,
+        valor_seguro: parsed.valor_seguro,
+        valor_desconto: parsed.valor_desconto,
+        valor_icms: parsed.valor_icms,
+        valor_ipi: parsed.valor_ipi,
+        valor_pis: parsed.valor_pis,
+        valor_cofins: parsed.valor_cofins,
+        valor_total: parsed.valor_total,
+
+        // Transporte
+        peso_bruto: parsed.peso_bruto,
+        peso_liquido: parsed.peso_liquido,
+        qtd_volumes: parsed.qtd_volumes,
+
+        // Itens com detalhe fiscal
         itens: parsed.itens.map(it => ({
           numero: it.numero,
           codigo: it.codigo,
           descricao: it.descricao,
+          ncm: it.ncm,
+          cfop: it.cfop,
+          ean: it.ean,
+          unidade: it.unidade,
           quantidade: it.quantidade,
           valor_unitario: it.valor_unitario,
           valor_total: it.valor_total,
+          icms_cst: it.icms?.cst || null,
+          icms_aliquota: it.icms?.aliquota || 0,
+          icms_valor: it.icms?.valor || 0,
+          ipi_cst: it.ipi?.cst || null,
+          ipi_valor: it.ipi?.valor || 0,
         })),
       },
       validacao,

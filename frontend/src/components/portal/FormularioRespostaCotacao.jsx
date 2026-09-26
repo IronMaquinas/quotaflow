@@ -34,7 +34,14 @@ const inputStyle = {
   transition: 'border .2s',
 };
 
-export default function FormularioRespostaCotacao({ cotacao, enviarResposta, respondendo }) {
+export default function FormularioRespostaCotacao({
+  cotacao,
+  enviarResposta,
+  respondendo,
+  modoModal = false,     // true quando renderizado dentro de modal (hub do fornecedor logado)
+  onSucesso,             // chamado após envio bem-sucedido (opcional)
+  onFechar,              // renderiza botão "Fechar" no comprovante (opcional)
+}) {
   // Estado para os valores preenchidos pelo fornecedor
   const [linhas, setLinhas] = useState([]);
   const [grupos, setGrupos] = useState([]);
@@ -57,8 +64,28 @@ export default function FormularioRespostaCotacao({ cotacao, enviarResposta, res
 
       const initialLinhas = cotacao.itens.map((item) => {
         const resp = porItem[item.id];
+        // M6: código do fornecedor. Ordem de prioridade:
+        //   1. O que ele já respondeu nesta cotação (reenvio)
+        //   2. O vínculo aprendido anteriormente (fornecedor_codigo_item)
+        //   3. O código da RC (chamado_itens.codigo = PN do fabricante)
+        // Se veio só do RC ou do aprendizado, o campo começa como
+        // "confirmado" (readonly). Se o fornecedor quiser mudar, clica
+        // em ✏️ Editar.
+        const codigoResp = resp?.codigo_fornecedor || null;
+        const codigoAprendido = item.codigo_fornecedor_aprendido || null;
+        const codigoRc = item.codigo_rc || null;
+        const codigoFinal = codigoResp || codigoAprendido || codigoRc || '';
+        // Edição explícita = só quando o fornecedor digitou algo diferente
+        // do aprendido/RC nesta resposta.
+        const foiEditado = codigoResp
+          && codigoResp !== codigoAprendido
+          && codigoResp !== codigoRc;
         return {
           id: item.id,
+          codigoFornecedor: codigoFinal,
+          codigoRc,
+          codigoFornecedorAprendido: codigoAprendido,
+          editandoCodigo: foiEditado,
           valor: resp?.valor != null ? String(resp.valor) : '',
           frete: resp?.modalidade || 'CIF',
           grupo: null,
@@ -184,6 +211,11 @@ export default function FormularioRespostaCotacao({ cotacao, enviarResposta, res
             ? parseFloat(freteRateado(l) || 0)
             : 0,
           grupo_frete: l.grupo || null,
+          // M6: envia sempre que houver valor. O backend decide se é
+          // 'manual' (diferente do RC) ou 'auto' (mesmo do RC).
+          codigo_fornecedor: l.codigoFornecedor
+            ? String(l.codigoFornecedor).trim()
+            : null,
         };
       }),
       prazo_entrega: parseInt(prazoGeral),
@@ -199,6 +231,7 @@ export default function FormularioRespostaCotacao({ cotacao, enviarResposta, res
     try {
       await enviarResposta(payload);
       setStep('enviado');
+      onSucesso?.();
     } catch (err) {
       alert('Erro ao enviar proposta: ' + err.message);
     }
@@ -208,7 +241,7 @@ export default function FormularioRespostaCotacao({ cotacao, enviarResposta, res
   if (step === 'enviado') {
     const veioDoBackend = cotacao?.ja_respondida === true;
     return (
-      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', gap: 20, padding: 40 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: modoModal ? 'auto' : '100vh', gap: 20, padding: 40 }}>
         <div style={{ fontSize: 52 }}>{veioDoBackend ? '✅' : '🎉'}</div>
         <div style={{ fontSize: 20, fontWeight: 700, color: '#1f2937' }}>
           {veioDoBackend ? 'Você já respondeu esta cotação' : 'Proposta enviada com sucesso!'}
@@ -265,6 +298,18 @@ export default function FormularioRespostaCotacao({ cotacao, enviarResposta, res
             ? 'Para alterar sua proposta, entre em contato com o comprador. Esta página é apenas o comprovante do que foi enviado.'
             : 'Um e-mail de confirmação foi enviado para você com todos os dados desta proposta.'}
         </div>
+        {onFechar && (
+          <button
+            onClick={onFechar}
+            style={{
+              padding: '10px 28px', borderRadius: 8,
+              background: '#10b981', color: '#fff', border: 'none',
+              fontSize: 14, fontWeight: 600, cursor: 'pointer',
+            }}
+          >
+            Fechar
+          </button>
+        )}
       </div>
     );
   }
@@ -300,7 +345,7 @@ export default function FormularioRespostaCotacao({ cotacao, enviarResposta, res
           <div
             style={{
               display: 'grid',
-              gridTemplateColumns: '2fr 80px 80px 80px 80px 100px',
+              gridTemplateColumns: '2fr 90px 80px 80px 80px 80px 100px',
               padding: '9px 18px',
               background: '#0f172a',
               borderBottom: '1px solid #2d3748',
@@ -310,6 +355,7 @@ export default function FormularioRespostaCotacao({ cotacao, enviarResposta, res
             }}
           >
             <span>ITEM</span>
+            <span>SEU CÓD.</span>
             <span>QTD</span>
             <span>VL UNIT.</span>
             <span>FRETE</span>
@@ -326,7 +372,7 @@ export default function FormularioRespostaCotacao({ cotacao, enviarResposta, res
                 key={it.id}
                 style={{
                   display: 'grid',
-                  gridTemplateColumns: '2fr 80px 80px 80px 80px 100px',
+                  gridTemplateColumns: '2fr 90px 80px 80px 80px 80px 100px',
                   padding: '11px 18px',
                   borderBottom: i < cotacao.itens.length - 1 ? '1px solid #2d3748' : 'none',
                   alignItems: 'center',
@@ -336,6 +382,9 @@ export default function FormularioRespostaCotacao({ cotacao, enviarResposta, res
                   <div style={{ fontSize: 13, color: '#f3f4f6', fontWeight: 500 }}>{it.peca || it.nome}</div>
                   <div style={{ fontSize: 10, color: '#6b7280' }}>{it.codigo}</div>
                 </div>
+                <span style={{ fontSize: 11, color: '#3b82f6', fontFamily: "'IBM Plex Mono', monospace" }}>
+                  {l?.codigoFornecedor || '—'}
+                </span>
                 <span style={{ fontSize: 12, color: '#d1d5db' }}>{it.quantidade}x</span>
                 <span style={{ fontSize: 13, color: '#f3f4f6', fontWeight: 600 }}>{fmtBRL(parseFloat(l.valor))}</span>
                 <span style={{ fontSize: 9, padding: '2px 8px', borderRadius: 4, background: l.frete === 'CIF' ? '#0f2f1a' : '#3f2a0a', color: l.frete === 'CIF' ? '#10b981' : '#f59e0b' }}>
@@ -410,7 +459,7 @@ export default function FormularioRespostaCotacao({ cotacao, enviarResposta, res
 
   // --- TELA PRINCIPAL DE PREENCHIMENTO ---
   return (
-    <div style={{ maxWidth: 900, margin: '0 auto', padding: '28px 20px', overflowY: 'auto' }}>
+    <div style={{ maxWidth: modoModal ? '100%' : 900, margin: '0 auto', padding: modoModal ? '16px 20px' : '28px 20px', overflowY: 'auto' }}>
       {/* Header */}
       <div
         style={{
@@ -518,18 +567,21 @@ export default function FormularioRespostaCotacao({ cotacao, enviarResposta, res
         <div
           style={{
             display: 'grid',
-            gridTemplateColumns: 'minmax(220px, 2.2fr) 40px 110px 100px 150px 130px',
-            minWidth: 810,
-            padding: '9px 16px',
+            gridTemplateColumns: 'minmax(180px, 1.8fr) 120px 32px 100px 90px 130px 110px',
+            minWidth: 820,
+            padding: '9px 14px',
             background: '#0f172a',
             borderBottom: '1px solid #2d3748',
             fontSize: 10,
             color: '#6b7280',
             letterSpacing: '0.07em',
-            gap: 8,
+            gap: 6,
           }}
         >
           <span>ITEM / CÓDIGO</span>
+          <span title="Código que vai no campo cProd da sua NFe. Já vem preenchido com o código do fabricante usado no pedido — corrija se você usa um diferente.">
+            SEU CÓDIGO NA NFe <span style={{ color: '#3b82f6', fontSize: 12 }}>ⓘ</span>
+          </span>
           <span>QTD</span>
           <span>VALOR UNIT. (R$)</span>
           <span>MODALIDADE</span>
@@ -548,8 +600,8 @@ export default function FormularioRespostaCotacao({ cotacao, enviarResposta, res
               key={it.id}
               style={{
                 display: 'grid',
-                gridTemplateColumns: 'minmax(220px, 2.2fr) 40px 110px 100px 150px 130px',
-                padding: '12px 16px',
+                gridTemplateColumns: 'minmax(180px, 1.8fr) 120px 32px 100px 90px 130px 110px',
+                padding: '12px 14px',
                 borderBottom: i < cotacao.itens.length - 1 ? '1px solid #2d3748' : 'none',
                 alignItems: 'center',
                 gap: 8,
@@ -607,6 +659,80 @@ export default function FormularioRespostaCotacao({ cotacao, enviarResposta, res
                 <div style={{ fontSize: 10, color: '#3b82f6', marginTop: 2, fontFamily: "'IBM Plex Mono', monospace" }}>
                   {it.codigo} · {it.equipamento || ''}
                 </div>
+              </div>
+              {/* M6: código do fornecedor (cProd da NFe).
+                  Modo 1 (default): readonly, pré-preenchido com o código do
+                  fabricante que o comprador cadastrou. O fornecedor só vê
+                  e (opcionalmente) clica em ✏️ pra corrigir.
+                  Modo 2 (editando): input normal — ele digita o código dele. */}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+                {l?.editandoCodigo ? (
+                  <>
+                    <input
+                      type="text"
+                      value={l?.codigoFornecedor || ''}
+                      onChange={(e) => setLinha(it.id, 'codigoFornecedor', e.target.value)}
+                      placeholder="Ex: LP-ATH-DIR"
+                      autoFocus
+                      style={{
+                        ...inputStyle,
+                        flex: 1, minWidth: 0,
+                        padding: '6px 8px',
+                        fontSize: 12,
+                        fontFamily: "'IBM Plex Mono', monospace",
+                        borderColor: '#f59e0b88',
+                      }}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setLinha(it.id, 'editandoCodigo', false)}
+                      title="Confirmar código"
+                      style={{
+                        background: 'transparent', border: 'none',
+                        color: '#10b981', cursor: 'pointer',
+                        fontSize: 14, padding: 2,
+                      }}
+                    >
+                      ✓
+                    </button>
+                  </>
+                ) : (
+                  <>
+                    <div style={{
+                      flex: 1, minWidth: 0,
+                      fontSize: 12,
+                      fontFamily: "'IBM Plex Mono', monospace",
+                      color: l?.codigoFornecedor ? '#d1d5db' : '#6b7280',
+                      padding: '6px 8px',
+                      background: '#0f172a',
+                      border: `1px solid ${l?.codigoFornecedorAprendido ? '#10b98155' : '#2d3748'}`,
+                      borderRadius: 6,
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap',
+                    }}
+                      title={
+                        l?.codigoFornecedorAprendido
+                          ? 'Código já registrado por você em uma compra anterior'
+                          : 'Código do fabricante cadastrado pelo comprador — confirme se você usa esse mesmo na NFe'
+                      }
+                    >
+                      {l?.codigoFornecedor || <span style={{ color: '#6b7280' }}>—</span>}
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setLinha(it.id, 'editandoCodigo', true)}
+                      title="Usar um código diferente deste"
+                      style={{
+                        background: 'transparent', border: 'none',
+                        color: '#6b7280', cursor: 'pointer',
+                        fontSize: 12, padding: 2,
+                      }}
+                    >
+                      ✏️
+                    </button>
+                  </>
+                )}
               </div>
               <span style={{ fontSize: 12, color: '#9ca3af', fontWeight: 600, textAlign: 'center' }}>
                 {it.quantidade}x
