@@ -7,6 +7,25 @@ const ValidacaoXmlService = require('../../services/ValidacaoXmlService');
 
 const SISTEMA_UUID = '00000000-0000-0000-0000-000000000000';
 
+// ─────────────────────────────────────────────────────────────────────
+// HELPER: dados do usuário logado
+//
+// Mesma função que existe em routes/cotacoes.js e routes/naoConformidades.js.
+// Usada aqui pra gravar `criado_por_nome` / `aprovado_por` nas entidades
+// que o fluxo de recebimento cria (NCs principalmente). Falha silenciosa
+// se o usuário não existir — devolve nome null.
+// ─────────────────────────────────────────────────────────────────────
+async function usuarioAtual(req, tenantId) {
+  let nome = null;
+  if (req.userId) {
+    try {
+      const u = await DB.selectOne("usuarios", { id: req.userId }, tenantId);
+      nome = u?.nome || null;
+    } catch (_) {}
+  }
+  return { id: req.userId || null, nome, email: req.userEmail || null };
+}
+
   //--- GERAR NÚMERO DO RECEBIMENTO ---
 async function gerarNumeroRecebimento(tenantId) {
   const ano = new Date().getFullYear();
@@ -991,24 +1010,6 @@ router.post('/contagem-cega', tenantMiddleware, async (req, res) => {
       migo_em: new Date()
     }, tenantId);
 
-    /* O SALDO NÃO SERÁ MAIS APROVADO APÓS A 2a TENTATIVA
-    // 7. Se aprovado e tentativa >= 2, atualizar saldo
-    if (status === 'aprovado' && tentativaReal >= 2) {
-      const itemConsumo = await DB.selectOne('itens_consumo', { 
-        id: item.item_catalogo_id, 
-        tenant_id: tenantId 
-      }, tenantId);
-      
-      if (itemConsumo) {
-        const novoSaldo = (parseFloat(itemConsumo.saldo_atual) || 0) + qtdContada;
-        await DB.update('itens_consumo', itemConsumo.id, {
-          saldo_atual: novoSaldo,
-          atualizado_em: new Date()
-        }, tenantId);
-      }
-    }
-    */
-
     // 8. Buscar histórico completo para retornar
     const historicoCompleto = await DB.select('historico_contagens_cegas', { 
       ordem_venda_item_id: itemIdNum,
@@ -1418,7 +1419,7 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
   try {
     const tenantId = req.tenantId;
     const { itemId } = req.params;
-    const { justificativa, destino_tratativa } = req.body; // 'aprovado' ou 'nao_conformidade'
+    const { justificativa, destino_tratativa, anexos } = req.body; // 'aprovado' ou 'nao_conformidade'
 
     if (!justificativa) {
       return res.status(400).json({ erro: 'Justificativa é obrigatória' });
@@ -1455,36 +1456,97 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
           ? await DB.selectOne('fornecedores', { id: ovParaNC.fornecedor_id, tenant_id: tenantId }, tenantId)
           : null;
 
-        await DB.insert('nao_conformidades', {
-          tenant_id: tenantId,
-          numero_nc: numeroNC,
-          ordem_venda_id: item.ordem_venda_id,
-          numero_pedido: ovParaNC?.numero || null,
-          // FK do fornecedor — vem da OC (nunca digitado). O `nome` fica
-          // como snapshot pra histórico, mas a FK é a fonte de verdade.
-          fornecedor_id: ovParaNC?.fornecedor_id || null,
-          fornecedor_nome: fornecedorParaNC?.nome || null,
-          numero_nota_fiscal: item.numero_nota_fiscal || null,
-          inspetor_id: req.userId,
-          motivo_recusa: justificativa,
-          quantidade: parseFloat(item.quantidade_recebida_fisica || 0),
-          unidade_medida: item.unidade_medida || 'UN',
-          // M4: entra no fluxo do fornecedor — notificação é disparada
-          // no passo 8 (email + status).
-          fornecedor_tratativa_status: ovParaNC?.fornecedor_id ? 'nao_notificado' : null,
-          criado_em: new Date()
-        }, tenantId);
+      // FIX M4: buscar nome do usuário logado pra gravar em
+      // `criado_por_nome`. Sem isso, o modal mostra "—" no campo
+      // "👤 aberta por".
+      const usuarioLogado = await usuarioAtual(req, tenantId);
+
+      const ncCriada = await DB.insert('nao_conformidades', {
+        tenant_id: tenantId,
+        numero_nc: numeroNC,
+        ordem_venda_id: item.ordem_venda_id,
+        numero_pedido: ovParaNC?.numero || null,
+        fornecedor_id: ovParaNC?.fornecedor_id || null,
+        fornecedor_nome: fornecedorParaNC?.nome || null,
+        numero_nota_fiscal: item.numero_nota_fiscal || null,
+        inspetor_id: req.userId,
+        // FIX M4: gravar nos 2 campos. `descricao_problema` é o que o
+        // ModalDetalheNC renderiza; `motivo_recusa` é a coluna legada
+        // (NOT NULL) usada por outras telas.
+        descricao_problema: justificativa,
+        motivo_recusa: justificativa,
+        // Quem abriu — nome de exibição no header do modal + timeline.
+        criado_por_nome: usuarioLogado.nome || null,
+        quantidade: parseFloat(item.quantidade_recebida_fisica || 0),
+        unidade_medida: item.unidade_medida || 'UN',
+        fornecedor_tratativa_status: ovParaNC?.fornecedor_id ? 'nao_notificado' : null,
+        criado_em: new Date()
+      }, tenantId);
+
+        // M4: evento de criação com visibilidade pro fornecedor. Ele
+        // vê a NC no portal mesmo sem notificação por email.
+        if (ncCriada && ovParaNC?.fornecedor_id) {
+          await DB.insert('nao_conformidade_eventos', {
+            tenant_id: tenantId,
+            nc_id: ncCriada.id,
+            tipo: 'criacao',
+            descricao: `NC criada no recebimento da OC ${ovParaNC.numero}: ${justificativa}`,
+            dados: { ordem_venda_id: item.ordem_venda_id, quantidade: item.quantidade_recebida_fisica },
+            criado_por: req.userId || null,
+            criado_por_nome: 'Recebimento',
+            visivel_fornecedor: true,
+            autor_tipo: 'comprador',
+          }, tenantId);
+        }
+
+        // M4: anexar evidências que vieram no body. Formato esperado:
+        // [{ url, nome_arquivo?, mime_type?, tamanho_bytes? }]
+        // Mesmo padrão usado em POST /api/nao-conformidades.
+        if (ncCriada && Array.isArray(anexos) && anexos.length > 0) {
+          for (let i = 0; i < anexos.length; i++) {
+            const a = anexos[i];
+            if (!a?.url) continue;
+            const nomePadrao = a.nome_arquivo || `${numeroNC}-evidencia-${String(i + 1).padStart(2, '0')}.jpg`;
+            await DB.insert('nao_conformidade_anexos', {
+              tenant_id: tenantId,
+              nc_id: ncCriada.id,
+              url: a.url,
+              nome_arquivo: nomePadrao,
+              mime_type: a.mime_type || null,
+              tamanho_bytes: a.tamanho_bytes != null ? parseInt(a.tamanho_bytes) : null,
+              criado_por: req.userId || null,
+              criado_por_nome: 'Recebimento',
+            }, tenantId);
+          }
+        }
       } catch (e) {
         console.error('❌ Erro ao registrar Não Conformidade:', e.message);
       }
 
+      // M4: notificação automática REMOVIDA por decisão de produto.
+      // A NC contra um fornecedor é uma afirmação formal com efeito
+      // contratual (recusa, glosa, devolução) — precisa de aprovação
+      // humana antes de sair do sistema.
+      //
+      // Fluxo M4.1: a NC nasce 'nao_notificado' e fica visível no portal
+      // do fornecedor em modo passivo. O email oficial sai quando o
+      // gestor aprovar/direcionar a NC numa etapa posterior.
+      //
+      // O evento de criação já é gravado com visivel_fornecedor=true
+      // (ver bloco de criação da NC), então a NC aparece na lista dele
+      // mesmo sem notificação ativa.
+
       // ✅ ATUALIZAÇÃO CORRIGIDA: Gravando nas colunas certas do seu Supabase!
+      // FIX M4: padronizar pra 'nao_conforme' (esse é o valor que o
+      // calcularStatusOV agora reconhece como quarentena ativa, e que
+      // o resto do frontend já usa no badge "Em Tratamento de Quarentena").
       await DB.update('ordem_venda_itens', itemId, {
         status_quarentena: 'nao_conforme',
         status_contagem: 'concluido',
+        motivo_divergencia: justificativa,
         observacao: justificativaCompleta,
-        aprovado_por: req.userId, // Salva o UUID de quem recusou
-        aprovado_em: new Date()   // Salva a data exata da recusa
+        aprovado_por: req.userId,
+        aprovado_em: new Date()
       }, tenantId);
 
       // Recalcula o status pai da ordem para atualizar o card na tela
@@ -1585,9 +1647,18 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
 function calcularStatusOV(itens) {
   if (!itens || itens.length === 0) return 'pendente';
   
-  // 1. PRIORIDADE 1: Itens em quarentena ativa (esperando decisão do gestor)
-  const temQuarentenaAtiva = itens.some(i => i.status_quarentena === 'rejeitado' || i.status_quarentena === 'quarentena');
-  if (temQuarentenaAtiva) return 'quarentena';
+  // 1. PRIORIDADE 1: Não Conformidade formal registrada. É o estado
+  //    mais grave — houve recusa COM NC aberta contra o fornecedor.
+  //    Diferente de 'quarentena' (que é só separação física, sem NC).
+  const temNaoConformidadeFormal = itens.some(i => i.status_quarentena === 'nao_conforme');
+  if (temNaoConformidadeFormal) return 'nao_conforme';
+
+  // 2. PRIORIDADE 2: Quarentena física (item rejeitado, aguardando
+  //    decisão se vira NC ou não).
+  const temQuarentenaFisica = itens.some(i =>
+    i.status_quarentena === 'rejeitado' || i.status_quarentena === 'quarentena'
+  );
+  if (temQuarentenaFisica) return 'quarentena';
 
   // 2. PRIORIDADE 2: Itens em processo de recontagem física ativa (1ª ou 2ª tentativa falhas)
   const temRecontagemAtiva = itens.some(i => (i.tentativa_atual || 0) > 0 && i.status_contagem !== 'concluido');
@@ -1658,6 +1729,62 @@ router.get('/nfe/:xmlId/download', tenantMiddleware, async (req, res) => {
   } catch (err) {
     console.error('❌ Erro em download XML (comprador):', err.message);
     return res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────
+// PUT /api/estoque/movimentacoes/item/:itemId/forcar-quarentena
+//
+// Coloca um item em quarentena direto (sem passar por contagem cega).
+// Usado pelo botão "⚠️ Quarentena" no modal de contagem — o comprador
+// já sabe que o item está com problema e não quer esperar as 3
+// tentativas.
+//
+// Diferente do /aprovar-saldo com 'nao_conformidade': NÃO cria NC
+// formal. O item fica bloqueado esperando tratativa posterior (o
+// comprador decide depois se vira NC, devolução, descarte etc.).
+//
+// Body: { motivo }
+// ─────────────────────────────────────────────────────────────────────
+router.put('/item/:itemId/forcar-quarentena', tenantMiddleware, async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const { itemId } = req.params;
+    const { motivo } = req.body;
+
+    if (!motivo || !motivo.trim()) {
+      return res.status(400).json({ erro: 'motivo é obrigatório' });
+    }
+
+    const item = await DB.selectOne('ordem_venda_itens', { id: itemId, tenant_id: tenantId }, tenantId);
+    if (!item) return res.status(404).json({ erro: 'Item não encontrado' });
+
+    const justificativaCompleta = `Quarentena: ${motivo.trim()}`;
+
+    await DB.update('ordem_venda_itens', itemId, {
+      // FIX M4: quarentena física NÃO é NC. Fica 'rejeitado' até o
+      // comprador decidir (no botão "⚖️ Tratar Quarentena" da tela
+      // principal) se vira NC formal, devolução, descarte etc.
+      status_quarentena: 'rejeitado',
+      status_contagem: 'concluido',
+      motivo_divergencia: motivo.trim(),
+      observacao: justificativaCompleta,
+      aprovado_por: req.userId,
+      aprovado_em: new Date(),
+    }, tenantId);
+
+    // Recalcula status geral da OV
+    const itensOV = await DB.select('ordem_venda_itens', { ordem_venda_id: item.ordem_venda_id, tenant_id: tenantId }, tenantId);
+    const novoStatus = calcularStatusOV(itensOV);
+    await DB.update('ordens_venda', item.ordem_venda_id, {
+      status_recebimento: novoStatus,
+      atualizado_em: new Date(),
+    }, tenantId);
+
+    res.json({ ok: true, mensagem: 'Item enviado para quarentena' });
+  } catch (err) {
+    console.error('❌ Erro ao forçar quarentena:', err.message);
+    res.status(500).json({ erro: err.message });
   }
 });
 

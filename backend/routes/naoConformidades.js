@@ -175,12 +175,31 @@ router.post('/', tenantMiddleware, async (req, res) => {
       }
     }
 
+    // M4: marca o evento como visível pro fornecedor (se a NC tem FK).
+    // Feito num UPDATE separado porque `registrarEventoNC` genérico não
+    // passa esse campo. Best-effort — se falhar, não bloqueia.
     await registrarEventoNC(
       tenantId, nc.id, "criacao",
       `NC criada (origem: ${origemFinal}) — ${descricao_problema.trim().slice(0, 100)}`,
-      { origem: origemFinal, anexos: anexosInseridos.length, visivel_fornecedor: !!fornecedorIdFinal },
+      { origem: origemFinal, anexos: anexosInseridos.length },
       u
     );
+
+    if (fornecedorIdFinal) {
+      try {
+        const eventosRecentes = await DB.select("nao_conformidade_eventos",
+          { nc_id: nc.id, tenant_id: tenantId }, tenantId);
+        const eventoCriacao = eventosRecentes.find(ev => ev.tipo === "criacao");
+        if (eventoCriacao) {
+          await DB.update("nao_conformidade_eventos", eventoCriacao.id, {
+            visivel_fornecedor: true,
+            autor_tipo: "comprador",
+          }, tenantId);
+        }
+      } catch (e) {
+        console.warn("⚠ Falha ao marcar evento como visível:", e.message);
+      }
+    }
 
     // M4: se tem fornecedor, marca evento como visível e dispara email.
     // Best-effort — não bloqueia resposta.

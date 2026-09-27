@@ -4,6 +4,7 @@ import TelaPortalFornecedor from './TelaPortalFornecedor';
 import TelaCatalogoFornecedor from './TelaCatalogoFornecedor';
 import TelaOrdensVenda from '../ordensvenda/TelaOrdensVenda';
 import TelaMeusPedidosFornecedor from '../fornecedores/TelaMeusPedidosFornecedor';
+import TelaNaoConformidadesFornecedor from '../fornecedores/TelaNaoConformidadesFornecedor';
 import TelaGestaoCotacoesFornecedor from '../fornecedores/TelaGestaoCotacoesFornecedor';
 
 const C = {
@@ -42,6 +43,7 @@ export default function TelaFornecedor() {
   const menuItens = [
     { id: 'cotacoes',      label: '📋 Minhas Cotações' },
     { id: 'pedidos',       label: '📦 Meus Pedidos' },
+    { id: 'nao-conformidades', label: '⚠️ Não Conformidades' },
     { id: 'oportunidades', label: '⚡ Oportunidades Spot' },
     { id: 'catalogo',      label: '📦 Catálogo' },
   ];
@@ -137,6 +139,7 @@ export default function TelaFornecedor() {
         <div style={{ flex: 1, overflowY: 'auto', background: C.bg }}>
         {tela === 'cotacoes' && <TelaGestaoCotacoesFornecedor C={C} s={s} usuario={usuario} />}
         {tela === 'pedidos' && <TelaMeusPedidosFornecedor C={C} s={s} usuario={usuario} />}
+        {tela === 'nao-conformidades' && <TelaNaoConformidadesFornecedor C={C} s={s} usuario={usuario} />}
         {tela === 'oportunidades' && <TelaPortalFornecedor />}
         {tela === 'catalogo' && <TelaCatalogoFornecedor C={C} s={s} fmtBRL={fmtBRL} />}
         </div>

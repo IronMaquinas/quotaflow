@@ -559,7 +559,10 @@ useEffect(() => { carregar(); }, [ncId]);
           {/* ── Descrição ── */}
           <Secao titulo="DESCRIÇÃO DO PROBLEMA" C={C}>
             <div style={{ fontSize: 13, color: C.text, lineHeight: 1.5 }}>
-              {nc.descricao_problema}
+              {/* FIX M4: NCs antigas (antes do fix do aprovar-saldo)
+                  só têm `motivo_recusa` preenchido. Fallback evita
+                  modal vazio. */}
+              {nc.descricao_problema || nc.motivo_recusa || '—'}
             </div>
           </Secao>
 

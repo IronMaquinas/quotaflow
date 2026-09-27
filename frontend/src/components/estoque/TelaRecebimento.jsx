@@ -2,6 +2,7 @@
 import { useState, useEffect, useRef } from 'react';
 import apiService from '../../services/apiService';
 import { LeitorCodigoBarras } from "../../components/LeitorCodigoBarras";
+import ModalNaoConformidade from "./ModalNaoConformidade";
 
 // Função para formatar valores em Reais
 const fmtBRL = (v) => {
@@ -13,6 +14,10 @@ export default function TelaRecebimento({ C, s, fmtD }) {
   const [ordensVendaAbertas, setOrdensVendaAbertas] = useState([]);
   const [ordemVendaSel, setOrdemVendaSel] = useState(null);
   const [itensOV, setItensOV] = useState([]);
+  // FIX M4: flag de operação assíncrona usada pelos botões
+  // "🚫 Não Conformidade" e "⚠️ Quarentena" no modal de contagem cega.
+  // Sem isso, o JSX quebra com "processando is not defined".
+  const [processando, setProcessando] = useState(false);
   const [buscaOV, setBuscaOV] = useState('');
   const [loading, setLoading] = useState(true);
   const [abrirLeitor, setAbrirLeitor] = useState(false);
@@ -39,6 +44,9 @@ export default function TelaRecebimento({ C, s, fmtD }) {
   const [contagemCega, setContagemCega] = useState(null);
   const [itensPendentesContagem, setItensPendentesContagem] = useState([]);
   const [modalContagemCega, setModalContagemCega] = useState(false);
+  // FIX M4: modal próprio pra "Não Conformidade" (substitui window.prompt).
+  // Aceita anexos. Também reaproveitado pra quarentena simples.
+  const [modalNCConfig, setModalNCConfig] = useState(null);
   const [contagemTentativa, setContagemTentativa] = useState(1);
   const [itensParaContar, setItensParaContar] = useState([]);
   const [contagens, setContagens] = useState({}); // { itemId: { quantidade, lote, validade, numero_serie } }
@@ -808,6 +816,41 @@ const handleValidarXML = async () => {
     ? acharItemNaNfe(itemConferenciaFiscal)
     : null;
 
+  const confirmarModalNC = async ({ motivo, anexos }) => {
+    setProcessando(true);
+    try {
+      for (const item of itensParaContar) {
+        if (modalNCConfig.modo === 'nao_conformidade') {
+          await apiService.put(
+            `/estoque/movimentacoes/item/${item.id}/aprovar-saldo`,
+            {
+              justificativa: motivo,
+              destino_tratativa: 'nao_conformidade',
+              // Anexos vão em cada item — o backend insere em
+              // nao_conformidade_anexos vinculado à NC de cada um.
+              anexos: anexos || [],
+            }
+          );
+        } else {
+          await apiService.put(
+            `/estoque/movimentacoes/item/${item.id}/forcar-quarentena`,
+            { motivo }
+          );
+        }
+      }
+      setModalNCConfig(null);
+      setModalContagemCega(false);
+      const verbo = modalNCConfig.modo === 'nao_conformidade' ? 'recusado(s) — NC registrada' : 'enviado(s) para Quarentena';
+      alert(`🚫 ${itensParaContar.length} item(ns) ${verbo}!`);
+      await carregarItensOV(ordemVendaSel.id);
+      await carregarOVs();
+    } catch (err) {
+      throw new Error(err.message);
+    } finally {
+      setProcessando(false);
+    }
+  };
+
   if (loading) return <div style={{ padding: 20, color: C.muted }}>Carregando...</div>;
 
 return (
@@ -907,8 +950,11 @@ return (
 
                 let statusConfig = { color: C.muted, icone: '⚪', label: 'Status Desconhecido' };
 
-                if (ov.status_recebimento === 'quarentena') {
-                  statusConfig = { cor: C.danger, icone: '🔴', label: '🚫 Em Tratamento de Quarentena' };
+                if (ov.status_recebimento === 'nao_conforme') {
+                  // FIX M4: NC formal registrada — mais grave que quarentena.
+                  statusConfig = { cor: C.danger, icone: '🔴', label: '⚠️ Não Conformidade Aberta' };
+                } else if (ov.status_recebimento === 'quarentena') {
+                  statusConfig = { cor: '#f59e0b', icone: '🟠', label: '🚫 Em Quarentena (aguardando tratativa)' };
                 } else if (ov.status_recebimento === 'contagem_pendente') {
                   statusConfig = { cor: C.warn, icone: '🟡', label: `⚠️ Aguardando Recontagem (${totalDivergentesReal} item divergente)` };
                 } else if (ov.status_recebimento === 'aguardando_contagem') {
@@ -2340,6 +2386,22 @@ return (
         </div>
       )}
 
+      {/* MODAL: NÃO CONFORMIDADE / QUARENTENA — padrão escuro */}
+      {modalNCConfig && (
+        <ModalNaoConformidade
+          C={C}
+          s={s}
+          titulo={modalNCConfig.titulo}
+          labelMotivo={modalNCConfig.modo === 'nao_conformidade' ? 'MOTIVO DA RECUSA *' : 'MOTIVO DA QUARENTENA *'}
+          placeholder={modalNCConfig.placeholderMotivo || 'Descreva o problema...'}
+          labelBotao={modalNCConfig.labelBotao}
+          corBotao={modalNCConfig.corBotao}
+          permiteAnexos={modalNCConfig.permiteAnexos}
+          onFechar={() => setModalNCConfig(null)}
+          onConfirmar={confirmarModalNC}
+        />
+      )}
+
       {/* MODAL: CONTAGEM CEGA (MIGO) - CORRIGIDO */}
       {modalContagemCega && (
         <div style={{ position: 'fixed', inset: 0, background: '#00000090', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 20 }}>
@@ -2509,27 +2571,20 @@ return (
               {/* 🔥 BOTÃO ABRIR NÃO CONFORMIDADE */}
               <button
                 onClick={() => {
-                  const justificativa = window.prompt('Descreva a não conformidade (ex: produto com avaria, conteúdo incorreto, etc.):');
-                  if (!justificativa) {
-                    alert('Justificativa é obrigatória!');
-                    return;
-                  }
-                  // Envia todos os itens pendentes para "bloqueado"
-                  itensParaContar.forEach(async (item) => {
-                    await apiService.post('/estoque/movimentacoes/contagem-cega', {
-                      item_id: item.id,
-                      quantidade: 0,
-                      tentativa: contagemTentativa,
-                      status: 'bloqueado',
-                      observacao: `Não conformidade: ${justificativa}`
-                    });
+                  setModalNCConfig({
+                    modo: 'nao_conformidade',
+                    titulo: 'Registrar Não Conformidade',
+                    labelBotao: '🚫 Recusar e Registrar NC',
+                    corBotao: C.danger,
+                    permiteAnexos: true,
                   });
-                  setModalContagemCega(false);
-                  alert('🚫 Item(s) movido(s) para Estoque Bloqueado!');
-                  carregarItensOV(ordemVendaSel.id);
-                  carregarOVs();
                 }}
-                style={{ ...s.btn(true, C.danger), padding: '8px 16px', fontSize: 12 }}
+                disabled={processando}
+                style={{
+                  ...s.btn(true, C.danger),
+                  padding: '8px 16px', fontSize: 12,
+                  opacity: processando ? 0.5 : 1,
+                }}
               >
                 🚫 Não Conformidade
               </button>
@@ -2537,26 +2592,21 @@ return (
               {/* 🔥 BOTÃO COLOCAR EM QUARENTENA */}
               <button
                 onClick={() => {
-                  const motivo = window.prompt('Digite o motivo da quarentena:');
-                  if (!motivo) {
-                    alert('Motivo é obrigatório!');
-                    return;
-                  }
-                  itensParaContar.forEach(async (item) => {
-                    await apiService.post('/estoque/movimentacoes/contagem-cega', {
-                      item_id: item.id,
-                      quantidade: 0,
-                      tentativa: contagemTentativa,
-                      status: 'rejeitado',
-                      observacao: `Quarentena: ${motivo}`
-                    });
+                  setModalNCConfig({
+                    modo: 'quarentena',
+                    titulo: 'Enviar para Quarentena',
+                    labelBotao: '⚠️ Enviar para Quarentena',
+                    corBotao: C.warn,
+                    permiteAnexos: false,
+                    placeholderMotivo: 'Descreva o motivo da quarentena...',
                   });
-                  setModalContagemCega(false);
-                  alert('🚫 Item(s) enviado(s) para Quarentena!');
-                  carregarItensOV(ordemVendaSel.id);
-                  carregarOVs();
                 }}
-                style={{ ...s.btn(true, C.warn), padding: '8px 16px', fontSize: 12 }}
+                disabled={processando}
+                style={{
+                  ...s.btn(true, C.warn),
+                  padding: '8px 16px', fontSize: 12,
+                  opacity: processando ? 0.5 : 1,
+                }}
               >
                 ⚠️ Quarentena
               </button>
