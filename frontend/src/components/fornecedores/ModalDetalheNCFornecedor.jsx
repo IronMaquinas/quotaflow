@@ -9,11 +9,12 @@ import apiService from '../../services/apiService';
 import { fmtD } from '../../utils/formatters';
 
 const STATUS_TRATATIVA = {
-  nao_notificado:       { l: 'Aguardando ciência', c: '#9ca3af', icon: '⏳' },
-  notificado:           { l: 'Aguardando você',    c: '#f59e0b', icon: '🔔' },
-  aceita:               { l: 'Aceita por você',    c: '#10b981', icon: '✅' },
-  contestada:           { l: 'Contestada',         c: '#ef4444', icon: '✋' },
-  resolvida_fornecedor: { l: 'Resolvida',          c: '#3b82f6', icon: '✔️' },
+  nao_enviado:          { l: 'Aguardando envio', c: '#6b7280', icon: '⏳' },
+  enviado:              { l: 'Aguardando você',  c: '#f59e0b', icon: '🔔' },
+  visualizado:          { l: 'Visualizada',      c: '#6366f1', icon: '👁️' },
+  aceita:               { l: 'Aceita por você',  c: '#10b981', icon: '✅' },
+  contestada:           { l: 'Contestada',       c: '#ef4444', icon: '✋' },
+  resolvida_fornecedor: { l: 'Resolvida',        c: '#3b82f6', icon: '✔️' },
 };
 
 export default function ModalDetalheNCFornecedor({ C, s, detalhe, carregando, onFechar, onAtualizar }) {
@@ -41,8 +42,8 @@ export default function ModalDetalheNCFornecedor({ C, s, detalhe, carregando, on
 
   const { cabecalho, descricao_problema, motivo_recusa, eventos, anexos } = detalhe;
   const cfg = STATUS_TRATATIVA[cabecalho.fornecedor_tratativa_status] || { l: '—', c: '#6b7280', icon: '⚪' };
-  const podeResponder = ['nao_notificado', 'notificado'].includes(cabecalho.fornecedor_tratativa_status);
-
+  const podeResponder = ['enviado', 'visualizado'].includes(cabecalho.fornecedor_tratativa_status);
+  
   const enviarMensagem = async () => {
     if (!mensagem.trim()) return;
     setEnviando(true);
@@ -168,14 +169,59 @@ export default function ModalDetalheNCFornecedor({ C, s, detalhe, carregando, on
             <div style={{ fontSize: 13, color: C.text, lineHeight: 1.6 }}>
               {descricao_problema || motivo_recusa || '—'}
             </div>
-            {cabecalho.quantidade && (
-              <div style={{ fontSize: 11, color: C.muted, marginTop: 8 }}>
-                Quantidade recusada: {cabecalho.quantidade} {cabecalho.unidade_medida || 'UN'}
-                {cabecalho.lote && ` · Lote ${cabecalho.lote}`}
-                {cabecalho.numero_serie && ` · Série ${cabecalho.numero_serie}`}
-              </div>
-            )}
           </div>
+
+          {/* Rastreabilidade — dados do material recusado.
+              Alimenta o relatório PDF (M4.3) e ajuda o fornecedor a
+              conferir a partida sem abrir os anexos. */}
+          {(() => {
+            const campos = [
+              { label: 'Número da NF',        valor: cabecalho.numero_nota_fiscal },
+              { label: 'Pedido (OC)',         valor: cabecalho.numero_pedido },
+              { label: 'Quantidade recusada', valor: cabecalho.quantidade != null ? `${cabecalho.quantidade} ${cabecalho.unidade_medida || 'UN'}` : null },
+              { label: 'Lote',                valor: cabecalho.lote },
+              { label: 'Número de série',     valor: cabecalho.numero_serie },
+              { label: 'Validade',            valor: cabecalho.validade ? new Date(cabecalho.validade).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : null },
+            ].filter(c => c.valor != null && c.valor !== '');
+
+            if (campos.length === 0) return null;
+
+            return (
+              <div style={{ marginBottom: 16 }}>
+                <div style={{
+                  fontSize: 11, color: C.muted,
+                  letterSpacing: '0.06em', fontWeight: 600,
+                  marginBottom: 8,
+                }}>
+                  DADOS DE RASTREABILIDADE
+                </div>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))',
+                  gap: 10,
+                  background: '#0f172a',
+                  border: `1px solid ${C.border}44`,
+                  borderRadius: 8,
+                  padding: '12px 14px',
+                }}>
+                  {campos.map((c, i) => (
+                    <div key={i}>
+                      <div style={{
+                        fontSize: 9, color: C.muted,
+                        letterSpacing: '0.06em', marginBottom: 2,
+                        textTransform: 'uppercase', fontWeight: 600,
+                      }}>
+                        {c.label}
+                      </div>
+                      <div style={{ fontSize: 12, color: C.text, fontWeight: 500 }}>
+                        {c.valor}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            );
+          })()}
 
           {/* Anexos — thumbnails com lightbox (mesmo padrão do modal do
               comprador, ModalDetalheNC.jsx). Sem abrir nova aba. */}

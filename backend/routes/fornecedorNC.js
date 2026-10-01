@@ -23,9 +23,20 @@ const BUCKET_NC_EVIDENCIAS = 'nfe-xmls'; // reusa o mesmo bucket (ou cria 'nc-ev
 // ─────────────────────────────────────────────────────────────────────────
 router.get('/', fornecedorMiddleware, async (req, res) => {
   try {
+    // FIX M4.3: whitelist de status visíveis ao fornecedor. Antes, o
+    // filtro era só por `fornecedor_id` — uma NC recém-criada no
+    // recebimento (status 'nao_enviado') já aparecia no portal do
+    // fornecedor, mesmo sem o comprador ter decidido enviar.
+    //
+    // Whitelist positiva (não "!= nao_enviado") pra cobrir casos onde
+    // o status venha null por dado legado — null também fica invisível.
+    const STATUS_VISIVEIS_PORTAL = [
+      'enviado', 'visualizado', 'aceita', 'contestada', 'resolvida_fornecedor',
+    ];
     const todas = await DB.select('nao_conformidades', {}, null);
     const minhas = todas.filter(nc =>
       String(nc.fornecedor_id) === String(req.fornecedorId)
+      && STATUS_VISIVEIS_PORTAL.includes(nc.fornecedor_tratativa_status)
     );
 
     if (minhas.length === 0) return res.json({ ncs: [] });
@@ -74,11 +85,47 @@ router.get('/:ncId', fornecedorMiddleware, async (req, res) => {
     if (String(nc.fornecedor_id) !== String(req.fornecedorId)) {
       return res.status(403).json({ erro: 'Acesso negado a esta NC' });
     }
+    // FIX M4.3: NC ainda 'nao_enviado' é invisível ao fornecedor. Devolve
+    // 404 (não 403) pra não vazar existência — o fornecedor não deve nem
+    // saber que essa NC existe ainda.
+    if (!['enviado', 'visualizado', 'aceita', 'contestada', 'resolvida_fornecedor'].includes(nc.fornecedor_tratativa_status)) {
+      return res.status(404).json({ erro: 'NC não encontrada' });
+    }
 
-    // Marca "ciente" na primeira leitura
-    if (!nc.fornecedor_ciente_em) {
+    // M4.2: marca "visualizado" na primeira leitura do fornecedor.
+    // FIX M4.3: só a partir de 'enviado'. Antes, o guard incluía
+    // 'nao_enviado' — o que contradizia o novo gate de visibilidade
+    // (se está invisível, não deveria chegar aqui).
+    const precisaMarcarVisualizado =
+      !nc.fornecedor_ciente_em
+      && nc.fornecedor_tratativa_status === 'enviado';
+
+    if (precisaMarcarVisualizado) {
+      const fornUser = req.userId
+        ? await DB.selectOne('fornecedor_usuarios', { id: req.userId }, null)
+        : null;
+      const forn = await DB.selectOne('fornecedores', { id: req.fornecedorId }, null);
+
+      const novoStatus = 'visualizado';
+
       await DB.update('nao_conformidades', ncId, {
         fornecedor_ciente_em: new Date().toISOString(),
+        fornecedor_ciente_por_nome: fornUser?.nome || forn?.nome || 'Fornecedor',
+        fornecedor_tratativa_status: novoStatus,
+        atualizado_em: new Date().toISOString(),
+      }, nc.tenant_id);
+
+      // Evento interno (não visível ao fornecedor — é histórico interno)
+      await DB.insert('nao_conformidade_eventos', {
+        tenant_id: nc.tenant_id,
+        nc_id: ncId,
+        tipo: 'fornecedor_visualizou',
+        descricao: `Fornecedor abriu a NC (${fornUser?.nome || forn?.nome || 'Fornecedor'})`,
+        dados: { nome: fornUser?.nome || forn?.nome || null },
+        criado_por: req.userId || null,
+        criado_por_nome: fornUser?.nome || forn?.nome || 'Fornecedor',
+        visivel_fornecedor: false,
+        autor_tipo: 'fornecedor',
       }, nc.tenant_id);
     }
 
@@ -90,6 +137,13 @@ router.get('/:ncId', fornecedorMiddleware, async (req, res) => {
 
     // Anexos que o comprador deixou visíveis (por enquanto, todos os da NC)
     const anexos = await DB.select('nao_conformidade_anexos', { nc_id: ncId, tenant_id: nc.tenant_id }, nc.tenant_id);
+
+    // FIX M4.2: reler o nc do banco — o objeto em memória foi carregado
+    // ANTES do UPDATE de "visualizado", então o `res.json` devolveria o
+    // status antigo. Sem isso, o fornecedor não vê a transição de estado
+    // até dar F5 (parece que "nada mudou" na UI dele).
+    const ncFinal = await DB.selectOne('nao_conformidades', { id: ncId }, null);
+    if (ncFinal) Object.assign(nc, ncFinal);
 
     // Número da OC
     const ov = nc.ordem_venda_id
@@ -105,6 +159,9 @@ router.get('/:ncId', fornecedorMiddleware, async (req, res) => {
         disposicao: nc.disposicao,
         fornecedor_tratativa_status: nc.fornecedor_tratativa_status,
         fornecedor_ciente_em: nc.fornecedor_ciente_em,
+        // FIX M4.2: expor quem visualizou (nome do usuário do fornecedor).
+        // Sem isso, o frontend mostra "visualizada por —" em vez do nome.
+        fornecedor_ciente_por_nome: nc.fornecedor_ciente_por_nome || null,
         criado_em: nc.criado_em,
         numero_nota_fiscal: nc.numero_nota_fiscal,
         numero_pedido: nc.numero_pedido,
@@ -202,8 +259,26 @@ router.post('/:ncId/anexo', fornecedorMiddleware, async (req, res) => {
     const ncId = parseInt(req.params.ncId, 10);
     const arquivo = req.files?.arquivo;
     if (!arquivo) return res.status(400).json({ erro: 'Arquivo é obrigatório' });
-    if (arquivo.size > 5 * 1024 * 1024) {
-      return res.status(400).json({ erro: 'Arquivo maior que 5MB.' });
+    if (arquivo.size > 8 * 1024 * 1024) {
+      return res.status(400).json({ erro: 'Arquivo maior que 8MB.' });
+    }
+    // M4.2: aceita múltiplos tipos além de imagem — evidência técnica
+    // (laudo, medição, planilha) também é útil pra tratativa.
+    const tiposPermitidos = [
+      'image/jpeg', 'image/png', 'image/webp', 'image/gif',
+      'application/pdf',
+      'application/msword',
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+      'application/vnd.ms-excel',
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-powerpoint',
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'text/plain', 'text/csv',
+    ];
+    if (arquivo.mimetype && !tiposPermitidos.includes(arquivo.mimetype)) {
+      return res.status(400).json({
+        erro: `Tipo de arquivo não aceito (${arquivo.mimetype}). Use imagens, PDF, Word, Excel, PowerPoint, TXT ou CSV.`
+      });
     }
 
     const nc = await DB.selectOne('nao_conformidades', { id: ncId }, null);
@@ -279,6 +354,11 @@ router.put('/:ncId/responder', fornecedorMiddleware, async (req, res) => {
     }
     if (['resolvida', 'cancelada'].includes(nc.status)) {
       return res.status(400).json({ erro: 'NC já encerrada — não aceita mais respostas' });
+    }
+    // M4.2: só pode responder se já visualizou (ou mais adiante).
+    // Não faz sentido responder antes de enviar/visualizar.
+    if (['nao_enviado'].includes(nc.fornecedor_tratativa_status)) {
+      return res.status(400).json({ erro: 'NC ainda não foi enviada a você' });
     }
 
     const forn = await DB.selectOne('fornecedores', { id: req.fornecedorId }, null);

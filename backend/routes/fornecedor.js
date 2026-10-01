@@ -6,6 +6,7 @@ const PortalRespostaService = require('../services/PortalRespostaService');
 const ValidacaoXmlService = require('../services/ValidacaoXmlService');
 const NfeXmlParser = require('../services/NfeXmlParser');
 const { supabase } = require('../db');
+const bcrypt = require('bcryptjs');
 
 // ─── ROTAS PROTEGIDAS PARA FORNECEDOR ───
 
@@ -1226,6 +1227,116 @@ router.get('/meus-pedidos/:ordemVendaId/nfe/:xmlId', fornecedorMiddleware, async
   } catch (err) {
     console.error('❌ Erro em download XML:', err.message);
     return res.status(500).json({ erro: err.message });
+  }
+});
+
+// PUT /api/fornecedor/me - Fornecedor edita os próprios dados cadastrais
+// (empresa) e os dados do seu usuário de login (nome/email/senha).
+// Tela "Meus Dados" no portal do fornecedor.
+//
+// Dois updates separados e independentes, cada um só roda se o payload
+// trouxer algo pra ele — permite salvar só dados da empresa, só do
+// usuário, ou os dois juntos na mesma chamada.
+router.put('/me', fornecedorMiddleware, async (req, res) => {
+  try {
+    const fornecedorId = req.fornecedorId;
+    const userId = req.userId;
+
+    const {
+      // dados da empresa (tabela fornecedores)
+      nome_fantasia, razao_social, endereco, cidade, estado, cep,
+      nome_contato, email_contato, telefone, whatsapp,
+      // dados do usuário de login (tabela fornecedor_usuarios)
+      nome, email, senha_atual, nova_senha
+    } = req.body;
+
+    const fornecedorAtual = await DB.selectOne('fornecedores', { id: fornecedorId });
+    if (!fornecedorAtual) {
+      return res.status(404).json({ erro: 'Fornecedor não encontrado' });
+    }
+    const tenantId = fornecedorAtual.tenant_id;
+
+    // ── 1) Dados da empresa ──
+    const dadosEmpresa = {};
+    if (nome_fantasia !== undefined) dadosEmpresa.nome_fantasia = nome_fantasia;
+    if (razao_social !== undefined) dadosEmpresa.razao_social = razao_social;
+    if (endereco !== undefined) dadosEmpresa.endereco = endereco;
+    if (cidade !== undefined) dadosEmpresa.cidade = cidade;
+    if (estado !== undefined) dadosEmpresa.estado = estado;
+    if (cep !== undefined) dadosEmpresa.cep = cep;
+    if (nome_contato !== undefined) dadosEmpresa.nome_contato = nome_contato;
+    if (email_contato !== undefined) dadosEmpresa.email_contato = email_contato;
+    if (telefone !== undefined) dadosEmpresa.telefone = telefone;
+    if (whatsapp !== undefined) dadosEmpresa.whatsapp = whatsapp;
+
+    if (Object.keys(dadosEmpresa).length > 0) {
+      if (dadosEmpresa.nome_fantasia !== undefined && !dadosEmpresa.nome_fantasia.trim()) {
+        return res.status(400).json({ erro: 'Nome Fantasia é obrigatório' });
+      }
+      await DB.update('fornecedores', fornecedorId, dadosEmpresa, tenantId);
+    }
+
+    // ── 2) Dados do usuário logado ──
+    const dadosUsuario = {};
+    if (nome !== undefined) dadosUsuario.nome = nome;
+    if (email !== undefined) dadosUsuario.email = email;
+
+    // Troca de senha: exige senha_atual + nova_senha juntas, valida a
+    // atual contra o hash antes de gravar a nova (nunca troca "às cegas").
+    if (nova_senha) {
+      if (!senha_atual) {
+        return res.status(400).json({ erro: 'Informe a senha atual para definir uma nova senha' });
+      }
+      if (nova_senha.length < 6) {
+        return res.status(400).json({ erro: 'A nova senha deve ter ao menos 6 caracteres' });
+      }
+      const usuarioComSenha = await DB.selectOne('fornecedor_usuarios', { id: userId });
+      if (!usuarioComSenha) {
+        return res.status(404).json({ erro: 'Usuário não encontrado' });
+      }
+      const senhaOk = await bcrypt.compare(senha_atual, usuarioComSenha.senha);
+      if (!senhaOk) {
+        return res.status(401).json({ erro: 'Senha atual incorreta' });
+      }
+      dadosUsuario.senha = await bcrypt.hash(nova_senha, 10);
+    }
+
+    if (Object.keys(dadosUsuario).length > 0) {
+      if (dadosUsuario.nome !== undefined && !dadosUsuario.nome.trim()) {
+        return res.status(400).json({ erro: 'Nome do usuário é obrigatório' });
+      }
+      if (dadosUsuario.email !== undefined) {
+        if (!dadosUsuario.email.trim()) {
+          return res.status(400).json({ erro: 'E-mail é obrigatório' });
+        }
+        // e-mail é o login — garante unicidade antes de trocar
+        const jaExiste = await DB.selectOne('fornecedor_usuarios', { email: dadosUsuario.email });
+        if (jaExiste && jaExiste.id !== userId) {
+          return res.status(409).json({ erro: 'Este e-mail já está em uso por outro usuário' });
+        }
+      }
+      await DB.update('fornecedor_usuarios', userId, dadosUsuario);
+    }
+
+    // Retorna o estado atualizado, no mesmo formato de GET /me
+    // (nunca reexpõe o hash de senha)
+    const fornecedor = await DB.selectOne('fornecedores', { id: fornecedorId });
+    const usuario = await DB.selectOne('fornecedor_usuarios', { id: userId });
+
+    res.json({
+      ok: true,
+      fornecedor,
+      usuario: {
+        id: usuario.id,
+        nome: usuario.nome,
+        email: usuario.email,
+        perfil: usuario.perfil
+      },
+      mensagem: 'Dados atualizados com sucesso'
+    });
+  } catch (err) {
+    console.error('❌ Erro ao atualizar dados do fornecedor:', err.message);
+    res.status(500).json({ erro: err.message });
   }
 });
 

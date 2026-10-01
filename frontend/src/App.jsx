@@ -152,6 +152,7 @@ export default function App() {
   const relatorio = useRelatorio();
   const [tela,setTela]=useState("home");
   const [osParaAbrir, setOsParaAbrir] = useState(null);
+  const [ncParaAbrir, setNcParaAbrir] = useState(null);
   const [totalPendencias, setTotalPendencias] = useState(0);
   const [participaBench,setParticipaBench]=useState(true);
   const email = useEmail();
@@ -492,7 +493,14 @@ const perfil = PERFIS[usuario.perfil];
 
         {temAcesso(tela) && tela === "recebimento" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
-            <TelaRecebimento C={C} s={s} />
+            <TelaRecebimento
+              C={C}
+              s={s}
+              onIrParaNC={(ncId) => {
+                setNcParaAbrir(ncId);
+                setTela("nao_conformidades");
+              }}
+            />
           </div>
         )}
 
@@ -611,6 +619,8 @@ const perfil = PERFIS[usuario.perfil];
               C={C}
               s={s}
               fmtD={fmtD}
+              initialNCId={ncParaAbrir}
+              onNCInicialConsumida={() => setNcParaAbrir(null)}
               onIrParaOS={(chamadoId) => {
                 setOsParaAbrir(chamadoId);
                 setTela("ordem_servico");

@@ -429,11 +429,29 @@ router.get('/ordem-venda/:ovId', tenantMiddleware, async (req, res) => {
         .map(v => String(v.item || '').trim().toLowerCase())
     );
 
+    // M4.3-e: buscar NCs abertas da OV pra enriquecer cada item com
+    // nc_id/numero_nc (TelaRecebimento navega direto pra NC vinculada).
+    // "Aberta" = status NÃO em ('resolvida', 'cancelada').
+    const todasNCs = await DB.select('nao_conformidades', { tenant_id: tenantId }, tenantId)
+      .catch(() => []);
+    const ncsAbertasDaOV = todasNCs.filter(nc =>
+      String(nc.ordem_venda_id) === String(ovId)
+      && !['resolvida', 'cancelada'].includes(nc.status)
+    );
+
     // 4. Buscar itens de consumo (para saber o SKU e saldo)
     const itensCompletos = await Promise.all(itens.map(async (item) => {
       const itemConsumo = await DB.selectOne('itens_consumo', { catalogo_item_id: item.item_catalogo_id, tenant_id: tenantId }, tenantId);
       const nomeItem = item.nome_item || 'Item sem nome';
       const fiscalOk = itensOkNaValidacao.has(String(nomeItem).trim().toLowerCase());
+
+      // M4.3-e: NC aberta do item. Vínculo por número de série; se o
+      // item não tiver série e houver só 1 NC na OV, assume ela.
+      const ncPorSerie = item.numero_serie
+        ? ncsAbertasDaOV.find(nc => nc.numero_serie && String(nc.numero_serie) === String(item.numero_serie))
+        : null;
+      const ncDoItem = ncPorSerie || (ncsAbertasDaOV.length === 1 ? ncsAbertasDaOV[0] : null);
+
       return {
         ...item,
         item_nome: itemConsumo?.nome || nomeItem,
@@ -443,9 +461,10 @@ router.get('/ordem-venda/:ovId', tenantMiddleware, async (req, res) => {
         quantidade_recebida: item.quantidade_recebida || 0,
         quantidade_pendente: (item.quantidade || 0) - (item.quantidade_recebida || 0),
         // Fase M3: a validação automática já conferiu este item.
-        // O botão "1. Fiscal" no frontend vira "✅ Fiscal OK" e o
-        // comprador só precisa confirmar (ou revisar se quiser).
         fiscal_auto_aprovado: fiscalOk,
+        // M4.3-e: NC aberta vinculada a este item (se houver).
+        nc_id: ncDoItem?.id || null,
+        numero_nc: ncDoItem?.numero_nc || null,
       };
     }));
 
@@ -956,14 +975,21 @@ router.post('/contagem-cega', tenantMiddleware, async (req, res) => {
     const quantidadeOk = diferenca < 0.001;
     const unidadeOk = unidadeEsperada === unidadeContada;
 
-    let status;
+    // M4.3-c: separar "resultado da contagem" (historico_contagens_cegas)
+    // de "estado do item" (ordem_venda_itens). A contagem tem 4 estados,
+    // o item tem 3. Nomes diferentes pra não confundir semântica ISO.
+    let resultadoContagem;   // vai pra historico_contagens_cegas.resultado_contagem
+    let statusItem;          // vai pra ordem_venda_itens.status_quarentena
     if (quantidadeOk && unidadeOk) {
-      status = 'aprovado';
+      resultadoContagem = 'aprovado';
+      statusItem = 'aprovado';
     } else {
       if (tentativaReal < 3) {
-        status = 'pendente';
+        resultadoContagem = 'divergente_pendente';
+        statusItem = 'pendente';
       } else {
-        status = 'rejeitado';
+        resultadoContagem = 'divergente_esgotado';
+        statusItem = 'rejeitado';
       }
     }
 
@@ -977,10 +1003,10 @@ router.post('/contagem-cega', tenantMiddleware, async (req, res) => {
       validade: validade || null,
       numero_serie: numero_serie || null,
       unidade_medida: unidadeContada,
-      status_quarentena: status,
+      resultado_contagem: resultadoContagem,
       observacao: observacao || null,
       contado_por: req.userId,
-      contado_em: new Date(),
+      contado_em: new Date().toISOString(),
       is_atual: true
     }, tenantId);
 
@@ -992,7 +1018,7 @@ router.post('/contagem-cega', tenantMiddleware, async (req, res) => {
     }
 
     // 6. Atualizar o item da OV
-    const contagemDefinitiva = (status === 'aprovado' || tentativaReal >= 3);
+    const contagemDefinitiva = (statusItem === 'aprovado' || tentativaReal >= 3);
 
     await DB.update('ordem_venda_itens', itemIdNum, {
       tentativa_atual: tentativaReal,
@@ -1005,7 +1031,7 @@ router.post('/contagem-cega', tenantMiddleware, async (req, res) => {
       numero_serie: numero_serie || null,
       unidade_medida: unidadeContada,
       // Salva como 'rejeitado' apenas na 3ª tentativa errada
-      status_quarentena: status, 
+      status_quarentena: statusItem, 
       migo_por: req.userId,
       migo_em: new Date()
     }, tenantId);
@@ -1039,7 +1065,10 @@ router.post('/contagem-cega', tenantMiddleware, async (req, res) => {
       mensagem: 'Contagem cega registrada com sucesso e status atualizado!',
       tentativa_atual: tentativaReal,
       historico: historicoCompleto,
-      status: status
+      // M4.3-n: após o split `status` → `resultadoContagem` + `statusItem`,
+      // o frontend continua lendo `response.status` pra saber se foi
+      // aprovado/pendente/rejeitado. Mandamos o statusItem (o do item).
+      status: statusItem
     });
 
   } catch (err) {
@@ -1061,20 +1090,24 @@ router.get('/item/:itemId/historico-contagens', tenantMiddleware, async (req, re
     }
 
     // 1. Verificar se o item existe
-    const item = await DB.selectOne('ordem_venda_itens', { 
-      id: itemIdNum, 
-      tenant_id: tenantId 
-    }, tenantId);
+    // FIX: wrapper não garante WHERE composto em DB.selectOne — busca por
+    // tenant e filtra em JS (convenção do projeto).
+    const todosItensTenant = await DB.select('ordem_venda_itens', { tenant_id: tenantId }, tenantId);
+    const item = todosItensTenant.find(i => String(i.id) === String(itemIdNum));
 
     if (!item) {
       return res.status(404).json({ erro: 'Item da OV não encontrado' });
     }
 
     // 2. Buscar histórico
-    const historico = await DB.select('historico_contagens_cegas', {
-      ordem_venda_item_id: itemIdNum,
-      tenant_id: tenantId
-    }, tenantId);
+    // FIX: idem — traz do tenant e filtra em JS por ordem_venda_item_id.
+    const todosHistoricos = await DB.select('historico_contagens_cegas', { tenant_id: tenantId }, tenantId);
+    const historico = todosHistoricos.filter(h => String(h.ordem_venda_item_id) === String(itemIdNum));
+    console.log('[historico-contagens]', {
+      itemIdNum,
+      totalTenant: todosHistoricos.length,
+      encontradoParaItem: historico.length,
+    });
 
     // 3. Ordenar por tentativa
     historico.sort((a, b) => (a.tentativa || 0) - (b.tentativa || 0));
@@ -1085,7 +1118,9 @@ router.get('/item/:itemId/historico-contagens', tenantMiddleware, async (req, re
       return {
         ...h,
         contado_por_nome: usuario?.nome || 'Usuário não encontrado',
-        contado_em_formatado: h.contado_em ? new Date(h.contado_em).toLocaleString('pt-BR') : null
+        contado_em_formatado: h.contado_em
+          ? new Date(h.contado_em).toLocaleString('pt-BR')
+          : null
       };
     }));
 
@@ -1419,7 +1454,20 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
   try {
     const tenantId = req.tenantId;
     const { itemId } = req.params;
-    const { justificativa, destino_tratativa, anexos } = req.body; // 'aprovado' ou 'nao_conformidade'
+    const {
+      justificativa,
+      destino_tratativa, // 'aprovado' ou 'nao_conformidade'
+      anexos,
+      // FIX M4.3: campos opcionais. Quando o comprador preenche a
+      // contagem mas clica em "Não Conformidade" (em vez de "Registrar
+      // Contagem"), o valor digitado precisa vir por aqui — senão a NC
+      // nasce com quantidade 0 (bug real).
+      quantidade_afetada,
+      unidade_medida: unidadeBody,
+      lote: loteBody,
+      validade: validadeBody,
+      numero_serie: serieBody,
+    } = req.body;
 
     if (!justificativa) {
       return res.status(400).json({ erro: 'Justificativa é obrigatória' });
@@ -1431,10 +1479,66 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
       return res.status(404).json({ erro: 'Item não encontrado' });
     }
 
+    // FIX M4.3: prioridade dos valores do item recusado.
+    //   body (digitado no modal) > quantidade_recebida_fisica (da contagem)
+    //   > item.quantidade (planejada) > 0.
+    const quantidadeFinal = parseFloat(
+      quantidade_afetada ?? item.quantidade_recebida_fisica ?? item.quantidade ?? 0
+    );
+    const unidadeFinal = unidadeBody || item.unidade_medida || 'UN';
+    const loteFinal = loteBody || item.lote || null;
+    const validadeFinal = validadeBody || item.validade || null;
+    const serieFinal = serieBody || item.numero_serie || null;
+
     // ─────────────────────────────────────────────────────────────────
     // CAMINHO 2: NÃO CONFORME (Recusa/Devolução)
     // ─────────────────────────────────────────────────────────────────
     if (destino_tratativa === 'nao_conformidade') {
+      // FIX M4.3-b: quando o comprador preenche a contagem no modal do
+      // recebimento e escolhe "Não Conformidade" (em vez de "Registrar
+      // Contagem"), os dados digitados iam só pra NC — nenhuma linha era
+      // criada em historico_contagens_cegas. Resultado: o botão
+      // "📜 Histórico" mostrava "Nenhuma contagem registrada" mesmo
+      // tendo contagem. Persistimos aqui, espelhando o que /contagem-cega
+      // faria. M4.3-c: usa valor próprio 'nao_conformidade' (não
+      // 'rejeitado') — quarentena e NC são coisas distintas.
+      //
+      // Só grava se o item AINDA não tem contagem registrada (evita
+      // duplicar quando o fluxo veio de "Tratar Quarentena" após uma
+      // contagem cega já existente).
+      try {
+        const todasHistItem = await DB.select('historico_contagens_cegas', { tenant_id: tenantId }, tenantId);
+        const contagensItem = todasHistItem.filter(c => String(c.ordem_venda_item_id) === String(item.id));
+
+        if (contagensItem.length === 0) {
+          const contagemNC = await DB.insert('historico_contagens_cegas', {
+            tenant_id: tenantId,
+            ordem_venda_item_id: item.id,
+            tentativa: 1,
+            quantidade_contada: quantidadeFinal,
+            unidade_medida: unidadeFinal,
+            lote: loteFinal,
+            validade: validadeFinal,
+                        numero_serie: serieFinal,
+            resultado_contagem: 'nao_conformidade',
+            observacao: justificativa ? `NC: ${justificativa}` : 'Não Conformidade registrada na 1ª contagem',
+            contado_por: req.userId || null,
+            contado_em: new Date().toISOString(),
+            is_atual: true,
+          }, tenantId);
+
+          // Sincroniza o item pra apontar pra essa contagem (senão a
+          // próxima tentativa fica dessincronizada).
+          await DB.update('ordem_venda_itens', itemId, {
+            tentativa_atual: 1,
+            contagem_atual_id: contagemNC?.id || null,
+            quantidade_recebida_fisica: quantidadeFinal,
+          }, tenantId);
+        }
+      } catch (e) {
+        console.error('❌ Erro ao gravar contagem cega da NC:', e.message);
+      }
+
       let numeroNC = `NC-${new Date().getFullYear()}-0001`; 
       try {
         numeroNC = await gerarNumeroNC(tenantId);
@@ -1477,9 +1581,16 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
         motivo_recusa: justificativa,
         // Quem abriu — nome de exibição no header do modal + timeline.
         criado_por_nome: usuarioLogado.nome || null,
-        quantidade: parseFloat(item.quantidade_recebida_fisica || 0),
-        unidade_medida: item.unidade_medida || 'UN',
-        fornecedor_tratativa_status: ovParaNC?.fornecedor_id ? 'nao_notificado' : null,
+        // FIX M4.2: quando o comprador clica "Não Conformidade" sem ter
+        // feito contagem antes, `quantidade_recebida_fisica` ainda é null.
+        // Fallback pra `item.quantidade` (planejada) — é a quantidade
+        // correta quando o item INTEIRO está sendo recusado.
+        quantidade: quantidadeFinal,
+        unidade_medida: unidadeFinal,
+        lote: loteFinal,
+        validade: validadeFinal,
+        numero_serie: serieFinal,
+        fornecedor_tratativa_status: ovParaNC?.fornecedor_id ? 'nao_enviado' : null,
         criado_em: new Date()
       }, tenantId);
 
@@ -1491,7 +1602,10 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
             nc_id: ncCriada.id,
             tipo: 'criacao',
             descricao: `NC criada no recebimento da OC ${ovParaNC.numero}: ${justificativa}`,
-            dados: { ordem_venda_id: item.ordem_venda_id, quantidade: item.quantidade_recebida_fisica },
+            dados: {
+              ordem_venda_id: item.ordem_venda_id,
+              quantidade: quantidadeFinal,
+            },
             criado_por: req.userId || null,
             criado_por_nome: 'Recebimento',
             visivel_fornecedor: true,
@@ -1501,12 +1615,20 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
 
         // M4: anexar evidências que vieram no body. Formato esperado:
         // [{ url, nome_arquivo?, mime_type?, tamanho_bytes? }]
-        // Mesmo padrão usado em POST /api/nao-conformidades.
+        //
+        // FIX M4-p: SEMPRE sobrescrever o nome do arquivo com padrão
+        // rastreável `<numeroNC>-evidencia-NN.ext`. Antes, se o cliente
+        // mandasse `IMG_1234.jpg`, esse nome ficava gravado — péssimo
+        // pra busca futura por NC no storage/banco.
         if (ncCriada && Array.isArray(anexos) && anexos.length > 0) {
           for (let i = 0; i < anexos.length; i++) {
             const a = anexos[i];
             if (!a?.url) continue;
-            const nomePadrao = a.nome_arquivo || `${numeroNC}-evidencia-${String(i + 1).padStart(2, '0')}.jpg`;
+            const ext = (a.mime_type === 'image/png') ? 'png'
+              : (a.mime_type === 'image/webp') ? 'webp'
+              : (a.mime_type === 'application/pdf') ? 'pdf'
+              : 'jpg';
+            const nomePadrao = `${numeroNC}-evidencia-${String(i + 1).padStart(2, '0')}.${ext}`;
             await DB.insert('nao_conformidade_anexos', {
               tenant_id: tenantId,
               nc_id: ncCriada.id,
@@ -1517,6 +1639,57 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
               criado_por: req.userId || null,
               criado_por_nome: 'Recebimento',
             }, tenantId);
+          }
+        }
+
+        // M4.1: notificação ao fornecedor respeita a policy do tenant.
+        //   'aprovacao' (default) → NC nasce 'nao_notificado'; gestor
+        //                            aprova no modal da NC.
+        //   'direta'              → email dispara automaticamente agora.
+        if (ncCriada && ovParaNC?.fornecedor_id) {
+          const tenantCfg = await DB.selectOne('tenants', { id: tenantId });
+          const policy = tenantCfg?.nc_notificacao_policy || 'aprovacao';
+
+          if (policy === 'direta') {
+            try {
+              const { notificarFornecedorNC } = require('../../services/NCService');
+              const uLogado = await usuarioAtual(req, tenantId);
+              await notificarFornecedorNC(ncCriada.id, tenantId, {
+                origem: 'auto',
+                userId: uLogado.id,
+                userNome: uLogado.nome,
+              });
+            } catch (mailErr) {
+              // Se o email falha (SMTP, fornecedor sem email), a NC fica
+              // como 'nao_notificado' e o gestor ainda pode disparar
+              // manualmente depois. Registra o problema na timeline.
+              console.warn('⚠ Falha ao notificar fornecedor automaticamente:', mailErr.message);
+              await DB.insert('nao_conformidade_eventos', {
+                tenant_id: tenantId,
+                nc_id: ncCriada.id,
+                tipo: 'notificacao_falhou',
+                descricao: `Envio automático falhou (${mailErr.message}). Use "Notificar fornecedor" para tentar novamente.`,
+                dados: { erro: mailErr.message },
+                criado_por: null,
+                criado_por_nome: 'Sistema',
+                visivel_fornecedor: false,
+                autor_tipo: 'sistema',
+              }, tenantId).catch(() => {});
+            }
+          } else {
+            // Policy 'aprovacao': registra evento interno avisando que
+            // precisa de aprovação. Não é visível pro fornecedor.
+            await DB.insert('nao_conformidade_eventos', {
+              tenant_id: tenantId,
+              nc_id: ncCriada.id,
+              tipo: 'notificacao_pendente_aprovacao',
+              descricao: 'Aguardando aprovação para notificar o fornecedor',
+              dados: null,
+              criado_por: req.userId || null,
+              criado_por_nome: 'Recebimento',
+              visivel_fornecedor: false,
+              autor_tipo: 'comprador',
+            }, tenantId).catch(() => {});
           }
         }
       } catch (e) {
@@ -1574,7 +1747,7 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
         tenant_id: tenantId,
         item_consumo_id: itemConsumoBloqueado?.id || null,
         tipo: 'bloqueio',
-        quantidade: parseFloat(item.quantidade_recebida_fisica || 0),
+        quantidade: quantidadeFinal,
         responsavel_id: req.userId,
         observacao: justificativaCompleta,
         ordem_venda_id: item.ordem_venda_id,

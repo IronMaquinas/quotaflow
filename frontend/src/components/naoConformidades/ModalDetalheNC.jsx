@@ -44,6 +44,18 @@ const STATUS_CFG = {
   cancelada:            { l: "Cancelada",             c: "#6b7280", icon: "⚫" },
 };
 
+// M4.2: pipeline único de tratativa com fornecedor (6 estados).
+// Substitui o esquema antigo (nao_notificado/notificado) que misturava
+// "envio" com "leitura".
+const TRATATIVA_FORNECEDOR_CFG = {
+  nao_enviado:          { l: "Aguardando triagem interna",   c: "#9ca3af", icon: "🔒" },
+  enviado:              { l: "Enviado ao fornecedor",        c: "#f59e0b", icon: "📤" },
+  visualizado:          { l: "Visualizado pelo fornecedor",  c: "#3b82f6", icon: "👁" },
+  aceita:               { l: "Fornecedor aceitou",           c: "#10b981", icon: "✅" },
+  contestada:           { l: "Fornecedor contestou",         c: "#ef4444", icon: "✋" },
+  resolvida_fornecedor: { l: "Fornecedor resolveu",          c: "#a855f7", icon: "🎯" },
+};
+
 const EVENTO_CFG = {
   criacao:                  { icon: "🆕", c: "#60a5fa" },
   status_alterado:          { icon: "🔄", c: "#f59e0b" },
@@ -122,6 +134,9 @@ export default function ModalDetalheNC({
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
   const [salvando, setSalvando] = useState(false);
+  // M4.3-j: confirmação antes de disparar email externo ao fornecedor.
+  const [confirmandoEnvio, setConfirmandoEnvio] = useState(false);
+  const [toast, setToast] = useState(null);
 
   // Form de resolver (mini-modal interno)
   const [resolvendo, setResolvendo] = useState(null);
@@ -145,6 +160,10 @@ export default function ModalDetalheNC({
 
   // Lista de usuários elegíveis pra receber NC
   const [usuariosElegiveis, setUsuariosElegiveis] = useState([]);
+  // M4.1: perfil do usuário logado (pra mostrar/ocultar botão de
+  // notificar fornecedor). Lido uma vez do localStorage — se o backend
+  // rejeitar depois, o modal mostra o erro.
+  const [perfilUsuario, setPerfilUsuario] = useState(null);
 
   // Form de plano de ação
   const [novoPlano, setNovoPlano] = useState(null);
@@ -176,7 +195,22 @@ export default function ModalDetalheNC({
     }
   }
 
-useEffect(() => { carregar(); }, [ncId]);
+  useEffect(() => { carregar(); }, [ncId]);
+
+  // M4.3-i: auto-clear do toast de sucesso em 4s.
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
+
+  // M4.3-j: Esc cancela o modal de confirmação de envio.
+  useEffect(() => {
+    if (!confirmandoEnvio) return;
+    const onKey = (e) => { if (e.key === "Escape") setConfirmandoEnvio(false); };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [confirmandoEnvio]);
 
   useEffect(() => {
     apiService.get("/usuarios")
@@ -187,6 +221,17 @@ useEffect(() => { carregar(); }, [ncId]);
         );
       })
       .catch(() => setUsuariosElegiveis([]));
+  }, []);
+
+  // M4.1: pega perfil do usuário logado do localStorage
+  useEffect(() => {
+    try {
+      const raw = localStorage.getItem("usuario");
+      const u = raw ? JSON.parse(raw) : null;
+      setPerfilUsuario(u?.perfil || null);
+    } catch (_) {
+      setPerfilUsuario(null);
+    }
   }, []);
 
   // ── Ações de status ──
@@ -305,6 +350,35 @@ useEffect(() => { carregar(); }, [ncId]);
       setEncerrando(null);
     } catch (e) {
       setErro(e.message || "Erro ao encerrar");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  // M4.3-j: dispara o modal de confirmação. Quem efetivamente envia
+  // é `notificarFornecedor` (abaixo), chamada pelo botão do modal.
+  function abrirConfirmacaoEnvio() {
+    setConfirmandoEnvio(true);
+  }
+
+  function confirmarEnvio() {
+    setConfirmandoEnvio(false);
+    notificarFornecedor();
+  }
+
+  // M4.1: notificar fornecedor (fluxo de aprovação)
+  // M4.3-i: feedback via toast in-place (o window.confirm voltou como
+  // modal próprio — ver M4.3-j).
+  async function notificarFornecedor() {
+    setSalvando(true);
+    setErro(null);
+    try {
+      const r = await apiService.post(`/nao-conformidades/${ncId}/notificar-fornecedor`, {});
+      await carregar();
+      onAtualizar?.();
+      setToast(r?.mensagem || `Email enviado para ${nc.fornecedor_nome || 'o fornecedor'}.`);
+    } catch (e) {
+      setErro(e.message || "Erro ao notificar fornecedor");
     } finally {
       setSalvando(false);
     }
@@ -501,7 +575,31 @@ useEffect(() => { carregar(); }, [ncId]);
               <span style={{ ...s.tag(st.c), fontSize: 10 }}>
                 {st.icon} {st.l}
               </span>
+
+              {/* M4.1: badge do status de tratativa com o fornecedor.
+                  Só mostra quando a NC tem fornecedor vinculado. */}
+              {nc.fornecedor_id && nc.fornecedor_tratativa_status && (() => {
+                const tf = TRATATIVA_FORNECEDOR_CFG[nc.fornecedor_tratativa_status];
+                if (!tf) return null;
+                return (
+                  <span style={{ ...s.tag(tf.c), fontSize: 10 }} title={`Fornecedor: ${nc.fornecedor_nome || '—'}`}>
+                    {tf.icon} {tf.l}
+                  </span>
+                );
+              })()}
             </div>
+
+            {/* M4.1: rastreio de leitura pelo fornecedor — "mensagem lida".
+                Mostra timestamp quando disponível. */}
+            {nc.fornecedor_ciente_em && (
+              <div style={{
+                fontSize: 10, color: C.muted, marginTop: 4,
+                display: 'flex', gap: 4, alignItems: 'center',
+              }}>
+                <span>👁</span>
+                <span>Visualizada pelo fornecedor em {fmtDataHora(nc.fornecedor_ciente_em)}</span>
+              </div>
+            )}
             <div style={{ fontSize: 11, color: C.muted, display: "flex",
                           gap: 12, flexWrap: "wrap", alignItems: "center" }}>
               {nc.chamado_numero && (
@@ -548,6 +646,27 @@ useEffect(() => { carregar(); }, [ncId]);
         {/* Corpo scrollável */}
         <div style={{ padding: "20px 22px", overflowY: "auto", flex: 1 }}>
 
+          {/* M4.3-i: toast de sucesso in-place (some em 4s). */}
+          {toast && (
+            <div style={{
+              padding: "10px 14px", background: "#10b98115",
+              border: "1px solid #10b98155", borderRadius: 6,
+              fontSize: 12, color: "#10b981", marginBottom: 16,
+              display: "flex", alignItems: "center", gap: 8,
+            }}>
+              <span>✅</span>
+              <span style={{ flex: 1 }}>{toast}</span>
+              <button
+                onClick={() => setToast(null)}
+                style={{ background: "transparent", border: "none",
+                         color: "#10b981", cursor: "pointer", fontSize: 14 }}
+                title="Fechar"
+              >
+                ×
+              </button>
+            </div>
+          )}
+
           {erro && (
             <div style={{ padding: "10px 12px", background: "#ef444415",
                           border: "1px solid #ef444440", borderRadius: 6,
@@ -556,15 +675,120 @@ useEffect(() => { carregar(); }, [ncId]);
             </div>
           )}
 
+          {/* M4.2: banner quando o fornecedor já respondeu e precisa
+              de ação do comprador (validar resolução ou tratar contestação). */}
+          {nc.fornecedor_tratativa_status === 'resolvida_fornecedor' && (
+            <div style={{
+              padding: "12px 16px", background: "#a855f715",
+              border: "1px solid #a855f755", borderRadius: 8,
+              marginBottom: 16, display: "flex", alignItems: "center", gap: 10,
+            }}>
+              <span style={{ fontSize: 20 }}>🎯</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#a855f7" }}>
+                  Fornecedor marcou esta NC como resolvida
+                </div>
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                  Valide a solução para encerrar a NC, ou rejeite se não atender.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {nc.fornecedor_tratativa_status === 'contestada' && (
+            <div style={{
+              padding: "12px 16px", background: "#ef444415",
+              border: "1px solid #ef444455", borderRadius: 8,
+              marginBottom: 16, display: "flex", alignItems: "center", gap: 10,
+            }}>
+              <span style={{ fontSize: 20 }}>✋</span>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#ef4444" }}>
+                  Fornecedor contestou esta NC
+                </div>
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                  Avalie a contestação: se for justa, aceite e cancele a NC. Caso contrário, rejeite e siga a tratativa interna.
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* M4.3: banner de triagem quando a NC tem fornecedor_id
+              mas ainda está 'nao_enviado'. Comunica que o fornecedor
+              NÃO tem acesso e oferece os 2 caminhos. */}
+          {nc.fornecedor_id && nc.fornecedor_tratativa_status === 'nao_enviado' && (
+            <div style={{
+              padding: "12px 16px", background: "#2e1c0c",
+              border: "1px solid #f59e0b55", borderRadius: 8,
+              marginBottom: 16,
+            }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+                <span style={{ fontSize: 18 }}>🔒</span>
+                <div style={{ fontSize: 12, fontWeight: 600, color: "#f59e0b" }}>
+                  Aguardando triagem — fornecedor NÃO tem acesso
+                </div>
+              </div>
+              <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.6 }}>
+                Esta NC nasceu vinculada a <strong>{nc.fornecedor_nome || '—'}</strong> (via OC),
+                mas ainda não foi decidido se é responsabilidade dele. O fornecedor
+                <strong> não vê</strong> esta NC até você clicar em "📤 Notificar fornecedor".
+                Se a triagem concluir que <strong>não é do fornecedor</strong> (ex: dano interno,
+                transporte, empilhadeira), use "Marcar como interna".
+              </div>
+            </div>
+          )}
+
           {/* ── Descrição ── */}
           <Secao titulo="DESCRIÇÃO DO PROBLEMA" C={C}>
             <div style={{ fontSize: 13, color: C.text, lineHeight: 1.5 }}>
-              {/* FIX M4: NCs antigas (antes do fix do aprovar-saldo)
-                  só têm `motivo_recusa` preenchido. Fallback evita
-                  modal vazio. */}
               {nc.descricao_problema || nc.motivo_recusa || '—'}
             </div>
           </Secao>
+
+          {/* ── Rastreabilidade ──
+              Dados fiscais e físicos do material recusado. Alimenta o
+              relatório PDF (M4.3) e serve pro fornecedor conferir a
+              partida sem precisar abrir os anexos.
+              Só renderiza a seção se pelo menos um campo estiver
+              preenchido. */}
+          {(() => {
+            const campos = [
+              { label: 'Número da NF',         valor: nc.numero_nota_fiscal },
+              { label: 'Pedido (OC)',          valor: nc.numero_pedido },
+              { label: 'RC origem',            valor: nc.chamado_numero },
+              { label: 'Quantidade recusada',  valor: nc.quantidade != null ? `${nc.quantidade} ${nc.unidade_medida || 'UN'}` : null },
+              { label: 'Lote',                 valor: nc.lote },
+              { label: 'Número de série',      valor: nc.numero_serie },
+              { label: 'Validade',             valor: nc.validade ? new Date(nc.validade).toLocaleDateString('pt-BR', { timeZone: 'UTC' }) : null },
+            ].filter(c => c.valor != null && c.valor !== '');
+
+            if (campos.length === 0) return null;
+
+            return (
+              <Secao titulo="DADOS DE RASTREABILIDADE" C={C}>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                  gap: 10,
+                }}>
+                  {campos.map((c, i) => (
+                    <div key={i}>
+                      <div style={{
+                        fontSize: 9, color: C.muted,
+                        letterSpacing: '0.06em', marginBottom: 2,
+                        textTransform: 'uppercase', fontWeight: 600,
+                      }}>
+                        {c.label}
+                      </div>
+                      <div style={{ fontSize: 12, color: C.text, fontWeight: 500 }}>
+                        {c.valor}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Secao>
+            );
+          })()}
 
           {/* ── Disposição + ação corretiva (aparecem quando registradas) ── */}
           {nc.disposicao && nc.disposicao !== "pendente" && (
@@ -907,6 +1131,146 @@ useEffect(() => { carregar(); }, [ncId]);
           <div style={{ padding: "14px 22px", borderTop: `1px solid ${C.border}`,
                         display: "flex", gap: 10, flexWrap: "wrap",
                         alignItems: "center", justifyContent: "flex-end" }}>
+            {/* M4.1: notificar fornecedor (fluxo de aprovação).
+                Só aparece quando:
+                  • NC tem fornecedor vinculado
+                  • Ainda não foi notificado (status 'nao_notificado')
+                  • Usuário é gestor/admin/comprador
+                O backend reforça a permissão. */}
+            {nc.fornecedor_id
+              && nc.fornecedor_tratativa_status === "nao_enviado"
+              && ["gestor", "admin", "comprador"].includes(perfilUsuario) && (
+              <>
+                <button
+                  onClick={async () => {
+                    if (!window.confirm(
+                      `Marcar esta NC como INTERNA?\n\n` +
+                      `O fornecedor ${nc.fornecedor_nome || '—'} perde acesso ` +
+                      `(se ainda não tiver visto, nem vai ver) e a NC segue o ` +
+                      `fluxo interno normal.`
+                    )) return;
+                    const motivo = window.prompt("Motivo (opcional):");
+                    if (motivo === null) return;
+                    setSalvando(true);
+                    try {
+                      await apiService.post(`/nao-conformidades/${ncId}/marcar-interna`, {
+                        motivo: motivo?.trim() || null,
+                      });
+                      await carregar();
+                      onAtualizar?.();
+                    } catch (e) {
+                      setErro(e.message || "Erro ao marcar como interna");
+                    } finally {
+                      setSalvando(false);
+                    }
+                  }}
+                  disabled={salvando}
+                  style={{
+                    ...s.btn(false, C.muted),
+                    padding: "8px 16px", fontSize: 12,
+                  }}
+                  title="NC não é responsabilidade do fornecedor — mantém no fluxo interno"
+                >
+                  🏭 Marcar como interna
+                </button>
+                <button
+                  onClick={abrirConfirmacaoEnvio}
+                  disabled={salvando}
+                  style={{
+                    ...s.btn(true, "#10b981"),
+                    padding: "8px 16px", fontSize: 12,
+                    background: "#10b981", border: "1px solid #10b981",
+                    opacity: salvando ? 0.5 : 1,
+                  }}
+                  title={`Enviar email para ${nc.fornecedor_nome || "fornecedor"}`}
+                >
+                  {salvando ? "⏳ Enviando email..." : "📤 Notificar fornecedor"}
+                </button>
+              </>
+            )}
+
+            {/* M4.2: ações do comprador quando o fornecedor já respondeu. */}
+            {nc.fornecedor_tratativa_status === 'resolvida_fornecedor' && (
+              <button
+                onClick={async () => {
+                  const obs = window.prompt("Observação (opcional):");
+                  if (obs === null) return;
+                  setSalvando(true);
+                  try {
+                    await apiService.post(`/nao-conformidades/${ncId}/validar-resolucao-fornecedor`, {
+                      observacao: obs?.trim() || null,
+                    });
+                    await carregar();
+                    onAtualizar?.();
+                  } catch (e) {
+                    setErro(e.message || "Erro ao validar");
+                  } finally {
+                    setSalvando(false);
+                  }
+                }}
+                disabled={salvando}
+                style={{ ...s.btn(true, "#a855f7"), padding: "8px 16px", fontSize: 12,
+                         background: "#a855f7", border: "1px solid #a855f7" }}
+              >
+                🎯 Validar resolução
+              </button>
+            )}
+
+            {nc.fornecedor_tratativa_status === 'contestada' && (
+              <>
+                <button
+                  onClick={async () => {
+                    const obs = window.prompt("Motivo (opcional):");
+                    if (obs === null) return;
+                    if (!window.confirm("Aceitar a contestação e CANCELAR a NC?\n\nEssa ação encerra a NC.")) return;
+                    setSalvando(true);
+                    try {
+                      await apiService.post(`/nao-conformidades/${ncId}/aceitar-contestacao`, {
+                        observacao: obs?.trim() || null,
+                      });
+                      await carregar();
+                      onAtualizar?.();
+                    } catch (e) {
+                      setErro(e.message || "Erro ao aceitar");
+                    } finally {
+                      setSalvando(false);
+                    }
+                  }}
+                  disabled={salvando}
+                  style={{ ...s.btn(true, "#10b981"), padding: "8px 16px", fontSize: 12,
+                           background: "#10b981", border: "1px solid #10b981" }}
+                >
+                  ✅ Aceitar contestação (cancelar NC)
+                </button>
+                <button
+                  onClick={async () => {
+                    const obs = window.prompt("Justificativa obrigatória:");
+                    if (!obs || !obs.trim()) {
+                      if (obs !== null) alert("Justificativa é obrigatória.");
+                      return;
+                    }
+                    setSalvando(true);
+                    try {
+                      await apiService.post(`/nao-conformidades/${ncId}/rejeitar-contestacao`, {
+                        observacao: obs.trim(),
+                      });
+                      await carregar();
+                      onAtualizar?.();
+                    } catch (e) {
+                      setErro(e.message || "Erro ao rejeitar");
+                    } finally {
+                      setSalvando(false);
+                    }
+                  }}
+                  disabled={salvando}
+                  style={{ ...s.btn(true, "#ef4444"), padding: "8px 16px", fontSize: 12,
+                           background: "#ef4444", border: "1px solid #ef4444" }}
+                >
+                  ❌ Rejeitar contestação
+                </button>
+              </>
+            )}
+
             {podeTransferir && (
               <button onClick={() => setTransferindo({
                   responsavel_id: "",
@@ -1443,6 +1807,50 @@ useEffect(() => { carregar(); }, [ncId]);
                            background: "#a855f7", border: "1px solid #a855f7",
                            opacity: salvando ? 0.5 : 1 }}>
                   {salvando ? "Transferindo..." : transferindo.responsavel_id ? "Confirmar transferência" : "Devolver para a fila"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* M4.3-j: confirmação antes de disparar email ao fornecedor. */}
+        {confirmandoEnvio && (
+          <div onClick={() => setConfirmandoEnvio(false)}
+               style={{ position: "fixed", inset: 0, background: "#000000bb",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        zIndex: 400, padding: 20 }}>
+            <div onClick={e => e.stopPropagation()}
+                 style={{ ...s.card, width: 460, maxWidth: "100%", padding: 22 }}>
+
+              <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 12 }}>
+                📤 Confirmar envio de email?
+              </div>
+
+              <div style={{ fontSize: 13, color: C.text, lineHeight: 1.6, marginBottom: 16 }}>
+                Você está prestes a notificar o fornecedor sobre esta NC. O email
+                será enviado e o fornecedor passará a ver a NC no portal.
+              </div>
+
+              <div style={{ background: C.bg, border: `1px solid ${C.border}55`,
+                            borderRadius: 8, padding: "12px 14px", marginBottom: 16,
+                            fontSize: 12, fontFamily: "'IBM Plex Mono', monospace",
+                            display: "flex", flexDirection: "column", gap: 6 }}>
+                <div><span style={{ color: C.muted }}>NC:</span> <span style={{ color: C.accent }}>{nc.numero_nc}</span></div>
+                <div><span style={{ color: C.muted }}>Fornecedor:</span> <span style={{ color: C.text }}>{nc.fornecedor_nome || "—"}</span></div>
+                <div><span style={{ color: C.muted }}>Email:</span> <span style={{ color: C.text }}>{nc.fornecedor_email || "não cadastrado"}</span></div>
+              </div>
+
+              <div style={{ display: "flex", justifyContent: "flex-end", gap: 10 }}>
+                <button onClick={() => setConfirmandoEnvio(false)}
+                        style={{ ...s.btn(false, C.muted), padding: "8px 16px", fontSize: 12 }}>
+                  Cancelar
+                </button>
+                <button onClick={confirmarEnvio}
+                        disabled={salvando}
+                        style={{ ...s.btn(true, "#10b981"), padding: "8px 16px", fontSize: 12,
+                                 background: "#10b981", border: "1px solid #10b981",
+                                 opacity: salvando ? 0.5 : 1 }}>
+                  ✅ Confirmar envio
                 </button>
               </div>
             </div>

@@ -6,6 +6,7 @@ import TelaOrdensVenda from '../ordensvenda/TelaOrdensVenda';
 import TelaMeusPedidosFornecedor from '../fornecedores/TelaMeusPedidosFornecedor';
 import TelaNaoConformidadesFornecedor from '../fornecedores/TelaNaoConformidadesFornecedor';
 import TelaGestaoCotacoesFornecedor from '../fornecedores/TelaGestaoCotacoesFornecedor';
+import TelaMeusDadosFornecedor from '../fornecedores/TelaMeusDadosFornecedor';
 
 const C = {
   bg: "#0a0e14",
@@ -34,10 +35,17 @@ const fmtD = d => d ? new Date(d).toLocaleDateString('pt-BR') : '—';
 export default function TelaFornecedor() {
   const [tela, setTela] = useState('cotacoes');
   const [usuario, setUsuario] = useState(null);
-  
+
   useEffect(() => {
     const user = JSON.parse(localStorage.getItem('usuario') || '{}');
     setUsuario(user);
+
+    // TelaMeusDadosFornecedor.jsx dispara este evento ao salvar com sucesso
+    // (além de já gravar o localStorage) — assim o "Olá, {nome}" e o
+    // rodapé do menu atualizam na hora, sem precisar de logout/login.
+    const onUsuarioAtualizado = (e) => setUsuario(e.detail);
+    window.addEventListener('usuario-atualizado', onUsuarioAtualizado);
+    return () => window.removeEventListener('usuario-atualizado', onUsuarioAtualizado);
   }, []);
 
   const menuItens = [
@@ -46,6 +54,7 @@ export default function TelaFornecedor() {
     { id: 'nao-conformidades', label: '⚠️ Não Conformidades' },
     { id: 'oportunidades', label: '⚡ Oportunidades Spot' },
     { id: 'catalogo',      label: '📦 Catálogo' },
+    { id: 'meus-dados',    label: '⚙️ Meus Dados' },
   ];
 
   const logout = () => {
@@ -142,6 +151,7 @@ export default function TelaFornecedor() {
         {tela === 'nao-conformidades' && <TelaNaoConformidadesFornecedor C={C} s={s} usuario={usuario} />}
         {tela === 'oportunidades' && <TelaPortalFornecedor />}
         {tela === 'catalogo' && <TelaCatalogoFornecedor C={C} s={s} fmtBRL={fmtBRL} />}
+        {tela === 'meus-dados' && <TelaMeusDadosFornecedor C={C} s={s} />}
         </div>
       </div>
     </div>

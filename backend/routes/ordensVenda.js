@@ -41,11 +41,11 @@ router.get('/', tenantMiddleware, async (req, res) => {
     const ordensComItens = await Promise.all(ordens.map(async (ov) => {
       // Buscar itens da OV
       const itens = await DB.select('ordem_venda_itens', { ordem_venda_id: ov.id }, tenantId);
-      
+
       // Buscar fornecedor
       const fornecedor = await DB.selectOne('fornecedores', { id: ov.fornecedor_id }, tenantId);
       const cotacao = await DB.selectOne('cotacoes', { id: ov.cotacao_id }, tenantId);
-      
+
       return {
         ...ov,
         fornecedor_nome: fornecedor?.nome || 'Fornecedor não identificado',

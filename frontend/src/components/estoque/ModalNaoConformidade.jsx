@@ -62,15 +62,24 @@ export default function ModalNaoConformidade({
   corBotao = '#ef4444',
   labelBotao = 'Registrar NC',
   permiteAnexos = true,
+  // FIX M4.3: valores do item que veio do modal de contagem. Se o
+  // comprador digitou "1 UN" lá, o valor vem pré-preenchido aqui.
+  // Editável — ele pode ajustar (ex: recebeu 10, 3 com defeito).
+  quantidadeInicial = '',
+  unidadeInicial = 'UN',
+  mostraRastreabilidade = false,
   onFechar,
   onConfirmar,
 }) {
   const [motivo, setMotivo] = useState('');
+  const [quantidade, setQuantidade] = useState(String(quantidadeInicial ?? ''));
+  const [unidade, setUnidade] = useState(unidadeInicial);
   const [anexos, setAnexos] = useState([]);
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
   const [fotoAberta, setFotoAberta] = useState(null);
   const fileRef = useRef(null);
+  const cameraRef = useRef(null);
 
   const adicionarArquivo = async (file) => {
     if (!file) return;
@@ -104,7 +113,12 @@ export default function ModalNaoConformidade({
     setCarregando(true);
     setErro(null);
     try {
-      await onConfirmar({ motivo: motivo.trim(), anexos });
+      await onConfirmar({
+        motivo: motivo.trim(),
+        anexos,
+        quantidade: quantidade ? parseFloat(String(quantidade).replace(',', '.')) : null,
+        unidade,
+      });
     } catch (e) {
       setErro(e.message || 'Erro ao registrar');
     } finally {
@@ -181,6 +195,44 @@ export default function ModalNaoConformidade({
             />
           </div>
 
+          {mostraRastreabilidade && (
+            <div style={{ marginBottom: 16 }}>
+              <label style={{
+                fontSize: 11, color: C.muted, letterSpacing: '0.06em',
+                fontWeight: 600, display: 'block', marginBottom: 6,
+              }}>
+                QUANTIDADE AFETADA
+              </label>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={quantidade}
+                  onChange={e => setQuantidade(e.target.value)}
+                  placeholder="Ex: 1"
+                  style={{ ...s.input, flex: 1, fontSize: 13 }}
+                />
+                <select
+                  value={unidade}
+                  onChange={e => setUnidade(e.target.value)}
+                  style={{ ...s.input, width: 120, appearance: 'none', fontSize: 13 }}
+                >
+                  <option value="UN">UN</option>
+                  <option value="L">L</option>
+                  <option value="KG">KG</option>
+                  <option value="M">M</option>
+                  <option value="CX">CX</option>
+                  <option value="RL">RL</option>
+                  <option value="GL">GL</option>
+                </select>
+              </div>
+              <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
+                Pré-preenchido com o que você digitou na contagem. Ajuste se parte do lote está OK.
+              </div>
+            </div>
+          )}
+
           {permiteAnexos && (
             <div style={{ marginBottom: 8 }}>
               <label style={{
@@ -223,6 +275,20 @@ export default function ModalNaoConformidade({
                 </div>
               )}
 
+              {/* 2 inputs: um força câmera (mobile), outro permite
+                  escolher da galeria. Padrão do ModalDetalheNC. */}
+              <input
+                ref={cameraRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                style={{ display: 'none' }}
+                onChange={e => {
+                  const files = Array.from(e.target.files || []);
+                  files.forEach(f => adicionarArquivo(f));
+                  e.target.value = '';
+                }}
+              />
               <input
                 ref={fileRef}
                 type="file"
@@ -235,16 +301,22 @@ export default function ModalNaoConformidade({
                   e.target.value = '';
                 }}
               />
-              <button
-                onClick={() => fileRef.current?.click()}
-                disabled={carregando}
-                style={{
-                  ...s.btn(false, C.muted),
-                  padding: '6px 14px', fontSize: 11,
-                }}
-              >
-                + Adicionar arquivo
-              </button>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => cameraRef.current?.click()}
+                  disabled={carregando}
+                  style={{ ...s.btn(false, C.muted), padding: '6px 14px', fontSize: 11 }}
+                >
+                  📷 Câmera
+                </button>
+                <button
+                  onClick={() => fileRef.current?.click()}
+                  disabled={carregando}
+                  style={{ ...s.btn(false, C.muted), padding: '6px 14px', fontSize: 11 }}
+                >
+                  🖼 Galeria
+                </button>
+              </div>
             </div>
           )}
         </div>

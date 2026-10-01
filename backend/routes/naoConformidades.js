@@ -19,6 +19,7 @@ const express = require('express');
 const router = express.Router();
 const { DB } = require('../db');
 const tenantMiddleware = require('../middleware/tenantMiddleware');
+const { notificarFornecedorNC } = require('../services/NCService');
 
 // ─────────────────────────────────────────────────────────────────────────
 // HELPERS
@@ -154,13 +155,20 @@ router.post('/', tenantMiddleware, async (req, res) => {
       fornecedor_tratativa_status: fornecedorIdFinal ? "nao_notificado" : null,
     }, tenantId);
 
-    // Anexos (fotos como data URI)
+    // Anexos (fotos como data URI). FIX M4-p: SEMPRE sobrescrever o
+    // nome com padrão rastreável `<numeroNC>-evidencia-NN.ext` —
+    // ignora o nome do cliente (ex: IMG_1234.jpg) pra manter padrão
+    // de busca por NC no futuro.
     const anexosInseridos = [];
     if (Array.isArray(anexos) && anexos.length > 0) {
       for (let i = 0; i < anexos.length; i++) {
         const a = anexos[i];
         if (!a?.url) continue;
-        const nomePadrao = a.nome_arquivo || `${numeroNC}-foto-${String(i + 1).padStart(2, '0')}.jpg`;
+        const ext = (a.mime_type === 'image/png') ? 'png'
+          : (a.mime_type === 'image/webp') ? 'webp'
+          : (a.mime_type === 'application/pdf') ? 'pdf'
+          : 'jpg';
+        const nomePadrao = `${numeroNC}-evidencia-${String(i + 1).padStart(2, '0')}.${ext}`;
         const anexo = await DB.insert("nao_conformidade_anexos", {
           tenant_id: tenantId,
           nc_id: nc.id,
@@ -331,6 +339,16 @@ router.get('/:id', tenantMiddleware, async (req, res) => {
     anexos.sort((a, b) => new Date(a.criado_em) - new Date(b.criado_em));
     planoAcao.sort((a, b) => new Date(a.criado_em) - new Date(b.criado_em));
 
+    // M4.3-j: incluir email do fornecedor no payload — usado pelo modal
+    // de confirmação de envio antes do usuário disparar o email.
+    let fornecedor_email = null;
+    if (nc.fornecedor_id) {
+      try {
+        const forn = await DB.selectOne("fornecedores", { id: nc.fornecedor_id, tenant_id: tenantId }, tenantId);
+        fornecedor_email = forn?.email || null;
+      } catch (_) {}
+    }
+
     // Enriquecer com número da OS e equipamento pra rastreabilidade na UI
     let chamado_numero = null;
     let equipamento_nome = null;
@@ -354,6 +372,7 @@ router.get('/:id', tenantMiddleware, async (req, res) => {
       ...nc,
       anexos, eventos, plano_acao: planoAcao,
       chamado_numero, equipamento_nome, equipamento_tag,
+      fornecedor_email,
     });
   } catch (err) {
     console.error("❌ Erro ao buscar NC:", err.message);
@@ -1044,6 +1063,250 @@ router.put('/:id/encerrar', tenantMiddleware, async (req, res) => {
   } catch (err) {
     console.error("❌ Erro ao encerrar NC:", err.message);
     res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/nao-conformidades/:id/notificar-fornecedor
+//
+// Dispara o email de NC pro fornecedor (fluxo de aprovação — policy
+// 'aprovacao'). Idempotente: se já foi notificado, retorna ok sem
+// reenviar.
+//
+// Permissão: gestor, admin, ou comprador (o "receiver" em empresas
+// pequenas muitas vezes é o próprio comprador com autoridade delegada).
+// ─────────────────────────────────────────────────────────────────────────
+router.post('/:id/notificar-fornecedor', tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { id } = req.params;
+
+  try {
+    const nc = await DB.selectOne('nao_conformidades', { id, tenant_id: tenantId }, tenantId);
+    if (!nc) return res.status(404).json({ erro: 'NC não encontrada' });
+
+    if (!nc.fornecedor_id) {
+      return res.status(400).json({ erro: 'NC sem fornecedor vinculado — não há quem notificar' });
+    }
+
+    const perfil = await perfilDoUsuario(req, tenantId);
+    const perfisPermitidos = ['gestor', 'admin', 'comprador'];
+    if (!perfisPermitidos.includes(perfil)) {
+      return res.status(403).json({
+        erro: `Apenas ${perfisPermitidos.join(', ')} podem notificar o fornecedor (seu perfil: ${perfil || '—'})`
+      });
+    }
+
+    const u = await usuarioAtual(req, tenantId);
+    const resultado = await notificarFornecedorNC(id, tenantId, {
+      origem: 'manual',
+      userId: u.id,
+      userNome: u.nome,
+    });
+
+    if (resultado.ja_notificado) {
+      return res.json({ ok: true, ja_notificado: true, mensagem: 'Esta NC já foi notificada ao fornecedor anteriormente' });
+    }
+
+    res.json({
+      ok: true,
+      email: resultado.email,
+      mensagem: `Fornecedor notificado por email (${resultado.email})`,
+    });
+  } catch (err) {
+    console.error("❌ Erro ao notificar fornecedor:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// M4.2 — Ações do comprador sobre a tratativa do fornecedor.
+//
+// 3 endpoints, cada um disparado por um estado específico do fornecedor:
+//   - /validar-resolucao-fornecedor: quando fornecedor marcou 'resolvida_fornecedor'
+//   - /aceitar-contestacao:          quando fornecedor marcou 'contestada'
+//   - /rejeitar-contestacao:         quando fornecedor marcou 'contestada'
+// ─────────────────────────────────────────────────────────────────────────
+
+// POST /api/nao-conformidades/:id/validar-resolucao-fornecedor
+// Body: { observacao? }
+router.post('/:id/validar-resolucao-fornecedor', tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { id } = req.params;
+  const { observacao } = req.body;
+
+  try {
+    const nc = await DB.selectOne('nao_conformidades', { id, tenant_id: tenantId }, tenantId);
+    if (!nc) return res.status(404).json({ erro: 'NC não encontrada' });
+    if (nc.fornecedor_tratativa_status !== 'resolvida_fornecedor') {
+      return res.status(400).json({
+        erro: `NC não está aguardando validação de resolução (status atual: ${nc.fornecedor_tratativa_status || '—'})`
+      });
+    }
+
+    const u = await usuarioAtual(req, tenantId);
+
+    await DB.update('nao_conformidades', id, {
+      status: 'resolvida',
+      fornecedor_tratativa_status: 'resolvida_fornecedor',
+      solucao_aplicada: observacao?.trim() || 'Resolução aceita do fornecedor',
+      resolvida_em: new Date().toISOString(),
+      resolvida_por: u.id,
+      resolvida_por_nome: u.nome,
+      encerrada_por: u.id,
+      encerrada_por_nome: u.nome,
+      encerrada_em: new Date().toISOString(),
+      atualizado_em: new Date().toISOString(),
+    }, tenantId);
+
+    await registrarEventoNC(
+      tenantId, id, 'resolucao_fornecedor_aceita',
+      `Resolução do fornecedor validada${observacao ? `: ${observacao}` : ''}`,
+      { observacao: observacao || null },
+      u
+    );
+
+    return res.json({ ok: true, mensagem: 'Resolução validada — NC encerrada' });
+  } catch (err) {
+    console.error('❌ Erro ao validar resolução do fornecedor:', err.message);
+    return res.status(500).json({ erro: err.message });
+  }
+});
+
+// POST /api/nao-conformidades/:id/aceitar-contestacao
+// Body: { observacao? }
+router.post('/:id/aceitar-contestacao', tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { id } = req.params;
+  const { observacao } = req.body;
+
+  try {
+    const nc = await DB.selectOne('nao_conformidades', { id, tenant_id: tenantId }, tenantId);
+    if (!nc) return res.status(404).json({ erro: 'NC não encontrada' });
+    if (nc.fornecedor_tratativa_status !== 'contestada') {
+      return res.status(400).json({
+        erro: `NC não está com contestação pendente (status atual: ${nc.fornecedor_tratativa_status || '—'})`
+      });
+    }
+
+    const u = await usuarioAtual(req, tenantId);
+    const motivoFinal = `Contestação do fornecedor aceita${observacao ? `: ${observacao}` : ''}`;
+
+    await DB.update('nao_conformidades', id, {
+      status: 'cancelada',
+      motivo_cancelamento: motivoFinal,
+      atualizado_em: new Date().toISOString(),
+    }, tenantId);
+
+    await registrarEventoNC(
+      tenantId, id, 'contestacao_aceita',
+      motivoFinal,
+      { observacao: observacao || null },
+      u
+    );
+
+    return res.json({ ok: true, mensagem: 'Contestação aceita — NC cancelada' });
+  } catch (err) {
+    console.error('❌ Erro ao aceitar contestação:', err.message);
+    return res.status(500).json({ erro: err.message });
+  }
+});
+
+// POST /api/nao-conformidades/:id/rejeitar-contestacao
+// Body: { observacao (obrigatório) }
+router.post('/:id/rejeitar-contestacao', tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { id } = req.params;
+  const { observacao } = req.body;
+
+  try {
+    if (!observacao || !observacao.trim()) {
+      return res.status(400).json({ erro: 'Justificativa é obrigatória ao rejeitar a contestação' });
+    }
+
+    const nc = await DB.selectOne('nao_conformidades', { id, tenant_id: tenantId }, tenantId);
+    if (!nc) return res.status(404).json({ erro: 'NC não encontrada' });
+    if (nc.fornecedor_tratativa_status !== 'contestada') {
+      return res.status(400).json({
+        erro: `NC não está com contestação pendente (status atual: ${nc.fornecedor_tratativa_status || '—'})`
+      });
+    }
+
+    const u = await usuarioAtual(req, tenantId);
+
+    await DB.update('nao_conformidades', id, {
+      fornecedor_tratativa_status: 'enviado', // volta pro ciclo — comprador reassume
+      atualizado_em: new Date().toISOString(),
+    }, tenantId);
+
+    await registrarEventoNC(
+      tenantId, id, 'contestacao_rejeitada',
+      `Contestação rejeitada pelo comprador: ${observacao.trim()}`,
+      { observacao: observacao.trim() },
+      u
+    );
+
+    return res.json({ ok: true, mensagem: 'Contestação rejeitada — NC segue em tratativa interna' });
+  } catch (err) {
+    console.error('❌ Erro ao rejeitar contestação:', err.message);
+    return res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/nao-conformidades/:id/marcar-interna
+//
+// Triagem concluiu que a NC NÃO é problema do fornecedor (ex: dano de
+// empilhadeira no recebimento). Zera `fornecedor_id` — a NC vira
+// interna comum, com todo o histórico preservado.
+//
+// Diferente de cancelar: a NC continua ativa, segue o fluxo ISO 9001
+// normal (direcionar área, plano de ação, etc). Só sai do radar do
+// fornecedor.
+//
+// Body: { motivo } (opcional)
+// ─────────────────────────────────────────────────────────────────────────
+router.post('/:id/marcar-interna', tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { id } = req.params;
+  const { motivo } = req.body || {};
+
+  try {
+    const nc = await DB.selectOne('nao_conformidades', { id, tenant_id: tenantId }, tenantId);
+    if (!nc) return res.status(404).json({ erro: 'NC não encontrada' });
+
+    if (!nc.fornecedor_id) {
+      return res.status(400).json({ erro: 'NC já está marcada como interna' });
+    }
+    if (['resolvida', 'cancelada'].includes(nc.status)) {
+      return res.status(400).json({ erro: 'NC já encerrada — não pode mais mudar escopo' });
+    }
+
+    const u = await usuarioAtual(req, tenantId);
+    const fornecedorAnterior = nc.fornecedor_nome || `#${nc.fornecedor_id}`;
+
+    await DB.update('nao_conformidades', id, {
+      fornecedor_id: null,
+      fornecedor_nome: null,
+      fornecedor_tratativa_status: null,
+      fornecedor_ciente_em: null,
+      fornecedor_ciente_por_nome: null,
+      atualizado_em: new Date().toISOString(),
+    }, tenantId);
+
+    await registrarEventoNC(
+      tenantId, id, 'marcada_interna',
+      `NC desvinculada do fornecedor ${fornecedorAnterior} — tratativa passa a ser interna${motivo ? `: ${motivo}` : ''}`,
+      { fornecedor_anterior: fornecedorAnterior, motivo: motivo || null },
+      u
+    );
+
+    return res.json({
+      ok: true,
+      mensagem: `NC agora é interna — fornecedor ${fornecedorAnterior} não tem mais acesso.`,
+    });
+  } catch (err) {
+    console.error('❌ Erro ao marcar NC como interna:', err.message);
+    return res.status(500).json({ erro: err.message });
   }
 });
 

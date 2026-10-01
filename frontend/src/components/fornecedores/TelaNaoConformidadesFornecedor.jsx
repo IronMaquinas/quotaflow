@@ -10,8 +10,9 @@ import { fmtBRL, fmtD } from '../../utils/formatters';
 import ModalDetalheNCFornecedor from './ModalDetalheNCFornecedor';
 
 const STATUS_TRATATIVA = {
-  nao_notificado:       { l: 'Aguardando ciência', c: '#9ca3af', icon: '⏳' },
-  notificado:           { l: 'Aguardando você',    c: '#f59e0b', icon: '🔔' },
+  nao_enviado:          { l: 'Aguardando envio', c: '#6b7280', icon: '⏳' },
+  enviado:              { l: 'Aguardando você',  c: '#f59e0b', icon: '🔔' },
+  visualizado:          { l: 'Visualizada',      c: '#6366f1', icon: '👁️' },
   aceita:               { l: 'Aceita por você',    c: '#10b981', icon: '✅' },
   contestada:           { l: 'Contestada',         c: '#ef4444', icon: '✋' },
   resolvida_fornecedor: { l: 'Resolvida',          c: '#3b82f6', icon: '✔️' },
@@ -54,7 +55,7 @@ export default function TelaNaoConformidadesFornecedor({ C, s, usuario }) {
 
   const filtradas = ncs.filter(nc => {
     if (filtro === 'aguardando') {
-      if (!['nao_notificado', 'notificado'].includes(nc.fornecedor_tratativa_status)) return false;
+      if (!['enviado', 'visualizado'].includes(nc.fornecedor_tratativa_status)) return false;
     }
     if (filtro === 'respondidas') {
       if (!['aceita', 'contestada', 'resolvida_fornecedor'].includes(nc.fornecedor_tratativa_status)) return false;
@@ -103,7 +104,7 @@ export default function TelaNaoConformidadesFornecedor({ C, s, usuario }) {
         ].map(f => {
           const ativo = filtro === f.id;
           const count = f.id === 'aguardando'
-            ? ncs.filter(nc => ['nao_notificado', 'notificado'].includes(nc.fornecedor_tratativa_status)).length
+            ? ncs.filter(nc => ['enviado', 'visualizado'].includes(nc.fornecedor_tratativa_status)).length
             : f.id === 'respondidas'
               ? ncs.filter(nc => ['aceita', 'contestada', 'resolvida_fornecedor'].includes(nc.fornecedor_tratativa_status)).length
               : ncs.length;

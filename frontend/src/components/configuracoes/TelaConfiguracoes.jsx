@@ -48,6 +48,7 @@ export default function TelaConfiguracoes({ C, s }) {
           { id: "jornada", label: "⏰ Jornada de trabalho" },
           { id: "feriados", label: "📅 Feriados" },
           { id: "custos", label: "💼 Custos operacionais" },
+          { id: "comunicacoes", label: "📨 Comunicações" },
         ].map(tab => (
           <button key={tab.id}
             onClick={() => { setAbaAtiva(tab.id); setErro(null); }}
@@ -81,6 +82,7 @@ export default function TelaConfiguracoes({ C, s }) {
       {abaAtiva === "jornada" && <SecaoJornada C={C} s={s} onErro={setErro} />}
       {abaAtiva === "feriados" && <SecaoFeriados C={C} s={s} onErro={setErro} />}
       {abaAtiva === "custos" && <SecaoCustosOperacionais C={C} s={s} onErro={setErro} />}
+      {abaAtiva === "comunicacoes" && <SecaoComunicacoes C={C} s={s} onErro={setErro} />}
     </div>
   );
 }
@@ -567,6 +569,146 @@ function SecaoFeriados({ C, s, onErro }) {
           ))}
         </div>
       )}
+    </div>
+  );
+}
+
+// ═════════════════════════════════════════════════════════════════════════
+// SEÇÃO: COMUNICAÇÕES
+// ═════════════════════════════════════════════════════════════════════════
+function SecaoComunicacoes({ C, s, onErro }) {
+  const [carregando, setCarregando] = useState(true);
+  const [salvando, setSalvando] = useState(false);
+  const [sucesso, setSucesso] = useState(false);
+  const [policy, setPolicy] = useState("aprovacao");
+
+  useEffect(() => {
+    setCarregando(true);
+    apiService.get("/configuracoes/nc-notificacao")
+      .then(r => setPolicy(r?.nc_notificacao_policy || "aprovacao"))
+      .catch(e => onErro?.(e.message || "Erro ao carregar comunicação"))
+      .finally(() => setCarregando(false));
+  }, [onErro]);
+
+  async function salvar() {
+    setSucesso(false);
+    onErro?.(null);
+    setSalvando(true);
+    try {
+      await apiService.put("/configuracoes/nc-notificacao", {
+        nc_notificacao_policy: policy,
+      });
+      setSucesso(true);
+      setTimeout(() => setSucesso(false), 3000);
+    } catch (e) {
+      onErro?.(e.message || "Erro ao salvar");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  if (carregando) {
+    return <div style={{ color: C.muted, padding: 20 }}>Carregando configuração...</div>;
+  }
+
+  const opcoes = [
+    {
+      id: "aprovacao",
+      titulo: "🔒 Exige aprovação",
+      descricao: "Ao registrar uma Não Conformidade, o fornecedor NÃO é notificado automaticamente. Um gestor ou comprador precisa revisar e aprovar o envio antes do email sair.",
+      recomendado: true,
+    },
+    {
+      id: "direta",
+      titulo: "⚡ Notificação direta",
+      descricao: "Assim que uma Não Conformidade é registrada no recebimento, o fornecedor é notificado por email imediatamente. Não requer aprovação prévia.",
+      recomendado: false,
+    },
+  ];
+
+  return (
+    <div style={{ maxWidth: 720 }}>
+      <div style={{ ...s.card, padding: "18px 20px", marginBottom: 16 }}>
+        <div style={{ fontSize: 12, color: C.textSub, fontWeight: 600, marginBottom: 6 }}>
+          NOTIFICAÇÃO DE NÃO CONFORMIDADES AO FORNECEDOR
+        </div>
+        <div style={{ fontSize: 11, color: C.muted, marginBottom: 16, lineHeight: 1.6 }}>
+          Uma Não Conformidade é uma afirmação formal contra um fornecedor,
+          com efeito contratual (recusa, glosa, devolução). Escolha se o
+          email deve sair automaticamente ou se precisa de aprovação antes.
+        </div>
+
+        <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+          {opcoes.map(opt => {
+            const ativo = policy === opt.id;
+            return (
+              <label
+                key={opt.id}
+                style={{
+                  display: "flex",
+                  gap: 12,
+                  padding: "12px 14px",
+                  border: `1px solid ${ativo ? C.accent : C.border}`,
+                  background: ativo ? `${C.accent}11` : "transparent",
+                  borderRadius: 8,
+                  cursor: "pointer",
+                  alignItems: "flex-start",
+                }}
+              >
+                <input
+                  type="radio"
+                  name="nc-notificacao-policy"
+                  checked={ativo}
+                  onChange={() => setPolicy(opt.id)}
+                  style={{ marginTop: 3, cursor: "pointer" }}
+                />
+                <div style={{ flex: 1 }}>
+                  <div style={{
+                    fontSize: 12, fontWeight: 600, color: C.text,
+                    display: "flex", alignItems: "center", gap: 6,
+                  }}>
+                    {opt.titulo}
+                    {opt.recomendado && (
+                      <span style={{
+                        fontSize: 9, color: C.success,
+                        background: `${C.success}22`,
+                        border: `1px solid ${C.success}55`,
+                        borderRadius: 4, padding: "1px 6px",
+                        letterSpacing: "0.05em", fontWeight: 700,
+                      }}>
+                        RECOMENDADO
+                      </span>
+                    )}
+                  </div>
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 4, lineHeight: 1.5 }}>
+                    {opt.descricao}
+                  </div>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, alignItems: "center" }}>
+        <button
+          onClick={salvar}
+          disabled={salvando}
+          style={{
+            ...s.btn(true),
+            padding: "10px 24px",
+            fontSize: 13,
+            opacity: salvando ? 0.5 : 1,
+          }}
+        >
+          {salvando ? "Salvando..." : "Salvar configuração"}
+        </button>
+        {sucesso && (
+          <span style={{ fontSize: 12, color: C.success, fontWeight: 600 }}>
+            ✅ Configuração salva
+          </span>
+        )}
+      </div>
     </div>
   );
 }

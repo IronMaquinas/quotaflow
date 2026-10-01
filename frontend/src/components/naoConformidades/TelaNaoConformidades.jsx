@@ -39,7 +39,7 @@ const DISPOSICAO_CFG = {
   uso_como_esta: { l: "Uso como está",    icon: "✔️" },
 };
 
-export default function TelaNaoConformidades({ C, s, fmtD, onIrParaOS }) {
+export default function TelaNaoConformidades({ C, s, fmtD, onIrParaOS, initialNCId, onNCInicialConsumida }) {
   const [ncs, setNcs] = useState([]);
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
@@ -52,6 +52,16 @@ export default function TelaNaoConformidades({ C, s, fmtD, onIrParaOS }) {
   // Card expandido (só 1 por vez, clicar em outro fecha o anterior)
   const [expandidoId, setExpandidoId] = useState(null);
   const [ncAbertaId, setNcAbertaId] = useState(null);
+
+  // M4.3-e: deep link interno. Quando TelaRecebimento chama onIrParaNC,
+  // App seta initialNCId e troca de tela. Aqui consumimos 1x e
+  // devolvemos o estado pro App (evita reabrir ao remontar).
+  useEffect(() => {
+    if (initialNCId) {
+      setNcAbertaId(initialNCId);
+      onNCInicialConsumida?.();
+    }
+  }, [initialNCId]);
 
   const carregar = useCallback(async () => {
     setCarregando(true);
@@ -221,6 +231,53 @@ export default function TelaNaoConformidades({ C, s, fmtD, onIrParaOS }) {
                 <span style={{ ...s.tag(st.c), fontSize: 10 }}>
                   {st.icon} {st.l}
                 </span>
+                {/* M4.1: badge de tratativa com fornecedor — paralelo ao
+                    status ISO. Mostra quando a NC tem fornecedor vinculado. */}
+                {/* M4.2: pipeline de tratativa com fornecedor (6 estados). */}
+                {/* FIX M4.2: se `fornecedor_ciente_em` está preenchido,
+                    o status EFETIVO é no mínimo "visualizado" — mesmo
+                    que `fornecedor_tratativa_status` no banco esteja
+                    atrás (ex: dado legado, reset manual). Sem isso, o
+                    card mostra "🔔 Aguardando envio" + "👁 visualizada"
+                    ao mesmo tempo, contraditório. */}
+                {nc.fornecedor_id
+                  && nc.fornecedor_tratativa_status === 'nao_enviado' && (
+                  <span
+                    style={{ ...s.tag("#9ca3af"), fontSize: 10 }}
+                    title="Não visível ao fornecedor. Envie pela tela de NC quando confirmar que é responsabilidade dele, ou marque como interna."
+                  >
+                    🔒 Aguardando triagem
+                  </span>
+                )}
+                {nc.fornecedor_id
+                  && !nc.fornecedor_ciente_em
+                  && nc.fornecedor_tratativa_status === 'enviado' && (
+                  <span style={{ ...s.tag("#f59e0b"), fontSize: 10 }} title="Email enviado, fornecedor ainda não visualizou">
+                    📤 Enviado
+                  </span>
+                )}
+                {nc.fornecedor_id
+                  && (nc.fornecedor_tratativa_status === 'visualizado' || nc.fornecedor_ciente_em)
+                  && !['aceita', 'contestada', 'resolvida_fornecedor'].includes(nc.fornecedor_tratativa_status) && (
+                  <span style={{ ...s.tag("#3b82f6"), fontSize: 10 }} title="Fornecedor abriu a NC">
+                    👁 Visualizado
+                  </span>
+                )}
+                {nc.fornecedor_id && nc.fornecedor_tratativa_status === 'aceita' && (
+                  <span style={{ ...s.tag("#10b981"), fontSize: 10 }}>
+                    ✅ Aceita
+                  </span>
+                )}
+                {nc.fornecedor_id && nc.fornecedor_tratativa_status === 'contestada' && (
+                  <span style={{ ...s.tag("#ef4444"), fontSize: 10 }}>
+                    ✋ Contestada
+                  </span>
+                )}
+                {nc.fornecedor_id && nc.fornecedor_tratativa_status === 'resolvida_fornecedor' && (
+                  <span style={{ ...s.tag("#a855f7"), fontSize: 10 }}>
+                    🎯 Resolvida (validar)
+                  </span>
+                )}
                 <span style={{ ...s.tag(C.muted), fontSize: 10 }}>
                   {origem.icon} {origem.l}
                 </span>
@@ -252,6 +309,16 @@ export default function TelaNaoConformidades({ C, s, fmtD, onIrParaOS }) {
                 )}
                 {nc.criado_por_nome && (
                   <span>👤 aberta por {nc.criado_por_nome}</span>
+                )}
+                {/* M4.1: rastreio "mensagem lida" — quando o fornecedor
+                    abriu o detalhe da NC no portal. */}
+                {nc.fornecedor_ciente_em && (
+                  <span
+                    style={{ color: "#3b82f6" }}
+                    title="Quando o fornecedor abriu o detalhe desta NC"
+                  >
+                    👁 visualizada {nc.fornecedor_ciente_por_nome ? `por ${nc.fornecedor_ciente_por_nome} ` : ''}em {fmtD(nc.fornecedor_ciente_em)}
+                  </span>
                 )}
                 {nc.criado_em && (
                   <span>📅 {fmtD ? fmtD(nc.criado_em) : new Date(nc.criado_em).toLocaleDateString("pt-BR")}</span>

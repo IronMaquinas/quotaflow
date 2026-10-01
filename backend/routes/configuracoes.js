@@ -238,4 +238,44 @@ router.put('/custo-recebimento', tenantMiddleware, async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/configuracoes/nc-notificacao
+//
+// Lê a política de notificação de NC ao fornecedor:
+//   'aprovacao' (default) → gestor precisa aprovar antes do email
+//   'direta'              → email dispara automaticamente ao criar NC
+// ─────────────────────────────────────────────────────────────────────────
+router.get('/nc-notificacao', tenantMiddleware, async (req, res) => {
+  try {
+    const tenant = await DB.selectOne('tenants', { id: req.tenantId });
+    const policy = tenant?.nc_notificacao_policy || 'aprovacao';
+    res.json({ nc_notificacao_policy: policy });
+  } catch (err) {
+    console.error("❌ Erro ao buscar policy de NC:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// PUT /api/configuracoes/nc-notificacao
+// Body: { nc_notificacao_policy: 'aprovacao' | 'direta' }
+// ─────────────────────────────────────────────────────────────────────────
+router.put('/nc-notificacao', tenantMiddleware, async (req, res) => {
+  try {
+    const policy = req.body?.nc_notificacao_policy;
+    const validas = ['aprovacao', 'direta'];
+    if (!policy || !validas.includes(policy)) {
+      return res.status(400).json({ erro: `nc_notificacao_policy deve ser: ${validas.join(' ou ')}` });
+    }
+
+    // Tabela tenants é especial — o id É o tenant_id. Sem 4º arg.
+    await DB.update('tenants', req.tenantId, { nc_notificacao_policy: policy });
+
+    res.json({ ok: true, nc_notificacao_policy: policy });
+  } catch (err) {
+    console.error("❌ Erro ao salvar policy de NC:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
 module.exports = router;
