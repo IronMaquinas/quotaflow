@@ -439,6 +439,12 @@ router.get('/ordem-venda/:ovId', tenantMiddleware, async (req, res) => {
       && !['resolvida', 'cancelada'].includes(nc.status)
     );
 
+    // M4.3-aa: nomes dos usuários que deram entrada (pra modal de entradas).
+    // Busca 1x todos os usuários do tenant e faz lookup em JS (padrão do projeto).
+    const todosUsuarios = await DB.select('usuarios', { tenant_id: tenantId }, tenantId).catch(() => []);
+    const nomeUsuarioPorId = {};
+    for (const u of todosUsuarios) nomeUsuarioPorId[String(u.id)] = u.nome || null;
+
     // 4. Buscar itens de consumo (para saber o SKU e saldo)
     const itensCompletos = await Promise.all(itens.map(async (item) => {
       const itemConsumo = await DB.selectOne('itens_consumo', { catalogo_item_id: item.item_catalogo_id, tenant_id: tenantId }, tenantId);
@@ -465,6 +471,10 @@ router.get('/ordem-venda/:ovId', tenantMiddleware, async (req, res) => {
         // M4.3-e: NC aberta vinculada a este item (se houver).
         nc_id: ncDoItem?.id || null,
         numero_nc: ncDoItem?.numero_nc || null,
+        // M4.3-aa: nome de quem deu entrada (pro modal de entradas).
+        entrada_por_nome: item.entrada_por
+          ? (nomeUsuarioPorId[String(item.entrada_por)] || null)
+          : null,
       };
     }));
 
@@ -780,9 +790,29 @@ router.post('/entrada', tenantMiddleware, async (req, res) => {
         return res.status(404).json({ erro: 'OV não encontrada' });
       }
 
-      const itemConsumo = await DB.selectOne('itens_consumo', { catalogo_item_id: item.item_catalogo_id, tenant_id: tenantId }, tenantId);
+      // M4.3-t: no 1º recebimento o item pode não existir em itens_consumo
+      // ainda — é o caso normal em compras (estoque zerou → OC gerada).
+      // O catálogo já validou o item na criação da OC; criamos a "ficha
+      // de estoque" on-the-fly e seguimos com a entrada.
+      // `sku` (part number) vem de `catalogo_itens.codigo` — fonte única.
+      let itemConsumo = await DB.selectOne('itens_consumo', { catalogo_item_id: item.item_catalogo_id, tenant_id: tenantId }, tenantId);
       if (!itemConsumo) {
-        return res.status(404).json({ erro: 'Item de consumo não encontrado' });
+        const catalogo = await DB.selectOne('catalogo_itens', { id: item.item_catalogo_id, tenant_id: tenantId }, tenantId);
+        if (!catalogo) {
+          return res.status(400).json({
+            erro: 'Item não encontrado no catálogo. Cadastre-o antes de dar entrada.'
+          });
+        }
+        itemConsumo = await DB.insert('itens_consumo', {
+          tenant_id: tenantId,
+          catalogo_item_id: item.item_catalogo_id,
+          nome: catalogo.nome || item.nome_item || 'Item sem nome',
+          sku: catalogo.codigo || null,
+          unidade_medida: catalogo.unidade || 'UN',
+          saldo_atual: 0,
+          serializado: false,
+        }, tenantId);
+        console.log(`🆕 itens_consumo criado on-the-fly: id=${itemConsumo.id} catalogo=${item.item_catalogo_id} sku="${catalogo.codigo}" nome="${catalogo.nome}"`);
       }
 
       // 3-WAY MATCH VALIDAÇÃO
@@ -822,15 +852,25 @@ router.post('/entrada', tenantMiddleware, async (req, res) => {
         criado_em: new Date()
       }, tenantId);
 
+      // M4.3-v: `ordem_venda_itens` NÃO tem coluna `atualizado_em` (só
+      // `ordens_venda` e `itens_consumo` têm). O UPDATE falhava e
+      // bloqueava a entrada no estoque.
       await DB.update('ordem_venda_itens', item.id, {
         quantidade_recebida: parseInt(item.quantidade_recebida || 0) + parseInt(quantidade),
-        atualizado_em: new Date()
+        // M4.3-w: rastreio por etapa (espelha miro_por/miro_em e migo_por/migo_em)
+        entrada_por: req.userId,
+        entrada_em: new Date().toISOString(),
       }, tenantId);
 
+      // M4.3-y: atualizar `status` E `status_recebimento` juntos — o card
+      // lê `status_recebimento`, e antes só `status` era atualizado
+      // (ficava dessincronizado, mostrando "Aguardando Entrada" mesmo
+      // com tudo recebido).
       const itensOV = await DB.select('ordem_venda_itens', { ordem_venda_id: ov.id }, tenantId);
-      const todosRecebidos = itensOV.every(i => i.quantidade_recebida >= i.quantidade);
+      const todosRecebidos = itensOV.every(i => Number(i.quantidade_recebida || 0) >= Number(i.quantidade || 0));
       await DB.update('ordens_venda', ov.id, {
-        status: todosRecebidos ? 'recebido' : 'parcial_recebido'
+        status: todosRecebidos ? 'recebido' : 'parcial_recebido',
+        status_recebimento: todosRecebidos ? 'recebido' : 'parcial',
       }, tenantId);
 
       return res.json({ ok: true, mensagem: '3-Way Match validado e entrada no estoque realizada!' });

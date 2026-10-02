@@ -449,7 +449,7 @@ export default function TelaMeusPedidosFornecedor({ C, s, usuario }) {
                       >
                         ⬇ Baixar XML
                       </button>
-                      {modalDetalhe.cabecalho.status_recebimento !== 'concluido' && (
+                                            {!['concluido', 'recebido'].includes(modalDetalhe.cabecalho.status_recebimento) && (
                         <button
                           onClick={abrirModalAnexar}
                           title="Substituir a NF-e atual (a anterior fica no histórico)"
@@ -544,7 +544,7 @@ export default function TelaMeusPedidosFornecedor({ C, s, usuario }) {
                     )}
                   </div>
                   <div style={{ display: 'flex', gap: 8 }}>
-                    {!modalDetalhe.nfe_atual && modalDetalhe.cabecalho.status_recebimento !== 'concluido' && (
+                    {!modalDetalhe.nfe_atual && !['concluido', 'recebido'].includes(modalDetalhe.cabecalho.status_recebimento) && (
                       <button
                         onClick={abrirModalAnexar}
                         style={{

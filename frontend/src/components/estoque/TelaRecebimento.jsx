@@ -67,6 +67,12 @@ export default function TelaRecebimento({ C, s, fmtD, onIrParaNC }) {
   const [justificativaTratativa, setJustificativaTratativa] = useState('');
   const [modalSucessoNC, setModalSucessoNC] = useState(null);
   const [modalHistorico, setModalHistorico] = useState(null);
+  // M4.3-x: item aguardando confirmação de entrada no estoque.
+  // Guarda o item (não boolean) pra o modal mostrar os dados certos.
+  const [confirmandoEntrada, setConfirmandoEntrada] = useState(null);
+  // M4.3-ab: modal "Ver entrada" — mostra o que foi pra estoque
+  // (data + usuário + RECEBIMENTO + lista de itens).
+  const [modalVerEntrada, setModalVerEntrada] = useState(false);
 
   // ─── FUNÇÕES PARA OVs (INVESTIGAÇÃO DE STATUS PAI) ────────────────────
   const carregarOVs = async () => {
@@ -469,18 +475,21 @@ export default function TelaRecebimento({ C, s, fmtD, onIrParaNC }) {
       return;
     }
 
-    // Fallback: sem NF-e, ou XML com divergência — abre vazio, fluxo
-    // manual normal.
+    // M4.3-u: sem NF-e ou com divergência — mas se o item JÁ tem
+    // conferência fiscal salva (numero_nota_fiscal preenchido), abre
+    // com os dados salvos pra "Revisar" mostrar o que foi gravado.
+    // Antes abria sempre vazio, e o usuário perdia o que tinha digitado.
+    const temFiscalSalvo = item.numero_nota_fiscal && item.miro_por;
     setItemConferenciaFiscal({
       ...item,
       valor_total_ov: item.valor_total || (item.valor_unitario * item.quantidade) || 0,
-      numero_nota_fiscal: '',
-      quantidade_nf: '',
-      valor_nf: '',
-      impostos: '',
-      data_vencimento_pagamento: '',
+      numero_nota_fiscal: temFiscalSalvo ? (item.numero_nota_fiscal || '') : '',
+      quantidade_nf: temFiscalSalvo ? (item.quantidade_nf ?? '') : '',
+      valor_nf: temFiscalSalvo ? (item.valor_nf ?? '') : '',
+      impostos: temFiscalSalvo ? (item.impostos ?? '') : '',
+      data_vencimento_pagamento: temFiscalSalvo ? (item.data_vencimento_pagamento ?? '') : '',
       unidade_medida: item.unidade_medida || 'UN',
-      motivo_divergencia: '',
+      motivo_divergencia: temFiscalSalvo ? (item.motivo_divergencia ?? '') : '',
     });
   };
 
@@ -667,11 +676,34 @@ const handleValidarXML = async () => {
     }
   };
 
+  // M4.3-q: qual é a próxima etapa do fluxo do item? Retorna
+  // 'fiscal' | 'contagem' | 'entrada' | null (concluído ou em NC).
+  // Alimenta a barra de progresso e as cores condicionais dos botões.
+  const proximaEtapa = (item) => {
+    if (!item) return null;
+    if (item.status_quarentena === 'nao_conforme') return null;
+    if (!item.miro_por) return 'fiscal';
+    if (!item.migo_por) return 'contagem';
+    if ((item.quantidade_recebida || 0) < (item.quantidade || 0)) return 'entrada';
+    return null; // fluxo concluído
+  };
+
+  // M4.3-x: abre o modal de confirmação (não dá entrada direto).
+  // A ação real fica em `confirmarEntradaEstoque` (abaixo do modal).
+  const confirmarEntradaEstoque = () => {
+    const item = confirmandoEntrada;
+    setConfirmandoEntrada(null);
+    if (item) entrarItemEstoque(item);
+  };
+
   const entrarItemEstoque = async (item) => {
     try {
       await apiService.post(`/estoque/movimentacoes/entrada`, {
+        // M4.3-s: o backend exige `item_id` (ordem_venda_itens.id) no modo
+        // COM OV. Antes mandava `item_consumo_id` (undefined no item da OV)
+        // e caía no modo SEM OV, que rejeitava.
+        item_id: item.id,
         ordem_venda_id: ordemVendaSel.id,
-        item_consumo_id: item.item_consumo_id,
         quantidade: item.quantidade_pendente,
         numero_nota_fiscal: item.numero_nota_fiscal,
         observacao: `Recebimento da OV ${ordemVendaSel.numero}`
@@ -955,6 +987,10 @@ return (
                   statusConfig = { cor: C.accent, icone: '🔵', label: '⏳ Aguardando Entrada' };
                 } else if (ov.status_recebimento === 'pendente') {
                   statusConfig = { cor: C.success, icone: '🟢', label: 'Aguardando Recebimento' };
+                } else if (ov.status_recebimento === 'recebido') {
+                  // M4.3-z: entrada concluída — valor que o backend grava em
+                  // `PUT /entrada`. Faltava no mapa, caía em "Status Desconhecido".
+                  statusConfig = { cor: C.success, icone: '✅', label: 'Entrada Concluída' };
                 } else if (ov.status_recebimento === 'concluido_recusado') {
                   statusConfig = { cor: C.muted, icone: '⚫', label: '🚫 Recebimento Encerrado (Recusado)' };
                 }
@@ -1145,78 +1181,137 @@ return (
         )}
 
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {itensOV.map(item => (
-            <div key={item.id} style={{ ...s.card, padding: '14px 18px' }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                <div>
-                  <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{item.item_nome}</div>
-                  <div style={{ fontSize: 11, color: C.muted }}>
-                    Qtd: {item.quantidade} · {item.sku || 'Sem SKU'}
-                  </div>
-                  <div style={{ fontSize: 11, color: C.muted }}>
-                    Recebido: {item.quantidade_recebida || 0} / {item.quantidade}
-                  </div>
-                  <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
-                    Contagem: {item.tentativa_atual || 0}/3 · 
-                    Status: {item.status_contagem === 'concluido' ? '✅ Concluído' : '⏳ Pendente'}
-                  </div>
-                </div>
+          {itensOV.map(item => {
+            // M4.3-r: fluxo acoplado. Cada etapa é um card clicável com o
+            // botão real dentro. Setas → conectam. Cor do card inteiro
+            // comunica status (verde=feito, laranja=atual, cinza=bloq).
+            const etapaAtual = proximaEtapa(item);
+            const feitaFiscal = !!item.miro_por;
+            const feitaContagem = !!item.migo_por;
+            const feitaEntrada = (item.quantidade_recebida || 0) >= (item.quantidade || 0);
+            const emNC = item.status_quarentena === 'nao_conforme';
+            const emRejeitado = item.status_quarentena === 'rejeitado';
 
-                <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            const corFeito = C.success || '#10b981';
+            const corAtual = C.warn || '#f59e0b';
+            const corBloq = C.border || '#4b5563';
+
+            const cardEtapa = (nome, chave, feita, info, onAction, actionLabel, disabled = false) => {
+              const isAtual = etapaAtual === chave;
+              const cor = feita ? corFeito : isAtual ? corAtual : corBloq;
+              const corBg = feita ? `${corFeito}12` : isAtual ? `${corAtual}12` : 'transparent';
+              return (
+                <div style={{
+                  flex: 1, minWidth: 0,
+                  border: `1px solid ${cor}55`,
+                  borderLeft: `3px solid ${cor}`,
+                  background: corBg,
+                  borderRadius: 8,
+                  padding: '10px 12px',
+                  display: 'flex', flexDirection: 'column', gap: 6,
+                  opacity: disabled ? 0.4 : 1,
+                }}>
+                  <div style={{ fontSize: 11, fontWeight: 600, color: cor, letterSpacing: '0.03em' }}>
+                    {feita ? '✅' : isAtual ? '⏳' : '○'} {nome}
+                  </div>
+                  <div style={{ fontSize: 10, color: C.muted, minHeight: 14 }}>
+                    {info || '—'}
+                  </div>
+                  {onAction && (
+                    <button
+                      onClick={onAction}
+                      disabled={disabled}
+                      style={{
+                        ...s.btn(true, cor),
+                        padding: '6px 10px', fontSize: 11,
+                        background: cor,
+                        border: `1px solid ${cor}`,
+                        opacity: disabled ? 0.5 : 1,
+                        cursor: disabled ? 'not-allowed' : 'pointer',
+                        fontWeight: isAtual ? 700 : 500,
+                      }}
+                    >
+                      {actionLabel}
+                    </button>
+                  )}
+                </div>
+              );
+            };
+
+            const seta = <div style={{ color: C.muted, fontSize: 14, padding: '0 2px', alignSelf: 'center' }}>→</div>;
+
+            return (
+              <div key={item.id} style={{ ...s.card, padding: '14px 18px' }}>
+                {/* Cabeçalho: nome + info + Histórico (link pequeno) */}
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: 12 }}>
+                  <div>
+                    <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>{item.item_nome}</div>
+                    <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                      Qtd: {item.quantidade} · {item.sku || 'Sem SKU'} · Recebido: {item.quantidade_recebida || 0}/{item.quantidade}
+                    </div>
+                    <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
+                      Contagem: {item.tentativa_atual || 0}/3 · Status: {item.status_contagem === 'concluido' ? '✅ Concluído' : '⏳ Pendente'}
+                    </div>
+                  </div>
                   <button
                     onClick={() => verHistoricoContagens(item.id)}
-                    style={{
-                      ...s.btn(false),
-                      padding: '4px 10px',
-                      fontSize: 10,
-                      borderColor: C.border
-                    }}
+                    style={{ background: 'transparent', border: `1px solid ${C.border}55`, borderRadius: 4,
+                             padding: '4px 8px', fontSize: 10, color: C.muted, cursor: 'pointer' }}
                     title="Ver histórico de contagens"
                   >
                     📜 Histórico
                   </button>
+                </div>
 
-                  {/* M3: quando o fornecedor anexou NF-e e o item bateu na
-                      validação automática, o botão vira "✅ Fiscal OK" (verde).
-                      Um clique confirma o fiscal — sem upload, sem digitação.
-                      O modal abre em modo "revisão" (com os dados da NF-e
-                      pré-carregados) pra quem quiser conferir de novo. */}
+                {/* M4.3-ae: Fiscal e Contagem continuam visíveis em NC (o
+                    usuário precisa consultar a NF-e e a contagem feita).
+                    Só a Entrada some (não pode entrar em NC) e o "Tratar NC"
+                    entra como ação principal à direita. */}
+                {emRejeitado ? (
                   <button
-                    onClick={() => abrirConferenciaFiscal(item)}
-                    title={
-                      item.miro_por ? 'Conferência fiscal já registrada'
-                      : item.fiscal_auto_aprovado ? 'NF-e validada digitalmente — clique para revisar e confirmar'
-                      : 'Registrar conferência fiscal (upload de XML ou manual)'
-                    }
-                    style={{
-                      ...s.btn(
-                        true,
-                        item.status_quarentena === 'rejeitado' ? C.danger
-                          : item.fiscal_auto_aprovado ? C.success
-                          : C.accent
-                      ),
-                      padding: '8px 14px',
-                      fontSize: 11,
-                      opacity: item.miro_por ? 0.6 : 1,
-                      cursor: item.miro_por ? 'default' : 'pointer'
-                    }}
+                    onClick={() => { setJustificativaTratativa(''); setItemTratativaQuarentena(item); }}
+                    style={{ ...s.btn(true, corAtual), padding: '10px 16px', fontSize: 12,
+                             background: corAtual, border: `1px solid ${corAtual}`, fontWeight: 600 }}
                   >
-                    {item.numero_recebimento_ov
-                      ? `✅ ${item.numero_recebimento_ov}`
-                      : item.miro_por
-                        ? `✅ ${item.numero_recebimento_miro || 'Fiscal'}`
-                        : item.fiscal_auto_aprovado
-                          ? '✅ Fiscal OK'
-                          : '📄 1. Fiscal'}
+                    ⚖️ Tratar Quarentena →
                   </button>
-
-                  {/* M4.3-f: botões de contagem e entrada só aparecem
-                      quando NÃO há NC aberta. Com NC, o "🚨 Tratar"
-                      acima é a única ação. */}
-                  {item.status_quarentena !== 'nao_conforme' && (
-                    <>
-                      <button
-                        onClick={() => {
+                ) : (
+                  /* Fluxo normal: cards acoplados (Entrada some em NC) */
+                  <div style={{ display: 'flex', gap: 4, alignItems: 'stretch' }}>
+                    {cardEtapa(
+                      'Fiscal', 'fiscal', feitaFiscal,
+                      item.numero_recebimento_ov || (item.miro_por ? 'Conferido' : 'Aguardando'),
+                      () => abrirConferenciaFiscal(item),
+                      feitaFiscal ? 'Revisar' : 'Realizar Rec Fiscal →'
+                    )}
+                    {seta}
+                    {(() => {
+                      // M4.3-ag: card Contagem.
+                      //   • aprovado E sem NC → "Ver contagem" (abre histórico)
+                      //   • em NC → comportamento original (histórico fica no
+                      //     botão 📜 do cabeçalho; o card segue o fluxo normal)
+                      //   • demais → fluxo original de contagem
+                      const contagemAprovadaSemNC = item.migo_por
+                        && item.status_quarentena === 'aprovado'
+                        && !emNC;
+                      const infoContagem = emNC
+                        ? 'Suspenso por NC'
+                        : item.migo_por && item.status_quarentena === 'aprovado' ? 'Física concluída'
+                        : item.tentativa_atual >= 3 ? 'Máximo atingido'
+                        : item.tentativa_atual > 0 ? `${item.tentativa_atual}ª feita`
+                        : (item.miro_por ? 'Aguardando' : 'Bloqueado');
+                      const labelContagem = contagemAprovadaSemNC ? 'Ver contagem'
+                        : item.migo_por && item.status_quarentena === 'aprovado' ? '✅ Física'
+                        : item.tentativa_atual >= 3 ? '🔒 Máximo'
+                        : `📦 ${(item.tentativa_atual || 0) + 1}ª Contagem`;
+                      return cardEtapa(
+                        'Contagem', 'contagem', item.migo_por && item.status_quarentena === 'aprovado',
+                        infoContagem,
+                        () => {
+                          if (contagemAprovadaSemNC) {
+                            verHistoricoContagens(item.id);
+                            return;
+                          }
                           if (!item.miro_por) {
                             alert('⚠️ Conclua a conferência fiscal primeiro!');
                             return;
@@ -1231,95 +1326,47 @@ return (
                           }
                           const proximaTentativa = (item.tentativa_atual || 0) + 1;
                           abrirContagemCega([item], proximaTentativa);
-                        }}
-                        style={{
-                          ...s.btn(true, C.warn),
-                          padding: '8px 14px',
-                          fontSize: 11,
-                          opacity: item.miro_por ? 1 : 0.5,
-                          cursor: item.miro_por ? 'pointer' : 'not-allowed'
-                        }}
-                      >
-                        {item.migo_por && item.status_quarentena === 'aprovado' ? '✅ Física'
-                          : item.tentativa_atual >= 3 ? '🔒 Máximo'
-                          : `📦 ${(item.tentativa_atual || 0) + 1}ª Contagem`}
-                      </button>
-
+                        },
+                        labelContagem,
+                        !item.miro_por || item.tentativa_atual >= 3
+                      );
+                    })()}
+                    {!emNC && (
+                      <>
+                        {seta}
+                        {cardEtapa(
+                          'Entrada', 'entrada', feitaEntrada,
+                          feitaEntrada ? 'No estoque' : (item.migo_por ? 'Pronto para entrar' : 'Bloqueado'),
+                          () => feitaEntrada
+                            ? setModalVerEntrada(true)
+                            : setConfirmandoEntrada(item),
+                          feitaEntrada ? 'Ver entrada' : 'Autorizar estoque →',
+                          !(item.miro_por && item.migo_por && item.status_quarentena === 'aprovado')
+                        )}
+                      </>
+                    )}
+                    {emNC && (
                       <button
                         onClick={() => {
-                          if (item.miro_por && item.migo_por && item.status_quarentena === 'aprovado') {
-                            entrarItemEstoque(item);
-                          } else {
-                            alert('⚠️ Conclua as conferências e aprovação primeiro!');
-                          }
+                          if (item.nc_id && onIrParaNC) onIrParaNC(item.nc_id);
+                          else alert('⚠️ Abra a tela "Não Conformidades" no menu para tratar.');
                         }}
-                        style={{
-                          ...s.btn(true, C.success),
-                          padding: '8px 14px',
-                          fontSize: 11,
-                          opacity: (item.miro_por && item.migo_por && item.status_quarentena === 'aprovado') ? 1 : 0.5,
-                          cursor: (item.miro_por && item.migo_por && item.status_quarentena === 'aprovado') ? 'pointer' : 'not-allowed'
-                        }}
+                        style={{ ...s.btn(true, C.danger), padding: '10px 16px', fontSize: 12,
+                                 background: C.danger, border: `1px solid ${C.danger}`, fontWeight: 600,
+                                 marginLeft: 8, alignSelf: 'stretch', flex: 1 }}
+                        title={item.numero_nc ? `Abrir ${item.numero_nc}` : 'Abrir NC'}
                       >
-                        {item.entrada_por ? '✅ Entrada'
-                          : '✅ 3. Entrada'}
+                        🚨 Tratar Não Conformidade →
                       </button>
-                    </>
-                  )}
-
-                  {/* M4.3-f: em NC aberta, "Tratar Não Conformidade" é a
-                      ÚNICA ação primária — fica por ÚLTIMO (padrão:
-                      informação à esquerda, ação à direita). Vermelho,
-                      navega direto. Os botões de contagem/entrada somem. */}
-                  {item.status_quarentena === 'nao_conforme' && (
-                    <button
-                      onClick={() => {
-                        if (item.nc_id && onIrParaNC) {
-                          onIrParaNC(item.nc_id);
-                        } else {
-                          alert('⚠️ Item com Não Conformidade aberta. Abra a tela "Não Conformidades" no menu para tratar.');
-                        }
-                      }}
-                      style={{
-                        ...s.btn(true, C.danger),
-                        padding: '8px 14px',
-                        fontSize: 11,
-                        background: C.danger,
-                        border: `1px solid ${C.danger}`,
-                        fontWeight: 600,
-                      }}
-                      title={item.numero_nc
-                        ? `Abrir ${item.numero_nc} na tela de Não Conformidades`
-                        : 'Abrir Não Conformidade deste item'}
-                    >
-                      🚨 Tratar Não Conformidade →
-                    </button>
-                  )}
-
-                  {/* 🔥 BOTÃO QUE ABRE O MODAL DE TRATATIVA */}
-                  {item.status_quarentena === 'rejeitado' && (
-                    <button
-                      onClick={() => {
-                        setJustificativaTratativa('');
-                        setItemTratativaQuarentena(item);
-                      }}
-                      style={{
-                        ...s.btn(true, C.success),
-                        padding: '8px 14px',
-                        fontSize: 11,
-                      }}
-                    >
-                      ⚖️ Tratar Quarentena
-                    </button>
-                  )}
-
-                </div>
+                    )}
+                  </div>
+                )}
               </div>
+            );
+          })}
             </div>
-          ))}
           </div>
         </div>
-      </div>
     )}
 
     {/* ───────────────────────────────────────────────────────────────────── */}
@@ -2802,6 +2849,165 @@ return (
           </div>
         </div>
       )}
+
+      {/* M4.3-x: modal de confirmação antes de dar entrada no estoque.
+          Guarda o item em `confirmandoEntrada` (não boolean) pra mostrar
+          os dados certos. Confirma → chama `confirmarEntradaEstoque`. */}
+      {confirmandoEntrada && (
+        <div
+          onClick={() => setConfirmandoEntrada(null)}
+          style={{ position: 'fixed', inset: 0, background: '#000000bb',
+                   display: 'flex', alignItems: 'center', justifyContent: 'center',
+                   zIndex: 400, padding: 20 }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ ...s.card, width: 480, maxWidth: '100%', padding: 22 }}
+          >
+            <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 6 }}>
+              📦 Confirmar entrada no estoque?
+            </div>
+            <div style={{ fontSize: 11, color: C.muted, marginBottom: 14 }}>
+              OV {ordemVendaSel?.numero || '—'}
+            </div>
+
+            <div style={{
+              background: C.bg, border: `1px solid ${C.border}55`,
+              borderRadius: 8, padding: '12px 14px', marginBottom: 14,
+              display: 'flex', flexDirection: 'column', gap: 6, fontSize: 12,
+            }}>
+              <div>
+                <span style={{ color: C.muted }}>Item:</span>{' '}
+                <span style={{ color: C.text, fontWeight: 600 }}>
+                  {confirmandoEntrada.item_nome || '—'}
+                </span>
+              </div>
+              <div>
+                <span style={{ color: C.muted }}>SKU:</span>{' '}
+                <span style={{ color: C.text, fontFamily: "'IBM Plex Mono', monospace" }}>
+                  {confirmandoEntrada.sku || '—'}
+                </span>
+              </div>
+              <div style={{ display: 'flex', gap: 16, marginTop: 4 }}>
+                <div>
+                  <span style={{ color: C.muted }}>Esperado:</span>{' '}
+                  <span style={{ color: C.text }}>
+                    {confirmandoEntrada.quantidade} {confirmandoEntrada.unidade_medida || 'UN'}
+                  </span>
+                </div>
+                <div>
+                  <span style={{ color: C.muted }}>Entrando:</span>{' '}
+                  <span style={{ color: C.success || '#10b981', fontWeight: 700 }}>
+                    {confirmandoEntrada.quantidade_pendente} {confirmandoEntrada.unidade_medida || 'UN'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.5, marginBottom: 16 }}>
+              Esta ação atualiza o saldo do item em estoque. Não pode ser desfeita.
+            </div>
+
+            <div style={{ display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button
+                onClick={() => setConfirmandoEntrada(null)}
+                style={{ ...s.btn(false, C.muted), padding: '8px 16px', fontSize: 12 }}
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={confirmarEntradaEstoque}
+                style={{
+                  ...s.btn(true, C.success || '#10b981'),
+                  padding: '8px 18px', fontSize: 12,
+                  background: C.success || '#10b981',
+                  border: `1px solid ${C.success || '#10b981'}`,
+                  fontWeight: 600,
+                }}
+              >
+                ✅ Confirmar entrada
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+            {/* M4.3-ab: modal "Ver entrada" — mostra o lote recebido:
+          data + usuário + endereço + lista de itens. Um único evento;
+          não repete data/usuário por item. */}
+      {modalVerEntrada && (() => {
+        const itensEntrados = itensOV.filter(i => i.entrada_por && i.entrada_em);
+        const primeiro = itensEntrados[0];
+        const totalUnidades = itensEntrados.reduce((s, i) => s + Number(i.quantidade_recebida || 0), 0);
+        const fmtData = primeiro?.entrada_em
+          ? new Date(String(primeiro.entrada_em).replace(' ', 'T')).toLocaleString('pt-BR')
+          : '—';
+
+        return (
+          <div onClick={() => setModalVerEntrada(false)}
+               style={{ position: 'fixed', inset: 0, background: '#000000bb',
+                        display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        zIndex: 400, padding: 20 }}>
+            <div onClick={e => e.stopPropagation()}
+                 style={{ ...s.card, width: 620, maxWidth: '100%', maxHeight: '90vh',
+                          overflowY: 'auto', padding: 22 }}>
+
+              {/* Cabeçalho do evento (1x) */}
+              <div style={{ marginBottom: 14 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 4 }}>
+                  📦 Entrada no estoque — OV {ordemVendaSel?.numero || '—'}
+                </div>
+                <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>
+                  📍 RECEBIMENTO
+                </div>
+                <div style={{ fontSize: 12, color: C.textSub || C.muted }}>
+                  📅 {fmtData} · 👤 {primeiro?.entrada_por_nome || '—'}
+                </div>
+              </div>
+
+              {/* Lista de itens */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 6,
+                            padding: '10px 0', borderTop: `1px solid ${C.border}`,
+                            borderBottom: `1px solid ${C.border}`, marginBottom: 12 }}>
+                {itensEntrados.length === 0 ? (
+                  <div style={{ color: C.muted, fontSize: 12, padding: 12, textAlign: 'center' }}>
+                    Nenhum item com entrada registrada.
+                  </div>
+                ) : itensEntrados.map(it => (
+                  <div key={it.id} style={{
+                    display: 'grid', gridTemplateColumns: '1fr auto auto',
+                    gap: 12, alignItems: 'center', fontSize: 12,
+                  }}>
+                    <span style={{ color: C.text }}>{it.item_nome}</span>
+                    <span style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 }}>
+                      {it.sku || '—'}
+                    </span>
+                    <span style={{ color: C.text, textAlign: 'right', minWidth: 60 }}>
+                      {it.quantidade_recebida} {it.unidade_medida || 'UN'}
+                    </span>
+                  </div>
+                ))}
+              </div>
+
+              {/* Rodapé */}
+              <div style={{ display: 'flex', justifyContent: 'space-between',
+                            alignItems: 'center' }}>
+                <div style={{ fontSize: 11, color: C.muted }}>
+                  Total: <strong style={{ color: C.text }}>
+                    {itensEntrados.length} {itensEntrados.length === 1 ? 'item' : 'itens'}
+                  </strong>
+                  {' · '}
+                  <strong style={{ color: C.text }}>{totalUnidades} unidades</strong>
+                </div>
+                <button onClick={() => setModalVerEntrada(false)}
+                        style={{ ...s.btn(true, C.accent), padding: '8px 20px', fontSize: 12 }}>
+                  Fechar
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* 📋 POP-UP DE VALIDAÇÃO: NÃO CONFORMIDADE GERADA COM SUCESSO (PADRÃO SAP) */}
       {modalSucessoNC && (
