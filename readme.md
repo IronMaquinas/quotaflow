@@ -195,7 +195,9 @@ Ver seção 5 para o fluxo completo. Resumo de tabelas:
 - **`nao_conformidades`** — recebimento recusado: `numero_nc | ordem_venda_id | numero_pedido | fornecedor_nome | numero_nota_fiscal | data_recebimento | inspetor_id | motivo_recusa (NOT NULL) | quantidade (NOT NULL) | unidade_medida | lote | numero_serie | validade | criado_em`.
 
 ### Estoque e reservas
-- **`itens_consumo`** — almoxarifado com saldo físico real: `saldo_atual, limite_recompra, limite_inferior_controle, lote_minimo_compra, quantidade_lotes_automatico, catalogo_item_id (ponte pra catalogo_itens, nullable — ver abaixo)`.
+- **`itens_consumo`** — almoxarifado com saldo físico real: `saldo_atual, limite_recompra, limite_inferior_controle, lote_minimo_compra, quantidade_lotes_automatico, catalogo_item_id (ponte pra catalogo_itens, nullable — ver abaixo)`. **Criado on-the-fly na primeira entrada** de um item que ainda não existia no estoque (10/2026): o `sku` (part number) é herdado de `catalogo_itens.codigo`, e `saldo_atual` nasce zerado — a entrada do `POST /entrada` soma o primeiro saldo em seguida. Evita bloquear o recebimento quando a compra foi gerada justamente porque o estoque estava zerado.
+- **`ordem_venda_itens`** — itens da OC/OV com rastreio de execução de recebimento por etapa: `miro_por`/`miro_em` (conferência fiscal), `migo_por`/`migo_em` (contagem física), `entrada_por`/`entrada_em` (entrada no estoque). Todas as colunas de data são `timestamptz`. O `entrada_em` é preenchido no mesmo clique que autoriza a entrada — todos os itens recebidos na mesma operação compartilham o mesmo valor (é metadado do evento, não por item).
+- **`historico_contagens_cegas`** — registro de cada tentativa de contagem cega. O campo `resultado_contagem` (renomeado de `status_quarentena` em 10/2026) tem 4 valores: `aprovado | divergente_pendente | divergente_esgotado | nao_conformidade`. **Não confundir com `ordem_venda_itens.status_quarentena`, que é o estado de segregação do item (ISO 9001) — este é o resultado da contagem.** Um trigger `AFTER INSERT` (`atualizar_historico_contagens`) reconstrói o JSON `ordem_venda_itens.historico_contagens` a partir dessas linhas.
 - **`estoque_reservas`** — reserva "promessa", não altera `saldo_atual` nem gera `movimentacoes_estoque`: `item_catalogo_id, chamado_id, chamado_item_id, quantidade, criado_em, liberado_em (null = ativa), liberado_motivo`. **Disponível = físico − soma(reservas ativas)**.
 - **`movimentacoes_estoque`** — todo movimento JÁ realizado (`tipo`: entrada/saida/ajuste). `saldo_atual` muda no mesmo instante do insert.
 - **`solicitacoes_retirada`** / **`solicitacao_retirada_itens`** — retirar material que já está fisicamente no almoxarifado (`RET-YYYY-NNNN`). Sem FK real com OS (campo "Origem" é texto livre). **Não confundir com RM** (ver terminologia na seção 5).
@@ -250,8 +252,16 @@ Separação estrutural em quatro documentos com rastreabilidade em cadeia, decid
       cancel, desbloqueia RC), mover item para nova RC
 
 6. Recebimento
-   └─ /entrada (com OV: 3-way match) ou sem OV (compra emergencial, flag "Compra sem OV")
-   └─ /recebimento (parcial vinculado a OV)
+   └─ Tela de recebimento mostra cards por OV com tracker visual de 3 etapas:
+      Fiscal (MIRO) → Contagem (MIGO) → Entrada (estoque), com cores por status
+   └─ Card "Entrada" some quando o item está em NC aberta (não pode entrar em NC);
+      Fiscal e Contagem permanecem visíveis para consulta (NF-e, histórico)
+   └─ POST /entrada (com OV: 3-way match contra valor_nf/quantidade_nf/quantidade_fisica)
+      ou sem OV (compra emergencial, flag "Compra sem OV")
+   └─ A entrada grava em movimentacoes_estoque + atualiza itens_consumo.saldo_atual +
+      marca ordem_venda_itens.entrada_por/entrada_em + atualiza ordens_venda.status/status_recebimento
+   └─ Modal "Ver entrada" mostra o lote recebido: data, usuário e endereço (RECEBIMENTO),
+      com a lista de itens — é a visão de logística, não um detalhe por item
    └─ Divergência → nao_conformidades (NC-YYYY-NNNN)
 ```
 
@@ -358,6 +368,16 @@ npm run dev
 - **Catálogo do fornecedor (marketplace)**: CRUD completo + import CSV, testado e confirmado funcionando pelo usuário em produção
 - **Busca unificada de item na OS** (catálogo local + marketplace, dual-source, sem curto-circuito), migração de Levenshtein client-side pra trigram server-side, com PN no hint — confirmado funcionando pelo usuário em produção (10/09/2026)
 
+### ✅ Em produção, confirmado (01/10/2026 — M4.3)
+- **Recebimento reescrito com tracker visual de 3 etapas** (Fiscal → Contagem → Entrada) no card de cada item. Cada etapa é um card clicável com cor por status (verde=feito, laranja=próximo, cinza=bloqueado), com o botão real dentro. Textos: "Realizar Rec Fiscal", "Contar", "Autorizar estoque"; estados feitos viram "Revisar" / "Ver contagem" / "Ver entrada".
+- **`📜 Histórico` sempre visível** no topo do card, abrindo o modal de histórico de contagens cegas (quem contou, quando, quantidade, lote, série, resultado).
+- **Entrada no estoque com rastreio**: `entrada_por`/`entrada_em` gravados no item; modal de confirmação antes de autorizar; modal "Ver entrada" com data, usuário e endereço (RECEBIMENTO).
+- **`itens_consumo` criado on-the-fly** na primeira entrada (antes bloqueava o recebimento quando o item nunca tinha estado em estoque — que é justamente o caso normal de compras por demanda).
+- **Fiscal (NF-e validada)** permanece acessível em NC aberta — antes o tracker escondia o botão Fiscal em NC, impedindo consultar a NF-e/XML de novo.
+- **Modal de confirmação** antes de disparar email ao fornecedor sobre NC (substituiu o `window.confirm`), com toast in-place de sucesso em vez de `alert`.
+- **Fuso horário corrigido** no histórico de contagens (`contado_em` virou `timestamptz`); trigger `atualizar_historico_contagens` reescrita para `resultado_contagem`.
+- **`status_recebimento` do card** reconhece o valor `'recebido'` (antes caía em "Status Desconhecido").
+
 ### ✅ Em produção, confirmado (09-10/09/2026 e adições de 09/2026)
 
 **Cotações — Fase 1B e derivados:**
@@ -397,6 +417,9 @@ npm run dev
 
 Registradas para não repetir a investigação. Ver `schema-real-e-tabelas-orfas.md` (doc do projeto) para o detalhamento completo de cada bug encontrado/corrigido.
 
+- **`timestamp with time zone` (timestamptz) é o único tipo aceitável pra coluna de data/hora. `timestamp without time zone` é bug latente.** O driver `pg` devolve `timestamp without time zone` como string **sem `Z` no fim** (`"2026-10-01 04:57:36.831"`), e o Node interpreta isso como TZ local do servidor. Se o servidor estiver em `America/Sao_Paulo` (Railway/local), o valor vira BRT-naive; se estiver em UTC, vira UTC-naive — e a formatação (`toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })`) **converte de um fuso que não é o real**. Sintoma típico: hora +3h (ou -3h) em **uma tela só**, o resto do sistema funcionando. Corrigir com `ALTER COLUMN x TYPE timestamp with time zone USING x AT TIME ZONE '<fuso_real_do_dado>'`. Coluna nova: **sempre** `timestamptz`.
+- **Trigger `AFTER INSERT` que referencia coluna renomeada ABORTA o INSERT.** Trigger roda dentro da transação do INSERT — se a função plpgsql quebrar (`column "X" does not exist`), **o INSERT inteiro é revertido** e o erro aparece como se fosse do INSERT, não do trigger. Sintoma: "INSERT tabela_a failed: column X does not exist" mesmo quando o INSERT não menciona X — a coluna X está na **função do trigger**. Antes de renomear coluna: `grep` em `pg_get_functiondef` de todas as funções (`SELECT proname, pg_get_functiondef(oid) FROM pg_proc WHERE prosrc LIKE '%nome_antigo%'`) + `information_schema.views` + `pg_trigger`. **Não fazer isso é o que garante dor de cabeça pós-migration.**
+- **SQL Editor do Supabase NÃO respeita `BEGIN`/`COMMIT` como transação única pra DDL.** Sintoma: `ALTER TABLE ... RENAME COLUMN` commita sozinho, e um erro no `UPDATE` seguinte deixa a migration pela metade (coluna já renomeada, dados não migrados). Rodar comando por comando, **um `ALTER`/`UPDATE`/`ADD CONSTRAINT` por vez**, com verificação (`SELECT` de checagem) entre cada. Idempotência onde possível (`IF NOT EXISTS`, `DO $$ ... $$`).
 - **`DB.select`/`DB.selectOne` (backend/db.js) não sabem expressar `IS NULL`**: qualquer `null` no `where` é descartado silenciosamente em vez de virar filtro. Precisa filtrar em JS depois de buscar. Já corrigido em `reservas.js`, `movimentacoes.js`.
 - **`DB.select`/`DB.selectOne` não sabem expressar array como filtro (`IN (...)`)**: mesmo padrão de contorno — buscar tudo, filtrar com `.includes()` em JS.
 - **`DB.raw()` só reconhece um punhado de padrões SQL hardcoded**: qualquer JOIN/WHERE fora do reconhecido cai num fallback perigoso (`SELECT * FROM <tabela>` ignorando WHERE/JOIN/ORDER BY) — já causou vazamento real de dados entre tenants/fornecedores em várias rotas, todas corrigidas reescrevendo sem `raw()`. Não auditado por completo — vale grep geral por `DB.raw(` se algo se comportar de forma "sempre retorna tudo".
