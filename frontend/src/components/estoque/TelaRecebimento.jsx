@@ -711,7 +711,15 @@ const handleValidarXML = async () => {
       alert('✅ Item recebido e entrada no estoque realizada!');
       await carregarItensOV(ordemVendaSel.id);
     } catch (err) {
-      alert('Erro ao entrar no estoque: ' + err.message);
+      // M4.3-al: o backend manda `divergencias[]` no body quando o
+      // 3-way match falha. Sem isso, o operador só via "Divergência
+      // encontrada no 3-Way Match" sem saber QUAL.
+      const divs = err.body?.divergencias;
+      if (Array.isArray(divs) && divs.length > 0) {
+        alert('Não foi possível dar entrada:\n\n' + divs.map(d => '• ' + d).join('\n'));
+      } else {
+        alert('Erro ao entrar no estoque: ' + err.message);
+      }
     }
   };
 
@@ -1212,6 +1220,19 @@ return (
             // comunica status (verde=feito, laranja=atual, cinza=bloq).
             const etapaAtual = proximaEtapa(item);
             const feitaFiscal = !!item.miro_por;
+            // M4.3-am: o card Fiscal só olhava `miro_por`. Se o comprador
+            // salvou a conferência com valor/quantidade divergente (forçado
+            // via SQL no teste, ou comportamento legado), o card pintava
+            // verde — mas o 3-way match bloqueava na entrada. Agora o card
+            // espelha a regra do backend e mostra "Divergência NF" em laranja.
+            const valorNF = Number(item.valor_nf || 0);
+            const valorOV = Number(item.valor_unitario || 0) * Number(item.quantidade || 0);
+            const qtdNF = Number(item.quantidade_nf || 0);
+            const qtdFisica = Number(item.quantidade_recebida_fisica || 0);
+            const fiscalDivergente = feitaFiscal && (
+              valorNF !== valorOV ||
+              (qtdNF > 0 && qtdFisica > 0 && qtdNF !== qtdFisica)
+            );
             const feitaContagem = !!item.migo_por;
             const feitaEntrada = (item.quantidade_recebida || 0) >= (item.quantidade || 0);
             const emNC = item.status_quarentena === 'nao_conforme';
@@ -1221,10 +1242,17 @@ return (
             const corAtual = C.warn || '#f59e0b';
             const corBloq = C.border || '#4b5563';
 
-            const cardEtapa = (nome, chave, feita, info, onAction, actionLabel, disabled = false) => {
+            // M4.3-an: `corForcada` (opcional) sobrescreve a cor padrão do
+            // card — usado pelo Fiscal divergente, que precisa de alerta
+            // laranja (não o cinza de "bloqueado"). Sem corForcada, o
+            // comportamento é idêntico ao original.
+            const cardEtapa = (nome, chave, feita, info, onAction, actionLabel, disabled = false, corForcada = null) => {
               const isAtual = etapaAtual === chave;
-              const cor = feita ? corFeito : isAtual ? corAtual : corBloq;
-              const corBg = feita ? `${corFeito}12` : isAtual ? `${corAtual}12` : 'transparent';
+              const cor = corForcada || (feita ? corFeito : isAtual ? corAtual : corBloq);
+              const corBg = corForcada
+                ? `${corForcada}12`
+                : feita ? `${corFeito}12` : isAtual ? `${corAtual}12` : 'transparent';
+              const icone = corForcada ? '⚠️' : (feita ? '✅' : isAtual ? '⏳' : '○');
               return (
                 <div style={{
                   flex: 1, minWidth: 0,
@@ -1237,7 +1265,7 @@ return (
                   opacity: disabled ? 0.4 : 1,
                 }}>
                   <div style={{ fontSize: 11, fontWeight: 600, color: cor, letterSpacing: '0.03em' }}>
-                    {feita ? '✅' : isAtual ? '⏳' : '○'} {nome}
+                    {icone} {nome}
                   </div>
                   <div style={{ fontSize: 10, color: C.muted, minHeight: 14 }}>
                     {info || '—'}
@@ -1304,10 +1332,14 @@ return (
                   /* Fluxo normal: cards acoplados (Entrada some em NC) */
                   <div style={{ display: 'flex', gap: 4, alignItems: 'stretch' }}>
                     {cardEtapa(
-                      'Fiscal', 'fiscal', feitaFiscal,
-                      item.numero_recebimento_ov || (item.miro_por ? 'Conferido' : 'Aguardando'),
+                      'Fiscal', 'fiscal', feitaFiscal && !fiscalDivergente,
+                      fiscalDivergente
+                        ? 'Divergência NF — abra para corrigir'
+                        : item.numero_recebimento_ov || (item.miro_por ? 'Conferido' : 'Aguardando'),
                       () => abrirConferenciaFiscal(item),
-                      feitaFiscal ? 'Revisar' : 'Realizar Rec Fiscal →'
+                      feitaFiscal ? 'Revisar' : 'Realizar Rec Fiscal →',
+                      false,                                          // não desabilitado
+                      fiscalDivergente ? '#f59e0b' : null             // M4.3-an: laranja em divergência
                     )}
                     {seta}
                     {(() => {

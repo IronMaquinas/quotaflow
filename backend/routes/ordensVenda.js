@@ -41,6 +41,10 @@ router.get('/', tenantMiddleware, async (req, res) => {
     const ordensComItens = await Promise.all(ordens.map(async (ov) => {
       // Buscar itens da OV
       const itens = await DB.select('ordem_venda_itens', { ordem_venda_id: ov.id }, tenantId);
+      // M4.3-ao: ordem de criação (id) é a ordem da OC. Sem `.sort()`, o
+      // Postgres devolve ordem arbitrária que MUDA depois de UPDATEs —
+      // o operador perde a referência "item 5 da OC".
+      (itens || []).sort((a, b) => Number(a.id) - Number(b.id));
 
       // Buscar fornecedor
       const fornecedor = await DB.selectOne('fornecedores', { id: ov.fornecedor_id }, tenantId);
@@ -112,6 +116,10 @@ router.get('/:id', tenantMiddleware, async (req, res) => {
 
     // Buscar itens
     const itens = await DB.select('ordem_venda_itens', { ordem_venda_id: ovId }, tenantId);
+    // M4.3-ao: ordem de criação (id) é a ordem da OC. Sem `.sort()`, o
+    // Postgres devolve ordem arbitrária que MUDA depois de UPDATEs —
+    // o operador perde a referência "item N da OC".
+    (itens || []).sort((a, b) => Number(a.id) - Number(b.id));
 
     // Buscar quem criou e aprovou
     const criador = await DB.selectOne('usuarios', { id: ov.criado_por }, tenantId);

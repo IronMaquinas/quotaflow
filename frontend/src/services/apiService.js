@@ -108,9 +108,14 @@ class ApiService {
           window.location.href = "/";
         }
 
-        throw new Error(
+        // M4.3-al: preserva o body inteiro no erro — antes só `erro` era
+        // exposto, e campos auxiliares (ex: `divergencias[]` do 3-way
+        // match) ficavam inacessíveis no catch.
+        const apiErr = new Error(
           data?.erro || `HTTP ${response.status}: ${response.statusText}`
         );
+        apiErr.body = data;
+        throw apiErr;
       }
 
       return data || {};

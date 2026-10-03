@@ -412,7 +412,11 @@ router.get('/ordem-venda/:ovId', tenantMiddleware, async (req, res) => {
 
     // 2. Buscar itens da OV
     const itens = await DB.select('ordem_venda_itens', { ordem_venda_id: ovId }, tenantId);
-
+    // M4.3-ao: idem — ordem de criação, imutável. Sem isso, cada UPDATE
+    // (fiscal/contagem/entrada) pode reordenar o heap físico do Postgres
+    // e o card muda de posição na próxima F5.
+    (itens || []).sort((a, b) => Number(a.id) - Number(b.id));
+    
     // 3. NF-e atual (última não-substituída) da OC — preenchida quando
     //    o fornecedor já anexou o XML via hub. O frontend usa pra:
     //      • Mostrar o banner "NF-e validada digitalmente"

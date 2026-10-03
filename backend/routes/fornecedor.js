@@ -816,6 +816,8 @@ router.get('/meus-pedidos/:ordemVendaId', fornecedorMiddleware, async (req, res)
       ? await DB.selectOne('tenants', { id: cham.tenant_id }, null)
       : null;
     const itens = await DB.select('ordem_venda_itens', { ordem_venda_id: ovId }, null);
+    // M4.3-ao: mesma regra do recebimento — ordem de criação (id).
+    (itens || []).sort((a, b) => Number(a.id) - Number(b.id));
 
     const st = derivarStatusPedido(ov);
 
