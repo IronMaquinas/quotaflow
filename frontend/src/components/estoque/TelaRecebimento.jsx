@@ -1051,6 +1051,31 @@ return (
                         }}>
                           {statusConfig.label}
                         </span>
+                        {/* M4.3-ai: contadores granulares de item.
+                            Mostra só as categorias com valor > 0. */}
+                        {ov.contadores && (() => {
+                          const c = ov.contadores;
+                          const itens = [];
+                          if (c.recebido > 0) itens.push({ label: `${c.recebido} recebido${c.recebido > 1 ? 's' : ''}`, cor: C.success || '#10b981', icon: '✅' });
+                          if (c.pronto > 0) itens.push({ label: `${c.pronto} pronto${c.pronto > 1 ? 's' : ''}`, cor: '#f59e0b', icon: '⚡' });
+                          if (c.aguardando_contagem > 0) itens.push({ label: `${c.aguardando_contagem} aguard. contagem`, cor: '#f59e0b', icon: '⏳' });
+                          if (c.aguardando_fiscal > 0) itens.push({ label: `${c.aguardando_fiscal} aguard. fiscal`, cor: C.muted, icon: '🔵' });
+                          if (c.quarentena > 0) itens.push({ label: `${c.quarentena} quarentena`, cor: '#f59e0b', icon: '🚫' });
+                          if (c.nc > 0) itens.push({ label: `${c.nc} NC`, cor: C.danger || '#ef4444', icon: '❌' });
+                          if (itens.length === 0) return null;
+                          return (
+                            <span style={{
+                              // M4.3-aj: fonte 11 + cor mais viva (não C.muted)
+                              // pra ler de relance. Ainda discreto, mas legível.
+                              fontSize: 11, color: C.text || '#e5e7eb',
+                              fontFamily: "'IBM Plex Mono', monospace",
+                              fontWeight: 500,
+                              opacity: 0.85,
+                            }}>
+                              · {itens.map(i => `${i.icon} ${i.label}`).join(' · ')}
+                            </span>
+                          );
+                        })()}
                         <span style={{ fontSize: 16, color: C.muted }}>→</span>
                       </div>
                     </div>

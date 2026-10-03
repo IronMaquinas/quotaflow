@@ -46,11 +46,26 @@ router.get('/', tenantMiddleware, async (req, res) => {
       const fornecedor = await DB.selectOne('fornecedores', { id: ov.fornecedor_id }, tenantId);
       const cotacao = await DB.selectOne('cotacoes', { id: ov.cotacao_id }, tenantId);
 
+      // M4.3-ai: contadores por categoria de item (para o badge secundário
+      // no card da OV). Cada item cai em UMA categoria, por prioridade.
+      const contadores = (itens || []).reduce((acc, i) => {
+        const qtd = Number(i.quantidade || 0);
+        const receb = Number(i.quantidade_recebida || 0);
+        if (i.status_quarentena === 'nao_conforme') acc.nc++;
+        else if (i.status_quarentena === 'rejeitado' || i.status_quarentena === 'quarentena') acc.quarentena++;
+        else if (receb >= qtd && qtd > 0) acc.recebido++;
+        else if (i.miro_por && i.migo_por && i.status_quarentena === 'aprovado') acc.pronto++;
+        else if (i.miro_por) acc.aguardando_contagem++;
+        else acc.aguardando_fiscal++;
+        return acc;
+      }, { nc: 0, quarentena: 0, recebido: 0, pronto: 0, aguardando_contagem: 0, aguardando_fiscal: 0 });
+
       return {
         ...ov,
         fornecedor_nome: fornecedor?.nome || 'Fornecedor não identificado',
         cotacao_numero: cotacao?.numero || null,
-        itens: itens || [] // 🔥 Adicionar os itens!
+        itens: itens || [], // 🔥 Adicionar os itens!
+        contadores, // M4.3-ai: badge secundário no card
       };
     }));
 

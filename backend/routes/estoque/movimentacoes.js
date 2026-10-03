@@ -304,7 +304,10 @@ router.post('/recebimento', tenantMiddleware, async (req, res) => {
         }, tenantId);
 
         // Buscar item de consumo (para atualizar saldo)
-        const itemConsumo = await DB.selectOne('itens_consumo', { catalogo_item_id: itemOV.item_catalogo_id, tenant_id: tenantId }, tenantId);
+        // M4.3-ah: só busca se tem catálogo vinculado (ver armadilha #1 do README).
+        const itemConsumo = itemOV.item_catalogo_id
+          ? await DB.selectOne('itens_consumo', { catalogo_item_id: itemOV.item_catalogo_id, tenant_id: tenantId }, tenantId)
+          : null;
         if (itemConsumo) {
           const novoSaldo = (parseFloat(itemConsumo.saldo_atual) || 0) + parseFloat(item.quantidade);
           await DB.update('itens_consumo', itemConsumo.id, {
@@ -447,7 +450,14 @@ router.get('/ordem-venda/:ovId', tenantMiddleware, async (req, res) => {
 
     // 4. Buscar itens de consumo (para saber o SKU e saldo)
     const itensCompletos = await Promise.all(itens.map(async (item) => {
-      const itemConsumo = await DB.selectOne('itens_consumo', { catalogo_item_id: item.item_catalogo_id, tenant_id: tenantId }, tenantId);
+      // M4.3-ah: só busca itens_consumo se o item tem catálogo vinculado.
+      // Com `item_catalogo_id: null`, o DB.selectOne ignora o null (armadilha
+      // #1 do README) e retorna o PRIMEIRO item de consumo do tenant,
+      // sobrescrevendo nome/sku do item da OC com dado errado.
+      // M4.3-ah: só busca se tem catálogo vinculado.
+      const itemConsumo = item.item_catalogo_id
+        ? await DB.selectOne('itens_consumo', { catalogo_item_id: item.item_catalogo_id, tenant_id: tenantId }, tenantId)
+        : null;
       const nomeItem = item.nome_item || 'Item sem nome';
       const fiscalOk = itensOkNaValidacao.has(String(nomeItem).trim().toLowerCase());
 
@@ -795,7 +805,10 @@ router.post('/entrada', tenantMiddleware, async (req, res) => {
       // O catálogo já validou o item na criação da OC; criamos a "ficha
       // de estoque" on-the-fly e seguimos com a entrada.
       // `sku` (part number) vem de `catalogo_itens.codigo` — fonte única.
-      let itemConsumo = await DB.selectOne('itens_consumo', { catalogo_item_id: item.item_catalogo_id, tenant_id: tenantId }, tenantId);
+      // M4.3-ah: só busca se tem catálogo vinculado.
+      let itemConsumo = item.item_catalogo_id
+        ? await DB.selectOne('itens_consumo', { catalogo_item_id: item.item_catalogo_id, tenant_id: tenantId }, tenantId)
+        : null;
       if (!itemConsumo) {
         const catalogo = await DB.selectOne('catalogo_itens', { id: item.item_catalogo_id, tenant_id: tenantId }, tenantId);
         if (!catalogo) {
@@ -1382,7 +1395,10 @@ router.get('/ordem-venda/:ovId', tenantMiddleware, async (req, res) => {
 
     // Buscar dados do catálogo para cada item
     const itensCompletos = await Promise.all(itens.map(async (item) => {
-      const itemConsumo = await DB.selectOne('itens_consumo', { catalogo_item_id: item.item_catalogo_id, tenant_id: tenantId }, tenantId);
+      // M4.3-ah: só busca se tem catálogo vinculado.
+      const itemConsumo = item.item_catalogo_id
+        ? await DB.selectOne('itens_consumo', { catalogo_item_id: item.item_catalogo_id, tenant_id: tenantId }, tenantId)
+        : null;
       return {
         ...item,
         item_nome: itemConsumo?.nome || item.nome_item || 'Item sem nome',
@@ -1814,7 +1830,10 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
     }, tenantId);
 
     // Lançar o saldo físico no catálogo apontando para a doca de RECEBIMENTO
-    const itemConsumo = await DB.selectOne('itens_consumo', { catalogo_item_id: item.item_catalogo_id, tenant_id: tenantId }, tenantId);
+    // M4.3-ah: só busca se tem catálogo vinculado.
+    const itemConsumo = item.item_catalogo_id
+      ? await DB.selectOne('itens_consumo', { catalogo_item_id: item.item_catalogo_id, tenant_id: tenantId }, tenantId)
+      : null;
 
     if (itemConsumo) {
       const novoSaldo = (parseFloat(itemConsumo.saldo_atual) || 0) + parseFloat(item.quantidade_recebida_fisica || 0);
