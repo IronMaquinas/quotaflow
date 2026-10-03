@@ -794,6 +794,18 @@ router.post('/entrada', tenantMiddleware, async (req, res) => {
         return res.status(404).json({ erro: 'Item da OV não encontrado' });
       }
 
+      // M4.3-ak: idempotência. Rejeita se o item já foi 100% recebido —
+      // sem isso, 2 cliques rápidos (ou retry de rede) dobram o saldo
+      // em itens_consumo. O frontend bloqueia o botão, mas isso é UI;
+      // o backend precisa garantir a invariante por conta própria.
+      const qtdPlanejada = Number(item.quantidade || 0);
+      const qtdRecebida = Number(item.quantidade_recebida || 0);
+      if (qtdRecebida >= qtdPlanejada && qtdPlanejada > 0) {
+        return res.status(400).json({
+          erro: 'Item já foi recebido integralmente. Nenhuma ação necessária.'
+        });
+      }
+
       const ov = await DB.selectOne('ordens_venda', { id: item.ordem_venda_id, tenant_id: tenantId }, tenantId);
       if (!ov) {
         return res.status(404).json({ erro: 'OV não encontrada' });
