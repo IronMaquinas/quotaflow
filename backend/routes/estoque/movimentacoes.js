@@ -454,7 +454,6 @@ router.get('/ordem-venda/:ovId', tenantMiddleware, async (req, res) => {
       // Com `item_catalogo_id: null`, o DB.selectOne ignora o null (armadilha
       // #1 do README) e retorna o PRIMEIRO item de consumo do tenant,
       // sobrescrevendo nome/sku do item da OC com dado errado.
-      // M4.3-ah: só busca se tem catálogo vinculado.
       const itemConsumo = item.item_catalogo_id
         ? await DB.selectOne('itens_consumo', { catalogo_item_id: item.item_catalogo_id, tenant_id: tenantId }, tenantId)
         : null;
