@@ -2997,10 +2997,18 @@ return (
           não repete data/usuário por item. */}
       {modalVerEntrada && (() => {
         const itensEntrados = itensOV.filter(i => i.entrada_por && i.entrada_em);
-        const primeiro = itensEntrados[0];
-        const fmtData = primeiro?.entrada_em
-          ? new Date(String(primeiro.entrada_em).replace(' ', 'T')).toLocaleString('pt-BR')
-          : '—';
+
+        // M4.3-au: formata data+hora+usuário+MOV POR ITEM (não no cabeçalho).
+        // Antes o modal assumia "1 evento, 1 data" — mas uma OV pode ter
+        // vários batches de entrada (Filtro entrou 02/10, Rolamento 04/10,
+        // etc.). Data/usuário no cabeçalho mentiria pros outros itens.
+        const fmtItem = (it) => ({
+          data: it.entrada_em
+            ? new Date(String(it.entrada_em).replace(' ', 'T')).toLocaleString('pt-BR')
+            : '—',
+          usuario: it.entrada_por_nome || '—',
+          mov: it.numero_movimento || '—',
+        });
 
         return (
           <div onClick={() => setModalVerEntrada(false)}
@@ -3008,10 +3016,10 @@ return (
                         display: 'flex', alignItems: 'center', justifyContent: 'center',
                         zIndex: 400, padding: 20 }}>
             <div onClick={e => e.stopPropagation()}
-                 style={{ ...s.card, width: 620, maxWidth: '100%', maxHeight: '90vh',
+                 style={{ ...s.card, width: 720, maxWidth: '100%', maxHeight: '90vh',
                           overflowY: 'auto', padding: 22 }}>
 
-              {/* Cabeçalho do evento (1x) */}
+              {/* Cabeçalho do evento — só OV + destino, sem data/usuário */}
               <div style={{ marginBottom: 14 }}>
                 <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 4 }}>
                   📦 Entrada no estoque — OV {ordemVendaSel?.numero || '—'}
@@ -3019,43 +3027,62 @@ return (
                 <div style={{ fontSize: 11, color: C.muted, marginBottom: 4 }}>
                   📍 RECEBIMENTO
                 </div>
-                <div style={{ fontSize: 12, color: C.textSub || C.muted }}>
-                  📅 {fmtData} · 👤 {primeiro?.entrada_por_nome || '—'}
+                <div style={{ fontSize: 11, color: C.muted }}>
+                  Total: <strong style={{ color: C.text }}>
+                    {itensEntrados.length} {itensEntrados.length === 1 ? 'item' : 'itens'}
+                  </strong>
                 </div>
               </div>
 
-              {/* Lista de itens */}
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 6,
+              {/* Lista de itens — uma linha por item, com data/usuário/MOV próprios */}
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8,
                             padding: '10px 0', borderTop: `1px solid ${C.border}`,
                             borderBottom: `1px solid ${C.border}`, marginBottom: 12 }}>
                 {itensEntrados.length === 0 ? (
                   <div style={{ color: C.muted, fontSize: 12, padding: 12, textAlign: 'center' }}>
                     Nenhum item com entrada registrada.
                   </div>
-                ) : itensEntrados.map(it => (
-                  <div key={it.id} style={{
-                    display: 'grid', gridTemplateColumns: '1fr auto auto',
-                    gap: 12, alignItems: 'center', fontSize: 12,
-                  }}>
-                    <span style={{ color: C.text }}>{it.item_nome}</span>
-                    <span style={{ color: C.muted, fontFamily: "'IBM Plex Mono', monospace", fontSize: 11 }}>
-                      {it.sku || '—'}
-                    </span>
-                    <span style={{ color: C.text, textAlign: 'right', minWidth: 60 }}>
-                      {it.quantidade_recebida} {it.unidade_medida || 'UN'}
-                    </span>
-                  </div>
-                ))}
+                ) : itensEntrados.map(it => {
+                  const meta = fmtItem(it);
+                  return (
+                    <div key={it.id} style={{
+                      display: 'flex', justifyContent: 'space-between',
+                      gap: 12, alignItems: 'flex-start',
+                      padding: '8px 10px',
+                      background: C.bg,
+                      borderRadius: 6,
+                      border: `1px solid ${C.border}33`,
+                    }}>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>
+                          {it.item_nome}
+                        </div>
+                        <div style={{
+                          fontSize: 11, color: C.muted, marginTop: 2,
+                          fontFamily: "'IBM Plex Mono', monospace",
+                          display: 'flex', gap: 6, flexWrap: 'wrap',
+                        }}>
+                          <span>📅 {meta.data}</span>
+                          <span>·</span>
+                          <span>👤 {meta.usuario}</span>
+                          <span>·</span>
+                          <span>📋 {meta.mov}</span>
+                        </div>
+                      </div>
+                      <div style={{
+                        fontSize: 13, color: C.text, textAlign: 'right',
+                        minWidth: 70, fontFamily: "'IBM Plex Mono', monospace",
+                      }}>
+                        {it.quantidade_recebida} {it.unidade_medida || 'UN'}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
 
               {/* Rodapé */}
-              <div style={{ display: 'flex', justifyContent: 'space-between',
+              <div style={{ display: 'flex', justifyContent: 'flex-end',
                             alignItems: 'center' }}>
-                <div style={{ fontSize: 11, color: C.muted }}>
-                  Total: <strong style={{ color: C.text }}>
-                    {itensEntrados.length} {itensEntrados.length === 1 ? 'item' : 'itens'}
-                  </strong>
-                </div>
                 <button onClick={() => setModalVerEntrada(false)}
                         style={{ ...s.btn(true, C.accent), padding: '8px 20px', fontSize: 12 }}>
                   Fechar

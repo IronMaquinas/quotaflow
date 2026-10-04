@@ -87,6 +87,32 @@ async function gerarNumeroNC(tenantId) {
   return `${prefix}${String(seq).padStart(4, '0')}`;
 }
 
+// --- Gerar número de MOV (movimento de estoque) sequencial ---
+// M4.3-ar: individual por LINHA de movimentacoes_estoque (não por batch).
+// Mesmo padrão do gerarNumeroNC (busca tudo, calcula maior seq em JS) —
+// NÃO usar DB.raw com LIKE/ORDER BY (armadilha do wrapper, ver README).
+async function gerarNumeroMovimento(tenantId) {
+  const ano = new Date().getFullYear();
+  const prefix = `MOV-${ano}-`;
+
+  const todas = await DB.select('movimentacoes_estoque', { tenant_id: tenantId }, tenantId).catch(() => []);
+
+  let seq = 1;
+  const numerosDoAno = (todas || [])
+    .map(m => m.numero_movimento)
+    .filter(n => n && n.startsWith(prefix))
+    .map(n => {
+      const match = n.match(/(\d+)$/);
+      return match ? parseInt(match[1]) : 0;
+    });
+
+  if (numerosDoAno.length > 0) {
+    seq = Math.max(...numerosDoAno) + 1;
+  }
+
+  return `${prefix}${String(seq).padStart(4, '0')}`;
+}
+
 // ─── LISTAR MOVIMENTAÇÕES ──────────────────────────────────
 router.get('/', tenantMiddleware, async (req, res) => {
   try {
@@ -179,8 +205,11 @@ router.post('/', tenantMiddleware, async (req, res) => {
     }
 
     // Registrar movimentação
+    // M4.3-ar: número de movimento individual (MOV-YYYY-NNNN)
+    const numeroMovimentoAjuste = await gerarNumeroMovimento(tenantId);
     const movimentacao = await DB.insert('movimentacoes_estoque', {
       tenant_id: tenantId,
+      numero_movimento: numeroMovimentoAjuste,
       item_consumo_id,
       tipo,
       quantidade: parseFloat(quantidade),
@@ -317,8 +346,13 @@ router.post('/recebimento', tenantMiddleware, async (req, res) => {
         }
 
         // Registrar movimentação de entrada (vinculada à OV)
+        // M4.3-ar: número de movimento individual (MOV-YYYY-NNNN)
+        const numeroMovimentoParcial = await gerarNumeroMovimento(tenantId);
         await DB.insert('movimentacoes_estoque', {
           tenant_id: tenantId,
+          numero_movimento: numeroMovimentoParcial,
+          // M4.3-at: vínculo direto com o item da OV.
+          ordem_venda_item_id: itemOV.id,
           item_consumo_id: itemConsumo?.id || null,
           tipo: 'entrada',
           quantidade: item.quantidade,
@@ -374,8 +408,11 @@ router.post('/recebimento', tenantMiddleware, async (req, res) => {
     }, tenantId);
 
     // Registrar movimentação (com NF)
+    // M4.3-ar: número de movimento individual (MOV-YYYY-NNNN)
+    const numeroMovimento = await gerarNumeroMovimento(tenantId);
     await DB.insert('movimentacoes_estoque', {
       tenant_id: tenantId,
+      numero_movimento: numeroMovimento,
       item_consumo_id: item.id,
       tipo: 'entrada',
       quantidade: parseFloat(quantidade),
@@ -436,6 +473,18 @@ router.get('/ordem-venda/:ovId', tenantMiddleware, async (req, res) => {
         .map(v => String(v.item || '').trim().toLowerCase())
     );
 
+    // M4.3-at: movimentações da OV, pra enriquecer cada item com
+    // `numero_movimento` (o modal Ver entrada mostra). Vínculo direto
+    // por `ordem_venda_item_id` — não depende de catálogo vinculado.
+    const movsDaOv = await DB.select('movimentacoes_estoque', { ordem_venda_id: ovId }, tenantId)
+      .catch(() => []);
+    const movPorItemOV = {};
+    for (const m of movsDaOv) {
+      if (m.ordem_venda_item_id && m.numero_movimento) {
+        movPorItemOV[String(m.ordem_venda_item_id)] = m.numero_movimento;
+      }
+    }
+
     // M4.3-e: buscar NCs abertas da OV pra enriquecer cada item com
     // nc_id/numero_nc (TelaRecebimento navega direto pra NC vinculada).
     // "Aberta" = status NÃO em ('resolvida', 'cancelada').
@@ -488,6 +537,8 @@ router.get('/ordem-venda/:ovId', tenantMiddleware, async (req, res) => {
         entrada_por_nome: item.entrada_por
           ? (nomeUsuarioPorId[String(item.entrada_por)] || null)
           : null,
+        // M4.3-at: número de movimento (MOV-YYYY-NNNN) do item.
+        numero_movimento: movPorItemOV[String(item.id)] || null,
       };
     }));
 
@@ -866,8 +917,13 @@ router.post('/entrada', tenantMiddleware, async (req, res) => {
         atualizado_em: new Date()
       }, tenantId);
 
+      // M4.3-ar: número de movimento individual (MOV-YYYY-NNNN)
+      const numeroMovimento = await gerarNumeroMovimento(tenantId);
       await DB.insert('movimentacoes_estoque', {
         tenant_id: tenantId,
+        numero_movimento: numeroMovimento,
+        // M4.3-at: vínculo direto com o item da OV (pro modal Ver entrada).
+        ordem_venda_item_id: item.id,
         item_consumo_id: itemConsumo.id,
         tipo: 'entrada',
         quantidade: quantidade,
@@ -922,8 +978,11 @@ router.post('/entrada', tenantMiddleware, async (req, res) => {
 
     const observacaoFornecedor = fornecedor_nome_manual ? ` - Fornecedor: ${fornecedor_nome_manual}` : '';
 
+    // M4.3-ar: número de movimento individual (MOV-YYYY-NNNN)
+    const numeroMovimentoManual = await gerarNumeroMovimento(tenantId);
     await DB.insert('movimentacoes_estoque', {
       tenant_id: tenantId,
+      numero_movimento: numeroMovimentoManual,
       item_consumo_id: itemConsumo.id,
       tipo: 'entrada',
       quantidade: quantidade,
@@ -1821,8 +1880,11 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
         tenant_id: tenantId
       }, tenantId);
 
+      // M4.3-ar: número de movimento individual (MOV-YYYY-NNNN)
+      const numeroMovimentoBloqueio = await gerarNumeroMovimento(tenantId);
       await DB.insert('movimentacoes_estoque', {
         tenant_id: tenantId,
+        numero_movimento: numeroMovimentoBloqueio,
         item_consumo_id: itemConsumoBloqueado?.id || null,
         tipo: 'bloqueio',
         quantidade: quantidadeFinal,
@@ -1867,8 +1929,11 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
       }, tenantId);
 
       // Histórico de auditoria da movimentação
+      // M4.3-ar: número de movimento individual (MOV-YYYY-NNNN)
+      const numeroMovimentoLiberacao = await gerarNumeroMovimento(tenantId);
       await DB.insert('movimentacoes_estoque', {
         tenant_id: tenantId,
+        numero_movimento: numeroMovimentoLiberacao,
         item_consumo_id: itemConsumo.id,
         tipo: 'entrada',
         quantidade: parseFloat(item.quantidade_recebida_fisica || 0),
