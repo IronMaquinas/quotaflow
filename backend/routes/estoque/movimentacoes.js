@@ -1394,6 +1394,13 @@ router.get('/ordens-em-processo', tenantMiddleware, async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────
 // 2. ROTA DO CLIQUE NO CARD (NO SINGULAR) - Usada quando você clica em uma OV
 // ─────────────────────────────────────────────────────────────────────
+// ⚠️  M4.3-aq: rota DUPLICADA. A versão ativa é a do topo do arquivo
+// (registrada primeiro — Express usa a primeira). Esta segunda nunca é
+// chamada. Mantida por segurança até confirmar que nenhum cliente/curl
+// aponta pra cá. Candidata a remoção no próximo cleanup.
+//
+// Se algum dia reativar: PRECISA do `.sort()` no DB.select de itens
+// (armadilha do README) pra ordem dos itens ficar estável.
 router.get('/ordem-venda/:ovId', tenantMiddleware, async (req, res) => {
   try {
     const tenantId = req.tenantId;

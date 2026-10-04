@@ -1339,7 +1339,10 @@ return (
                       () => abrirConferenciaFiscal(item),
                       feitaFiscal ? 'Revisar' : 'Realizar Rec Fiscal →',
                       false,                                          // não desabilitado
-                      fiscalDivergente ? '#f59e0b' : null             // M4.3-an: laranja em divergência
+                      // M4.3-ap: em NC, o "Tratar NC" já é a ação principal —
+                      // o Fiscal divergente fica neutro pra não competir
+                      // visualmente. Fora de NC, mantém o alerta laranja.
+                      (fiscalDivergente && !emNC) ? '#f59e0b' : null
                     )}
                     {seta}
                     {(() => {
@@ -2995,7 +2998,6 @@ return (
       {modalVerEntrada && (() => {
         const itensEntrados = itensOV.filter(i => i.entrada_por && i.entrada_em);
         const primeiro = itensEntrados[0];
-        const totalUnidades = itensEntrados.reduce((s, i) => s + Number(i.quantidade_recebida || 0), 0);
         const fmtData = primeiro?.entrada_em
           ? new Date(String(primeiro.entrada_em).replace(' ', 'T')).toLocaleString('pt-BR')
           : '—';
@@ -3053,8 +3055,6 @@ return (
                   Total: <strong style={{ color: C.text }}>
                     {itensEntrados.length} {itensEntrados.length === 1 ? 'item' : 'itens'}
                   </strong>
-                  {' · '}
-                  <strong style={{ color: C.text }}>{totalUnidades} unidades</strong>
                 </div>
                 <button onClick={() => setModalVerEntrada(false)}
                         style={{ ...s.btn(true, C.accent), padding: '8px 20px', fontSize: 12 }}>
