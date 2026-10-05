@@ -113,6 +113,44 @@ async function gerarNumeroMovimento(tenantId) {
   return `${prefix}${String(seq).padStart(4, '0')}`;
 }
 
+// M4.4-etapa-3: atualiza saldo em itens_consumo_enderecos atomicamente.
+// mode: 'add' (soma ou cria) ou 'sub' (subtrai, erro se insuficiente).
+// Invariante do modelo: itens_consumo.saldo_atual === SUM(enderecos.saldo).
+async function atualizarEndereco(tenantId, itemConsumoId, endereco, quantidade, mode = 'add') {
+  const linhas = await DB.select('itens_consumo_enderecos',
+    { item_consumo_id: itemConsumoId, tenant_id: tenantId }, tenantId);
+  const linha = linhas.find(e => e.endereco === endereco);
+
+  if (mode === 'add') {
+    if (linha) {
+      await DB.update('itens_consumo_enderecos', linha.id, {
+        saldo: (parseFloat(linha.saldo) || 0) + quantidade,
+        atualizado_em: new Date(),
+      }, tenantId);
+    } else {
+      await DB.insert('itens_consumo_enderecos', {
+        tenant_id: tenantId,
+        item_consumo_id: itemConsumoId,
+        endereco,
+        saldo: quantidade,
+        atualizado_em: new Date(),
+      }, tenantId);
+    }
+  } else if (mode === 'sub') {
+    if (!linha) {
+      throw new Error(`Endereço "${endereco}" não encontrado no item ${itemConsumoId}`);
+    }
+    const novo = (parseFloat(linha.saldo) || 0) - quantidade;
+    if (novo < 0) {
+      throw new Error(`Saldo insuficiente em "${endereco}" (tem ${linha.saldo}, tentou tirar ${quantidade})`);
+    }
+    await DB.update('itens_consumo_enderecos', linha.id, {
+      saldo: novo,
+      atualizado_em: new Date(),
+    }, tenantId);
+  }
+}
+
 // ─── LISTAR MOVIMENTAÇÕES ──────────────────────────────────
 router.get('/', tenantMiddleware, async (req, res) => {
   try {
@@ -343,6 +381,9 @@ router.post('/recebimento', tenantMiddleware, async (req, res) => {
             saldo_atual: novoSaldo,
             atualizado_em: new Date()
           }, tenantId);
+
+          // M4.4-etapa-3: espelha no endereço.
+          await atualizarEndereco(tenantId, itemConsumo.id, 'RECEBIMENTO', parseFloat(item.quantidade), 'add');
         }
 
         // Registrar movimentação de entrada (vinculada à OV)
@@ -406,6 +447,9 @@ router.post('/recebimento', tenantMiddleware, async (req, res) => {
       saldo_atual: novoSaldo,
       atualizado_em: new Date()
     }, tenantId);
+
+    // M4.4-etapa-3: espelha no endereço.
+    await atualizarEndereco(tenantId, item.id, 'RECEBIMENTO', parseFloat(quantidade), 'add');
 
     // Registrar movimentação (com NF)
     // M4.3-ar: número de movimento individual (MOV-YYYY-NNNN)
@@ -917,6 +961,14 @@ router.post('/entrada', tenantMiddleware, async (req, res) => {
         atualizado_em: new Date()
       }, tenantId);
 
+      // M4.4-etapa-3: espelha o saldo no modelo por endereço. Toda entrada
+      // vai pra RECEBIMENTO (doca SAP). Se já existe linha pra esse
+      // endereço, soma; senão, cria. Invariante: itens_consumo.saldo_atual
+      // === SUM(itens_consumo_enderecos.saldo).
+      await atualizarEndereco(
+        tenantId, itemConsumo.id, 'RECEBIMENTO', parseFloat(quantidade), 'add'
+      );
+
       // M4.3-ar: número de movimento individual (MOV-YYYY-NNNN)
       const numeroMovimento = await gerarNumeroMovimento(tenantId);
       await DB.insert('movimentacoes_estoque', {
@@ -975,6 +1027,9 @@ router.post('/entrada', tenantMiddleware, async (req, res) => {
       saldo_atual: novoSaldo,
       atualizado_em: new Date()
     }, tenantId);
+
+    // M4.4-etapa-3: espelha no endereço.
+    await atualizarEndereco(tenantId, itemConsumo.id, 'RECEBIMENTO', parseFloat(quantidade), 'add');
 
     const observacaoFornecedor = fornecedor_nome_manual ? ` - Fornecedor: ${fornecedor_nome_manual}` : '';
 
@@ -1927,6 +1982,9 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
         localizacao: 'RECEBIMENTO', // Direciona para o endereço de conferência SAP
         atualizado_em: new Date()
       }, tenantId);
+
+      // M4.4-etapa-3: espelha no endereço.
+      await atualizarEndereco(tenantId, itemConsumo.id, 'RECEBIMENTO', parseFloat(item.quantidade_recebida_fisica || 0), 'add');
 
       // Histórico de auditoria da movimentação
       // M4.3-ar: número de movimento individual (MOV-YYYY-NNNN)
