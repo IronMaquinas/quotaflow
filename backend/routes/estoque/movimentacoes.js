@@ -113,6 +113,31 @@ async function gerarNumeroMovimento(tenantId) {
   return `${prefix}${String(seq).padStart(4, '0')}`;
 }
 
+// --- Gerar número de TRF (transferência entre endereços) sequencial ---
+// M4.4-etapa-4: prefixo próprio (não MOV) pra distinguir transferência
+// de entrada/saída. Mesmo padrão do gerarNumeroMovimento.
+async function gerarNumeroTransferencia(tenantId) {
+  const ano = new Date().getFullYear();
+  const prefix = `TRF-${ano}-`;
+
+  const todas = await DB.select('movimentacoes_estoque', { tenant_id: tenantId }, tenantId).catch(() => []);
+
+  let seq = 1;
+  const numerosDoAno = (todas || [])
+    .map(m => m.numero_movimento)
+    .filter(n => n && n.startsWith(prefix))
+    .map(n => {
+      const match = n.match(/(\d+)$/);
+      return match ? parseInt(match[1]) : 0;
+    });
+
+  if (numerosDoAno.length > 0) {
+    seq = Math.max(...numerosDoAno) + 1;
+  }
+
+  return `${prefix}${String(seq).padStart(4, '0')}`;
+}
+
 // M4.4-etapa-3: atualiza saldo em itens_consumo_enderecos atomicamente.
 // mode: 'add' (soma ou cria) ou 'sub' (subtrai, erro se insuficiente).
 // Invariante do modelo: itens_consumo.saldo_atual === SUM(enderecos.saldo).
@@ -150,6 +175,106 @@ async function atualizarEndereco(tenantId, itemConsumoId, endereco, quantidade, 
     }, tenantId);
   }
 }
+
+// ─── TRANSFERIR SALDO ENTRE ENDEREÇOS ──────────────────────
+// M4.4-etapa-4: move quantidade de um endereço pro outro. NÃO altera
+// `itens_consumo.saldo_atual` (transferência não muda o total, só o
+// endereço). Gera TRF-YYYY-NNNN e respeita o invariante dos endereços.
+//
+// Input: { item_consumo_id, quantidade, endereco_destino, endereco_origem?, observacao? }
+// - Se `endereco_origem` não vier: usa se o item só tem 1 endereço com saldo.
+//   Se tiver 2+, retorna 400 com a lista pra UI escolher.
+router.post('/transferir', tenantMiddleware, async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const {
+      item_consumo_id,
+      quantidade,
+      endereco_destino,
+      endereco_origem: enderecoOrigemBody,
+      observacao,
+    } = req.body;
+
+    if (!item_consumo_id || !endereco_destino) {
+      return res.status(400).json({ erro: 'item_consumo_id e endereco_destino são obrigatórios' });
+    }
+    const q = parseFloat(quantidade);
+    if (!q || q <= 0) {
+      return res.status(400).json({ erro: 'quantidade deve ser maior que zero' });
+    }
+    if (String(endereco_destino).trim() === '') {
+      return res.status(400).json({ erro: 'endereco_destino não pode ser vazio' });
+    }
+
+    const item = await DB.selectOne('itens_consumo', { id: item_consumo_id, tenant_id: tenantId }, tenantId);
+    if (!item) return res.status(404).json({ erro: 'Item não encontrado' });
+
+    // Endereços com saldo > 0
+    const linhasEnd = await DB.select('itens_consumo_enderecos',
+      { item_consumo_id: item.id, tenant_id: tenantId }, tenantId);
+    const comSaldo = linhasEnd.filter(e => Number(e.saldo) > 0);
+
+    if (comSaldo.length === 0) {
+      return res.status(400).json({ erro: 'Item não tem saldo em nenhum endereço.' });
+    }
+
+    // Decide origem
+    let enderecoOrigem = enderecoOrigemBody;
+    if (!enderecoOrigem) {
+      if (comSaldo.length === 1) {
+        enderecoOrigem = comSaldo[0].endereco;
+      } else {
+        return res.status(400).json({
+          erro: 'Múltiplos endereços com saldo. Informe `endereco_origem`.',
+          enderecos_disponiveis: comSaldo.map(e => ({ endereco: e.endereco, saldo: e.saldo })),
+        });
+      }
+    }
+
+    if (String(enderecoOrigem) === String(endereco_destino)) {
+      return res.status(400).json({ erro: 'Endereço de destino igual ao de origem.' });
+    }
+
+    const origem = comSaldo.find(e => e.endereco === enderecoOrigem);
+    if (!origem) {
+      return res.status(400).json({
+        erro: `Endereço de origem "${enderecoOrigem}" não tem saldo deste item.`,
+        enderecos_disponiveis: comSaldo.map(e => ({ endereco: e.endereco, saldo: e.saldo })),
+      });
+    }
+    if (Number(origem.saldo) < q) {
+      return res.status(400).json({
+        erro: `Saldo insuficiente em "${enderecoOrigem}" (tem ${origem.saldo}, tentou mover ${q}).`,
+      });
+    }
+
+    // M4.4-etapa-4b: transferência atômica via RPC. A função PL/pgSQL
+    // `transferir_saldo` roda numa transação real — se qualquer parte
+    // falhar, TUDO é desfeito. Não há estado intermediário.
+    const numeroTrf = await gerarNumeroTransferencia(tenantId);
+
+    const enderecosAtualizados = await DB.rpc('transferir_saldo', {
+      p_tenant_id: tenantId,
+      p_item_consumo_id: item.id,
+      p_endereco_origem: enderecoOrigem,
+      p_endereco_destino: endereco_destino,
+      p_quantidade: q,
+      p_numero_movimento: numeroTrf,
+      p_responsavel_id: req.userId,
+      p_observacao: observacao || `Transferência ${enderecoOrigem} → ${endereco_destino}`,
+    });
+
+    return res.json({
+      ok: true,
+      numero_movimento: numeroTrf,
+      mensagem: `Transferido ${q} ${item.unidade_medida || 'UN'} de "${enderecoOrigem}" para "${endereco_destino}".`,
+      enderecos: enderecosAtualizados,
+    });
+  } catch (err) {
+    console.error('❌ Erro ao transferir saldo:', err.message);
+    return res.status(500).json({ erro: err.message });
+  }
+});
 
 // ─── LISTAR MOVIMENTAÇÕES ──────────────────────────────────
 router.get('/', tenantMiddleware, async (req, res) => {
