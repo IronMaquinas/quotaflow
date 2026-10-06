@@ -28,6 +28,15 @@ export default function TelaEstoqueConsumiveis({ C, s, fmtBRL, fmtD }) {
     codigo_barras: '',
     ativo: true
   });
+  // M4.4-etapa-6: estado do modal de transferência entre endereços.
+  const [itemTransferindo, setItemTransferindo] = useState(null);
+  const [formTransf, setFormTransf] = useState({
+    endereco_origem: '',
+    endereco_destino: '',
+    quantidade: '',
+    observacao: '',
+  });
+  const [salvandoTransferencia, setSalvandoTransferencia] = useState(false);
 
   // ─── CARREGAR ITENS ──────────────────────────────────────────
   const carregarItens = async () => {
@@ -148,6 +157,59 @@ const salvarConfig = async () => {
     setModal(item.id);
   };
 
+  // ─── M4.4-etapa-6: TRANSFERÊNCIA ENTRE ENDEREÇOS ─────────────
+  // Abre o modal. Pré-seleciona o endereço com mais saldo como origem
+  // (menos cliques no caso comum).
+  const abrirTransferir = (item) => {
+    const enderecos = item.enderecos || [];
+    setItemTransferindo(item);
+    setFormTransf({
+      endereco_origem: enderecos[0]?.endereco || '',
+      endereco_destino: '',
+      quantidade: '',
+      observacao: '',
+    });
+  };
+
+  const fecharTransferir = () => {
+    setItemTransferindo(null);
+    setFormTransf({ endereco_origem: '', endereco_destino: '', quantidade: '', observacao: '' });
+  };
+
+  const executarTransferencia = async () => {
+    if (!itemTransferindo) return;
+
+    const enderecoOrigem = formTransf.endereco_origem;
+    const enderecoDestino = formTransf.endereco_destino.trim();
+    const qtd = parseFloat(formTransf.quantidade);
+
+    if (!enderecoOrigem) return alert('Selecione o endereço de origem.');
+    if (!enderecoDestino) return alert('Informe o endereço de destino.');
+    if (enderecoDestino === enderecoOrigem) return alert('Destino deve ser diferente da origem.');
+    if (!qtd || qtd <= 0) return alert('Quantidade deve ser maior que zero.');
+
+    setSalvandoTransferencia(true);
+    try {
+      const resp = await apiService.post('/estoque/movimentacoes/transferir', {
+        item_consumo_id: itemTransferindo.id,
+        quantidade: qtd,
+        endereco_origem: enderecoOrigem,
+        endereco_destino: enderecoDestino,
+        observacao: formTransf.observacao.trim() || null,
+      });
+      alert(`✅ ${resp.mensagem}\n\nMovimento: ${resp.numero_movimento}`);
+      fecharTransferir();
+      await carregarItens();
+    } catch (err) {
+      // M4.3-al: apiService anexa `.body` no erro — pega a lista de
+      // endereços disponíveis se a rota devolveu 400 com metadados.
+      const msg = err.body?.erro || err.message || 'Erro ao transferir';
+      alert('Erro: ' + msg);
+    } finally {
+      setSalvandoTransferencia(false);
+    }
+  };
+
   const deletarItem = async (id) => {
     if (!confirm('Tem certeza?')) return;
     try {
@@ -249,12 +311,28 @@ const salvarConfig = async () => {
               <div>
                 <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>{item.nome}</div>
                 <div style={{ fontSize: 10, color: C.muted }}>{item.sku || '—'}</div>
+                {/* M4.4-etapa-6: endereços com saldo */}
+                {item.enderecos && item.enderecos.length > 0 && (
+                  <div style={{ fontSize: 10, color: C.muted, marginTop: 3, fontFamily: "'IBM Plex Mono', monospace" }}>
+                    📍 {item.enderecos.map(e => `${e.endereco}: ${e.saldo}`).join(' · ')}
+                  </div>
+                )}
               </div>
               <div style={{ fontSize: 13, color: C.text, fontWeight: 600 }}>{item.saldo_atual || 0} {item.unidade_medida || 'UN'}</div>
               <div style={{ fontSize: 12, color: C.textSub }}>{item.limite_recompra || '—'}</div>
               <div style={{ fontSize: 12, color: C.textSub }}>{item.limite_inferior_controle || '—'}</div>
               <div><span style={{ ...s.tag(status.color), fontSize: 10 }}>{status.label}</span></div>
               <div style={{ display: 'flex', gap: 6, justifyContent: 'flex-end' }}>
+                {/* M4.4-etapa-6: transferir entre endereços — só se tem saldo */}
+                {item.enderecos && item.enderecos.length > 0 && (
+                  <button 
+                    onClick={() => abrirTransferir(item)} 
+                    title="Transferir entre endereços"
+                    style={{ background: 'transparent', border: `1px solid ${C.accent}55`, borderRadius: 5, padding: '4px 8px', color: C.accent, fontSize: 11, cursor: 'pointer' }}
+                  >
+                    🚚
+                  </button>
+                )}
                 <button onClick={() => abrirEditar(item)} style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 5, padding: '4px 8px', color: C.muted, fontSize: 11, cursor: 'pointer' }}>✏</button>
                 <button onClick={() => deletarItem(item.id)} style={{ background: 'transparent', border: `1px solid #ef444433`, borderRadius: 5, padding: '4px 8px', color: '#ef4444', fontSize: 11, cursor: 'pointer' }}>🗑</button>
               </div>
@@ -263,6 +341,99 @@ const salvarConfig = async () => {
         })}
         {itensFiltrados.length === 0 && <div style={{ padding: 40, textAlign: 'center', color: C.muted }}>Nenhum item cadastrado</div>}
       </div>
+
+      {/* ─── M4.4-etapa-6: MODAL DE TRANSFERÊNCIA ENTRE ENDEREÇOS ─── */}
+      {itemTransferindo && (
+        <div 
+          onClick={fecharTransferir}
+          style={{ position: 'fixed', inset: 0, background: '#00000090', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 20 }}
+        >
+          <div 
+            onClick={e => e.stopPropagation()}
+            style={{ ...s.card, width: 480, maxWidth: '100%' }}
+          >
+            <div style={{ padding: '18px 22px', borderBottom: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>
+                🚚 Transferir — {itemTransferindo.nome}
+              </div>
+              <button onClick={fecharTransferir} style={{ background: 'transparent', border: 'none', color: C.muted, fontSize: 20, cursor: 'pointer' }}>×</button>
+            </div>
+
+            <div style={{ padding: '18px 22px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+              <div>
+                <label style={s.label}>ENDEREÇO DE ORIGEM</label>
+                <select
+                  value={formTransf.endereco_origem}
+                  onChange={e => setFormTransf(f => ({ ...f, endereco_origem: e.target.value }))}
+                  style={{ ...s.input, width: '100%', appearance: 'none' }}
+                >
+                  {(itemTransferindo.enderecos || []).map(e => (
+                    <option key={e.endereco} value={e.endereco}>
+                      {e.endereco} — {e.saldo} {itemTransferindo.unidade_medida || 'UN'}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label style={s.label}>ENDEREÇO DE DESTINO</label>
+                <input
+                  type="text"
+                  value={formTransf.endereco_destino}
+                  onChange={e => setFormTransf(f => ({ ...f, endereco_destino: e.target.value }))}
+                  placeholder="Ex: A01, Prateleira B, Corredor 3"
+                  style={{ ...s.input, width: '100%' }}
+                />
+              </div>
+
+              <div>
+                <label style={s.label}>QUANTIDADE</label>
+                <input
+                  type="number"
+                  value={formTransf.quantidade}
+                  onChange={e => setFormTransf(f => ({ ...f, quantidade: e.target.value }))}
+                  placeholder="Digite a quantidade..."
+                  min="0"
+                  step="0.01"
+                  style={{ ...s.input, width: '100%' }}
+                  onWheel={e => e.target.blur()}
+                />
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
+                  Disponível em {formTransf.endereco_origem}: {(itemTransferindo.enderecos || []).find(e => e.endereco === formTransf.endereco_origem)?.saldo || 0} {itemTransferindo.unidade_medida || 'UN'}
+                </div>
+              </div>
+
+              <div>
+                <label style={s.label}>OBSERVAÇÃO (OPCIONAL)</label>
+                <textarea
+                  value={formTransf.observacao}
+                  onChange={e => setFormTransf(f => ({ ...f, observacao: e.target.value }))}
+                  placeholder="Ex: Separação para montagem"
+                  rows={2}
+                  style={{ ...s.input, width: '100%', resize: 'vertical' }}
+                />
+              </div>
+            </div>
+
+            <div style={{ padding: '14px 22px', borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              <button 
+                onClick={fecharTransferir} 
+                disabled={salvandoTransferencia}
+                style={{ ...s.btn(false), padding: '8px 16px' }}
+              >
+                Cancelar
+              </button>
+              <button 
+                onClick={executarTransferencia}
+                disabled={salvandoTransferencia}
+                style={{ ...s.btn(true), padding: '8px 16px', opacity: salvandoTransferencia ? 0.5 : 1 }}
+              >
+                {salvandoTransferencia ? 'Transferindo...' : '🚚 Transferir'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ─── MODAL DE CONFIGURAÇÕES ─── */}
       {modalConfig && (

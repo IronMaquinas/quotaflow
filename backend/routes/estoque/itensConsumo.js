@@ -12,14 +12,31 @@ router.get('/', tenantMiddleware, async (req, res) => {
     // 1. Buscar os itens (com TODOS os campos, incluindo os novos)
     const itens = await DB.select('itens_consumo', { tenant_id: tenantId }, tenantId);
 
+    // 1b. M4.4-etapa-6: buscar endereços do tenant 1x, agrupar por item
+    const todosEnderecos = await DB.select('itens_consumo_enderecos', { tenant_id: tenantId }, tenantId)
+      .catch(() => []);
+    const enderecosPorItem = {};
+    for (const e of todosEnderecos) {
+      const key = String(e.item_consumo_id);
+      if (!enderecosPorItem[key]) enderecosPorItem[key] = [];
+      enderecosPorItem[key].push({ endereco: e.endereco, saldo: Number(e.saldo) || 0 });
+    }
+
     // 2. Buscar o fornecedor separadamente (para exibir o nome)
     const itensComFornecedor = await Promise.all(itens.map(async (item) => {
       const fornecedor = item.fornecedor_preferencial_id ?
         await DB.selectOne('fornecedores', { id: item.fornecedor_preferencial_id, tenant_id: tenantId }, tenantId) : null;
 
+      const enderecos = enderecosPorItem[String(item.id)] || [];
+
       return {
         ...item,
-        fornecedor_nome: fornecedor?.nome || '—'
+        fornecedor_nome: fornecedor?.nome || '—',
+        // M4.4-etapa-6: endereços com saldo > 0 (UI mostra no card + usa
+        // no modal de transferência). Ordena por saldo desc (maior primeiro).
+        enderecos: enderecos
+          .filter(e => e.saldo > 0)
+          .sort((a, b) => b.saldo - a.saldo),
       };
     }));
 
