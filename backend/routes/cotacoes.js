@@ -150,6 +150,34 @@ async function gerarNumeroRM(tenant_id) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
+// gerarNumeroSaida — SAI-YYYY-NNNN, individual por aplicação em OS com
+// origem_lastro = 'estoque_proprio'. Padrão idêntico ao gerarNumeroMovimento
+// (movimentacoes.js): busca tudo do tenant, calcula a maior sequência do
+// ano em JS. NÃO usar DB.raw com LIKE/ORDER BY (armadilha do wrapper).
+// ─────────────────────────────────────────────────────────────────────────
+async function gerarNumeroSaida(tenantId) {
+  const ano = new Date().getFullYear();
+  const prefix = `SAI-${ano}-`;
+
+  const todas = await DB.select('movimentacoes_estoque', { tenant_id: tenantId }, tenantId).catch(() => []);
+
+  let seq = 1;
+  const numerosDoAno = (todas || [])
+    .map(m => m.numero_movimento)
+    .filter(n => n && n.startsWith(prefix))
+    .map(n => {
+      const match = n.match(/(\d+)$/);
+      return match ? parseInt(match[1]) : 0;
+    });
+
+  if (numerosDoAno.length > 0) {
+    seq = Math.max(...numerosDoAno) + 1;
+  }
+
+  return `${prefix}${String(seq).padStart(4, '0')}`;
+}
+
+// ─────────────────────────────────────────────────────────────────────────
 // calcularDisponivel — mesmo cálculo já usado em routes/estoque/reservas.js
 // (GET /saldo): físico (itens_consumo.saldo_atual) − soma das reservas
 // ativas (estoque_reservas com liberado_em IS NULL, filtrado em JS porque
@@ -3499,6 +3527,72 @@ router.post("/chamados/:id/materiais/:itemId/aplicar", tenantMiddleware, async (
       } catch (_) { /* silencioso — se falhar, fica só email */ }
     }
 
+    // ── M4.4-etapa-5: resolução de estoque (só pra origem_lastro='estoque_proprio') ──
+    // Antes do RPC (que é transacional), resolve o item_consumo + endereço
+    // de origem. Se não achar saldo, rejeita com a lista de endereços
+    // disponíveis (a UI pergunta qual usar quando tem 2+).
+    let itemConsumoId = null;
+    let enderecoOrigem = null;
+    let numeroSaida = null;
+
+    if (origem_lastro === "estoque_proprio") {
+      if (!item.item_catalogo_id) {
+        return res.status(400).json({
+          erro: "Item da OS não tem vínculo com catálogo. Registre entrada no almoxarifado antes de aplicar.",
+        });
+      }
+
+      const itemConsumo = await DB.selectOne(
+        "itens_consumo",
+        { catalogo_item_id: item.item_catalogo_id, tenant_id: tenantId },
+        tenantId
+      );
+      if (!itemConsumo) {
+        return res.status(400).json({
+          erro: "Material não está no estoque. Registre entrada no almoxarifado antes de aplicar.",
+        });
+      }
+
+      const linhasEnd = await DB.select(
+        "itens_consumo_enderecos",
+        { item_consumo_id: itemConsumo.id, tenant_id: tenantId },
+        tenantId
+      );
+      const comSaldo = linhasEnd.filter((e) => Number(e.saldo) >= q);
+
+      if (comSaldo.length === 0) {
+        const comAlgumSaldo = linhasEnd.filter((e) => Number(e.saldo) > 0);
+        return res.status(400).json({
+          erro: `Nenhum endereço com saldo suficiente pra aplicar ${q} ${item.unidade_medida || "UN"}.`,
+          enderecos_disponiveis: comAlgumSaldo.map((e) => ({ endereco: e.endereco, saldo: e.saldo })),
+        });
+      }
+
+      let enderecoEscolhido = req.body.endereco_origem;
+      if (!enderecoEscolhido) {
+        if (comSaldo.length === 1) {
+          enderecoEscolhido = comSaldo[0].endereco;
+        } else {
+          return res.status(400).json({
+            erro: "Múltiplos endereços com saldo. Informe `endereco_origem`.",
+            enderecos_disponiveis: comSaldo.map((e) => ({ endereco: e.endereco, saldo: e.saldo })),
+          });
+        }
+      }
+
+      const escolhido = comSaldo.find((e) => e.endereco === enderecoEscolhido);
+      if (!escolhido) {
+        return res.status(400).json({
+          erro: `Endereço "${enderecoEscolhido}" não tem saldo suficiente (${q}).`,
+          enderecos_disponiveis: comSaldo.map((e) => ({ endereco: e.endereco, saldo: e.saldo })),
+        });
+      }
+
+      itemConsumoId = itemConsumo.id;
+      enderecoOrigem = enderecoEscolhido;
+      numeroSaida = await gerarNumeroSaida(tenantId);
+    }
+
     // ── RPC atômico (aplicação + séries numa transação) ──
     let aplicacaoId;
     try {
@@ -3518,6 +3612,12 @@ router.post("/chamados/:id/materiais/:itemId/aplicar", tenantMiddleware, async (
         p_operador_nome: operadorNome,
         p_idempotency_key: idemKey,
         p_series: ehSerializado ? series : null,
+        // M4.4-etapa-5: params extras. Só preenchidos quando
+        // origem_lastro = 'estoque_proprio' — o RPC debita endereço +
+        // saldo_atual + grava MOV de saída (SAI-*) na mesma transação.
+        p_item_consumo_id: itemConsumoId,
+        p_endereco_origem: enderecoOrigem,
+        p_numero_saida: numeroSaida,
       });
     } catch (rpcErr) {
       // O índice único uq_aplic_series_ativo é a última linha de defesa
