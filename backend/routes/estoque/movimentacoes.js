@@ -248,6 +248,20 @@ router.post('/transferir', tenantMiddleware, async (req, res) => {
       });
     }
 
+    // M4.4-etapa-6b: resolve os endereços (código → id) contra o catálogo
+    // `enderecos`. Rejeita se algum não estiver cadastrado (evita endereço
+    // órfão, o problema que motivou a tabela).
+    const todosEnderecos = await DB.select('enderecos', { tenant_id: tenantId }, tenantId);
+    const enderecoOrigemObj = todosEnderecos.find(e => e.codigo === enderecoOrigem);
+    const enderecoDestinoObj = todosEnderecos.find(e => e.codigo === endereco_destino);
+
+    if (!enderecoOrigemObj) {
+      return res.status(400).json({ erro: `Endereço de origem "${enderecoOrigem}" não cadastrado.` });
+    }
+    if (!enderecoDestinoObj) {
+      return res.status(400).json({ erro: `Endereço de destino "${endereco_destino}" não cadastrado. Cadastre-o antes de transferir.` });
+    }
+
     // M4.4-etapa-4b: transferência atômica via RPC. A função PL/pgSQL
     // `transferir_saldo` roda numa transação real — se qualquer parte
     // falhar, TUDO é desfeito. Não há estado intermediário.
@@ -256,8 +270,8 @@ router.post('/transferir', tenantMiddleware, async (req, res) => {
     const enderecosAtualizados = await DB.rpc('transferir_saldo', {
       p_tenant_id: tenantId,
       p_item_consumo_id: item.id,
-      p_endereco_origem: enderecoOrigem,
-      p_endereco_destino: endereco_destino,
+      p_endereco_origem_id: enderecoOrigemObj.id,
+      p_endereco_destino_id: enderecoDestinoObj.id,
       p_quantidade: q,
       p_numero_movimento: numeroTrf,
       p_responsavel_id: req.userId,

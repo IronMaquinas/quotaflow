@@ -3533,6 +3533,7 @@ router.post("/chamados/:id/materiais/:itemId/aplicar", tenantMiddleware, async (
     // disponíveis (a UI pergunta qual usar quando tem 2+).
     let itemConsumoId = null;
     let enderecoOrigem = null;
+    let enderecoOrigemId = null;   // M4.4-etapa-6b: id do catálogo enderecos
     let numeroSaida = null;
 
     if (origem_lastro === "estoque_proprio") {
@@ -3588,8 +3589,19 @@ router.post("/chamados/:id/materiais/:itemId/aplicar", tenantMiddleware, async (
         });
       }
 
+      // M4.4-etapa-6b: resolve o código do endereço pro id do catálogo
+      // (mesma regra do /transferir).
+      const todosEnderecos = await DB.select("enderecos", { tenant_id: tenantId }, tenantId);
+      const enderecoObj = todosEnderecos.find((e) => e.codigo === enderecoEscolhido);
+      if (!enderecoObj) {
+        return res.status(400).json({
+          erro: `Endereço "${enderecoEscolhido}" não está cadastrado. Cadastre-o antes de aplicar.`,
+        });
+      }
+
       itemConsumoId = itemConsumo.id;
-      enderecoOrigem = enderecoEscolhido;
+      enderecoOrigem = enderecoEscolhido;      // mantém o código (compatibilidade)
+      enderecoOrigemId = enderecoObj.id;       // novo
       numeroSaida = await gerarNumeroSaida(tenantId);
     }
 
@@ -3616,7 +3628,7 @@ router.post("/chamados/:id/materiais/:itemId/aplicar", tenantMiddleware, async (
         // origem_lastro = 'estoque_proprio' — o RPC debita endereço +
         // saldo_atual + grava MOV de saída (SAI-*) na mesma transação.
         p_item_consumo_id: itemConsumoId,
-        p_endereco_origem: enderecoOrigem,
+        p_endereco_origem_id: enderecoOrigemId,
         p_numero_saida: numeroSaida,
       });
     } catch (rpcErr) {
