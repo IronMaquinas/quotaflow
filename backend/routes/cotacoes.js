@@ -3453,8 +3453,11 @@ router.post("/chamados/:id/materiais/:itemId/aplicar", tenantMiddleware, async (
     if (!lastroValidos.includes(origem_lastro)) {
       return res.status(400).json({ erro: "origem_lastro inválido — use 'rm', 'emergencial' ou 'estoque_proprio'" });
     }
-    if (origem_lastro !== "rm" && !motivo_emergencia) {
-      return res.status(400).json({ erro: "motivo_emergencia é obrigatório quando a origem não é RM" });
+    // M4.4-etapa-7: `motivo_emergencia` só se aplica a compra externa
+    // (emergencial). Estoque próprio (almoxarifado) não precisa — o
+    // material já está na empresa, não há "compra" pra justificar.
+    if (origem_lastro === "emergencial" && !motivo_emergencia) {
+      return res.status(400).json({ erro: "motivo_emergencia é obrigatório quando a origem é emergencial" });
     }
 
     // ── Validação de série (antes do RPC) ──

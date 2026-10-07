@@ -8,8 +8,11 @@ import { useState, useEffect } from "react";
 import BarcodeScannerInput from "../../common/BarcodeScannerInput";
 
 export default function ModalAplicarMaterial({
-  chamado, item, salvando, onCancelar, onConfirmar, s, C,
+  chamado, item, itemConsumo, salvando, onCancelar, onConfirmar, s, C,
 }) {
+  // M4.4-etapa-7: itemConsumo (itens_consumo) vem com `.enderecos` do
+  // backend quando o item da OS tem catálogo vinculado. Alimenta o
+  // dropdown de endereço de origem (escolha obrigatória se 2+).
   const qtdPlanejada = Number(item.quantidade) || 0;
   const qtdAplicada = Number(item.quantidade_aplicada) || 0;
   const qtdPendente = Math.max(0, qtdPlanejada - qtdAplicada);
@@ -29,6 +32,27 @@ export default function ModalAplicarMaterial({
   const [origemLastro, setOrigemLastro] = useState(temRM ? "rm" : "emergencial");
   const [motivoEmergencia, setMotivoEmergencia] = useState(temRM ? "" : "compra_cartao");
   const [valorEstimado, setValorEstimado] = useState("");
+  // M4.4-etapa-7: endereço de origem quando origemLastro = 'estoque_proprio'.
+  // Pré-seleciona o único endereço se houver só 1; exige escolha se 2+.
+  const [enderecoSelecionado, setEnderecoSelecionado] = useState("");
+
+  // M4.4-etapa-7: endereços do item de consumo com saldo > 0.
+  const enderecosDisponiveis = (itemConsumo?.enderecos || []).filter(e => Number(e.saldo) > 0);
+  const precisaEscolherEndereco = origemLastro === "estoque_proprio"
+    && enderecosDisponiveis.length >= 2;
+  const semSaldoNoEstoque = origemLastro === "estoque_proprio"
+    && enderecosDisponiveis.length === 0;
+
+  // Auto-seleciona o primeiro endereço quando só tem 1.
+  useEffect(() => {
+    if (origemLastro !== "estoque_proprio") return;
+    if (enderecosDisponiveis.length === 1 && enderecoSelecionado !== enderecosDisponiveis[0].endereco) {
+      setEnderecoSelecionado(enderecosDisponiveis[0].endereco);
+    }
+    if (enderecosDisponiveis.length === 0 && enderecoSelecionado !== "") {
+      setEnderecoSelecionado("");
+    }
+  }, [origemLastro, enderecoSelecionado, enderecosDisponiveis.length]);
 
   useEffect(() => {
     const n = Math.max(1, parseInt(quantidade) || 1);
@@ -47,8 +71,18 @@ export default function ModalAplicarMaterial({
     const q = parseInt(quantidade);
     if (!q || q <= 0) return "Informe uma quantidade maior que zero.";
     if (q > qtdPendente) return `Só restam ${qtdPendente} unidade(s) pendente(s) neste item.`;
-    if (origemLastro !== "rm" && !motivoEmergencia) {
-      return "Selecione o motivo da origem não-RM (compra emergencial, estoque próprio etc).";
+    // M4.4-etapa-7: motivo só é exigido pra emergencial.
+    if (origemLastro === "emergencial" && !motivoEmergencia) {
+      return "Selecione o motivo da compra emergencial.";
+    }
+    // M4.4-etapa-7: estoque próprio exige endereço com saldo.
+    if (origemLastro === "estoque_proprio") {
+      if (enderecosDisponiveis.length === 0) {
+        return "Este item não tem saldo no almoxarifado. Mude a origem para 'Compra emergencial' ou registre entrada primeiro.";
+      }
+      if (!enderecoSelecionado) {
+        return "Selecione o endereço de origem do almoxarifado.";
+      }
     }
     if (serializado) {
       const vazios = numerosSerie.filter(s => !s.trim()).length;
@@ -71,8 +105,11 @@ export default function ModalAplicarMaterial({
       lote: lote.trim() || null,
       observacoes: observacoes.trim() || null,
       origem_lastro: origemLastro,
-      motivo_emergencia: origemLastro !== "rm" ? motivoEmergencia : null,
+      // M4.4-etapa-7: motivo só se aplica a emergencial.
+      motivo_emergencia: origemLastro === "emergencial" ? motivoEmergencia : null,
       valor_estimado: valorEstimado !== "" ? parseFloat(valorEstimado) : null,
+      // M4.4-etapa-7: endereço de origem quando vem do almoxarifado.
+      endereco_origem: origemLastro === "estoque_proprio" ? enderecoSelecionado : null,
       _idempotencyKey: crypto.randomUUID(),
     });
   }
@@ -131,32 +168,74 @@ export default function ModalAplicarMaterial({
                 É esperado em compras emergenciais, mas precisa ter motivo declarado.
               </div>
 
-              <label style={{ ...s.label, fontSize: 10 }}>COMO ESTA PEÇA CHEGOU *</label>
+              <label style={{ ...s.label, fontSize: 10 }}>SELECIONE A ORIGEM DESTE MATERIAL *</label>
               <select value={origemLastro}
                 onChange={e => setOrigemLastro(e.target.value)}
                 style={{ ...s.input, appearance: "none", marginBottom: 10 }}>
                 <option value="emergencial">Compra emergencial (loja física, cartão, cupom)</option>
-                <option value="estoque_proprio">Estoque próprio do técnico / doação</option>
+                <option value="estoque_proprio">🏢 Almoxarifado da empresa (sai do estoque)</option>
               </select>
 
-              <label style={{ ...s.label, fontSize: 10 }}>MOTIVO *</label>
-              <select value={motivoEmergencia}
-                onChange={e => setMotivoEmergencia(e.target.value)}
-                style={{ ...s.input, appearance: "none", marginBottom: 10 }}>
-                <option value="compra_cartao">Compra direta no cartão</option>
-                <option value="compra_dinheiro">Compra direta em dinheiro</option>
-                <option value="urgencia_operacional">Urgência operacional (equipamento parado)</option>
-                <option value="estoque_tecnico">Veio do estoque pessoal do técnico</option>
-                <option value="doacao">Doação / garantia do fornecedor</option>
-                <option value="outro">Outro (descrever nas observações)</option>
-              </select>
+              {/* M4.4-etapa-7: endereço de origem quando vem do almoxarifado */}
+              {origemLastro === "estoque_proprio" && enderecosDisponiveis.length > 0 && (
+                <>
+                  <label style={{ ...s.label, fontSize: 10 }}>ENDEREÇO DE ORIGEM *</label>
+                  {enderecosDisponiveis.length === 1 ? (
+                    <div style={{ ...s.input, background: C.bg, color: C.muted, marginBottom: 10,
+                                  cursor: "not-allowed" }}>
+                      📍 {enderecosDisponiveis[0].endereco} — {enderecosDisponiveis[0].saldo} {itemConsumo?.unidade_medida || "UN"}
+                    </div>
+                  ) : (
+                    <select value={enderecoSelecionado}
+                      onChange={e => setEnderecoSelecionado(e.target.value)}
+                      style={{ ...s.input, appearance: "none", marginBottom: 10 }}>
+                      <option value="">— Selecione o endereço —</option>
+                      {enderecosDisponiveis.map(e => (
+                        <option key={e.endereco} value={e.endereco}>
+                          📍 {e.endereco} — {e.saldo} {itemConsumo?.unidade_medida || "UN"}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+                </>
+              )}
 
-              <label style={{ ...s.label, fontSize: 10 }}>VALOR PAGO (R$) — OPCIONAL</label>
-              <input type="number" min="0" step="0.01"
-                value={valorEstimado}
-                onChange={e => setValorEstimado(e.target.value)}
-                placeholder="Ex: 89.90"
-                style={{ ...s.input, textAlign: "right" }} />
+              {/* M4.4-etapa-7: aviso quando origem é almoxarifado mas não tem saldo */}
+              {origemLastro === "estoque_proprio" && enderecosDisponiveis.length === 0 && (
+                <div style={{
+                  background: "#ef444415", border: "1px solid #ef444440",
+                  borderRadius: 6, padding: "10px 12px", marginBottom: 10,
+                  fontSize: 11, color: "#ef4444",
+                }}>
+                  ⚠ Este item <strong>não tem saldo no almoxarifado</strong>.
+                  Mude a origem para <strong>"Compra emergencial"</strong> ou
+                  registre a entrada antes de aplicar.
+                </div>
+              )}
+
+              {/* M4.4-etapa-7: motivo e valor pago só fazem sentido pro
+                  emergencial. Estoque próprio já está na empresa. */}
+              {origemLastro === "emergencial" && (
+                <>
+                  <label style={{ ...s.label, fontSize: 10 }}>MOTIVO *</label>
+                  <select value={motivoEmergencia}
+                    onChange={e => setMotivoEmergencia(e.target.value)}
+                    style={{ ...s.input, appearance: "none", marginBottom: 10 }}>
+                    <option value="compra_cartao">Compra direta no cartão</option>
+                    <option value="compra_dinheiro">Compra direta em dinheiro</option>
+                    <option value="urgencia_operacional">Urgência operacional (equipamento parado)</option>
+                    <option value="doacao">Doação / garantia do fornecedor</option>
+                    <option value="outro">Outro (descrever nas observações)</option>
+                  </select>
+
+                  <label style={{ ...s.label, fontSize: 10 }}>VALOR PAGO (R$) — OPCIONAL</label>
+                  <input type="number" min="0" step="0.01"
+                    value={valorEstimado}
+                    onChange={e => setValorEstimado(e.target.value)}
+                    placeholder="Ex: 89.90"
+                    style={{ ...s.input, textAlign: "right" }} />
+                </>
+              )}
             </div>
           )}
 

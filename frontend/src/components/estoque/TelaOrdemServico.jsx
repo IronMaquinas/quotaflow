@@ -80,6 +80,41 @@ import ModalReportarNC from "./modais/ModalReportarNC";
 import ModalDetalheRC from "./modais/ModalDetalheRC";
 import ModalDetalheRM from "./modais/ModalDetalheRM";
 
+// M4.4-etapa-7: toast reutilizável desta tela. Padrão do TelaEstoqueConsumiveis.
+function ToastView({ toast, C, onClose }) {
+  if (!toast) return null;
+  const ehErro = toast.tipo === "error";
+  return (
+    <div style={{
+      position: "fixed",
+      bottom: 24, right: 24,
+      zIndex: 600,
+      background: ehErro ? "#7f1d1d" : "#0f2f1a",
+      border: `1px solid ${ehErro ? "#ef4444" : "#10b981"}66`,
+      color: ehErro ? "#fca5a5" : "#6ee7b7",
+      padding: "12px 18px",
+      borderRadius: 8,
+      fontSize: 13,
+      fontWeight: 500,
+      boxShadow: "0 4px 12px #00000055",
+      maxWidth: 380,
+      display: "flex",
+      alignItems: "center",
+      gap: 10,
+    }}>
+      <span style={{ fontSize: 16 }}>{ehErro ? "⚠️" : "✅"}</span>
+      <span style={{ flex: 1 }}>{toast.texto}</span>
+      <button
+        onClick={onClose}
+        style={{ background: "transparent", border: "none",
+                 color: "inherit", cursor: "pointer", fontSize: 16, lineHeight: 1 }}
+      >
+        ×
+      </button>
+    </div>
+  );
+}
+
 export default function TelaOrdemServico({
   fmtBRL, fmtD, C, s,
   chamadoInicialId, onOSAberta,
@@ -170,11 +205,16 @@ export default function TelaOrdemServico({
   // ── Estados da aplicação de material (MIGO-like) ──
   const { aplicar, reverter, listarHistorico, salvando: salvandoAplicacao } = useMaterialAplicacoes();
   const [modalAplicacao, setModalAplicacao] = useState(null);
+  // M4.4-etapa-7: item de consumo (almoxarifado) vinculado ao item da OS
+  // via catalogo_item_id. Alimenta o dropdown de endereço de origem.
+  const [itemConsumoModal, setItemConsumoModal] = useState(null);
   const [modalReversao, setModalReversao] = useState(null);
   const [historicoPorItem, setHistoricoPorItem] = useState({});
   const [expandidoHistorico, setExpandidoHistorico] = useState({});  
 
   const [pendingFocusId, setPendingFocusId] = useState(null);
+  // M4.4-etapa-7: toast in-place (feedback de ações do usuário)
+  const [toast, setToast] = useState(null);
 
     // ── Percentual de conclusão + timeline de eventos da OS ──
   const [percentualConclusao, setPercentualConclusao] = useState(0);
@@ -202,8 +242,33 @@ export default function TelaOrdemServico({
     }
   }, []);
 
+  // M4.4-etapa-7: busca o item de consumo (almoxarifado) vinculado ao
+  // item da OS via catalogo_item_id. Usa /estoque/itens (já existe) e
+  // filtra em JS. Devolve `null` se não há vínculo ou não achou.
+  const carregarItemConsumoDoModal = async (itemOS) => {
+    if (!itemOS?.item_catalogo_id) {
+      setItemConsumoModal(null);
+      return;
+    }
+    try {
+      const lista = await apiService.get('/estoque/itens');
+      const encontrado = (lista || []).find(
+        i => String(i.catalogo_item_id) === String(itemOS.item_catalogo_id)
+      );
+      setItemConsumoModal(encontrado || null);
+    } catch (_) {
+      setItemConsumoModal(null);
+    }
+  };
+
   useEffect(() => { carregar(); }, []);
 
+  // M4.4-etapa-7: limpa o toast depois de 4s
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
   // Abre automaticamente uma OS específica quando vem de outra tela
   // (ex: usuário clicou em "Ver OS-XXXX" a partir de uma NC). Faz o fetch
   // fresco pra garantir que o objeto tem itens/anexos carregados — o
@@ -1059,9 +1124,11 @@ export default function TelaOrdemServico({
   // ─────────────────────────────────────────────────────────────────────────
   if (modalAplicacao) {
     return (
+      <>
       <ModalAplicarMaterial
         chamado={chamadoSel}
         item={modalAplicacao.item}
+        itemConsumo={itemConsumoModal}       /* M4.4-etapa-7 */
         salvando={salvandoAplicacao}
         s={s}
         C={C}
@@ -1102,12 +1169,22 @@ export default function TelaOrdemServico({
               });
             }
 
+            // M4.4-etapa-7: toast de sucesso (feedback visual na tela da OS
+            // ao invés de fechar o modal em silêncio).
+            setToast({
+              tipo: "success",
+              texto: `Aplicado ${payload.quantidade} UN de "${modalAplicacao.item.item_nome}" (${chamadoSel.numero})`,
+            });
             setModalAplicacao(null);
           } catch (e) {
-            alert("Não foi possível registrar a aplicação: " + (e.message || "erro inesperado"));
+            setToast({
+              tipo: "error",
+              texto: "Não foi possível registrar: " + (e.message || "erro inesperado"),
+            });
           }
         }}
       />
+      </>
     );
   }
 
@@ -1767,7 +1844,11 @@ export default function TelaOrdemServico({
                   <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                     {temPendencia && (
                       <button
-                        onClick={() => setModalAplicacao({ item })}
+                        onClick={() => {
+                          setItemConsumoModal(null);           // limpa antes de buscar
+                          setModalAplicacao({ item });
+                          carregarItemConsumoDoModal(item);     // busca em paralelo
+                        }}
                         style={{ ...s.btn(true), padding: "6px 12px", fontSize: 11 }}>
                         ✅ Confirmar aplicação
                       </button>
@@ -2044,6 +2125,7 @@ export default function TelaOrdemServico({
             </>
           )}
         </div>
+        {toast && <ToastView toast={toast} C={C} onClose={() => setToast(null)} />}
       </div>
     );
   }
