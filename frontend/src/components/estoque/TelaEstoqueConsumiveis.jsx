@@ -43,6 +43,15 @@ export default function TelaEstoqueConsumiveis({ C, s, fmtBRL, fmtD }) {
   // M4.4-etapa-6f: toast in-place (substitui alert() em ações de
   // transferência — não bloqueia, some sozinho).
   const [toast, setToast] = useState(null);
+  // M4.4-etapa-6g: modal de gerenciar endereços (cadastro + edição).
+  const [modalEnderecos, setModalEnderecos] = useState(false);
+  const [enderecosLista, setEnderecosLista] = useState([]);
+  const [carregandoEnderecos, setCarregandoEnderecos] = useState(false);
+  // `null` = lista; objeto = form aberto (criar/editar)
+  const [editandoEndereco, setEditandoEndereco] = useState(null);
+  const [salvandoEndereco, setSalvandoEndereco] = useState(false);
+  // M4.4-etapa-6g: busca na lista de endereços (código ou localização)
+  const [buscaEndereco, setBuscaEndereco] = useState('');
 
   // ─── CARREGAR ITENS ──────────────────────────────────────────
   const carregarItens = async () => {
@@ -98,6 +107,104 @@ const salvarConfig = async () => {
     alert('Erro ao salvar configurações: ' + err.message);
   }
 };
+
+  // ─── M4.4-etapa-6g: GERENCIAR ENDEREÇOS ─────────────────────
+  const carregarEnderecos = async () => {
+    setCarregandoEnderecos(true);
+    try {
+      const lista = await apiService.get('/estoque/enderecos?incluir_inativos=true');
+      setEnderecosLista(lista || []);
+      return lista || [];
+    } catch (err) {
+      setToast({ tipo: 'error', texto: err.message || 'Erro ao carregar endereços' });
+      return [];
+    } finally {
+      setCarregandoEnderecos(false);
+    }
+  };
+
+  const abrirModalEnderecos = async () => {
+    setModalConfig(false);           // fecha Configurações
+    setModalEnderecos(true);
+    setEditandoEndereco(null);       // abre na lista
+    await carregarEnderecos();
+  };
+
+  const fecharModalEnderecos = () => {
+    setModalEnderecos(false);
+    setEditandoEndereco(null);
+    setBuscaEndereco('');
+  };
+
+  const abrirFormEndereco = (endereco = null) => {
+    if (endereco) {
+      setEditandoEndereco({
+        id: endereco.id,
+        codigo: endereco.codigo,        // imutável — só leitura
+        descricao: endereco.descricao || '',
+        tipo: endereco.tipo || 'armazem',
+        ativo: endereco.ativo !== false,
+        _novo: false,
+      });
+    } else {
+      setEditandoEndereco({
+        id: null,
+        codigo: '',
+        descricao: '',
+        tipo: 'armazem',
+        ativo: true,
+        _novo: true,
+      });
+    }
+  };
+
+  const fecharFormEndereco = () => {
+    setEditandoEndereco(null);
+  };
+
+  const salvarEndereco = async () => {
+    if (!editandoEndereco) return;
+
+    const { _novo, id, codigo, descricao, tipo, ativo } = editandoEndereco;
+
+    if (_novo) {
+      const codigoNorm = String(codigo || '').trim().toUpperCase();
+      if (!codigoNorm) {
+        setToast({ tipo: 'error', texto: 'Código é obrigatório' });
+        return;
+      }
+      if (!/^[A-Z0-9_-]{1,30}$/.test(codigoNorm)) {
+        setToast({ tipo: 'error', texto: 'Código: até 30 caracteres (letras maiúsculas, números, _ ou -)' });
+        return;
+      }
+    }
+
+    setSalvandoEndereco(true);
+    try {
+      if (_novo) {
+        await apiService.post('/estoque/enderecos', {
+          codigo: String(codigo).trim().toUpperCase(),
+          descricao: String(descricao || '').trim(),
+          tipo,
+        });
+        setToast({ tipo: 'success', texto: `Endereço "${String(codigo).trim().toUpperCase()}" criado.` });
+      } else {
+        await apiService.put(`/estoque/enderecos/${id}`, {
+          descricao: String(descricao || '').trim(),
+          tipo,
+          ativo,
+        });
+        setToast({ tipo: 'success', texto: 'Endereço atualizado.' });
+      }
+      setEditandoEndereco(null);
+      await carregarEnderecos();
+    } catch (err) {
+      const msg = err.body?.erro || err.message || 'Erro ao salvar endereço';
+      setToast({ tipo: 'error', texto: msg });
+    } finally {
+      setSalvandoEndereco(false);
+    }
+  };
 
   // ─── SALVAR ITEM ─────────────────────────────────────────────
     const salvarItem = async () => {
@@ -259,6 +366,14 @@ const salvarConfig = async () => {
     return { label: '✅ OK', color: C.success };
   };
 
+  // M4.4-etapa-6g: endereços filtrados pela busca (código ou localização)
+  const enderecosFiltrados = enderecosLista.filter(e => {
+    const q = buscaEndereco.trim().toLowerCase();
+    if (!q) return true;
+    return (e.codigo || '').toLowerCase().includes(q)
+        || (e.descricao || '').toLowerCase().includes(q);
+  });
+
   const itensFiltrados = itens.filter(item => {
     const matchBusca = !busca || 
       item.nome.toLowerCase().includes(busca.toLowerCase()) ||
@@ -284,6 +399,16 @@ const salvarConfig = async () => {
         <div style={{ display: 'flex', gap: 8 }}>
           <button onClick={() => setModalConfig(true)} style={{ ...s.btn(false), padding: '8px 14px', fontSize: 12 }}>
             ⚙️
+          </button>
+          {/* M4.4-etapa-6g: ação operacional — fica visível, não dentro
+              das configurações (o operador usa toda semana pra cadastrar
+              endereço novo antes de receber material). */}
+          <button
+            onClick={abrirModalEnderecos}
+            style={{ ...s.btn(false), padding: '8px 14px', fontSize: 12 }}
+            title="Gerenciar endereços de estoque"
+          >
+            📍 Endereços
           </button>
           <button onClick={() => { setModal('novo'); setForm({ ...form, nome: '', sku: '', saldo_atual: 0 }); }} style={{ ...s.btn(true), padding: '9px 18px' }}>
             + Novo Item
@@ -675,6 +800,242 @@ const salvarConfig = async () => {
                 <button onClick={() => setModalConfig(false)} style={{ ...s.btn(false), flex: 1 }}>Cancelar</button>
                 <button onClick={salvarConfig} style={{ ...s.btn(true), flex: 1 }}>Salvar</button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ─── M4.4-etapa-6g: MODAL DE GERENCIAR ENDEREÇOS ────────── */}
+      {modalEnderecos && (
+        <div
+          onClick={fecharModalEnderecos}
+          style={{ position: 'fixed', inset: 0, background: '#00000090',
+                   display: 'flex', alignItems: 'center', justifyContent: 'center',
+                   zIndex: 320, padding: 20 }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ ...s.card, width: 720, maxWidth: '100%', maxHeight: '85vh',
+                     display: 'flex', flexDirection: 'column' }}
+          >
+            {/* Cabeçalho */}
+            <div style={{ padding: '18px 22px', borderBottom: `1px solid ${C.border}`,
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>
+                {editandoEndereco
+                  ? (editandoEndereco._novo ? '📍 Novo Endereço' : `📍 Editar — ${editandoEndereco.codigo}`)
+                  : '📍 Endereços de Estoque'}
+              </div>
+              <button
+                onClick={editandoEndereco ? fecharFormEndereco : fecharModalEnderecos}
+                style={{ background: 'transparent', border: 'none', color: C.muted, fontSize: 20, cursor: 'pointer' }}
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Corpo */}
+            <div style={{ padding: '20px 22px', overflowY: 'auto', flex: 1 }}>
+              {editandoEndereco ? (
+                /* ── FORM (criar/editar) ── */
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  <div>
+                    <label style={s.label}>CÓDIGO</label>
+                    <input
+                      type="text"
+                      value={editandoEndereco.codigo}
+                      onChange={e => setEditandoEndereco(p => ({ ...p, codigo: e.target.value.toUpperCase() }))}
+                      placeholder="Ex: A01, B02, RECEBIMENTO"
+                      disabled={!editandoEndereco._novo}
+                      style={{
+                        ...s.input, width: '100%',
+                        fontFamily: "'IBM Plex Mono', monospace",
+                        opacity: editandoEndereco._novo ? 1 : 0.6,
+                        cursor: editandoEndereco._novo ? 'text' : 'not-allowed',
+                      }}
+                    />
+                    <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
+                      {editandoEndereco._novo
+                        ? 'Letras maiúsculas, números, _ ou -. Até 30 caracteres. Não pode ser editado depois.'
+                        : 'Código é imutável (preserva histórico de movimentações).'}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label style={s.label}>LOCALIZAÇÃO / DESCRIÇÃO</label>
+                    <input
+                      type="text"
+                      value={editandoEndereco.descricao}
+                      onChange={e => setEditandoEndereco(p => ({ ...p, descricao: e.target.value }))}
+                      placeholder="Ex: Prateleira A, corredor 1 / Doca sul"
+                      style={{ ...s.input, width: '100%' }}
+                    />
+                  </div>
+
+                  <div>
+                    <label style={s.label}>TIPO</label>
+                    <select
+                      value={editandoEndereco.tipo}
+                      onChange={e => setEditandoEndereco(p => ({ ...p, tipo: e.target.value }))}
+                      style={{ ...s.input, width: '100%', appearance: 'none' }}
+                    >
+                      <option value="recebimento">📥 Recebimento (doca padrão)</option>
+                      <option value="armazem">📦 Armazém (prateleira, corredor)</option>
+                      <option value="expedicao">📤 Expedição (saída)</option>
+                      <option value="nc">❌ Não Conformidade (segregação)</option>
+                      <option value="transito">🚚 Trânsito (entre endereços)</option>
+                    </select>
+                  </div>
+
+                  {!editandoEndereco._novo && (
+                    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                  padding: '10px 12px', background: C.bg, borderRadius: 6 }}>
+                      <div>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Ativo</div>
+                        <div style={{ fontSize: 11, color: C.muted }}>
+                          Endereços inativos não aparecem nas sugestões de transferência
+                        </div>
+                      </div>
+                      <button
+                        onClick={() => setEditandoEndereco(p => ({ ...p, ativo: !p.ativo }))}
+                        style={{
+                          width: 48, height: 28, borderRadius: 14,
+                          background: editandoEndereco.ativo ? C.success : C.border,
+                          cursor: 'pointer', position: 'relative', transition: 'background .2s',
+                          border: 'none', flexShrink: 0,
+                        }}
+                      >
+                        <div style={{
+                          width: 22, height: 22, borderRadius: '50%', background: '#fff',
+                          position: 'absolute', top: 3,
+                          left: editandoEndereco.ativo ? 23 : 3,
+                          transition: 'left .2s',
+                          boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                        }} />
+                      </button>
+                    </div>
+                  )}
+                </div>
+              ) : (
+                /* ── LISTA ── */
+                <>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12, gap: 10, flexWrap: 'wrap' }}>
+                    <input
+                      type="text"
+                      placeholder="Buscar por código ou localização..."
+                      value={buscaEndereco}
+                      onChange={e => setBuscaEndereco(e.target.value)}
+                      style={{ ...s.input, flex: 1, minWidth: 200, maxWidth: 320, padding: '6px 12px', fontSize: 12 }}
+                    />
+                    <div style={{ fontSize: 11, color: C.muted, whiteSpace: 'nowrap' }}>
+                      {enderecosLista.filter(e => e.ativo).length} ativo(s) · {enderecosLista.length} total
+                    </div>
+                    <button
+                      onClick={() => abrirFormEndereco(null)}
+                      style={{ ...s.btn(true), padding: '6px 12px', fontSize: 11 }}
+                    >
+                      + Novo Endereço
+                    </button>
+                  </div>
+
+                  {carregandoEnderecos ? (
+                    <div style={{ padding: 30, textAlign: 'center', color: C.muted, fontSize: 12 }}>
+                      Carregando...
+                    </div>
+                  ) : enderecosFiltrados.length === 0 ? (
+                    <div style={{ padding: 30, textAlign: 'center', color: C.muted, fontSize: 12,
+                                  border: `1px dashed ${C.border}`, borderRadius: 6 }}>
+                      {buscaEndereco.trim()
+                        ? `📭 Nenhum endereço encontrado para "${buscaEndereco}"`
+                        : '📭 Nenhum endereço cadastrado'}
+                    </div>
+                  ) : (
+                    <div style={{ ...s.card, overflow: 'hidden' }}>
+                      <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr 130px 90px 60px',
+                                    padding: '10px 14px', background: C.bg,
+                                    borderBottom: `1px solid ${C.border}`,
+                                    fontSize: 10, color: C.muted, letterSpacing: '0.08em' }}>
+                        <span>CÓDIGO</span>
+                        <span>LOCALIZAÇÃO</span>
+                        <span>TIPO</span>
+                        <span>STATUS</span>
+                        <span></span>
+                      </div>
+                      {enderecosFiltrados.map(e => (
+                        <div key={e.id} style={{
+                          display: 'grid', gridTemplateColumns: '140px 1fr 130px 90px 60px',
+                          padding: '12px 14px', borderBottom: `1px solid ${C.border}22`,
+                          alignItems: 'center', opacity: e.ativo ? 1 : 0.5,
+                        }}>
+                          <div style={{ fontSize: 12, fontWeight: 600, color: C.text, fontFamily: "'IBM Plex Mono', monospace" }}>
+                            {e.codigo}
+                          </div>
+                          <div style={{ fontSize: 12, color: C.textSub }}>
+                            {e.descricao || '—'}
+                          </div>
+                          <div style={{ fontSize: 11, color: C.muted }}>
+                            {e.tipo === 'recebimento' ? '📥 Recebimento'
+                              : e.tipo === 'armazem' ? '📦 Armazém'
+                              : e.tipo === 'expedicao' ? '📤 Expedição'
+                              : e.tipo === 'nc' ? '❌ NC'
+                              : e.tipo === 'transito' ? '🚚 Trânsito'
+                              : e.tipo}
+                          </div>
+                          <div>
+                            <span style={{
+                              ...s.tag(e.ativo ? C.success : C.muted),
+                              fontSize: 10,
+                              background: (e.ativo ? C.success : C.muted) + '22',
+                            }}>
+                              {e.ativo ? '● ativo' : '● inativo'}
+                            </span>
+                          </div>
+                          <div style={{ display: 'flex', justifyContent: 'flex-end' }}>
+                            <button
+                              onClick={() => abrirFormEndereco(e)}
+                              style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 5,
+                                       padding: '4px 8px', color: C.muted, fontSize: 11, cursor: 'pointer' }}
+                            >
+                              ✏
+                            </button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
+            </div>
+
+            {/* Rodapé */}
+            <div style={{ padding: '14px 22px', borderTop: `1px solid ${C.border}`,
+                          display: 'flex', justifyContent: 'flex-end', gap: 10 }}>
+              {editandoEndereco ? (
+                <>
+                  <button
+                    onClick={fecharFormEndereco}
+                    disabled={salvandoEndereco}
+                    style={{ ...s.btn(false), padding: '8px 16px', fontSize: 12 }}
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={salvarEndereco}
+                    disabled={salvandoEndereco}
+                    style={{ ...s.btn(true), padding: '8px 16px', fontSize: 12,
+                             opacity: salvandoEndereco ? 0.5 : 1 }}
+                  >
+                    {salvandoEndereco ? 'Salvando...' : (editandoEndereco._novo ? 'Criar endereço' : 'Salvar alterações')}
+                  </button>
+                </>
+              ) : (
+                <button
+                  onClick={fecharModalEnderecos}
+                  style={{ ...s.btn(false), padding: '8px 16px', fontSize: 12 }}
+                >
+                  Fechar
+                </button>
+              )}
             </div>
           </div>
         </div>
