@@ -30,6 +30,9 @@ export default function TelaEstoqueConsumiveis({ C, s, fmtBRL, fmtD }) {
   });
   // M4.4-etapa-6: estado do modal de transferência entre endereços.
   const [itemTransferindo, setItemTransferindo] = useState(null);
+  // M4.4-etapa-6d: painel lateral (master-detail). Guarda o item clicado
+  // na lista — null = painel fechado.
+  const [itemSelecionado, setItemSelecionado] = useState(null);
   const [formTransf, setFormTransf] = useState({
     endereco_origem: '',
     endereco_destino: '',
@@ -37,14 +40,19 @@ export default function TelaEstoqueConsumiveis({ C, s, fmtBRL, fmtD }) {
     observacao: '',
   });
   const [salvandoTransferencia, setSalvandoTransferencia] = useState(false);
+  // M4.4-etapa-6f: toast in-place (substitui alert() em ações de
+  // transferência — não bloqueia, some sozinho).
+  const [toast, setToast] = useState(null);
 
   // ─── CARREGAR ITENS ──────────────────────────────────────────
   const carregarItens = async () => {
     try {
       const data = await apiService.get('/estoque/itens');
       setItens(data || []);
+      return data || [];   // M4.4-etapa-6e: retorna pra quem precisar
     } catch (err) {
       console.error('Erro ao carregar itens:', err);
+      return [];
     } finally {
       setLoading(false);
     }
@@ -64,6 +72,13 @@ export default function TelaEstoqueConsumiveis({ C, s, fmtBRL, fmtD }) {
     carregarItens();
     carregarConfig();
   }, []);
+
+  // M4.4-etapa-6f: limpa o toast depois de 4s
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 4000);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   // ─── SALVAR CONFIGURAÇÕES ───────────────────────────────────
 const salvarConfig = async () => {
@@ -157,14 +172,18 @@ const salvarConfig = async () => {
     setModal(item.id);
   };
 
-  // ─── M4.4-etapa-6: TRANSFERÊNCIA ENTRE ENDEREÇOS ─────────────
-  // Abre o modal. Pré-seleciona o endereço com mais saldo como origem
-  // (menos cliques no caso comum).
-  const abrirTransferir = (item) => {
+  // M4.4-etapa-6f: `enderecoSugerido` (opcional) pré-seleciona a origem
+  // quando o usuário clica no 🚚 de um endereço específico. Sem isso,
+  // a origem era sempre o endereço com mais saldo — o que confundia
+  // quem clicou no 🚚 do A01 e viu o modal abrir com B02 selecionado.
+  const abrirTransferir = (item, enderecoSugerido = null) => {
     const enderecos = item.enderecos || [];
+    const origemInicial = enderecoSugerido && enderecos.find(e => e.endereco === enderecoSugerido)
+      ? enderecoSugerido
+      : (enderecos[0]?.endereco || '');
     setItemTransferindo(item);
     setFormTransf({
-      endereco_origem: enderecos[0]?.endereco || '',
+      endereco_origem: origemInicial,
       endereco_destino: '',
       quantidade: '',
       observacao: '',
@@ -197,14 +216,23 @@ const salvarConfig = async () => {
         endereco_destino: enderecoDestino,
         observacao: formTransf.observacao.trim() || null,
       });
-      alert(`✅ ${resp.mensagem}\n\nMovimento: ${resp.numero_movimento}`);
+      setToast({ tipo: 'success', texto: `${resp.mensagem} (${resp.numero_movimento})` });
+      const idItemTransferido = itemTransferindo.id;
       fecharTransferir();
-      await carregarItens();
+
+      // M4.4-etapa-6e: recarrega a lista e, se o modal de detalhe ainda
+      // estiver aberto pro mesmo item, reflete os saldos novos — sem
+      // isso, o funcionário vê o saldo velho e acha que não transferiu.
+      const listaAtualizada = await carregarItens();
+      if (itemSelecionado?.id === idItemTransferido) {
+        const fresco = (listaAtualizada || []).find(i => i.id === idItemTransferido);
+        if (fresco) setItemSelecionado(fresco);
+      }
     } catch (err) {
       // M4.3-al: apiService anexa `.body` no erro — pega a lista de
       // endereços disponíveis se a rota devolveu 400 com metadados.
       const msg = err.body?.erro || err.message || 'Erro ao transferir';
-      alert('Erro: ' + msg);
+      setToast({ tipo: 'error', texto: msg });
     } finally {
       setSalvandoTransferencia(false);
     }
@@ -306,8 +334,23 @@ const salvarConfig = async () => {
         </div>
         {itensFiltrados.map((item) => {
           const status = getStatus(item);
+          const selecionado = itemSelecionado?.id === item.id;
           return (
-            <div key={item.id} style={{ display: 'grid', gridTemplateColumns: '2fr 1fr 1fr 1fr 100px 80px', padding: '13px 18px', borderBottom: `1px solid ${C.border}22`, alignItems: 'center' }}>
+            <div 
+              key={item.id} 
+              onClick={() => setItemSelecionado(item)}
+              style={{ 
+                display: 'grid', 
+                gridTemplateColumns: '2fr 1fr 1fr 1fr 100px 80px', 
+                padding: '13px 18px', 
+                borderBottom: `1px solid ${C.border}22`, 
+                alignItems: 'center',
+                cursor: 'pointer',
+                background: selecionado ? `${C.accent}15` : 'transparent',
+                borderLeft: selecionado ? `3px solid ${C.accent}` : '3px solid transparent',
+                transition: 'background .15s',
+              }}
+            >
               <div>
                 <div style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>{item.nome}</div>
                 <div style={{ fontSize: 10, color: C.muted }}>{item.sku || '—'}</div>
@@ -326,21 +369,137 @@ const salvarConfig = async () => {
                 {/* M4.4-etapa-6: transferir entre endereços — só se tem saldo */}
                 {item.enderecos && item.enderecos.length > 0 && (
                   <button 
-                    onClick={() => abrirTransferir(item)} 
+                    onClick={(e) => { e.stopPropagation(); abrirTransferir(item); }} 
                     title="Transferir entre endereços"
                     style={{ background: 'transparent', border: `1px solid ${C.accent}55`, borderRadius: 5, padding: '4px 8px', color: C.accent, fontSize: 11, cursor: 'pointer' }}
                   >
                     🚚
                   </button>
                 )}
-                <button onClick={() => abrirEditar(item)} style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 5, padding: '4px 8px', color: C.muted, fontSize: 11, cursor: 'pointer' }}>✏</button>
-                <button onClick={() => deletarItem(item.id)} style={{ background: 'transparent', border: `1px solid #ef444433`, borderRadius: 5, padding: '4px 8px', color: '#ef4444', fontSize: 11, cursor: 'pointer' }}>🗑</button>
+                <button onClick={(e) => { e.stopPropagation(); abrirEditar(item); }} style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 5, padding: '4px 8px', color: C.muted, fontSize: 11, cursor: 'pointer' }}>✏</button>
+                <button onClick={(e) => { e.stopPropagation(); deletarItem(item.id); }} style={{ background: 'transparent', border: `1px solid #ef444433`, borderRadius: 5, padding: '4px 8px', color: '#ef4444', fontSize: 11, cursor: 'pointer' }}>🗑</button>
               </div>
             </div>
           );
         })}
         {itensFiltrados.length === 0 && <div style={{ padding: 40, textAlign: 'center', color: C.muted }}>Nenhum item cadastrado</div>}
       </div>
+
+            {/* ─── M4.4-etapa-6d: MODAL DE DETALHE DO ITEM ───────────────
+          Substituiu o painel lateral — o painel empurrava a tabela
+          (que tem 6 colunas) e criava efeito de reflow. O modal mantém
+          a lista intacta por baixo. */}
+      {itemSelecionado && (
+        <div
+          onClick={() => setItemSelecionado(null)}
+          style={{ position: 'fixed', inset: 0, background: '#00000090',
+                   display: 'flex', alignItems: 'center', justifyContent: 'center',
+                   zIndex: 300, padding: 20 }}
+        >
+          <div
+            onClick={e => e.stopPropagation()}
+            style={{ ...s.card, width: 540, maxWidth: '100%', maxHeight: '85vh',
+                     display: 'flex', flexDirection: 'column' }}
+          >
+            {/* Cabeçalho */}
+            <div style={{ padding: '18px 22px', borderBottom: `1px solid ${C.border}`,
+                          display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+              <div style={{ minWidth: 0 }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{itemSelecionado.nome}</div>
+                <div style={{ fontSize: 11, color: C.muted, fontFamily: "'IBM Plex Mono', monospace", marginTop: 2 }}>
+                  {itemSelecionado.sku || '—'} · {itemSelecionado.unidade_medida || 'UN'}
+                </div>
+              </div>
+              <button
+                onClick={() => setItemSelecionado(null)}
+                style={{ background: 'transparent', border: 'none', color: C.muted, fontSize: 20, cursor: 'pointer', lineHeight: 1 }}
+              >
+                ×
+              </button>
+            </div>
+
+            {/* Corpo — endereços */}
+            <div style={{ padding: '18px 22px', overflowY: 'auto', flex: 1 }}>
+              <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>SALDO POR ENDEREÇO</div>
+
+              {(!itemSelecionado.enderecos || itemSelecionado.enderecos.length === 0) ? (
+                <div style={{ padding: 24, textAlign: 'center', color: C.muted, fontSize: 12,
+                              border: `1px dashed ${C.border}`, borderRadius: 6 }}>
+                  📭 Nenhum endereço com saldo
+                </div>
+              ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                  {itemSelecionado.enderecos.map(e => (
+                    <div
+                      key={e.endereco}
+                      style={{
+                        display: 'flex', justifyContent: 'space-between', alignItems: 'center',
+                        padding: '12px 14px', borderRadius: 6,
+                        background: C.bg, border: `1px solid ${C.border}55`,
+                      }}
+                    >
+                      <div>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: C.text, fontFamily: "'IBM Plex Mono', monospace" }}>
+                          📍 {e.endereco}
+                        </div>
+                        <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
+                          saldo disponível
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                        <span style={{ fontSize: 14, fontWeight: 700, color: C.accent }}>
+                          {e.saldo} {itemSelecionado.unidade_medida || 'UN'}
+                        </span>
+                        <button
+                          onClick={() => abrirTransferir(itemSelecionado, e.endereco)}
+                          title={`Mover saldo de ${e.endereco}`}
+                          style={{
+                            background: 'transparent', border: `1px solid ${C.accent}55`,
+                            borderRadius: 5, padding: '4px 8px', color: C.accent,
+                            fontSize: 11, cursor: 'pointer',
+                          }}
+                        >
+                          🚚
+                        </button>
+                      </div>
+                    </div>
+                  ))}
+                  <div style={{ marginTop: 8, fontSize: 12, color: C.muted, textAlign: 'right' }}>
+                    Total: <strong style={{ color: C.text }}>{itemSelecionado.saldo_atual || 0} {itemSelecionado.unidade_medida || 'UN'}</strong>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Rodapé */}
+            <div style={{ padding: '14px 22px', borderTop: `1px solid ${C.border}`,
+                          display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+              <div style={{ display: 'flex', gap: 8 }}>
+                <button
+                  onClick={() => abrirTransferir(itemSelecionado)}
+                  disabled={!itemSelecionado.enderecos || itemSelecionado.enderecos.length === 0}
+                  style={{ ...s.btn(true), padding: '8px 14px', fontSize: 12,
+                           opacity: (!itemSelecionado.enderecos || itemSelecionado.enderecos.length === 0) ? 0.5 : 1 }}
+                >
+                  🚚 Mover saldo
+                </button>
+                <button
+                  onClick={() => abrirEditar(itemSelecionado)}
+                  style={{ ...s.btn(false), padding: '8px 14px', fontSize: 12 }}
+                >
+                  ✏ Editar item
+                </button>
+              </div>
+              <button
+                onClick={() => setItemSelecionado(null)}
+                style={{ ...s.btn(false), padding: '8px 14px', fontSize: 12 }}
+              >
+                Fechar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ─── M4.4-etapa-6: MODAL DE TRANSFERÊNCIA ENTRE ENDEREÇOS ─── */}
       {itemTransferindo && (
@@ -518,6 +677,37 @@ const salvarConfig = async () => {
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* M4.4-etapa-6f: toast flutuante (sucesso/erro) */}
+      {toast && (
+        <div style={{
+          position: 'fixed',
+          bottom: 24, right: 24,
+          zIndex: 600,
+          background: toast.tipo === 'error' ? '#7f1d1d' : '#0f2f1a',
+          border: `1px solid ${toast.tipo === 'error' ? '#ef4444' : '#10b981'}66`,
+          color: toast.tipo === 'error' ? '#fca5a5' : '#6ee7b7',
+          padding: '12px 18px',
+          borderRadius: 8,
+          fontSize: 13,
+          fontWeight: 500,
+          boxShadow: '0 4px 12px #00000055',
+          maxWidth: 380,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 10,
+        }}>
+          <span style={{ fontSize: 16 }}>{toast.tipo === 'error' ? '⚠️' : '✅'}</span>
+          <span style={{ flex: 1 }}>{toast.texto}</span>
+          <button
+            onClick={() => setToast(null)}
+            style={{ background: 'transparent', border: 'none',
+                     color: 'inherit', cursor: 'pointer', fontSize: 16, lineHeight: 1 }}
+          >
+            ×
+          </button>
         </div>
       )}
 

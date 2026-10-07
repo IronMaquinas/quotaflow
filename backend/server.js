@@ -30,6 +30,7 @@ const configEstoqueRoutes = require('./routes/estoque/configuracoes');
 const solicitacoesRoutes = require('./routes/estoque/solicitacoes');
 const ordemServicoRoutes = require('./routes/estoque/ordemServico');
 const reservasRoutes = require('./routes/estoque/reservas');
+const enderecosRoutes = require('./routes/estoque/enderecos'); // M4.4-etapa-6c
 const fornecedorProdutosRouter = require('./routes/fornecedorProdutos');
 const buscaFornecedoresRouter = require('./routes/buscaFornecedores');
 const catalogoBuscaRouter = require('./routes/catalogoBusca');
@@ -80,6 +81,8 @@ app.use('/api/estoque/movimentacoes', tenantMiddleware, movimentacoesRoutes);
 app.use('/api/estoque/recompra', tenantMiddleware, recompraRoutes);
 app.use('/api/estoque/configuracoes', tenantMiddleware, configEstoqueRoutes);
 app.use('/api/estoque/solicitacoes', tenantMiddleware, solicitacoesRoutes);
+// M4.4-etapa-6c: catálogo de endereços (CRUD)
+app.use('/api/estoque/enderecos', tenantMiddleware, enderecosRoutes);
 app.use('/api/estoque', solicitacoesRoutes);
 app.use('/api/estoque/ordem-servico', tenantMiddleware, ordemServicoRoutes);
 app.use('/api/estoque', tenantMiddleware, reservasRoutes);
