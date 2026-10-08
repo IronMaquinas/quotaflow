@@ -1253,6 +1253,57 @@ router.post('/:id/rejeitar-contestacao', tenantMiddleware, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────
+// POST /api/nao-conformidades/:id/devolver-fornecedor
+//
+// M4.4-etapa-9: comprador devolve a resolução/contestação pro fornecedor
+// com motivo. Entra em loop — fornecedor revisa e reenvia.
+// Body: { motivo (obrigatório) }
+// ─────────────────────────────────────────────────────────────────────────
+router.post('/:id/devolver-fornecedor', tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { id } = req.params;
+  const { motivo } = req.body;
+
+  try {
+    if (!motivo || !motivo.trim()) {
+      return res.status(400).json({ erro: 'Motivo é obrigatório ao devolver para o fornecedor' });
+    }
+
+    const nc = await DB.selectOne('nao_conformidades', { id, tenant_id: tenantId }, tenantId);
+    if (!nc) return res.status(404).json({ erro: 'NC não encontrada' });
+
+    const statusDevolvivel = ['resolvida_fornecedor', 'contestada'];
+    if (!statusDevolvivel.includes(nc.fornecedor_tratativa_status)) {
+      return res.status(400).json({
+        erro: `NC não está aguardando ação sua (status: ${nc.fornecedor_tratativa_status || '—'})`,
+      });
+    }
+
+    const u = await usuarioAtual(req, tenantId);
+    const rodadaAtual = Number(nc.rodada) || 1;
+
+    await DB.update('nao_conformidades', id, {
+      fornecedor_tratativa_status: 'devolvida',
+      rodada: rodadaAtual + 1,
+      tipo_resolucao: null,  // limpa pra próxima rodada
+      atualizado_em: new Date().toISOString(),
+    }, tenantId);
+
+    await registrarEventoNC(
+      tenantId, id, 'devolucao_fornecedor',
+      `Devolvido ao fornecedor (rodada ${rodadaAtual + 1}): ${motivo.trim()}`,
+      { motivo: motivo.trim(), rodada: rodadaAtual + 1 },
+      u
+    );
+
+    return res.json({ ok: true, mensagem: 'Devolvido ao fornecedor' });
+  } catch (err) {
+    console.error('❌ Erro ao devolver para fornecedor:', err.message);
+    return res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
 // POST /api/nao-conformidades/:id/marcar-interna
 //
 // Triagem concluiu que a NC NÃO é problema do fornecedor (ex: dano de

@@ -31,7 +31,7 @@ router.get('/', fornecedorMiddleware, async (req, res) => {
     // Whitelist positiva (não "!= nao_enviado") pra cobrir casos onde
     // o status venha null por dado legado — null também fica invisível.
     const STATUS_VISIVEIS_PORTAL = [
-      'enviado', 'visualizado', 'aceita', 'contestada', 'resolvida_fornecedor',
+      'enviado', 'visualizado', 'aceita', 'contestada', 'resolvida_fornecedor', 'devolvida',
     ];
     const todas = await DB.select('nao_conformidades', {}, null);
     const minhas = todas.filter(nc =>
@@ -341,10 +341,20 @@ router.post('/:ncId/anexo', fornecedorMiddleware, async (req, res) => {
 router.put('/:ncId/responder', fornecedorMiddleware, async (req, res) => {
   try {
     const ncId = parseInt(req.params.ncId, 10);
-    const { resposta, observacao } = req.body;
+    const { resposta, observacao, tipo_resolucao } = req.body;
     const validas = ['aceita', 'contestada', 'resolvida_fornecedor'];
     if (!validas.includes(resposta)) {
       return res.status(400).json({ erro: `resposta deve ser: ${validas.join(', ')}` });
+    }
+    // M4.4-etapa-9: quando resolve, exige tipo_resolucao (das 7 opções).
+    const tiposValidos = [
+      'substituicao', 'ressarcimento', 'credito', 'reparo',
+      'devolucao_estorno', 'aceite_com_ressalva', 'outro',
+    ];
+    if (resposta === 'resolvida_fornecedor' && !tiposValidos.includes(tipo_resolucao)) {
+      return res.status(400).json({
+        erro: `tipo_resolucao é obrigatório quando resolve. Use: ${tiposValidos.join(', ')}`,
+      });
     }
 
     const nc = await DB.selectOne('nao_conformidades', { id: ncId }, null);
@@ -366,23 +376,42 @@ router.put('/:ncId/responder', fornecedorMiddleware, async (req, res) => {
       ? await DB.selectOne('fornecedor_usuarios', { id: req.userId }, null)
       : null;
 
-    await DB.update('nao_conformidades', ncId, {
+    // M4.4-etapa-9: grava tipo_resolucao quando resolve. Em outros
+    // status, mantém null (evita herdar de rodada anterior).
+    const updResposta = {
       fornecedor_tratativa_status: resposta,
       atualizado_em: new Date().toISOString(),
-    }, nc.tenant_id);
+    };
+    if (resposta === 'resolvida_fornecedor') {
+      updResposta.tipo_resolucao = tipo_resolucao;
+    }
+
+    await DB.update('nao_conformidades', ncId, updResposta, nc.tenant_id);
 
     const descricoes = {
       aceita: 'Fornecedor ACEITOU a não conformidade',
       contestada: 'Fornecedor CONTESTOU a não conformidade',
       resolvida_fornecedor: 'Fornecedor marcou como RESOLVIDA',
     };
+    const rotulosResolucao = {
+      substituicao: 'Substituição do item',
+      ressarcimento: 'Ressarcimento financeiro',
+      credito: 'Crédito futuro',
+      reparo: 'Reparo / retrabalho',
+      devolucao_estorno: 'Devolução com estorno',
+      aceite_com_ressalva: 'Aceite com ressalva',
+      outro: 'Outro',
+    };
+    const sufixoResolucao = resposta === 'resolvida_fornecedor' && tipo_resolucao
+      ? ` (${rotulosResolucao[tipo_resolucao] || tipo_resolucao})`
+      : '';
 
     await DB.insert('nao_conformidade_eventos', {
       tenant_id: nc.tenant_id,
       nc_id: ncId,
       tipo: 'resposta_fornecedor',
-      descricao: `${descricoes[resposta]}${observacao ? ` — ${observacao}` : ''}`,
-      dados: { resposta, observacao: observacao || null },
+            descricao: `${descricoes[resposta]}${sufixoResolucao}${observacao ? ` — ${observacao}` : ''}`,
+      dados: { resposta, observacao: observacao || null, tipo_resolucao: tipo_resolucao || null },
       criado_por: req.userId || null,
       criado_por_nome: fornUser?.nome || forn?.nome || 'Fornecedor',
       visivel_fornecedor: true,
@@ -412,6 +441,79 @@ router.put('/:ncId/responder', fornecedorMiddleware, async (req, res) => {
     res.json({ ok: true, fornecedor_tratativa_status: resposta });
   } catch (err) {
     console.error('❌ Erro em /responder:', err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/fornecedor/nao-conformidades/:ncId/reenviar
+//
+// M4.4-etapa-9: após o comprador devolver, o fornecedor revisa e
+// reenvia com novo tipo_resolucao. Volta pra 'resolvida_fornecedor'.
+// Body: { tipo_resolucao, observacao? }
+// ─────────────────────────────────────────────────────────────────────────
+router.post('/:ncId/reenviar', fornecedorMiddleware, async (req, res) => {
+  try {
+    const ncId = parseInt(req.params.ncId, 10);
+    const { tipo_resolucao, observacao } = req.body;
+
+    const tiposValidos = [
+      'substituicao', 'ressarcimento', 'credito', 'reparo',
+      'devolucao_estorno', 'aceite_com_ressalva', 'outro',
+    ];
+    if (!tiposValidos.includes(tipo_resolucao)) {
+      return res.status(400).json({
+        erro: `tipo_resolucao é obrigatório. Use: ${tiposValidos.join(', ')}`,
+      });
+    }
+
+    const nc = await DB.selectOne('nao_conformidades', { id: ncId }, null);
+    if (!nc) return res.status(404).json({ erro: 'NC não encontrada' });
+    if (String(nc.fornecedor_id) !== String(req.fornecedorId)) {
+      return res.status(403).json({ erro: 'Acesso negado' });
+    }
+    if (nc.fornecedor_tratativa_status !== 'devolvida') {
+      return res.status(400).json({
+        erro: `NC não está devolvida (status: ${nc.fornecedor_tratativa_status || '—'})`,
+      });
+    }
+
+    const forn = await DB.selectOne('fornecedores', { id: req.fornecedorId }, null);
+    const fornUser = req.userId
+      ? await DB.selectOne('fornecedor_usuarios', { id: req.userId }, null)
+      : null;
+
+    await DB.update('nao_conformidades', ncId, {
+      fornecedor_tratativa_status: 'resolvida_fornecedor',
+      tipo_resolucao,
+      atualizado_em: new Date().toISOString(),
+    }, nc.tenant_id);
+
+    const rotulosResolucao = {
+      substituicao: 'Substituição do item',
+      ressarcimento: 'Ressarcimento financeiro',
+      credito: 'Crédito futuro',
+      reparo: 'Reparo / retrabalho',
+      devolucao_estorno: 'Devolução com estorno',
+      aceite_com_ressalva: 'Aceite com ressalva',
+      outro: 'Outro',
+    };
+
+    await DB.insert('nao_conformidade_eventos', {
+      tenant_id: nc.tenant_id,
+      nc_id: ncId,
+      tipo: 'reenvio_fornecedor',
+      descricao: `Fornecedor reenviou resolução (${rotulosResolucao[tipo_resolucao] || tipo_resolucao})${observacao ? ` — ${observacao}` : ''}`,
+      dados: { tipo_resolucao, observacao: observacao || null, rodada: nc.rodada },
+      criado_por: req.userId || null,
+      criado_por_nome: fornUser?.nome || forn?.nome || 'Fornecedor',
+      visivel_fornecedor: true,
+      autor_tipo: 'fornecedor',
+    }, nc.tenant_id);
+
+    res.json({ ok: true, fornecedor_tratativa_status: 'resolvida_fornecedor' });
+  } catch (err) {
+    console.error('❌ Erro em /reenviar:', err.message);
     res.status(500).json({ erro: err.message });
   }
 });
