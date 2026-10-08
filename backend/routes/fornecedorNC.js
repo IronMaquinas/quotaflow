@@ -31,7 +31,7 @@ router.get('/', fornecedorMiddleware, async (req, res) => {
     // Whitelist positiva (não "!= nao_enviado") pra cobrir casos onde
     // o status venha null por dado legado — null também fica invisível.
     const STATUS_VISIVEIS_PORTAL = [
-      'enviado', 'visualizado', 'aceita', 'contestada', 'resolvida_fornecedor', 'devolvida',
+      'enviado', 'visualizado', 'contestada', 'resolvida_fornecedor', 'devolvida',
     ];
     const todas = await DB.select('nao_conformidades', {}, null);
     const minhas = todas.filter(nc =>
@@ -95,7 +95,7 @@ router.get('/:ncId', fornecedorMiddleware, async (req, res) => {
     // FIX M4.3: NC ainda 'nao_enviado' é invisível ao fornecedor. Devolve
     // 404 (não 403) pra não vazar existência — o fornecedor não deve nem
     // saber que essa NC existe ainda.
-    if (!['enviado', 'visualizado', 'aceita', 'contestada', 'resolvida_fornecedor', 'devolvida'].includes(nc.fornecedor_tratativa_status)) {
+    if (!['enviado', 'visualizado', 'contestada', 'resolvida_fornecedor', 'devolvida'].includes(nc.fornecedor_tratativa_status)) {
       return res.status(404).json({ erro: 'NC não encontrada' });
     }
 
@@ -343,13 +343,16 @@ router.post('/:ncId/anexo', fornecedorMiddleware, async (req, res) => {
 
 // ─────────────────────────────────────────────────────────────────────────
 // PUT /api/fornecedor/nao-conformidades/:ncId/responder
-// Body: { resposta: 'aceita' | 'contestada' | 'resolvida_fornecedor', observacao? }
+// Body: { resposta: 'contestada' | 'resolvida_fornecedor', observacao?, tipo_resolucao? }
+// (M4.4-etapa-9c: 'aceita' removido — fornecedor só contesta ou resolve)
 // ─────────────────────────────────────────────────────────────────────────
 router.put('/:ncId/responder', fornecedorMiddleware, async (req, res) => {
   try {
     const ncId = parseInt(req.params.ncId, 10);
     const { resposta, observacao, tipo_resolucao } = req.body;
-    const validas = ['aceita', 'contestada', 'resolvida_fornecedor'];
+    // M4.4-etapa-9c: 'aceita' removido — fornecedor só contesta ou resolve.
+    // "Aceitar sem resolver" era estado limbo (idêntico a 'visualizado').
+    const validas = ['contestada', 'resolvida_fornecedor'];
     if (!validas.includes(resposta)) {
       return res.status(400).json({ erro: `resposta deve ser: ${validas.join(', ')}` });
     }

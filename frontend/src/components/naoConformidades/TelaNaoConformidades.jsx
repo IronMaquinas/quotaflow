@@ -263,24 +263,26 @@ export default function TelaNaoConformidades({ C, s, fmtD, onIrParaOS, initialNC
                   && !nc.fornecedor_ciente_em
                   && nc.fornecedor_tratativa_status === 'enviado' && (
                   <span style={{ ...s.tag("#f59e0b"), fontSize: 10 }} title="Email enviado, fornecedor ainda não visualizou">
-                    📤 Enviado
+                    📤 Enviada ao Fornecedor
                   </span>
                 )}
+                {/* M4.4-etapa-9: chip "Visualizado" só quando o status é
+                    literalmente 'visualizado' OU é 'enviado' com ciência
+                    registrada. Evita mostrar "Visualizado" em status
+                    intermediários (ex: 'devolvida') por timestamp antigo. */}
                 {nc.fornecedor_id
-                  && (nc.fornecedor_tratativa_status === 'visualizado' || nc.fornecedor_ciente_em)
-                  && !['aceita', 'contestada', 'resolvida_fornecedor', 'devolvida'].includes(nc.fornecedor_tratativa_status) && (
+                  && (
+                    nc.fornecedor_tratativa_status === 'visualizado'
+                    || (nc.fornecedor_tratativa_status === 'enviado' && nc.fornecedor_ciente_em)
+                  ) && (
                   <span style={{ ...s.tag("#3b82f6"), fontSize: 10 }} title="Fornecedor abriu a NC">
-                    👁 Visualizado
+                    👁 Visualizada pelo Fornecedor
                   </span>
                 )}
-                {nc.fornecedor_id && nc.fornecedor_tratativa_status === 'aceita' && (
-                  <span style={{ ...s.tag("#10b981"), fontSize: 10 }}>
-                    ✅ Aceita
-                  </span>
-                )}
+                {/* M4.4-etapa-9c: chip 'aceita' removido do fluxo */}
                 {nc.fornecedor_id && nc.fornecedor_tratativa_status === 'contestada' && (
                   <span style={{ ...s.tag("#ef4444"), fontSize: 10 }}>
-                    ✋ Contestada
+                    ✋ Contestada pelo Fornecedor
                   </span>
                 )}
                 {nc.fornecedor_id && nc.fornecedor_tratativa_status === 'resolvida_fornecedor' && (

@@ -24,8 +24,8 @@ export default function ModalDetalheNCFornecedor({ C, s, detalhe, carregando, on
   const [motivoResposta, setMotivoResposta] = useState('');
   // M4.4-etapa-9: tipo de resolução (só obrigatório quando 'resolvida_fornecedor')
   const [tipoResolucao, setTipoResolucao] = useState('substituicao');
-  const [mostrarResponder, setMostrarResponder] = useState(null); // 'aceita' | 'contestada' | 'resolvida_fornecedor'
-  const [fotoAberta, setFotoAberta] = useState(null);
+  const [mostrarResponder, setMostrarResponder] = useState(null); // 'contestada' | 'resolvida_fornecedor'
+  // const [fotoAberta, setFotoAberta] = useState(null);
   const fileRef = useRef(null);
 
   if (carregando || !detalhe) {
@@ -354,7 +354,7 @@ export default function ModalDetalheNCFornecedor({ C, s, detalhe, carregando, on
               borderRadius: 8, padding: '12px 16px', marginTop: 12,
             }}>
               <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 600, marginBottom: 6 }}>
-                🔄 COMPRADOR DEVOLVEU — AÇÃO NECESSÁRIA
+                🔄 DEVOLVIDA PELO COMPRADOR — AÇÃO NECESSÁRIA
               </div>
               <div style={{ fontSize: 12, color: C.text, lineHeight: 1.5 }}>
                 Sua resolução foi analisada e devolvida. Revise o motivo abaixo,
@@ -421,12 +421,8 @@ export default function ModalDetalheNCFornecedor({ C, s, detalhe, carregando, on
                 RESPONDER OFICIALMENTE
               </div>
               <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
-                <button
-                  onClick={() => setMostrarResponder('aceita')}
-                  style={{ ...s.btn(true, '#10b981'), padding: '8px 14px', fontSize: 12 }}
-                >
-                  ✅ Aceitar NC
-                </button>
+                {/* M4.4-etapa-9c: botão "Aceitar NC" removido —
+                    fornecedor só contesta ou resolve (modelo SAP). */}
                 <button
                   onClick={() => setMostrarResponder('contestada')}
                   style={{ ...s.btn(true, '#ef4444'), padding: '8px 14px', fontSize: 12 }}
@@ -444,9 +440,8 @@ export default function ModalDetalheNCFornecedor({ C, s, detalhe, carregando, on
               {mostrarResponder && (
                 <div style={{ marginTop: 12, padding: 12, background: '#0f172a', borderRadius: 6 }}>
                   <div style={{ fontSize: 11, color: C.muted, marginBottom: 6 }}>
-                    {mostrarResponder === 'aceita' && 'Você aceita a não conformidade. Opcional: observação.'}
                     {mostrarResponder === 'contestada' && 'Descreva o motivo da contestação (obrigatório).'}
-                    {mostrarResponder === 'resolvida_fornecedor' && 'Você optou por resolver. Preencha o formulário adequadamente.'}
+                    {mostrarResponder === 'resolvida_fornecedor' && 'Escolha o tipo e descreva a solução.'}
                   </div>
                    {/* M4.4-etapa-9: tipo de resolução quando 'resolvida_fornecedor' */}
                   {mostrarResponder === 'resolvida_fornecedor' && (

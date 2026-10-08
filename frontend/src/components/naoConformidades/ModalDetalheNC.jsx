@@ -53,7 +53,7 @@ const TRATATIVA_FORNECEDOR_CFG = {
   visualizado:          { l: "Visualizado pelo fornecedor",  c: "#3b82f6", icon: "👁" },
   // M4.4-etapa-9: status do loop de negociação
   devolvida:            { l: "Devolvida ao fornecedor",      c: "#f59e0b", icon: "🔄" },
-  aceita:               { l: "Fornecedor aceitou",           c: "#10b981", icon: "✅" },
+  // M4.4-etapa-9c: 'aceita' removido — fornecedor só contesta ou resolve
   contestada:           { l: "Fornecedor contestou",         c: "#ef4444", icon: "✋" },
   resolvida_fornecedor: { l: "Fornecedor resolveu",          c: "#a855f7", icon: "🎯" },
 };

@@ -22,7 +22,7 @@ async function notificarFornecedorNC(ncId, tenantId, opts = {}) {
   }
 
   // Idempotência: já enviado (ou além)? Não refaz.
-  if (['enviado', 'visualizado', 'aceita', 'contestada', 'resolvida_fornecedor'].includes(nc.fornecedor_tratativa_status)) {
+  if (['enviado', 'visualizado', 'contestada', 'resolvida_fornecedor'].includes(nc.fornecedor_tratativa_status)) {
     return { ja_notificado: true };
   }
 
@@ -115,9 +115,12 @@ async function notificarFornecedorNC(ncId, tenantId, opts = {}) {
     corpo
   );
 
-  // M4.2: pipeline de 6 estados. Renomeia 'notificado' → 'enviado'.
+  // M4.4-etapa-9b: zera `fornecedor_ciente_em` ao notificar. Sem isso,
+  // se a NC voltar pra 'enviado' (ex: reenvio, reset), o timestamp antigo
+  // de "fornecedor visualizou" faz o chip mentir.
   await DB.update('nao_conformidades', ncId, {
     fornecedor_tratativa_status: 'enviado',
+    fornecedor_ciente_em: null,
     atualizado_em: new Date().toISOString(),
   }, tenantId);
 

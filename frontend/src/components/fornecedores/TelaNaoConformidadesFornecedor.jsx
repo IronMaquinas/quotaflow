@@ -15,7 +15,7 @@ const STATUS_TRATATIVA = {
   visualizado:          { l: 'Visualizada',        c: '#6366f1', icon: '👁️' },
   // M4.4-etapa-9: comprador devolveu — precisa revisar e reenviar
   devolvida:            { l: 'Devolvida — ação!',  c: '#f59e0b', icon: '🔄' },
-  aceita:               { l: 'Aceita por você',    c: '#10b981', icon: '✅' },
+  // M4.4-etapa-9c: 'aceita' removido do fluxo
   contestada:           { l: 'Contestada',         c: '#ef4444', icon: '✋' },
   resolvida_fornecedor: { l: 'Resolvida',          c: '#3b82f6', icon: '✔️' },
 };
