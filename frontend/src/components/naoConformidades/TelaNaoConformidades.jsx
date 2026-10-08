@@ -249,6 +249,16 @@ export default function TelaNaoConformidades({ C, s, fmtD, onIrParaOS, initialNC
                     🔒 Aguardando triagem
                   </span>
                 )}
+                {/* M4.4-etapa-9: chip específico quando devolvida ao fornecedor */}
+                {nc.fornecedor_id
+                  && nc.fornecedor_tratativa_status === 'devolvida' && (
+                  <span
+                    style={{ ...s.tag("#f59e0b"), fontSize: 10 }}
+                    title="Comprador devolveu — fornecedor precisa revisar e reenviar"
+                  >
+                    🔄 Devolvida ao fornecedor
+                  </span>
+                )}
                 {nc.fornecedor_id
                   && !nc.fornecedor_ciente_em
                   && nc.fornecedor_tratativa_status === 'enviado' && (
@@ -258,7 +268,7 @@ export default function TelaNaoConformidades({ C, s, fmtD, onIrParaOS, initialNC
                 )}
                 {nc.fornecedor_id
                   && (nc.fornecedor_tratativa_status === 'visualizado' || nc.fornecedor_ciente_em)
-                  && !['aceita', 'contestada', 'resolvida_fornecedor'].includes(nc.fornecedor_tratativa_status) && (
+                  && !['aceita', 'contestada', 'resolvida_fornecedor', 'devolvida'].includes(nc.fornecedor_tratativa_status) && (
                   <span style={{ ...s.tag("#3b82f6"), fontSize: 10 }} title="Fornecedor abriu a NC">
                     👁 Visualizado
                   </span>

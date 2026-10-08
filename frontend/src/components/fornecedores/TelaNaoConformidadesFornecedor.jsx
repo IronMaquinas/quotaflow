@@ -10,9 +10,11 @@ import { fmtBRL, fmtD } from '../../utils/formatters';
 import ModalDetalheNCFornecedor from './ModalDetalheNCFornecedor';
 
 const STATUS_TRATATIVA = {
-  nao_enviado:          { l: 'Aguardando envio', c: '#6b7280', icon: '⏳' },
-  enviado:              { l: 'Aguardando você',  c: '#f59e0b', icon: '🔔' },
-  visualizado:          { l: 'Visualizada',      c: '#6366f1', icon: '👁️' },
+  nao_enviado:          { l: 'Aguardando envio',   c: '#6b7280', icon: '⏳' },
+  enviado:              { l: 'Aguardando você',    c: '#f59e0b', icon: '🔔' },
+  visualizado:          { l: 'Visualizada',        c: '#6366f1', icon: '👁️' },
+  // M4.4-etapa-9: comprador devolveu — precisa revisar e reenviar
+  devolvida:            { l: 'Devolvida — ação!',  c: '#f59e0b', icon: '🔄' },
   aceita:               { l: 'Aceita por você',    c: '#10b981', icon: '✅' },
   contestada:           { l: 'Contestada',         c: '#ef4444', icon: '✋' },
   resolvida_fornecedor: { l: 'Resolvida',          c: '#3b82f6', icon: '✔️' },

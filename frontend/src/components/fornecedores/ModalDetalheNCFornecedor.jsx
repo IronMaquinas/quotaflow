@@ -22,6 +22,8 @@ export default function ModalDetalheNCFornecedor({ C, s, detalhe, carregando, on
   const [enviando, setEnviando] = useState(false);
   const [respondendo, setRespondendo] = useState(false);
   const [motivoResposta, setMotivoResposta] = useState('');
+  // M4.4-etapa-9: tipo de resolução (só obrigatório quando 'resolvida_fornecedor')
+  const [tipoResolucao, setTipoResolucao] = useState('substituicao');
   const [mostrarResponder, setMostrarResponder] = useState(null); // 'aceita' | 'contestada' | 'resolvida_fornecedor'
   const [fotoAberta, setFotoAberta] = useState(null);
   const fileRef = useRef(null);
@@ -86,12 +88,31 @@ export default function ModalDetalheNCFornecedor({ C, s, detalhe, carregando, on
       await apiService.put(`/fornecedor/nao-conformidades/${cabecalho.id}/responder`, {
         resposta: mostrarResponder,
         observacao: motivoResposta.trim() || null,
+        // M4.4-etapa-9: tipo_resolucao só quando 'resolvida_fornecedor'
+        tipo_resolucao: mostrarResponder === 'resolvida_fornecedor' ? tipoResolucao : null,
       });
       setMostrarResponder(null);
       setMotivoResposta('');
       onAtualizar();
     } catch (e) {
       alert('Erro: ' + e.message);
+    } finally {
+      setRespondendo(false);
+    }
+  };
+
+  // M4.4-etapa-9: reenvia após devolução do comprador (loop)
+  const reenviar = async () => {
+    setRespondendo(true);
+    try {
+      await apiService.post(`/fornecedor/nao-conformidades/${cabecalho.id}/reenviar`, {
+        tipo_resolucao: tipoResolucao,
+        observacao: motivoResposta.trim() || null,
+      });
+      setMotivoResposta('');
+      onAtualizar();
+    } catch (e) {
+      alert('Erro: ' + (e.message || 'erro inesperado'));
     } finally {
       setRespondendo(false);
     }
@@ -326,6 +347,70 @@ export default function ModalDetalheNCFornecedor({ C, s, detalhe, carregando, on
             </div>
           </div>
 
+          {/* M4.4-etapa-9: aviso quando o comprador devolveu — precisa reenviar */}
+          {cabecalho?.fornecedor_tratativa_status === 'devolvida' && (
+            <div style={{
+              background: '#2e1c0c', border: '1px solid #f59e0b55',
+              borderRadius: 8, padding: '12px 16px', marginTop: 12,
+            }}>
+              <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 600, marginBottom: 6 }}>
+                🔄 COMPRADOR DEVOLVEU — AÇÃO NECESSÁRIA
+              </div>
+              <div style={{ fontSize: 12, color: C.text, lineHeight: 1.5 }}>
+                Sua resolução foi analisada e devolvida. Revise o motivo abaixo,
+                ajuste sua proposta e reenvie.
+              </div>
+
+              {/* M4.4-etapa-9: mostra o motivo da devolução (último evento) */}
+              {(() => {
+                const ultimaDevolucao = (eventos || []).find(ev => ev.tipo === 'devolucao_fornecedor');
+                const motivo = ultimaDevolucao?.dados?.motivo || null;
+                if (!motivo) return null;
+                return (
+                  <div style={{
+                    marginTop: 10, padding: '10px 12px',
+                    background: '#00000044', borderRadius: 6,
+                    fontSize: 12, color: C.text, fontStyle: 'italic',
+                    borderLeft: '3px solid #f59e0b',
+                  }}>
+                    <span style={{ color: '#f59e0b', fontWeight: 600, fontStyle: 'normal' }}>
+                      💬 Motivo do comprador:
+                    </span>{' '}
+                    {motivo}
+                  </div>
+                );
+              })()}
+              <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                <select
+                  value={tipoResolucao}
+                  onChange={e => setTipoResolucao(e.target.value)}
+                  style={{ ...s.input, flex: 1, minWidth: 200, appearance: 'none' }}
+                >
+                  <option value="substituicao">🔄 Substituição do item</option>
+                  <option value="ressarcimento">💰 Ressarcimento financeiro</option>
+                  <option value="credito">📒 Crédito futuro</option>
+                  <option value="reparo">🧰 Reparo / retrabalho</option>
+                  <option value="devolucao_estorno">↩️ Devolução com estorno</option>
+                  <option value="aceite_com_ressalva">⚠️ Aceite com ressalva</option>
+                  <option value="outro">📎 Outro (descrever na observação)</option>
+                </select>
+                <button
+                  onClick={reenviar}
+                  disabled={respondendo}
+                  style={{ ...s.btn(true, '#3b82f6'), padding: '8px 16px', fontSize: 12,
+                           opacity: respondendo ? 0.5 : 1 }}
+                >
+                  {respondendo ? 'Reenviando...' : '📤 Reenviar resolução'}
+                </button>
+              </div>
+              {motivoResposta && (
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 8 }}>
+                  Observação será incluída: "{motivoResposta}"
+                </div>
+              )}
+            </div>
+          )}
+
           {/* Ações de resposta */}
           {podeResponder && (
             <div style={{
@@ -361,8 +446,28 @@ export default function ModalDetalheNCFornecedor({ C, s, detalhe, carregando, on
                   <div style={{ fontSize: 11, color: C.muted, marginBottom: 6 }}>
                     {mostrarResponder === 'aceita' && 'Você aceita a não conformidade. Opcional: observação.'}
                     {mostrarResponder === 'contestada' && 'Descreva o motivo da contestação (obrigatório).'}
-                    {mostrarResponder === 'resolvida_fornecedor' && 'Você marca como resolvida. Descreva a solução.'}
+                    {mostrarResponder === 'resolvida_fornecedor' && 'Você optou por resolver. Preencha o formulário adequadamente.'}
                   </div>
+                   {/* M4.4-etapa-9: tipo de resolução quando 'resolvida_fornecedor' */}
+                  {mostrarResponder === 'resolvida_fornecedor' && (
+                    <div style={{ marginBottom: 10 }}>
+                      <label style={{ ...s.label, fontSize: 11, color: C.muted }}>SELECIONE ABAIXO A OPÇÃO DE RESOLUÇÃO *</label>
+                      <select
+                        value={tipoResolucao}
+                        onChange={e => setTipoResolucao(e.target.value)}
+                        style={{ ...s.input, width: '100%', appearance: 'none', marginTop: 4 }}
+                      >
+                        <option value="substituicao">🔄 Substituição do item</option>
+                        <option value="ressarcimento">💰 Ressarcimento financeiro</option>
+                        <option value="credito">📒 Crédito futuro</option>
+                        <option value="reparo">🧰 Reparo / retrabalho</option>
+                        <option value="devolucao_estorno">↩️ Devolução com estorno</option>
+                        <option value="aceite_com_ressalva">⚠️ Aceite com ressalva</option>
+                        <option value="outro">📎 Outro (descrever na observação)</option>
+                      </select>
+                    </div>
+                  )}
+
                   <textarea
                     value={motivoResposta}
                     onChange={e => setMotivoResposta(e.target.value)}

@@ -61,7 +61,7 @@ async function gerarNumeroNC(tenantId) {
   return `${prefix}${String(seq).padStart(4, '0')}`;
 }
 
-async function registrarEventoNC(tenantId, ncId, tipo, descricao, dados, usuario) {
+async function registrarEventoNC(tenantId, ncId, tipo, descricao, dados, usuario, opcoes = {}) {
   try {
     await DB.insert("nao_conformidade_eventos", {
       tenant_id: tenantId,
@@ -71,6 +71,9 @@ async function registrarEventoNC(tenantId, ncId, tipo, descricao, dados, usuario
       dados: dados || null,
       criado_por: usuario?.id || null,
       criado_por_nome: usuario?.nome || null,
+      // M4.4-etapa-9: opções extras (compat: default é false/comprador)
+      visivel_fornecedor: opcoes.visivel_fornecedor === true,
+      autor_tipo: opcoes.autor_tipo || 'comprador',
     }, tenantId);
   } catch (err) {
     console.warn("⚠ Falha ao registrar evento NC (não bloqueante):", err.message);
@@ -1293,7 +1296,8 @@ router.post('/:id/devolver-fornecedor', tenantMiddleware, async (req, res) => {
       tenantId, id, 'devolucao_fornecedor',
       `Devolvido ao fornecedor (rodada ${rodadaAtual + 1}): ${motivo.trim()}`,
       { motivo: motivo.trim(), rodada: rodadaAtual + 1 },
-      u
+      u,
+      { visivel_fornecedor: true, autor_tipo: 'comprador' }
     );
 
     return res.json({ ok: true, mensagem: 'Devolvido ao fornecedor' });

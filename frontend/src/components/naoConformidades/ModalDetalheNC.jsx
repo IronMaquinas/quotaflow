@@ -51,6 +51,8 @@ const TRATATIVA_FORNECEDOR_CFG = {
   nao_enviado:          { l: "Aguardando triagem interna",   c: "#9ca3af", icon: "🔒" },
   enviado:              { l: "Enviado ao fornecedor",        c: "#f59e0b", icon: "📤" },
   visualizado:          { l: "Visualizado pelo fornecedor",  c: "#3b82f6", icon: "👁" },
+  // M4.4-etapa-9: status do loop de negociação
+  devolvida:            { l: "Devolvida ao fornecedor",      c: "#f59e0b", icon: "🔄" },
   aceita:               { l: "Fornecedor aceitou",           c: "#10b981", icon: "✅" },
   contestada:           { l: "Fornecedor contestou",         c: "#ef4444", icon: "✋" },
   resolvida_fornecedor: { l: "Fornecedor resolveu",          c: "#a855f7", icon: "🎯" },
@@ -1191,29 +1193,55 @@ export default function ModalDetalheNC({
 
             {/* M4.2: ações do comprador quando o fornecedor já respondeu. */}
             {nc.fornecedor_tratativa_status === 'resolvida_fornecedor' && (
-              <button
-                onClick={async () => {
-                  const obs = window.prompt("Observação (opcional):");
-                  if (obs === null) return;
-                  setSalvando(true);
-                  try {
-                    await apiService.post(`/nao-conformidades/${ncId}/validar-resolucao-fornecedor`, {
-                      observacao: obs?.trim() || null,
-                    });
-                    await carregar();
-                    onAtualizar?.();
-                  } catch (e) {
-                    setErro(e.message || "Erro ao validar");
-                  } finally {
-                    setSalvando(false);
-                  }
-                }}
-                disabled={salvando}
-                style={{ ...s.btn(true, "#a855f7"), padding: "8px 16px", fontSize: 12,
-                         background: "#a855f7", border: "1px solid #a855f7" }}
-              >
-                🎯 Validar resolução
-              </button>
+              <>
+                <button
+                  onClick={async () => {
+                    const obs = window.prompt("Observação (opcional):");
+                    if (obs === null) return;
+                    setSalvando(true);
+                    try {
+                      await apiService.post(`/nao-conformidades/${ncId}/validar-resolucao-fornecedor`, {
+                        observacao: obs?.trim() || null,
+                      });
+                      await carregar();
+                      onAtualizar?.();
+                    } catch (e) {
+                      setErro(e.message || "Erro ao validar");
+                    } finally {
+                      setSalvando(false);
+                    }
+                  }}
+                  disabled={salvando}
+                  style={{ ...s.btn(true, "#a855f7"), padding: "8px 16px", fontSize: 12,
+                           background: "#a855f7", border: "1px solid #a855f7" }}
+                >
+                  🎯 Validar resolução
+                </button>
+                <button
+                  onClick={async () => {
+                    const motivo = window.prompt("Motivo da devolução (obrigatório):");
+                    if (motivo === null) return;
+                    if (!motivo.trim()) { alert("Motivo é obrigatório."); return; }
+                    setSalvando(true);
+                    try {
+                      await apiService.post(`/nao-conformidades/${ncId}/devolver-fornecedor`, {
+                        motivo: motivo.trim(),
+                      });
+                      await carregar();
+                      onAtualizar?.();
+                    } catch (e) {
+                      setErro(e.message || "Erro ao devolver");
+                    } finally {
+                      setSalvando(false);
+                    }
+                  }}
+                  disabled={salvando}
+                  style={{ ...s.btn(true, "#f59e0b"), padding: "8px 16px", fontSize: 12,
+                           background: "#f59e0b", border: "1px solid #f59e0b" }}
+                >
+                  🔄 Devolver ao fornecedor
+                </button>
+              </>
             )}
 
             {nc.fornecedor_tratativa_status === 'contestada' && (
@@ -1267,6 +1295,30 @@ export default function ModalDetalheNC({
                            background: "#ef4444", border: "1px solid #ef4444" }}
                 >
                   ❌ Rejeitar contestação
+                </button>
+                <button
+                  onClick={async () => {
+                    const motivo = window.prompt("Motivo da devolução (obrigatório):");
+                    if (motivo === null) return;
+                    if (!motivo.trim()) { alert("Motivo é obrigatório."); return; }
+                    setSalvando(true);
+                    try {
+                      await apiService.post(`/nao-conformidades/${ncId}/devolver-fornecedor`, {
+                        motivo: motivo.trim(),
+                      });
+                      await carregar();
+                      onAtualizar?.();
+                    } catch (e) {
+                      setErro(e.message || "Erro ao devolver");
+                    } finally {
+                      setSalvando(false);
+                    }
+                  }}
+                  disabled={salvando}
+                  style={{ ...s.btn(true, "#f59e0b"), padding: "8px 16px", fontSize: 12,
+                           background: "#f59e0b", border: "1px solid #f59e0b" }}
+                >
+                  🔄 Devolver ao fornecedor
                 </button>
               </>
             )}

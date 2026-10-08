@@ -81,6 +81,13 @@ router.get('/:ncId', fornecedorMiddleware, async (req, res) => {
     if (!ncId) return res.status(400).json({ erro: 'ID inválido' });
 
     const nc = await DB.selectOne('nao_conformidades', { id: ncId }, null);
+    // M4.4-etapa-9: log de diagnóstico (temporário)
+    console.log('[GET /:ncId]', {
+      ncId,
+      req_fornecedorId: req.fornecedorId,
+      nc_fornecedor_id: nc?.fornecedor_id,
+      nc_status: nc?.fornecedor_tratativa_status,
+    });
     if (!nc) return res.status(404).json({ erro: 'NC não encontrada' });
     if (String(nc.fornecedor_id) !== String(req.fornecedorId)) {
       return res.status(403).json({ erro: 'Acesso negado a esta NC' });
@@ -88,7 +95,7 @@ router.get('/:ncId', fornecedorMiddleware, async (req, res) => {
     // FIX M4.3: NC ainda 'nao_enviado' é invisível ao fornecedor. Devolve
     // 404 (não 403) pra não vazar existência — o fornecedor não deve nem
     // saber que essa NC existe ainda.
-    if (!['enviado', 'visualizado', 'aceita', 'contestada', 'resolvida_fornecedor'].includes(nc.fornecedor_tratativa_status)) {
+    if (!['enviado', 'visualizado', 'aceita', 'contestada', 'resolvida_fornecedor', 'devolvida'].includes(nc.fornecedor_tratativa_status)) {
       return res.status(404).json({ erro: 'NC não encontrada' });
     }
 
