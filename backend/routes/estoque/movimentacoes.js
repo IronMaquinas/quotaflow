@@ -1487,6 +1487,117 @@ router.get('/item/:itemId/historico-contagens', tenantMiddleware, async (req, re
   }
 });
 
+// ─── M4.4-etapa-8: TRAJETÓRIA DE UM ITEM ────────────────────
+// Retorna todas as movimentações de um item de consumo, ordenadas
+// por data desc, com enriquecimento (OC, OS, fornecedor).
+router.get('/item/:itemConsumoId/trajetoria', tenantMiddleware, async (req, res) => {
+  try {
+    const tenantId = req.tenantId;
+    const { itemConsumoId } = req.params;
+
+    const item = await DB.selectOne('itens_consumo', { id: itemConsumoId, tenant_id: tenantId }, tenantId);
+    if (!item) return res.status(404).json({ erro: 'Item não encontrado' });
+
+    // Busca todas as movimentações do item (padrão: DB.select + filtro JS)
+    const todas = await DB.select(
+      'movimentacoes_estoque',
+      { tenant_id: tenantId, item_consumo_id: itemConsumoId },
+      tenantId
+    );
+    todas.sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em));
+
+    // M4.4-etapa-8b: saldo acumulado após cada movimento.
+    // Percorre em ordem ASC (mais antigo → mais novo), aplica delta por
+    // tipo, guarda o saldo resultante por id. Transferência NÃO altera
+    // saldo total (só troca de endereço).
+    const todasASC = [...todas].reverse();
+    let saldoAcumulado = 0;
+    const saldoPorId = {};
+    for (const m of todasASC) {
+      const q = Number(m.quantidade) || 0;
+      if (m.tipo === 'entrada') saldoAcumulado += q;
+      else if (m.tipo === 'saida' || m.tipo === 'bloqueio') saldoAcumulado -= q;
+      // transferencia: saldo não muda
+      saldoPorId[m.id] = saldoAcumulado;
+    }
+
+    // Enriquecimento em paralelo (OC direto da coluna; OS via regex na
+    // observação — padrão "Aplicação em OS (chamado X, item Y)";
+    // fornecedor pelo fornecedor_id).
+    const eventos = await Promise.all(todas.map(async (m) => {
+      let oc_numero = m.ordem_venda_numero || null;
+      let os_numero = null;
+      let fornecedor_nome = null;
+
+      // M4.4-etapa-8c: enriquecer saída com OS + número do item na OS.
+      // Usa chamado_id/chamado_item_id das colunas (mais robusto que regex).
+      let chamado_item_numero = null;
+      let chamado_item_nome = null;
+      if (m.tipo === 'saida') {
+        const chamadoId = m.chamado_id
+          || (String(m.observacao || '').match(/chamado (\d+)/) || [])[1];
+        const chamadoItemId = m.chamado_item_id
+          || (String(m.observacao || '').match(/item (\d+)/) || [])[1];
+
+        if (chamadoId) {
+          const ch = await DB.selectOne('chamados', { id: chamadoId, tenant_id: tenantId }, tenantId);
+          os_numero = ch?.numero || null;
+        }
+        if (chamadoItemId) {
+          const chItem = await DB.selectOne('chamado_itens', { id: chamadoItemId, tenant_id: tenantId }, tenantId);
+          if (chItem) {
+            chamado_item_nome = chItem.item_nome || null;
+            if (chItem.numero_base != null) {
+              chamado_item_numero = (chItem.posicao != null && chItem.posicao !== chItem.numero_base)
+                ? `${chItem.numero_base}.${chItem.posicao}`
+                : String(chItem.numero_base);
+            }
+          }
+        }
+      }
+
+      if (m.tipo === 'entrada' && m.fornecedor_id) {
+        const f = await DB.selectOne('fornecedores', { id: m.fornecedor_id, tenant_id: tenantId }, tenantId);
+        fornecedor_nome = f?.nome || null;
+      }
+
+      return {
+        id: m.id,
+        tipo: m.tipo,
+        numero_movimento: m.numero_movimento,
+        quantidade: Number(m.quantidade) || 0,
+        endereco_origem: m.endereco_origem || null,
+        endereco_destino: m.endereco_destino || null,
+        observacao: m.observacao || null,
+        criado_em: m.criado_em,
+        oc_numero,
+        os_numero,
+        fornecedor_nome,
+        // M4.4-etapa-8c: número do item na OS (#N ou #N.M) + nome
+        chamado_item_numero,
+        chamado_item_nome,
+        // M4.4-etapa-8b: saldo acumulado APÓS este movimento.
+        saldo_apos: saldoPorId[m.id] ?? 0,
+      };
+    }));
+
+    res.json({
+      ok: true,
+      item: {
+        id: item.id,
+        nome: item.nome,
+        sku: item.sku,
+        unidade_medida: item.unidade_medida || 'UN',
+        saldo_atual: Number(item.saldo_atual) || 0,
+      },
+      eventos,
+    });
+  } catch (err) {
+    console.error('❌ Erro ao buscar trajetória:', err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
 // GET /api/estoque/movimentacoes/contagens-pendentes
 router.get('/contagens-pendentes', tenantMiddleware, async (req, res) => {
   try {

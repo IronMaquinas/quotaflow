@@ -33,6 +33,21 @@ export default function TelaEstoqueConsumiveis({ C, s, fmtBRL, fmtD }) {
   // M4.4-etapa-6d: painel lateral (master-detail). Guarda o item clicado
   // na lista — null = painel fechado.
   const [itemSelecionado, setItemSelecionado] = useState(null);
+  // M4.4-etapa-8: hover da linha (feedback visual de "clicável")
+  const [hoverId, setHoverId] = useState(null);
+  // Reseta abas e trajetória quando troca o item selecionado
+  useEffect(() => {
+    if (itemSelecionado) {
+      setAbaDetalhe('enderecos');
+      setTrajetoria(null);
+      setFiltroTrajetoria('todos');
+    }
+  }, [itemSelecionado?.id]);
+  // M4.4-etapa-8: modal de detalhe com abas (Endereços | Trajetória)
+  const [abaDetalhe, setAbaDetalhe] = useState('enderecos');
+  const [trajetoria, setTrajetoria] = useState(null);
+  const [carregandoTrajetoria, setCarregandoTrajetoria] = useState(false);
+  const [filtroTrajetoria, setFiltroTrajetoria] = useState('todos');
   const [formTransf, setFormTransf] = useState({
     endereco_origem: '',
     endereco_destino: '',
@@ -81,6 +96,15 @@ export default function TelaEstoqueConsumiveis({ C, s, fmtBRL, fmtD }) {
     carregarItens();
     carregarConfig();
   }, []);
+
+  // M4.4-etapa-8: reseta abas e trajetória quando troca o item selecionado.
+  useEffect(() => {
+    if (itemSelecionado) {
+      setAbaDetalhe('enderecos');
+      setTrajetoria(null);
+      setFiltroTrajetoria('todos');
+    }
+  }, [itemSelecionado?.id]);
 
   // M4.4-etapa-6f: limpa o toast depois de 4s
   useEffect(() => {
@@ -203,6 +227,20 @@ const salvarConfig = async () => {
       setToast({ tipo: 'error', texto: msg });
     } finally {
       setSalvandoEndereco(false);
+    }
+  };
+
+  // M4.4-etapa-8: carrega a trajetória do item selecionado.
+  const carregarTrajetoria = async (itemId) => {
+    setCarregandoTrajetoria(true);
+    try {
+      const resp = await apiService.get(`/estoque/movimentacoes/item/${itemId}/trajetoria`);
+      setTrajetoria(resp || null);
+    } catch (err) {
+      setToast({ tipo: 'error', texto: err.message || 'Erro ao carregar trajetória' });
+      setTrajetoria(null);
+    } finally {
+      setCarregandoTrajetoria(false);
     }
   };
 
@@ -464,6 +502,8 @@ const salvarConfig = async () => {
             <div 
               key={item.id} 
               onClick={() => setItemSelecionado(item)}
+              onMouseEnter={() => setHoverId(item.id)}
+              onMouseLeave={() => setHoverId(null)}
               style={{ 
                 display: 'grid', 
                 gridTemplateColumns: '2fr 1fr 1fr 1fr 100px 80px', 
@@ -471,7 +511,11 @@ const salvarConfig = async () => {
                 borderBottom: `1px solid ${C.border}22`, 
                 alignItems: 'center',
                 cursor: 'pointer',
-                background: selecionado ? `${C.accent}15` : 'transparent',
+                background: selecionado 
+                  ? `${C.accent}15` 
+                  : hoverId === item.id 
+                    ? `${C.accent}20` 
+                    : 'transparent',
                 borderLeft: selecionado ? `3px solid ${C.accent}` : '3px solid transparent',
                 transition: 'background .15s',
               }}
@@ -543,8 +587,43 @@ const salvarConfig = async () => {
               </button>
             </div>
 
-            {/* Corpo — endereços */}
+            {/* M4.4-etapa-8: abas (Endereços | Trajetória) */}
+            <div style={{ display: 'flex', gap: 2, padding: '0 22px', borderBottom: `1px solid ${C.border}` }}>
+              <button
+                onClick={() => setAbaDetalhe('enderecos')}
+                style={{
+                  background: 'transparent', border: 'none',
+                  borderBottom: abaDetalhe === 'enderecos' ? `2px solid ${C.accent}` : '2px solid transparent',
+                  color: abaDetalhe === 'enderecos' ? C.text : C.muted,
+                  fontSize: 12, fontWeight: abaDetalhe === 'enderecos' ? 600 : 400,
+                  cursor: 'pointer', padding: '10px 14px',
+                  fontFamily: 'inherit', marginBottom: -1,
+                }}
+              >
+                📍 Endereços
+              </button>
+              <button
+                onClick={() => {
+                  setAbaDetalhe('trajetoria');
+                  if (!trajetoria && itemSelecionado) carregarTrajetoria(itemSelecionado.id);
+                }}
+                style={{
+                  background: 'transparent', border: 'none',
+                  borderBottom: abaDetalhe === 'trajetoria' ? `2px solid ${C.accent}` : '2px solid transparent',
+                  color: abaDetalhe === 'trajetoria' ? C.text : C.muted,
+                  fontSize: 12, fontWeight: abaDetalhe === 'trajetoria' ? 600 : 400,
+                  cursor: 'pointer', padding: '10px 14px',
+                  fontFamily: 'inherit', marginBottom: -1,
+                }}
+              >
+                📜 Trajetória
+              </button>
+            </div>
+
+            {/* Corpo — condicional (endereços OU trajetória) */}
             <div style={{ padding: '18px 22px', overflowY: 'auto', flex: 1 }}>
+              {abaDetalhe === 'enderecos' && (
+                <>
               <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>SALDO POR ENDEREÇO</div>
 
               {(!itemSelecionado.enderecos || itemSelecionado.enderecos.length === 0) ? (
@@ -593,6 +672,156 @@ const salvarConfig = async () => {
                     Total: <strong style={{ color: C.text }}>{itemSelecionado.saldo_atual || 0} {itemSelecionado.unidade_medida || 'UN'}</strong>
                   </div>
                 </div>
+              )}
+                </>
+              )}
+
+              {/* ─── M4.4-etapa-8: ABA TRAJETÓRIA ─────────────────── */}
+              {abaDetalhe === 'trajetoria' && (
+                <>
+                  {carregandoTrajetoria ? (
+                    <div style={{ padding: 30, textAlign: 'center', color: C.muted, fontSize: 12 }}>
+                      Carregando trajetória...
+                    </div>
+                  ) : !trajetoria || !trajetoria.eventos || trajetoria.eventos.length === 0 ? (
+                    <div style={{ padding: 30, textAlign: 'center', color: C.muted, fontSize: 12,
+                                  border: `1px dashed ${C.border}`, borderRadius: 6 }}>
+                      📭 Nenhuma movimentação registrada para este item
+                    </div>
+                  ) : (() => {
+                    const eventos = trajetoria.eventos;
+                    const tipos = [
+                      { id: 'todos', label: 'Todos', icon: '📋' },
+                      { id: 'entrada', label: 'Entradas', icon: '📥' },
+                      { id: 'transferencia', label: 'Transferências', icon: '🚚' },
+                      { id: 'saida', label: 'Saídas', icon: '📤' },
+                      { id: 'bloqueio', label: 'Bloqueios', icon: '🚫' },
+                    ];
+                    const contagem = tipos.reduce((acc, t) => {
+                      acc[t.id] = t.id === 'todos'
+                        ? eventos.length
+                        : eventos.filter(e => e.tipo === t.id).length;
+                      return acc;
+                    }, {});
+                    const eventosFiltrados = filtroTrajetoria === 'todos'
+                      ? eventos
+                      : eventos.filter(e => e.tipo === filtroTrajetoria);
+
+                    const cfgTipo = {
+                      entrada:       { icon: '📥', label: 'Entrada',       cor: C.success || '#10b981' },
+                      transferencia: { icon: '🚚', label: 'Transferência', cor: '#f59e0b' },
+                      saida:         { icon: '📤', label: 'Saída',         cor: C.danger  || '#ef4444' },
+                      bloqueio:      { icon: '🚫', label: 'Bloqueio',      cor: C.muted   || '#6b7280' },
+                    };
+
+                    return (
+                      <>
+                        {/* Chips de filtro */}
+                        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap', marginBottom: 16 }}>
+                          {tipos.map(t => {
+                            const ativo = filtroTrajetoria === t.id;
+                            return (
+                              <button
+                                key={t.id}
+                                onClick={() => setFiltroTrajetoria(t.id)}
+                                style={{
+                                  background: ativo ? `${C.accent}22` : 'transparent',
+                                  border: `1px solid ${ativo ? C.accent : C.border}`,
+                                  color: ativo ? C.accent : C.muted,
+                                  borderRadius: 999, padding: '4px 12px',
+                                  fontSize: 11, cursor: 'pointer', fontFamily: 'inherit',
+                                  fontWeight: ativo ? 600 : 400,
+                                }}
+                              >
+                                {t.icon} {t.label} <span style={{ opacity: 0.7 }}>({contagem[t.id]})</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+
+                        {/* Timeline */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+                          {eventosFiltrados.length === 0 ? (
+                            <div style={{ padding: 20, textAlign: 'center', color: C.muted, fontSize: 12,
+                                          border: `1px dashed ${C.border}`, borderRadius: 6 }}>
+                              📭 Nenhum evento deste tipo
+                            </div>
+                          ) : eventosFiltrados.map(e => {
+                            const cfg = cfgTipo[e.tipo] || { icon: '⚪', label: e.tipo, cor: C.muted };
+                            const data = e.criado_em
+                              ? new Date(String(e.criado_em).replace(' ', 'T')).toLocaleString('pt-BR')
+                              : '—';
+
+                            // Texto do "de → para" conforme o tipo
+                            let rotaTexto = null;
+                            if (e.tipo === 'entrada' && e.endereco_destino) {
+                              rotaTexto = `→ ${e.endereco_destino}`;
+                            } else if (e.tipo === 'transferencia' && e.endereco_origem && e.endereco_destino) {
+                              rotaTexto = `${e.endereco_origem} → ${e.endereco_destino}`;
+                            } else if (e.tipo === 'saida' && e.endereco_origem) {
+                              rotaTexto = `← ${e.endereco_origem}`;
+                            }
+
+                            return (
+                              <div key={e.id} style={{
+                                borderLeft: `3px solid ${cfg.cor}`,
+                                background: C.bg, borderRadius: 6,
+                                padding: '10px 14px',
+                              }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 4, flexWrap: 'wrap', gap: 8 }}>
+                                  <div style={{ fontSize: 11, color: cfg.cor, fontWeight: 600 }}>
+                                    {cfg.icon} {cfg.label}
+                                    {e.numero_movimento && <span style={{ marginLeft: 8, color: C.muted, fontWeight: 400, fontFamily: "'IBM Plex Mono', monospace" }}>{e.numero_movimento}</span>}
+                                  </div>
+                                  <div style={{ fontSize: 11, fontWeight: 700, color: C.text, fontFamily: "'IBM Plex Mono', monospace" }}>
+                                    {(e.tipo === 'saida' || e.tipo === 'bloqueio') ? '−' : '+'}{e.quantidade} {trajetoria.item?.unidade_medida || 'UN'}
+                                  </div>
+                                </div>
+                                <div style={{ fontSize: 11, color: C.muted, fontFamily: "'IBM Plex Mono', monospace", marginTop: 2 }}>
+                                  📅 {data}
+                                </div>
+                                {(rotaTexto || e.oc_numero || e.os_numero || e.fornecedor_nome) && (
+                                  <div style={{ fontSize: 11, color: C.muted, marginTop: 4, display: 'flex', gap: 10, flexWrap: 'wrap' }}>
+                                    {rotaTexto && <span>📍 {rotaTexto}</span>}
+                                    {e.oc_numero && <span>📄 {e.oc_numero}</span>}
+                                    {e.os_numero && <span>🔧 {e.os_numero}</span>}
+                                    {e.chamado_item_numero && (
+                                      <span>📌 #{e.chamado_item_numero}{e.chamado_item_nome ? ` — ${e.chamado_item_nome}` : ''}</span>
+                                    )}
+                                    {e.fornecedor_nome && <span>🏢 {e.fornecedor_nome}</span>}
+                                  </div>
+                                )}
+                                {/* M4.4-etapa-8b: saldo acumulado após este movimento */}
+                                {typeof e.saldo_apos === 'number' && (
+                                  <div style={{
+                                    fontSize: 11, color: C.text, marginTop: 6,
+                                    fontFamily: "'IBM Plex Mono', monospace",
+                                    padding: '4px 8px',
+                                    background: `${C.accent}15`,
+                                    border: `1px solid ${C.accent}33`,
+                                    borderRadius: 4,
+                                    display: 'inline-block',
+                                  }}>
+                                    📦 Saldo após: <strong style={{ color: C.accent }}>{e.saldo_apos} {trajetoria.item?.unidade_medida || 'UN'}</strong>
+                                  </div>
+                                )}
+
+                                {/* M4.4-etapa-8d: esconde a observação técnica antiga
+                                    ("Aplicação em OS (chamado X, item Y)") — o
+                                    card já mostra OS + #N — Nome nas linhas acima. */}
+                                {e.observacao && !/^Aplicação em OS \(chamado \d+, item \d+\)$/.test(e.observacao) && (
+                                  <div style={{ fontSize: 10, color: C.muted, marginTop: 4, fontStyle: 'italic' }}>
+                                    {e.observacao}
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    );
+                  })()}
+                </>
               )}
             </div>
 
