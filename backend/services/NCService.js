@@ -22,7 +22,12 @@ async function notificarFornecedorNC(ncId, tenantId, opts = {}) {
   }
 
   // Idempotência: já enviado (ou além)? Não refaz.
-  if (['enviado', 'visualizado', 'contestada', 'resolvida_fornecedor'].includes(nc.fornecedor_tratativa_status)) {
+  // M4.4-etapa-9d: usa whitelist centralizada. Se o fornecedor já vê a NC
+  // no portal (qualquer status visível), não precisa re-notificar. Isso
+  // cobre 'devolvida' também — o fornecedor sabe que tem ação pendente
+  // pelo bloco de reenvio, sem precisar de email novo.
+  const { STATUS_VISIVEIS_FORNECEDOR } = require('../constants/fornecedorStatus');
+  if (STATUS_VISIVEIS_FORNECEDOR.includes(nc.fornecedor_tratativa_status)) {
     return { ja_notificado: true };
   }
 

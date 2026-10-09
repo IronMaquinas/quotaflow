@@ -18,6 +18,9 @@ const fornecedorMiddleware = require('../middleware/fornecedorMiddleware');
 
 const BUCKET_NC_EVIDENCIAS = 'nfe-xmls'; // reusa o mesmo bucket (ou cria 'nc-evidencias')
 
+// M4.4-etapa-9d: whitelist canônica (módulo próprio — evita require circular)
+const { STATUS_VISIVEIS_FORNECEDOR: STATUS_VISIVEIS } = require('../constants/fornecedorStatus');
+
 // ─────────────────────────────────────────────────────────────────────────
 // GET /api/fornecedor/nao-conformidades
 // ─────────────────────────────────────────────────────────────────────────
@@ -30,14 +33,19 @@ router.get('/', fornecedorMiddleware, async (req, res) => {
     //
     // Whitelist positiva (não "!= nao_enviado") pra cobrir casos onde
     // o status venha null por dado legado — null também fica invisível.
-    const STATUS_VISIVEIS_PORTAL = [
-      'enviado', 'visualizado', 'contestada', 'resolvida_fornecedor', 'devolvida',
-    ];
+    // M4.4-etapa-9d: whitelist centralizada (ver constante no topo)
+    // M4.4-etapa-9h: incluir NCs ENCERRADAS (status interno `resolvida`
+    // ou `cancelada`) quando `?incluir_concluidas=true`. Sem a flag, o
+    // comportamento é o de antes (só em tratativa).
+    const incluirConcluidas = req.query.incluir_concluidas === 'true';
+    const STATUS_INTERNOS_CONCLUIDOS = ['resolvida', 'cancelada'];
     const todas = await DB.select('nao_conformidades', {}, null);
-    const minhas = todas.filter(nc =>
-      String(nc.fornecedor_id) === String(req.fornecedorId)
-      && STATUS_VISIVEIS_PORTAL.includes(nc.fornecedor_tratativa_status)
-    );
+    const minhas = todas.filter(nc => {
+      if (String(nc.fornecedor_id) !== String(req.fornecedorId)) return false;
+      if (STATUS_VISIVEIS.includes(nc.fornecedor_tratativa_status)) return true;
+      if (incluirConcluidas && STATUS_INTERNOS_CONCLUIDOS.includes(nc.status)) return true;
+      return false;
+    });
 
     if (minhas.length === 0) return res.json({ ncs: [] });
 
@@ -46,6 +54,19 @@ router.get('/', fornecedorMiddleware, async (req, res) => {
     const todasOv = await DB.select('ordens_venda', {}, null);
     const ovPorId = {};
     todasOv.filter(ov => ovIds.includes(ov.id)).forEach(ov => { ovPorId[ov.id] = ov; });
+
+    // M4.4-etapa-9i: enriquece com nome do tenant (cliente que abriu a NC).
+    // Busca SÓ os tenants que aparecem nas NCs retornadas — o custo
+    // escala com o tamanho da tela, não com o tamanho do SaaS.
+    const tenantIdsUnicos = [...new Set(minhas.map(nc => nc.tenant_id).filter(Boolean))];
+    const todosTenants = await DB.select('tenants', {}, null).catch(() => []);
+    const nomeTenantPorId = {};
+    for (const t of todosTenants) {
+      // Filtra em JS (wrapper não suporta IN confiável — padrão do projeto)
+      if (tenantIdsUnicos.some(id => String(id) === String(t.id))) {
+        nomeTenantPorId[String(t.id)] = t.nome || null;
+      }
+    }
 
     const ncs = minhas.map(nc => ({
       id: nc.id,
@@ -63,6 +84,10 @@ router.get('/', fornecedorMiddleware, async (req, res) => {
       fornecedor_tratativa_status: nc.fornecedor_tratativa_status,
       fornecedor_ciente_em: nc.fornecedor_ciente_em,
       criado_em: nc.criado_em,
+      // M4.4-etapa-9h: flag derivada (o frontend usa pra separar as abas)
+      _concluida: ['resolvida', 'cancelada'].includes(nc.status),
+      // M4.4-etapa-9i: nome do cliente (tenant)
+      tenant_nome: nomeTenantPorId[String(nc.tenant_id)] || null,
     })).sort((a, b) => new Date(b.criado_em || 0) - new Date(a.criado_em || 0));
 
     res.json({ ncs });
@@ -95,7 +120,12 @@ router.get('/:ncId', fornecedorMiddleware, async (req, res) => {
     // FIX M4.3: NC ainda 'nao_enviado' é invisível ao fornecedor. Devolve
     // 404 (não 403) pra não vazar existência — o fornecedor não deve nem
     // saber que essa NC existe ainda.
-    if (!['enviado', 'visualizado', 'contestada', 'resolvida_fornecedor', 'devolvida'].includes(nc.fornecedor_tratativa_status)) {
+    // M4.4-etapa-9d: whitelist centralizada
+    // M4.4-etapa-9h: também deixa ver NC ENCERRADA (histórico/auditoria).
+    // Quando o comprador valida/cancela, `fornecedor_tratativa_status`
+    // vira null — a NC ainda deve ser acessível pro fornecedor pelo id.
+    const statusInternoConcluido = ['resolvida', 'cancelada'].includes(nc.status);
+    if (!STATUS_VISIVEIS.includes(nc.fornecedor_tratativa_status) && !statusInternoConcluido) {
       return res.status(404).json({ erro: 'NC não encontrada' });
     }
 
@@ -157,6 +187,9 @@ router.get('/:ncId', fornecedorMiddleware, async (req, res) => {
       ? await DB.selectOne('ordens_venda', { id: nc.ordem_venda_id }, nc.tenant_id)
       : null;
 
+    // M4.4-etapa-9i: nome do cliente (tenant) pro header do modal
+    const tenant = await DB.selectOne('tenants', { id: nc.tenant_id }, null).catch(() => null);
+
     res.json({
       cabecalho: {
         id: nc.id,
@@ -178,6 +211,8 @@ router.get('/:ncId', fornecedorMiddleware, async (req, res) => {
         lote: nc.lote,
         numero_serie: nc.numero_serie,
         validade: nc.validade,
+        // M4.4-etapa-9i: cliente que abriu a NC
+        tenant_nome: tenant?.nome || null,
       },
       descricao_problema: nc.descricao_problema,
       motivo_recusa: nc.motivo_recusa,

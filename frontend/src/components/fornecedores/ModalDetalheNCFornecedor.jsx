@@ -9,12 +9,14 @@ import apiService from '../../services/apiService';
 import { fmtD } from '../../utils/formatters';
 
 const STATUS_TRATATIVA = {
-  nao_enviado:          { l: 'Aguardando envio', c: '#6b7280', icon: '⏳' },
-  enviado:              { l: 'Aguardando você',  c: '#f59e0b', icon: '🔔' },
-  visualizado:          { l: 'Visualizada',      c: '#6366f1', icon: '👁️' },
-  aceita:               { l: 'Aceita por você',  c: '#10b981', icon: '✅' },
-  contestada:           { l: 'Contestada',       c: '#ef4444', icon: '✋' },
-  resolvida_fornecedor: { l: 'Resolvida',        c: '#3b82f6', icon: '✔️' },
+  nao_enviado:          { l: 'Aguardando envio',   c: '#6b7280', icon: '⏳' },
+  enviado:              { l: 'Aguardando você',    c: '#f59e0b', icon: '🔔' },
+  visualizado:          { l: 'Visualizada',        c: '#6366f1', icon: '👁️' },
+  // M4.4-etapa-9: comprador devolveu — precisa revisar e reenviar
+  devolvida:            { l: 'Devolvida pelo Comprador!',  c: '#f59e0b', icon: '🔄' },
+  // M4.4-etapa-9c: 'aceita' removido do fluxo
+  contestada:           { l: 'Contestada',         c: '#ef4444', icon: '✋' },
+  resolvida_fornecedor: { l: 'Resolvida',          c: '#3b82f6', icon: '✔️' },
 };
 
 export default function ModalDetalheNCFornecedor({ C, s, detalhe, carregando, onFechar, onAtualizar }) {
@@ -25,7 +27,7 @@ export default function ModalDetalheNCFornecedor({ C, s, detalhe, carregando, on
   // M4.4-etapa-9: tipo de resolução (só obrigatório quando 'resolvida_fornecedor')
   const [tipoResolucao, setTipoResolucao] = useState('substituicao');
   const [mostrarResponder, setMostrarResponder] = useState(null); // 'contestada' | 'resolvida_fornecedor'
-  // const [fotoAberta, setFotoAberta] = useState(null);
+  const [fotoAberta, setFotoAberta] = useState(null);
   const fileRef = useRef(null);
 
   if (carregando || !detalhe) {
@@ -43,7 +45,13 @@ export default function ModalDetalheNCFornecedor({ C, s, detalhe, carregando, on
   }
 
   const { cabecalho, descricao_problema, motivo_recusa, eventos, anexos } = detalhe;
-  const cfg = STATUS_TRATATIVA[cabecalho.fornecedor_tratativa_status] || { l: '—', c: '#6b7280', icon: '⚪' };
+  // M4.4-etapa-9h: quando a NC foi encerrada pelo comprador (status
+  // interno 'resolvida'/'cancelada'), mostra chip próprio mesmo que
+  // `fornecedor_tratativa_status` esteja null.
+  const concluida = cabecalho.status === 'resolvida' || cabecalho.status === 'cancelada';
+  const cfg = concluida
+    ? { l: cabecalho.status === 'cancelada' ? 'Cancelada' : 'Concluída', c: '#10b981', icon: '✅' }
+    : (STATUS_TRATATIVA[cabecalho.fornecedor_tratativa_status] || { l: '—', c: '#6b7280', icon: '⚪' });
   const podeResponder = ['enviado', 'visualizado'].includes(cabecalho.fornecedor_tratativa_status);
   
   const enviarMensagem = async () => {
@@ -141,6 +149,15 @@ export default function ModalDetalheNCFornecedor({ C, s, detalhe, carregando, on
             <div style={{ fontSize: 11, color: C.muted, letterSpacing: '0.08em', marginBottom: 4 }}>
               NÃO CONFORMIDADE
             </div>
+            {/* M4.4-etapa-9i: nome do cliente (tenant) — identidade da NC */}
+            {cabecalho.tenant_nome && (
+              <div style={{
+                fontSize: 15, fontWeight: 600, color: C.accent,
+                marginBottom: 2,
+              }}>
+                🏢 {cabecalho.tenant_nome}
+              </div>
+            )}
             <div style={{
               fontSize: 18, fontWeight: 700, color: C.text,
               fontFamily: "'IBM Plex Mono', monospace",

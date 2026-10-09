@@ -1148,9 +1148,12 @@ router.post('/:id/validar-resolucao-fornecedor', tenantMiddleware, async (req, r
 
     const u = await usuarioAtual(req, tenantId);
 
+    // M4.4-etapa-9g: limpa `fornecedor_tratativa_status` quando a NC
+    // encerra. Sem isso, o chip "🎯 Resolvida (validar)" ficaria ao lado
+    // do "✅ Resolvida" — dois estados contraditórios.
     await DB.update('nao_conformidades', id, {
       status: 'resolvida',
-      fornecedor_tratativa_status: 'resolvida_fornecedor',
+      fornecedor_tratativa_status: null,
       solucao_aplicada: observacao?.trim() || 'Resolução aceita do fornecedor',
       resolvida_em: new Date().toISOString(),
       resolvida_por: u.id,
@@ -1194,8 +1197,11 @@ router.post('/:id/aceitar-contestacao', tenantMiddleware, async (req, res) => {
     const u = await usuarioAtual(req, tenantId);
     const motivoFinal = `Contestação do fornecedor aceita${observacao ? `: ${observacao}` : ''}`;
 
+    // M4.4-etapa-9g: limpa `fornecedor_tratativa_status` quando a NC
+    // encerra (contestação aceita → NC cancelada).
     await DB.update('nao_conformidades', id, {
       status: 'cancelada',
+      fornecedor_tratativa_status: null,
       motivo_cancelamento: motivoFinal,
       atualizado_em: new Date().toISOString(),
     }, tenantId);

@@ -9,6 +9,7 @@
 
 import { useState, useEffect, useRef } from "react";
 import apiService from "../../services/apiService";
+import ModalPrompt from "../shared/ModalPrompt";  // M4.4-etapa-9e
 
 // Sugestão automática de área por tipo de disposição. O usuário pode
 // sobrescrever no mini-modal. Alinhado com o fluxo real: devolução vai
@@ -138,6 +139,11 @@ export default function ModalDetalheNC({
   const [salvando, setSalvando] = useState(false);
   // M4.3-j: confirmação antes de disparar email externo ao fornecedor.
   const [confirmandoEnvio, setConfirmandoEnvio] = useState(false);
+  // M4.4-etapa-9e: modal de prompt padrão (substitui window.prompt)
+  // M4.4-etapa-9e: modal prompt padrão (substitui window.prompt)
+  const [promptDevolucao, setPromptDevolucao] = useState(null); // null | { motivo: '' }
+  // M4.4-etapa-9f: validação de resolução via modal (observação opcional)
+  const [promptValidar, setPromptValidar] = useState(null); // null | { observacao: '' }
   const [toast, setToast] = useState(null);
 
   // Form de resolver (mini-modal interno)
@@ -381,6 +387,41 @@ export default function ModalDetalheNC({
       setToast(r?.mensagem || `Email enviado para ${nc.fornecedor_nome || 'o fornecedor'}.`);
     } catch (e) {
       setErro(e.message || "Erro ao notificar fornecedor");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  // M4.4-etapa-9e: devolve pro fornecedor com motivo (via ModalPrompt)
+  async function executarDevolucao() {
+    if (!promptDevolucao) return;
+    const motivo = promptDevolucao.motivo?.trim();
+    if (!motivo) return;
+    setSalvando(true);
+    try {
+      await apiService.post(`/nao-conformidades/${ncId}/devolver-fornecedor`, { motivo });
+      await carregar();
+      onAtualizar?.();
+      setPromptDevolucao(null);
+    } catch (e) {
+      setErro(e.message || "Erro ao devolver");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  // M4.4-etapa-9f: valida a resolução do fornecedor (encerra a NC)
+  async function executarValidacao() {
+    if (!promptValidar) return;
+    const observacao = promptValidar.observacao?.trim() || null;
+    setSalvando(true);
+    try {
+      await apiService.post(`/nao-conformidades/${ncId}/validar-resolucao-fornecedor`, { observacao });
+      await carregar();
+      onAtualizar?.();
+      setPromptValidar(null);
+    } catch (e) {
+      setErro(e.message || "Erro ao validar");
     } finally {
       setSalvando(false);
     }
@@ -1195,22 +1236,7 @@ export default function ModalDetalheNC({
             {nc.fornecedor_tratativa_status === 'resolvida_fornecedor' && (
               <>
                 <button
-                  onClick={async () => {
-                    const obs = window.prompt("Observação (opcional):");
-                    if (obs === null) return;
-                    setSalvando(true);
-                    try {
-                      await apiService.post(`/nao-conformidades/${ncId}/validar-resolucao-fornecedor`, {
-                        observacao: obs?.trim() || null,
-                      });
-                      await carregar();
-                      onAtualizar?.();
-                    } catch (e) {
-                      setErro(e.message || "Erro ao validar");
-                    } finally {
-                      setSalvando(false);
-                    }
-                  }}
+                  onClick={() => setPromptValidar({ observacao: '' })}
                   disabled={salvando}
                   style={{ ...s.btn(true, "#a855f7"), padding: "8px 16px", fontSize: 12,
                            background: "#a855f7", border: "1px solid #a855f7" }}
@@ -1218,23 +1244,7 @@ export default function ModalDetalheNC({
                   🎯 Validar resolução
                 </button>
                 <button
-                  onClick={async () => {
-                    const motivo = window.prompt("Motivo da devolução (obrigatório):");
-                    if (motivo === null) return;
-                    if (!motivo.trim()) { alert("Motivo é obrigatório."); return; }
-                    setSalvando(true);
-                    try {
-                      await apiService.post(`/nao-conformidades/${ncId}/devolver-fornecedor`, {
-                        motivo: motivo.trim(),
-                      });
-                      await carregar();
-                      onAtualizar?.();
-                    } catch (e) {
-                      setErro(e.message || "Erro ao devolver");
-                    } finally {
-                      setSalvando(false);
-                    }
-                  }}
+                  onClick={() => setPromptDevolucao({ motivo: '' })}
                   disabled={salvando}
                   style={{ ...s.btn(true, "#f59e0b"), padding: "8px 16px", fontSize: 12,
                            background: "#f59e0b", border: "1px solid #f59e0b" }}
@@ -1297,23 +1307,7 @@ export default function ModalDetalheNC({
                   ❌ Rejeitar contestação
                 </button>
                 <button
-                  onClick={async () => {
-                    const motivo = window.prompt("Motivo da devolução (obrigatório):");
-                    if (motivo === null) return;
-                    if (!motivo.trim()) { alert("Motivo é obrigatório."); return; }
-                    setSalvando(true);
-                    try {
-                      await apiService.post(`/nao-conformidades/${ncId}/devolver-fornecedor`, {
-                        motivo: motivo.trim(),
-                      });
-                      await carregar();
-                      onAtualizar?.();
-                    } catch (e) {
-                      setErro(e.message || "Erro ao devolver");
-                    } finally {
-                      setSalvando(false);
-                    }
-                  }}
+                  onClick={() => setPromptDevolucao({ motivo: '' })}
                   disabled={salvando}
                   style={{ ...s.btn(true, "#f59e0b"), padding: "8px 16px", fontSize: 12,
                            background: "#f59e0b", border: "1px solid #f59e0b" }}
@@ -1908,6 +1902,45 @@ export default function ModalDetalheNC({
             </div>
           </div>
         )}
+
+      {/* M4.4-etapa-9e: modal prompt padrão pra motivo da devolução */}
+      {promptDevolucao && (
+        <ModalPrompt
+          aberto
+          titulo="🔄 Devolver ao fornecedor"
+          descricao="Explique por que a resolução não foi aceita. O fornecedor verá este motivo e poderá reenviar."
+          label="MOTIVO DA DEVOLUÇÃO"
+          placeholder="Ex: valor não confere com a NF / substituição não atende / aguardamos ressarcimento"
+          obrigatorio
+          valor={promptDevolucao.motivo}
+          onChange={v => setPromptDevolucao(p => ({ ...p, motivo: v }))}
+          onConfirmar={executarDevolucao}
+          onCancelar={() => setPromptDevolucao(null)}
+          salvando={salvando}
+          confirmarTexto="🔄 Devolver"
+          corBotao="#f59e0b"
+          C={C} s={s}
+        />
+      )}
+
+      {/* M4.4-etapa-9f: modal de validação de resolução (observação opcional) */}
+      {promptValidar && (
+        <ModalPrompt
+          aberto
+          titulo="🎯 Validar resolução"
+          descricao="Confirma que a resolução do fornecedor encerra a NC? Adicione uma observação se precisar."
+          label="OBSERVAÇÃO (OPCIONAL)"
+          placeholder="Ex: peça substituída conforme combinado"
+          valor={promptValidar.observacao}
+          onChange={v => setPromptValidar(p => ({ ...p, observacao: v }))}
+          onConfirmar={executarValidacao}
+          onCancelar={() => setPromptValidar(null)}
+          salvando={salvando}
+          confirmarTexto="🎯 Validar e encerrar"
+          corBotao="#a855f7"
+          C={C} s={s}
+        />
+      )}
 
         {/* Lightbox */}
         {fotoAberta && (

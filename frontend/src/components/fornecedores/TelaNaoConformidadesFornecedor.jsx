@@ -12,9 +12,9 @@ import ModalDetalheNCFornecedor from './ModalDetalheNCFornecedor';
 const STATUS_TRATATIVA = {
   nao_enviado:          { l: 'Aguardando envio',   c: '#6b7280', icon: '⏳' },
   enviado:              { l: 'Aguardando você',    c: '#f59e0b', icon: '🔔' },
-  visualizado:          { l: 'Visualizada',        c: '#6366f1', icon: '👁️' },
+  visualizado:          { l: 'Visualizada por você',        c: '#6366f1', icon: '👁️' },
   // M4.4-etapa-9: comprador devolveu — precisa revisar e reenviar
-  devolvida:            { l: 'Devolvida — ação!',  c: '#f59e0b', icon: '🔄' },
+  devolvida:            { l: 'Devolvida pelo Comprador!',  c: '#f59e0b', icon: '🔄' },
   // M4.4-etapa-9c: 'aceita' removido do fluxo
   contestada:           { l: 'Contestada',         c: '#ef4444', icon: '✋' },
   resolvida_fornecedor: { l: 'Resolvida',          c: '#3b82f6', icon: '✔️' },
@@ -32,7 +32,8 @@ export default function TelaNaoConformidadesFornecedor({ C, s, usuario }) {
   const carregar = useCallback(async () => {
     try {
       setLoading(true);
-      const data = await apiService.get('/fornecedor/nao-conformidades');
+      // M4.4-etapa-9h: inclui NCs encerradas (aba "Concluídas")
+      const data = await apiService.get('/fornecedor/nao-conformidades?incluir_concluidas=true');
       setNcs(data.ncs || []);
     } catch (e) {
       setErro(e.message || 'Erro ao carregar NCs');
@@ -56,15 +57,21 @@ export default function TelaNaoConformidadesFornecedor({ C, s, usuario }) {
   };
 
   const filtradas = ncs.filter(nc => {
+    // M4.4-etapa-9h: inclui aba "Concluídas" (NCs encerradas pelo comprador).
+    // 'respondidas' atualizado: 'aceita' saiu do fluxo; 'devolvida' entrou.
+    if (filtro === 'concluidas') {
+      if (!nc._concluida) return false;
+    }
     if (filtro === 'aguardando') {
       if (!['enviado', 'visualizado'].includes(nc.fornecedor_tratativa_status)) return false;
     }
     if (filtro === 'respondidas') {
-      if (!['aceita', 'contestada', 'resolvida_fornecedor'].includes(nc.fornecedor_tratativa_status)) return false;
+      if (!['contestada', 'resolvida_fornecedor', 'devolvida'].includes(nc.fornecedor_tratativa_status)) return false;
     }
     if (busca.trim()) {
       const q = busca.toLowerCase();
-      const hay = `${nc.numero_nc} ${nc.descricao_problema || ''} ${nc.numero_pedido || ''} ${nc.numero_nota_fiscal || ''}`.toLowerCase();
+      // M4.4-etapa-9i: inclui nome do cliente (tenant) na busca
+      const hay = `${nc.numero_nc} ${nc.descricao_problema || ''} ${nc.numero_pedido || ''} ${nc.numero_nota_fiscal || ''} ${nc.tenant_nome || ''}`.toLowerCase();
       if (!hay.includes(q)) return false;
     }
     return true;
@@ -103,13 +110,18 @@ export default function TelaNaoConformidadesFornecedor({ C, s, usuario }) {
           { id: 'todas', l: 'Todas' },
           { id: 'aguardando', l: 'Aguardando você' },
           { id: 'respondidas', l: 'Já respondidas' },
+          { id: 'concluidas', l: 'Concluídas' },   {/* M4.4-etapa-9h */}
         ].map(f => {
           const ativo = filtro === f.id;
+          // M4.4-etapa-9h: contadores com as 4 abas. "Todas" inclui as
+          // concluídas; "Aguardando" e "Respondidas" excluem as concluídas.
           const count = f.id === 'aguardando'
-            ? ncs.filter(nc => ['enviado', 'visualizado'].includes(nc.fornecedor_tratativa_status)).length
+            ? ncs.filter(nc => ['enviado', 'visualizado'].includes(nc.fornecedor_tratativa_status) && !nc._concluida).length
             : f.id === 'respondidas'
-              ? ncs.filter(nc => ['aceita', 'contestada', 'resolvida_fornecedor'].includes(nc.fornecedor_tratativa_status)).length
-              : ncs.length;
+              ? ncs.filter(nc => ['contestada', 'resolvida_fornecedor', 'devolvida'].includes(nc.fornecedor_tratativa_status) && !nc._concluida).length
+              : f.id === 'concluidas'
+                ? ncs.filter(nc => nc._concluida).length
+                : ncs.length;
           return (
             <button
               key={f.id}
@@ -146,7 +158,12 @@ export default function TelaNaoConformidadesFornecedor({ C, s, usuario }) {
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
           {filtradas.map(nc => {
-            const cfg = STATUS_TRATATIVA[nc.fornecedor_tratativa_status] || { l: '—', c: '#6b7280', icon: '⚪' };
+            // M4.4-etapa-9h: quando o comprador encerra (status interno
+            // resolvida/cancelada), fornecedor_tratativa_status vira null.
+            // Deriva chip "Concluída" pra não cair em fallback branco.
+            const cfg = nc._concluida
+              ? { l: 'Concluída', c: '#10b981', icon: '✅' }
+              : (STATUS_TRATATIVA[nc.fornecedor_tratativa_status] || { l: '—', c: '#6b7280', icon: '⚪' });
             return (
               <div
                 key={nc.id}
@@ -167,6 +184,12 @@ export default function TelaNaoConformidadesFornecedor({ C, s, usuario }) {
                     fontFamily: "'IBM Plex Mono', monospace", marginBottom: 2,
                   }}>
                     {nc.numero_nc}
+                    {/* M4.4-etapa-9i: nome do cliente (tenant) ao lado */}
+                    {nc.tenant_nome && (
+                      <span style={{ marginLeft: 8, fontSize: 11, color: C.muted, fontWeight: 400, fontFamily: 'inherit' }}>
+                        {nc.tenant_nome}
+                      </span>
+                    )}
                   </div>
                   <div style={{
                     fontSize: 12, color: C.textSub,
