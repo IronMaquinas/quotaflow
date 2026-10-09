@@ -22,6 +22,7 @@ export default function ModalPrompt({
   aberto, titulo, descricao, label = 'VALOR', placeholder = '',
   obrigatorio = false, valor = '', onChange, onConfirmar, onCancelar,
   salvando = false, C, s, confirmarTexto = 'Confirmar', corBotao,
+  erro,  // M4.4-etapa-10b: mensagem de erro exibida dentro do modal
 }) {
   const inputRef = useRef(null);
 
@@ -72,6 +73,17 @@ export default function ModalPrompt({
           rows={4}
           style={{ ...s.input, width: '100%', resize: 'vertical', fontSize: 13, marginTop: 4 }}
         />
+
+        {/* M4.4-etapa-10b: erro exibido DENTRO do modal */}
+        {erro && (
+          <div style={{
+            marginTop: 12, padding: '10px 12px',
+            background: '#ef444415', border: '1px solid #ef444440',
+            borderRadius: 6, fontSize: 12, color: '#ef4444', lineHeight: 1.5,
+          }}>
+            ⚠ {erro}
+          </div>
+        )}
 
         <div style={{ display: 'flex', gap: 10, marginTop: 16, justifyContent: 'flex-end' }}>
           <button

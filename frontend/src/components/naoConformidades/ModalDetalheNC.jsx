@@ -139,11 +139,31 @@ export default function ModalDetalheNC({
   const [salvando, setSalvando] = useState(false);
   // M4.3-j: confirmação antes de disparar email externo ao fornecedor.
   const [confirmandoEnvio, setConfirmandoEnvio] = useState(false);
-  // M4.4-etapa-9e: modal de prompt padrão (substitui window.prompt)
-  // M4.4-etapa-9e: modal prompt padrão (substitui window.prompt)
+  // M4.4-etapa-9e: modais de prompt padrão (substitui window.prompt)
   const [promptDevolucao, setPromptDevolucao] = useState(null); // null | { motivo: '' }
-  // M4.4-etapa-9f: validação de resolução via modal (observação opcional)
+  // M4.4-etapa-9f: validação via modal (observação opcional)
   const [promptValidar, setPromptValidar] = useState(null); // null | { observacao: '' }
+  // M4.4-etapa-10b: erro local do ModalPrompt (evita mostrar no corpo da NC)
+  const [erroPrompt, setErroPrompt] = useState(null);
+  // M4.4-etapa-9e: devolve pro fornecedor com motivo (via ModalPrompt)
+  // M4.4-etapa-10b: erro vai pro modal, não pro corpo da NC
+  async function executarDevolucao() {
+    if (!promptDevolucao) return;
+    const motivo = promptDevolucao.motivo?.trim();
+    if (!motivo) return;
+    setSalvando(true);
+    setErroPrompt(null);
+    try {
+      await apiService.post(`/nao-conformidades/${ncId}/devolver-fornecedor`, { motivo });
+      await carregar();
+      onAtualizar?.();
+      setPromptDevolucao(null);
+    } catch (e) {
+      setErroPrompt(e.message || "Erro ao devolver");
+    } finally {
+      setSalvando(false);
+    }
+  }
   const [toast, setToast] = useState(null);
 
   // Form de resolver (mini-modal interno)
@@ -387,24 +407,6 @@ export default function ModalDetalheNC({
       setToast(r?.mensagem || `Email enviado para ${nc.fornecedor_nome || 'o fornecedor'}.`);
     } catch (e) {
       setErro(e.message || "Erro ao notificar fornecedor");
-    } finally {
-      setSalvando(false);
-    }
-  }
-
-  // M4.4-etapa-9e: devolve pro fornecedor com motivo (via ModalPrompt)
-  async function executarDevolucao() {
-    if (!promptDevolucao) return;
-    const motivo = promptDevolucao.motivo?.trim();
-    if (!motivo) return;
-    setSalvando(true);
-    try {
-      await apiService.post(`/nao-conformidades/${ncId}/devolver-fornecedor`, { motivo });
-      await carregar();
-      onAtualizar?.();
-      setPromptDevolucao(null);
-    } catch (e) {
-      setErro(e.message || "Erro ao devolver");
     } finally {
       setSalvando(false);
     }
@@ -1244,7 +1246,7 @@ export default function ModalDetalheNC({
                   🎯 Validar resolução
                 </button>
                 <button
-                  onClick={() => setPromptDevolucao({ motivo: '' })}
+                  onClick={() => { setErroPrompt(null); setPromptDevolucao({ motivo: '' }); }}
                   disabled={salvando}
                   style={{ ...s.btn(true, "#f59e0b"), padding: "8px 16px", fontSize: 12,
                            background: "#f59e0b", border: "1px solid #f59e0b" }}
@@ -1307,7 +1309,7 @@ export default function ModalDetalheNC({
                   ❌ Rejeitar contestação
                 </button>
                 <button
-                  onClick={() => setPromptDevolucao({ motivo: '' })}
+                  onClick={() => { setErroPrompt(null); setPromptDevolucao({ motivo: '' }); }}
                   disabled={salvando}
                   style={{ ...s.btn(true, "#f59e0b"), padding: "8px 16px", fontSize: 12,
                            background: "#f59e0b", border: "1px solid #f59e0b" }}
@@ -1915,10 +1917,11 @@ export default function ModalDetalheNC({
           valor={promptDevolucao.motivo}
           onChange={v => setPromptDevolucao(p => ({ ...p, motivo: v }))}
           onConfirmar={executarDevolucao}
-          onCancelar={() => setPromptDevolucao(null)}
+          onCancelar={() => { setPromptDevolucao(null); setErroPrompt(null); }}
           salvando={salvando}
           confirmarTexto="🔄 Devolver"
           corBotao="#f59e0b"
+          erro={erroPrompt}
           C={C} s={s}
         />
       )}

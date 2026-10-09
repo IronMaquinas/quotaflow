@@ -1291,6 +1291,16 @@ router.post('/:id/devolver-fornecedor', tenantMiddleware, async (req, res) => {
     const u = await usuarioAtual(req, tenantId);
     const rodadaAtual = Number(nc.rodada) || 1;
 
+    // M4.4-etapa-10: guarda contra loop infinito (comprador ↔ fornecedor
+    // devolvendo/reenviando). Após 5 rodadas, só resta validar ou cancelar
+    // — o time humano precisa conversar fora do sistema.
+    const RODADAS_MAX = 5;
+    if (rodadaAtual >= RODADAS_MAX) {
+      return res.status(400).json({
+        erro: `Limite de ${RODADAS_MAX} devoluções atingido. Encaminhe para validação final ou cancelamento.`,
+      });
+    }
+
     await DB.update('nao_conformidades', id, {
       fornecedor_tratativa_status: 'devolvida',
       rodada: rodadaAtual + 1,

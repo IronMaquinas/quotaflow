@@ -373,10 +373,18 @@ export default function ModalDetalheNCFornecedor({ C, s, detalhe, carregando, on
               <div style={{ fontSize: 11, color: '#f59e0b', fontWeight: 600, marginBottom: 6 }}>
                 🔄 DEVOLVIDA PELO COMPRADOR — AÇÃO NECESSÁRIA
               </div>
-              <div style={{ fontSize: 12, color: C.text, lineHeight: 1.5 }}>
-                Sua resolução foi analisada e devolvida. Revise o motivo abaixo,
-                ajuste sua proposta e reenvie.
-              </div>
+              {/* M4.4-etapa-10: aviso quando o limite de rodadas foi atingido */}
+              {Number(cabecalho.rodada) >= 5 ? (
+                <div style={{ fontSize: 12, color: '#ef4444', lineHeight: 1.5, fontWeight: 600 }}>
+                  ⚠️ Limite de 5 devoluções atingido. O comprador precisa validar ou cancelar —
+                  contate-o para alinhar os próximos passos.
+                </div>
+              ) : (
+                <div style={{ fontSize: 12, color: C.text, lineHeight: 1.5 }}>
+                  Sua resolução foi analisada e devolvida. Veja o motivo no <strong>histórico abaixo</strong>,
+                  ajuste sua proposta e reenvie.
+                </div>
+              )}
 
               {/* M4.4-etapa-9: mostra o motivo da devolução (último evento) */}
               {(() => {
@@ -397,33 +405,38 @@ export default function ModalDetalheNCFornecedor({ C, s, detalhe, carregando, on
                   </div>
                 );
               })()}
-              <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-                <select
-                  value={tipoResolucao}
-                  onChange={e => setTipoResolucao(e.target.value)}
-                  style={{ ...s.input, flex: 1, minWidth: 200, appearance: 'none' }}
-                >
-                  <option value="substituicao">🔄 Substituição do item</option>
-                  <option value="ressarcimento">💰 Ressarcimento financeiro</option>
-                  <option value="credito">📒 Crédito futuro</option>
-                  <option value="reparo">🧰 Reparo / retrabalho</option>
-                  <option value="devolucao_estorno">↩️ Devolução com estorno</option>
-                  <option value="aceite_com_ressalva">⚠️ Aceite com ressalva</option>
-                  <option value="outro">📎 Outro (descrever na observação)</option>
-                </select>
-                <button
-                  onClick={reenviar}
-                  disabled={respondendo}
-                  style={{ ...s.btn(true, '#3b82f6'), padding: '8px 16px', fontSize: 12,
-                           opacity: respondendo ? 0.5 : 1 }}
-                >
-                  {respondendo ? 'Reenviando...' : '📤 Reenviar resolução'}
-                </button>
-              </div>
-              {motivoResposta && (
-                <div style={{ fontSize: 10, color: C.muted, marginTop: 8 }}>
-                  Observação será incluída: "{motivoResposta}"
-                </div>
+
+              {Number(cabecalho.rodada) < 5 && (
+                <>
+                  <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
+                    <select
+                      value={tipoResolucao}
+                      onChange={e => setTipoResolucao(e.target.value)}
+                      style={{ ...s.input, flex: 1, minWidth: 200, appearance: 'none' }}
+                    >
+                      <option value="substituicao">🔄 Substituição do item</option>
+                      <option value="ressarcimento">💰 Ressarcimento financeiro</option>
+                      <option value="credito">📒 Crédito futuro</option>
+                      <option value="reparo">🧰 Reparo / retrabalho</option>
+                      <option value="devolucao_estorno">↩️ Devolução com estorno</option>
+                      <option value="aceite_com_ressalva">⚠️ Aceite com ressalva</option>
+                      <option value="outro">📎 Outro (descrever na observação)</option>
+                    </select>
+                    <button
+                      onClick={reenviar}
+                      disabled={respondendo}
+                      style={{ ...s.btn(true, '#3b82f6'), padding: '8px 16px', fontSize: 12,
+                               opacity: respondendo ? 0.5 : 1 }}
+                    >
+                      {respondendo ? 'Reenviando...' : '📤 Reenviar resolução'}
+                    </button>
+                  </div>
+                  {motivoResposta && (
+                    <div style={{ fontSize: 10, color: C.muted, marginTop: 8 }}>
+                      Observação será incluída: "{motivoResposta}"
+                    </div>
+                  )}
+                </>
               )}
             </div>
           )}
