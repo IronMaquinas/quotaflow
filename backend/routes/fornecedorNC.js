@@ -556,6 +556,28 @@ router.post('/:ncId/reenviar', fornecedorMiddleware, async (req, res) => {
       autor_tipo: 'fornecedor',
     }, nc.tenant_id);
 
+    // M4.4-etapa-10c: notificar comprador por email (mesmo padrão do
+    // /responder). Antes, ele só descobria se abrisse o portal.
+    try {
+      const comprador = nc.inspetor_id
+        ? await DB.selectOne('usuarios', { id: nc.inspetor_id, tenant_id: nc.tenant_id }, nc.tenant_id)
+        : null;
+      if (comprador?.email) {
+        const { enviarEmailCotacao } = require('../services/emailService');
+        const baseUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, '');
+        const corpo = `
+          <h2>Fornecedor reenviou a resolução — NC ${nc.numero_nc}</h2>
+          <p><strong>${forn?.nome || 'Fornecedor'}</strong> reenviou após sua devolução.</p>
+          <p><strong>Tipo:</strong> ${rotulosResolucao[tipo_resolucao] || tipo_resolucao}</p>
+          ${observacao ? `<blockquote>${observacao}</blockquote>` : ''}
+          <p><a href="${baseUrl}/#dashboard">Abrir QuotaFlow</a></p>
+        `;
+        await enviarEmailCotacao(comprador.email, `NC ${nc.numero_nc} — resolução reenviada`, corpo);
+      }
+    } catch (mailErr) {
+      console.warn('⚠ Falha ao notificar comprador (reenvio):', mailErr.message);
+    }
+
     res.json({ ok: true, fornecedor_tratativa_status: 'resolvida_fornecedor' });
   } catch (err) {
     console.error('❌ Erro em /reenviar:', err.message);

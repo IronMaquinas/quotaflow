@@ -1316,6 +1316,34 @@ router.post('/:id/devolver-fornecedor', tenantMiddleware, async (req, res) => {
       { visivel_fornecedor: true, autor_tipo: 'comprador' }
     );
 
+    // M4.4-etapa-10c: notificar o fornecedor por email. Antes, ele só
+    // descobria a devolução se abrisse o portal.
+    try {
+      const fornecedor = nc.fornecedor_id
+        ? await DB.selectOne('fornecedores', { id: nc.fornecedor_id, tenant_id: tenantId }, tenantId)
+        : null;
+      if (fornecedor?.email) {
+        const { enviarEmailCotacao } = require('../services/emailService');
+        const baseUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, '');
+        const linkPortal = `${baseUrl}/#portal`;
+        const corpo = `
+          <h2>Sua resolução foi devolvida — NC ${nc.numero_nc}</h2>
+          <p>O comprador analisou sua proposta e <strong>devolveu pra revisão</strong>.</p>
+          <p><strong>Motivo:</strong></p>
+          <blockquote>${motivo.trim()}</blockquote>
+          <p>Acesse o portal, ajuste sua proposta e reenvie:</p>
+          <p><a href="${linkPortal}">Abrir Portal do Fornecedor</a></p>
+        `;
+        await enviarEmailCotacao(
+          fornecedor.email,
+          `NC ${nc.numero_nc} — resolução devolvida para revisão`,
+          corpo
+        );
+      }
+    } catch (mailErr) {
+      console.warn('⚠ Falha ao notificar fornecedor (devolução):', mailErr.message);
+    }
+
     return res.json({ ok: true, mensagem: 'Devolvido ao fornecedor' });
   } catch (err) {
     console.error('❌ Erro ao devolver para fornecedor:', err.message);
