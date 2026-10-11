@@ -14,11 +14,14 @@ export default function ModalReportarNC({
 
   const [descricao, setDescricao] = useState("");
   const [acaoImediata, setAcaoImediata] = useState("");
-  const [disposicao, setDisposicao] = useState("pendente");
+  // M4.5-fix: disposição removida do formulário de abertura. É decisão
+  // de quem analisa (fluxo registrar-disposicao, no detalhe da NC),
+  // não de quem reporta o problema.
   const [quantidadeAfetada, setQuantidadeAfetada] = useState(
     isMaterial ? String(qtdPlanejada || 1) : ""
   );
-  const [custoEstimado, setCustoEstimado] = useState("");
+  // M4.5-fix: custo estimado removido da abertura. Vai entrar no fluxo
+  // de análise (registrar-disposicao) por valor do item + horas.
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState(null);
 
@@ -38,8 +41,8 @@ export default function ModalReportarNC({
         origem,
         descricao_problema: descricao.trim(),
         acao_imediata: acaoImediata.trim() || null,
-        disposicao,
-        custo_estimado: custoEstimado !== "" ? parseFloat(custoEstimado) : null,
+        // M4.5-fix: disposição e custo estimado não vão mais daqui.
+        // Backend cai em 'pendente' / null.
         quantidade_afetada: isMaterial && quantidadeAfetada !== ""
           ? parseFloat(quantidadeAfetada)
           : null,
@@ -54,13 +57,7 @@ export default function ModalReportarNC({
     }
   }
 
-  const disposicoes = [
-    { id: "pendente", label: "Pendente de decisão" },
-    { id: "devolucao", label: "Devolução ao fornecedor" },
-    { id: "retrabalho", label: "Retrabalho" },
-    { id: "descarte", label: "Descarte (refugo)" },
-    { id: "uso_como_esta", label: "Uso como está (concessão)" },
-  ];
+  // M4.5-fix: array de disposições removido junto com o select.
 
   return (
     <div style={{ position: "fixed", inset: 0, background: "#00000090",
@@ -166,27 +163,8 @@ export default function ModalReportarNC({
               style={{ ...s.input, minHeight: 70, resize: "vertical" }} />
           </div>
 
-          <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr",
-                        gap: 10, marginBottom: 14 }}>
-            <div>
-              <label style={s.label}>DISPOSIÇÃO</label>
-              <select value={disposicao}
-                onChange={e => setDisposicao(e.target.value)}
-                style={{ ...s.input, appearance: "none" }}>
-                {disposicoes.map(d => (
-                  <option key={d.id} value={d.id}>{d.label}</option>
-                ))}
-              </select>
-            </div>
-            <div>
-              <label style={s.label}>CUSTO EST. (R$)</label>
-              <input type="number" min="0" step="0.01"
-                value={custoEstimado}
-                onChange={e => setCustoEstimado(e.target.value)}
-                placeholder="0,00"
-                style={{ ...s.input, textAlign: "right" }} />
-            </div>
-          </div>
+          {/* M4.5-fix: disposição e custo estimado removidos da abertura.
+              Ambos entram no fluxo de análise (registrar-disposicao). */}
 
           {erro && (
             <div style={{ padding: "10px 12px", background: "#ef444415",

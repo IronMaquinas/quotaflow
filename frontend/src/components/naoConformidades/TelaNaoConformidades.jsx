@@ -10,6 +10,7 @@
 import { useState, useEffect, useCallback } from "react";
 import apiService from "../../services/apiService";
 import ModalDetalheNC from "./ModalDetalheNC";
+import ModalNovaNC from "./ModalNovaNC";
 
 // ─────────────────────────────────────────────────────────────────────────
 // CONSTANTES DE UI
@@ -52,6 +53,8 @@ export default function TelaNaoConformidades({ C, s, fmtD, onIrParaOS, initialNC
   // Card expandido (só 1 por vez, clicar em outro fecha o anterior)
   const [expandidoId, setExpandidoId] = useState(null);
   const [ncAbertaId, setNcAbertaId] = useState(null);
+  // M4.5: abertura manual de NC (modal novo)
+  const [novaNCAberta, setNovaNCAberta] = useState(false);
 
   // M4.3-e: deep link interno. Quando TelaRecebimento chama onIrParaNC,
   // App seta initialNCId e troca de tela. Aqui consumimos 1x e
@@ -104,7 +107,7 @@ export default function TelaNaoConformidades({ C, s, fmtD, onIrParaOS, initialNC
           </div>
         </div>
         <button
-          onClick={() => alert("Em breve: criar NC avulsa (sem OS vinculada). Por ora, use o botão '⚠️ Reportar problema' dentro de uma Ordem de Serviço.")}
+          onClick={() => setNovaNCAberta(true)}
           style={{ ...s.btn(true), padding: "9px 20px", fontSize: 12 }}>
           ➕ Nova NC
         </button>
@@ -465,6 +468,17 @@ export default function TelaNaoConformidades({ C, s, fmtD, onIrParaOS, initialNC
                 fmtD={fmtD}
               />
             )}
+
+            {/* M4.5: modal de abertura manual de NC */}
+            {novaNCAberta && (
+              <ModalNovaNC
+                C={C}
+                s={s}
+                onFechar={() => setNovaNCAberta(false)}
+                onAtualizar={() => { setNovaNCAberta(false); carregar(); }}
+              />
+            )}
+
           </div>
         );
       })}

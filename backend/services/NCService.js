@@ -66,53 +66,32 @@ async function notificarFornecedorNC(ncId, tenantId, opts = {}) {
     ? (tenant?.email_contato || tenant?.email_admin || null)
     : (comprador?.email || tenant?.email_contato || tenant?.email_admin || null);
 
-  // M4.1: campos opcionais do recebimento (lote, série, validade).
-  // Só renderiza a linha quando o valor está preenchido.
-  const linhaLote = nc.lote
-    ? `<li><strong>Lote:</strong> ${nc.lote}</li>`
-    : '';
-  const linhaSerie = nc.numero_serie
-    ? `<li><strong>Nº de série:</strong> ${nc.numero_serie}</li>`
-    : '';
-  const linhaValidade = nc.validade
-    ? `<li><strong>Validade:</strong> ${new Date(nc.validade).toLocaleDateString('pt-BR', { timeZone: 'UTC' })}</li>`
-    : '';
-  const linhaQtd = nc.quantidade
-    ? `<li><strong>Qtd recusada:</strong> ${nc.quantidade} ${nc.unidade_medida || 'UN'}</li>`
+  // M4.4-etapa-10d: usa o template padronizado (corpoParaFornecedor).
+  // Monta o rodapé de contato como HTML solto (só as linhas internas)
+  // e passa pro template, que envolve no bloco cinza padrão.
+  const { corpoParaFornecedor } = require('./NCEmailTemplates');
+  const itemConsumo = nc.item_catalogo_id
+    ? await DB.selectOne('itens_consumo', { catalogo_item_id: nc.item_catalogo_id, tenant_id: tenantId }, tenantId)
+    : null;
+
+  const rodapeContato = (contatoNome || contatoTel || contatoMail)
+    ? [
+        contatoNome ? `<p style="margin:6px 0 0 0;font-size:13px;color:#333;"><strong>${contatoNome}</strong></p>` : '',
+        contatoMail ? `<p style="margin:2px 0 0 0;font-size:12px;color:#555;">📧 ${contatoMail}</p>` : '',
+        contatoTel ? `<p style="margin:2px 0 0 0;font-size:12px;color:#555;">📞 ${contatoTel}</p>` : '',
+      ].filter(Boolean).join('')
     : '';
 
-  // Rodapé — só renderiza o bloco de contato se ao menos um campo existir.
-  const rodape = (contatoNome || contatoTel || contatoMail)
-    ? `
-      <div style="background:#f5f5f5;border-left:4px solid #2563eb;padding:12px 16px;margin:20px 0;">
-        <p style="margin:0;font-size:13px;color:#555;"><strong>Dúvidas sobre esta NC?</strong></p>
-        ${contatoNome ? `<p style="margin:6px 0 0 0;font-size:13px;color:#333;"><strong>${contatoNome}</strong></p>` : ''}
-        ${contatoMail ? `<p style="margin:2px 0 0 0;font-size:12px;color:#555;">📧 ${contatoMail}</p>` : ''}
-        ${contatoTel ? `<p style="margin:2px 0 0 0;font-size:12px;color:#555;">📞 ${contatoTel}</p>` : ''}
-      </div>
-    `
-    : '';
-
-  const corpo = `
-    <h2>Não Conformidade registrada</h2>
-    <p>Olá <strong>${forn.nome}</strong>,</p>
-    <p>Foi registrada uma <strong>Não Conformidade</strong> contra um recebimento seu:</p>
-    <ul>
-      <li><strong>NC:</strong> ${nc.numero_nc}</li>
-      ${ov?.numero ? `<li><strong>Pedido:</strong> ${ov.numero}</li>` : ''}
-      ${nc.numero_nota_fiscal ? `<li><strong>NF:</strong> ${nc.numero_nota_fiscal}</li>` : ''}
-      ${linhaQtd}
-      ${linhaLote}
-      ${linhaSerie}
-      ${linhaValidade}
-      <li><strong>Motivo:</strong> ${nc.descricao_problema || nc.motivo_recusa || '—'}</li>
-    </ul>
-    <p>Acesse o Portal do Fornecedor para ver detalhes, responder e anexar evidências:</p>
-    <p><a href="${linkPortal}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:white;text-decoration:none;border-radius:6px;">Abrir Portal</a></p>
-    ${rodape}
-    <hr/>
-    <p><small>Mensagem automática do QuotaFlow.</small></p>
-  `;
+  const corpo = corpoParaFornecedor({
+    nc, ov, fornecedor: forn, tenant,
+    itemNome: itemConsumo?.nome || null,
+    sku: itemConsumo?.sku || null,
+    acao: 'Não conformidade registrada',
+    motivo: null,
+    linkPortal,
+    rodapeContato,
+    contexto: 'criacao',
+  });
 
   await enviarEmailCotacao(
     forn.email,

@@ -213,6 +213,11 @@ router.get('/:ncId', fornecedorMiddleware, async (req, res) => {
         validade: nc.validade,
         // M4.4-etapa-9i: cliente que abriu a NC
         tenant_nome: tenant?.nome || null,
+        // M4.4-etapa-10d: rodada atual da tratativa. O modal do fornecedor
+        // usa pra decidir se ainda pode reenviar (limite = 5) e pra exibir
+        // o aviso de limite atingido. Sem isso, `Number(undefined) < 5`
+        // dá false e o botão Reenviar some.
+        rodada: nc.rodada ?? 1,
       },
       descricao_problema: nc.descricao_problema,
       motivo_recusa: nc.motivo_recusa,
@@ -463,21 +468,40 @@ router.put('/:ncId/responder', fornecedorMiddleware, async (req, res) => {
       autor_tipo: 'fornecedor',
     }, nc.tenant_id);
 
-    // Notifica comprador (best-effort)
+    // Notifica comprador (best-effort) — M4.4-etapa-10d: usa template
+    // padronizado com bloco de contexto (cliente, item, PN, qtd, descrição).
     try {
       const comprador = nc.inspetor_id
         ? await DB.selectOne('usuarios', { id: nc.inspetor_id }, nc.tenant_id)
         : null;
       if (comprador?.email) {
         const { enviarEmailCotacao } = require('../services/emailService');
+        const { corpoParaComprador } = require('../services/NCEmailTemplates');
+        const ov = nc.ordem_venda_id
+          ? await DB.selectOne('ordens_venda', { id: nc.ordem_venda_id, tenant_id: nc.tenant_id }, nc.tenant_id)
+          : null;
+        const tenant = await DB.selectOne('tenants', { id: nc.tenant_id }, null).catch(() => null);
+        const itemConsumo = nc.item_catalogo_id
+          ? await DB.selectOne('itens_consumo', { catalogo_item_id: nc.item_catalogo_id, tenant_id: nc.tenant_id }, nc.tenant_id)
+          : null;
         const baseUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, '');
-        const corpo = `
-          <h2>Fornecedor respondeu a NC ${nc.numero_nc}</h2>
-          <p><strong>${forn?.nome || 'Fornecedor'}</strong> ${descricoes[resposta]}.</p>
-          ${observacao ? `<blockquote>${observacao}</blockquote>` : ''}
-          <p><a href="${baseUrl}/#dashboard">Abrir QuotaFlow</a></p>
-        `;
-        await enviarEmailCotacao(comprador.email, `NC ${nc.numero_nc} — ${descricoes[resposta]}`, corpo);
+        // M4.4-etapa-10d-fix: texto do email separado do texto do evento.
+        // O template corpoParaComprador já prefixa com o nome do fornecedor,
+        // então aqui o texto começa com verbo em minúsculo.
+        const acoesEmail = {
+          contestada: 'contestou a NC',
+          resolvida_fornecedor: 'marcou a NC como resolvida',
+        };
+        const acao = `${acoesEmail[resposta] || descricoes[resposta]}${sufixoResolucao}`;
+        const corpo = corpoParaComprador({
+          nc, ov, fornecedor: forn, tenant,
+          itemNome: itemConsumo?.nome || null,
+          sku: itemConsumo?.sku || null,
+          acao,
+          motivo: observacao || null,
+          linkApp: `${baseUrl}/#dashboard`,
+        });
+        await enviarEmailCotacao(comprador.email, `${nc.numero_nc} — ${descricoes[resposta]}`, corpo);
       }
     } catch (mailErr) {
       console.warn('⚠ Falha ao notificar comprador:', mailErr.message);
@@ -556,23 +580,31 @@ router.post('/:ncId/reenviar', fornecedorMiddleware, async (req, res) => {
       autor_tipo: 'fornecedor',
     }, nc.tenant_id);
 
-    // M4.4-etapa-10c: notificar comprador por email (mesmo padrão do
-    // /responder). Antes, ele só descobria se abrisse o portal.
+    // M4.4-etapa-10c/d: notificar comprador por email com contexto completo.
     try {
       const comprador = nc.inspetor_id
         ? await DB.selectOne('usuarios', { id: nc.inspetor_id, tenant_id: nc.tenant_id }, nc.tenant_id)
         : null;
       if (comprador?.email) {
         const { enviarEmailCotacao } = require('../services/emailService');
+        const { corpoParaComprador } = require('../services/NCEmailTemplates');
+        const ov = nc.ordem_venda_id
+          ? await DB.selectOne('ordens_venda', { id: nc.ordem_venda_id, tenant_id: nc.tenant_id }, nc.tenant_id)
+          : null;
+        const tenant = await DB.selectOne('tenants', { id: nc.tenant_id }, null).catch(() => null);
+        const itemConsumo = nc.item_catalogo_id
+          ? await DB.selectOne('itens_consumo', { catalogo_item_id: nc.item_catalogo_id, tenant_id: nc.tenant_id }, nc.tenant_id)
+          : null;
         const baseUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, '');
-        const corpo = `
-          <h2>Fornecedor reenviou a resolução — NC ${nc.numero_nc}</h2>
-          <p><strong>${forn?.nome || 'Fornecedor'}</strong> reenviou após sua devolução.</p>
-          <p><strong>Tipo:</strong> ${rotulosResolucao[tipo_resolucao] || tipo_resolucao}</p>
-          ${observacao ? `<blockquote>${observacao}</blockquote>` : ''}
-          <p><a href="${baseUrl}/#dashboard">Abrir QuotaFlow</a></p>
-        `;
-        await enviarEmailCotacao(comprador.email, `NC ${nc.numero_nc} — resolução reenviada`, corpo);
+        const corpo = corpoParaComprador({
+          nc, ov, fornecedor: forn, tenant,
+          itemNome: itemConsumo?.nome || null,
+          sku: itemConsumo?.sku || null,
+          acao: `Resolução reenviada (${rotulosResolucao[tipo_resolucao] || tipo_resolucao})`,
+          motivo: observacao || null,
+          linkApp: `${baseUrl}/#dashboard`,
+        });
+        await enviarEmailCotacao(comprador.email, `${nc.numero_nc} — resolução reenviada`, corpo);
       }
     } catch (mailErr) {
       console.warn('⚠ Falha ao notificar comprador (reenvio):', mailErr.message);

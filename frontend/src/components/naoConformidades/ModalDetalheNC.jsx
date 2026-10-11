@@ -968,12 +968,32 @@ export default function ModalDetalheNC({
             ) : (
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {(nc.anexos || []).map(a => (
-                  <div key={a.id} style={{ position: "relative" }}>
-                    <img src={a.url} alt={a.nome_arquivo}
-                      onClick={() => setFotoAberta(a)}
-                      style={{ width: 100, height: 100, objectFit: "cover",
-                               borderRadius: 6, cursor: "pointer",
-                               border: `1px solid ${C.border}` }} />
+                  <div key={a.id} style={{ position: "relative", maxWidth: 100 }}>
+                    {a.mime_type?.startsWith('image/') ? (
+                      <img src={a.signed_url || a.url} alt={a.nome_arquivo}
+                        onClick={() => setFotoAberta({ ...a, url: a.signed_url || a.url })}
+                        style={{ width: 100, height: 100, objectFit: "cover",
+                                 borderRadius: 6, cursor: "pointer",
+                                 border: `1px solid ${C.border}` }} />
+                    ) : (
+                      // PDF ou outro: card com ícone + botão "Abrir" em nova aba
+                      <div title={a.nome_arquivo}
+                        style={{ width: 100, height: 100, borderRadius: 6,
+                                 border: `1px solid ${C.border}`, background: C.bg,
+                                 display: "flex", flexDirection: "column",
+                                 alignItems: "center", justifyContent: "center",
+                                 gap: 4, padding: 6, textAlign: "center" }}>
+                        <span style={{ fontSize: 28 }}>📄</span>
+                        <a href={a.signed_url || a.url} target="_blank" rel="noopener noreferrer"
+                          onClick={e => e.stopPropagation()}
+                          style={{ fontSize: 9, color: C.accent,
+                                   textDecoration: "underline",
+                                   overflow: "hidden", textOverflow: "ellipsis",
+                                   whiteSpace: "nowrap", maxWidth: "100%" }}>
+                          Abrir
+                        </a>
+                      </div>
+                    )}
                     {!encerrada && (
                       <button onClick={() => removerAnexo(a)}
                         title="Remover"
@@ -985,6 +1005,16 @@ export default function ModalDetalheNC({
                         ×
                       </button>
                     )}
+                    {/* M4.5-fix: nome do arquivo embaixo da miniatura,
+                        informação importante pra rastreabilidade ISO. */}
+                    <div
+                      title={a.nome_arquivo}
+                      style={{ fontSize: 9, color: C.muted, marginTop: 3,
+                               maxWidth: 100, overflow: "hidden",
+                               textOverflow: "ellipsis", whiteSpace: "nowrap",
+                               textAlign: "center" }}>
+                      {a.nome_arquivo}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -1951,9 +1981,23 @@ export default function ModalDetalheNC({
             style={{ position: "fixed", inset: 0, background: "#000000ee",
                      display: "flex", alignItems: "center", justifyContent: "center",
                      zIndex: 20, cursor: "zoom-out", padding: 30 }}>
-            <img src={fotoAberta.url} alt={fotoAberta.nome_arquivo}
-              style={{ maxWidth: "95%", maxHeight: "95%",
-                       borderRadius: 8 }} />
+            {fotoAberta.mime_type?.startsWith('image/') ? (
+              <img src={fotoAberta.url} alt={fotoAberta.nome_arquivo}
+                style={{ maxWidth: "95%", maxHeight: "95%",
+                         borderRadius: 8 }} />
+            ) : (
+              <div style={{ color: "white", textAlign: "center", maxWidth: 500 }}>
+                <div style={{ fontSize: 48, marginBottom: 12 }}>📄</div>
+                <div style={{ fontSize: 14, marginBottom: 16 }}>{fotoAberta.nome_arquivo}</div>
+                <a href={fotoAberta.url} target="_blank" rel="noopener noreferrer"
+                  onClick={e => e.stopPropagation()}
+                  style={{ background: "#3b82f6", color: "#fff",
+                           padding: "8px 18px", borderRadius: 6,
+                           textDecoration: "none", fontSize: 12 }}>
+                  ⬇ Abrir PDF
+                </a>
+              </div>
+            )}
             <div style={{ position: "absolute", bottom: 20, color: "white",
                           fontSize: 11, opacity: 0.7 }}>
               {fotoAberta.nome_arquivo} · clique para fechar

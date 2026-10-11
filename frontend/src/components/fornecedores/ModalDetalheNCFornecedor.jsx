@@ -52,8 +52,11 @@ export default function ModalDetalheNCFornecedor({ C, s, detalhe, carregando, on
   const cfg = concluida
     ? { l: cabecalho.status === 'cancelada' ? 'Cancelada' : 'Concluída', c: '#10b981', icon: '✅' }
     : (STATUS_TRATATIVA[cabecalho.fornecedor_tratativa_status] || { l: '—', c: '#6b7280', icon: '⚪' });
-  const podeResponder = ['enviado', 'visualizado'].includes(cabecalho.fornecedor_tratativa_status);
-  
+  // M4.4-etapa-10d: 'devolvida' também é acionável — o fornecedor precisa
+  // contestar ou resolver de novo após a devolução do comprador.
+  const podeResponder = ['enviado', 'visualizado', 'devolvida']
+    .includes(cabecalho.fornecedor_tratativa_status);
+
   const enviarMensagem = async () => {
     if (!mensagem.trim()) return;
     setEnviando(true);
@@ -109,22 +112,9 @@ export default function ModalDetalheNCFornecedor({ C, s, detalhe, carregando, on
     }
   };
 
-  // M4.4-etapa-9: reenvia após devolução do comprador (loop)
-  const reenviar = async () => {
-    setRespondendo(true);
-    try {
-      await apiService.post(`/fornecedor/nao-conformidades/${cabecalho.id}/reenviar`, {
-        tipo_resolucao: tipoResolucao,
-        observacao: motivoResposta.trim() || null,
-      });
-      setMotivoResposta('');
-      onAtualizar();
-    } catch (e) {
-      alert('Erro: ' + (e.message || 'erro inesperado'));
-    } finally {
-      setRespondendo(false);
-    }
-  };
+  // M4.4-etapa-10d-fix: função `reenviar` removida. O fluxo correto é
+  // só Contestar ou Resolver (via /responder). O bloco laranja é
+  // puramente informativo — a ação fica no bloco "RESPONDER OFICIALMENTE".
 
   return (
     <div onClick={onFechar} style={{
@@ -374,7 +364,7 @@ export default function ModalDetalheNCFornecedor({ C, s, detalhe, carregando, on
                 🔄 DEVOLVIDA PELO COMPRADOR — AÇÃO NECESSÁRIA
               </div>
               {/* M4.4-etapa-10: aviso quando o limite de rodadas foi atingido */}
-              {Number(cabecalho.rodada) >= 5 ? (
+              {Number(cabecalho.rodada ?? 1) >= 5 ? (
                 <div style={{ fontSize: 12, color: '#ef4444', lineHeight: 1.5, fontWeight: 600 }}>
                   ⚠️ Limite de 5 devoluções atingido. O comprador precisa validar ou cancelar —
                   contate-o para alinhar os próximos passos.
@@ -406,42 +396,15 @@ export default function ModalDetalheNCFornecedor({ C, s, detalhe, carregando, on
                 );
               })()}
 
-              {Number(cabecalho.rodada) < 5 && (
-                <>
-                  <div style={{ display: 'flex', gap: 8, marginTop: 12, flexWrap: 'wrap' }}>
-                    <select
-                      value={tipoResolucao}
-                      onChange={e => setTipoResolucao(e.target.value)}
-                      style={{ ...s.input, flex: 1, minWidth: 200, appearance: 'none' }}
-                    >
-                      <option value="substituicao">🔄 Substituição do item</option>
-                      <option value="ressarcimento">💰 Ressarcimento financeiro</option>
-                      <option value="credito">📒 Crédito futuro</option>
-                      <option value="reparo">🧰 Reparo / retrabalho</option>
-                      <option value="devolucao_estorno">↩️ Devolução com estorno</option>
-                      <option value="aceite_com_ressalva">⚠️ Aceite com ressalva</option>
-                      <option value="outro">📎 Outro (descrever na observação)</option>
-                    </select>
-                    <button
-                      onClick={reenviar}
-                      disabled={respondendo}
-                      style={{ ...s.btn(true, '#3b82f6'), padding: '8px 16px', fontSize: 12,
-                               opacity: respondendo ? 0.5 : 1 }}
-                    >
-                      {respondendo ? 'Reenviando...' : '📤 Reenviar resolução'}
-                    </button>
-                  </div>
-                  {motivoResposta && (
-                    <div style={{ fontSize: 10, color: C.muted, marginTop: 8 }}>
-                      Observação será incluída: "{motivoResposta}"
-                    </div>
-                  )}
-                </>
-              )}
+              {/* M4.4-etapa-10d-fix: bloco laranja é SÓ informativo.
+                  A ação (Contestar / Resolver) fica no bloco azul abaixo. */}
             </div>
           )}
 
           {/* Ações de resposta */}
+          {/* M4.4-etapa-10d-fix: bloco único de ação. Aparece em
+              'enviado', 'visualizado' e 'devolvida' (via podeResponder).
+              Form abre abaixo, mesmo comportamento dos prints de treino. */}
           {podeResponder && (
             <div style={{
               background: '#0f1e35', border: '1px solid #3b82f633',

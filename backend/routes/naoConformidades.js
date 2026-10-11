@@ -99,6 +99,14 @@ router.post('/', tenantMiddleware, async (req, res) => {
     custo_estimado, quantidade_afetada,
     chamado_id, chamado_item_id, equipamento_id, item_catalogo_id,
     anexos,
+    // M4.5: campos pra NC avulsa (abertura manual pela tela de NCs).
+    // `item_nome_avulso` guarda o texto livre quando o operador não acha
+    // o item no catálogo. `item_fora_catalogo` sinaliza pra Qualidade
+    // que precisa fazer curadoria. `data_ocorrencia` registra quando o
+    // problema aconteceu (≠ `criado_em`, que é quando a NC foi aberta).
+    data_ocorrencia, item_nome_avulso,
+    numero_nota_fiscal, lote, numero_serie, validade, unidade_medida,
+    fornecedor_id,
   } = req.body;
 
   try {
@@ -150,12 +158,30 @@ router.post('/', tenantMiddleware, async (req, res) => {
       chamado_item_id: chamado_item_id || null,
       equipamento_id: equipamento_id || null,
       item_catalogo_id: item_catalogo_id || null,
+      // M4.5: item avulso — operador não achou no catálogo, digitou texto
+      // livre. `item_fora_catalogo` fica true pra Qualidade ver a pendência.
+      item_nome_avulso: item_nome_avulso?.trim() || null,
+      item_fora_catalogo: !item_catalogo_id && !!item_nome_avulso?.trim(),
+      // M4.5: data da ocorrência (≠ criado_em). ISO quer saber QUANDO
+      // aconteceu, não só quando foi registrado.
+      data_ocorrencia: data_ocorrencia || null,
+      // M4.5: campos de rastreabilidade que a criação manual pode trazer.
+      numero_nota_fiscal: numero_nota_fiscal?.trim() || null,
+      lote: lote?.trim() || null,
+      numero_serie: numero_serie?.trim() || null,
+      validade: validade || null,
+      unidade_medida: unidade_medida?.trim() || null,
       quantidade: quantidade_afetada != null ? parseFloat(quantidade_afetada) : null,
       inspetor_id: u.id,
       criado_por_nome: u.nome,
       motivo_recusa: descricao_problema.trim(),
       fornecedor_id: fornecedorIdFinal,
-      fornecedor_tratativa_status: fornecedorIdFinal ? "nao_notificado" : null,
+      // M4.4-etapa-10d-fix: grava o nome do fornecedor junto (ajuda a
+      // busca por texto na lista e evita fallback `#7` em modais).
+      fornecedor_nome: fornecedorIdFinal
+        ? (await DB.selectOne("fornecedores", { id: fornecedorIdFinal, tenant_id: tenantId }, tenantId))?.nome || null
+        : null,
+      fornecedor_tratativa_status: fornecedorIdFinal ? "nao_enviado" : null,
     }, tenantId);
 
     // Anexos (fotos como data URI). FIX M4-p: SEMPRE sobrescrever o
@@ -212,40 +238,14 @@ router.post('/', tenantMiddleware, async (req, res) => {
       }
     }
 
-    // M4: se tem fornecedor, marca evento como visível e dispara email.
-    // Best-effort — não bloqueia resposta.
-    if (fornecedorIdFinal) {
-      try {
-        const forn = await DB.selectOne("fornecedores", { id: fornecedorIdFinal, tenant_id: tenantId }, tenantId);
-        const emailDestino = forn?.email;
-        if (emailDestino) {
-          const { enviarEmailCotacao } = require("../services/emailService");
-          const baseUrl = (process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/+$/, "");
-          const linkNC = `${baseUrl}/#/portal`;
-          const corpo = `
-            <h2>Não Conformidade registrada</h2>
-            <p>Olá <strong>${forn.nome || "Fornecedor"}</strong>,</p>
-            <p>Foi registrada uma <strong>Não Conformidade</strong> contra um recebimento seu:</p>
-            <ul>
-              <li><strong>NC:</strong> ${numeroNC}</li>
-              ${ovParaNC?.numero ? `<li><strong>Pedido:</strong> ${ovParaNC.numero}</li>` : ""}
-              ${req.body.numero_nota_fiscal ? `<li><strong>NF:</strong> ${req.body.numero_nota_fiscal}</li>` : ""}
-              <li><strong>Motivo:</strong> ${descricao_problema.trim()}</li>
-            </ul>
-            <p>Acesse o Portal do Fornecedor para ver os detalhes, responder e anexar evidências:</p>
-            <p><a href="${linkNC}" style="display:inline-block;padding:10px 20px;background:#2563eb;color:white;text-decoration:none;border-radius:6px;">Abrir Portal do Fornecedor</a></p>
-            <hr/>
-            <p><small>Mensagem automática do QuotaFlow.</small></p>
-          `;
-          await enviarEmailCotacao(emailDestino, `Não Conformidade ${numeroNC} — ${forn.nome}`, corpo);
-          await DB.update("nao_conformidades", nc.id, {
-            fornecedor_tratativa_status: "notificado",
-          }, tenantId);
-        }
-      } catch (mailErr) {
-        console.warn("⚠ Falha ao notificar fornecedor (não bloqueante):", mailErr.message);
-      }
-    }
+    // M4.4-etapa-10d-fix: notificação automática REMOVIDA daqui.
+    //
+    // Motivo: este bloco (a) montava HTML inline duplicando o email do
+    // NCService, (b) setava `fornecedor_tratativa_status = 'notificado'`
+    // — valor fora da whitelist STATUS_VISIVEIS_FORNECEDOR, então a NC
+    // ficava invisível no portal do fornecedor até o gestor clicar em
+    // "Notificar fornecedor". O único caminho de notificação agora é
+    // via NCService (idempotente, usa NCEmailTemplates, seta 'enviado').
 
     res.status(201).json({
       ok: true,
@@ -345,10 +345,15 @@ router.get('/:id', tenantMiddleware, async (req, res) => {
     // M4.3-j: incluir email do fornecedor no payload — usado pelo modal
     // de confirmação de envio antes do usuário disparar o email.
     let fornecedor_email = null;
+    let fornecedor_nome = nc.fornecedor_nome || null;
     if (nc.fornecedor_id) {
       try {
         const forn = await DB.selectOne("fornecedores", { id: nc.fornecedor_id, tenant_id: tenantId }, tenantId);
         fornecedor_email = forn?.email || null;
+        // M4.4-etapa-10d-fix: enriquece nome do fornecedor. A coluna
+        // `nc.fornecedor_nome` nem sempre está preenchida (a criação
+        // não grava), então cai no valor da tabela `fornecedores`.
+        fornecedor_nome = fornecedor_nome || forn?.nome || null;
       } catch (_) {}
     }
 
@@ -371,11 +376,24 @@ router.get('/:id', tenantMiddleware, async (req, res) => {
       } catch (_) {}
     }
 
+    // M4.5: enriquece anexos com signed URL do Storage (bucket privado
+    // `nc-evidencias`). Anexos antigos gravados como data URI passam
+    // inalterados — o helper `gerarSignedUrl` devolve o próprio data URI
+    // nesse caso, então o front usa `signed_url` uniformemente.
+    const { gerarSignedUrlsEmBatch } = require('../services/StorageNC');
+    const pathsAnexos = (anexos || []).map(a => a.url).filter(Boolean);
+    const mapaUrls = await gerarSignedUrlsEmBatch(pathsAnexos);
+    const anexosEnriquecidos = (anexos || []).map(a => ({
+      ...a,
+      signed_url: mapaUrls[a.url] || null,
+    }));
+
     res.json({
       ...nc,
-      anexos, eventos, plano_acao: planoAcao,
+      anexos: anexosEnriquecidos, eventos, plano_acao: planoAcao,
       chamado_numero, equipamento_nome, equipamento_tag,
       fornecedor_email,
+      fornecedor_nome,
     });
   } catch (err) {
     console.error("❌ Erro ao buscar NC:", err.message);
@@ -658,26 +676,56 @@ router.delete('/plano-acao/:planoId', tenantMiddleware, async (req, res) => {
 router.post('/:id/anexos', tenantMiddleware, async (req, res) => {
   const tenantId = req.tenantId;
   const { id } = req.params;
-  const { url, nome_arquivo, mime_type, tamanho_bytes } = req.body;
+  // M4.5: dois modos de entrada.
+  //   (a) LEGADO: `url` = data URI (`data:image/...`). Anexos antigos,
+  //       comportamento inalterado (grava base64 no banco).
+  //   (b) NOVO: `base64` (sem prefixo) + `mime_type` → sobe pro Supabase
+  //       Storage (bucket `nc-evidencias`) e grava o PATH no banco.
+  // O front novo (ModalNovaNC) usa (b); o ModalDetalheNC atual segue
+  // usando (a) até a migração M4.x.
+  const { url, base64, nome_arquivo, mime_type, tamanho_bytes } = req.body;
 
   try {
-    if (!url) return res.status(400).json({ erro: "url é obrigatória" });
+    if (!url && !base64) {
+      return res.status(400).json({ erro: "url (data URI) ou base64 é obrigatório" });
+    }
 
     const nc = await DB.selectOne("nao_conformidades", { id, tenant_id: tenantId }, tenantId);
     if (!nc) return res.status(404).json({ erro: "NC não encontrada" });
 
     const anexosExistentes = await DB.select("nao_conformidade_anexos", { nc_id: id, tenant_id: tenantId }, tenantId);
     const seq = anexosExistentes.length + 1;
-    const nomeFinal = nome_arquivo || `${nc.numero_nc}-foto-${String(seq).padStart(2, '0')}.jpg`;
+    const nomeFinal = nome_arquivo || `${nc.numero_nc}-evidencia-${String(seq).padStart(2, '0')}`;
+
+    let urlFinal = url || null;
+    let tamanhoFinal = tamanho_bytes != null ? parseInt(tamanho_bytes) : null;
+    let mimeFinal = mime_type || null;
+
+    // Modo NOVO: sobe pro Storage
+    if (base64) {
+      const { subirAnexoNC } = require('../services/StorageNC');
+      const buffer = Buffer.from(base64, 'base64');
+      const up = await subirAnexoNC({
+        tenantId,
+        ncId: Number(id),
+        indice: seq,
+        mimeType: mime_type || null,
+        buffer,
+        nomeOriginal: nome_arquivo || null,
+      });
+      urlFinal = up.path;              // path no bucket, não URL pública
+      tamanhoFinal = up.tamanhoBytes;
+      mimeFinal = up.mimeType;
+    }
 
     const u = await usuarioAtual(req, tenantId);
     const anexo = await DB.insert("nao_conformidade_anexos", {
       tenant_id: tenantId,
       nc_id: id,
-      url,
+      url: urlFinal,
       nome_arquivo: nomeFinal,
-      mime_type: mime_type || null,
-      tamanho_bytes: tamanho_bytes != null ? parseInt(tamanho_bytes) : null,
+      mime_type: mimeFinal,
+      tamanho_bytes: tamanhoFinal,
       criado_por: u.id,
       criado_por_nome: u.nome,
     }, tenantId);
@@ -707,6 +755,12 @@ router.delete('/anexos/:anexoId', tenantMiddleware, async (req, res) => {
     if (!anexo) return res.status(404).json({ erro: "Anexo não encontrado" });
 
     await DB.delete("nao_conformidade_anexos", anexoId, tenantId);
+
+    // M4.5: remove do Storage também. Best-effort — se falhar, o
+    // registro no banco já foi apagado e o arquivo fica órfão (limpeza
+    // de órfãos fica pra M4.x).
+    const { removerAnexoNC } = require('../services/StorageNC');
+    await removerAnexoNC(anexo.url);
 
     const u = await usuarioAtual(req, tenantId);
     await registrarEventoNC(
@@ -1305,6 +1359,11 @@ router.post('/:id/devolver-fornecedor', tenantMiddleware, async (req, res) => {
       fornecedor_tratativa_status: 'devolvida',
       rodada: rodadaAtual + 1,
       tipo_resolucao: null,  // limpa pra próxima rodada
+      // M4.4-etapa-10d-fix: ao devolver, o comprador JÁ agiu. A NC volta
+      // ao estado 'aberta' porque a bola está com o fornecedor. Sem isso,
+      // `status` fica preso em 'aguardando_validacao' e a tela do comprador
+      // mostra dois chips conflitantes ("Aguardando validação" + "Devolvida").
+      status: 'aberta',
       atualizado_em: new Date().toISOString(),
     }, tenantId);
 
@@ -1316,27 +1375,34 @@ router.post('/:id/devolver-fornecedor', tenantMiddleware, async (req, res) => {
       { visivel_fornecedor: true, autor_tipo: 'comprador' }
     );
 
-    // M4.4-etapa-10c: notificar o fornecedor por email. Antes, ele só
-    // descobria a devolução se abrisse o portal.
+    // M4.4-etapa-10c/d: notificar o fornecedor por email com contexto
+    // completo (cliente, item, PN, quantidade, descrição).
     try {
       const fornecedor = nc.fornecedor_id
         ? await DB.selectOne('fornecedores', { id: nc.fornecedor_id, tenant_id: tenantId }, tenantId)
         : null;
       if (fornecedor?.email) {
         const { enviarEmailCotacao } = require('../services/emailService');
+        const { corpoParaFornecedor } = require('../services/NCEmailTemplates');
+        const ov = nc.ordem_venda_id
+          ? await DB.selectOne('ordens_venda', { id: nc.ordem_venda_id, tenant_id: tenantId }, tenantId)
+          : null;
+        const tenant = await DB.selectOne('tenants', { id: nc.tenant_id }, null).catch(() => null);
+        const itemConsumo = nc.item_catalogo_id
+          ? await DB.selectOne('itens_consumo', { catalogo_item_id: nc.item_catalogo_id, tenant_id: tenantId }, tenantId)
+          : null;
         const baseUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, '');
-        const linkPortal = `${baseUrl}/#portal`;
-        const corpo = `
-          <h2>Sua resolução foi devolvida — NC ${nc.numero_nc}</h2>
-          <p>O comprador analisou sua proposta e <strong>devolveu pra revisão</strong>.</p>
-          <p><strong>Motivo:</strong></p>
-          <blockquote>${motivo.trim()}</blockquote>
-          <p>Acesse o portal, ajuste sua proposta e reenvie:</p>
-          <p><a href="${linkPortal}">Abrir Portal do Fornecedor</a></p>
-        `;
+        const corpo = corpoParaFornecedor({
+          nc, ov, fornecedor, tenant,
+          itemNome: itemConsumo?.nome || null,
+          sku: itemConsumo?.sku || null,
+          acao: 'devolvida para revisão',
+          motivo: motivo.trim(),
+          linkPortal: `${baseUrl}/#portal`,
+        });
         await enviarEmailCotacao(
           fornecedor.email,
-          `NC ${nc.numero_nc} — resolução devolvida para revisão`,
+          `${nc.numero_nc} — resolução devolvida para revisão`,
           corpo
         );
       }
@@ -1405,6 +1471,74 @@ router.post('/:id/marcar-interna', tenantMiddleware, async (req, res) => {
     });
   } catch (err) {
     console.error('❌ Erro ao marcar NC como interna:', err.message);
+    return res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/nao-conformidades/:id/vincular-item-catalogo
+//
+// M4.5: curadoria de item. A Qualidade revisa uma NC aberta com item
+// fora do catálogo e vincula a um item real de `itens_consumo`.
+//
+// Body: { item_catalogo_id, observacao? }
+// Efeito:
+//   - Seta item_catalogo_id, limpa item_nome_avulso, zera item_fora_catalogo
+//   - Registra evento `item_vinculado_catalogo` no histórico
+//   - (Se o item já estava vinculado, atualiza só o id — permite trocar
+//     caso o operador tenha vinculado errado)
+// ─────────────────────────────────────────────────────────────────────────
+router.post('/:id/vincular-item-catalogo', tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { id } = req.params;
+  const { item_catalogo_id, observacao } = req.body || {};
+
+  if (!item_catalogo_id) {
+    return res.status(400).json({ erro: 'item_catalogo_id é obrigatório' });
+  }
+
+  try {
+    const nc = await DB.selectOne('nao_conformidades', { id, tenant_id: tenantId }, tenantId);
+    if (!nc) return res.status(404).json({ erro: 'NC não encontrada' });
+
+    if (['resolvida', 'cancelada'].includes(nc.status)) {
+      return res.status(400).json({ erro: 'NC já encerrada — não pode mais editar item' });
+    }
+
+    // Confirma que o item existe e é do tenant
+    const item = await DB.selectOne('itens_consumo',
+      { catalogo_item_id: item_catalogo_id, tenant_id: tenantId }, tenantId);
+    if (!item) {
+      return res.status(404).json({ erro: 'Item não encontrado no catálogo' });
+    }
+
+    const u = await usuarioAtual(req, tenantId);
+    const descricaoAnterior = nc.item_nome_avulso || `#${nc.item_catalogo_id || '—'}`;
+    const estavaFora = !!nc.item_fora_catalogo;
+
+    await DB.update('nao_conformidades', id, {
+      item_catalogo_id,
+      item_nome_avulso: null,
+      item_fora_catalogo: false,
+      atualizado_em: new Date().toISOString(),
+    }, tenantId);
+
+    await registrarEventoNC(
+      tenantId, id, 'item_vinculado_catalogo',
+      `Item vinculado ao catálogo por ${u.nome}: "${descricaoAnterior}" → "${item.nome}"${estavaFora ? ' (curadoria de item fora do catálogo)' : ''}${observacao ? ` — ${observacao}` : ''}`,
+      {
+        item_catalogo_id,
+        item_nome: item.nome,
+        descricao_anterior: descricaoAnterior,
+        estava_fora_catalogo: estavaFora,
+        observacao: observacao || null,
+      },
+      u
+    );
+
+    return res.json({ ok: true, item: { id: item.catalogo_item_id, nome: item.nome } });
+  } catch (err) {
+    console.error('❌ Erro ao vincular item ao catálogo:', err.message);
     return res.status(500).json({ erro: err.message });
   }
 });
