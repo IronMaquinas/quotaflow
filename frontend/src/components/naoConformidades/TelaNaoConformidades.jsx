@@ -296,6 +296,7 @@ export default function TelaNaoConformidades({ C, s, fmtD, onIrParaOS, initialNC
                 <span style={{ ...s.tag(C.muted), fontSize: 10 }}>
                   {origem.icon} {origem.l}
                 </span>
+
                 {nc.disposicao && nc.disposicao !== "pendente" && (
                   <span style={{ ...s.tag("#a855f7"), fontSize: 10 }}>
                     {disp.icon} {disp.l}
@@ -311,6 +312,33 @@ export default function TelaNaoConformidades({ C, s, fmtD, onIrParaOS, initialNC
                             whiteSpace: expandido ? "normal" : "nowrap" }}>
                 {nc.descricao_problema}
               </div>
+
+              {/* M4.5: item vinculado — mostrado abaixo da descrição
+                  (é contexto, não status, então fica melhor aqui do que
+                  como chip). Ícone: 📦 estoque, 📖 só catálogo, 🏷 livre. */}
+              {(nc.item_nome || nc.item_nome_avulso) && (
+                <div style={{ fontSize: 11, color: C.muted, marginBottom: 6,
+                              display: 'flex', alignItems: 'center',
+                              gap: 6, flexWrap: 'wrap' }}>
+                  <span>
+                    {nc.item_consumo_id ? '📦' : (nc.item_nome ? '📖' : '🏷')}
+                  </span>
+                  <span style={{ color: C.textSub || C.muted }}>
+                    {nc.item_nome || nc.item_nome_avulso}
+                  </span>
+                  {nc.item_sku && (
+                    <span style={{ fontFamily: "'IBM Plex Mono',monospace",
+                                   fontSize: 10 }}>
+                      {nc.item_sku}
+                    </span>
+                  )}
+                  {!nc.item_consumo_id && !nc.item_catalogo_id && (
+                    <span style={{ color: '#f59e0b', fontSize: 10 }}>
+                      · não vinculado
+                    </span>
+                  )}
+                </div>
+              )}
 
               <div style={{ display: "flex", gap: 14, fontSize: 10,
                             color: C.muted, flexWrap: "wrap" }}>

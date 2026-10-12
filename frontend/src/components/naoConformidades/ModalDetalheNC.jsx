@@ -182,6 +182,14 @@ export default function ModalDetalheNC({
   const [encerrando, setEncerrando] = useState(null);
   // { causa_raiz, cinco_porques: [5 strings], observacao }
 
+  // M4.5-fix: editar item (curadoria de item avulso + vínculo ao catálogo)
+  const [editandoItem, setEditandoItem] = useState(null);
+  // { item_nome_avulso, item_sku_avulso, item_catalogo_id }
+  const [itemEditSugestoes, setItemEditSugestoes] = useState([]);
+  const [itemEditShowSugestoes, setItemEditShowSugestoes] = useState(false);
+  const [itemEditBuscando, setItemEditBuscando] = useState(false);
+  const itemEditBuscaRef = useRef({ timer: null, ultimaChamadaId: 0 });
+
   // Mini-modal de transferência
   const [transferindo, setTransferindo] = useState(null);
   // { responsavel_id: "", responsavel_nome: "", observacao: "" }
@@ -280,6 +288,85 @@ export default function ModalDetalheNC({
       setResolvendo(null);
     }
   }
+
+  // ── Editar item: busca de sugestões (mesmo padrão da TelaOrdemServico) ──
+  function buscarSugestoesEditItem(termo) {
+    const ctrl = itemEditBuscaRef.current;
+    if (ctrl.timer) clearTimeout(ctrl.timer);
+
+    if (termo.trim().length < 2) {
+      ctrl.ultimaChamadaId += 1;
+      setItemEditSugestoes([]);
+      setItemEditShowSugestoes(false);
+      setItemEditBuscando(false);
+      return;
+    }
+
+    setItemEditBuscando(true);
+    ctrl.timer = setTimeout(async () => {
+      const chamadaId = ++ctrl.ultimaChamadaId;
+      try {
+        const resp = await apiService.get('/nao-conformidades/buscar-item', { termo, limit: 8 });
+        if (chamadaId !== ctrl.ultimaChamadaId) return;
+        const resultados = resp?.resultados || [];
+        setItemEditSugestoes(resultados);
+        setItemEditShowSugestoes(resultados.length > 0);
+      } catch (err) {
+        if (chamadaId !== ctrl.ultimaChamadaId) return;
+        setItemEditSugestoes([]);
+        setItemEditShowSugestoes(false);
+      } finally {
+        if (chamadaId === ctrl.ultimaChamadaId) setItemEditBuscando(false);
+      }
+    }, 350);
+  }
+
+  // Seleciona sugestão do catálogo: vincula (endpoint já existente)
+  async function selecionarSugestaoEditItem(sug) {
+    // M4.5: com o novo endpoint, todo resultado é vinculável. Não existe
+    // mais o caso "marketplace que não vincula".
+    console.log('[DEBUG] selecionarSugestaoEditItem — sug recebido:', sug);
+    setSalvando(true);
+    setErro(null);
+    try {
+      await apiService.post(`/nao-conformidades/${ncId}/vincular-item`, {
+        item_consumo_id: sug.item_consumo_id || null,
+        item_catalogo_id: sug.catalogo_item_id || null,
+      });
+      await carregar();
+      onAtualizar?.();
+      setEditandoItem(null);
+      setToast('Item vinculado.');
+    } catch (e) {
+      setErro(e.message || 'Erro ao vincular item');
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  // Salva item avulso (texto livre): endpoint novo
+  async function salvarItemAvulso() {
+    if (!editandoItem?.item_nome_avulso?.trim()) {
+      setErro('Informe o nome do item.');
+      return;
+    }
+    setSalvando(true);
+    setErro(null);
+    try {
+      await apiService.post(`/nao-conformidades/${ncId}/editar-item-avulso`, {
+        item_nome_avulso: editandoItem.item_nome_avulso.trim(),
+        item_sku_avulso: editandoItem.item_sku_avulso?.trim() || null,
+      });
+      await carregar();
+      onAtualizar?.();
+      setEditandoItem(null);
+      setToast('Item atualizado.');
+    } catch (e) {
+      setErro(e.message || 'Erro ao editar item');
+    } finally {
+      setSalvando(false);
+    }
+  }  
 
   // ─────────────────────────────────────────────────────────────────
   // AÇÕES DO NOVO FLUXO (ISO 9001 — 4 etapas)
@@ -784,6 +871,82 @@ export default function ModalDetalheNC({
           )}
 
           {/* ── Descrição ── */}
+          {/* ── Item + Part Number ──
+              M4.5-fix: quem é o item da NC. Se veio do catálogo, mostra
+              nome + SKU. Se é avulso, mostra texto livre + chip de aviso.
+              Qualidade/admin/gestor podem editar (vinculando ao catálogo
+              ou corrigindo texto livre). */}
+          {(() => {
+            const temVinculo = !!nc.item_catalogo_id;
+            const nomeItem = temVinculo
+              ? nc.item_nome
+              : (nc.item_nome_avulso || null);
+            const skuItem = temVinculo
+              ? nc.item_sku
+              : (nc.item_sku_avulso || null);
+            const podeEditarItem = ['qualidade', 'admin', 'gestor'].includes(perfilUsuario);
+
+            return (
+              <Secao
+                titulo="ITEM"
+                C={C}
+                extra={
+                  podeEditarItem && !encerrada ? (
+                    <button
+                      onClick={() => setEditandoItem({
+                        item_nome_avulso: nc.item_nome_avulso || '',
+                        item_sku_avulso: nc.item_sku_avulso || '',
+                        item_catalogo_id: nc.item_catalogo_id || null,
+                      })}
+                      style={{ background: 'transparent', border: 'none',
+                               color: C.accent, fontSize: 11, cursor: 'pointer',
+                               fontFamily: 'inherit', padding: 0 }}>
+                      ✏️ Editar
+                    </button>
+                  ) : null
+                }>
+                <div style={{
+                  display: 'grid',
+                  gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))',
+                  gap: 10,
+                }}>
+                  <div>
+                    <div style={{
+                      fontSize: 9, color: C.muted,
+                      letterSpacing: '0.06em', marginBottom: 2,
+                      textTransform: 'uppercase', fontWeight: 600,
+                    }}>
+                      Item
+                    </div>
+                    <div style={{ fontSize: 12, color: C.text, fontWeight: 500,
+                                  display: 'flex', alignItems: 'center',
+                                  gap: 6, flexWrap: 'wrap' }}>
+                      {nomeItem || '—'}
+                      {!nc.item_consumo_id && !nc.item_catalogo_id && nomeItem && (
+                        <span style={{ ...s.tag('#f59e0b'), fontSize: 9 }}
+                          title="Item em texto livre — a Qualidade pode vincular depois">
+                          ⚠ Sem vínculo
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                  <div>
+                    <div style={{
+                      fontSize: 9, color: C.muted,
+                      letterSpacing: '0.06em', marginBottom: 2,
+                      textTransform: 'uppercase', fontWeight: 600,
+                    }}>
+                      Part Number
+                    </div>
+                    <div style={{ fontSize: 12, color: C.text, fontWeight: 500 }}>
+                      {skuItem || '—'}
+                    </div>
+                  </div>
+                </div>
+              </Secao>
+            );
+          })()}
+
           <Secao titulo="DESCRIÇÃO DO PROBLEMA" C={C}>
             <div style={{ fontSize: 13, color: C.text, lineHeight: 1.5 }}>
               {nc.descricao_problema || nc.motivo_recusa || '—'}
@@ -1815,6 +1978,116 @@ export default function ModalDetalheNC({
                            background: C.success, border: `1px solid ${C.success}`,
                            opacity: (salvando || !encerrando.causa_raiz?.trim()) ? 0.5 : 1 }}>
                   {salvando ? "Encerrando..." : "Confirmar encerramento"}
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Mini-modal: editar item (M4.5-fix) */}
+        {editandoItem && (
+          <div style={{ position: "absolute", inset: 0, background: "#00000090",
+                        display: "flex", alignItems: "center", justifyContent: "center",
+                        zIndex: 10, padding: 20 }}>
+            <div style={{ ...s.card, width: 540, maxWidth: "100%" }}>
+              <div style={{ padding: "18px 22px", borderBottom: `1px solid ${C.border}` }}>
+                <div style={{ fontSize: 14, fontWeight: 700, color: C.text }}>
+                  ✏️ Editar item
+                </div>
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                  {nc.numero_nc}
+                </div>
+              </div>
+              <div style={{ padding: "18px 22px" }}>
+                <div style={{ fontSize: 11, color: C.muted, marginBottom: 14, lineHeight: 1.6 }}>
+                  Busque no catálogo pra <strong>vincular</strong> um item existente,
+                  ou digite livremente pra marcar como <strong>item fora do catálogo</strong>.
+                </div>
+
+                <div style={{ position: "relative", marginBottom: 12 }}>
+                  <label style={s.label}>ITEM *</label>
+                  <input type="text"
+                    value={editandoItem.item_nome_avulso}
+                    onChange={e => {
+                      setEditandoItem(it => ({
+                        ...it,
+                        item_nome_avulso: e.target.value,
+                        item_catalogo_id: null,
+                      }));
+                      buscarSugestoesEditItem(e.target.value);
+                    }}
+                    onFocus={() => { if (itemEditSugestoes.length > 0) setItemEditShowSugestoes(true); }}
+                    onBlur={() => setTimeout(() => setItemEditShowSugestoes(false), 200)}
+                    placeholder="Ex: Rolamento SKF 6205"
+                    autoFocus
+                    style={s.input} />
+
+                  {itemEditBuscando && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0,
+                                  background: C.bg, border: `1px solid ${C.border}`,
+                                  borderTop: 'none', borderRadius: '0 0 6px 6px',
+                                  zIndex: 100, padding: '8px 12px', fontSize: 11, color: C.muted }}>
+                      Buscando...
+                    </div>
+                  )}
+                  {!itemEditBuscando && itemEditShowSugestoes && itemEditSugestoes.length > 0 && (
+                    <div style={{ position: 'absolute', top: '100%', left: 0, right: 0,
+                                  background: C.bg, border: `1px solid ${C.border}`,
+                                  borderTop: 'none', borderRadius: '0 0 6px 6px',
+                                  zIndex: 100, maxHeight: 220, overflowY: 'auto',
+                                  boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
+                      {itemEditSugestoes.map((sug, i) => {
+                        const partesInfo = [];
+                        if (sug.sku) partesInfo.push(`PN: ${sug.sku}`);
+
+                        return (
+                          <div key={`${sug.item_consumo_id || sug.catalogo_item_id || i}`}
+                            onMouseDown={e => e.preventDefault()}
+                            onClick={() => selecionarSugestaoEditItem(sug)}
+                            style={{ padding: '10px 12px', cursor: 'pointer',
+                                     borderBottom: `1px solid ${C.border}22`, fontSize: 12,
+                                     display: 'flex', alignItems: 'center', gap: 8 }}
+                            onMouseEnter={e => e.currentTarget.style.background = '#1e2a3f'}
+                            onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
+                            <span
+                              title={sug.tem_estoque ? 'No seu estoque' : 'Só no catálogo (nunca comprado)'}
+                              style={{ fontSize: 13, flexShrink: 0 }}>
+                              {sug.tem_estoque ? '📦' : '📖'}
+                            </span>
+                            <div style={{ flex: 1, minWidth: 0 }}>
+                              <div style={{ color: C.text, fontWeight: 500 }}>{sug.nome}</div>
+                              <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                                {partesInfo.join(' · ')}
+                              </div>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label style={s.label}>PART NUMBER</label>
+                  <input type="text"
+                    value={editandoItem.item_sku_avulso}
+                    onChange={e => setEditandoItem(it => ({ ...it, item_sku_avulso: e.target.value }))}
+                    placeholder="Ex: SKF-6205"
+                    style={s.input} />
+                </div>
+              </div>
+              <div style={{ display: "flex", gap: 10, padding: "14px 22px",
+                            borderTop: `1px solid ${C.border}` }}>
+                <button onClick={() => setEditandoItem(null)} disabled={salvando}
+                  style={{ ...s.btn(false), flex: 1, padding: "8px 16px" }}>
+                  Cancelar
+                </button>
+                <button onClick={salvarItemAvulso}
+                  disabled={salvando || !editandoItem.item_nome_avulso?.trim()}
+                  style={{ ...s.btn(true), flex: 1, padding: "8px 16px",
+                           background: "#a855f7", border: "1px solid #a855f7",
+                           opacity: (salvando || !editandoItem.item_nome_avulso?.trim()) ? 0.5 : 1 }}>
+                  {salvando ? "Salvando..." : "Salvar como item avulso"}
                 </button>
               </div>
             </div>

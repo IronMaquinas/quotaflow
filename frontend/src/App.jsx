@@ -465,6 +465,10 @@ const perfil = PERFIS[usuario.perfil];
               fmtD={fmtD}
               chamadoInicialId={osParaAbrir}
               onOSAberta={() => setOsParaAbrir(null)}
+              onIrParaNC={(ncId) => {
+                setNcParaAbrir(ncId);
+                setTela("nao_conformidades");
+              }}
             />
           </div>
         )}

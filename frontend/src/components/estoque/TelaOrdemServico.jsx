@@ -44,10 +44,11 @@
 //   - autocomplete de equipamento e de item via /catalogo/buscar-item
 // ─────────────────────────────────────────────────────────────────────────
 
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { useChamados } from "../../hooks/useChamados";
 import { useEquipamentos } from "../../hooks/useEquipamentos";
 import apiService from "../../services/apiService";
+import Modal from "../shared/Modal";
 import BarcodeScannerInput from "../common/BarcodeScannerInput";
 
 // ── Helpers, constantes e hooks extraídos (Rodada 1 da quebra) ──
@@ -118,6 +119,7 @@ function ToastView({ toast, C, onClose }) {
 export default function TelaOrdemServico({
   fmtBRL, fmtD, C, s,
   chamadoInicialId, onOSAberta,
+  onIrParaNC,
 }) {
   const { chamados, loading, erro, carregar, criar, atualizar, deletar } = useChamados();
   const { equipamentos } = useEquipamentos();
@@ -169,6 +171,22 @@ export default function TelaOrdemServico({
 
   // NCs vinculadas à OS atual
   const [ncsDoChamado, setNcsDoChamado] = useState([]);
+  // M4.5: modal de bloqueio de conclusão (quando há NC ativa).
+  // null = fechado; { } = aberto.
+  const [bloqueioConclusao, setBloqueioConclusao] = useState(null);
+
+  // M4.5: mapa rápido de quais itens da OS têm NC ativa. Uma NC "ativa"
+  // é qualquer uma que não esteja resolvida/cancelada. Chave = chamado_item_id
+  // (id do item na OS).
+  const itemTemNCAtiva = useMemo(() => {
+    const mapa = new Map();
+    (ncsDoChamado || []).forEach(nc => {
+      if (['resolvida', 'cancelada'].includes(nc.status)) return;
+      if (nc.chamado_item_id != null) mapa.set(String(nc.chamado_item_id), nc);
+    });
+    return mapa;
+  }, [ncsDoChamado]);
+
   const [painelNCExpandido, setPainelNCExpandido] = useState(null);
 
   // ── Templates de OS (Modelos de Manutenção) — Fase 1: privados do tenant ──
@@ -1718,29 +1736,56 @@ export default function TelaOrdemServico({
                       ⚠️ <strong>Não é possível concluir a OS</strong> enquanto
                       houver NC ativa.
                     </div>
+                    {onIrParaNC && (
+                      <div style={{ fontSize: 10, color: C.muted, marginBottom: 8 }}>
+                        Clique numa NC abaixo para abrir o detalhe.
+                      </div>
+                    )}
                     <div style={{ display: "flex", flexDirection: "column",
                                   gap: 4 }}>
                       {ncsAtivas.map(nc => (
-                        <div key={nc.id} style={{ display: "flex", gap: 8,
-                                                  alignItems: "center", flexWrap: "wrap" }}>
-                      <span style={{
-                        ...s.tag("#f59e0b"),
-                        fontSize: 10,
-                        fontFamily: "'IBM Plex Mono',monospace",
-                      }}>
-                        {nc.numero_nc} · {({
-                          aberta: "Aberta",
-                          em_analise: "Em análise",
-                          em_execucao: "Em execução",
-                          aguardando_validacao: "Aguard. validação",
-                          resolvida: "Resolvida",
-                          cancelada: "Cancelada",
-                        })[nc.status] || nc.status}
-                      </span>
+                        <div
+                          key={nc.id}
+                          onClick={() => onIrParaNC?.(nc.id)}
+                          title={onIrParaNC ? "Abrir detalhe da NC" : undefined}
+                          style={{
+                            display: "flex", gap: 8,
+                            alignItems: "center", flexWrap: "wrap",
+                            padding: "4px 8px",
+                            borderRadius: 4,
+                            cursor: onIrParaNC ? "pointer" : "default",
+                            transition: "background .15s",
+                          }}
+                          onMouseEnter={e => {
+                            if (onIrParaNC) e.currentTarget.style.background = "#f59e0b20";
+                          }}
+                          onMouseLeave={e => {
+                            e.currentTarget.style.background = "transparent";
+                          }}>
+                          <span style={{
+                            ...s.tag("#f59e0b"),
+                            fontSize: 10,
+                            fontFamily: "'IBM Plex Mono',monospace",
+                          }}>
+                            {nc.numero_nc} · {({
+                              aberta: "Aberta",
+                              em_analise: "Em análise",
+                              em_execucao: "Em execução",
+                              aguardando_validacao: "Aguard. validação",
+                              resolvida: "Resolvida",
+                              cancelada: "Cancelada",
+                            })[nc.status] || nc.status}
+                          </span>
                           {nc.criado_por_nome && (
                             <span style={{ fontSize: 10, color: C.muted }}>
                               aberta por {nc.criado_por_nome}
                               {nc.criado_em && ` · ${fmtD(nc.criado_em)}`}
+                            </span>
+                          )}
+                          {onIrParaNC && (
+                            <span style={{ fontSize: 10, color: C.accent,
+                                           marginLeft: "auto" }}>
+                              abrir →
                             </span>
                           )}
                         </div>
@@ -1783,7 +1828,28 @@ export default function TelaOrdemServico({
                       {item.serializado && <span style={{ ...s.tag("#a855f7"), fontSize: 9 }}>🔢 SERIALIZADO</span>}
                     </div>
                     <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
-                      <span title={est.label} style={{ fontSize: 14, cursor: "help" }}>{est.icon}</span>
+                      {/* M4.5: ícone ⚠️ quando o item tem NC ativa.
+                          Clicável: abre a NC vinculada em nova tela.
+                          Substituiu a bolinha CSS por emoji, alinhado com
+                          o padrão visual dos outros ícones do app. */}
+                      {itemTemNCAtiva.has(String(item.id)) && (() => {
+                        const nc = itemTemNCAtiva.get(String(item.id));
+                        return (
+                          <span
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (nc && onIrParaNC) onIrParaNC(nc.id);
+                            }}
+                            title={`NC ativa: ${nc.numero_nc}${onIrParaNC ? ' — clique pra abrir' : ''}`}
+                            style={{
+                              fontSize: 14,
+                              cursor: onIrParaNC ? "pointer" : "default",
+                              lineHeight: 1,
+                            }}>
+                            ⚠️
+                          </span>
+                        );
+                      })()}
                       <span style={{ ...s.tag(cfgAplic.c), fontSize: 10 }}>{cfgAplic.icon} {cfgAplic.label}</span>
                     </div>
                   </div>
@@ -2020,52 +2086,77 @@ export default function TelaOrdemServico({
 
         <div style={{ display: "flex", gap: 10 }}>
           
-          {!chamadoSel.concluida_em && (
-            <button
-              onClick={() => {
-                const materiais = numerados.filter(it => it.tipo === "material" && it.status !== "cancelado");
-                const servicos  = numerados.filter(it => it.tipo === "servico" && it.status !== "cancelado");
-                const aplicados = materiais.filter(m => m.status_aplicacao === "aplicado").length;
-                const naoAplicados = materiais.filter(m => m.status_aplicacao === "nao_aplicado").length;
+          {!chamadoSel.concluida_em && (() => {
+            // M4.5: bloqueio por NC ativa. O botão fica com fundo preto
+            // (desabilitado visualmente) e clicar mostra o motivo + navega
+            // pra NC pendente. Preserva o fluxo normal quando não tem NC.
+            const ncAtiva = (ncsDoChamado || []).find(
+              nc => !['resolvida', 'cancelada'].includes(nc.status)
+            );
+            const bloqueado = !!ncAtiva;
 
-                const materiaisPendentes = materiais.filter(m => {
-                  const ap = Number(m.quantidade_aplicada) || 0;
-                  const pl = Number(m.quantidade) || 0;
-                  return m.status_aplicacao !== "nao_aplicado" && ap < pl;
-                });
+            return (
+              <button
+                onClick={() => {
+                  if (bloqueado) {
+                    // M4.5: abre modal com a(s) NC(s) bloqueando, em vez de
+                    // window.alert + navegação forçada. O usuário decide se
+                    // quer abrir a NC ou voltar pra OS.
+                    setBloqueioConclusao({ ncAtiva });
+                    return;
+                  }
 
-                const servicosSemApontamento = servicos.filter(s => !s.apontamento);
+                  const materiais = numerados.filter(it => it.tipo === "material" && it.status !== "cancelado");
+                  const servicos  = numerados.filter(it => it.tipo === "servico" && it.status !== "cancelado");
+                  const aplicados = materiais.filter(m => m.status_aplicacao === "aplicado").length;
+                  const naoAplicados = materiais.filter(m => m.status_aplicacao === "nao_aplicado").length;
 
-                // Sempre abre o modal. A decisão de bloquear ou não fica
-                // dentro dele — evita alternar entre dialog nativo e modal
-                // (inconsistência visual reportada durante os testes).
-                setModalConclusao({
-                  resumo: {
-                    materiais_aplicados: aplicados,
-                    materiais_nao_aplicados: naoAplicados,
-                    materiais_pendentes: materiaisPendentes.map(m => ({
-                      numero_exibicao: m.numeroExibicao,
-                      item_nome: m.item_nome,
-                      quantidade: m.quantidade,
-                      quantidade_aplicada: m.quantidade_aplicada,
-                    })),
-                    servicos_sem_apontamento: servicosSemApontamento.length,
-                    servicos_pendentes_lista: servicosSemApontamento.map(s => ({
-                      numero_exibicao: s.numeroExibicao,
-                      nome: s.nome,
-                    })),
-                    horas_planejadas: 0,
-                    horas_reais: 0,
-                  },
-                  confirmouServicosPendentes: false,
-                  erro: null,
-                });
-              }}
-              style={{ ...s.btn(true), padding: "9px 20px", fontSize: 12,
-                      background: C.success, border: `1px solid ${C.success}` }}>
-              ✅ Concluir OS
-            </button>
-          )}
+                  const materiaisPendentes = materiais.filter(m => {
+                    const ap = Number(m.quantidade_aplicada) || 0;
+                    const pl = Number(m.quantidade) || 0;
+                    return m.status_aplicacao !== "nao_aplicado" && ap < pl;
+                  });
+
+                  const servicosSemApontamento = servicos.filter(s => !s.apontamento);
+
+                  // Sempre abre o modal. A decisão de bloquear ou não fica
+                  // dentro dele — evita alternar entre dialog nativo e modal
+                  // (inconsistência visual reportada durante os testes).
+                  setModalConclusao({
+                    resumo: {
+                      materiais_aplicados: aplicados,
+                      materiais_nao_aplicados: naoAplicados,
+                      materiais_pendentes: materiaisPendentes.map(m => ({
+                        numero_exibicao: m.numeroExibicao,
+                        item_nome: m.item_nome,
+                        quantidade: m.quantidade,
+                        quantidade_aplicada: m.quantidade_aplicada,
+                      })),
+                      servicos_sem_apontamento: servicosSemApontamento.length,
+                      servicos_pendentes_lista: servicosSemApontamento.map(s => ({
+                        numero_exibicao: s.numeroExibicao,
+                        nome: s.nome,
+                      })),
+                      horas_planejadas: 0,
+                      horas_reais: 0,
+                    },
+                    confirmouServicosPendentes: false,
+                    erro: null,
+                  });
+                }}
+                title={bloqueado ? `Bloqueado: ${ncAtiva.numero_nc} ativa` : 'Concluir a OS'}
+                style={{
+                  ...s.btn(true),
+                  padding: "9px 20px", fontSize: 12,
+                  background: bloqueado ? "#111827" : C.success,
+                  border: `1px solid ${bloqueado ? "#374151" : C.success}`,
+                  color: bloqueado ? "#6b7280" : "#fff",
+                  cursor: bloqueado ? "not-allowed" : "pointer",
+                }}>
+                {bloqueado ? "🔒 Concluir OS" : "✅ Concluir OS"}
+              </button>
+            );
+          })()}
           
           {!chamadoSel.concluida_em && !chamadoSel.cancelada_em && (
             <>
@@ -2126,6 +2217,104 @@ export default function TelaOrdemServico({
           )}
         </div>
         {toast && <ToastView toast={toast} C={C} onClose={() => setToast(null)} />}
+
+        {/* M4.5: modal de bloqueio de conclusão — overlay de verdade
+            (renderizado DENTRO do JSX do detalhe, então a OS continua
+            visível por trás). Aberto quando o usuário clica em
+            "Concluir OS" com NC ativa. */}
+        {bloqueioConclusao && (() => {
+          const ncsAtivas = (ncsDoChamado || []).filter(
+            nc => !['resolvida', 'cancelada'].includes(nc.status)
+          );
+          const varias = ncsAtivas.length > 1;
+
+          return (
+            <Modal
+              title="⚠️ Não é possível concluir a OS"
+              onClose={() => setBloqueioConclusao(null)}
+              width={520}
+              actions={[
+                {
+                  label: "Voltar para a OS",
+                  variant: "secondary",
+                  onClick: () => setBloqueioConclusao(null),
+                },
+              ]}>
+              <div style={{ fontSize: 13, color: C.text, lineHeight: 1.6, marginBottom: 14 }}>
+                {varias
+                  ? <>Encerre <strong>as não conformidades abaixo</strong> antes de concluir a OS.</>
+                  : <>Encerre <strong>a não conformidade abaixo</strong> antes de concluir a OS.</>}
+              </div>
+
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                {ncsAtivas.map(nc => {
+                  const abrir = () => {
+                    if (onIrParaNC) {
+                      setBloqueioConclusao(null);
+                      onIrParaNC(nc.id);
+                    }
+                  };
+                  const labelStatus = ({
+                    aberta: 'Aberta',
+                    em_analise: 'Em análise',
+                    em_execucao: 'Em execução',
+                    aguardando_validacao: 'Aguard. validação',
+                  })[nc.status] || nc.status;
+
+                  return (
+                    <div
+                      key={nc.id}
+                      onClick={abrir}
+                      role="button"
+                      tabIndex={0}
+                      onKeyDown={e => { if (e.key === 'Enter') abrir(); }}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: 10,
+                        padding: '10px 12px',
+                        background: C.bg,
+                        border: `1px solid ${C.border}`,
+                        borderRadius: 6,
+                        cursor: onIrParaNC ? 'pointer' : 'default',
+                        transition: 'border-color .15s, background .15s',
+                      }}
+                      onMouseEnter={e => {
+                        if (!onIrParaNC) return;
+                        e.currentTarget.style.borderColor = '#f59e0b';
+                        e.currentTarget.style.background = '#f59e0b10';
+                      }}
+                      onMouseLeave={e => {
+                        e.currentTarget.style.borderColor = C.border;
+                        e.currentTarget.style.background = C.bg;
+                      }}>
+                      <span style={{
+                        fontFamily: "'IBM Plex Mono',monospace",
+                        fontWeight: 700, fontSize: 12, color: '#f59e0b',
+                      }}>
+                        {nc.numero_nc}
+                      </span>
+                      <span style={{ ...s.tag('#f59e0b'), fontSize: 10 }}>
+                        {labelStatus}
+                      </span>
+                      {nc.criado_por_nome && (
+                        <span style={{ fontSize: 10, color: C.muted }}>
+                          por {nc.criado_por_nome}
+                        </span>
+                      )}
+                      {onIrParaNC && (
+                        <span style={{
+                          fontSize: 11, color: C.accent,
+                          marginLeft: 'auto', fontWeight: 600,
+                        }}>
+                          abrir →
+                        </span>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            </Modal>
+          );
+        })()}
       </div>
     );
   }

@@ -107,6 +107,7 @@ router.post('/', tenantMiddleware, async (req, res) => {
     data_ocorrencia, item_nome_avulso,
     numero_nota_fiscal, lote, numero_serie, validade, unidade_medida,
     fornecedor_id,
+    item_consumo_id,
   } = req.body;
 
   try {
@@ -158,6 +159,7 @@ router.post('/', tenantMiddleware, async (req, res) => {
       chamado_item_id: chamado_item_id || null,
       equipamento_id: equipamento_id || null,
       item_catalogo_id: item_catalogo_id || null,
+      item_consumo_id: item_consumo_id || null,
       // M4.5: item avulso — operador não achou no catálogo, digitou texto
       // livre. `item_fora_catalogo` fica true pra Qualidade ver a pendência.
       item_nome_avulso: item_nome_avulso?.trim() || null,
@@ -306,17 +308,137 @@ router.get('/', tenantMiddleware, async (req, res) => {
         .forEach(e => { equipamentosPorId[e.id] = e; });
     }
 
-    ncs = ncs.map(nc => ({
-      ...nc,
-      chamado_numero: nc.chamado_id ? (chamadosPorId[nc.chamado_id]?.numero || null) : null,
-      equipamento_nome: nc.equipamento_id ? (equipamentosPorId[nc.equipamento_id]?.nome || null) : null,
-      equipamento_tag: nc.equipamento_id ? (equipamentosPorId[nc.equipamento_id]?.tag || null) : null,
-    }));
+    // M4.5-fix: enriquece com nome/SKU do item vinculado ao catálogo.
+    // Itens fora do catálogo usam `item_nome_avulso`/`item_sku_avulso`
+    // (que já vêm direto do banco no `...nc`).
+    // M4.5: enriquece com item — estoque tem prioridade (tem saldo).
+    const itemConsumoIds = [...new Set(ncs.map(nc => nc.item_consumo_id).filter(Boolean))];
+    const itemCatalogoIds = [...new Set(ncs.map(nc => nc.item_catalogo_id).filter(Boolean))];
+
+    let estoquePorId = {};
+    if (itemConsumoIds.length > 0) {
+      const estoques = await DB.select("itens_consumo", { tenant_id: tenantId }, tenantId);
+      estoques
+        .filter(i => itemConsumoIds.includes(i.id))
+        .forEach(i => { estoquePorId[i.id] = i; });
+    }
+    let catalogoPorId = {};
+    if (itemCatalogoIds.length > 0) {
+      const cats = await DB.select("catalogo_itens", { tenant_id: tenantId }, tenantId);
+      cats
+        .filter(c => itemCatalogoIds.includes(c.id))
+        .forEach(c => { catalogoPorId[c.id] = c; });
+    }
+
+    ncs = ncs.map(nc => {
+      let item_nome = null;
+      let item_sku = null;
+      if (nc.item_consumo_id && estoquePorId[nc.item_consumo_id]) {
+        item_nome = estoquePorId[nc.item_consumo_id].nome;
+        item_sku = estoquePorId[nc.item_consumo_id].sku;
+      } else if (nc.item_catalogo_id && catalogoPorId[nc.item_catalogo_id]) {
+        item_nome = catalogoPorId[nc.item_catalogo_id].nome;
+        item_sku = catalogoPorId[nc.item_catalogo_id].codigo;
+      }
+      return {
+        ...nc,
+        chamado_numero: nc.chamado_id ? (chamadosPorId[nc.chamado_id]?.numero || null) : null,
+        equipamento_nome: nc.equipamento_id ? (equipamentosPorId[nc.equipamento_id]?.nome || null) : null,
+        equipamento_tag: nc.equipamento_id ? (equipamentosPorId[nc.equipamento_id]?.tag || null) : null,
+        item_nome,
+        item_sku,
+      };
+    });
 
     ncs.sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em));
     res.json(ncs);
   } catch (err) {
     console.error("❌ Erro ao listar NCs:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/nao-conformidades/buscar-item?termo=X&limit=8
+//
+// M4.5: busca unificada de item pra NC. Une duas fontes:
+//   1) itens_consumo (estoque do tenant) — ILIKE em nome/sku
+//   2) catalogo_itens (via RPC buscar_itens_catalogo_tenant) — a mesma
+//      RPC que a OS/RM/OC já usam
+//
+// Deduplica por catalogo_item_id: se o item está nas duas, fica só a
+// versão de estoque (tem saldo_atual). Ícones definidos no front:
+//   🏭 estoque puro (sem catálogo)
+//   📦 estoque + catálogo
+//   📖 só catálogo (fornecedor oferece, tenant nunca comprou)
+// ─────────────────────────────────────────────────────────────────────────
+router.get('/buscar-item', tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const termo = (req.query.termo || '').trim();
+  const limite = Math.min(parseInt(req.query.limit, 10) || 8, 20);
+
+  if (termo.length < 2) {
+    return res.json({ resultados: [] });
+  }
+
+  try {
+    const termoLower = termo.toLowerCase();
+
+    // Fonte 1: estoque do tenant
+    const itensEstoque = await DB.select('itens_consumo', { tenant_id: tenantId }, tenantId);
+    const estoqueFiltrado = (itensEstoque || [])
+      .filter(i => i.ativo !== false)
+      .filter(i =>
+        (i.nome || '').toLowerCase().includes(termoLower)
+        || (i.sku || '').toLowerCase().includes(termoLower)
+      );
+
+    // Fonte 2: catálogo (RPC que a OS usa)
+    const { supabase } = require('../db');
+    const { data: catalogoData, error: catErr } = await supabase.rpc('buscar_itens_catalogo_tenant', {
+      p_tenant_id: tenantId,
+      p_codigo: termo,
+      p_nome: termo,
+      p_descricao: '',
+      p_limite: limite,
+    });
+    if (catErr) throw new Error(catErr.message);
+
+    // M4.5: MERGE — 1 linha por item, não 1 linha por origem.
+    // Um item pode existir nas duas fontes (estoque aponta pro catálogo
+    // via catalogo_item_id). Nesse caso é UM item só — a linha carrega
+    // os dois IDs, o usuário não escolhe origem.
+    const idsCatalogoNoEstoque = new Set(
+      estoqueFiltrado.map(i => i.catalogo_item_id).filter(Boolean)
+    );
+
+    const resultadosEstoque = estoqueFiltrado.map(i => ({
+      item_consumo_id: i.id,
+      catalogo_item_id: i.catalogo_item_id || null,
+      nome: i.nome,
+      sku: i.sku || null,
+      saldo_atual: i.saldo_atual != null ? parseFloat(i.saldo_atual) : null,
+      tem_estoque: true,
+    }));
+
+    const resultadosCatalogo = (catalogoData || [])
+      .filter(c => !idsCatalogoNoEstoque.has(c.catalogo_item_id))
+      .map(c => ({
+        item_consumo_id: null,
+        catalogo_item_id: c.catalogo_item_id,
+        nome: c.nome,
+        sku: c.codigo || null,
+        saldo_atual: null,
+        tem_estoque: false,
+      }));
+
+    // Ordena: quem tem estoque primeiro (é onde o usuário vai mais
+    // provavelmente mexer), depois quem não tem.
+    const resultados = [...resultadosEstoque, ...resultadosCatalogo].slice(0, limite);
+
+    res.json({ resultados });
+  } catch (err) {
+    console.error('❌ Erro na busca de item (NC):', err.message);
     res.status(500).json({ erro: err.message });
   }
 });
@@ -376,6 +498,31 @@ router.get('/:id', tenantMiddleware, async (req, res) => {
       } catch (_) {}
     }
 
+    // M4.5-fix: enriquece com nome e SKU do item quando vinculado ao
+    // catálogo. `item_nome_avulso` (item fora do catálogo) já vem do
+    // `...nc` — não precisa buscar. O front usa um dos dois.
+    let item_nome = null;
+    let item_sku = null;
+    let item_saldo = null;
+
+    // Prioridade: estoque primeiro (tem saldo real). Se não tiver estoque,
+    // busca no catálogo.
+    if (nc.item_consumo_id) {
+      try {
+        const ic = await DB.selectOne("itens_consumo", { id: nc.item_consumo_id, tenant_id: tenantId }, tenantId);
+        item_nome = ic?.nome || null;
+        item_sku = ic?.sku || null;
+        item_saldo = ic?.saldo_atual != null ? parseFloat(ic.saldo_atual) : null;
+      } catch (_) {}
+    }
+    if (!item_nome && nc.item_catalogo_id) {
+      try {
+        const cat = await DB.selectOne("catalogo_itens", { id: nc.item_catalogo_id, tenant_id: tenantId }, tenantId);
+        item_nome = cat?.nome || null;
+        item_sku = cat?.codigo || null;
+      } catch (_) {}
+    }
+
     // M4.5: enriquece anexos com signed URL do Storage (bucket privado
     // `nc-evidencias`). Anexos antigos gravados como data URI passam
     // inalterados — o helper `gerarSignedUrl` devolve o próprio data URI
@@ -394,6 +541,12 @@ router.get('/:id', tenantMiddleware, async (req, res) => {
       chamado_numero, equipamento_nome, equipamento_tag,
       fornecedor_email,
       fornecedor_nome,
+      // M4.5-fix: item enriquecido (nome + sku do catálogo). Se o item
+      // estiver fora do catálogo, estes ficam null e o front usa
+      // `item_nome_avulso` (que já vem do `...nc`).
+      item_nome,
+      item_sku,
+      item_saldo,
     });
   } catch (err) {
     console.error("❌ Erro ao buscar NC:", err.message);
@@ -1539,6 +1692,150 @@ router.post('/:id/vincular-item-catalogo', tenantMiddleware, async (req, res) =>
     return res.json({ ok: true, item: { id: item.catalogo_item_id, nome: item.nome } });
   } catch (err) {
     console.error('❌ Erro ao vincular item ao catálogo:', err.message);
+    return res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/nao-conformidades/:id/vincular-item
+//
+// M4.5: vínculo unificado — aceita item_consumo_id E/OU catalogo_item_id.
+// Substitui /vincular-item-catalogo (que só aceitava catálogo).
+// Body: { item_consumo_id?, catalogo_item_id? } — pelo menos 1.
+// ─────────────────────────────────────────────────────────────────────────
+router.post('/:id/vincular-item', tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { id } = req.params;
+  // M4.5-fix: o campo se chama `item_catalogo_id` (mesmo nome da coluna
+  // na tabela e do payload de criação). Antes estava `catalogo_item_id`
+  // por engano — o front manda `item_catalogo_id` e o backend lia null.
+  const { item_consumo_id, item_catalogo_id } = req.body || {};
+
+  if (!item_consumo_id && !item_catalogo_id) {
+    return res.status(400).json({ erro: 'item_consumo_id ou item_catalogo_id é obrigatório' });
+  }
+
+  try {
+    const nc = await DB.selectOne('nao_conformidades', { id, tenant_id: tenantId }, tenantId);
+    if (!nc) return res.status(404).json({ erro: 'NC não encontrada' });
+
+    if (['resolvida', 'cancelada'].includes(nc.status)) {
+      return res.status(400).json({ erro: 'NC já encerrada — não pode mais editar item' });
+    }
+
+    // Valida existência dos dois, quando vierem
+    let nomeFinal = null;
+    let skuFinal = null;
+
+    if (item_consumo_id) {
+      const ic = await DB.selectOne('itens_consumo', { id: item_consumo_id, tenant_id: tenantId }, tenantId);
+      if (!ic) return res.status(404).json({ erro: 'Item de estoque não encontrado' });
+      nomeFinal = ic.nome;
+      skuFinal = ic.sku;
+    }
+    if (item_catalogo_id) {
+      const cat = await DB.selectOne('catalogo_itens', { id: item_catalogo_id, tenant_id: tenantId }, tenantId);
+      if (!cat) return res.status(404).json({ erro: 'Item do catálogo não encontrado' });
+      if (!nomeFinal) {
+        nomeFinal = cat.nome;
+        skuFinal = cat.codigo;
+      }
+    }
+
+    const u = await usuarioAtual(req, tenantId);
+
+    await DB.update('nao_conformidades', id, {
+      item_consumo_id: item_consumo_id || null,
+      item_catalogo_id: item_catalogo_id || null,
+      item_nome_avulso: null,
+      item_sku_avulso: null,
+      item_fora_catalogo: false,
+      atualizado_em: new Date().toISOString(),
+    }, tenantId);
+
+    await registrarEventoNC(
+      tenantId, id, 'item_vinculado',
+      `Item vinculado por ${u.nome}: "${nomeFinal}"${skuFinal ? ` (${skuFinal})` : ''}`,
+      { item_consumo_id: item_consumo_id || null, item_catalogo_id: item_catalogo_id || null },
+      u
+    );
+
+    return res.json({ ok: true, item: { nome: nomeFinal, sku: skuFinal } });
+  } catch (err) {
+    console.error('❌ Erro ao vincular item:', err.message);
+    return res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/nao-conformidades/:id/editar-item-avulso
+//
+// M4.5-fix: curadoria de item avulso. A Qualidade revisa uma NC com item
+// fora do catálogo e edita o nome/part number em texto livre — sem
+// vincular ao catálogo (isso continua sendo o /vincular-item-catalogo).
+//
+// Body: { item_nome_avulso (obrigatório), item_sku_avulso (opcional) }
+// Efeito:
+//   - Seta item_nome_avulso, item_sku_avulso, marca item_fora_catalogo=true
+//   - Zera item_catalogo_id (garante que não fica órfão apontando pro nada)
+//   - Registra evento `item_editado_avulso` no histórico
+//
+// Permissão: qualidade, admin, gestor.
+// ─────────────────────────────────────────────────────────────────────────
+router.post('/:id/editar-item-avulso', tenantMiddleware, async (req, res) => {
+  const tenantId = req.tenantId;
+  const { id } = req.params;
+  const { item_nome_avulso, item_sku_avulso } = req.body || {};
+
+  if (!item_nome_avulso || !item_nome_avulso.trim()) {
+    return res.status(400).json({ erro: 'item_nome_avulso é obrigatório' });
+  }
+
+  try {
+    const nc = await DB.selectOne('nao_conformidades', { id, tenant_id: tenantId }, tenantId);
+    if (!nc) return res.status(404).json({ erro: 'NC não encontrada' });
+
+    if (['resolvida', 'cancelada'].includes(nc.status)) {
+      return res.status(400).json({ erro: 'NC já encerrada — não pode mais editar item' });
+    }
+
+    const perfil = await perfilDoUsuario(req, tenantId);
+    const perfisPermitidos = ['qualidade', 'admin', 'gestor'];
+    if (!perfisPermitidos.includes(perfil)) {
+      return res.status(403).json({
+        erro: `Apenas ${perfisPermitidos.join(', ')} podem editar o item (seu perfil: ${perfil || '—'})`
+      });
+    }
+
+    const u = await usuarioAtual(req, tenantId);
+    const nomeAnterior = nc.item_nome_avulso
+      || (nc.item_catalogo_id ? `#${nc.item_catalogo_id}` : '—');
+
+    await DB.update('nao_conformidades', id, {
+      item_catalogo_id: null,
+      item_nome_avulso: item_nome_avulso.trim(),
+      item_sku_avulso: item_sku_avulso?.trim() || null,
+      item_fora_catalogo: true,
+      atualizado_em: new Date().toISOString(),
+    }, tenantId);
+
+    await registrarEventoNC(
+      tenantId, id, 'item_editado_avulso',
+      `Item editado por ${u.nome}: "${nomeAnterior}" → "${item_nome_avulso.trim()}"${item_sku_avulso?.trim() ? ` (PN: ${item_sku_avulso.trim()})` : ''}`,
+      {
+        nome_anterior: nomeAnterior,
+        nome_novo: item_nome_avulso.trim(),
+        sku_novo: item_sku_avulso?.trim() || null,
+      },
+      u
+    );
+
+    return res.json({
+      ok: true,
+      item: { nome: item_nome_avulso.trim(), sku: item_sku_avulso?.trim() || null },
+    });
+  } catch (err) {
+    console.error('❌ Erro ao editar item avulso:', err.message);
     return res.status(500).json({ erro: err.message });
   }
 });

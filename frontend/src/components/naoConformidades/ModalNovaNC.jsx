@@ -49,7 +49,12 @@ function abrirAnexoEmNovaAba(dataUri, mimeType, nomeArquivo) {
     for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
     const blob = new Blob([bytes], { type: mimeType || 'application/octet-stream' });
     const url = URL.createObjectURL(blob);
-    const w = window.open(url, '_blank', 'noopener,noreferrer');
+
+    // M4.5-fix: SEM `noopener`/`noreferrer` no window.open. Eles são
+    // boa prática de segurança, mas com Blob URL de PDF quebram o viewer
+    // inline em Safari e Chrome — o navegador abre a aba vazia E baixa
+    // o arquivo. Sem as flags, o PDF renderiza direto na aba nova.
+    const w = window.open(url, '_blank');
     if (!w) {
       // Popup bloqueado — fallback: download
       const a = document.createElement('a');
@@ -58,8 +63,14 @@ function abrirAnexoEmNovaAba(dataUri, mimeType, nomeArquivo) {
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      return;
     }
-    setTimeout(() => URL.revokeObjectURL(url), 60000);
+
+    // M4.5-fix: NÃO revoga o Blob URL por timeout. Se o navegador estiver
+    // lento pra renderizar o PDF, o revoke mata a URL antes — e ele cai
+    // no download de novo. Deixa o navegador liberar quando fechar a aba
+    // (GC cuida sozinho).
   } catch (e) {
     console.warn('Falha ao abrir anexo em nova aba:', e);
   }
@@ -144,6 +155,7 @@ export default function ModalNovaNC({ C, s, onFechar, onAtualizar }) {
   const [itemTexto, setItemTexto] = useState('');
   const [itemSku, setItemSku] = useState('');
   const [itemCatalogoId, setItemCatalogoId] = useState(null);
+  const [itemConsumoId, setItemConsumoId] = useState(null);
   const [itemSugestoes, setItemSugestoes] = useState([]);
   const [itemShowSugestoes, setItemShowSugestoes] = useState(false);
   const [itemBuscando, setItemBuscando] = useState(false);
@@ -206,7 +218,7 @@ export default function ModalNovaNC({ C, s, onFechar, onAtualizar }) {
     ctrl.timer = setTimeout(async () => {
       const chamadaId = ++ctrl.ultimaChamadaId;
       try {
-        const resp = await apiService.get('/catalogo/buscar-item', { termo, limit: 5 });
+        const resp = await apiService.get('/nao-conformidades/buscar-item', { termo, limit: 8 });
         if (chamadaId !== ctrl.ultimaChamadaId) return;
         const resultados = resp?.resultados || [];
         setItemSugestoes(resultados);
@@ -224,8 +236,11 @@ export default function ModalNovaNC({ C, s, onFechar, onAtualizar }) {
 
   function selecionarSugestaoItem(sug) {
     setItemTexto(sug.nome || '');
-    setItemSku(sug.codigo || '');
-    setItemCatalogoId(sug.origem === 'catalogo' && sug.catalogo_item_id ? sug.catalogo_item_id : null);
+    setItemSku(sug.sku || '');
+    // M4.5: o backend já resolveu qual é o item. Guarda os vínculos
+    // que vierem — o usuário não escolhe.
+    setItemCatalogoId(sug.catalogo_item_id || null);
+    setItemConsumoId(sug.item_consumo_id || null);
     setItemSugestoes([]);
     setItemShowSugestoes(false);
   }
@@ -306,7 +321,8 @@ export default function ModalNovaNC({ C, s, onFechar, onAtualizar }) {
       // no default "pendente" pra disposição e null pro custo.
       quantidade_afetada: quantidade !== '' ? parseFloat(quantidade) : null,
       item_catalogo_id: itemCatalogoId || null,
-      item_nome_avulso: !itemCatalogoId ? itemTexto.trim() : null,
+      item_consumo_id: itemConsumoId || null,
+      item_nome_avulso: !itemCatalogoId && !itemConsumoId ? itemTexto.trim() : null,
       numero_nota_fiscal: numeroNotaFiscal.trim() || null,
       unidade_medida: unidade || null,
       lote: lote.trim() || null,
@@ -449,27 +465,17 @@ export default function ModalNovaNC({ C, s, onFechar, onAtualizar }) {
                                 zIndex: 100, maxHeight: 220, overflowY: 'auto',
                                 boxShadow: '0 4px 6px rgba(0,0,0,0.1)' }}>
                     {itemSugestoes.map((sug, i) => {
-                      const doCatalogo = sug.origem === 'catalogo';
-                      const matchExato = sug.tipo_match === 'codigo' || sug.tipo_match === 'pn';
                       const partesInfo = [];
-                      if (sug.codigo) partesInfo.push(`PN: ${sug.codigo}`);
-                      else if (doCatalogo) partesInfo.push(sug.categoria || 'Catálogo local');
-                      else partesInfo.push('Reconhecido');
-                      if (doCatalogo && sug.codigo && sug.categoria) partesInfo.push(sug.categoria);
-                      if (matchExato) partesInfo.push('código exato');
+                      if (sug.sku) partesInfo.push(`PN: ${sug.sku}`);
 
                       return (
-                        <div key={`${sug.origem}-${sug.catalogo_item_id || sug.nome}-${i}`}
+                        <div key={`${sug.item_consumo_id || sug.catalogo_item_id || i}`}
                           onClick={() => selecionarSugestaoItem(sug)}
                           style={{ padding: '10px 12px', cursor: 'pointer',
                                    borderBottom: `1px solid ${C.border}22`, fontSize: 12,
                                    display: 'flex', alignItems: 'center', gap: 8 }}
                           onMouseEnter={e => e.currentTarget.style.background = '#1e2a3f'}
                           onMouseLeave={e => e.currentTarget.style.background = 'transparent'}>
-                          <span title={doCatalogo ? 'No catálogo local' : 'Reconhecido (sem catálogo)'}
-                            style={{ fontSize: 13, flexShrink: 0 }}>
-                            {doCatalogo ? '📦' : '🔵'}
-                          </span>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ color: C.text, fontWeight: 500 }}>{sug.nome}</div>
                             <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
@@ -482,9 +488,9 @@ export default function ModalNovaNC({ C, s, onFechar, onAtualizar }) {
                   </div>
                 )}
               </div>
-              {!itemCatalogoId && itemTexto.trim().length > 0 && (
+              {!itemCatalogoId && !itemConsumoId && itemTexto.trim().length > 0 && (
                 <div style={{ fontSize: 10, color: '#f59e0b', marginTop: 4 }}>
-                  ⚠ Item fora do catálogo — a Qualidade vai revisar e vincular depois.
+                  ⚠ Item em texto livre — a Qualidade vai revisar e vincular depois.
                 </div>
               )}
             </div>
