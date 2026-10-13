@@ -5,6 +5,7 @@ import TelaChamadosNova from "./components/chamados/TelaChamadosNova";
 import TelaFornecedoresNova from "./components/fornecedores/TelaFornecedoresNova";
 import TelaEquipamentos from './components/equipamentos/TelaEquipamentos';
 import TelaUsuariosNova from './components/usuarios/TelaUsuariosNova';
+import ModalMeuPerfil from './components/usuarios/ModalMeuPerfil';
 import TelaPlanoAcaoNova from './components/plano/TelaPlanoAcaoNova';
 import TelaFinanceiroNova from './components/financeiro/TelaFinanceiroNova';
 import TelaRelatorioNova from './components/relatorio/TelaRelatorioNova';
@@ -146,6 +147,9 @@ export default function App() {
   const fornecedores = useFornecedores();
   const token = localStorage.getItem('access_token');
   const catalogo = useCatalogo(token);
+  // M4.7: destructuring direto — o resto do App usa itens/setItens soltos.
+  // Mantém `catalogo` como objeto pro `<TelaCatalogo catalogo={catalogo} />`.
+  const { itens, setItens, listar, importarFornecedor } = catalogo;
   const equipamentos = useEquipamentos();
   const tarefas = useTarefas();
   const usuarios = useUsuarios();
@@ -157,6 +161,7 @@ export default function App() {
   const [osParaAbrir, setOsParaAbrir] = useState(null);
   const [ncParaAbrir, setNcParaAbrir] = useState(null);
   const [totalPendencias, setTotalPendencias] = useState(0);
+  const [meuPerfilAberto, setMeuPerfilAberto] = useState(false);
   const [participaBench,setParticipaBench]=useState(true);
   const email = useEmail();
   const [notasPeriodo,setNotasPeriodo]=useState({
@@ -425,12 +430,21 @@ const perfil = PERFIS[usuario.perfil] || {
             paddingTop: 12,
             marginTop: 8,
           }}>
-            <div style={{ fontSize: 11, color: C.text, fontWeight: 500, marginBottom: 2 }}>
-              {usuario.nome}
-            </div>
-            <div style={{ fontSize: 9, color: perfil.c, marginBottom: 8 }}>
-              {perfil.icon} {perfil.l}
-            </div>
+            <button
+              onClick={() => setMeuPerfilAberto(true)}
+              title="Meu perfil"
+              style={{
+                background: 'transparent', border: 'none', padding: 0,
+                cursor: 'pointer', textAlign: 'left', width: '100%',
+                fontFamily: 'inherit', marginBottom: 8,
+              }}>
+              <div style={{ fontSize: 11, color: C.text, fontWeight: 500, marginBottom: 2 }}>
+                {usuario.nome}
+              </div>
+              <div style={{ fontSize: 9, color: perfil.c }}>
+                {perfil.icon} {perfil.l} · editar
+              </div>
+            </button>
             <button
               onClick={logout}
               style={{
@@ -715,6 +729,20 @@ const perfil = PERFIS[usuario.perfil] || {
         )}        
       </div>
       </div>
+
+      {/* M4.7: modal de perfil */}
+      {meuPerfilAberto && (
+        <ModalMeuPerfil
+          usuario={usuario}
+          onFechar={() => setMeuPerfilAberto(false)}
+          onAtualizado={(u) => {
+            // Atualiza o state + localStorage pra refletir nome/telefone novos
+            const novo = { ...usuario, ...u };
+            setUsuario(novo);
+            localStorage.setItem('usuario', JSON.stringify(novo));
+          }}
+        />
+      )}
       </div>
     );
     if (!usuario) return <TelaLogin onLogin={login}/>;

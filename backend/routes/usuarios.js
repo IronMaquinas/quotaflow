@@ -204,11 +204,65 @@ router.post("/", tenantMiddleware, requerAdmin, async (req, res) => {
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────
-// PUT /api/usuarios/:id - Atualizar usuário
-// ─────────────────────────────────────────────────────────────────────────
+// M4.7: rotas "meu perfil" — SEMPRE antes de /:id (senão o Express casa
+// /me com /:id e tenta UUID "me" → 500). O id é `req.userId` do JWT.
 
-// PUT /api/usuarios/:id - Atualizar usuário (completo)
+// PUT /api/usuarios/me — atualiza nome e telefone do próprio usuário
+router.put("/me", tenantMiddleware, async (req, res) => {
+  try {
+    const { nome, telefone } = req.body || {};
+    const upd = {};
+    if (nome !== undefined) {
+      if (!nome.trim()) return res.status(400).json({ erro: "Nome não pode ser vazio" });
+      upd.nome = nome.trim();
+    }
+    if (telefone !== undefined) {
+      upd.telefone = (telefone && String(telefone).trim()) || null;
+    }
+    if (Object.keys(upd).length === 0) {
+      return res.status(400).json({ erro: "Nada para atualizar" });
+    }
+    upd.atualizado_em = new Date().toISOString();
+
+    await DB.update("usuarios", req.userId, upd, req.tenantId);
+    const atualizado = await DB.selectOne("usuarios", { id: req.userId }, req.tenantId);
+    const { senha_hash, ...seguro } = atualizado;
+    res.json({ ok: true, usuario: seguro });
+  } catch (err) {
+    console.error("❌ Erro em PUT /usuarios/me:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// POST /api/usuarios/me/trocar-senha — troca a senha (valida a atual)
+router.post("/me/trocar-senha", tenantMiddleware, async (req, res) => {
+  try {
+    const { senhaAtual, senhaNova } = req.body || {};
+    if (!senhaAtual || !senhaNova) {
+      return res.status(400).json({ erro: "senhaAtual e senhaNova são obrigatórias" });
+    }
+    if (String(senhaNova).length < 6) {
+      return res.status(400).json({ erro: "Nova senha deve ter mínimo 6 caracteres" });
+    }
+    const usuario = await DB.selectOne("usuarios", { id: req.userId }, req.tenantId);
+    if (!usuario) return res.status(404).json({ erro: "Usuário não encontrado" });
+
+    const ok = bcrypt.compareSync(senhaAtual, usuario.senha_hash);
+    if (!ok) return res.status(401).json({ erro: "Senha atual incorreta" });
+
+    const novoHash = bcrypt.hashSync(senhaNova, 10);
+    await DB.update("usuarios", req.userId, {
+      senha_hash: novoHash,
+      atualizado_em: new Date().toISOString(),
+    }, req.tenantId);
+
+    res.json({ ok: true, mensagem: "Senha atualizada" });
+  } catch (err) {
+    console.error("❌ Erro em POST /usuarios/me/trocar-senha:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
 router.put("/:id", tenantMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
@@ -363,10 +417,6 @@ router.patch("/:id", tenantMiddleware, async (req, res) => {
     res.status(500).json({ erro: err.message });
   }
 });
-
-// ─────────────────────────────────────────────────────────────────────────
-// DELETE /api/usuarios/:id - Deletar usuário (admin only)
-// ─────────────────────────────────────────────────────────────────────────
 
 router.delete("/:id", tenantMiddleware, requerAdmin, async (req, res) => {
   try {
