@@ -278,7 +278,7 @@ export default function TelaNaoConformidades({ C, s, fmtD, onIrParaOS, initialNC
                     nc.fornecedor_tratativa_status === 'visualizado'
                     || (nc.fornecedor_tratativa_status === 'enviado' && nc.fornecedor_ciente_em)
                   ) && (
-                  <span style={{ ...s.tag("#3b82f6"), fontSize: 10 }} title="Fornecedor abriu a NC">
+                  <span style={{ ...s.tag("#3b82f6"), fontSize: 10 }} title="Fornecedor visualizou a NC">
                     👁 Visualizada pelo Fornecedor
                   </span>
                 )}

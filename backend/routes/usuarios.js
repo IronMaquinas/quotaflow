@@ -10,6 +10,24 @@
 // POST   /api/usuarios/:id/perfil   - Alterar perfil de usuário (admin only)
 // ════════════════════════════════════════════════════════════════════════════════
 
+// ⚠️ REGRA MULTI-TENANT — tabelas N:N sem tenant_id
+//
+// Tabelas como `usuario_perfis`, `cotacao_fornecedores` e outras N:N
+// NÃO têm coluna `tenant_id` — o isolamento entre tenants é garantido
+// por TRANSITIVIDADE via a tabela principal.
+//
+// REGRA: nenhuma rota pode consultar uma tabela N:N sem antes validar
+// que a entidade principal pertence ao `req.tenantId`.
+//
+// Exemplo correto:
+//   const usuario = await DB.selectOne('usuarios', { id }, req.tenantId);
+//   if (!usuario) return 404;  // ← barreira
+//   const perfis = await DB.select('usuario_perfis', { usuario_id: id }, null);
+//
+// Exemplo ERRADO (furo de segurança):
+//   const perfis = await DB.select('usuario_perfis', { usuario_id: id }, null);
+//   // ← nunca validou que o usuário é do tenant logado
+
 const express = require("express");
 const router = express.Router();
 const bcrypt = require("bcryptjs");
@@ -33,14 +51,31 @@ function requerAdmin(req, res, next) {
 
 router.get("/", tenantMiddleware, async (req, res) => {
   try {
-    const usuarios = await DB.raw(`
-      SELECT id, nome, email, perfil, ativo, criado_em
-      FROM usuarios
-      WHERE tenant_id = $1
-      ORDER BY criado_em DESC
-    `, [req.tenantId]);
+    // M4.5-fix: trocado DB.raw por DB.select. O DB.raw cai no fallback
+    // genérico quando a query tem ORDER BY (não reconhece o padrão),
+    // e o fallback ignora o SELECT explícito — devolvia usuários sem
+    // a coluna `telefone` (que foi adicionada depois). DB.select + sort
+    // em JS é o padrão recomendado pelo próprio db.js.
+    const usuarios = await DB.select("usuarios", { tenant_id: req.tenantId }, req.tenantId);
 
-    res.json(usuarios);
+    // M4.5: enriquece cada usuário com o array de perfis (usuario_perfis).
+    // IMPORTANTE: `usuario_perfis` NÃO tem tenant_id — passa `null` como
+    // 3º argumento, senão o DB.select tenta filtrar por coluna inexistente.
+    const todosUsuarioPerfis = await DB.select("usuario_perfis", {}, null).catch(() => []);
+    const perfisPorUsuario = {};
+    (todosUsuarioPerfis || []).forEach(up => {
+      if (!perfisPorUsuario[up.usuario_id]) perfisPorUsuario[up.usuario_id] = [];
+      perfisPorUsuario[up.usuario_id].push(up.perfil_codigo);
+    });
+
+    const usuariosSeguros = (usuarios || [])
+      .map(({ senha_hash, ...u }) => ({
+        ...u,
+        perfis: perfisPorUsuario[u.id] || [u.perfil].filter(Boolean),
+      }))
+      .sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em));
+
+    res.json(usuariosSeguros);
   } catch (err) {
     console.error("❌ Erro ao listar usuários:", err.message);
     res.status(500).json({ erro: err.message });
@@ -62,7 +97,15 @@ router.get("/:id", tenantMiddleware, async (req, res) => {
     // Não retornar senha_hash
     const { senha_hash, ...usuarioSeguro } = usuario;
 
-    res.json(usuarioSeguro);
+    // M4.5: enriquece com o array de perfis (usuario_perfis).
+    // `usuario_perfis` NÃO tem tenant_id — passa `null`.
+    const perfisDoUsuario = await DB.select("usuario_perfis", { usuario_id: req.params.id }, null);
+    const perfisArr = (perfisDoUsuario || []).map(p => p.perfil_codigo);
+
+    res.json({
+      ...usuarioSeguro,
+      perfis: perfisArr.length > 0 ? perfisArr : [usuario.perfil].filter(Boolean),
+    });
   } catch (err) {
     console.error("❌ Erro ao buscar usuário:", err.message);
     res.status(500).json({ erro: err.message });
@@ -75,7 +118,14 @@ router.get("/:id", tenantMiddleware, async (req, res) => {
 
 router.post("/", tenantMiddleware, requerAdmin, async (req, res) => {
   try {
-    const { nome, email, senha, perfil } = req.body;
+    const { nome, email, senha, perfil, telefone, perfis } = req.body;
+
+    // M4.5: aceita `perfis` (array) do frontend novo. Se não vier, cai no
+    // `perfil` (string) por compatibilidade. `perfil` = perfis[0] (principal).
+    const perfisFinal = Array.isArray(perfis) && perfis.length > 0
+      ? perfis.filter(Boolean)
+      : (perfil ? [perfil] : ['comprador']);
+    const perfilPrincipal = perfisFinal[0];
 
     // Validações
     if (!nome || !email || !senha) {
@@ -90,8 +140,13 @@ router.post("/", tenantMiddleware, requerAdmin, async (req, res) => {
       });
     }
 
-    if (!["tecnico", "comprador", "gestor", "admin", "fornecedor"].includes(perfil || "tecnico")) {
-      return res.status(400).json({ erro: "Perfil inválido. Opções: tecnico, comprador, gestor, admin, fornecedor" });
+    // M4.5: valida cada perfil do array contra a lista canônica
+    const PERFIS_VALIDOS = ['admin', 'gestor', 'comprador', 'operacao', 'qualidade', 'financeiro'];
+    const invalidos = perfisFinal.filter(p => !PERFIS_VALIDOS.includes(p));
+    if (invalidos.length > 0) {
+      return res.status(400).json({
+        erro: `Perfil inválido: ${invalidos.join(', ')}. Válidos: ${PERFIS_VALIDOS.join(', ')}`
+      });
     }
 
     // Verificar se email já existe neste tenant
@@ -110,15 +165,32 @@ router.post("/", tenantMiddleware, requerAdmin, async (req, res) => {
       nome,
       email,
       senha_hash: senhaHash,
-      perfil: perfil || "tecnico",
+      // M4.5: `perfil` continua sendo a coluna canônica (compatibilidade
+      // com os 22 checks legados). É o perfil PRINCIPAL (perfisFinal[0]).
+      perfil: perfilPrincipal,
+      telefone: (telefone && String(telefone).trim()) || null,
       ativo: 1
     }, req.tenantId);
+
+    // M4.5: grava os N perfis em usuario_perfis
+    for (const codigo of perfisFinal) {
+      try {
+        await DB.insert("usuario_perfis", {
+          usuario_id: usuario.id,
+          perfil_codigo: codigo,
+        }, req.tenantId);
+      } catch (e) {
+        // Perfil já existe ou inválido — segue
+        console.warn(`⚠ Falha ao gravar perfil ${codigo}:`, e.message);
+      }
+    }
 
     // Não retornar senha_hash
     const { senha_hash, ...usuarioSeguro } = usuario;
 
     res.status(201).json({
       ...usuarioSeguro,
+      perfis: perfisFinal,
       mensagem: "Usuário criado com sucesso"
     });
 
@@ -136,7 +208,11 @@ router.post("/", tenantMiddleware, requerAdmin, async (req, res) => {
 router.put("/:id", tenantMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
-    const { nome, email, perfil, ativo, senha } = req.body;
+    const { nome, email, perfil, ativo, senha, telefone, perfis } = req.body;
+
+    // M4.5: se `perfis` (array) veio, usa ele. Senão cai no `perfil` (string).
+    const temPerfisArray = Array.isArray(perfis);
+    const perfisFinal = temPerfisArray ? perfis.filter(Boolean) : null;
 
     const usuario = await DB.selectOne("usuarios", { id }, req.tenantId);
     if (!usuario) {
@@ -156,16 +232,50 @@ router.put("/:id", tenantMiddleware, async (req, res) => {
     if (email !== undefined) dadosAtualizar.email = email;
     if (perfil !== undefined) dadosAtualizar.perfil = perfil;
     if (ativo !== undefined) dadosAtualizar.ativo = ativo ? 1 : 0;
+    // M4.5: telefone — normaliza vazio pra null
+    if (telefone !== undefined) {
+      dadosAtualizar.telefone = (telefone && String(telefone).trim()) || null;
+    }
     if (senha && senha.length > 0) {
       dadosAtualizar.senha_hash = bcrypt.hashSync(senha, 10);
+    }
+    // M4.5: `perfil` (coluna canônica) = primeiro do array, se array veio
+    if (temPerfisArray && perfisFinal.length > 0) {
+      dadosAtualizar.perfil = perfisFinal[0];
     }
 
     await DB.update("usuarios", id, dadosAtualizar, req.tenantId);
 
+    // M4.5: se `perfis` (array) veio, sincroniza usuario_perfis.
+    // Apaga os antigos e grava os novos (idempotente).
+    // IMPORTANTE: `usuario_perfis` NÃO tem tenant_id — passa `null`
+    // como 3º argumento pra não filtrar por coluna inexistente.
+    if (temPerfisArray && perfisFinal.length > 0) {
+      try {
+        await DB.deleteWhere("usuario_perfis", { usuario_id: id }, null);
+        for (const codigo of perfisFinal) {
+          await DB.insert("usuario_perfis", {
+            usuario_id: id,
+            perfil_codigo: codigo,
+          }, null);
+        }
+      } catch (e) {
+        console.warn(`⚠ Falha ao sincronizar perfis:`, e.message);
+      }
+    }
+
     const updated = await DB.selectOne("usuarios", { id }, req.tenantId);
     const { senha_hash, ...usuarioSeguro } = updated;
 
-    res.json({ ...usuarioSeguro, mensagem: "Usuário atualizado com sucesso" });
+    // M4.5: retorna também os perfis do N:N
+    const perfisDoUsuario = await DB.select("usuario_perfis", { usuario_id: id }, null);
+    const perfisArr = (perfisDoUsuario || []).map(p => p.perfil_codigo);
+
+    res.json({
+      ...usuarioSeguro,
+      perfis: perfisArr,
+      mensagem: "Usuário atualizado com sucesso",
+    });
   } catch (err) {
     console.error("❌ Erro ao atualizar usuário:", err.message);
     res.status(500).json({ erro: err.message });
@@ -177,7 +287,13 @@ router.patch("/:id", tenantMiddleware, async (req, res) => {
   // Reaproveita a mesma função do PUT
   try {
     const { id } = req.params;
-    const { nome, email, perfil, ativo, senha } = req.body;
+    const { nome, email, perfil, ativo, senha, telefone, perfis } = req.body;
+
+    // M4.5: se `perfis` (array) veio, usa ele. Senão cai no `perfil` (string).
+    const temPerfisArray = Array.isArray(perfis);
+    const perfisFinal = temPerfisArray
+      ? perfis.filter(Boolean)
+      : null;
 
     const usuario = await DB.selectOne("usuarios", { id }, req.tenantId);
     if (!usuario) {
@@ -196,16 +312,48 @@ router.patch("/:id", tenantMiddleware, async (req, res) => {
     if (email !== undefined) dadosAtualizar.email = email;
     if (perfil !== undefined) dadosAtualizar.perfil = perfil;
     if (ativo !== undefined) dadosAtualizar.ativo = ativo ? 1 : 0;
+    // M4.5: telefone — normaliza vazio pra null
+    if (telefone !== undefined) {
+      dadosAtualizar.telefone = (telefone && String(telefone).trim()) || null;
+    }
     if (senha && senha.length > 0) {
       dadosAtualizar.senha_hash = bcrypt.hashSync(senha, 10);
+    }
+    // M4.5: `perfil` (coluna canônica) = primeiro do array, se array veio
+    if (temPerfisArray && perfisFinal.length > 0) {
+      dadosAtualizar.perfil = perfisFinal[0];
     }
 
     await DB.update("usuarios", id, dadosAtualizar, req.tenantId);
 
+    // M4.5: se `perfis` (array) veio, sincroniza usuario_perfis.
+    // `usuario_perfis` NÃO tem tenant_id — passa `null` no 3º argumento.
+    if (temPerfisArray && perfisFinal.length > 0) {
+      try {
+        await DB.deleteWhere("usuario_perfis", { usuario_id: id }, null);
+        for (const codigo of perfisFinal) {
+          await DB.insert("usuario_perfis", {
+            usuario_id: id,
+            perfil_codigo: codigo,
+          }, null);
+        }
+      } catch (e) {
+        console.warn(`⚠ Falha ao sincronizar perfis:`, e.message);
+      }
+    }
+
     const updated = await DB.selectOne("usuarios", { id }, req.tenantId);
     const { senha_hash, ...usuarioSeguro } = updated;
 
-    res.json({ ...usuarioSeguro, mensagem: "Usuário atualizado com sucesso" });
+    // M4.5: retorna também os perfis do N:N
+    const perfisDoUsuario = await DB.select("usuario_perfis", { usuario_id: id }, null);
+    const perfisArr = (perfisDoUsuario || []).map(p => p.perfil_codigo);
+
+    res.json({
+      ...usuarioSeguro,
+      perfis: perfisArr,
+      mensagem: "Usuário atualizado com sucesso",
+    });
   } catch (err) {
     console.error("❌ Erro ao atualizar usuário:", err.message);
     res.status(500).json({ erro: err.message });

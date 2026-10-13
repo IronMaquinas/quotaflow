@@ -1,5 +1,8 @@
 // components/usuarios/TelaUsuariosNova.jsx
 import { useState, useEffect } from 'react';
+import PhoneInput from 'react-phone-number-input';
+import 'react-phone-number-input/style.css';
+import './phone-input.css';
 
 export default function TelaUsuariosNova({ useUsuarios, C, s }) {
   const token = localStorage.getItem('access_token');
@@ -15,7 +18,7 @@ export default function TelaUsuariosNova({ useUsuarios, C, s }) {
     email: '',
     telefone: '',
     senha: '',
-    perfil: 'comprador',
+    perfis: ['comprador'],   // M4.5: array de perfis (multi-perfil)
     ativo: true,
   });
 
@@ -45,13 +48,19 @@ export default function TelaUsuariosNova({ useUsuarios, C, s }) {
     try {
       const dadosEnvio = { ...form };
       if (!form.senha) delete dadosEnvio.senha; // não enviar senha vazia
+      if (!dadosEnvio.perfis || dadosEnvio.perfis.length === 0) {
+        dadosEnvio.perfis = ['comprador']; // fallback — evita usuário sem perfil
+      }
+      if (!form.telefone || !form.telefone.trim()) {
+        dadosEnvio.telefone = null; // normaliza vazio pra null
+      }
       if (modal === 'novo') {
         await criar(dadosEnvio);
       } else {
         await atualizar(modal.usuario.id, dadosEnvio);
       }
       setModal(null);
-      setForm({ nome: '', email: '', senha: '', perfil: 'comprador', ativo: true });
+      setForm({ nome: '', email: '', telefone: '', senha: '', perfis: ['comprador'], ativo: true });
       alert(modal === 'novo' ? 'Usuário criado!' : 'Usuário atualizado!');
     } catch (e) {
       alert('Erro: ' + e.message);
@@ -85,14 +94,17 @@ export default function TelaUsuariosNova({ useUsuarios, C, s }) {
     }
   };
 
-  const perfis = ['tecnico', 'comprador', 'gestor', 'admin', 'fornecedor'];
-  const perfilLabels = {
-    tecnico: 'Técnico',
-    comprador: 'Comprador',
-    gestor: 'Gestor',
-    admin: 'Administrador',
-    fornecedor: 'Fornecedor'
-  };
+  // M4.5: perfis canônicos do sistema (6). `fornecedor` sai (é tabela
+  // separada). `tecnico` virou `operacao`.
+  const PERFIS_SISTEMA = [
+    { codigo: 'admin',       label: 'Administrador', desc: 'Acesso total, configura tenant' },
+    { codigo: 'gestor',      label: 'Gestor',        desc: 'Visão global, aprovações' },
+    { codigo: 'comprador',   label: 'Comprador',     desc: 'Cotações, OC, fornecedores' },
+    { codigo: 'operacao',    label: 'Operação',      desc: 'OS, recebimento, estoque, NC' },
+    { codigo: 'qualidade',   label: 'Qualidade',     desc: 'NC, curadoria, causa raiz' },
+    { codigo: 'financeiro',  label: 'Financeiro',    desc: 'Contas a pagar, custo, fiscal' },
+  ];
+  const perfilLabels = Object.fromEntries(PERFIS_SISTEMA.map(p => [p.codigo, p.label]));
 
   return (
     <div style={{ padding: '22px 24px', overflowY: 'auto', height: '100%' }}>
@@ -104,7 +116,7 @@ export default function TelaUsuariosNova({ useUsuarios, C, s }) {
         </div>
         <button
           onClick={() => {
-            setForm({ nome: '', email: '', senha: '', perfil: 'comprador', ativo: true });
+            setForm({ nome: '', email: '', telefone: '', senha: '', perfis: ['comprador'], ativo: true });
             setModal('novo');
           }}
           style={{ ...s.btn(true), padding: '9px 20px', fontSize: 12 }}
@@ -123,7 +135,7 @@ export default function TelaUsuariosNova({ useUsuarios, C, s }) {
           style={{ ...s.input, flex: 1, minWidth: 200, padding: '8px 12px', fontSize: 12 }}
         />
         <div style={{ display: 'flex', gap: 4 }}>
-          {['todos', 'tecnico', 'comprador', 'gestor', 'admin', 'fornecedor'].map(p => (
+          {['todos', ...PERFIS_SISTEMA.map(p => p.codigo)].map(p => (
             <button
               key={p}
               onClick={() => setFiltroPerfil(p)}
@@ -191,7 +203,7 @@ export default function TelaUsuariosNova({ useUsuarios, C, s }) {
               key={u.id}
               style={{
                 display: 'grid',
-                gridTemplateColumns: '2fr 2fr 120px 100px 100px 100px',
+                gridTemplateColumns: '2fr 2fr 120px 120px 100px 100px 100px',
                 padding: '13px 18px',
                 borderBottom: i < usuariosFiltrados.length - 1 ? `1px solid ${C.border}22` : 'none',
                 alignItems: 'center',
@@ -201,7 +213,29 @@ export default function TelaUsuariosNova({ useUsuarios, C, s }) {
               <div style={{ fontSize: 12, color: C.accent }}>{u.email}</div>
               <div style={{ fontSize: 12, color: C.muted }}>{u.telefone || '—'}</div>
               <div>
-                <span style={{ ...s.tag(C.accent), fontSize: 10 }}>{perfilLabels[u.perfil]}</span>
+                {(() => {
+                  // M4.5: mostra o "perfil principal" + contador dos extras.
+                  // Fonte: u.perfis (array do backend); fallback pro u.perfil legado.
+                  const lista = (u.perfis && u.perfis.length > 0)
+                    ? u.perfis
+                    : [u.perfil].filter(Boolean);
+                  const principal = lista[0];
+                  const extras = lista.length - 1;
+                  return (
+                    <div style={{ display: 'flex', gap: 4, alignItems: 'center', flexWrap: 'wrap' }}>
+                      <span style={{ ...s.tag(C.accent), fontSize: 10 }}>
+                        {perfilLabels[principal] || principal || '—'}
+                      </span>
+                      {extras > 0 && (
+                        <span
+                          style={{ ...s.tag('#a855f7'), fontSize: 10 }}
+                          title={lista.slice(1).map(c => perfilLabels[c] || c).join(', ')}>
+                          +{extras}
+                        </span>
+                      )}
+                    </div>
+                  );
+                })()}
               </div>
               <div>
                 <span style={{ ...s.tag(u.ativo ? C.success : '#ef4444'), fontSize: 10 }}>
@@ -217,7 +251,7 @@ export default function TelaUsuariosNova({ useUsuarios, C, s }) {
                       email: u.email,
                       telefone: u.telefone,
                       senha: '',
-                      perfil: u.perfil,
+                      perfis: u.perfis && u.perfis.length > 0 ? u.perfis : [u.perfil].filter(Boolean),
                       ativo: u.ativo,
                     });
                     setModal({ tipo: 'editar', usuario: u });
@@ -267,23 +301,39 @@ export default function TelaUsuariosNova({ useUsuarios, C, s }) {
                 />
               </div>
 
-              <div style={{ marginBottom: 14 }}>
-                <label style={s.label}>E-MAIL *</label>
-                <input
-                  type="email"
-                  value={form.email}
-                  onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
-                  placeholder="joao@empresa.com"
-                  style={s.input}
-                />
-                <label style={s.label}>TELEFONE</label>
-                <input
-                  type="tel"
-                  value={form.telefone}
-                  onChange={e => setForm(f => ({ ...f, telefone: e.target.value }))}
-                  placeholder="(11) 99999-9999"
-                  style={s.input}
-                />
+              {/* Email + Telefone na mesma linha */}
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 14 }}>
+                <div>
+                  <label style={s.label}>E-MAIL *</label>
+                  <input
+                    type="email"
+                    value={form.email}
+                    onChange={e => setForm(f => ({ ...f, email: e.target.value }))}
+                    placeholder="joao@empresa.com"
+                    style={s.input}
+                  />
+                </div>
+                <div>
+                  <label style={s.label}>TELEFONE</label>
+                  <PhoneInput
+                    international
+                    defaultCountry="BR"
+                    value={form.telefone || ''}
+                    onChange={(value) => setForm(f => ({ ...f, telefone: value || '' }))}
+                    placeholder="(11) 99999-9999"
+                    className="phone-input-dark"
+                    style={{
+                      background: C.bg,
+                      border: `1px solid ${C.border}`,
+                      borderRadius: 6,
+                      padding: '0 12px',
+                      height: 38,
+                      fontSize: 13,
+                      display: 'flex',
+                      alignItems: 'center',
+                    }}
+                  />
+                </div>
               </div>
 
               <div style={{ marginBottom: 14 }}>
@@ -300,16 +350,70 @@ export default function TelaUsuariosNova({ useUsuarios, C, s }) {
               </div>
 
               <div style={{ marginBottom: 14 }}>
-                <label style={s.label}>PERFIL</label>
-                <select
-                  value={form.perfil}
-                  onChange={e => setForm(f => ({ ...f, perfil: e.target.value }))}
-                  style={{ ...s.input, appearance: 'none' }}
-                >
-                  {perfis.map(p => (
-                    <option key={p} value={p}>{perfilLabels[p]}</option>
-                  ))}
-                </select>
+                <label style={s.label}>PERFIS *</label>
+                <div style={{
+                  display: 'flex', flexDirection: 'column', gap: 12,
+                  background: C.bg, border: `1px solid ${C.border}`,
+                  borderRadius: 6, padding: '14px 16px',
+                }}>
+                  {PERFIS_SISTEMA.map(p => {
+                    const marcado = form.perfis.includes(p.codigo);
+                    return (
+                      <div
+                        key={p.codigo}
+                        style={{
+                          display: 'flex', alignItems: 'center',
+                          justifyContent: 'space-between', gap: 12,
+                        }}>
+                        <div style={{ flex: 1, minWidth: 0 }}>
+                          <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>
+                            {p.label}
+                          </div>
+                          <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>
+                            {p.desc}
+                          </div>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setForm(f => ({
+                              ...f,
+                              perfis: marcado
+                                ? f.perfis.filter(c => c !== p.codigo)
+                                : [...f.perfis, p.codigo],
+                            }));
+                          }}
+                          title={marcado ? `Remover ${p.label}` : `Adicionar ${p.label}`}
+                          style={{
+                            width: 48,
+                            height: 28,
+                            borderRadius: 14,
+                            background: marcado ? C.success : C.border,
+                            cursor: 'pointer',
+                            position: 'relative',
+                            transition: 'background .2s',
+                            border: 'none',
+                            flexShrink: 0,
+                          }}>
+                          <div style={{
+                            width: 22,
+                            height: 22,
+                            borderRadius: '50%',
+                            background: '#fff',
+                            position: 'absolute',
+                            top: 3,
+                            left: marcado ? 23 : 3,
+                            transition: 'left .2s',
+                            boxShadow: '0 2px 4px rgba(0,0,0,0.2)',
+                          }} />
+                        </button>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
+                  Ative todos os perfis que este usuário pode acumular.
+                </div>
               </div>
 
               <div style={{ marginBottom: 14 }}>

@@ -7,6 +7,7 @@
 import { useState, useRef } from 'react';
 import apiService from '../../services/apiService';
 import { fmtD } from '../../utils/formatters';
+import ModalGerarPdfNC from '../naoConformidades/ModalGerarPdfNC';
 
 const STATUS_TRATATIVA = {
   nao_enviado:          { l: 'Aguardando envio',   c: '#6b7280', icon: '⏳' },
@@ -28,6 +29,8 @@ export default function ModalDetalheNCFornecedor({ C, s, detalhe, carregando, on
   const [tipoResolucao, setTipoResolucao] = useState('substituicao');
   const [mostrarResponder, setMostrarResponder] = useState(null); // 'contestada' | 'resolvida_fornecedor'
   const [fotoAberta, setFotoAberta] = useState(null);
+  // M4.5: modal de geração de PDF (versão fornecedor — sem dados internos).
+  const [gerandoPdf, setGerandoPdf] = useState(false);
   const fileRef = useRef(null);
 
   if (carregando || !detalhe) {
@@ -182,6 +185,83 @@ export default function ModalDetalheNCFornecedor({ C, s, detalhe, carregando, on
 
         {/* Body */}
         <div style={{ padding: '20px 22px', overflowY: 'auto', flex: 1 }}>
+
+          {/* M4.5: contato do cliente + comprador.
+              Mostra com quem o fornecedor pode falar (email, telefone,
+              WhatsApp). Respeita as policies do tenant — pode mostrar
+              empresa, comprador, ou os dois. */}
+          {detalhe?.contato?.principal?.nome && (
+            <div style={{
+              background: '#0f1e35',
+              border: '1px solid #3b82f633',
+              borderRadius: 8,
+              padding: '12px 16px',
+              marginBottom: 16,
+            }}>
+              <div style={{
+                fontSize: 10, color: C.accent,
+                letterSpacing: '0.06em', fontWeight: 600, marginBottom: 8,
+              }}>
+                💬 DÚVIDAS SOBRE ESTA NC?
+              </div>
+
+              <div style={{ fontSize: 13, color: C.text, fontWeight: 600, marginBottom: 6 }}>
+                🏢 {detalhe.contato.principal.nome}
+              </div>
+
+              {detalhe.contato.principal.telefone && (
+                <div style={{ fontSize: 12, color: C.text, marginBottom: 6,
+                              display: 'flex', gap: 12, alignItems: 'center',
+                              flexWrap: 'wrap' }}>
+                  <a href={`tel:${detalhe.contato.principal.telefone.replace(/\\D/g, '')}`}
+                    style={{ color: C.text, textDecoration: 'none' }}>
+                    📞 {detalhe.contato.principal.telefone}
+                  </a>
+                  <a href={`https://wa.me/${detalhe.contato.principal.telefone.replace(/\\D/g, '')}`}
+                    target="_blank" rel="noopener noreferrer"
+                    style={{ color: '#22c55e', textDecoration: 'none', fontWeight: 600 }}>
+                    💬 WhatsApp
+                  </a>
+                </div>
+              )}
+
+              {detalhe.contato.principal.email && (
+                <div style={{ fontSize: 12, marginBottom: 4 }}>
+                  <a href={`mailto:${detalhe.contato.principal.email}`}
+                    style={{ color: C.text, textDecoration: 'none' }}>
+                    ✉ {detalhe.contato.principal.email}
+                  </a>
+                </div>
+              )}
+
+              {/* Se o contato principal é a empresa mas tem um comprador
+                  diferente, mostra ele também — contexto extra útil. */}
+              {detalhe.contato.comprador?.nome
+                && detalhe.contato.comprador.nome !== detalhe.contato.principal.nome && (
+                <div style={{
+                  fontSize: 11, color: C.muted, marginTop: 10, paddingTop: 10,
+                  borderTop: `1px dashed ${C.border}55`,
+                }}>
+                  👤 Comprador responsável:{' '}
+                  <strong style={{ color: C.text }}>
+                    {detalhe.contato.comprador.nome}
+                  </strong>
+                  {detalhe.contato.comprador.email && (
+                    <>
+                      {' · '}
+                      <a href={`mailto:${detalhe.contato.comprador.email}`}
+                        style={{ color: C.accent, textDecoration: 'none' }}>
+                        {detalhe.contato.comprador.email}
+                      </a>
+                    </>
+                  )}
+                  {detalhe.contato.comprador.telefone && (
+                    <> · {detalhe.contato.comprador.telefone}</>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Motivo */}
           <div style={{
@@ -487,8 +567,19 @@ export default function ModalDetalheNCFornecedor({ C, s, detalhe, carregando, on
         {/* Footer */}
         <div style={{
           padding: '14px 22px', borderTop: `1px solid ${C.border}`,
-          display: 'flex', justifyContent: 'flex-end',
+          display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10,
         }}>
+          {/* M4.5: gerar PDF na versão do fornecedor (sem dados internos) */}
+          <button
+            onClick={() => setGerandoPdf(true)}
+            disabled={carregando}
+            style={{ ...s.btn(false, '#3b82f6'), padding: '8px 16px', fontSize: 12,
+                     borderColor: '#3b82f6', color: '#3b82f6',
+                     opacity: carregando ? 0.5 : 1 }}
+            title="Gerar relatório PDF desta NC (versão fornecedor)"
+          >
+            🖨 Gerar PDF
+          </button>
           <button
             onClick={onFechar}
             style={{ ...s.btn(false, C.muted), padding: '8px 20px', fontSize: 12 }}
@@ -497,6 +588,51 @@ export default function ModalDetalheNCFornecedor({ C, s, detalhe, carregando, on
           </button>
         </div>
       </div>
+
+      {/* M4.5: modal de geração de PDF (versão fornecedor) */}
+      {gerandoPdf && (
+        <ModalGerarPdfNC
+          C={C}
+          s={s}
+          nc={{
+            ...detalhe,
+            // M4.5: achata `cabecalho` pros campos que o gerarPdfNC.js
+            // espera no top-level (mesma estrutura do nc do comprador).
+            numero_nc: detalhe?.cabecalho?.numero_nc,
+            origem: detalhe?.cabecalho?.origem,
+            status: detalhe?.cabecalho?.status,
+            numero_nota_fiscal: detalhe?.cabecalho?.numero_nota_fiscal,
+            numero_pedido: detalhe?.cabecalho?.numero_pedido,
+            quantidade: detalhe?.cabecalho?.quantidade,
+            unidade_medida: detalhe?.cabecalho?.unidade_medida,
+            lote: detalhe?.cabecalho?.lote,
+            numero_serie: detalhe?.cabecalho?.numero_serie,
+            validade: detalhe?.cabecalho?.validade,
+            item_nome: detalhe?.cabecalho?.item_nome,
+            item_sku: detalhe?.cabecalho?.item_sku,
+            item_nome_avulso: detalhe?.cabecalho?.item_nome_avulso,
+            item_sku_avulso: detalhe?.cabecalho?.item_sku_avulso,
+            acao_imediata: detalhe?.cabecalho?.acao_imediata,
+            criado_em: detalhe?.cabecalho?.criado_em,
+            criado_por_nome: detalhe?.cabecalho?.criado_por_nome,
+            data_ocorrencia: detalhe?.cabecalho?.data_ocorrencia,
+            fornecedor_nome: detalhe?.cabecalho?.tenant_nome, // nome do cliente, na visão do fornecedor
+            descricao_problema: detalhe?.descricao_problema,
+            motivo_recusa: detalhe?.motivo_recusa,
+            anexos: detalhe?.anexos || [],
+            eventos: detalhe?.eventos || [],
+            tenant: detalhe?.tenant || null,
+          }}
+          tenant={detalhe?.tenant || null}
+          usuario={{
+            nome: detalhe?.cabecalho?.fornecedor_ciente_por_nome
+              || detalhe?.cabecalho?.tenant_nome
+              || 'Fornecedor'
+          }}
+          versao="fornecedor"
+          onFechar={() => setGerandoPdf(false)}
+        />
+      )}
 
       {/* Lightbox */}
       {fotoAberta && (

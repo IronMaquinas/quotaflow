@@ -535,18 +535,27 @@ router.get('/:id', tenantMiddleware, async (req, res) => {
       signed_url: mapaUrls[a.url] || null,
     }));
 
+    // M4.5-fix: tenant estruturado pra rastreabilidade (PDF, relatórios,
+    // emails). Fonte única de verdade — o frontend não lê de localStorage.
+    let tenant_obj = null;
+    try {
+      const t = await DB.selectOne("tenants", { id: tenantId }, null);
+      if (t) {
+        tenant_obj = { nome: t.nome || null, cnpj: t.cnpj || null };
+      }
+    } catch (_) {}
+
     res.json({
       ...nc,
       anexos: anexosEnriquecidos, eventos, plano_acao: planoAcao,
       chamado_numero, equipamento_nome, equipamento_tag,
       fornecedor_email,
       fornecedor_nome,
-      // M4.5-fix: item enriquecido (nome + sku do catálogo). Se o item
-      // estiver fora do catálogo, estes ficam null e o front usa
-      // `item_nome_avulso` (que já vem do `...nc`).
       item_nome,
       item_sku,
-      item_saldo,
+      // M4.5: tenant estruturado + usuário (pra PDF).
+      tenant: tenant_obj,
+      gerado_por: nc.criado_por_nome || null,
     });
   } catch (err) {
     console.error("❌ Erro ao buscar NC:", err.message);

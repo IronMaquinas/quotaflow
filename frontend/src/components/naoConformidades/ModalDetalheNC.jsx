@@ -9,7 +9,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import apiService from "../../services/apiService";
-import ModalPrompt from "../shared/ModalPrompt";  // M4.4-etapa-9e
+import ModalPrompt from "../shared/ModalPrompt";
+import ModalGerarPdfNC from "./ModalGerarPdfNC";
 
 // Sugestão automática de área por tipo de disposição. O usuário pode
 // sobrescrever no mini-modal. Alinhado com o fluxo real: devolução vai
@@ -215,6 +216,10 @@ export default function ModalDetalheNC({
 
   // Lightbox
   const [fotoAberta, setFotoAberta] = useState(null);
+  // M4.5: modal de geração de PDF da NC.
+  const [gerandoPdf, setGerandoPdf] = useState(false);
+  // M4.5-fix: tenant vem do payload do GET /:id (nc.tenant).
+  // Sem localStorage — fonte única de verdade é a API.
   // Histórico começa recolhido pra não empurrar os botões de ação
   const [historicoExpandido, setHistoricoExpandido] = useState(false);
 
@@ -259,7 +264,8 @@ export default function ModalDetalheNC({
       .catch(() => setUsuariosElegiveis([]));
   }, []);
 
-  // M4.1: pega perfil do usuário logado do localStorage
+  // M4.1: pega perfil do usuário logado do localStorage (só pro
+  // controle de permissão de UI — não é fonte de dado do PDF).
   useEffect(() => {
     try {
       const raw = localStorage.getItem("usuario");
@@ -1512,6 +1518,13 @@ export default function ModalDetalheNC({
               </>
             )}
 
+            <button
+              onClick={() => setGerandoPdf(true)}
+              disabled={salvando}
+              style={{ ...s.btn(false), padding: "8px 16px", fontSize: 12,
+                       borderColor: "#3b82f6", color: "#3b82f6" }}>
+              🖨 Gerar PDF
+            </button>
             {podeTransferir && (
               <button onClick={() => setTransferindo({
                   responsavel_id: "",
@@ -2247,6 +2260,19 @@ export default function ModalDetalheNC({
           C={C} s={s}
         />
       )}
+
+        {/* M4.5: modal de geração de PDF */}
+        {gerandoPdf && (
+          <ModalGerarPdfNC
+            C={C}
+            s={s}
+            nc={nc}
+            tenant={nc?.tenant || null}
+            usuario={{ nome: nc?.criado_por_nome || null }}
+            versao="interno"
+            onFechar={() => setGerandoPdf(false)}
+          />
+        )}
 
         {/* Lightbox */}
         {fotoAberta && (

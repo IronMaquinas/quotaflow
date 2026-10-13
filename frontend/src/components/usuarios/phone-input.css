@@ -1,0 +1,33 @@
+/* frontend/src/components/usuarios/phone-input.css
+ *
+ * Override do tema dark pro react-phone-number-input.
+ * Importado direto no TelaUsuariosNova.jsx — fica acoplado ao componente
+ * que usa, não polui CSS global.
+ */
+
+.phone-input-dark .PhoneInputInput {
+  background: transparent;
+  border: none;
+  color: inherit;
+  font-family: inherit;
+  font-size: 13px;
+  outline: none;
+  padding: 0;
+  height: 100%;
+}
+.phone-input-dark .PhoneInputInput::placeholder {
+  color: rgba(255, 255, 255, 0.4);
+}
+.phone-input-dark .PhoneInputCountryIcon {
+  width: 20px;
+  height: 15px;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.15);
+  border-radius: 2px;
+}
+.phone-input-dark .PhoneInputCountrySelectArrow {
+  opacity: 0.6;
+  border-color: rgba(255, 255, 255, 0.6);
+}
+.phone-input-dark .PhoneInputCountry {
+  margin-right: 8px;
+}

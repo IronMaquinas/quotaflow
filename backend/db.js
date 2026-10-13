@@ -96,6 +96,22 @@ class DB {
     return true;
   }
 
+    // ⚠️ DB.delete(table, id) filtra por `.eq("id", id)`. NÃO funciona em
+  // tabelas N:N (usuario_perfis, cotacao_fornecedores, etc) que não têm
+  // coluna `id`. Use DB.deleteWhere(table, { ... }) nesses casos.
+  static async deleteWhere(table, where = {}, tenant_id = null) {
+    let query = supabase.from(table).delete();
+    if (tenant_id) query = query.eq("tenant_id", tenant_id);
+    for (const [key, value] of Object.entries(where)) {
+      if (value !== undefined && value !== null) {
+        query = query.eq(key, value);
+      }
+    }
+    const { error } = await query;
+    if (error) throw new Error(`DELETE ${table} WHERE failed: ${error.message}`);
+    return true;
+  }
+
   // ─────────────────────────────────────────────────────────────────────────
   // RPC: chama funções Postgres definidas no SQL Editor do Supabase.
   // Diferente dos métodos acima, roda DENTRO de uma transação real do

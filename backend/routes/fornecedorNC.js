@@ -190,6 +190,79 @@ router.get('/:ncId', fornecedorMiddleware, async (req, res) => {
     // M4.4-etapa-9i: nome do cliente (tenant) pro header do modal
     const tenant = await DB.selectOne('tenants', { id: nc.tenant_id }, null).catch(() => null);
 
+    // M4.5: contato do cliente + comprador pro portal do fornecedor.
+    // Respeita as policies do tenant (comunicacao_*_policy), com default
+    // 'empresa' — igual o NCService faz pros emails.
+    const comprador = nc.inspetor_id
+      ? await DB.selectOne('usuarios', { id: nc.inspetor_id }, nc.tenant_id).catch(() => null)
+      : null;
+
+    const usarEmpresaNome = (tenant?.comunicacao_nome_policy || 'empresa') === 'empresa';
+    const usarEmpresaTel = (tenant?.comunicacao_telefone_policy || 'empresa') === 'empresa';
+    const usarEmpresaMail = (tenant?.comunicacao_email_policy || 'empresa') === 'empresa';
+
+    const contato = {
+      // Sempre manda os dois: a empresa (nome + cnpj) e o comprador (nome,
+      // email, telefone). O fornecedor vê tudo — quanto mais dados, melhor
+      // pra ele saber com quem falar.
+      empresa: tenant
+        ? { nome: tenant.nome || null, cnpj: tenant.cnpj || null }
+        : null,
+      comprador: comprador
+        ? {
+            nome: comprador.nome || null,
+            email: comprador.email || null,
+            telefone: comprador.telefone || null,
+          }
+        : null,
+      // Campos "principais" seguindo a policy (o front usa pra destacar)
+      principal: {
+        nome: usarEmpresaNome ? (tenant?.nome || null) : (comprador?.nome || null),
+        telefone: usarEmpresaTel ? (tenant?.telefone || null) : (comprador?.telefone || null),
+        email: usarEmpresaMail
+          ? (tenant?.email_contato || tenant?.email_admin || null)
+          : (comprador?.email || null),
+      },
+    };
+
+    // M4.5: enriquece item (nome + SKU do catálogo) quando vinculado.
+    // `item_nome_avulso`/`item_sku_avulso` já vêm direto do nc.
+    let item_nome = null;
+    let item_sku = null;
+    if (nc.item_catalogo_id) {
+      try {
+        const item = await DB.selectOne(
+          "catalogo_itens",
+          { id: nc.item_catalogo_id, tenant_id: nc.tenant_id },
+          nc.tenant_id
+        );
+        item_nome = item?.nome || null;
+        item_sku = item?.codigo || null;
+      } catch (_) {}
+    }
+    // Fallback: se tem item_consumo_id mas não catálogo, pega de itens_consumo
+    if (!item_nome && nc.item_consumo_id) {
+      try {
+        const ic = await DB.selectOne(
+          "itens_consumo",
+          { id: nc.item_consumo_id, tenant_id: nc.tenant_id },
+          nc.tenant_id
+        );
+        item_nome = ic?.nome || null;
+        item_sku = ic?.sku || null;
+      } catch (_) {}
+    }
+
+    // M4.5: enriquece anexos com signed_url (mesmo padrão do comprador).
+    // Sem isso, o fornecedor não vê as fotos (só o path do Storage).
+    const { gerarSignedUrlsEmBatch } = require('../services/StorageNC');
+    const pathsAnexos = (anexos || []).map(a => a.url).filter(Boolean);
+    const mapaUrls = await gerarSignedUrlsEmBatch(pathsAnexos);
+    const anexosEnriquecidos = (anexos || []).map(a => ({
+      ...a,
+      signed_url: mapaUrls[a.url] || null,
+    }));
+
     res.json({
       cabecalho: {
         id: nc.id,
@@ -218,11 +291,27 @@ router.get('/:ncId', fornecedorMiddleware, async (req, res) => {
         // o aviso de limite atingido. Sem isso, `Number(undefined) < 5`
         // dá false e o botão Reenviar some.
         rodada: nc.rodada ?? 1,
+        // M4.5: campos extras pro PDF e pra rastreabilidade do fornecedor.
+        item_nome: item_nome,
+        item_sku: item_sku,
+        item_nome_avulso: nc.item_nome_avulso,
+        item_sku_avulso: nc.item_sku_avulso,
+        item_fora_catalogo: nc.item_fora_catalogo,
+        acao_imediata: nc.acao_imediata,
+        data_ocorrencia: nc.data_ocorrencia,
+        criado_por_nome: nc.criado_por_nome,
+        fornecedor_id: nc.fornecedor_id,
       },
       descricao_problema: nc.descricao_problema,
       motivo_recusa: nc.motivo_recusa,
       eventos: eventosVisiveis,
-      anexos,
+      anexos: anexosEnriquecidos,
+      // M4.5: tenant estruturado pro cabeçalho do PDF.
+      tenant: tenant
+        ? { nome: tenant.nome || null, cnpj: tenant.cnpj || null }
+        : null,
+      // M4.5: contato do cliente + comprador pro portal do fornecedor.
+      contato,
     });
   } catch (err) {
     console.error('❌ Erro em /fornecedor/nao-conformidades/:id:', err.message);

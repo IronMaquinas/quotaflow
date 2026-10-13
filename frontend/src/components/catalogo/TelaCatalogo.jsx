@@ -112,7 +112,7 @@ export default function TelaCatalogo({
 
       const token = localStorage.getItem('access_token');
       const response = await fetch(
-        `${import.meta.env.VITE_API_URL || 'http://localhost:3000/api'}/catalogo/importar-fornecedor`,
+        `${import.meta.env.VITE_API_URL}/catalogo/importar-fornecedor`,
         {
           method: 'POST',
           headers: { 'Authorization': `Bearer ${token}` },
