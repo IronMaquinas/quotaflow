@@ -224,21 +224,36 @@ export default function App() {
       catalogo.listar();
     }
     
-    const perfil = user.perfil || user.papel || 'comprador';
-    const telaInicial = { 
-      tecnico:"tecnico", 
-      comprador:"compradora", 
-      gestor:"financeiro", 
-      admin:"usuarios",
-      fornecedor: "portalfornecedor"
-    };
-    setTela(telaInicial[perfil] || "home");
+    // TODO M4.6 — Dashboard "Analista Sênior"
+    //
+    // Aqui é onde vai morar a lógica do dashboard personalizado por perfil.
+    // A ideia: quando o usuário logar, ele vê um resumo com TUDO que precisa
+    // ser feito no dia pro(s) seu(s) perfil(s):
+    //
+    //   comprador  → OCs pendentes, cotações aguardando resposta, aprovações
+    //   qualidade  → NCs abertas, respostas de fornecedor, itens fora do catálogo
+    //   operacao   → OS abertas, recebimentos do dia, apontamentos pendentes
+    //   gestor     → visão consolidada (aprovações + KPIs)
+    //   financeiro → contas do dia, custos pendentes
+    //
+    // Por ora, todos caem em "home" (que hoje é só um menu de atalhos).
+    // Quando o dashboard existir, ele substitui a `TelaHome` atual e o
+    // roteamento continua sendo só `setTela("home")`.
+    //
+    // A "TelaHome" recebe `usuario.perfis` (array) e monta os widgets
+    // conforme os perfis do usuário logado.
+    setTela("home");
   };
   const logout = () => { setUsuario(null); setTela("home"); };
 
   // Verificar permissão
   const temAcesso = (t) => {
-    const resultado = !PERMISSOES[t] || (usuario && PERMISSOES[t].includes(usuario.perfil));
+    // M4.5: aceita perfis múltiplos. Se o usuário tem QUALQUER perfil que dá
+    // acesso à tela, libera. Cai pro `usuario.perfil` (legado) se `perfis` vazio.
+    const perfisUsuario = Array.isArray(usuario?.perfis) && usuario.perfis.length > 0
+      ? usuario.perfis
+      : [usuario?.perfil].filter(Boolean);
+    const resultado = !PERMISSOES[t] || (usuario && PERMISSOES[t].some(p => perfisUsuario.includes(p)));
     return resultado;
   };
 
@@ -272,35 +287,48 @@ if (window.location.hash.startsWith('#/portal/cotacao/')) {
   // Mostrar login se não autenticado
   if (!usuario) return <TelaLogin onLogin={login}/>;
 
-const perfil = PERFIS[usuario.perfil];
+// M4.5: fallback se o perfil do usuário não existe no mapa PERFIS
+// (proteção contra dado legado ou perfil órfão).
+const perfil = PERFIS[usuario.perfil] || {
+  l: usuario.perfil || 'Usuário',
+  c: C.accent,
+  icon: '👤',
+};
 
   // Nav items filtrados por perfil
   const navItems = [
-    {id:"home",          l:"Início",                  perfis:["tecnico","comprador","gestor","admin"]},
-    {id: "ordem_servico",l: "🛠️ Ordem de Serviço",    perfis: ["tecnico", "comprador", "gestor", "admin"]},
-    {id:"recebimento",   l: "📥 Recebimento",         perfis: ["comprador", "gestor", "admin"]},
-    {id:"tecnico",       l:"🔧 Requisição de Compras",perfis:["tecnico","comprador","gestor","admin"]},
-    {id:"compradora",    l:"📋 Compras",              perfis:["comprador","gestor","admin"]},
-    {id:"spot",          l:"⚡ Canal Spot",            perfis:["comprador","gestor","admin"]}, 
-    {id:"retirada",      l:"📤 Retirada",             perfis:["tecnico","comprador","gestor","admin"]},
-    {id:"estoque",       l:"📦 Consumíveis",          perfis:["comprador","gestor","admin"]},
-    {id:"historico_estoque", l:"📜 Movimentações",    perfis:["comprador","gestor","admin"]},
-    {id:"aprovacoes",    l:"✅ Aprovações",           perfis:["gestor","admin"], badge: totalPendencias > 0 ? totalPendencias : null},
-    {id:"ordensvenda",   l:"📄 Ordens de Venda",      perfis:["comprador","gestor","admin"]},
-    {id:"plano",         l:`✅ Plano${tarefas.dados.filter(t=>t.status==="em_andamento").length>0?` (${tarefas.dados.filter(t=>t.status==="em_andamento").length})`:""}`, perfis:["comprador","gestor","admin"]},
-    {id:"financeiro",    l:"💰 Financeiro",           perfis:["gestor","admin"]},
-    {id:"relatorio",     l:"📄 Relatório",            perfis:["gestor","admin"]},
-    {id:"historico",     l:"📉 Histórico Preços",     perfis:["gestor","admin"]},
-    {id:"inteligencia",  l:"🧠 Inteligência",         perfis:["gestor","admin"]},
-    {id:"benchmark",     l:"📈 Benchmark",            perfis:["gestor","admin"]},
-    {id:"equipamentos",  l:"⚙ Equipamentos",          perfis:["comprador","gestor","admin"]},
-    {id:"fornecedores",  l:"🏭 Fornecedores",         perfis:["comprador","gestor","admin"]},
-    {id:"portalfornecedor", l:"🏢 Portal Fornecedor", perfis:["fornecedor","admin"]},
-    {id:"catalogo",      l:"📦 Catálogo",             perfis:["comprador","gestor","admin"]},
+    {id:"home",          l:"Início",                  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro"]},
+    {id:"ordem_servico", l:"🛠️ Ordem de Serviço",    perfis:["admin","gestor","operacao","qualidade"]},
+    {id:"recebimento",   l:"📥 Recebimento",         perfis:["admin","gestor","comprador","operacao"]},
+    {id:"tecnico",       l:"🔧 Requisição de Compras",perfis:["admin","gestor","comprador","operacao"]},
+    {id:"compradora",    l:"📋 Compras",              perfis:["admin","gestor","comprador"]},
+    {id:"spot",          l:"⚡ Canal Spot",            perfis:["admin","gestor","comprador"]},
+    {id:"retirada",      l:"📤 Retirada",             perfis:["admin","gestor","comprador","operacao"]},
+    {id:"estoque",       l:"📦 Consumíveis",          perfis:["admin","gestor","comprador","operacao"]},
+    {id:"historico_estoque", l:"📜 Movimentações",    perfis:["admin","gestor","comprador"]},
+    {id:"aprovacoes",    l:"✅ Aprovações",           perfis:["admin","gestor"], badge: totalPendencias > 0 ? totalPendencias : null},
+    {id:"ordensvenda",   l:"📄 Ordens de Venda",      perfis:["admin","gestor","comprador"]},
+    {id:"plano",         l:`✅ Plano${tarefas.dados.filter(t=>t.status==="em_andamento").length>0?` (${tarefas.dados.filter(t=>t.status==="em_andamento").length})`:""}`, perfis:["admin","gestor","comprador"]},
+    {id:"financeiro",    l:"💰 Financeiro",           perfis:["admin","gestor","financeiro"]},
+    {id:"relatorio",     l:"📄 Relatório",            perfis:["admin","gestor"]},
+    {id:"historico",     l:"📉 Histórico Preços",     perfis:["admin","gestor"]},
+    {id:"inteligencia",  l:"🧠 Inteligência",         perfis:["admin","gestor"]},
+    {id:"benchmark",     l:"📈 Benchmark",            perfis:["admin","gestor"]},
+    {id:"equipamentos",  l:"⚙ Equipamentos",          perfis:["admin","gestor","comprador","operacao"]},
+    {id:"fornecedores",  l:"🏭 Fornecedores",         perfis:["admin","gestor","comprador"]},
+    {id:"portalfornecedor", l:"🏢 Portal Fornecedor", perfis:["admin","fornecedor"]},
+    {id:"catalogo",      l:"📦 Catálogo",             perfis:["admin","gestor","comprador","qualidade"]},
     {id:"usuarios",      l:"👥 Usuários",             perfis:["admin"]},
-    {id:"nao_conformidades", l:"⚠️ Não Conformidades", perfis:["tecnico","gestor","admin"]},
-    {id:"configuracoes", l:"⚙️ Configurações",        perfis:["gestor","admin"]},
-  ].filter(n=>n.perfis.includes(usuario.perfil));
+    {id:"nao_conformidades", l:"⚠️ Não Conformidades", perfis:["admin","gestor","operacao","qualidade"]},
+    {id:"configuracoes", l:"⚙️ Configurações",        perfis:["admin","gestor"]},
+  ].filter(n => {
+    // M4.5: multi-perfil. `usuario.perfis` é array (do backend). Cai pro
+    // `usuario.perfil` (singular) quando não vier — compat com login antigo.
+    const perfisUsuario = Array.isArray(usuario?.perfis) && usuario.perfis.length > 0
+      ? usuario.perfis
+      : [usuario?.perfil].filter(Boolean);
+    return n.perfis.some(p => perfisUsuario.includes(p));
+  });
 
   return(
     <div style={{fontFamily:"'DM Sans','Segoe UI',sans-serif",background:C.bg,height:"100vh",color:C.text,display:"flex",flexDirection:"column",overflow:"hidden"}}>
@@ -555,7 +583,8 @@ const perfil = PERFIS[usuario.perfil];
               cotacoes={cotacoes.dados || []} 
               fornecedores={fornecedores.dados || []} 
               equipamentos={equipamentos.dados || []} 
-              perfilUsuario={usuario.perfil}
+                            perfilUsuario={usuario.perfil}
+              perfisUsuario={Array.isArray(usuario.perfis) ? usuario.perfis : [usuario.perfil].filter(Boolean)}
               C={C} 
               s={s} 
               fmtBRL={fmtBRL} 
@@ -2169,152 +2198,53 @@ function TelaPlanoAcao({ tarefas, setTarefas, onVoltar }) {
 // AUTH — USUÁRIOS E PERFIS
 // ─────────────────────────────────────────────
 
+// ⚠️ IMPORTANTE: sincronizar com os 6 perfis canônicos do banco
+// (tabela `perfis`). Se adicionar/remover perfil lá, atualizar aqui
+// também — senão o App quebra ao logar com usuário de perfil novo
+// (lê `.c` de undefined). `tecnico` e `fornecedor` são legado (mantidos
+// pra compat com dados antigos em teste).
 const PERFIS = {
-  tecnico:   { l:"Técnico",       c:"#f59e0b", icon:"🔧" },
-  comprador: { l:"Comprador",     c:"#3b82f6", icon:"📋" },
-  gestor:    { l:"Gestor",        c:"#a78bfa", icon:"📊" },
-  admin:     { l:"Administrador", c:"#ef4444", icon:"⚙"  },
-  fornecedor: { l:"Fornecedor",   c:"#22c55e", icon:"🏢" },
+  admin:       { l:"Administrador", c:"#ef4444", icon:"⚙"  },
+  gestor:      { l:"Gestor",        c:"#a78bfa", icon:"📊" },
+  comprador:   { l:"Comprador",     c:"#3b82f6", icon:"📋" },
+  operacao:    { l:"Operação",      c:"#f59e0b", icon:"🔧" },
+  qualidade:   { l:"Qualidade",     c:"#10b981", icon:"✅" },
+  financeiro:  { l:"Financeiro",    c:"#06b6d4", icon:"💰" },
+  // legado (mantidos pra não quebrar dado antigo em teste)
+  tecnico:     { l:"Técnico",       c:"#f59e0b", icon:"🔧" },
+  fornecedor:  { l:"Fornecedor",    c:"#22c55e", icon:"🏢" },
 };
 
-// Permissões por tela
+// Permissões por tela.
+// ⚠️ IMPORTANTE: sincronizar com `navItems` (mesma lista de perfis por
+// tela) e com os 6 perfis canônicos do banco. `tecnico` e `fornecedor`
+// são legado (mantidos pra compat com dados antigos em teste).
 const PERMISSOES = {
-  home:           ["tecnico","comprador","gestor","admin"],
-  tecnico:        ["tecnico","comprador","gestor","admin"],
-  compradora:     ["comprador","gestor","admin"],
-  plano:          ["comprador","gestor","admin"],
-  financeiro:     ["gestor","admin"],
-  relatorio:      ["gestor","admin"],
-  historico:      ["gestor","admin"],
-  inteligencia:   ["gestor","admin"],
-  benchmark:      ["gestor","admin"],
-  equipamentos:   ["comprador","gestor","admin"],
-  fornecedores:   ["comprador","gestor","admin"],
-  usuarios:       ["admin"],
-  portalfornecedor: ["fornecedor","admin"],
-  aprovacoes:       ["gestor","admin"], 
+  home:               ["admin","gestor","comprador","operacao","qualidade","financeiro"],
+  ordem_servico:      ["admin","gestor","operacao","qualidade"],
+  recebimento:        ["admin","gestor","comprador","operacao"],
+  tecnico:            ["admin","gestor","comprador","operacao"],   // Requisição de Compras
+  compradora:         ["admin","gestor","comprador"],
+  spot:               ["admin","gestor","comprador"],
+  retirada:           ["admin","gestor","comprador","operacao"],
+  estoque:            ["admin","gestor","comprador","operacao"],
+  historico_estoque:  ["admin","gestor","comprador"],
+  aprovacoes:         ["admin","gestor"],
+  ordensvenda:        ["admin","gestor","comprador"],
+  plano:              ["admin","gestor","comprador"],
+  financeiro:         ["admin","gestor","financeiro"],
+  relatorio:          ["admin","gestor"],
+  historico:          ["admin","gestor"],
+  inteligencia:       ["admin","gestor"],
+  benchmark:          ["admin","gestor"],
+  equipamentos:       ["admin","gestor","comprador","operacao"],
+  fornecedores:       ["admin","gestor","comprador"],
+  portalfornecedor:   ["admin","fornecedor"],
+  catalogo:           ["admin","gestor","comprador","qualidade"],
+  usuarios:           ["admin"],
+  nao_conformidades:  ["admin","gestor","operacao","qualidade"],
+  configuracoes:      ["admin","gestor"],
+  // legado (compat com dados antigos em teste)
+  tecnico_legado:     ["tecnico"],
+  fornecedor_legado:  ["fornecedor"],
 };
-
-// ─── Tela de Gestão de Usuários (Admin) ──────
-function TelaUsuarios({ usuarios, setUsuarios }) {
-  const [modal, setModal] = useState(null);
-  const [form, setForm] = useState({ nome:"", email:"", senha:"", perfil:"comprador", ativo:true });
-  const [senhaVisivel, setSenhaVisivel] = useState(false);
-
-  const salvar = () => {
-    if (!form.nome||!form.email) return;
-    if (modal==="novo") {
-      setUsuarios(prev=>[...prev,{ id:Date.now(), ...form, senha:hashSenha(form.senha||"123456"), criacao:new Date().toISOString().split("T")[0] }]);
-    } else {
-      setUsuarios(prev=>prev.map(u=>u.id!==modal.id?u:{...u, nome:form.nome, email:form.email, perfil:form.perfil, ativo:form.ativo,
-        ...(form.senha?{senha:hashSenha(form.senha)}:{}) }));
-    }
-    setModal(null);
-  };
-
-  const abrirEditar = u => { setForm({nome:u.nome,email:u.email,senha:"",perfil:u.perfil,ativo:u.ativo}); setModal(u); };
-  const abrirNovo   = () => { setForm({nome:"",email:"",senha:"",perfil:"comprador",ativo:true}); setModal("novo"); };
-  const toggleAtivo = id => setUsuarios(prev=>prev.map(u=>u.id===id?{...u,ativo:!u.ativo}:u));
-
-  return (
-    <div style={{padding:"22px 24px",overflowY:"auto",height:"100%"}}>
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:22}}>
-        <div>
-          <div style={{fontSize:11,color:C.muted,letterSpacing:"0.1em",marginBottom:4}}>ADMINISTRAÇÃO</div>
-          <div style={{fontSize:22,fontWeight:700,color:C.text}}>Gestão de Usuários</div>
-        </div>
-        <button onClick={abrirNovo} style={{...s.btn(true),padding:"9px 18px"}}>+ Novo usuário</button>
-      </div>
-
-      {/* KPIs */}
-      <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:10,marginBottom:20}}>
-        {Object.entries(PERFIS).map(([k,v])=>(
-          <div key={k} style={{...s.card,padding:"12px 16px",borderLeft:`3px solid ${v.c}`}}>
-            <div style={{fontSize:10,color:C.muted,marginBottom:4}}>{v.icon} {v.l.toUpperCase()}</div>
-            <div style={{fontSize:22,fontWeight:700,color:v.c}}>{usuarios.filter(u=>u.perfil===k&&u.ativo).length}</div>
-            <div style={{fontSize:10,color:C.muted}}>{usuarios.filter(u=>u.perfil===k&&!u.ativo).length} inativo{usuarios.filter(u=>u.perfil===k&&!u.ativo).length!==1?"s":""}</div>
-          </div>
-        ))}
-      </div>
-
-      {/* Tabela */}
-      <div style={{...s.card,overflow:"hidden"}}>
-        <div style={{display:"grid",gridTemplateColumns:"2fr 2fr 120px 80px 80px 90px",padding:"10px 18px",background:C.bg,borderBottom:`1px solid ${C.border}`,fontSize:10,color:C.muted,letterSpacing:"0.08em"}}>
-          <span>NOME</span><span>E-MAIL</span><span>PERFIL</span><span>CRIAÇÃO</span><span>STATUS</span><span></span>
-        </div>
-        {usuarios.map((u,i)=>{
-          const pCfg=PERFIS[u.perfil];
-          return(
-            <div key={u.id} style={{display:"grid",gridTemplateColumns:"2fr 2fr 120px 80px 80px 90px",padding:"13px 18px",borderBottom:i<usuarios.length-1?`1px solid ${C.border}22`:"none",alignItems:"center"}}>
-              <div style={{display:"flex",alignItems:"center",gap:8}}>
-                <div style={{width:30,height:30,borderRadius:"50%",background:`${pCfg.c}22`,border:`1px solid ${pCfg.c}44`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:14,flexShrink:0}}>{pCfg.icon}</div>
-                <div>
-                  <div style={{fontSize:13,color:u.ativo?C.text:C.muted,fontWeight:500}}>{u.nome}</div>
-                </div>
-              </div>
-              <span style={{fontSize:12,color:C.accent}}>{u.email}</span>
-              <span style={{...s.tag(pCfg.c)}}>{pCfg.l}</span>
-              <span style={{fontSize:11,color:C.muted}}>{fmtD(u.criacao)}</span>
-              <div>
-                <span style={{...s.tag(u.ativo?C.success:"#ef4444"),fontSize:10}}>{u.ativo?"Ativo":"Inativo"}</span>
-              </div>
-              <div style={{display:"flex",gap:6}}>
-                <button onClick={()=>abrirEditar(u)} style={{background:"transparent",border:`1px solid ${C.border}`,borderRadius:5,padding:"4px 8px",color:C.muted,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>✏</button>
-                <button onClick={()=>toggleAtivo(u.id)} style={{background:"transparent",border:`1px solid ${u.ativo?"#ef444433":"#22c55e33"}`,borderRadius:5,padding:"4px 8px",color:u.ativo?"#ef4444":C.success,fontSize:11,cursor:"pointer",fontFamily:"inherit"}}>{u.ativo?"Desativar":"Ativar"}</button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Modal */}
-      {modal&&(
-        <Modal title={modal==="novo"?"Novo usuário":"Editar usuário"} onClose={()=>setModal(null)} width={460}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12}}>
-            <div style={{gridColumn:"1/-1"}}><Input label="Nome completo *" value={form.nome} onChange={e=>setForm(f=>({...f,nome:e.target.value}))}/></div>
-            <div style={{gridColumn:"1/-1"}}><Input label="E-mail *" value={form.email} onChange={e=>setForm(f=>({...f,email:e.target.value}))} placeholder="usuario@empresa.com"/></div>
-          </div>
-          <div style={{marginBottom:14}}>
-            <label style={s.label}>{modal==="novo"?"SENHA *":"NOVA SENHA (deixe em branco para manter)"}</label>
-            <div style={{position:"relative"}}>
-              <input type={senhaVisivel?"text":"password"} value={form.senha} onChange={e=>setForm(f=>({...f,senha:e.target.value}))}
-                placeholder={modal==="novo"?"Mínimo 6 caracteres":"••••••••"} style={{...s.input,paddingRight:44}}/>
-              <button onClick={()=>setSenhaVisivel(v=>!v)} style={{position:"absolute",right:10,top:"50%",transform:"translateY(-50%)",background:"transparent",border:"none",color:C.muted,cursor:"pointer"}}>{senhaVisivel?"🙈":"👁"}</button>
-            </div>
-            {modal==="novo"&&<div style={{fontSize:10,color:C.muted,marginTop:4}}>Padrão se deixar em branco: 123456</div>}
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:12,marginBottom:8}}>
-            <Select label="Perfil" value={form.perfil} onChange={e=>setForm(f=>({...f,perfil:e.target.value}))}>
-              {Object.entries(PERFIS).map(([k,v])=><option key={k} value={k}>{v.icon} {v.l}</option>)}
-            </Select>
-            <Select label="Status" value={form.ativo?"ativo":"inativo"} onChange={e=>setForm(f=>({...f,ativo:e.target.value==="ativo"}))}>
-              <option value="ativo">Ativo</option>
-              <option value="inativo">Inativo</option>
-            </Select>
-          </div>
-
-          {/* Mapa de permissões do perfil selecionado */}
-          <div style={{background:C.bg,borderRadius:8,padding:"12px 14px",marginBottom:16}}>
-            <div style={{fontSize:10,color:C.muted,letterSpacing:"0.08em",marginBottom:8}}>PERMISSÕES DO PERFIL {PERFIS[form.perfil]?.l.toUpperCase()}</div>
-            <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
-              {Object.entries(PERMISSOES).map(([tela,perfis])=>{
-                const temAcesso=perfis.includes(form.perfil);
-                const labels={home:"Início",tecnico:"Chamados",compradora:"Compras",plano:"Plano de Ação",financeiro:"Financeiro",relatorio:"Relatório",historico:"Histórico",inteligencia:"Inteligência",benchmark:"Benchmark",equipamentos:"Equipamentos",fornecedores:"Fornecedores",usuarios:"Usuários",portalfornecedor:"Portal Fornecedor"};
-                return(
-                  <span key={tela} style={{fontSize:10,borderRadius:4,padding:"2px 7px",background:temAcesso?`${C.success}22`:C.border,color:temAcesso?C.success:C.muted,border:`1px solid ${temAcesso?`${C.success}44`:C.border}`}}>
-                    {temAcesso?"✓":"✕"} {labels[tela]||tela}
-                  </span>
-                );
-              })}
-            </div>
-          </div>
-
-          <div style={{display:"flex",gap:10,justifyContent:"flex-end"}}>
-            <button onClick={()=>setModal(null)} style={{...s.btn(false),padding:"8px 18px"}}>Cancelar</button>
-            <button onClick={salvar} disabled={!form.nome||!form.email} style={s.btn(form.nome&&form.email)}>Salvar</button>
-          </div>
-        </Modal>
-      )}
-    </div>
-  );
-}

@@ -144,8 +144,16 @@ export default function ModalApontamento({
         // Ampliado pra incluir comprador: ele é quem executa devoluções
         // (área Suprimentos). O filtro real acontece por área no mini-modal
         // de disposição, não aqui.
+        // M4.5: aceita perfis múltiplos. Mesmos perfis do filtro antigo,
+        // agora checando qualquer perfil do usuário (array).
+        const PERFIS_ELEGIVEIS_OS = ["admin", "gestor", "operacao", "comprador"];
         setUsuariosElegiveis(
-          todos.filter(u => ["tecnico", "gestor", "admin", "comprador"].includes(u.perfil))
+          todos.filter(u => {
+            const lista = Array.isArray(u.perfis) && u.perfis.length > 0
+              ? u.perfis
+              : [u.perfil].filter(Boolean);
+            return lista.some(p => PERFIS_ELEGIVEIS_OS.includes(p));
+          })
         );
       })
       .catch(() => setUsuariosElegiveis([]));
@@ -745,7 +753,12 @@ export default function ModalApontamento({
                         style={{ ...s.input, fontSize: 11, flex: 1, appearance: "none" }}>
                         <option value="">+ Adicionar usuário da equipe...</option>
                         {usuariosTenant
-                          .filter(u => ["tecnico", "gestor", "admin"].includes(u.perfil))
+                          .filter(u => {
+                            const lista = Array.isArray(u.perfis) && u.perfis.length > 0
+                              ? u.perfis
+                              : [u.perfil].filter(Boolean);
+                            return lista.some(p => ["admin", "gestor", "operacao"].includes(p));
+                          })
                           .filter(u => !(linha.participantes || []).some(p => p.id === u.id))
                           .map(u => (
                             <option key={u.id} value={u.id}>

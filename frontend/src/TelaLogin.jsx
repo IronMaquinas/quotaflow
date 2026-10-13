@@ -99,6 +99,7 @@ export default function TelaLogin({ onLogin }) {
         nome: data.usuario.nome,
         email: data.usuario.email,
         perfil: data.usuario.perfil || data.usuario.papel || (isFornecedor ? 'fornecedor' : 'comprador'),
+        perfis: Array.isArray(data.usuario.perfis) ? data.usuario.perfis : undefined,
         ativo: true,
         access_token: data.tokens?.accessToken || data.token,
         fornecedor_id: data.usuario.fornecedor_id || null,

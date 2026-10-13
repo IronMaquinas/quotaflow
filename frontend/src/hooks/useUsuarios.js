@@ -164,7 +164,11 @@ export function useUsuarios(accessToken) {
 
   const contarPorPerfil = useCallback(
     (perfil) => {
-      return usuarios.filter((u) => u.perfil === perfil).length;
+      // M4.5: conta se o usuário tem o perfil (principal ou extra)
+      return usuarios.filter((u) => {
+        const lista = Array.isArray(u.perfis) && u.perfis.length > 0 ? u.perfis : [u.perfil];
+        return lista.includes(perfil);
+      }).length;
     },
     [usuarios]
   );

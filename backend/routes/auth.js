@@ -211,6 +211,18 @@ router.post("/login", async (req, res) => {
     // Gerar tokens
     const { accessToken, refreshToken } = gerarTokens(usuario, tenant);
 
+    // M4.5: busca os perfis N:N (usuario_perfis). `usuario_perfis` NÃO
+    // tem tenant_id — passa `null` como 3º argumento.
+    let perfisArr = [];
+    try {
+      const linhas = await DB.select("usuario_perfis", { usuario_id: usuario.id }, null);
+      perfisArr = (linhas || []).map(l => l.perfil_codigo);
+    } catch (_) {}
+    // Fallback: se o N:N estiver vazio, usa o `perfil` (coluna legada)
+    if (perfisArr.length === 0 && usuario.perfil) {
+      perfisArr = [usuario.perfil];
+    }
+
     // Responder
     res.json({
       ok: true,
@@ -223,7 +235,8 @@ router.post("/login", async (req, res) => {
         id: usuario.id,
         email: usuario.email,
         nome: usuario.nome,
-        perfil: usuario.perfil
+        perfil: usuario.perfil,
+        perfis: perfisArr,   // M4.5: array pro frontend (multi-perfil)
       },
       tokens: {
         accessToken,

@@ -201,6 +201,9 @@ export default function ModalDetalheNC({
   // notificar fornecedor). Lido uma vez do localStorage — se o backend
   // rejeitar depois, o modal mostra o erro.
   const [perfilUsuario, setPerfilUsuario] = useState(null);
+  // M4.5: perfis como array (multi-perfil). Fallback pro `perfilUsuario`
+  // quando o login antigo não devolveu `perfis`.
+  const [perfisUsuarioLocal, setPerfisUsuarioLocal] = useState([]);
 
   // Form de plano de ação
   const [novoPlano, setNovoPlano] = useState(null);
@@ -257,8 +260,16 @@ export default function ModalDetalheNC({
     apiService.get("/usuarios")
       .then(lista => {
         const todos = Array.isArray(lista) ? lista : [];
+        // M4.5: filtra por perfis (array), com fallback pro perfil legado.
+        // Inclui os 6 perfis canônicos (menos financeiro, que não executa NC).
+        const PERFIS_ELEGIVEIS_NC = ["admin", "gestor", "operacao", "qualidade", "comprador"];
         setUsuariosElegiveis(
-          todos.filter(u => ["tecnico", "gestor", "admin"].includes(u.perfil))
+          todos.filter(u => {
+            const lista = Array.isArray(u.perfis) && u.perfis.length > 0
+              ? u.perfis
+              : [u.perfil].filter(Boolean);
+            return lista.some(p => PERFIS_ELEGIVEIS_NC.includes(p));
+          })
         );
       })
       .catch(() => setUsuariosElegiveis([]));
@@ -271,6 +282,16 @@ export default function ModalDetalheNC({
       const raw = localStorage.getItem("usuario");
       const u = raw ? JSON.parse(raw) : null;
       setPerfilUsuario(u?.perfil || null);
+      setPerfisUsuarioLocal(
+        Array.isArray(u?.perfis) && u.perfis.length > 0
+          ? u.perfis
+          : [u?.perfil].filter(Boolean)
+      );
+      setPerfisUsuarioLocal(
+        Array.isArray(u?.perfis) && u.perfis.length > 0
+          ? u.perfis
+          : [u?.perfil].filter(Boolean)
+      );
     } catch (_) {
       setPerfilUsuario(null);
     }
@@ -890,7 +911,9 @@ export default function ModalDetalheNC({
             const skuItem = temVinculo
               ? nc.item_sku
               : (nc.item_sku_avulso || null);
-            const podeEditarItem = ['qualidade', 'admin', 'gestor'].includes(perfilUsuario);
+            // M4.5: multi-perfil — checa se QUALQUER perfil do usuário bate
+            const podeEditarItem = ['qualidade', 'admin', 'gestor']
+              .some(p => perfisUsuarioLocal.includes(p));
 
             return (
               <Secao
@@ -1383,7 +1406,8 @@ export default function ModalDetalheNC({
                 O backend reforça a permissão. */}
             {nc.fornecedor_id
               && nc.fornecedor_tratativa_status === "nao_enviado"
-              && ["gestor", "admin", "comprador"].includes(perfilUsuario) && (
+              // M4.5: multi-perfil — checa se QUALQUER perfil do usuário bate
+              && ["gestor", "admin", "comprador"].some(p => perfisUsuarioLocal.includes(p)) && (
               <>
                 <button
                   onClick={async () => {
@@ -1689,7 +1713,13 @@ export default function ModalDetalheNC({
         {registrandoDisposicao && (() => {
           const areaSugerida = AREA_POR_DISPOSICAO[registrandoDisposicao.disposicao] || null;
           const perfisArea = PERFIS_POR_AREA[registrandoDisposicao.area_responsavel] || [];
-          const porArea = usuariosElegiveis.filter(u => perfisArea.includes(u.perfil));
+          // M4.5: filtra por qualquer perfil do usuário (array), com fallback single.
+          const porArea = usuariosElegiveis.filter(u => {
+            const lista = Array.isArray(u.perfis) && u.perfis.length > 0
+              ? u.perfis
+              : [u.perfil].filter(Boolean);
+            return lista.some(p => perfisArea.includes(p));
+          });
 
           // Se o filtro por área não retorna ninguém (ex: não há comprador
           // cadastrado), cai automaticamente pra lista completa — não deixa

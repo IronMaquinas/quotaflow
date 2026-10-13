@@ -179,7 +179,18 @@ export default function AppLayout({ currentPage, onPageChange, children }) {
             {sidebarOpen && (
               <div style={{ textAlign: "left", flex: 1 }}>
                 <div style={{ fontSize: 11, color: C.text }}>{usuario?.nome || "Usuário"}</div>
-                <div style={{ fontSize: 10, color: C.muted }}>{usuario?.perfil}</div>
+                <div style={{ fontSize: 10, color: C.muted }}>
+                  {/* M4.5: mostra o perfil principal + contador de extras */}
+                  {(() => {
+                    const lista = Array.isArray(usuario?.perfis) && usuario.perfis.length > 0
+                      ? usuario.perfis
+                      : [usuario?.perfil].filter(Boolean);
+                    if (lista.length === 0) return '—';
+                    return lista.length === 1
+                      ? lista[0]
+                      : `${lista[0]} +${lista.length - 1}`;
+                  })()}
+                </div>
               </div>
             )}
             {sidebarOpen && (
