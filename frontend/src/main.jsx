@@ -76,6 +76,19 @@ function Router() {
     return <App />;
   }
 
+  // M4.6: se logou como fornecedor, App renderiza o portal (TelaGestaoCotacoesFornecedor).
+  // A lógica de qual tela mostrar está dentro do App, baseado em `usuario.perfil`.
+
+  // M4.6: rotas de auth (esqueci/reset senha) → delega pro App.
+  if (
+    currentPage.startsWith("esqueci-senha") ||
+    currentPage.startsWith("reset-senha") ||
+    currentPage.startsWith("/esqueci-senha") ||
+    currentPage.startsWith("/reset-senha")
+  ) {
+    return <App />;
+  }
+
   // Qualquer outra rota → TelaLogin
   const handleLogin = (userData) => {
     loginWithData(userData);

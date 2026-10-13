@@ -449,4 +449,109 @@ router.post('/login-fornecedor', async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// M4.6 — RESET DE SENHA ("esqueci minha senha")
+// ─────────────────────────────────────────────────────────────────────────────
+
+const bcryptReset = require('bcryptjs');
+const {
+  podeEnviarReset,
+  gerarReset,
+  validarToken,
+  aplicarNovaSenha,
+  TTL_MINUTOS,
+} = require('../services/PasswordResetService');
+const { enviarEmailCotacao } = require('../services/emailService');
+
+/**
+ * POST /api/auth/forgot-password
+ * Body: { email }
+ * Sempre responde 200 (não vaza se o email existe).
+ */
+router.post('/forgot-password', async (req, res) => {
+  try {
+    const email = (req.body?.email || '').trim().toLowerCase();
+    if (!email) return res.status(400).json({ erro: 'Email é obrigatório' });
+
+    // Rate limit
+    const pode = await podeEnviarReset(email);
+    if (!pode) {
+      // Responde 200 mesmo assim (não vaza nada)
+      return res.json({ ok: true, mensagem: 'Se o email existir, enviaremos um link.' });
+    }
+
+    const r = await gerarReset(email);
+    if (r) {
+      const baseUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, '');
+      const link = `${baseUrl}/#/reset-senha?token=${r.token}`;
+      const corpo = `
+        <h2>Redefinir senha — QuotaFlow</h2>
+        <p>Olá <strong>${r.alvo.nome || 'usuário'}</strong>,</p>
+        <p>Recebemos um pedido para redefinir sua senha.</p>
+        <p>O link abaixo é válido por <strong>${TTL_MINUTOS} minutos</strong>:</p>
+        <p><a href="${link}" style="display:inline-block;padding:10px 20px;background:#3b82f6;color:#fff;text-decoration:none;border-radius:6px">🔒 Redefinir senha</a></p>
+        <p style="font-size:12px;color:#666">Se você não pediu, ignore este email.</p>
+      `;
+      try {
+        await enviarEmailCotacao(email, 'Redefinir senha — QuotaFlow', corpo);
+      } catch (e) {
+        console.warn('⚠ Falha ao enviar email de reset:', e.message);
+      }
+    }
+
+    // Sempre responde 200
+    return res.json({ ok: true, mensagem: 'Se o email existir, enviaremos um link.' });
+  } catch (err) {
+    console.error('❌ Erro em /forgot-password:', err.message);
+    // Não vaza erro real — resposta genérica
+    return res.json({ ok: true, mensagem: 'Se o email existir, enviaremos um link.' });
+  }
+});
+
+/**
+ * GET /api/auth/reset-password/validar?token=xxx
+ */
+router.get('/reset-password/validar', async (req, res) => {
+  try {
+    const token = req.query.token;
+    const v = await validarToken(token);
+    if (!v) return res.json({ ok: false, motivo: 'invalido' });
+    if (v.erro) return res.json({ ok: false, motivo: v.erro });
+    return res.json({ ok: true });
+  } catch (err) {
+    return res.status(500).json({ erro: err.message });
+  }
+});
+
+/**
+ * POST /api/auth/reset-password
+ * Body: { token, senha }
+ */
+router.post('/reset-password', async (req, res) => {
+  try {
+    const { token, senha } = req.body || {};
+    if (!token || !senha) {
+      return res.status(400).json({ erro: 'Token e senha são obrigatórios' });
+    }
+    if (String(senha).length < 6) {
+      return res.status(400).json({ erro: 'Senha deve ter mínimo 6 caracteres' });
+    }
+    const senhaHash = bcryptReset.hashSync(senha, 10);
+    const r = await aplicarNovaSenha(token, senhaHash);
+    if (!r.ok) {
+      const msgs = {
+        expirado: 'Este link expirou. Peça um novo.',
+        usado: 'Este link já foi usado. Peça um novo.',
+        invalido: 'Link inválido.',
+        sem_alvo: 'Não foi possível redefinir a senha.',
+      };
+      return res.status(400).json({ erro: msgs[r.motivo] || 'Erro ao redefinir' });
+    }
+    return res.json({ ok: true, mensagem: 'Senha redefinida com sucesso' });
+  } catch (err) {
+    console.error('❌ Erro em /reset-password:', err.message);
+    return res.status(500).json({ erro: err.message });
+  }
+});
+
 module.exports = router;

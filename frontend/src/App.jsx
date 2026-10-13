@@ -14,6 +14,8 @@ import TelaBenchmarkNova from './components/benchmark/TelaBenchmarkNova';
 import TelaPortalFornecedor from './components/portal/TelaPortalFornecedor';
 import TelaGestaoCotacoesFornecedor from './components/fornecedores/TelaGestaoCotacoesFornecedor';
 import TelaLogin from './TelaLogin';
+import TelaEsqueciSenha from './TelaEsqueciSenha';
+import TelaResetSenha from './TelaResetSenha';
 import apiService from './services/apiService';
 import TelaCatalogo from "./components/catalogo/TelaCatalogo";
 import { useCatalogo } from './hooks/useCatalogo';
@@ -48,7 +50,7 @@ const gerarCOT = () => { cotacaoCounter++; return `COT-${new Date().getFullYear(
 // ─────────────────────────────────────────────
 // HELPERS & CONSTANTS
 // ─────────────────────────────────────────────
-const C = {
+export const C = {
   bg:"#0a0e14", surface:"#111722", border:"#1e2535", accent:"#3b82f6",
   success:"#22c55e", warn:"#f59e0b", danger:"#ef4444", muted:"#64748b",
   text:"#e2e8f0", textSub:"#94a3b8", saving:"#a78bfa",
@@ -67,7 +69,7 @@ const getMaior = fs => { const vs=fs.filter(f=>f.valor!=null).map(f=>f.valor); r
 // ─────────────────────────────────────────────
 // UI ATOMS
 // ─────────────────────────────────────────────
-const s = {
+export const s = {
   input:{ width:"100%",background:C.bg,border:`1px solid ${C.border}`,borderRadius:6,padding:"9px 12px",color:C.text,fontSize:13,fontFamily:"inherit",outline:"none",boxSizing:"border-box" },
   btn:(v,color="#3b82f6")=>({ background:v?color:C.surface,border:`1px solid ${v?color:C.border}`,borderRadius:7,padding:"9px 18px",color:v?"#fff":C.muted,fontSize:13,fontWeight:600,cursor:v?"pointer":"not-allowed",fontFamily:"inherit",transition:"all .15s" }),
   tag:(c="#64748b")=>({ fontSize:10,background:`${c}22`,border:`1px solid ${c}44`,borderRadius:4,padding:"2px 8px",color:c,letterSpacing:"0.06em",fontWeight:600,whiteSpace:"nowrap" }),
@@ -113,28 +115,29 @@ export default function App() {
 
   // 2. ESTADO PARA CONTROLAR SE ESTAMOS NO PORTAL
   const [isPortal, setIsPortal] = useState(false);
+  // M4.6: rota de auth (esqueci/reset senha) via state, não hash.
+  // O hash é capturado pelo Router do app e não propaga pro listener.
+  const [authRoute, setAuthRoute] = useState(() => {
+    // M4.6: detecta rota de auth no hash inicial (link do email)
+    const h = window.location.hash || '';
+    if (h.startsWith('#/reset-senha')) return 'reset-senha';
+    if (h.startsWith('#/esqueci-senha')) return 'esqueci-senha';
+    return null;
+  });
 
   // 3. useEffect para monitorar mudanças no hash
+  const [hashRota, setHashRota] = useState(window.location.hash || '');
   useEffect(() => {
     const checkHash = () => {
       const hash = window.location.hash;
-      const isPortalRoute = hash.startsWith('#/portal/cotacao/');
-      setIsPortal(isPortalRoute);
+      setIsPortal(hash.startsWith('#/portal/cotacao/'));
+      setHashRota(hash);
     };
 
     checkHash(); // verifica na montagem
-    window.addEventListener('hashchange', checkHash); // reage a mudanças
+    window.addEventListener('hashchange', checkHash);
     return () => window.removeEventListener('hashchange', checkHash);
   }, []);
-
-  // 4. SE FOR ROTA DE PORTAL, RENDERIZA IMEDIATAMENTE (sem login)
-  if (isPortal) {
-    return (
-      <div style={{ fontFamily: "'DM Sans','Segoe UI',sans-serif", background: C.bg, height: "100vh", color: C.text }}>
-        <TelaPortalFornecedor />
-      </div>
-    );
-  }
 
   // 5. RESTANTE DO APP (login, estado do usuário, etc.)
   const [usuario, setUsuario] = useState(null);
@@ -174,16 +177,33 @@ export default function App() {
     }
   };
 
+  const setNota = (chave, texto) => setNotasPeriodo(prev=>({...prev,[chave]:texto}));
+
   // Buscar pendências assim que o usuário logar
   useEffect(() => {
     if (usuario) {
       buscarTotalPendencias();
     }
-  }, [usuario]); 
+  }, [usuario]);
 
-  const setNota = (chave, texto) => setNotasPeriodo(prev=>({...prev,[chave]:texto}));
-  const { itens, setItens, listar, importarFornecedor } = useCatalogo();
-  
+  // M4.6: rotas por hash — portal, esqueci senha, reset senha.
+  // IMPORTANTE: ficam DEPOIS de todos os hooks (regra dos Hooks do React —
+  // número/ordem de chamadas tem que ser idêntico em todo render). Antes,
+  // estavam antes dos hooks, o que quebrava o React ao navegar pra elas.
+  if (isPortal) {
+    return (
+      <div style={{ fontFamily: "'DM Sans','Segoe UI',sans-serif", background: C.bg, height: "100vh", color: C.text }}>
+        <TelaPortalFornecedor />
+      </div>
+    );
+  }
+  if (authRoute === 'esqueci-senha') {
+    return <TelaEsqueciSenha onVoltar={() => setAuthRoute(null)} />;
+  }
+  if (authRoute === 'reset-senha') {
+    return <TelaResetSenha onVoltar={() => setAuthRoute(null)} />;
+  }
+
   const login = (user) => {
     setUsuario(user);
     buscarTotalPendencias(); 
@@ -276,16 +296,13 @@ export default function App() {
     navegar("plano");
   };
 
-if (window.location.hash.startsWith('#/portal/cotacao/')) {
-  return (
-    <div style={{fontFamily:"'DM Sans','Segoe UI',sans-serif",background:C.bg,height:"100vh",color:C.text}}>
-      <TelaPortalFornecedor />
-    </div>
-  );
-}
-
   // Mostrar login se não autenticado
-  if (!usuario) return <TelaLogin onLogin={login}/>;
+  if (!usuario) return (
+    <TelaLogin
+      onLogin={login}
+      onNavegarPara={(rota) => setAuthRoute(rota)}
+    />
+  );
 
 // M4.5: fallback se o perfil do usuário não existe no mapa PERFIS
 // (proteção contra dado legado ou perfil órfão).

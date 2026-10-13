@@ -50,7 +50,7 @@ const s = {
   },
 };
 
-export default function TelaLogin({ onLogin }) {
+export default function TelaLogin({ onLogin, onNavegarPara }) {
   const [email, setEmail] = useState("");
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");
@@ -336,6 +336,26 @@ export default function TelaLogin({ onLogin }) {
               )}
             </button>
 
+            {/* M4.6: link "esqueci minha senha" */}
+            <div style={{ marginTop: 14, textAlign: 'center' }}>
+              <button
+                type="button"
+                onClick={() => onNavegarPara && onNavegarPara('esqueci-senha')}
+                style={{
+                  background: 'transparent',
+                  border: 'none',
+                  color: C.accent,
+                  fontSize: 12,
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  textDecoration: 'underline',
+                  padding: 0,
+                }}
+              >
+                Esqueci minha senha
+              </button>
+            </div>
+
             <style>{`@keyframes spin{from{transform:rotate(0deg)}to{transform:rotate(360deg)}}`}</style>
           </form>
         </div>
@@ -427,7 +447,7 @@ export default function TelaLogin({ onLogin }) {
                   fontFamily: "'IBM Plex Mono',monospace",
                 }}
               >
-                teste@xyz.com.br
+                marconymonteiro@uol.com.br
               </div>
             </button>
           </div>
