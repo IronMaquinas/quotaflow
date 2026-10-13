@@ -34,6 +34,12 @@ function tenantMiddleware(req, res, next) {
     req.userEmail = decoded.email;
     req.userPerfil = decoded.perfil;
 
+    // M4.6: array de perfis (multi-perfil). Fallback pro single se
+    // o token for antigo (usuário não relogou depois da migração).
+    req.perfis = Array.isArray(decoded.perfis) && decoded.perfis.length > 0
+      ? decoded.perfis
+      : [decoded.perfil].filter(Boolean);
+
     next();
   } catch (err) {
     if (err.name === "TokenExpiredError") {

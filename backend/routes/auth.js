@@ -13,12 +13,17 @@ const tenantMiddleware = require("../middleware/tenantMiddleware");
 // HELPER: Gerar tokens JWT
 // ─────────────────────────────────────────────────────────────────────────────
 
-function gerarTokens(usuario, tenant) {
+function gerarTokens(usuario, tenant, perfisArr = null) {
   const payload = {
     user_id: usuario.id,
     tenant_id: tenant.id,
     email: usuario.email,
-    perfil: usuario.perfil
+    perfil: usuario.perfil,
+    // M4.6: array de perfis (multi-perfil). Fallback pro single se o
+    // caller não passar — assim os 3 usos continuam funcionando sem mudança.
+    perfis: Array.isArray(perfisArr) && perfisArr.length > 0
+      ? perfisArr
+      : [usuario.perfil].filter(Boolean),
   };
 
   const accessToken = jwt.sign(payload, process.env.JWT_SECRET, {
@@ -208,11 +213,8 @@ router.post("/login", async (req, res) => {
       return res.status(401).json({ erro: "Email ou senha incorretos" });
     }
 
-    // Gerar tokens
-    const { accessToken, refreshToken } = gerarTokens(usuario, tenant);
-
-    // M4.5: busca os perfis N:N (usuario_perfis). `usuario_perfis` NÃO
-    // tem tenant_id — passa `null` como 3º argumento.
+    // M4.6: busca os perfis N:N (usuario_perfis) ANTES de gerar os tokens,
+    // pra incluir no JWT. `usuario_perfis` NÃO tem tenant_id — passa `null`.
     let perfisArr = [];
     try {
       const linhas = await DB.select("usuario_perfis", { usuario_id: usuario.id }, null);
@@ -222,6 +224,9 @@ router.post("/login", async (req, res) => {
     if (perfisArr.length === 0 && usuario.perfil) {
       perfisArr = [usuario.perfil];
     }
+
+    // Gerar tokens (com perfis no payload do JWT)
+    const { accessToken, refreshToken } = gerarTokens(usuario, tenant, perfisArr);
 
     // Responder
     res.json({

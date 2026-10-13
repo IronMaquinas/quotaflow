@@ -39,7 +39,11 @@ const tenantMiddleware = require("../middleware/tenantMiddleware");
 // ─────────────────────────────────────────────────────────────────────────
 
 function requerAdmin(req, res, next) {
-  if (req.userPerfil !== "admin") {
+  // M4.6: multi-perfil — aceita se QUALQUER perfil do usuário é admin.
+  const perfis = Array.isArray(req.perfis) && req.perfis.length > 0
+    ? req.perfis
+    : [req.userPerfil].filter(Boolean);
+  if (!perfis.includes("admin")) {
     return res.status(403).json({ erro: "Apenas administradores podem fazer isso" });
   }
   next();

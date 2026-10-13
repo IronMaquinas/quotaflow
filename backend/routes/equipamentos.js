@@ -26,7 +26,10 @@ router.post("/", tenantMiddleware, async (req, res) => {
   }
 });
 
-router.put("/:id", tenantMiddleware, async (req, res) => {
+// M4.6: handler compartilhado por PUT e PATCH. O front
+// (equipamentosService.js) usa PATCH pra update — e o router só tinha PUT,
+// dando 404. Ambos passam a funcionar com o mesmo handler.
+async function atualizarEquipamento(req, res) {
   try {
     await DB.update("equipamentos", req.params.id, req.body, req.tenantId);
     const eq = await DB.selectOne("equipamentos", { id: req.params.id }, req.tenantId);
@@ -34,7 +37,10 @@ router.put("/:id", tenantMiddleware, async (req, res) => {
   } catch (err) {
     res.status(500).json({ erro: err.message });
   }
-});
+}
+
+router.put("/:id", tenantMiddleware, atualizarEquipamento);
+router.patch("/:id", tenantMiddleware, atualizarEquipamento);
 
 router.delete("/:id", tenantMiddleware, async (req, res) => {
   try {

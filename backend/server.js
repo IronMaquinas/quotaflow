@@ -59,6 +59,16 @@ app.use(cors({
 app.use(express.json({ limit: '15mb' }));
 app.use(fileUpload());
 
+// M4.6: reescreve PATCH → PUT. O front (apiService.js) chama PATCH em
+// várias rotas (chamados, cotacoes, fornecedores, equipamentos, tarefas),
+// mas o backend registra tudo como PUT. Normaliza o método ANTES do router.
+app.use((req, res, next) => {
+  if (req.method === 'PATCH') {
+    req.method = 'PUT';
+  }
+  next();
+});
+
 // ── Rotas ────────────────────────────────────
 app.use("/api/auth",         authRoutes);
 app.use("/api/cotacoes",     cotacoesRoutes);
