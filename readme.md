@@ -1,10 +1,8 @@
 # 📦 QuotaFlow — Estrutura Completa do Projeto
 
-**Versão:** 3.0 (Separação OS/RM/RC + Marketplace de Fornecedores)
-**Última atualização:** 10/09/2026
-**Status:** núcleo de compras (OS → RM → RC → OV) em produção; marketplace de fornecedores com busca unificada (catálogo local + marketplace) em produção.
-
-Este README foi reescrito em 10/09/2026 — a versão anterior (19/08/2026) estava defasada em relação ao que de fato está em produção. Tudo aqui reflete o estado real confirmado pelo usuário, não um plano.
+**Versão:** 4.0 (Multi-perfil + NC end-to-end + Reset de senha + Meu perfil)
+**Última atualização:** 13/10/2026
+**Status:** núcleo de compras (OS → RM → RC → OV) em produção; marketplace de fornecedores com busca unificada em produção; módulo de Não Conformidades com fluxo ISO 9001 completo; multi-perfil e reset de senha entregues.
 
 ---
 
@@ -16,10 +14,12 @@ Este README foi reescrito em 10/09/2026 — a versão anterior (19/08/2026) esta
 4. [Banco de Dados](#banco-de-dados)
 5. [Fluxo de Negócio: OS → RM → RC → OV](#fluxo-de-negócio-os--rm--rc--ov)
 6. [Marketplace de Fornecedores e Busca Unificada de Item](#marketplace-de-fornecedores-e-busca-unificada-de-item)
-7. [Como Rodar](#como-rodar)
-8. [Status das Features](#status-das-features)
-9. [Armadilhas Conhecidas do Backend](#armadilhas-conhecidas-do-backend)
-10. [Roadmap / Decisões em Aberto](#roadmap--decisões-em-aberto)
+7. [Módulo de Não Conformidades (M4.4 – M4.5)](#módulo-de-não-conformidades-m44--m45)
+8. [Multi-perfil, Reset de Senha e Meu Perfil (M4.6 – M4.7)](#multi-perfil-reset-de-senha-e-meu-perfil-m46--m47)
+9. [Como Rodar](#como-rodar)
+10. [Status das Features](#status-das-features)
+11. [Armadilhas Conhecidas do Backend](#armadilhas-conhecidas-do-backend)
+12. [Roadmap / Decisões em Aberto](#roadmap--decisões-em-aberto)
 
 ---
 
@@ -30,7 +30,7 @@ Este README foi reescrito em 10/09/2026 — a versão anterior (19/08/2026) esta
 ### Principais Atores:
 - 🚚 **Motorista / Mecânico / Encarregado** — abre a Ordem de Serviço (OS), monta a lista de materiais e serviços
 - 💰 **Comprador** — revisa os itens de material marcados para compra, gera Requisição de Material (RM), depois Requisição de Compra (RC/cotação), escolhe fornecedor e emite Ordem de Venda (OV)
-- 🏢 **Fornecedor** — cadastra catálogo de produtos (via CSV ou manualmente), responde cotações pelo portal próprio
+- 🏢 **Fornecedor** — cadastra catálogo de produtos (via CSV ou manualmente), responde cotações pelo portal próprio, trata NCs
 
 ### Segmentação de clientes (decisão de produto confirmada)
 Cerca de 20% dos clientes potenciais (geralmente com herança de controladoria tipo óleo & gás) querem catálogo próprio rigoroso, rastreável, com fornecedores "internos" qualificados. Os outros ~80% querem o mínimo de burocracia possível e vão comprar direto do marketplace agregado de fornecedores, sem nunca preencher o catálogo do próprio tenant. **O sistema foi desenhado para atender aos dois perfis ao mesmo tempo, sem forçar nenhum a se comportar como o outro** — ver seção 6.
@@ -38,32 +38,32 @@ Cerca de 20% dos clientes potenciais (geralmente com herança de controladoria t
 ---
 
 ## 🏗️ Arquitetura
-
-```
 ┌─────────────────┐
-│   Frontend      │  (React + Vite)
-│   (port 5173)   │
+│ Frontend │ (React + Vite)
+│ (port 5173) │
 └────────┬────────┘
-         │ HTTP/REST (JWT Bearer)
-         ▼
+│ HTTP/REST (JWT Bearer)
+▼
 ┌─────────────────┐
-│   Backend       │  (Node.js + Express)
-│   (port 3001)   │
+│ Backend │ (Node.js + Express)
+│ (port 3001) │
 └────────┬────────┘
-         │ Supabase JS client (supabase-js) + wrapper DB (backend/db.js)
-         ▼
+│ Supabase JS client (supabase-js) + wrapper DB (backend/db.js)
+▼
 ┌─────────────────┐
-│  Supabase       │  (PostgreSQL + Auth + pg_trgm/unaccent)
-│  (Cloud)        │
+│ Supabase │ (PostgreSQL + Auth + Storage + pg_trgm/unaccent)
+│ (Cloud) │
 └─────────────────┘
-```
+
+text
 
 ### Stack Tecnológico:
-- **Frontend:** React 18 + Vite
+- **Frontend:** React 18 + Vite; `react-phone-number-input` (telefone internacional E.164)
 - **Backend:** Node.js + Express
 - **Banco:** PostgreSQL (Supabase), com extensões `pg_trgm` e `unaccent` para busca fuzzy
-- **Auth:** JWT (`Authorization: Bearer <token>`), payload `{ user_id, tenant_id, email, perfil }`, validado em `middleware/tenantMiddleware.js`
-- **Multi-tenant:** toda tabela relevante tem `tenant_id`; middleware injeta `req.tenantId`
+- **Storage:** Supabase Storage (bucket privado `nc-evidencias` para anexos de NC; bucket `nfe-xmls` para XML de NF-e)
+- **Auth:** JWT (`Authorization: Bearer <token>`), payload `{ user_id, tenant_id, email, perfil, perfis[] }`, validado em `middleware/tenantMiddleware.js`
+- **Multi-tenant:** toda tabela relevante tem `tenant_id`; middleware injeta `req.tenantId` (exceto tabelas N:N como `usuario_perfis`, cujo isolamento é por transitividade via FK do usuário)
 
 ### `apiService.js` — convenção real (importante para quem for escrever chamadas novas)
 `apiService.get(endpoint, params)` e os demais métodos **recebem os query params/body diretamente como objeto**, sem wrapper `{ params: {...} }` (essa é convenção do axios, não deste projeto). A assinatura real:
@@ -73,24 +73,27 @@ post(endpoint, body, params = {})
 put(endpoint, body, params = {})
 patch(endpoint, body, params = {})
 delete(endpoint, params = {})
-```
-Um `{ params: { x } }} passado como segundo argumento de `get` produz `?params=[object Object]` na URL — bug real encontrado e corrigido em `TelaChamadosNova.jsx` (dois pontos: `consultarSaldo` e a busca unificada de item) em 10/09/2026.
+Um { params: { x } }} passado como segundo argumento de get produz ?params=[object Object] na URL — bug real encontrado e corrigido em TelaChamadosNova.jsx (dois pontos: consultarSaldo e a busca unificada de item) em 10/09/2026.
 
----
+Middleware global PATCH → PUT (M4.6, 13/10/2026)
+O front (apiService.js) usa PATCH em várias rotas (/chamados/:id, /cotacoes/:id, /fornecedores/:id, /equipamentos/:id, /tarefas/:id), mas o backend registra tudo como PUT. Em vez de duplicar handlers em cada arquivo, um middleware no server.js normaliza req.method = 'PUT' antes do router. Se um dia precisar de PATCH com semântica diferente de PUT (update parcial real), remover o middleware e registrar rotas .patch() específicas.
 
-## 📁 Estrutura de Pastas
-
-```
+📁 Estrutura de Pastas
+text
 quotaflow/
 │
 ├── backend/
 │   ├── services/
 │   │   ├── CotacaoService.js       (Lógica de cotações — buscarPorChamadoComFornecedores, etc)
 │   │   ├── CatalogoService.js
-│   │   └── emailService.js         (parcialmente integrado — usado em resposta de cotação)
+│   │   ├── emailService.js         (envio genérico + templates)
+│   │   ├── NCService.js            (M4.1 — notificação de NC ao fornecedor + emissão de token)
+│   │   ├── NCEmailTemplates.js     (M4.4 — templates de email da NC: corpoParaFornecedor / corpoParaComprador)
+│   │   ├── StorageNC.js            (M4.5 — upload/signed URL/delete no bucket `nc-evidencias`)
+│   │   └── PasswordResetService.js (M4.6 — geração/validação de token de reset de senha)
 │   │
 │   ├── routes/
-│   │   ├── auth.js
+│   │   ├── auth.js                 (login, signup, login-fornecedor, forgot-password, reset-password)
 │   │   ├── cotacoes.js             (chamados/OS/RM, apontamentos, gerar-requisicao-material, cotações/RC, OV — arquivo grande e central)
 │   │   ├── catalogo.js             (catálogo do tenant — CRUD "clássico")
 │   │   ├── catalogoBusca.js        (NOVO 09/2026 — busca unificada catálogo+marketplace pra tela de OS)
@@ -99,8 +102,10 @@ quotaflow/
 │   │   ├── fornecedorProdutos.js   (NOVO 09/2026 — CRUD do catálogo do fornecedor: upload CSV, criar/editar/deletar item)
 │   │   ├── buscaFornecedores.js    (NOVO 09/2026 — busca no marketplace COM dado comercial, uso do comprador)
 │   │   ├── portalFornecedor.js     (rota realmente usada pelo fornecedor pra responder cotação via token — sem middleware, autenticação por token na URL)
+│   │   ├── fornecedorNC.js         (M4.2 – M4.4 — endpoints do portal do fornecedor para NC: listar, responder, anexar, reenviar)
+│   │   ├── naoConformidades.js     (M4.2 – M4.5 — endpoints do comprador para NC: CRUD, devolver, marcar-interna, vincular-item, editar-item-avulso, buscar-item)
 │   │   ├── equipamentos.js
-│   │   ├── usuarios.js
+│   │   ├── usuarios.js             (CRUD + /me + /me/trocar-senha + requerAdmin)
 │   │   ├── tarefas.js
 │   │   ├── email.js
 │   │   ├── cnpj.js
@@ -115,10 +120,15 @@ quotaflow/
 │   │       └── reservas.js         (reserva de estoque pra OS — GET /saldo, POST/DELETE /reservas)
 │   │
 │   ├── middleware/
-│   │   ├── tenantMiddleware.js     (valida JWT, injeta req.tenantId/req.userId/req.userEmail/req.userPerfil)
+│   │   ├── tenantMiddleware.js     (valida JWT, injeta req.tenantId/req.userId/req.userEmail/req.userPerfil/req.perfis)
 │   │   └── fornecedorMiddleware.js
 │   │
-│   ├── db.js                       (exporta `supabase` — cliente supabase-js cru — e `DB`, wrapper com select/selectOne/insert/update/delete/raw)
+│   ├── constants/
+│   │   └── fornecedorStatus.js     (whitelist canônica de status visíveis ao fornecedor em NC)
+│   │
+│   ├── scripts/                    (one-off / migrations manuais quando não cabem em SQL puro)
+│   │
+│   ├── db.js                       (exporta `supabase` — cliente supabase-js cru — e `DB`, wrapper com select/selectOne/insert/update/delete/deleteWhere/raw)
 │   ├── server.js
 │   ├── .env
 │   └── package.json
@@ -127,220 +137,288 @@ quotaflow/
 │   ├── src/
 │   │   ├── components/
 │   │   │   ├── chamados/
-│   │   │   │   └── TelaChamadosNova.jsx        (abre OS: lista única material+serviço, busca unificada de item — ver seção 6)
+│   │   │   │   └── TelaChamadosNova.jsx        (abre OS: lista única material+serviço, busca unificada de item)
 │   │   │   │
 │   │   │   ├── estoque/
-│   │   │   │   └── TelaGerarRequisicaoMaterial.jsx  (fila do comprador: OS → RM)
+│   │   │   │   ├── TelaGerarRequisicaoMaterial.jsx  (fila do comprador: OS → RM)
+│   │   │   │   ├── TelaRecebimento.jsx
+│   │   │   │   ├── TelaOrdemServico.jsx             (detalhe de OS, tracker 3 etapas no recebimento, ⚠️ item com NC ativa, bloqueio de conclusão)
+│   │   │   │   └── modais/
+│   │   │   │       ├── ModalReportarNC.jsx          (abertura de NC via OS)
+│   │   │   │       └── ModalApontamento.jsx
 │   │   │   │
 │   │   │   ├── cotacoes/
 │   │   │   │   ├── TelaCotacoesNovaComAbas.jsx (lista RM sem cotação, cria RC/cotação)
 │   │   │   │   └── CotacaoAutomaticaView.jsx
 │   │   │   │
+│   │   │   ├── naoConformidades/
+│   │   │   │   ├── TelaNaoConformidades.jsx         (lista do comprador: filtros por status/origem, chip "item fora do catálogo", KPI curadoria)
+│   │   │   │   ├── ModalDetalheNC.jsx               (detalhe completo, edição de item, mini-modais de análise ISO 9001, trilha de auditoria, geração de PDF)
+│   │   │   │   ├── ModalNovaNC.jsx                  (M4.5 — abertura manual de NC, autocomplete item, anexos com preview)
+│   │   │   │   └── ModalGerarPdfNC.jsx              (geração de PDF: versão interna e versão fornecedor)
+│   │   │   │
 │   │   │   ├── fornecedores/
-│   │   │   │   ├── TelaFornecedoresNova.jsx       (fornecedor "cliente", lado comprador)
-│   │   │   │   └── TelaCatalogoFornecedor.jsx     (NOVO 09/2026 — perfil do fornecedor anunciante: CRUD + import CSV do catálogo próprio)
+│   │   │   │   ├── TelaFornecedoresNova.jsx         (fornecedor "cliente", lado comprador)
+│   │   │   │   ├── TelaCatalogoFornecedor.jsx       (perfil do fornecedor anunciante: CRUD + import CSV)
+│   │   │   │   ├── TelaNaoConformidadesFornecedor.jsx (lista de NCs do fornecedor)
+│   │   │   │   └── ModalDetalheNCFornecedor.jsx     (detalhe de NC no portal do fornecedor: contestar/resolver, anexos, PDF)
+│   │   │   │
+│   │   │   ├── usuarios/
+│   │   │   │   ├── TelaUsuariosNova.jsx             (CRUD de usuários, multi-perfil com toggles)
+│   │   │   │   ├── ModalMeuPerfil.jsx               (M4.7 — modal do próprio usuário: nome, telefone, trocar senha)
+│   │   │   │   └── phone-input.css                  (override dark do react-phone-number-input)
 │   │   │   │
 │   │   │   ├── portal/
-│   │   │   │   └── TelaPortalFornecedor.jsx    (fornecedor responde cotação via link/token)
+│   │   │   │   └── TelaPortalFornecedor.jsx
 │   │   │   │
 │   │   │   ├── equipamentos/, catalogo/, historico/, relatorio/, financeiro/,
-│   │   │   │   inteligencia/, plano/, benchmark/, usuarios/, layouts/, shared/
+│   │   │   │   inteligencia/, plano/, benchmark/, layouts/, shared/
 │   │   │
 │   │   ├── hooks/
 │   │   │   ├── useCotacoes.js, useChamados.js, useFornecedores.js, useAuth.js,
 │   │   │   │   useCatalogo.js, useEquipamentos.js, useEmail.js, usePortal.js,
 │   │   │   │   useTarefas.js, useUsuarios.js
-│   │   │
+│   │
 │   │   ├── services/
-│   │   │   ├── apiService.js       (cliente HTTP genérico — ver convenção na seção Arquitetura)
+│   │   │   ├── apiService.js       (cliente HTTP genérico)
 │   │   │   └── ...Service.js por domínio
-│   │   │
-│   │   ├── utils/csvFornecedorUtils.js  (NOVO 09/2026 — parser CSV quote-aware + sinônimos de coluna + normalização de preço BR/US, usado no import do catálogo do fornecedor)
-│   │   │
+│   │
+│   │   ├── utils/
+│   │   │   ├── csvFornecedorUtils.js  (parser CSV quote-aware + sinônimos de coluna + normalização de preço BR/US)
+│   │   │   └── gerarPdfNC.js          (M4.5 — gera o HTML printável da NC, CSS embutido)
+│   │
+│   │   ├── TelaLogin.jsx
+│   │   ├── TelaEsqueciSenha.jsx       (M4.6)
+│   │   ├── TelaResetSenha.jsx         (M4.6)
+│   │   ├── TelaSignup.jsx
 │   │   ├── App.jsx, main.jsx
 │   │
 │   ├── .env.local, package.json, vite.config.js
 │
 └── README.md (este arquivo)
-```
+🗄️ Banco de Dados
+Núcleo multi-tenant
+tenants — id | nome | cnpj | telefone | email_contato | email_admin | comunicacao_*_policy | criado_em
+
+usuarios — id | tenant_id | nome | email | telefone | perfil | ativo | criado_em | atualizado_em. perfil continua sendo o "principal" (compatibilidade com checks legados); o multi-perfil de verdade vive em usuario_perfis (ver abaixo). telefone em E.164 (+5511999999999).
+
+perfis ⭐ (M4.6) — catálogo dos 6 perfis canônicos: admin | gestor | comprador | operacao | qualidade | financeiro. Colunas: codigo (PK) | nome | descricao | ordem.
+
+usuario_perfis ⭐ (M4.6) — N:N entre usuários e perfis (multi-perfil). usuario_id | perfil_codigo. Não tem tenant_id — isolamento por transitividade (ver db.js regra multi-tenant).
+
+equipamentos — id | tenant_id | tag | nome | local | fabricante | modelo | serie | ativo | criado_em.
+
+Núcleo de compra: OS → RM → RC → OV
+Ver seção 5 para o fluxo completo.
+
+chamados — OS e RM (tipo_documento: 'os' | 'requisicao_material'). Campos: id | tenant_id | equipamento_id | numero | status | urgencia | categoria | descricao_geral | servico_nome | modo_programacao | data_inicio_prevista | data_fim_prevista | tipo_documento | origem_os_id | origem_os_numero | origem_rc_id | origem_rc_numero | bloqueado_em | criado_em.
+
+chamado_itens — lista única material+serviço. Campos descritos na versão anterior do README (mantidos).
+
+chamado_apontamentos — apontamento por item de serviço.
+
+cotacoes ⭐ — a RC.
+
+cotacao_itens — itens da RC.
+
+cotacao_fornecedores ⯑ — resposta por fornecedor na RC.
+
+cotacao_fornecedor_itens — resposta item a item.
+
+ordens_venda — OV emitida após escolha do fornecedor.
+
+nao_conformidades — ver seção 7 para o schema completo.
+
+Módulo de Não Conformidades (M4.4/M4.5)
+nao_conformidades — numero_nc | tenant_id | ordem_venda_id | numero_pedido | fornecedor_id | fornecedor_nome | fornecedor_tratativa_status | fornecedor_ciente_em | fornecedor_ciente_por_nome | numero_nota_fiscal | data_recebimento | data_ocorrencia | inspetor_id | criado_por_nome | motivo_recusa | descricao_problema | quantidade | unidade_medida | lote | numero_serie | validade | **item_catalogo_id** (M4.5) | **item_consumo_id** (M4.5 — ponte pro estoque) | **item_nome_avulso** (M4.5 — texto livre quando item fora do catálogo) | **item_sku_avulso** (M4.5) | **item_fora_catalogo** (M4.5 — flag pra Qualidade revisar) | tipo_resolucao | rodada | **status** (aberta | em_analise | em_execucao | aguardando_validacao | resolvida | cancelada) | **fornecedor_tratativa_status** (nao_enviado | enviado | visualizado | contestada | resolvida_fornecedor | devolvida | null) | criado_em | atualizado_em. Constraint CHECK em fornecedor_tratativa_status (whitelist). Bloco causa_raiz / cinco_porques (jsonb) / acao_corretiva / encerrada_por_* / devolvida_validacao_*.
+
+nao_conformidade_eventos — timeline: nc_id | tipo | descricao | dados (jsonb) | criado_por | criado_por_nome | criado_em | visivel_fornecedor | autor_tipo.
+
+nao_conformidade_anexos — nc_id | url | nome_arquivo | mime_type | tamanho_bytes. O url agora contém path do bucket nc-evidencias (M4.5) — antes era data URI inline. Anexos antigos (data URI) continuam válidos e são detectados no gerarPdfNC.js.
+
+nao_conformidade_plano_acao — plano 3W opcional.
+
+Multi-perfil, reset de senha e afins
+perfis / usuario_perfis — descritos acima.
+
+password_resets ⭐ (M4.6) — id | tenant_id | usuario_id | fornecedor_usuario_id | email | token_hash | expira_em | usado_em | criado_em. Serve tenant e fornecedor (uma das duas FKs preenchida, a outra null). Token cru nunca é guardado — só o SHA-256.
+
+Estoque e reservas (mantidos da versão anterior)
+itens_consumo — almoxarifado com saldo físico. Colunas item_sku_avulso (M4.5 — part number livre quando o item não tem catálogo).
+
+ordem_venda_itens, historico_contagens_cegas, estoque_reservas, movimentacoes_estoque, solicitacoes_retirada, config_estoque — inalterados.
+
+Catálogo e marketplace (mantidos)
+catalogo_itens — catálogo do tenant.
+
+fornecedores, fornecedor_itens, fornecedor_produtos — inalterados.
+
+normalizar_pn / normalizar_texto — inalteradas.
+
+Storage
+Bucket nc-evidencias (privado) — M4.5. Path: tenant-{id}/nc-{id}/evidencia-NN.ext. Acesso sempre via signed URL (1h TTL, download: false).
+
+Bucket nfe-xmls (privado) — XML de NF-e (uso anterior).
+
+Outras tabelas
+tarefas, tarefa_comentarios, fornecedor_preco_historico, cnpj_alertas, notas_periodo, cliente_frota, fornecedor_upload_log, demandas_spot.
+
+Órfãs, não usadas (mantidas): ordens_servico, ordem_servico_itens, backend/routes/useAuth.js (deletado em M4.6).
+
+🔄 Fluxo de Negócio: OS → RM → RC → OV
+(Mantido integralmente da versão anterior — o fluxo não mudou.)
+
+🔎 Marketplace de Fornecedores e Busca Unificada de Item
+(Mantido integralmente da versão anterior — a busca unificada e as duas rotas com contratos diferentes seguem como em 10/09/2026.)
+
+Adição M4.5: a mesma busca unificada é usada pela NC na tela do comprador. O endpoint é GET /nao-conformidades/buscar-item — não reaproveita o /catalogo/buscar-item porque o contrato é diferente (a NC precisa saber se o item tem estoque — itens_consumo — além do catálogo). Retorna { item_consumo_id, catalogo_item_id, nome, sku, tem_estoque } e o front usa 2 ícones: 📦 (tem estoque) / 📖 (só catálogo). Dedup por catalogo_item_id.
 
 ---
 
-## 🗄️ Banco de Dados
+## 📊 Benchmarking de Mercado
 
-### Núcleo multi-tenant
-- **`tenants`** — `id | nome | criado_em`
-- **`usuarios`** — `id | tenant_id | nome | email | perfil | ativo | criado_em` (perfil: admin, comprador, supervisor, fornecedor)
-- **`equipamentos`** — `id | tenant_id | tag | nome | local | fabricante | modelo | serie | ativo | criado_em`. `fabricante`/`modelo` existem mas são opcionais e hoje raramente preenchidos — ver seção Roadmap sobre amarração de busca a equipamento.
+### Visão geral
+Página dedicada do tenant que compara **os preços que ele praticou** contra a
+**faixa de preços da rede QuotaFlow** — sem abrir valores de concorrentes
+nominalmente. O que o cliente vê é:
 
-### Núcleo de compra: OS → RM → RC → OV
-Ver seção 5 para o fluxo completo. Resumo de tabelas:
+> "Você pagou R$ 1.000 neste item. A rede QuotaFlow registrou valores entre
+> R$ 800 e R$ 1.200, com mediana R$ 950. **Considere incluir o fornecedor
+> XYZ na próxima cotação** — este fornecedor tem histórico de venda do mesmo
+> item por R$ 900."
 
-- **`chamados`** — serve tanto para OS quanto RM, discriminado por `tipo_documento` (`'os'` | `'requisicao_material'`, `NOT NULL DEFAULT 'os'`). Campos relevantes: `id | tenant_id | equipamento_id | numero | status | urgencia | categoria | descricao_geral | servico_nome | modo_programacao | data_inicio_prevista | data_fim_prevista | tipo_documento | origem_os_id | origem_os_numero | criado_em`. `origem_os_id`/`origem_os_numero` só são preenchidos em linhas RM, apontando pra OS-mãe.
-  - **Rastreabilidade de "Mover para nova RC" (09/2026):** `origem_rc_id | origem_rc_numero` — quando a RC nasceu de outra RC (por reagendamento). Distinto de `origem_os_id`, que aponta pra OS-mãe.
-  - **Trava de edição (09/2026):** `bloqueado_em` — setado quando cotação é disparada ou quando a RC herda resposta via "Mover para nova RC". Requisitante não pode mais editar. Limpo quando a cotação é cancelada.
-- **`chamado_itens`** — lista única de itens (material OU serviço, discriminado por `tipo`). Campos: `id | tenant_id | chamado_id | tipo | origem (planejado|adicionado) | status (ativo|cancelado) | numero_base | posicao | origem_os_item_id` + campos de material (`item_nome, codigo, item_catalogo_id, quantidade, tipo_item, descricao, status_estoque, saldo_disponivel`) + campos de serviço (`nome, descricao, qtd_pessoas_planejada, data_inicio_prevista, data_fim_prevista`) + campos de aplicação (`quantidade_aplicada, status_aplicacao (pendente|parcial|aplicado|nao_aplicado)`) + campos de conclusão de serviço (`servico_concluido_manual, servico_concluido_em, servico_concluido_por, servico_concluido_por_nome`).
-  - **Soft cancel (Fase "Remover item da RC", 09/2026):** `cancelado_em | cancelado_por | cancelado_por_nome | motivo_cancelamento`. Item cancelado continua na lista com tarja, nunca é deletado. Restaurável enquanto a cotação não foi finalizada.
-  - **Rastreabilidade de "Mover para nova RC":** `movido_para_rc_id | movido_para_rc_numero | movido_para_cotacao_id` — quando o item saiu da RC original por reagendamento.
-  - **Rastreabilidade inversa:** `origem_rc_item_id` — quando o item foi recebido de outra RC via "Mover para nova RC".
-  - `origem_os_item_id` só preenchido em itens de RM, apontando pro item de material original da OS.
-- **`chamado_apontamentos`** — apontamento de execução por item de serviço, `UNIQUE(chamado_item_id)` (valor único, não histórico versionado — decisão de produto ainda em aberto se deve virar histórico).
-- **`cotacoes`** ⭐ — a RC. `id | tenant_id | chamado_id (aponta pra uma RM, não mais pra OS diretamente) | status | modo | numero | notas | confirmado_em | confirmado_por | enviado_em | finalizado_em | criado_em`.
-- **`cotacao_itens`** — `id | tenant_id | cotacao_id | chamado_item_id | item_catalogo_id | quantidade | preco_estimado | fornecedores_ids (ARRAY) | criado_em`.
-- **`cotacao_fornecedores`** ⯑ — `id | tenant_id | cotacao_id | fornecedor_id | fornecedor_nome | fornecedor_email | token | status | valor | prazo | frete (modalidade agregada: CIF/FOB/MISTO) | valor_frete | obs | data_resposta | enviado_em` + **renegociação por item (`valor_renegociado`, `frete_renegociado`, `economia`, `economia_frete`)** + **herança (Fase "Mover para nova RC", 09/2026):** `origem_cotacao_id` — aponta pra cotação de onde os dados foram herdados. `data_resposta` é preservada ao herdar (sinaliza que a proposta é antiga).
-- **`cotacao_fornecedor_itens`** — detalhamento por item da resposta do fornecedor: `valor_unitario | valor`, `frete | valor_frete`, `frete_modalidade` (por item — pode variar dentro da mesma cotação, ex: peça leve por CIF/correio, peça pesada FOB por peso), `chamado_item_id` (derivado no backend, nunca vem do frontend), `prazo` (prazo por item, desde 09/2026).
-  - **Renegociação (Fase 1B, 09/2026):** `valor_renegociado | frete_renegociado` — quando o comprador renegocia item a item no monitor.
-  - **Origem do preenchimento:** `origem_preenchimento` — `'link'` (fornecedor respondeu pelo portal), `'manual'` (comprador editou), `'herdada'` (veio via "Mover para nova RC"), ou `null` (compatibilidade com respostas antigas via portal). **Constraint CHECK expandida em 09/2026 para aceitar `'herdada'`.**
-- **`ordens_venda`** — `id | tenant_id | cotacao_id | fornecedor_id | numero | status | valor_total | valor_frete | prazo_entrega | criado_em | enviado_em | entregue_em`.
-- **`nao_conformidades`** — recebimento recusado: `numero_nc | ordem_venda_id | numero_pedido | fornecedor_nome | numero_nota_fiscal | data_recebimento | inspetor_id | motivo_recusa (NOT NULL) | quantidade (NOT NULL) | unidade_medida | lote | numero_serie | validade | criado_em`.
+### Como o número aparece
+- **Só o tenant vê os próprios valores.** Nunca os de outro tenant.
+- **Faixa da rede** só aparece quando há **≥ 5 fornecedores** com histórico do
+  item (anonimato estatístico — mesmo princípio dos benchmarks de folha de
+  pagamento).
+- **Convite ao fornecedor** só aparece quando um fornecedor específico tem
+  histórico do mesmo item a preço menor que o praticado — e ele não foi
+  convidado na última cotação. Ação de 1 clique: "Incluir na próxima cotação".
 
-### Estoque e reservas
-- **`itens_consumo`** — almoxarifado com saldo físico real: `saldo_atual, limite_recompra, limite_inferior_controle, lote_minimo_compra, quantidade_lotes_automatico, catalogo_item_id (ponte pra catalogo_itens, nullable — ver abaixo)`. **Criado on-the-fly na primeira entrada** de um item que ainda não existia no estoque (10/2026): o `sku` (part number) é herdado de `catalogo_itens.codigo`, e `saldo_atual` nasce zerado — a entrada do `POST /entrada` soma o primeiro saldo em seguida. Evita bloquear o recebimento quando a compra foi gerada justamente porque o estoque estava zerado.
-- **`ordem_venda_itens`** — itens da OC/OV com rastreio de execução de recebimento por etapa: `miro_por`/`miro_em` (conferência fiscal), `migo_por`/`migo_em` (contagem física), `entrada_por`/`entrada_em` (entrada no estoque). Todas as colunas de data são `timestamptz`. O `entrada_em` é preenchido no mesmo clique que autoriza a entrada — todos os itens recebidos na mesma operação compartilham o mesmo valor (é metadado do evento, não por item).
-- **`historico_contagens_cegas`** — registro de cada tentativa de contagem cega. O campo `resultado_contagem` (renomeado de `status_quarentena` em 10/2026) tem 4 valores: `aprovado | divergente_pendente | divergente_esgotado | nao_conformidade`. **Não confundir com `ordem_venda_itens.status_quarentena`, que é o estado de segregação do item (ISO 9001) — este é o resultado da contagem.** Um trigger `AFTER INSERT` (`atualizar_historico_contagens`) reconstrói o JSON `ordem_venda_itens.historico_contagens` a partir dessas linhas.
-- **`estoque_reservas`** — reserva "promessa", não altera `saldo_atual` nem gera `movimentacoes_estoque`: `item_catalogo_id, chamado_id, chamado_item_id, quantidade, criado_em, liberado_em (null = ativa), liberado_motivo`. **Disponível = físico − soma(reservas ativas)**.
-- **`movimentacoes_estoque`** — todo movimento JÁ realizado (`tipo`: entrada/saida/ajuste). `saldo_atual` muda no mesmo instante do insert.
-- **`solicitacoes_retirada`** / **`solicitacao_retirada_itens`** — retirar material que já está fisicamente no almoxarifado (`RET-YYYY-NNNN`). Sem FK real com OS (campo "Origem" é texto livre). **Não confundir com RM** (ver terminologia na seção 5).
-- **`config_estoque`** — única tabela de configuração de estoque real (a duplicata `configuracoes_estoque` foi removida).
+### De onde vêm os dados
+- `fornecedor_produtos` (marketplace) — catálogo do fornecedor anunciante,
+  global. Alimentado por CSV ou manual pelo próprio fornecedor.
+- `cotacao_fornecedor_itens` — preço praticado nas cotações fechadas.
+- `fornecedor_preco_historico` — série temporal (preço por item, por fornecedor).
+- `catalogo_itens.codigo` (PN) — chave de agregação entre tenants.
 
-### Catálogo e marketplace de fornecedores
-- **`catalogo_itens`** — catálogo **do tenant** (cliente comprador), tenant-scoped. `id | tenant_id | codigo (NOT NULL) | nome (NOT NULL) | categoria | ativo | subcategoria | marca | modelo | tipo_fabricante | ano_fabricacao_inicio | ano_fabricacao_fim | descricao | especificacoes (jsonb) | unidade | tags (text[]) | verificado | criado_em | atualizado_em | atualizado_por`. `marca`/`modelo`/`ano_fabricacao_*` existem no schema mas raramente preenchidos hoje — ver Roadmap.
-- **`fornecedores`** — cadastro do fornecedor "cliente" (lado comprador) — `id | tenant_id | nome | razao_social | cnpj | email | endereco | cidade | estado | cep | ativo | criado_em`.
-- **`fornecedor_itens`** — vínculo antigo fornecedor↔catalogo_itens do tenant (preço/prazo por item do catálogo do cliente) — modelo "cliente cadastra fornecedor + preço", ainda existe mas é o modelo mais burocrático (perfil ~20%).
-- **`fornecedor_produtos`** ⭐ (NOVO 09/2026) — catálogo **do fornecedor anunciante**, global (não tenant-scoped) — é o marketplace de fato. `id | fornecedor_id | pn_raw | pn_normalizado (generated) | nome_raw | descricao_raw | texto_normalizado (generated) | categoria | marca | preco_unitario | moeda | unidade | ativo | atualizado_em`. Alimentado via upload de CSV ou cadastro manual pelo próprio fornecedor no seu perfil.
-- **`normalizar_pn(text)`** / **`normalizar_texto(text)`** — funções SQL auxiliares (uppercase+strip de PN; lowercase+unaccent de texto), usadas tanto em `catalogo_itens` quanto `fornecedor_produtos` pra busca fuzzy consistente.
+### Limitação atual (honesta)
+Hoje o banco **não tem volume suficiente** para a faixa da rede aparecer na
+maioria dos itens (precisa de ≥ 5 fornecedores por item). A página existe e
+funciona; ela **cresce junto com o marketplace**. Enquanto o volume não vem,
+o que dá pra entregar:
+- Comparação do tenant **contra ele mesmo** (mesmo item, mês anterior, média
+  dos últimos 6 meses) — zero dependência de rede.
+- "Você pagou R$ 1.000; na sua última compra deste item você pagou R$ 850."
+- Recomendação "considere incluir fornecedor Y" quando o próprio tenant já
+  comprou mais barato de outro fornecedor.
 
-### Outras tabelas
-- `tarefas`, `tarefa_comentarios`, `fornecedor_preco_historico`, `cnpj_alertas`, `notas_periodo`, `cliente_frota`, `fornecedor_upload_log`, `demandas_spot`.
-- **Órfãs, não usadas por nenhuma tela/rota ativa** (mantidas, não apagadas): `ordens_servico`, `ordem_servico_itens`.
-
----
-
-## 🔄 Fluxo de Negócio: OS → RM → RC → OV
-
-Separação estrutural em quatro documentos com rastreabilidade em cadeia, decidida e implementada em 09/09/2026 (ver detalhes técnicos completos no doc do projeto `schema-real-e-tabelas-orfas.md`, item 9).
-
-```
-1. OS (Ordem de Serviço) — TelaChamadosNova.jsx
-   └─ Encarregado/mecânico monta a OS: lista única de materiais + serviços
-   └─ Busca de item agora é UNIFICADA (catálogo local + marketplace) — ver seção 6
-   └─ chamados.tipo_documento = 'os', origem_os_id = NULL
-
-2. RM (Requisição de Material) — TelaGerarRequisicaoMaterial.jsx
-   └─ Fila do comprador: lista OS com itens de material ainda sem RM vinculada
-   └─ Comprador escolhe quais itens (e ajusta quantidade — nunca maior que o planejado)
-   └─ Uma OS pode gerar VÁRIAS RM ao longo do tempo (itens urgentes agora, resto depois)
-   └─ POST /cotacoes/chamados/:id/gerar-requisicao-material
-   └─ chamados.tipo_documento = 'requisicao_material', origem_os_id → OS-mãe
-
-3. RC (Requisição de Compra) = cotações — TelaCotacoesNovaComAbas.jsx
-   └─ Dropdown de "nova cotação" lista só RM (nunca OS diretamente)
-   └─ Sistema busca fornecedores (catálogo local + marketplace) e sugere os melhores
-   └─ Comprador seleciona fornecedores → cotação enviada (token único por fornecedor)
-   └─ cotacoes.chamado_id → aponta pra RM
-
-4. Fornecedor responde — TelaPortalFornecedor.jsx (via link/token, sem login)
-   └─ cotacao_fornecedores atualizado (status: respondido), com frete discriminado por item
-
-5. OV (Ordem de Venda) — TelaMonitorarRespostas.jsx / fluxo de cotação
-   └─ Comprador compara respostas, emite OV pro fornecedor escolhido
-   └─ ordens_venda criada, cotação finalizada
-   └─ (09/2026) Monitor tem: edição item-a-item com CIF/FOB, card "Vencedores
-      por Item" com acordeão, Panorama executivo em 3 atos (sem/com/após
-      QuotaFlow) com Saving do Sistema e Saving do Comprador
-   └─ (09/2026) Comprador pode remover/restaurar item, cancelar cotação (soft
-      cancel, desbloqueia RC), mover item para nova RC
-
-6. Recebimento
-   └─ Tela de recebimento mostra cards por OV com tracker visual de 3 etapas:
-      Fiscal (MIRO) → Contagem (MIGO) → Entrada (estoque), com cores por status
-   └─ Card "Entrada" some quando o item está em NC aberta (não pode entrar em NC);
-      Fiscal e Contagem permanecem visíveis para consulta (NF-e, histórico)
-   └─ POST /entrada (com OV: 3-way match contra valor_nf/quantidade_nf/quantidade_fisica)
-      ou sem OV (compra emergencial, flag "Compra sem OV")
-   └─ A entrada grava em movimentacoes_estoque + atualiza itens_consumo.saldo_atual +
-      marca ordem_venda_itens.entrada_por/entrada_em + atualiza ordens_venda.status/status_recebimento
-   └─ Modal "Ver entrada" mostra o lote recebido: data, usuário e endereço (RECEBIMENTO),
-      com a lista de itens — é a visão de logística, não um detalhe por item
-   └─ Divergência → nao_conformidades (NC-YYYY-NNNN)
-```
-
-### Terminologia — RET vs. RM (não confundir)
-- **RET** (`RET-YYYY-NNNN`): retirar material que **já está fisicamente no almoxarifado**. Fluxo independente, sem FK real com OS.
-- **RM** (`RM-YYYY-NNNN`): requisitar material que **precisa ser comprado**. É o filho estrutural da OS nesta separação, alimenta a RC.
-
-### Fluxos auxiliares na RC/cotação (09/2026)
-
-**Remover/Restaurar item da RC** (durante cotação ativa):
-- Botão ✕ no header do item → modal com motivo obrigatório → item marcado como `cancelado` (soft), tarja cinza com motivo + autor + timestamp
-- Botão "↩ Restaurar" no item cancelado (motivo opcional, corretivo)
-- Travas: última OC emitida, último item ativo da RC, cotação finalizada/cancelada
-
-**Mover item para nova RC** (reagendamento):
-- Modal de remoção tem radio "Encerrar" (só cancela) vs. "Mover para nova RC" (cria RC nova)
-- Backend `POST /:cotacaoId/itens/mover` (batch): cria RC nova herdando equipamento, urgência, categoria, serviço, OS origem, técnico requisitante; cria cotação vinculada; copia `chamado_itens` + `cotacao_itens`
-- **Herança de cotação original:** copia `cotacao_fornecedores` (token novo, `data_resposta` preservado, `origem_cotacao_id`) + `cotacao_fornecedor_itens` remapeando IDs, com `origem_preenchimento: 'herdada'`
-- Cotação nova nasce como **`'enviada'`** (não `'respondida'` — comunica "aguardando revisão")
-- Nova RC é bloqueada se herdou ≥ 1 fornecedor com resposta (mesma regra de RC cotada)
-- Banner azul no monitor: "📦 Itens herdados da RC-X — Revise antes de emitir OC"
-- Item cancelado ganha link "↳ Reagendado na RC-Y" no banner
-
-**Cancelar cotação** (soft cancel, 09/2026):
-- Botão "🚫 Cancelar cotação" no header do monitor → modal com motivo obrigatório
-- Cotação vira `status: 'cancelada'` (não deletada), evento registrado na timeline da RC
-- RC é **desbloqueada** (`bloqueado_em: null`, `status: 'aguardando_cotacao'`) — requisitante volta a poder editar
-- Nova cotação pode ser criada depois via "+ Nova Cotação" (a RC cancelada aparece na lista)
-
-**Trava de edição em RC cotada:**
-- Backend `PUT /chamados/:id` bloqueia **qualquer** alteração quando `bloqueado_em` (antes só bloqueava adição de item novo) — alinhado com SAP MM
-- Frontend `TelaChamadosNova`: banner 🔒 + botões Editar/Deletar desabilitados
-- Fluxo legítimo: se requisitante precisa alterar, contata o comprador (que pode restaurar/mover item pelo monitor)
+### Valor de produto
+- **Retenção:** o cliente não sai porque perde o histórico de economia.
+- **Monetização (fase 2):** fornecedor pode pagar **destaque** pra aparecer na
+  recomendação "incluir na próxima cotação". Modelo análogo ao "patrocinado"
+  do Google Shopping — cobrança por impressão ou por inclusão efetiva.
+- **Efeito de rede:** quanto mais tenants usam, melhor o benchmark de todos.
+  É um dos poucos features que **melhora com o tempo sem dev adicional**.
 
 ---
 
-## 🔎 Marketplace de Fornecedores e Busca Unificada de Item
+## 🧭 Módulo de Não Conformidades (M4.4 – M4.5)
+Fluxo completo (ISO 9001 cláusula 10.2)
+Abertura — via OS/recebimento (origem os_material, os_servico, recebimento) ou manual (ModalNovaNC, origem inspecao).
 
-Esta é a área de trabalho mais recente (09-10/09/2026) e a que sustenta a proposta de valor central do produto para o perfil de cliente que não quer manter catálogo próprio.
+Notificação ao fornecedor — gestor clica "📤 Notificar fornecedor"; NCService.notificarFornecedorNC (idempotente) envia email + muda fornecedor_tratativa_status pra enviado.
 
-### Por que dois catálogos coexistem (decisão de produto confirmada)
-- **`catalogo_itens`** (tenant-scoped): pensado originalmente pro perfil ~20% (herança óleo&gás), que quer rastreabilidade e só comprar de fornecedores "internos" qualificados.
-- **`fornecedor_produtos`** (global, marketplace): pra que os ~80% restantes — que não vão se dar ao trabalho de cadastrar catálogo próprio — ainda consigam abrir uma OS e ter o item reconhecido, puxando de qualquer fornecedor cadastrado no sistema. **O marketplace não é um canal de vendas desconectado do fluxo do SaaS — ele funciona como o catálogo de fato para a maioria dos clientes.**
+Tratativa — fornecedor responde pelo portal (contestar ou resolver). Comprador analisa: pode validar (encerra NC), devolver (loop de rodadas), aceitar contestação (cancela NC) ou rejeitar contestação.
 
-### Catálogo do fornecedor (`fornecedor_produtos`) — CRUD completo
-- `TelaCatalogoFornecedor.jsx`: modal único de criar/editar item (PN, nome, descrição, categoria, marca, preço, unidade) + import de CSV.
-- `routes/fornecedorProdutos.js`: `POST /produtos/upload` (bulk CSV), `GET /produtos/meus`, `POST /produtos` (item único), `PUT /produtos/:id`, `DELETE /produtos/:id` (soft delete via `ativo:false`). Todas com checagem de ownership por `fornecedor_id`.
-- `frontend/src/utils/csvFornecedorUtils.js`: parser CSV quote-aware, detecção de coluna por sinônimos (pn/nome/descricao/categoria/marca/preco_unitario/unidade, cada um com múltiplos aliases), normalização de preço BR/US (`1.234,56`, `89,90`, `1234.56`).
+Encerramento — Qualidade registra causa raiz + 5 porquês (opcional), NC vira resolvida.
 
-### Busca de fornecedores — duas rotas com contratos DIFERENTES de propósito
-- **`GET /busca-fornecedores/por-texto`** (`routes/buscaFornecedores.js`) — uso do **comprador**, retorna `fornecedor_nome` e `preco_unitario` de propósito (é a base do "grande marketplace" consolidado, com potencial de monetização — banner, posicionamento pago — mencionado pelo usuário como visão futura, não construído ainda).
-- **`GET /catalogo/buscar-item`** (`routes/catalogoBusca.js`, NOVO) — uso do **encarregado/mecânico na tela de OS**, contrato DELIBERADAMENTE restrito: **nunca retorna fornecedor nem preço**. Quem abre uma OS não deve ver dado comercial — isso é dado do comprador, não de quem está no chão de fábrica/pátio. PN (`codigo`) não é considerado dado comercial e aparece nas duas rotas.
-- Essa separação de contrato é proposital, não só de UI: existe pra nunca vazar dado comercial por engano se o endpoint de OS for reaproveitado em outro lugar no futuro.
+Fluxos auxiliares da NC
+Marcar como interna — NC nasceu vinculada a fornecedor via OC, mas a triagem concluiu que não é problema dele. Zera fornecedor_id, mantém o histórico, fornecedor perde acesso ao portal.
 
-### `buscar_itens_catalogo_tenant` e `buscar_fornecedores_para_item` — funções SQL de busca
-Ambas seguem o mesmo padrão em 3 estágios:
-1. **Código/PN exato** (normalizado) → confiança 100, autoritativo.
-2. **Nome sozinho** via `pg_trgm` (operador `%`, indexado) → evita diluição de similaridade por descrição longa (ver bug abaixo).
-3. **Fallback: nome+descrição concatenados** → só roda se o estágio 2 não achou nada; cobre termo técnico que só aparece na ficha técnica, não no nome comercial.
+Curadoria de item (M4.5) — quando o operador abre NC com item fora do catálogo (texto livre), a Qualidade pode depois vincular ao catálogo (POST /:id/vincular-item) ou editar como item avulso (POST /:id/editar-item-avulso). Ícone ⚠ no chip enquanto pendente.
 
-`GET /catalogo/buscar-item` chama as duas funções **sempre em paralelo** (nunca com curto-circuito condicional), mescla os resultados por confiança (empate: catálogo local primeiro, é a fonte com estoque real vinculável) e corta no `limit` só no final. Um round de busca não pode "esconder" o outro — bug real encontrado e corrigido: a versão anterior parava de buscar no marketplace assim que o catálogo local sozinho já preenchia o limite, escondendo itens do marketplace em buscas com termos genéricos que batiam com muitos itens locais (ex: "lâmpada").
+Bloqueio de OS por NC ativa (M4.4-etapa-10d)
+Backend: PUT /chamados/:id (detalhe) recusa conclusão enquanto houver NC ativa vinculada via chamado_id.
 
-### PN no hint da sugestão (10/09/2026)
-A sugestão no dropdown de busca da OS mostra o PN junto ao nome quando disponível (`"Lâmpada farol direito — PN: LMP-FRD-001"`), tanto para itens do catálogo local quanto do marketplace. Ajuda o funcionário a diferenciar itens de nome parecido mas de veículo/aplicação diferente, sem precisar de um campo de busca por código separado — como o backend já testa PN exato antes de nome, digitar o PN direto no campo de busca já resolve o item exato. PN do marketplace é o PN de UM fornecedor específico que respondeu o match — tratado como referência informativa, não como código "oficial" unificado do item (`fornecedor_produtos` não tem noção de PN canônico entre fornecedores diferentes — ver Roadmap sobre normalização).
+Frontend: botão "🔒 Concluir OS" fica com fundo preto e clique abre modal overlay (não substitui a tela) listando as NCs abertas com ação dupla (abrir NC / voltar). Item da OS com NC ativa ganha ⚠ clicável no header.
 
-### Dual-display: estoque real vs. "reconhecido"
-Ao selecionar uma sugestão na OS:
-- **Origem `catalogo`**: preenche `item_catalogo_id`, consulta `GET /estoque/saldo` de verdade, mostra badge real (🟢 atende / 🟡 parcial / 🔴 sem estoque).
-- **Origem `fornecedores`**: `item_catalogo_id` fica `null` (não força vínculo de estoque falso), status vira `reconhecido_sem_estoque_local` — rótulo neutro, nunca mostra fornecedor/preço.
+Regra: qualquer NC com status NOT IN ('resolvida','cancelada') bloqueia.
 
----
+Emails transacionais (M4.4-etapa-10d)
+Todos os 5 eventos usam o mesmo template (NCEmailTemplates.js):
 
-## 🚀 Como Rodar
+Criação (criacao — contexto: 'criacao') → fornecedor
 
-### Pré-requisitos:
-- Node.js 18+, npm, conta Supabase, Git
+Devolução (E1 — contexto: 'devolucao') → fornecedor
 
-### Iniciar Projeto:
-```bash
+Reenvio (E2) → comprador
+
+Contestação (E3) → comprador
+
+Resolução (E3) → comprador
+
+O bloco de contexto (🏢 Cliente / 📋 NC / 📄 OC / 📦 Item / 🔖 PN / 🔢 Qtd / 🏷 Lote / 🔢 Série / 📆 Validade / 📝 Descrição) é sempre visível. Cabeçalho/rodapé são dinâmicos por contexto.
+
+PDF de NC (M4.5)
+Gerado no frontend via window.print() (não há dependência nova). O gerarPdfNC.js monta o HTML com CSS embutido.
+
+Duas versões: interno (comprador, com causa raiz / trilha de auditoria opcionais) e fornecedor (sem dados internos; com tratativa e histórico de devoluções).
+
+Sem links clicáveis pros anexos no PDF — fotos entram como miniatura (pixels), PDFs são listados só por nome. Decisão de segurança: PDF pode ser distribuído.
+
+Limitações conhecidas: sem "Página X de Y" no conteúdo (limitação do window.print()); fotos vão pra página seguinte se não couberem no bloco.
+
+Anexos no Storage (M4.5)
+Fotos e PDFs vão pro bucket nc-evidencias, path tenant-{id}/nc-{id}/evidencia-NN.ext.
+
+Signed URL gerada no GET /:id em batch (por criarSignedUrlsEmBatch).
+
+download: false → PDFs abrem em nova aba em vez de baixar.
+
+Anexos antigos (data URI inline) continuam válidos — o gerarSignedUrl detecta data: e devolve como está.
+
+🔐 Multi-perfil, Reset de Senha e Meu Perfil (M4.6 – M4.7)
+Multi-perfil
+Modelo: usuarios.perfil continua sendo o "principal" (compatibilidade com checks antigos); usuario_perfis guarda o array de perfis do usuário.
+
+JWT: auth.js inclui perfis: [...] no payload. Fallback [decoded.perfil] cobre tokens emitidos antes da migração.
+
+tenantMiddleware: injeta req.perfis (array) e mantém req.userPerfil (single).
+
+requerAdmin (em usuarios.js): aceita se qualquer perfil do usuário é admin.
+
+Frontend: o ModalMeuPerfil e a TelaUsuariosNova usam 6 toggles (com codigo dos 6 perfis canônicos). navItems e PERMISSOES no App.jsx filtram por interseção de perfis.
+
+Reset de senha
+Fluxo: "Esqueci minha senha" → backend gera token → email com link → /reset-senha?token=....
+
+Backend: PasswordResetService.js (gerar/validar/consumir token, SHA-256, TTL 1h, rate limit 3/15min por email).
+
+Rotas: POST /api/auth/forgot-password, GET /api/auth/reset-password/validar, POST /api/auth/reset-password.
+
+Resposta sempre 200 no /forgot (não vaza se o email existe).
+
+Serve tenant e fornecedor — encontrarUsuarioPorEmail busca nas duas tabelas.
+
+Frontend: TelaEsqueciSenha.jsx + TelaResetSenha.jsx, rotas via state (authRoute) no App.jsx, não por hash (o Router do app intercepta o hash). Comentarista: se o usuário sai, setAuthRoute(null) fecha.
+
+Meu perfil (M4.7a)
+PUT /api/usuarios/me — atualiza nome + telefone do próprio usuário (req.userId do JWT, nunca aceita id no body).
+
+POST /api/usuarios/me/trocar-senha — valida senha atual, atualiza.
+
+Frontend: ModalMeuPerfil.jsx (avatar com iniciais enquanto upload de foto não existe; 2 abas: dados + trocar senha). Botão no rodapé da sidebar abre o modal.
+
+⚠ Ordem de rotas: /me e /me/trocar-senha precisam vir antes de router.put("/:id") e router.post("/:id/...") no usuarios.js — senão o Express casa /me com /:id e o handler tenta fazer SELECT WHERE id = 'me' → 500 UUID.
+
+🚀 Como Rodar
+Pré-requisitos:
+Node.js 18+, npm, conta Supabase (Postgres + Storage), Git
+
+Iniciar Projeto:
+bash
 # Terminal 1: Backend
 cd backend
 npm install
@@ -352,125 +430,311 @@ cd frontend
 npm install
 npm run dev
 # ✅ App em http://localhost:5173
-```
+Buckets do Supabase Storage:
+nc-evidencias (privado) — obrigatório pro módulo de NC. Sem ele, POST /nao-conformidades/:id/anexos falha.
 
----
+nfe-xmls (privado) — pra XML de NF-e.
 
-## ✅ Status das Features
+✅ Status das Features
+✅ Em produção (histórico consolidado)
+Autenticação JWT, multi-tenant, cadastro de equipamentos
 
-### ✅ Em produção, confirmado (histórico condensado — cronológico)
-- Autenticação JWT, multi-tenant, cadastro de equipamentos
-- Repaginação da OS: lista única material+serviço, numeração estável (`numero_base`/`posicao`), apontamento de execução persistido
-- Separação estrutural **OS → RM → RC → OV** completa (migration 005, Fases B/C/D)
-- Reserva de estoque (`estoque_reservas`, modelo "available to promise") + ponte `itens_consumo.catalogo_item_id ↔ catalogo_itens`
-- Correção de vazamento de dados no portal do fornecedor (itens entre fornecedores diferentes na mesma cotação, resposta cruzada, frete discriminado por item — CIF/FOB/MISTO)
-- Recebimento com e sem OV (compra emergencial), não conformidade (NC), correção de bug de concatenação de saldo
-- **Catálogo do fornecedor (marketplace)**: CRUD completo + import CSV, testado e confirmado funcionando pelo usuário em produção
-- **Busca unificada de item na OS** (catálogo local + marketplace, dual-source, sem curto-circuito), migração de Levenshtein client-side pra trigram server-side, com PN no hint — confirmado funcionando pelo usuário em produção (10/09/2026)
+Repaginação da OS: lista única material+serviço, numeração estável, apontamento de execução persistido
 
-### ✅ Em produção, confirmado (01/10/2026 — M4.3)
-- **Recebimento reescrito com tracker visual de 3 etapas** (Fiscal → Contagem → Entrada) no card de cada item. Cada etapa é um card clicável com cor por status (verde=feito, laranja=próximo, cinza=bloqueado), com o botão real dentro. Textos: "Realizar Rec Fiscal", "Contar", "Autorizar estoque"; estados feitos viram "Revisar" / "Ver contagem" / "Ver entrada".
-- **`📜 Histórico` sempre visível** no topo do card, abrindo o modal de histórico de contagens cegas (quem contou, quando, quantidade, lote, série, resultado).
-- **Entrada no estoque com rastreio**: `entrada_por`/`entrada_em` gravados no item; modal de confirmação antes de autorizar; modal "Ver entrada" com data, usuário e endereço (RECEBIMENTO).
-- **`itens_consumo` criado on-the-fly** na primeira entrada (antes bloqueava o recebimento quando o item nunca tinha estado em estoque — que é justamente o caso normal de compras por demanda).
-- **Fiscal (NF-e validada)** permanece acessível em NC aberta — antes o tracker escondia o botão Fiscal em NC, impedindo consultar a NF-e/XML de novo.
-- **Modal de confirmação** antes de disparar email ao fornecedor sobre NC (substituiu o `window.confirm`), com toast in-place de sucesso em vez de `alert`.
-- **Fuso horário corrigido** no histórico de contagens (`contado_em` virou `timestamptz`); trigger `atualizar_historico_contagens` reescrita para `resultado_contagem`.
-- **`status_recebimento` do card** reconhece o valor `'recebido'` (antes caía em "Status Desconhecido").
+Separação estrutural OS → RM → RC → OV completa
 
-### ✅ Em produção, confirmado (09-10/09/2026 e adições de 09/2026)
+Reserva de estoque + ponte itens_consumo.catalogo_item_id ↔ catalogo_itens
 
-**Cotações — Fase 1B e derivados:**
-- Edição de resposta do fornecedor **item a item** (antes era só cabeçalho — corrigido o vazamento de `valor_renegociado` entre itens e o cálculo inflado do SAVING)
-- **CIF/FOB por item** editável no modal (radio), com botões "Todos CIF / Todos FOB" em massa. Frete desabilitado em CIF. `/monitorar` respeita CIF (frete não soma no total nem na economia)
-- **Card "Vencedores por Item"** substituiu "Melhor Proposta Geral" — acordeão por fornecedor com itens ganhos, valores e savings
-- **Panorama executivo** em 3 atos: Sem o QuotaFlow (pior cotação) / Com o QuotaFlow (menor cotação) / Após Negociação (fechado). Exibe **Saving do Sistema** (range de mercado) e **Saving do Comprador** (pode ser **negativo** e fica vermelho, comunicando custo de decisão)
+Correção de vazamento de dados no portal do fornecedor
 
-**Fluxos auxiliares da RC (ver seção 5):**
-- Remover/Restaurar item da RC com soft cancel + evento na timeline
-- Mover item para nova RC com **herança de cotação** (fornecedores, respostas, renegociações) e rastreabilidade bidirecional
-- Cancelar cotação (soft cancel + desbloqueio automático da RC)
-- Trava de edição em RC cotada (banner + botões desabilitados + bloqueio no backend)
+Recebimento com e sem OV, NC, correção de bug de concatenação de saldo
 
-**Fixes pontuais:**
-- `excluirCotacao`: wrapper `DB.delete` só aceita ID único — corrigido (antes gerava `[object Object]`)
-- Email de solicitação de cotação lia `cotacao.numero_cotacao` (inexistente) → `cotacao.numero` (corrigido "Solicitação de Cotação: undefined")
-- Email rodapé lia `cotacao.usuario_id` (inexistente) → `cotacao.criado_por`
-- `enviarCotacao` só gravava `status: 'cotando'` — agora também grava `bloqueado_em` (necessário para a trava)
-- Filtro "Nova Cotação" comparava com `'cancelado'` (typo) → `'cancelada'` (backend grava feminino)
-- `statusLabels` ganhou `'cancelada'`; `handleAbrirCotacao` trata cancelada com mensagem clara
+Catálogo do fornecedor (marketplace): CRUD + import CSV
 
-### 🟡 Em progresso / próximo passo real
-- **#5 Custo de recebimento por NF** — campo `custo_recebimento_nf` em `tenants`, tela de configuração, 4ª seção no Panorama executivo. Diferencial competitivo central (nenhum ERP/SaaS faz isso na hora da decisão; SAP/Oracle tratam como rateio contábil pós-fato)
-- Tela única de consulta de estoque cobrindo consumíveis e peças/componentes juntos
-- Validar `TelaGerarRequisicaoMaterial.jsx` na prática com um comprador de verdade usando dados reais
+Busca unificada de item na OS (catálogo + marketplace, dual-source, sem curto-circuito)
 
-### ❌ Não iniciado
-- Tela consolidada de "grande marketplace" pro comprador (reaproveita `/busca-fornecedores/por-texto`, não deve tocar o comportamento de top-3 da tela de cotação existente) — potencial de monetização (banner, posicionamento pago) mencionado pelo usuário, visão futura
-- Email/WhatsApp automático ao enviar cotação
-- Dashboard, relatórios
-- Reativação da aba "Manual" de `TelaCotacoesNovaComAbas.jsx` (emitir RC sem passar por concorrência) — lógica já existe, só falta botão de acesso
+Recebimento reescrito com tracker visual de 3 etapas (Fiscal → Contagem → Entrada), com entrada_por/entrada_em gravados
 
----
+itens_consumo criado on-the-fly na primeira entrada
 
-## ⚠️ Armadilhas Conhecidas do Backend
+Fuso horário corrigido no histórico de contagens (contado_em virou timestamptz)
 
-Registradas para não repetir a investigação. Ver `schema-real-e-tabelas-orfas.md` (doc do projeto) para o detalhamento completo de cada bug encontrado/corrigido.
+Cotações — Fase 1B: edição item a item, CIF/FOB por item, card "Vencedores por Item", Panorama executivo em 3 atos com Saving do Sistema / do Comprador
 
-- **`timestamp with time zone` (timestamptz) é o único tipo aceitável pra coluna de data/hora. `timestamp without time zone` é bug latente.** O driver `pg` devolve `timestamp without time zone` como string **sem `Z` no fim** (`"2026-10-01 04:57:36.831"`), e o Node interpreta isso como TZ local do servidor. Se o servidor estiver em `America/Sao_Paulo` (Railway/local), o valor vira BRT-naive; se estiver em UTC, vira UTC-naive — e a formatação (`toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })`) **converte de um fuso que não é o real**. Sintoma típico: hora +3h (ou -3h) em **uma tela só**, o resto do sistema funcionando. Corrigir com `ALTER COLUMN x TYPE timestamp with time zone USING x AT TIME ZONE '<fuso_real_do_dado>'`. Coluna nova: **sempre** `timestamptz`.
-- **Trigger `AFTER INSERT` que referencia coluna renomeada ABORTA o INSERT.** Trigger roda dentro da transação do INSERT — se a função plpgsql quebrar (`column "X" does not exist`), **o INSERT inteiro é revertido** e o erro aparece como se fosse do INSERT, não do trigger. Sintoma: "INSERT tabela_a failed: column X does not exist" mesmo quando o INSERT não menciona X — a coluna X está na **função do trigger**. Antes de renomear coluna: `grep` em `pg_get_functiondef` de todas as funções (`SELECT proname, pg_get_functiondef(oid) FROM pg_proc WHERE prosrc LIKE '%nome_antigo%'`) + `information_schema.views` + `pg_trigger`. **Não fazer isso é o que garante dor de cabeça pós-migration.**
-- **SQL Editor do Supabase NÃO respeita `BEGIN`/`COMMIT` como transação única pra DDL.** Sintoma: `ALTER TABLE ... RENAME COLUMN` commita sozinho, e um erro no `UPDATE` seguinte deixa a migration pela metade (coluna já renomeada, dados não migrados). Rodar comando por comando, **um `ALTER`/`UPDATE`/`ADD CONSTRAINT` por vez**, com verificação (`SELECT` de checagem) entre cada. Idempotência onde possível (`IF NOT EXISTS`, `DO $$ ... $$`).
-- **`DB.select`/`DB.selectOne` (backend/db.js) não sabem expressar `IS NULL`**: qualquer `null` no `where` é descartado silenciosamente em vez de virar filtro. Precisa filtrar em JS depois de buscar. Já corrigido em `reservas.js`, `movimentacoes.js`.
-  - **Sintoma perigoso:** `DB.selectOne('itens_consumo', { catalogo_item_id: item.item_catalogo_id })` com `item_catalogo_id` **null** → o wrapper ignora o filtro e devolve o PRIMEIRO item do tenant. Resultado: nome/SKU do item da OC são sobrescritos com dado de outro produto. **Corrigido em 5 lugares de `movimentacoes.js` (M4.3-ah)** com guard `item.item_catalogo_id ? ... : null`. **Sempre** validar antes de passar pra `DB.selectOne`.
-- **`DB.select` NÃO ordena.** A ordem devolvida é **arbitrária** e pode **mudar** depois de qualquer `UPDATE` (o Postgres reposiciona a linha no heap físico — o `id` continua o mesmo, mas o `SELECT *` sem `ORDER BY` pode devolver em ordem diferente). Sintoma: *"o item N da OC mudou de posição depois que dei entrada"*. **Toda lista que o usuário vê precisa de `.sort()` em JS** após o `DB.select` (o wrapper não suporta `order by`). Exceção: cálculos agregados (`.every`/`.some`/`.reduce`), onde a ordem é irrelevante. **Corrigido em `ordensVenda.js:43`, `ordensVenda.js:114`, `movimentacoes.js:414` e `fornecedor.js:818`** — ainda há ~18 rotas a varrer sob demanda quando forem tocadas.
-  - **Sintoma perigoso:** `DB.selectOne('itens_consumo', { catalogo_item_id: item.item_catalogo_id })` com `item_catalogo_id` **null** → o wrapper ignora o filtro e devolve o PRIMEIRO item do tenant. Resultado: nome/SKU do item da OC são sobrescritos com dado de outro produto. **Corrigido em 5 lugares de `movimentacoes.js` (M4.3-ah)** com guard `item.item_catalogo_id ? ... : null`. **Sempre** validar antes de passar pra `DB.selectOne`.
-   - **`DB.select` NÃO ordena.** A ordem devolvida é **arbitrária** e pode **mudar** depois de qualquer `UPDATE` (o Postgres reposiciona a linha no heap físico — o `id` continua o mesmo, mas o `SELECT *` sem `ORDER BY` pode devolver em ordem diferente). Sintoma: *"o item N da OC mudou de posição depois que dei entrada"*. **Toda lista que o usuário vê precisa de `.sort()` em JS** após o `DB.select` (o wrapper não suporta `order by`). Exceção: cálculos agregados (`.every`/`.some`/`.reduce`), onde a ordem é irrelevante. **Corrigido em `ordensVenda.js:43`, `ordensVenda.js:114`, `movimentacoes.js:414` e `fornecedor.js:818`** — ainda há ~18 rotas a varrer sob demanda quando forem tocadas.
-  - **Sintoma perigoso:** `DB.selectOne('itens_consumo', { catalogo_item_id: item.item_catalogo_id })` com `item_catalogo_id` **null** → o wrapper ignora o filtro null e a query roda como `SELECT * FROM itens_consumo WHERE tenant_id = X LIMIT 1`. **Retorna o primeiro item do tenant**, não zero. Resultado: nome/SKU do item são sobrescritos com dado errado de outro produto. **Ocorreu em 5 lugares de `movimentacoes.js` (linhas ~307, ~453, ~808, ~1398, ~1833)** — corrigido com guard `item.item_catalogo_id ? ... : null`. **Sempre** validar antes de passar pra `DB.selectOne`.
-- **`DB.select`/`DB.selectOne` não sabem expressar array como filtro (`IN (...)`)**: mesmo padrão de contorno — buscar tudo, filtrar com `.includes()` em JS.
-- **`DB.raw()` só reconhece um punhado de padrões SQL hardcoded**: qualquer JOIN/WHERE fora do reconhecido cai num fallback perigoso (`SELECT * FROM <tabela>` ignorando WHERE/JOIN/ORDER BY) — já causou vazamento real de dados entre tenants/fornecedores em várias rotas, todas corrigidas reescrevendo sem `raw()`. Não auditado por completo — vale grep geral por `DB.raw(` se algo se comportar de forma "sempre retorna tudo".
-- **`bigint`/`numeric` do Postgres voltam como STRING via node-pg**: comparação ingênua (`===`) ou soma sem `parseFloat()`/`Number()` quebra silenciosamente (já causou concatenação de string em vez de soma em `/recebimento`, e falso-negativo de comparação de id em `PUT /chamados/:id`).
-- **`apiService.get(endpoint, { params: {...} })` é o padrão ERRADO neste projeto** — ver seção Arquitetura. Produz `?params=[object Object]`.
-- **Postgres não permite mudar o `RETURNS TABLE` de uma função existente via `CREATE OR REPLACE`** — precisa `DROP FUNCTION` (com assinatura exata) + `CREATE`. Confirmado ao adicionar `pn_raw` ao retorno de `buscar_fornecedores_para_item` (migration 011).
-- **`pg_trgm`: `similarity(a,b) > limiar` no WHERE não é indexável** — força Seq Scan mesmo com índice GIN existente. Usar o operador `%` com `PERFORM set_limit(limiar)` antes, que É indexável (Bitmap Index Scan).
-- **`pg_trgm`: comparar contra nome+descrição concatenados dilui a similaridade de termos curtos** — uma descrição técnica longa faz um termo de busca curto (ex: "farol") cair abaixo do limiar mesmo quando o nome comercial sozinho bateria bem. Resolvido com busca em estágios: nome sozinho primeiro, descrição como fallback.
-- **Funções SQL `LANGUAGE sql` podem ser "inlined" pelo planner** (dentro de índice funcional ou corpo de outra função) — nomes não qualificados dentro do corpo são re-resolvidos contra o `search_path` da sessão CHAMADORA, não da criação, o que pode quebrar em contextos específicos (`function unaccent(text) does not exist... during inlining`) mesmo funcionando em chamada direta. Fix: `ALTER FUNCTION ... SET search_path = public;` (também desativa a inlineação como efeito colateral, prevenindo recorrência).
-- **`DB.delete(table, id, tenantId)` só aceita ID único — nunca WHERE composto.** Passar `{ cotacao_id, tenant_id }` como segundo argumento vira `DELETE WHERE id = [object Object]` e o Postgres rejeita. Pra deletar múltiplas linhas, iterar buscando os IDs antes (`for (const x of lista) await DB.delete(table, x.id, tenantId)`). Bug real em `excluirCotacao`, corrigido em 09/2026.
-- **`DB.insert` e `DB.update` não fazem cast de tipo.** Se `fornecedores_ids` é `integer[]` no banco, passar `JSON.stringify([1,2])` (ou um array de strings) quebra silenciosamente ou retorna erro de tipo. Sempre alinhar o tipo do payload com o tipo da coluna.
-- **Constraint CHECK em coluna enum-like precisa de migration pra aceitar valor novo.** `cotacao_fornecedor_itens.origem_preenchimento` aceitava só `'link'` e `'manual'` — tentar inserir `'herdada'` estourava `violates check constraint`. Padrão: `DROP CONSTRAINT` + `ADD CONSTRAINT ... CHECK (campo = ANY (ARRAY[...]))` incluindo o novo valor.
+Fluxos auxiliares da RC: remover/restaurar item, mover item pra nova RC (com herança de cotação), cancelar cotação, trava de edição
 
----
+Fixes pontuais: excluirCotacao, emails com undefined, bloqueado_em em enviarCotacao, filtro 'cancelado' → 'cancelada'
+
+✅ Em produção (M4.4 – M4.7 — 13/10/2026)
+M4.4: emails transacionais de NC (5 eventos, template unificado), bloqueio de OS por NC ativa, modal overlay de bloqueio, chip "Devolvida ao fornecedor", banner "NC ativa" na OS com clique
+
+M4.5: abertura manual de NC (ModalNovaNC), item fora do catálogo com curadoria da Qualidade, vincular-item e editar-item-avulso, anexos no Supabase Storage com signed URL, PDF de NC (interno + fornecedor), contato empresa+comprador no PDF e no portal do fornecedor
+
+M4.6: reset de senha (forgot password com token por email, TTL 1h), multi-perfil (backend + frontend + JWT + migração + varredura single→array), middleware global PATCH → PUT, telefone internacional (react-phone-number-input)
+
+M4.7a: modal "Meu perfil" com abas dados/senha, PUT /api/usuarios/me e POST /api/usuarios/me/trocar-senha
+
+🟡 Em progresso / próximo passo real
+#5 Custo de recebimento por NF — diferencial competitivo central
+
+Tela única de consulta de estoque cobrindo consumíveis e peças/componentes juntos
+
+Validar TelaGerarRequisicaoMaterial.jsx na prática com um comprador de verdade usando dados reais
+
+❌ Não iniciado
+M4.7b — Dashboard "Analista Sênior" (tela do zero, widgets por perfil, avatar clicável no canto superior direito, upload de foto). TODO marcado no App.jsx.
+
+Tela consolidada de "grande marketplace" pro comprador
+
+Email/WhatsApp automático ao enviar cotação
+
+Dashboard, relatórios
+
+Reativação da aba "Manual" de TelaCotacoesNovaComAbas.jsx
+
+⚠️ Armadilhas Conhecidas do Backend
+(Mantidas integralmente da versão anterior + as 4 novas abaixo.)
+
+⚠️ DB.delete só aceita ID único — não compõe filtro
+DB.delete(table, id, tenantId) faz .eq("id", id). Não funciona em tabelas N:N (usuario_perfis, cotacao_fornecedores) que não têm coluna id. Bug real: DELETE FROM usuario_perfis WHERE id = '<uuid>' retornava 0 linhas afetadas (nenhuma tinha id), e os perfis antigos ficavam. Corrigido com DB.deleteWhere(table, where, tenantId) (M4.6) — usa DELETE WHERE de verdade. Sempre usar deleteWhere em tabelas N:N.
+
+⚠️ DB.raw cai no fallback genérico
+DB.raw() só reconhece um punhado de padrões SQL hardcoded. Qualquer WHERE/ORDER BY fora do reconhecido cai no fallback SELECT * FROM <tabela> ignorando o resto da query. Bug real: GET /usuarios filtrava por ORDER BY criado_em DESC → caía no fallback → devolvia usuários sem a coluna telefone (adicionada depois). Corrigido trocando DB.raw por DB.select + .sort() em JS (M4.5). Regra: se precisa de WHERE além de tenant_id, use DB.select + filtro em JS.
+
+⚠️ DB.select / DB.selectOne ignoram null no filtro
+Qualquer null no where é descartado silenciosamente. Sintoma perigoso: DB.selectOne('itens_consumo', { catalogo_item_id: item.item_catalogo_id }) com item_catalogo_id null → vira SELECT * FROM itens_consumo WHERE tenant_id = X LIMIT 1 → devolve o primeiro item do tenant. Sempre validar antes de passar pra DB.selectOne.
+
+⚠️ DB.select NÃO ordena
+Ordem devolvida é arbitrária e pode mudar depois de qualquer UPDATE (heap físico do Postgres). Toda lista que o usuário vê precisa de .sort() em JS.
+
+⚠️ Ordem de rotas /me antes de /:id (M4.7a)
+Rotas literais (/me, /me/trocar-senha) precisam vir antes de router.put("/:id"). Senão o Express casa /me com /:id e o handler tenta SELECT WHERE id = 'me' → erro UUID.
+
+⚠️ Regra multi-tenant pra tabelas N:N sem tenant_id
+Tabelas N:N (usuario_perfis, cotacao_fornecedores) não têm tenant_id. Isolamento é por transitividade via FK do usuário/entidade principal. Nunca consultar essas tabelas sem antes validar que a entidade principal pertence ao req.tenantId. Documentado no topo do db.js.
+
+⚠️ Regra dos Hooks do React
+Hooks (useState, useEffect, useX) nunca podem ser chamados depois de um return condicional. O número e a ordem de chamadas têm que ser idênticos em todo render. Bug real em App.jsx: rotas de auth por hash estavam antes dos hooks → React quebrava ao navegar. Corrigido movendo as rotas pra depois de todos os hooks.
+
+(Demais armadilhas mantidas da versão anterior: timestamp without time zone é bug latente; trigger AFTER INSERT que referencia coluna renomeada aborta o INSERT; SQL Editor do Supabase não respeita BEGIN/COMMIT pra DDL; DB.raw() cai em fallback; bigint/numeric voltam como string; apiService.get(endpoint, { params }) é padrão errado; pg_trgm indexabilidade; LANGUAGE sql inlining; DB.insert/DB.update não fazem cast; constraint CHECK em coluna enum-like precisa de migration pra aceitar valor novo.)
 
 ## 🗺️ Roadmap / Decisões em Aberto
 
-### Curto prazo, sem mudança de schema
-- Nenhuma pendência técnica conhecida na busca unificada de item — considerada fechada em 10/09/2026.
+> **Sem datas.** A ordem abaixo é de prioridade, não de calendário. Cada
+> item é atacado conforme tempo e necessidade de cliente.
 
-### Médio prazo — amarração de busca a Equipamento
-Problema identificado: um nome de item pode ser ambíguo entre veículos/modelos diferentes (ex: "lâmpada farol direito" pode servir a vários veículos, com PNs diferentes por fornecedor). `equipamentos.fabricante`/`modelo` e `catalogo_itens.marca`/`modelo`/`ano_fabricacao_*` já existem no schema — não precisam de migration — mas hoje estão majoritariamente vazios (nunca foram expostos em tela de cadastro nem usados em busca). Plano acordado: NÃO forçar preenchimento agora (contradiria a decisão de baixa fricção pros 80% dos clientes). Quando fizer sentido (catálogo com dado real preenchido), usar o Equipamento já selecionado no topo da OS como **reforço de ranking** (boost, não filtro rígido) contra `catalogo_itens.marca`/`modelo` — só se aplica ao catálogo local, o marketplace não tem esse campo. A checagem final de compatibilidade continua humana (comprador revisando a cotação, fornecedor validando ao responder).
+### Prioridade alta — próximo passo real
 
-### Curto-médio prazo — fluxos de cotação (fila de trabalho atual)
-- **#5 Custo de recebimento por NF** (em desenvolvimento) — campo configurável em `tenants`, mostrado no Panorama executivo quando > 0. Sistema sugere consolidação quando 1 fornecedor majoritário cotou todos os itens dos outros (MVP). Saving negativo pós-recebimento também nos relatórios gerenciais — é mérito do comprador tomar decisão que beneficia o negócio, não só o departamento.
-- **#4c Validade das propostas** — portal ganha campo "validade em dias"; monitor mostra badge 🟢🟡🔴; panorama avisa se venceu. Justificativa: valores vencidos invalidam o cálculo de custo de recebimento (se a cotação tá vencida, o custo que ela produz é castelo de areia).
-- **Aging de RC** — RC aberta há 30/60/90 dias gera aviso de cancelamento definitivo (o comprador decide se cancela). Sentido falta no SAP, segundo o usuário.
-- **Requisitante abre nova RC referenciando RC bloqueada** — reusa muito do fluxo do `/mover` que já existe.
-- **Central de notificações** — eventos já são registrados em `chamado_eventos`; falta o dispatcher + UI. Depois de ter eventos suficientes pra valer a pena.
-- **Custo de recebimento v2** — otimização "set cover" (qual fornecedor absorve mais itens com o menor custo total). MVP só testa fornecedor majoritário.
+- **M4.7b — Dashboard "Analista Sênior"** (TODO no `App.jsx`). Cada perfil vê
+  um resumo do próprio dia: comprador (cotações aguardando resposta, OCs
+  pendentes, aprovações), qualidade (NCs abertas, respostas de fornecedor,
+  curadoria de item), operação (OS abertas, recebimentos, apontamentos),
+  gestor (aprovações + KPIs consolidados), financeiro (contas do dia).
+  Avatar clicável no canto superior direito → abre `ModalMeuPerfil`.
+- **Relatórios PDF gerenciais estilo ISO.** Reaproveita `gerarPdfNC.js`.
+  Entrega: PDF de OS, PDF de RC aprovada, PDF de OV, e um **Relatório
+  Mensal/Trimestral gerencial** com status de OS / cotações / recebimento /
+  NC / manutenções em andamento. **Snapshot imutável** ao gerar (congela o
+  JSON analisado + PDF — se o cliente editar OS depois, o relatório do mês
+  anterior continua mostrando o que era verdade). Campo "Aprovado por
+  [gestor] em [data]" com hash do conteúdo. Agendamento por cron (dia 1º,
+  8h, email pro gestor). Auditoria ISO ama.
+- **Calendário de Manutenção + MRP.** Visão mês/semana com cards por OS
+  (dados já existem em `chamados` e `chamado_itens` — zero migration).
+  Botão "Rodar MRP" projeta consumo + custo médio dos últimos 6 meses,
+  gera previsão orçamentária. Diferencial de venda forte: "você tem
+  R$ 47k de manutenção prevista pro Q1".
+- **Export Excel em massa.** OS, RC, OV, NC, itens de estoque. Pequena
+  transportadora vive em Excel — tira 30% dos tickets de suporte.
+- **M4.8a — IA Embarcada (nível gestor).** Ver seção IA abaixo.
 
-### Longo prazo — normalização de catálogo entre fornecedores
-(sem alteração — mantém o texto atual)
+### Prioridade média — features de valor real
+
+- **Validade das propostas.** Portal ganha campo "validade em dias"; monitor
+  mostra badge 🟢🟡🔴; panorama avisa se venceu. Sem isso, valores vencidos
+  invalidam o cálculo de custo de recebimento.
+- **Aging de RC.** RC aberta há 30/60/90 dias gera aviso de cancelamento
+  definitivo (o comprador decide se cancela). Sentido falta no SAP, segundo
+  o usuário.
+- **Webhooks / Zapier / Make.** Endpoints `nc.criada`, `ov.emitida`,
+  `rc.aprovada`, `os.concluida`. Cliente conecta sozinho no Zapier/Make —
+  custo zero pra você, valor percebido alto ("QuotaFlow integra com tudo").
+- **#5 Custo de recebimento por NF.** Campo `custo_recebimento_nf` em
+  `tenants`, tela de configuração, 4ª seção no Panorama executivo.
+- **M4.8b — IA Embarcada (níveis operacionais).** Só quando houver
+  clientes pedindo e métrica de uso dos perfis.
+- **Upload de avatar do usuário.** Depende de coluna `usuarios.avatar_url` +
+  Storage. Cosmético, mas melhora o onboarding.
+
+### Prioridade baixa — sob demanda de cliente pagante
+
+- **Inspeção de equipamento.** Checklist de pré-viagem (motorista) e check
+  periódico (mecânico) + abertura de OS direto do item reprovado. Cuidado
+  com UX: precisa funcionar em celular, com internet ruim, com 1 mão.
+- **Inspeção de locação.** Reaproveita 90% da inspeção de equipamento — só
+  muda o tipo (`pre_viagem | retorno_locacao | periodica`). Só faz sentido
+  se ≥ 3 clientes pagantes pedirem.
+- **Tela única de consulta de estoque** cobrindo consumíveis + peças juntos.
+- **Marketplace monetizado.** Banner + destaque pago ao fornecedor na
+  recomendação de cotação. Já tem infra; falta modelo de cobrança.
+- **Requisitante abre nova RC referenciando RC bloqueada.** Reusa o fluxo
+  do `/mover` que já existe.
+
+### Visão de produto (sem prazo — constrói quando fizer sentido)
+
+**Posicionamento final:** all-in-one-solution para o pequeno transportador
+brasileiro — do orçamento comercial até NPS e assistência técnica.
+
+**Onde NÃO entramos (por escolha deliberada):**
+- **Fiscal** (NFe/SPed/NFS-e) — barreira regulatória alta, Omie/Conta Azul
+  dominam. Integração via API em vez de construção.
+- **Financeiro completo** (contas a pagar/receber, conciliação) — mesma
+  lógica.
+- **RH / Ponto** — fora do nosso problema.
+
+**Onde vamos estender (reaproveitando o que já existe):**
+- **Propostas comerciais** — orçamento → OS, reaproveita `chamados` +
+  `chamado_itens` com um novo `tipo_documento`.
+- **Assistência técnica de cliente final** — mesma OS, muda o destinatário
+  (cliente final em vez de equipamento interno).
+- **NPS / CSAT** — 1 formulário, 1 email automático, 1 dashboard. Gancho
+  de venda forte ("seu cliente final aprovou o serviço com nota 9,2/10").
+- **Benchmarking setorial anônimo** — quando houver 20+ tenants ativos,
+  comparar contra a média do setor em vez de contra o próprio histórico.
+
+**Decisão de verticalização vs. plataforma** fica pra quando houver 200-500
+clientes pagantes. Não antecipar.
+
+### M4.8 — IA Embarcada (arquitetura detalhada)
+
+**Objetivo:** agente que analisa dados **agregados** do tenant e entrega ao
+gestor (e, em versão resumida, aos demais perfis) uma leitura "analista
+sênior": onde investir, o que está indo bem, o que pode melhorar, e alertas
+de comportamento atípico (compliance operacional).
+
+**Arquitetura de 2 camadas (custo controlado):**
+1. **Camada SQL (grátis):** queries agregadas no Postgres geram um "resumo
+   estruturado" — KPIs por período, tendências, desvios de média, top
+   fornecedores, custo por categoria, NCs por origem, aging de RC/OV,
+   reincidência de item, economia acumulada.
+2. **Camada LLM (paga por análise):** só o resumo agregado (2-5k tokens)
+   vai pro modelo. Prompt com persona "analista sênior de compras" +
+   framework SWOT. **Nunca envia dado bruto.**
+
+**Exemplo real de cruzamento que só essa arquitetura produz:**
+> "50% das cotações do trimestre terminaram com fornecedor único, apesar de
+> a média de participação ser 2,4 fornecedores por cotação. Dessas, 80%
+> tiveram renegociação só com esse fornecedor. **Padrão atípico** —
+> vale revisar o processo de convite ou checar dependência de fornecedor."
+
+Esse cruzamento existe em SQL (2 queries + 1 merge). O LLM só interpreta o
+resumo. **Custo por análise: < R$ 1.**
+
+**Gatilhos de disparo (não é "a IA analisa o banco todo"):**
+- Fim de mês / trimestre / ano → gera relatório SWOT + recomendações.
+- Sob demanda (gestor clica "Analisar período").
+- Alertas de compliance rodam **em background** (diário/semanal) e geram
+  fila de revisão.
+
+**Escopo por perfil (gated):**
+- **Gestor / Admin:** SWOT completa (operacional + tática + estratégica),
+  recomendações de investimento, análise de fornecedor, alertas de
+  compliance comportamental.
+- **Comprador / Qualidade / Operação:** 1 análise/semana em cache — resumo
+  do próprio setor.
+- **Limite por plano:** Essencial = 2 análises/mês; Operação = 8/mês;
+  Completo = 30/mês; Enterprise = ilimitado com fair use.
+
+**Compliance / anomaly detection (fase 2):**
+- Padrões suspeitos: OS abertas fora do horário, RC emergencial recorrente
+  do mesmo requisitante, fornecedor único em categoria competitiva,
+  aprovação em cadeia por mesma pessoa, NC "resolvida" rápido demais,
+  consumo de estoque sem OS vinculada.
+- Saída sempre em linguagem neutra: **"padrão atípico detectado"** — nunca
+  "funcionário X fez Y". Decisão final é sempre humana.
+- Log de auditoria de quem consultou cada alerta.
+
+**Monetização recomendada:**
+- Add-on IA: +R$ 149/mês (5 análises incluídas)
+- Pacote extra: R$ 39 por 10 análises adicionais
+- Enterprise: ilimitado com fair use
+
+**Pré-requisitos técnicos:**
+- Tabela `ia_analises` (`tenant_id | tipo | periodo | resumo_sql (jsonb) |
+  resposta_llm (text) | custo_tokens | criado_em | criado_por`) — cache de
+  análise, evita reprocessar.
+- Endpoint `POST /api/ia/analisar` com rate limit por tenant/plano.
+- Chave do provedor (OpenAI/Anthropic/Groq) em env var, com fallback por
+  tenant (Enterprise pode usar chave própria).
+- Painel admin pra ver custo acumulado por tenant (se virar lucro negativo,
+  corta antes).
+- **A IA vende o PDF:** "Exportar análise como PDF" reaproveita
+  `gerarPdfNC.js`. Custo zero, valor percebido alto.
+
+**M4.8a (gestor) antes de M4.8b (demais perfis).** Motivo: cliente precisa
+de 6+ meses de dado acumulado pra IA ter o que analisar. M4.8a faz sentido
+depois que a base tiver histórico. M4.8b só quando houver pedido real.
+
+### Outras decisões em aberto
+
+- **Amarração de busca a Equipamento** (ranking, não filtro rígido). Só
+  faz sentido quando `catalogo_itens.marca/modelo/ano_fabricacao_*` estiver
+  povoado — hoje está majoritariamente vazio. Equipamento selecionado no
+  topo da OS vira **boost de ranking**, nunca filtro que esconde opção.
+- **Normalização de catálogo entre fornecedores** (`pn_raw` é por fornecedor;
+  não há PN canônico cross-fornecedor). Decisão ainda em aberto — resolve
+  via `normalizar_pn` + curadoria humana, ou via um dicionário próprio.
+- **Backend sem auto-restart em dev.** Considerar `nodemon` (dev) e `pm2`
+  (prod). Hoje, se o processo cai, o app para.
+- **Higiene:** `POST /signup` não cria linha em `usuario_perfis` (fallback
+  cobre, mas fica feio se um dia listar).
 
 ### Deferidos (intencional, não é pendência ativa)
+
 - Estilo visual do seletor "Programação da OS"
-- Toggle de "verificar estoque no ato da programação" por tenant (mesmo toggle decidirá RM automática vs. manual, e tratamento de peça sem vínculo de estoque)
-- Limpeza de `ordens_servico`/`ordem_servico_itens` (órfãs)
-- Decidir se apontamento de execução vira histórico versionado (remover `UNIQUE(chamado_item_id)`)
-- Remoção de `/api/cotacao/:token` inline em `server.js` (provável código morto — rota ativa real é `/api/portal/cotacao/...`)
-- Drag-and-drop pra reordenar itens da OS (hoje é ▲▼) — avaliar depois que o volume real de itens por OS mostrar se é necessário
+- Toggle de "verificar estoque no ato da programação" por tenant
+- Limpeza de `ordens_servico` / `ordem_servico_itens` (órfãs)
+- Decidir se apontamento de execução vira histórico versionado
+- Remoção de `/api/cotacao/:token` inline em `server.js` (provável código morto)
+- Drag-and-drop pra reordenar itens da OS
+- **Merge de email duplicado** entre `usuarios` e `fornecedor_usuarios` (caso
+  apareça de novo — solução conhecida: renomear/desativar o lixo)
+- **PATCH diferenciado de PUT** (hoje o middleware normaliza tudo — remover
+  só se algum dia precisar de update parcial real)
+- **Decidir modelo de monetização da IA:** add-on vs. incluso vs. híbrido
+  (hoje recomendação: híbrido — 5 grátis/mês + pacote extra)
+
+📞 Contatos do Projeto
+Desenvolvedor: Marcony
+Plataforma: QuotaFlow
+Última atualização deste documento: 13/10/2026
+
+text
 
 ---
 
-## 📞 Contatos do Projeto
+## Resumo do que mudou
 
-**Desenvolvedor:** Marcony
-**Plataforma:** QuotaFlow
-**Última atualização deste documento:** 10/09/2026
+**Novo:**
+- Seções 7 (NC) e 8 (Multi-perfil / Reset / Meu perfil) completas
+- Stack atualizada (Storage, react-phone-number-input)
+- 4 armadilhas novas documentadas (`DB.deleteWhere`, `DB.raw` fallback, `/me` antes de `/:id`, ordem dos Hooks)
+- Roadmap reorganizado (M4.7b, nodemon/pm2, higiene)
+
+**Mantido:**
+- Visão geral, segmentação de clientes, arquitetura, `apiService` convenção
+- Fluxo OS → RM → RC → OV inteiro
+- Marketplace + busca unificada
+- Todas as armadilhas antigas
+- Todas as decisões em aberto (roadmap)
+
+**Não inventei nada** — só consolidei o que a gente fez. Se algum trecho estiver diferente do que você lembra, me avisa que ajusto.
+
+## Depois
+
+1. **Substitui o README.md** pelo conteúdo acima
+2. **Commit específico do README**:
+   ```bash
+   git add README.md
+   git commit -m "docs: atualiza README (M4.4 – M4.7a)"
+   git push origin main
