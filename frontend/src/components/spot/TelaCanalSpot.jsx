@@ -82,14 +82,78 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
                 <span style={{ fontSize: 12, color: C.accent }}>
                   💬 {d.msg_nao_lidas || 0} não lidas
                 </span>
-                <span style={{ fontSize: 12, color: C.muted }}>
-                  {d.total_interesses || 0} interesses
+                <span style={{ fontSize: 12, color: d.total_interesses > 0 ? C.success : C.muted, fontWeight: d.total_interesses > 0 ? 600 : 400 }}>
+                  {d.total_interesses > 0 ? `${d.total_interesses} interesse(s)` : 'Sem interesses'}
                 </span>
+                {d.total_visualizacoes > 0 ? (
+                  <span
+                    style={{ fontSize: 12, color: C.accent, fontWeight: 600 }}
+                    title={d.visualizada_em ? `1ª visualização em ${fmtD(d.visualizada_em)}` : ''}
+                  >
+                    👁 {d.total_visualizacoes} {d.total_visualizacoes === 1 ? 'visualização' : 'visualizações'}
+                  </span>
+                ) : (
+                  <span style={{ fontSize: 12, color: C.muted }}>
+                    👁 Sem visualizações
+                  </span>
+                )}
               </div>
             </div>
           </div>
         ))}
       </div>
+
+      {/* MODAL - Detalhe da Demanda */}
+      {modal && modal !== 'nova' && (() => {
+        const d = demandas.find(x => x.id === modal);
+        if (!d) return null;
+        return (
+          <div style={{ position: 'fixed', inset: 0, background: '#00000090', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 20 }}>
+            <div style={{ ...s.card, width: 560, maxWidth: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', padding: '18px 22px', borderBottom: `1px solid ${C.border}` }}>
+                <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>{d.componente}</div>
+                <button onClick={() => setModal(null)} style={{ background: 'transparent', border: 'none', color: C.muted, fontSize: 20, cursor: 'pointer' }}>×</button>
+              </div>
+              <div style={{ padding: '18px 22px', overflowY: 'auto' }}>
+                <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>{d.descricao_equipamento}</div>
+                {d.marca_modelo && <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>{d.marca_modelo}</div>}
+                {d.part_number && <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>PN: {d.part_number}</div>}
+                <div style={{ fontSize: 12, color: C.muted, marginBottom: 16 }}>
+                  {d.quantidade} unidade(s) · urgência {d.urgencia}
+                </div>
+                {d.comentarios && (
+                  <div style={{ fontSize: 12, color: C.text, background: C.bg, padding: 10, borderRadius: 6, marginBottom: 16, border: `1px solid ${C.border}` }}>
+                    {d.comentarios}
+                  </div>
+                )}
+
+                <div style={{ fontSize: 11, color: C.muted, letterSpacing: '0.08em', marginBottom: 10 }}>
+                  FORNECEDORES INTERESSADOS ({d.interesses?.length || 0})
+                </div>
+
+                {(!d.interesses || d.interesses.length === 0) ? (
+                  <div style={{ fontSize: 12, color: C.muted, textAlign: 'center', padding: 20 }}>
+                    Nenhum fornecedor manifestou interesse ainda.
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                    {d.interesses.map(i => (
+                      <div key={i.id} style={{ background: C.bg, border: `1px solid ${C.border}`, borderRadius: 6, padding: '10px 14px' }}>
+                        <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>🏢 {i.fornecedor_nome}</div>
+                        {i.mensagem && <div style={{ fontSize: 11, color: C.muted, marginTop: 4, fontStyle: 'italic' }}>"{i.mensagem}"</div>}
+                        <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>{fmtD(i.criado_em)}</div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+              <div style={{ padding: '14px 22px', borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'flex-end' }}>
+                <button onClick={() => setModal(null)} style={{ ...s.btn(false), padding: '8px 18px' }}>Fechar</button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* MODAL - Nova Demanda */}
       {modal === 'nova' && (

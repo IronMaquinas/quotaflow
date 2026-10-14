@@ -1,12 +1,13 @@
 // components/portal/TelaFornecedor.jsx
 import { useState, useEffect } from 'react';
-import TelaPortalFornecedor from './TelaPortalFornecedor';
+//import TelaPortalFornecedor from './TelaPortalFornecedor';
 import TelaCatalogoFornecedor from './TelaCatalogoFornecedor';
 import TelaOrdensVenda from '../ordensvenda/TelaOrdensVenda';
 import TelaMeusPedidosFornecedor from '../fornecedores/TelaMeusPedidosFornecedor';
 import TelaNaoConformidadesFornecedor from '../fornecedores/TelaNaoConformidadesFornecedor';
 import TelaGestaoCotacoesFornecedor from '../fornecedores/TelaGestaoCotacoesFornecedor';
 import TelaMeusDadosFornecedor from '../fornecedores/TelaMeusDadosFornecedor';
+import TelaFornecedorSpot from './TelaFornecedorSpot';
 
 const C = {
   bg: "#0a0e14",
@@ -149,7 +150,7 @@ export default function TelaFornecedor() {
         {tela === 'cotacoes' && <TelaGestaoCotacoesFornecedor C={C} s={s} usuario={usuario} />}
         {tela === 'pedidos' && <TelaMeusPedidosFornecedor C={C} s={s} usuario={usuario} />}
         {tela === 'nao-conformidades' && <TelaNaoConformidadesFornecedor C={C} s={s} usuario={usuario} />}
-        {tela === 'oportunidades' && <TelaPortalFornecedor />}
+        {tela === 'oportunidades' && <TelaFornecedorSpot C={C} s={s} usuario={usuario} />}
         {tela === 'catalogo' && <TelaCatalogoFornecedor C={C} s={s} fmtBRL={fmtBRL} />}
         {tela === 'meus-dados' && <TelaMeusDadosFornecedor C={C} s={s} />}
         </div>
