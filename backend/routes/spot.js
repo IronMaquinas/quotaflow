@@ -231,8 +231,19 @@ router.get('/fornecedor/demandas', fornecedorMiddleware, async (req, res) => {
     const meuPorDemanda = {};
     for (const i of meusInteresses) meuPorDemanda[i.demanda_id] = i;
 
-    // Encerradas só aparecem para quem respondeu (para ver o resultado).
-    const demandas = (todas || []).filter(d => d.status !== 'encerrada' || meuPorDemanda[d.id]);
+    // Encerradas só aparecem para quem respondeu, e só por um tempo:
+    // vencidas por 90 dias, não vencidas (perdidas/canceladas) por 30 dias.
+    // O histórico completo continua no banco para os indicadores.
+    const DIA_MS = 24 * 60 * 60 * 1000;
+    const agora = Date.now();
+    const demandas = (todas || []).filter(d => {
+      if (d.status !== 'encerrada') return true;
+      const mi = meuPorDemanda[d.id];
+      if (!mi) return false;
+      const dias = mi.status === 'escolhido' ? 90 : 30;
+      const encerradaEm = new Date(d.encerrada_em || d.criado_em || 0).getTime();
+      return agora - encerradaEm <= dias * DIA_MS;
+    });
 
     const minhasVis = await DB.select('demandas_spot_visualizacoes', { fornecedor_id: req.fornecedorId });
     const visPorMim = {};

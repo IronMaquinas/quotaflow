@@ -74,13 +74,36 @@ const numeroDemanda = (d) => d.numero || `DSP-${String(d.id).padStart(4, '0')}`;
 
 const formatarReais = (v) => `R$ ${Number(v).toFixed(2).replace('.', ',')}`;
 
+// ─── Abas ───
+// Prazos de exibição do histórico (o backend usa os mesmos valores e nem envia o que passou disso).
+const DIAS_VENCIDAS = 90;
+const DIAS_NAO_VENCIDAS = 30;
+
+const ABAS = {
+  andamento:    { label: 'Em andamento' },
+  vencidas:     { label: '🏆 Vencidas' },
+  nao_vencidas: { label: 'Não vencidas' },
+  canceladas:   { label: 'Canceladas' },
+};
+
+function abaDe(d) {
+  if (d.status !== 'encerrada') return 'andamento';
+  if (d.meu_interesse?.status === 'escolhido') return 'vencidas';
+  if (d.encerramento_motivo === 'nao_necessario') return 'canceladas';
+  return 'nao_vencidas';
+}
+
+// Situações (cores) que aparecem como filtro dentro da aba "Em andamento"
+const SITUACOES_ANDAMENTO = ['nao_respondida', 'respondida', 'sem_retorno'];
+
 export default function TelaFornecedorSpot({ C, s, usuario }) {
   const [demandas, setDemandas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState(null);
   const [detalhe, setDetalhe] = useState(null);
   const [fotoAmpliada, setFotoAmpliada] = useState(null);
-  const [filtroSituacao, setFiltroSituacao] = useState('todas');
+  const [aba, setAba] = useState('andamento');
+  const [filtroSituacao, setFiltroSituacao] = useState('todas'); // só na aba Em andamento
   const [busca, setBusca] = useState('');
   const [valorEstimado, setValorEstimado] = useState('');
   const [observacao, setObservacao] = useState('');
@@ -145,41 +168,54 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
     }
   };
 
-  // ─── Filtros ───
-  const contagem = { todas: demandas.length };
-  for (const d of demandas) {
-    const sit = situacaoFornecedor(d);
-    contagem[sit] = (contagem[sit] || 0) + 1;
-  }
-
-  const daSituacao = filtroSituacao === 'todas'
-    ? demandas
-    : demandas.filter(d => situacaoFornecedor(d) === filtroSituacao);
-
+  // ─── Busca (vale para todas as abas) ───
   const termo = busca.trim();
   const termoNorm = normalizar(termo);
   const termoAlfa = soAlfanum(termo);
-  const filtradas = !termo ? daSituacao : daSituacao.filter(d => {
+  const casaBusca = (d) => {
+    if (!termo) return true;
     const textos = [d.componente, d.descricao_equipamento, d.marca_modelo, d.empresa_nome, d.cliente_nome];
     if (textos.some(v => v && normalizar(v).includes(termoNorm))) return true;
     // número e PN: casam também ignorando hífens, pontos e espaços
     return [numeroDemanda(d), d.part_number].some(v =>
       v && (normalizar(v).includes(termoNorm) || (termoAlfa && soAlfanum(v).includes(termoAlfa)))
     );
-  });
+  };
+  const encontradas = demandas.filter(casaBusca);
 
-  // Abertas primeiro (mais novas no topo); encerradas no fim
-  const ordenadas = [...filtradas].sort((a, b) => {
-    const ea = a.status === 'encerrada' ? 1 : 0;
-    const eb = b.status === 'encerrada' ? 1 : 0;
-    if (ea !== eb) return ea - eb;
-    const da = new Date((ea ? a.encerrada_em : a.criado_em) || 0).getTime();
-    const db = new Date((eb ? b.encerrada_em : b.criado_em) || 0).getTime();
-    return db - da;
-  });
+  // Quantidade por aba (já considerando a busca)
+  const porAba = { andamento: [], vencidas: [], nao_vencidas: [], canceladas: [] };
+  for (const d of encontradas) porAba[abaDe(d)].push(d);
 
-  // Mostra só os filtros que têm demandas (menos poluição); o ativo sempre aparece
-  const chips = ['todas', ...Object.keys(SITUACOES).filter(k => contagem[k] > 0 || filtroSituacao === k)];
+  // Dentro de "Em andamento": filtro por cor
+  const contagemSit = { todas: porAba.andamento.length };
+  for (const d of porAba.andamento) {
+    const sit = situacaoFornecedor(d);
+    contagemSit[sit] = (contagemSit[sit] || 0) + 1;
+  }
+  const chips = ['todas', ...SITUACOES_ANDAMENTO.filter(k => contagemSit[k] > 0 || filtroSituacao === k)];
+
+  let daAba = porAba[aba];
+  if (aba === 'andamento' && filtroSituacao !== 'todas') {
+    daAba = daAba.filter(d => situacaoFornecedor(d) === filtroSituacao);
+  }
+
+  // Em andamento: mais novas no topo. Histórico: encerradas mais recentemente no topo.
+  const dataOrdem = (d) => new Date((aba === 'andamento' ? d.criado_em : (d.encerrada_em || d.criado_em)) || 0).getTime();
+  const ordenadas = [...daAba].sort((a, b) => dataOrdem(b) - dataOrdem(a));
+
+  // Resumo da aba Vencidas
+  const totalVencido = porAba.vencidas.reduce((soma, d) => soma + (Number(d.meu_interesse?.valor_estimado) || 0), 0);
+
+  const mensagemVazia = termo
+    ? `Nenhuma demanda encontrada para "${termo}" nesta aba`
+    : aba === 'andamento'
+      ? (filtroSituacao === 'todas' ? 'Nenhuma demanda spot em aberto no momento.' : 'Nenhuma demanda nesta situação.')
+      : aba === 'vencidas'
+        ? `Nenhuma demanda vencida nos últimos ${DIAS_VENCIDAS} dias.`
+        : aba === 'canceladas'
+          ? `Nenhuma demanda cancelada nos últimos ${DIAS_NAO_VENCIDAS} dias.`
+          : `Nenhuma demanda não vencida nos últimos ${DIAS_NAO_VENCIDAS} dias.`;
 
   if (loading) return <div style={{ padding: 40, color: C.muted }}>Carregando...</div>;
   if (erro) return <div style={{ padding: 40, color: '#ef4444' }}>⚠ {erro}</div>;
@@ -193,56 +229,96 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
         </div>
       </div>
 
-      {/* Filtros por situação */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
-        {chips.map(sit => {
-          const ativo = filtroSituacao === sit;
-          const rotulo = sit === 'todas' ? 'Todas' : `${SITUACOES[sit].emoji} ${SITUACOES[sit].curto}`;
+      {/* Busca única (procura em todas as abas) */}
+      <div style={{ position: 'relative', marginBottom: 14 }}>
+        <input
+          value={busca}
+          onChange={e => setBusca(e.target.value)}
+          onKeyDown={e => { if (e.key === 'Escape') setBusca(''); }}
+          autoFocus
+          placeholder="Buscar por número, item, part number, equipamento ou cliente..."
+          style={{ ...s.input, width: '100%', paddingLeft: 32, paddingRight: busca ? 30 : undefined, boxSizing: 'border-box' }}
+        />
+        <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: C.muted, pointerEvents: 'none' }}>🔍</span>
+        {busca && (
+          <button
+            onClick={() => setBusca('')}
+            title="Limpar busca"
+            style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: C.muted, fontSize: 16, cursor: 'pointer', lineHeight: 1 }}
+          >
+            ×
+          </button>
+        )}
+      </div>
+
+      {/* Abas */}
+      <div style={{ display: 'flex', gap: 4, borderBottom: `1px solid ${C.border}`, marginBottom: 14, overflowX: 'auto' }}>
+        {Object.entries(ABAS).map(([chave, info]) => {
+          const ativa = aba === chave;
+          const qtd = porAba[chave].length;
           return (
-            <button key={sit} onClick={() => setFiltroSituacao(sit)}
-              title={sit === 'todas' ? '' : SITUACOES[sit].label}
-              style={{ background: ativo ? C.accent : 'transparent', border: `1px solid ${ativo ? C.accent : C.border}`, borderRadius: 6, padding: '6px 12px', color: ativo ? 'white' : C.muted, fontSize: 11, cursor: 'pointer' }}>
-              {rotulo} <span style={{ opacity: 0.7 }}>({contagem[sit] || 0})</span>
+            <button
+              key={chave}
+              onClick={() => setAba(chave)}
+              style={{
+                background: 'transparent', border: 'none', cursor: 'pointer', whiteSpace: 'nowrap',
+                padding: '9px 14px', marginBottom: -1, fontSize: 13,
+                fontWeight: ativa ? 700 : 500,
+                color: ativa ? C.text : C.muted,
+                borderBottom: `2px solid ${ativa ? C.accent : 'transparent'}`,
+              }}
+            >
+              {info.label}{' '}
+              <span style={{
+                fontSize: 11, padding: '1px 7px', borderRadius: 10, marginLeft: 2,
+                background: ativa ? C.accent : C.border, color: ativa ? '#fff' : C.muted,
+                opacity: qtd === 0 ? 0.5 : 1,
+              }}>
+                {qtd}
+              </span>
             </button>
           );
         })}
       </div>
 
-      {/* Busca única */}
-      <div style={{ display: 'flex', gap: 8, marginBottom: 18, alignItems: 'center' }}>
-        <div style={{ position: 'relative', flex: 1 }}>
-          <input
-            value={busca}
-            onChange={e => setBusca(e.target.value)}
-            onKeyDown={e => { if (e.key === 'Escape') setBusca(''); }}
-            autoFocus
-            placeholder="Buscar por número, item, part number, equipamento ou cliente..."
-            style={{ ...s.input, width: '100%', paddingLeft: 32, paddingRight: busca ? 30 : undefined, boxSizing: 'border-box' }}
-          />
-          <span style={{ position: 'absolute', left: 10, top: '50%', transform: 'translateY(-50%)', fontSize: 13, color: C.muted, pointerEvents: 'none' }}>🔍</span>
-          {busca && (
-            <button
-              onClick={() => setBusca('')}
-              title="Limpar busca"
-              style={{ position: 'absolute', right: 6, top: '50%', transform: 'translateY(-50%)', background: 'transparent', border: 'none', color: C.muted, fontSize: 16, cursor: 'pointer', lineHeight: 1 }}
-            >
-              ×
-            </button>
-          )}
+      {/* Filtros por cor (só em andamento) */}
+      {aba === 'andamento' && porAba.andamento.length > 0 && (
+        <div style={{ display: 'flex', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
+          {chips.map(sit => {
+            const ativo = filtroSituacao === sit;
+            const rotulo = sit === 'todas' ? 'Todas' : `${SITUACOES[sit].emoji} ${SITUACOES[sit].curto}`;
+            return (
+              <button key={sit} onClick={() => setFiltroSituacao(sit)}
+                title={sit === 'todas' ? '' : SITUACOES[sit].label}
+                style={{ background: ativo ? C.accent : 'transparent', border: `1px solid ${ativo ? C.accent : C.border}`, borderRadius: 6, padding: '5px 12px', color: ativo ? 'white' : C.muted, fontSize: 11, cursor: 'pointer' }}>
+                {rotulo} <span style={{ opacity: 0.7 }}>({contagemSit[sit] || 0})</span>
+              </button>
+            );
+          })}
         </div>
-        {termo && (
-          <span style={{ fontSize: 11, color: C.muted, flexShrink: 0 }}>
-            {filtradas.length} de {daSituacao.length}
-          </span>
-        )}
-      </div>
+      )}
+
+      {/* Resumo / aviso do histórico */}
+      {aba === 'vencidas' && porAba.vencidas.length > 0 && (
+        <div style={{ fontSize: 12, color: C.text, marginBottom: 14 }}>
+          🏆 <b>{porAba.vencidas.length}</b> {porAba.vencidas.length === 1 ? 'demanda vencida' : 'demandas vencidas'}
+          {totalVencido > 0 && <> · <b style={{ color: C.success }}>{formatarReais(totalVencido)}</b> em propostas</>}
+          <span style={{ color: C.muted }}> · últimos {DIAS_VENCIDAS} dias</span>
+        </div>
+      )}
+      {(aba === 'nao_vencidas' || aba === 'canceladas') && (
+        <div style={{ fontSize: 11, color: C.muted, marginBottom: 14 }}>
+          {aba === 'canceladas'
+            ? 'Demandas que o comprador cancelou por não precisar mais do item.'
+            : 'Demandas em que o comprador optou por outro fornecedor.'}
+          {' '}Mostrando as encerradas nos últimos {DIAS_NAO_VENCIDAS} dias.
+        </div>
+      )}
 
       {/* Lista */}
       {ordenadas.length === 0 ? (
         <div style={{ ...s.card, padding: 40, textAlign: 'center', color: C.muted }}>
-          {termo
-            ? `Nenhuma demanda encontrada para "${termo}"`
-            : demandas.length === 0 ? 'Nenhuma demanda spot no momento.' : 'Nenhuma demanda nesta situação.'}
+          {mensagemVazia}
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
