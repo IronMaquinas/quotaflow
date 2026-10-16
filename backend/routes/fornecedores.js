@@ -22,6 +22,7 @@ const express = require("express");
 const router = express.Router();
 const { DB } = require("../db");
 const tenantMiddleware = require("../middleware/tenantMiddleware");
+const { normalizarAtuacao, CAMPOS_ATUACAO } = require("../services/atuacao"); // perfil de atuação (etapa 4)
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
@@ -251,6 +252,7 @@ router.post("/", tenantMiddleware, async (req, res) => {
       latitude: latitude || null,
       longitude: longitude || null,
       email: email || null,
+      ...(await normalizarAtuacao(DB, req.body, { tenantId: req.tenantId })),
       tipo: "local", // tenant nunca cria global — global é cadastrado pela plataforma
       ativo: 1,
     }, req.tenantId);
@@ -282,7 +284,8 @@ router.put("/:id", tenantMiddleware, async (req, res) => {
 
     // ── Global: só preferências do próprio tenant ──
     if (achado.global) {
-      const tentouEditarCadastro = CAMPOS_EDITAVEIS.some((c) => body[c] !== undefined);
+      const tentouEditarCadastro = [...CAMPOS_EDITAVEIS, ...CAMPOS_ATUACAO, "marca_sugerida"]
+        .some((c) => body[c] !== undefined);
       if (tentouEditarCadastro) {
         return res.status(403).json({
           erro: "Fornecedor global: os dados cadastrais são mantidos pela plataforma. Você pode apenas ativá-lo ou desativá-lo para a sua empresa.",
@@ -324,6 +327,7 @@ router.put("/:id", tenantMiddleware, async (req, res) => {
       else if (campo === "contatos" || campo === "categorias") updateData[campo] = JSON.stringify(body[campo]);
       else updateData[campo] = body[campo];
     }
+    Object.assign(updateData, await normalizarAtuacao(DB, body, { tenantId: req.tenantId }));
     if (body.ativo !== undefined) updateData.ativo = body.ativo ? 1 : 0;
     // `tipo` e `tenant_id` nunca são alterados por esta rota.
 

@@ -9,6 +9,9 @@ const ValidacaoXmlService = require('../services/ValidacaoXmlService');
 const NfeXmlParser = require('../services/NfeXmlParser');
 const { supabase } = require('../db');
 const bcrypt = require('bcryptjs');
+const { normalizarAtuacao } = require('../services/atuacao'); // perfil de atuação (etapa 4)
+
+const EMAIL_VALIDO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
 // ─── ROTAS PROTEGIDAS PARA FORNECEDOR ───
 
@@ -1272,10 +1275,18 @@ router.put('/me', fornecedorMiddleware, async (req, res) => {
     if (email_contato !== undefined) dadosEmpresa.email_contato = email_contato;
     if (telefone !== undefined) dadosEmpresa.telefone = telefone;
     if (whatsapp !== undefined) dadosEmpresa.whatsapp = whatsapp;
+    // Perfil de atuação (segmentos, sistemas, marcas, ofertas, estados) — só os que vieram
+    Object.assign(dadosEmpresa, await normalizarAtuacao(DB, req.body, { fornecedorId }));
 
     if (Object.keys(dadosEmpresa).length > 0) {
       if (dadosEmpresa.nome_fantasia !== undefined && !dadosEmpresa.nome_fantasia.trim()) {
         return res.status(400).json({ erro: 'Nome Fantasia é obrigatório' });
+      }
+      // email_contato vira o e-mail oficial do fornecedor (gatilho da migration 009
+      // copia para fornecedores.email e para o 1º contato) — é para onde vão
+      // cotações, pedidos e NCs. Texto que não é e-mail não pode entrar.
+      if (dadosEmpresa.email_contato && !EMAIL_VALIDO.test(String(dadosEmpresa.email_contato).trim())) {
+        return res.status(400).json({ erro: 'E-mail da empresa inválido' });
       }
       await DB.update('fornecedores', fornecedorId, dadosEmpresa, tenantId);
     }
@@ -1312,6 +1323,9 @@ router.put('/me', fornecedorMiddleware, async (req, res) => {
       if (dadosUsuario.email !== undefined) {
         if (!dadosUsuario.email.trim()) {
           return res.status(400).json({ erro: 'E-mail é obrigatório' });
+        }
+        if (!EMAIL_VALIDO.test(dadosUsuario.email.trim())) {
+          return res.status(400).json({ erro: 'E-mail de login inválido' });
         }
         // e-mail é o login — garante unicidade antes de trocar
         const jaExiste = await DB.selectOne('fornecedor_usuarios', { email: dadosUsuario.email });

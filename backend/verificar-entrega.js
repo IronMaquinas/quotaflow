@@ -1,25 +1,30 @@
 #!/usr/bin/env node
-// verificar-entrega.js — confere, em um comando, se os arquivos da etapa 1
-// (fornecedores globais) estão no projeto exatamente como foram entregues.
+// verificar-entrega.js — confere, em um comando, se os arquivos entregues
+// (etapa 1: fornecedores globais; etapa 3: cadastro único; etapa 4: perfil
+// de atuação) estão no projeto exatamente como foram entregues.
 //
 // Só LÊ arquivos. Não altera nada.
-// Uso (dentro da pasta backend):  node verificar-entrega.js
+// Uso (dentro da pasta backend):
+//   node verificar-entrega.js --antes   → ANTES de copiar: os arquivos que vão ser
+//                                         substituídos ainda são a versão que eu usei
+//                                         de base? (se não forem, me mande antes)
+//   node verificar-entrega.js           → DEPOIS de copiar: tudo igual ao entregue?
 //
 // Para cada arquivo verifica:
-//   1. existe no lugar certo
+//   1. existe (arquivos do frontend são procurados pelo nome dentro de ../frontend/src)
 //   2. conteúdo idêntico ao entregue (ignora só quebra de linha final e CRLF do Windows)
-//   3. sintaxe válida (node --check)
-//   4. o require de services/fornecedoresVisiveis aponta para um arquivo que existe
+//   3. sintaxe válida (node --check — só arquivos .js; .jsx o Vite confere)
+//   4. os require de services/fornecedoresVisiveis e services/atuacao apontam para arquivos que existem
 
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const { execFileSync } = require('child_process');
 
+// Depois de copiar — versão entregue (a mais recente de cada arquivo)
 const ESPERADO = {
-  'routes/fornecedores.js': '9e950a1ab5835f90d11d51062cb1bcb8',
+  // etapa 1
   'routes/buscaFornecedores.js': '39dea794495d3da0b9dc916a1ea0faf0',
-  'routes/spot.js': '70e00afb50b0d8547bbb12ef186fc9b4',
   'services/CotacaoService.js': '7e16fed50eefffa689e2f6f69c0d7cfe',
   'services/fornecedoresVisiveis.js': '8c1fa18647fa44b05b4865491067a0c0',
   'routes/cotacoes.js': '5a83261606ba1146511c64c560b6e058',
@@ -30,9 +35,33 @@ const ESPERADO = {
   'services/NCService.js': 'a9432a05c6bfb78719497119235bbe44',
   'services/PortalRespostaService.js': 'aff8546f40f10b238354651e8b17aefb',
   'services/ValidacaoXmlService.js': 'a8e0f2180da6f621272f70fb80a2b8e3',
+  // etapa 4 (inclui arquivos já mexidos nas etapas 1 e 3)
+  'routes/fornecedores.js': 'f925b8245052e7468f7cac7da4bf7d4f',
+  'routes/spot.js': 'ecf503506b92bb30a91b803125ac7f68',
+  'routes/fornecedor.js': '0b447f0e2735fefbe56da81b6a5a763d',
+  'routes/atuacao.js': 'cc196661189e2714bcfad96e5c1e8ad9',
+  'services/atuacao.js': '8509ac0206906a7f93384350e77132bf',
+  'front:SeletorAtuacao.jsx': '17afaaf69d6e4cf0c105490267d188a7',
+  'front:TelaMeusDadosFornecedor.jsx': '43d89224e6b9171c1dba9744c0853e29',
+  'front:TelaFornecedoresNova.jsx': '2b65c229997c5755dda5748c383aa007',
+  'front:TelaCanalSpot.jsx': '3814aad93cd5339bd66511097842018d',
+  'front:TelaFornecedorSpot.jsx': '0b2516ca2d30559b0cb922056f6330f8',
+};
+
+// Antes de copiar a etapa 4 — versão que serviu de base para as alterações
+const ANTES = {
+  'routes/fornecedores.js': '9e950a1ab5835f90d11d51062cb1bcb8',
+  'routes/spot.js': '70e00afb50b0d8547bbb12ef186fc9b4',
+  'routes/fornecedor.js': 'c530a530879b6b6cddaf0a591db5a5f7',
+  'front:TelaMeusDadosFornecedor.jsx': 'd303423d0541447eb41988c79417dd62',
+  'front:TelaFornecedoresNova.jsx': 'b6a9b529e667f2ee7f97fbed1527011b',
+  'front:TelaCanalSpot.jsx': '5a10f0042ac8e253419e227fae231511',
+  'front:TelaFornecedorSpot.jsx': '32ca46bd8421e827457656625eefc584',
 };
 
 const RAIZ = process.cwd();
+const FRONT = path.join(RAIZ, '..', 'frontend', 'src');
+const modoAntes = process.argv.includes('--antes');
 const normalizar = (txt) => txt.replace(/\r\n/g, '\n').replace(/\s+$/, '');
 const md5 = (txt) => crypto.createHash('md5').update(normalizar(txt)).digest('hex');
 
@@ -41,53 +70,103 @@ if (!fs.existsSync(path.join(RAIZ, 'routes')) || !fs.existsSync(path.join(RAIZ, 
   process.exit(1);
 }
 
-let falhas = 0;
-console.log('\nConferindo arquivos da etapa 1 (fornecedores globais)\n');
+function acharNoFrontend(nome, dir = FRONT, achados = []) {
+  if (!fs.existsSync(dir)) return achados;
+  for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
+    const p = path.join(dir, e.name);
+    if (e.isDirectory()) acharNoFrontend(nome, p, achados);
+    else if (e.name === nome) achados.push(p);
+  }
+  return achados;
+}
 
-for (const [rel, esperado] of Object.entries(ESPERADO)) {
-  const abs = path.join(RAIZ, rel);
+function localizar(chave) {
+  if (!chave.startsWith('front:')) return { abs: path.join(RAIZ, chave), rotulo: chave };
+  const nome = chave.slice(6);
+  const achados = acharNoFrontend(nome);
+  if (achados.length > 1) return { erro: `mais de um arquivo ${nome}: ${achados.map((a) => path.relative(FRONT, a)).join(', ')}`, rotulo: nome };
+  if (!achados.length) return { abs: null, rotulo: `frontend/src/**/${nome}` };
+  return { abs: achados[0], rotulo: 'frontend/src/' + path.relative(FRONT, achados[0]) };
+}
+
+const LISTA = modoAntes ? ANTES : ESPERADO;
+let falhas = 0;
+console.log(modoAntes
+  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 4?\n'
+  : '\nConferindo arquivos entregues (etapas 1, 3 e 4 de fornecedores)\n');
+
+for (const [chave, esperado] of Object.entries(LISTA)) {
+  const { abs, rotulo, erro } = localizar(chave);
   const problemas = [];
 
-  if (!fs.existsSync(abs)) {
-    console.log(`✗ ${rel}\n    não encontrado`);
+  if (erro) {
+    console.log(`✗ ${rotulo}\n    ${erro}`);
+    falhas++;
+    continue;
+  }
+  if (!abs || !fs.existsSync(abs)) {
+    console.log(`✗ ${rotulo}\n    não encontrado`);
     falhas++;
     continue;
   }
   const conteudo = fs.readFileSync(abs, 'utf8');
 
-  if (md5(conteudo) !== esperado) problemas.push('conteúdo DIFERENTE do entregue');
-
-  try {
-    execFileSync(process.execPath, ['--check', abs], { stdio: 'pipe' });
-  } catch (e) {
-    problemas.push('erro de sintaxe: ' + String(e.stderr || e.message).split('\n').find((l) => l.trim()) );
+  if (md5(conteudo) !== esperado) {
+    problemas.push(modoAntes
+      ? 'DIFERENTE da base — você alterou este arquivo depois da última entrega? Me mande antes de substituir.'
+      : 'conteúdo DIFERENTE do entregue');
   }
 
-  const req = conteudo.match(/require\(\s*['"]([^'"]*fornecedoresVisiveis)['"]\s*\)/);
-  if (req) {
-    const alvo = path.resolve(path.dirname(abs), req[1]) + '.js';
-    if (!fs.existsSync(alvo)) problemas.push(`require('${req[1]}') não encontra o arquivo`);
+  if (!modoAntes && abs.endsWith('.js')) {
+    try {
+      execFileSync(process.execPath, ['--check', abs], { stdio: 'pipe' });
+    } catch (e) {
+      problemas.push('erro de sintaxe: ' + String(e.stderr || e.message).split('\n').find((l) => l.trim()));
+    }
+    const reqs = conteudo.matchAll(/require\(\s*['"]([^'"]*(?:fornecedoresVisiveis|services\/atuacao))['"]\s*\)/g);
+    for (const r of reqs) {
+      const alvo = path.resolve(path.dirname(abs), r[1]) + '.js';
+      if (!fs.existsSync(alvo)) problemas.push(`require('${r[1]}') não encontra o arquivo`);
+    }
   }
 
   if (problemas.length) {
     falhas++;
-    console.log(`✗ ${rel}`);
+    console.log(`✗ ${rotulo}`);
     problemas.forEach((p) => console.log(`    ${p}`));
   } else {
-    console.log(`✓ ${rel}`);
+    console.log(`✓ ${rotulo}`);
   }
 }
 
-// O arquivo novo precisa entrar no commit
-try {
-  const rastreado = execFileSync('git', ['ls-files', 'services/fornecedoresVisiveis.js'], { cwd: RAIZ, stdio: 'pipe' }).toString().trim();
-  if (!rastreado) {
-    console.log('\n⚠️  services/fornecedoresVisiveis.js ainda não está no git.');
-    console.log('    Antes do commit: git add services/fornecedoresVisiveis.js');
-  }
-} catch { /* sem git disponível: ignora */ }
+if (!modoAntes) {
+  // Arquivos novos precisam entrar no commit
+  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js'];
+  try {
+    for (const n of novos) {
+      const rastreado = execFileSync('git', ['ls-files', n], { cwd: RAIZ, stdio: 'pipe' }).toString().trim();
+      if (!rastreado) console.log(`\n⚠️  ${n} ainda não está no git (git add ${n})`);
+    }
+    const seletor = acharNoFrontend('SeletorAtuacao.jsx')[0];
+    if (seletor) {
+      const rastreado = execFileSync('git', ['ls-files', seletor], { cwd: RAIZ, stdio: 'pipe' }).toString().trim();
+      if (!rastreado) console.log(`⚠️  frontend/src/${path.relative(FRONT, seletor)} ainda não está no git`);
+    }
+  } catch { /* sem git disponível: ignora */ }
 
+  // A rota nova precisa estar registrada no server.js
+  const server = path.join(RAIZ, 'server.js');
+  if (fs.existsSync(server) && !/routes\/atuacao/.test(fs.readFileSync(server, 'utf8'))) {
+    falhas++;
+    console.log("\n✗ server.js não registra a rota nova. Adicione: app.use('/api/atuacao', require('./routes/atuacao'));");
+  }
+}
+
+const total = Object.keys(LISTA).length;
 console.log(falhas
-  ? `\n✗ ${falhas} arquivo(s) com problema — mande esta saída para conferência.`
-  : `\n✓ Todos os ${Object.keys(ESPERADO).length} arquivos estão exatamente como entregues.`);
+  ? `\n✗ ${falhas} problema(s) — mande esta saída para conferência.`
+  : modoAntes
+    ? `\n✓ Os ${total} arquivos são a base esperada. Pode copiar a entrega.`
+    : `\n✓ Todos os ${total} arquivos estão exatamente como entregues.`);
 process.exit(falhas ? 1 : 0);

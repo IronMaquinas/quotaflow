@@ -6,6 +6,7 @@ const tenantMiddleware = require('../middleware/tenantMiddleware');
 const fornecedorMiddleware = require('../middleware/fornecedorMiddleware');
 
 const StorageSpot = require('../services/StorageSpot');
+const { normalizarDemanda } = require('../services/atuacao'); // segmento, sistema, ofertas aceitas (etapa 4)
 
 // ─── COMPRADOR ────────────────────────────────────────────────
 
@@ -327,6 +328,7 @@ router.post('/demandas', tenantMiddleware, async (req, res) => {
       quantidade: Number(b.quantidade),
       comentarios: b.comentarios ? String(b.comentarios).trim() : null,
       urgencia: b.urgencia || 'media',
+      ...(await normalizarDemanda(DB, b)),
       status: 'aberta',
     }, req.tenantId);
     res.status(201).json({ ok: true, demanda });

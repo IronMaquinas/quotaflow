@@ -27,6 +27,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import apiService from "../../services/apiService";
+import { useOpcoesAtuacao, PainelAtuacao, atuacaoDe } from "../shared/SeletorAtuacao";
 
 const EMAIL_VALIDO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -39,6 +40,8 @@ export default function TelaMeusDadosFornecedor({ C, s }) {
 
   const [formEmpresa, setFormEmpresa] = useState(null);
   const [formUsuario, setFormUsuario] = useState(null);
+  const [formAtuacao, setFormAtuacao] = useState(atuacaoDe(null)); // perfil de atuação (etapa 4)
+  const { opcoes: opcoesAtuacao, recarregar: recarregarOpcoesAtuacao } = useOpcoesAtuacao();
   const [formSenha, setFormSenha] = useState({ senha_atual: "", nova_senha: "", confirmar_senha: "" });
   const [senhaVisivel, setSenhaVisivel] = useState(false);
 
@@ -63,6 +66,7 @@ export default function TelaMeusDadosFornecedor({ C, s }) {
         nome: dados.usuario?.nome || "",
         email: dados.usuario?.email || "",
       });
+      setFormAtuacao(atuacaoDe(dados.fornecedor));
     } catch (err) {
       console.error("❌ Erro ao carregar Meus Dados:", err);
       setErroCarregar(err.message);
@@ -105,6 +109,7 @@ export default function TelaMeusDadosFornecedor({ C, s }) {
     try {
       const resposta = await apiService.put("/fornecedor/me", {
         ...formEmpresa,
+        ...formAtuacao,
         nome: formUsuario.nome,
         email: formUsuario.email,
       });
@@ -121,6 +126,12 @@ export default function TelaMeusDadosFornecedor({ C, s }) {
         // Evento custom (storage não dispara na mesma aba que escreveu) —
         // permite que TelaFornecedor.jsx reaja sem precisar de F5.
         window.dispatchEvent(new CustomEvent("usuario-atualizado", { detail: usuarioAtualizado }));
+      }
+
+      // Atuação volta do banco já validada (marca sugerida entra marcada, "em análise")
+      if (resposta.fornecedor) {
+        if (formAtuacao.marca_sugerida && formAtuacao.marca_sugerida.trim()) await recarregarOpcoesAtuacao();
+        setFormAtuacao(atuacaoDe(resposta.fornecedor));
       }
 
       mostrarMensagem("ok", resposta.mensagem || "Dados atualizados com sucesso.");
@@ -278,6 +289,16 @@ export default function TelaMeusDadosFornecedor({ C, s }) {
               placeholder="(11) 90000-0000" style={s.input} />
           </div>
         </div>
+      </div>
+
+      {/* ─── Atuação (etapa 4) — base das "oportunidades que combinam com você" ─── */}
+      <div style={{ ...s.card, padding: "20px 22px", marginBottom: 18 }}>
+        <div style={{ fontSize: 13, fontWeight: 700, color: C.text, marginBottom: 4 }}>ATUAÇÃO</div>
+        <div style={{ fontSize: 11, color: C.muted, marginBottom: 16 }}>
+          Diga com o que você trabalha. Usamos isso para destacar as demandas do Canal Spot que combinam com a sua empresa.
+          Nada aqui é obrigatório — mas quanto mais completo, melhores as recomendações.
+        </div>
+        <PainelAtuacao opcoes={opcoesAtuacao} valores={formAtuacao} onChange={setFormAtuacao} C={C} s={s} />
       </div>
 
       {/* ─── Meu acesso (usuário de login) ─── */}

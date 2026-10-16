@@ -1,6 +1,7 @@
 // components/portal/TelaFornecedorSpot.jsx
 import { useState, useEffect } from 'react';
 import apiService from '../../services/apiService';
+import { useOpcoesAtuacao, nomeAtuacao } from '../shared/SeletorAtuacao';
 
 function tempoAtras(iso) {
   if (!iso) return '';
@@ -98,6 +99,7 @@ const SITUACOES_ANDAMENTO = ['nao_respondida', 'respondida', 'sem_retorno'];
 
 export default function TelaFornecedorSpot({ C, s, usuario }) {
   const [demandas, setDemandas] = useState([]);
+  const { opcoes: opcoesAtuacao } = useOpcoesAtuacao(); // nomes de segmento/sistema/oferta (etapa 4)
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState(null);
   const [detalhe, setDetalhe] = useState(null);
@@ -511,6 +513,16 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
                   <div>
                     <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>{d.descricao_equipamento}</div>
                     {d.marca_modelo && <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>{d.marca_modelo}</div>}
+                    {(d.segmento || d.sistema) && (
+                      <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>
+                        {[d.segmento && nomeAtuacao(opcoesAtuacao, 'segmento', d.segmento), d.sistema && nomeAtuacao(opcoesAtuacao, 'sistema', d.sistema)].filter(Boolean).join(' · ')}
+                      </div>
+                    )}
+                    {(d.ofertas_aceitas || []).length > 0 && (
+                      <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>
+                        Aceita: {d.ofertas_aceitas.map(o => nomeAtuacao(opcoesAtuacao, 'oferta', o)).join(', ')}
+                      </div>
+                    )}
                     {d.part_number && <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>PN: {d.part_number}</div>}
                     <div style={{ fontSize: 12, color: C.muted, marginBottom: 16 }}>
                       {d.quantidade} unidade(s) · urgência {d.urgencia}

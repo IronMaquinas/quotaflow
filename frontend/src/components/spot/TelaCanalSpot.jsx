@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import apiService from '../../services/apiService';
+import SeletorAtuacao, { useOpcoesAtuacao, nomeAtuacao } from '../shared/SeletorAtuacao';
 
 // Reduz a imagem no navegador antes do upload: lado maior até 1280px, JPEG ~70%.
 // Uma foto de celular de 4–8 MB costuma cair para 150–400 KB.
@@ -79,6 +80,20 @@ const MOTIVOS_ENCERRAMENTO = {
   outro: 'Outro motivo',
 };
 
+// segmento, sistema e ofertas_aceitas: opcionais (etapa 4 — base do Match Score)
+const FORM_VAZIO = {
+  descricao_equipamento: '',
+  marca_modelo: '',
+  componente: '',
+  part_number: '',
+  quantidade: 1,
+  comentarios: '',
+  urgencia: 'media',
+  segmento: '',
+  sistema: '',
+  ofertas_aceitas: [],
+};
+
 export default function TelaCanalSpot({ C, s, fmtD }) {
   const [demandas, setDemandas] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -88,15 +103,8 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
   const [salvandoStatus, setSalvandoStatus] = useState(false);
   const [fotoAmpliada, setFotoAmpliada] = useState(null);
   const [modal, setModal] = useState(null); // <- FALTAVA: null | 'nova' | id da demanda
-  const [form, setForm] = useState({
-    descricao_equipamento: '',
-    marca_modelo: '',
-    componente: '',
-    part_number: '',
-    quantidade: 1,
-    comentarios: '',
-    urgencia: 'media'
-  });
+  const [form, setForm] = useState({ ...FORM_VAZIO });
+  const { opcoes: opcoesAtuacao } = useOpcoesAtuacao();
 
   const [fotoArquivo, setFotoArquivo] = useState(null);
   const [fotoPreview, setFotoPreview] = useState(null);
@@ -240,7 +248,7 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
       }
 
       setModal(null);
-      setForm({ descricao_equipamento: '', marca_modelo: '', componente: '', part_number: '', quantidade: 1, comentarios: '', urgencia: 'media' });
+      setForm({ ...FORM_VAZIO });
       setFotoArquivo(null);
       setFotoPreview(null);
       carregarDemandas();
@@ -423,6 +431,16 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
                     <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>{d.descricao_equipamento}</div>
                     {d.marca_modelo && <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>{d.marca_modelo}</div>}
                     {d.part_number && <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>PN: {d.part_number}</div>}
+                    {(d.segmento || d.sistema) && (
+                      <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>
+                        {[d.segmento && nomeAtuacao(opcoesAtuacao, 'segmento', d.segmento), d.sistema && nomeAtuacao(opcoesAtuacao, 'sistema', d.sistema)].filter(Boolean).join(' · ')}
+                      </div>
+                    )}
+                    {(d.ofertas_aceitas || []).length > 0 && (
+                      <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>
+                        Aceita: {d.ofertas_aceitas.map(o => nomeAtuacao(opcoesAtuacao, 'oferta', o)).join(', ')}
+                      </div>
+                    )}
                     <div style={{ fontSize: 12, color: C.muted, marginBottom: 16 }}>
                       {d.quantidade} unidade(s) · urgência {d.urgencia}
                     </div>
@@ -747,7 +765,25 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
             <div style={{ padding: '20px 22px', overflowY: 'auto' }}>
               <div style={{ marginBottom: 12 }}><label style={s.label}>Descrição do Equipamento *</label><input value={form.descricao_equipamento} onChange={e => setForm(f => ({ ...f, descricao_equipamento: e.target.value }))} style={s.input} /></div>
               <div style={{ marginBottom: 12 }}><label style={s.label}>Marca / Modelo</label><input value={form.marca_modelo} onChange={e => setForm(f => ({ ...f, marca_modelo: e.target.value }))} style={s.input} /></div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={s.label}>Segmento <span style={{ fontWeight: 400, color: C.muted }}>(opcional)</span></label>
+                <SeletorAtuacao opcoes={opcoesAtuacao} dimensao="segmento" multiplo={false}
+                  valor={form.segmento ? [form.segmento] : []}
+                  onChange={v => setForm(f => ({ ...f, segmento: v[0] || '' }))} C={C} />
+              </div>
               <div style={{ marginBottom: 12 }}><label style={s.label}>Componente *</label><input value={form.componente} onChange={e => setForm(f => ({ ...f, componente: e.target.value }))} style={s.input} autoComplete="off" name="componente_spot" /></div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={s.label}>Sistema <span style={{ fontWeight: 400, color: C.muted }}>(opcional)</span></label>
+                <SeletorAtuacao opcoes={opcoesAtuacao} dimensao="sistema" multiplo={false}
+                  valor={form.sistema ? [form.sistema] : []}
+                  onChange={v => setForm(f => ({ ...f, sistema: v[0] || '' }))} C={C} />
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={s.label}>Aceita <span style={{ fontWeight: 400, color: C.muted }}>(opcional — pode marcar mais de um)</span></label>
+                <SeletorAtuacao opcoes={opcoesAtuacao} dimensao="oferta"
+                  valor={form.ofertas_aceitas}
+                  onChange={v => setForm(f => ({ ...f, ofertas_aceitas: v }))} C={C} />
+              </div>
               <div style={{ marginBottom: 12 }}><label style={s.label}>Part Number</label><input value={form.part_number} onChange={e => setForm(f => ({ ...f, part_number: e.target.value }))} style={s.input} /></div>
               <div style={{ marginBottom: 12 }}><label style={s.label}>Quantidade *</label><input type="number" min="1" value={form.quantidade} onChange={e => setForm(f => ({ ...f, quantidade: parseInt(e.target.value) || 1 }))} style={s.input} /></div>
               <div style={{ marginBottom: 12 }}><label style={s.label}>Comentários</label><textarea value={form.comentarios} onChange={e => setForm(f => ({ ...f, comentarios: e.target.value }))} rows={2} style={{ ...s.input, resize: 'none' }} /></div>

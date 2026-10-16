@@ -1,6 +1,6 @@
 # 📦 QuotaFlow — Estrutura Completa do Projeto
 
-**Versão:** 4.1 (Canal Spot + Fornecedores Globais)
+**Versão:** 4.2 (Canal Spot + Fornecedores Globais + Cadastro Único)
 **Última atualização:** 16/10/2026
 **Status:** núcleo de compras (OS → RM → RC → OV) em produção; marketplace de fornecedores com busca unificada em produção; módulo de Não Conformidades com fluxo ISO 9001 completo; multi-perfil e reset de senha entregues; **Canal Spot** (demandas urgentes/raras) com ciclo completo comprador ↔ fornecedor; **fornecedores globais** da plataforma visíveis a todos os tenants, com isolamento total dos fornecedores locais.
 
@@ -241,8 +241,13 @@ quotaflow/
 ### Fornecedores ⭐ (atualizado 16/10/2026 — ver seção 7)
 - **fornecedores** — uma linha por empresa fornecedora. Colunas relevantes: `id (bigint) | tenant_id | tipo ('local' | 'global') | nome | nome_fantasia | razao_social | cnpj | email | email_contato | nome_contato | telefone | whatsapp | contatos (jsonb) | categorias (jsonb) | palavras_chave (text[]) | dados_cnpj (jsonb) | situacao_cnpj | ativo (integer) | ...endereço`.
   - **CHECK `fornecedores_tenant_por_tipo`** (migration 008): `global` ⇒ `tenant_id IS NULL`; `local` ⇒ `tenant_id IS NOT NULL`.
-  - ⚠ Campos duplicados ainda não unificados: `nome` × `nome_fantasia`, `email` × `email_contato`, `contatos` × `nome_contato/telefone/whatsapp`. A tela do tenant grava o 1º conjunto; o "Meus Dados" do fornecedor grava o 2º. Unificação planejada (Roadmap, etapa 3).
-  - ⚠ `contatos`/`categorias`/`dados_cnpj` são jsonb mas historicamente gravados com `JSON.stringify` (string dentro do jsonb). Ler sempre de forma tolerante aos dois formatos.
+  - **Cadastro único (migration 009, gatilho `fornecedores_sincroniza_cadastro`):** os campos duplicados andam sempre juntos, em qualquer gravação:
+    - `nome_fantasia` é o nome oficial → `nome` é cópia
+    - `email` é o e-mail oficial (recebe cotação, OC e NC) → `email_contato` é cópia
+    - `contatos` (lista de pessoas, com papel) × `nome_contato/telefone/whatsapp`: quem gravou a **lista** (tela do tenant) faz os campos soltos copiarem o 1º contato; quem gravou os **campos soltos** (Meus Dados do fornecedor) atualiza o 1º contato da lista
+    - `contatos` é gravado como lista jsonb de verdade (o gatilho converte o texto que o backend ainda manda com `JSON.stringify`)
+    - O gatilho **não** copia `email` para `contatos[0].email` quando o tenant edita a lista: o tenant pode ter um contato de cotação diferente do e-mail oficial
+  - ⚠ `categorias`/`dados_cnpj` continuam podendo vir como string dentro do jsonb. Ler sempre de forma tolerante aos dois formatos.
 - **tenant_fornecedores** ⭐ (migration 007) — vínculo privado tenant ↔ fornecedor: `id | tenant_id | fornecedor_id (FK CASCADE) | ativo | preferido | obs | criado_em | atualizado_em`, `UNIQUE(tenant_id, fornecedor_id)`. Hoje guarda o "desativar para mim" dos globais; na etapa 2 passa a guardar também o vínculo dos locais.
 - **fornecedor_usuarios** — login do portal do fornecedor: `id (uuid) | fornecedor_id (integer → fornecedores.id) | nome | email | senha_hash | perfil | ativo | criado_em`. ⚠ A coluna de senha é **`senha_hash`** (não `senha`).
 - **fornecedores_spot** — 🪦 **órfã**. Tinha `fornecedor_origem_id | segmentos | marcas | palavras_chave` (extensão de perfil spot). Nenhuma rota usa mais; será absorvida pelo perfil de atuação (Roadmap, etapa 4).
@@ -291,6 +296,7 @@ Ver seção 5 para o fluxo completo.
 ### Migrations recentes
 - **007_tenant_fornecedores.sql** — cria `tenant_fornecedores`.
 - **008_fornecedores_globais_sem_tenant.sql** — `tenant_id` deixa de ser NOT NULL em `fornecedores`; globais passam a `tenant_id NULL`; CHECK `fornecedores_tenant_por_tipo`.
+- **009_fornecedores_cadastro_unico.sql** — corrige os dados atuais (contatos como lista, e-mail inválido descartado, cópias preenchidas) e cria o gatilho `fornecedores_sincroniza_cadastro`. Idempotente.
 - **Encerramento spot** — colunas `encerrada_em`, `encerramento_motivo`, `fornecedor_vencedor_id`, `encerramento_observacao` em `demandas_spot`; `em_negociacao` convertido para `aberta`.
 
 ### Outras tabelas
@@ -551,6 +557,7 @@ npm run dev
 
 ### ✅ Em produção (16/10/2026)
 - **Canal Spot completo:** situações por cor (comprador), abas e expiração do histórico (fornecedor), busca única dos dois lados, encerrar com escolha do vencedor / reabrir, resultado para o fornecedor sem expor o vencedor, foto com compressão adicionada/trocada a qualquer momento
+- **Cadastro único do fornecedor (etapa 3):** nome, e-mail e contato iguais em todas as telas (gatilho no banco); validação de e-mail no Meus Dados (antes aceitava "Peças" como e-mail)
 - **Fornecedores globais (etapa 1 da unificação):** regra "locais + globais" em cadastro, cotação automática, vínculo e envio de RC, OV, NC, estoque, portal de resposta de cotação, validação de XML e marketplace; global somente leitura para o tenant com "desativar para mim"; migrations 007 e 008
 - **Correções de segurança/integridade:** vazamento de nome/preço de fornecedor local de outro tenant no marketplace; RC aceitava vincular fornecedor local de outro tenant; interessado do spot lido de tabela errada (`fornecedores_spot` com id coincidente); troca de senha do portal (`senha_hash`)
 
@@ -583,7 +590,10 @@ Fornecedor global tem `tenant_id` NULL. `DB.selectOne('fornecedores', { id }, te
 `routes/spot.js` buscava o interessado em `fornecedores_spot` pelo `id` — só funcionava porque o Global Peças tinha **id 7 nas duas tabelas**, por coincidência. Ao ligar tabelas, conferir a FK de verdade (`fornecedor_origem_id`) e de onde vem o id (`req.fornecedorId` vem de `fornecedor_usuarios.fornecedor_id` → `fornecedores.id`).
 
 ### ⚠️ jsonb gravado como string
-`contatos`, `categorias` e `dados_cnpj` em `fornecedores` foram gravados com `JSON.stringify`, então chegam como **string** dentro do jsonb. `JSON.parse` direto quebra se algum registro vier como objeto. Ler sempre de forma tolerante: `typeof v === 'string' ? JSON.parse(v) : (v || padrao)`.
+`categorias` e `dados_cnpj` em `fornecedores` foram gravados com `JSON.stringify`, então chegam como **string** dentro do jsonb. `JSON.parse` direto quebra se algum registro vier como objeto. Ler sempre de forma tolerante: `typeof v === 'string' ? JSON.parse(v) : (v || padrao)`. (`contatos` já é normalizado pelo gatilho da migration 009, mas o leitor tolerante continua valendo.)
+
+### ⚠️ Campos de cadastro do fornecedor têm gatilho
+Gravar `nome`, `nome_fantasia`, `email`, `email_contato`, `contatos`, `nome_contato`, `telefone` ou `whatsapp` em `fornecedores` dispara a sincronização (migration 009). O valor que volta do `DB.update`/`DB.insert` pode ser diferente do que foi enviado (ex.: `contatos` volta como lista; `email_contato` volta igual a `email`). Para ler o e-mail do fornecedor, use `emailFornecedor(f)`; para o nome, `f.nome_fantasia || f.nome`.
 
 ### ⚠️ Coluna de senha do portal é `senha_hash`
 `fornecedor_usuarios` usa `senha_hash`. Usar `.senha` faz `bcrypt.compare` falhar sempre ("Senha atual incorreta") e gravaria numa coluna inexistente.
@@ -640,8 +650,8 @@ Lições da etapa 1 (10/2026), para as próximas entregas:
 ### Prioridade alta — próximo passo real
 
 - **Unificação de fornecedores (etapas 2 a 5).** Base para o Match Score.
-  - **Etapa 2** — migrar os locais existentes para `tenant_fornecedores` e deduplicar por CNPJ (mesma empresa cadastrada por dois tenants = um fornecedor, dois vínculos privados).
-  - **Etapa 3** — um único conjunto de campos de nome/contato: manter `nome_fantasia`, `email_contato`, `nome_contato`, `telefone`, `whatsapp`; migrar e aposentar `nome`, `email`, `contatos`. Regra de dono: o fornecedor é dono dos dados da empresa; o tenant só do vínculo.
+  - **Etapa 2 — adiada (decisão 16/10/2026).** Diagnóstico: 5 fornecedores, nenhum CNPJ repetido. Mesmo CNPJ cadastrado como local por dois tenants é **correto** (cada um é privado). A junção só acontece quando a empresa assumir o próprio cadastro (etapa 5) ou for promovida a global. Ponto de atenção para essa junção: o id de fornecedor está em 3 formatos (`bigint` na maioria; `integer` em `fornecedor_usuarios`, `interesses_spot`, `movimentacoes_estoque`, `ordem_venda_itens`, `fornecedor_itens`, `fornecedor_upload_log`, `demandas_spot_visualizacoes`; **texto** em `itens_consumo.fornecedor_preferencial_id`) e em lista em `cotacao_itens.fornecedores_ids`.
+  - **Etapa 3 — feita (16/10/2026, migration 009).** Gatilho mantém nome, e-mail e contato sincronizados (ver Banco de Dados). Aposentar as colunas-cópia (`nome`, `email_contato`) é opcional e só quando todos os leitores usarem as oficiais.
   - **Etapa 4** — perfil de atuação em `fornecedores` com **listas fechadas** (segmentos: guindaste, empilhadeira, caminhão, ônibus, implemento…; sistemas: motor, hidráulica, pneumática, elétrica, transmissão, freios…; marcas), absorvendo e removendo `fornecedores_spot`. Catálogo deve aceitar item **sem preço** (portfólio).
   - **Etapa 5** — convite para o fornecedor local assumir o próprio cadastro (login no portal); locais viram candidatos a global (crescimento orgânico da rede).
 - **Match Score do Canal Spot** ("vagas que combinam com você", estilo LinkedIn).

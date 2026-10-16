@@ -131,6 +131,7 @@ app.get('/api/spot/publicas', async (req, res) => {
 
 // Rotas protegidas (exigem autenticação)
 app.use('/api/spot', spotRoutes);
+app.use('/api/atuacao', require('./routes/atuacao'));
 
 // Rota de saúde (Railway usa para verificar se o servidor está rodando)
 app.get("/health", (req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));

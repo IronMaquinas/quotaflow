@@ -1,6 +1,7 @@
 // components/fornecedores/TelaFornecedoresNova.jsx
 import { useState, useEffect } from "react";
 import { useFornecedores } from "../../hooks/useFornecedores";
+import { useOpcoesAtuacao, PainelAtuacao, ResumoAtuacao, atuacaoDe, atuacaoVazia, nomeAtuacao, DIMENSOES_ATUACAO } from "../shared/SeletorAtuacao";
 
 export default function TelaFornecedoresNova({ fmtD, C, s }) {
   const { fornecedores, loading, erro, listar, criar, atualizar, deletar } = useFornecedores();
@@ -11,6 +12,7 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
   const [processando, setProcessando] = useState(false);
   const [consultandoCNPJ, setConsultandoCNPJ] = useState(false);
   const [filtroCategoria, setFiltroCategoria] = useState('');
+  const { opcoes: opcoesAtuacao, recarregar: recarregarOpcoesAtuacao } = useOpcoesAtuacao();
 
   // Estado do formulário (expandido)
   const [form, setForm] = useState({
@@ -28,24 +30,17 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
     contato_email: "",
     contato_telefone: "",
     contato_whatsapp: "",
-    categorias: [],
+    ...atuacaoVazia(), // perfil de atuação (etapa 4) — substitui as antigas "categorias"
     email: "",
   });
 
-  const categorias = [
-    "rolamentos",
-    "correias",
-    "transmissão",
-    "hidráulico",
-    "pneumático",
-    "válvulas",
-    "filtros",
-    "sensores",
-    "instrumentação",
-    "elétrica",
-    "automação",
-    "manutenção geral",
-  ];
+  // Texto de todas as opções de atuação do fornecedor, para o filtro
+  // ("hidráulica", "Volvo", "guindaste", "RJ"…)
+  const semAcento = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const textoAtuacao = (f) => semAcento(DIMENSOES_ATUACAO
+    .flatMap(d => (f[d.campo] || []).map(c => nomeAtuacao(opcoesAtuacao, d.dimensao, c)))
+    .join(" "));
+  const termoAtuacao = semAcento(filtroCategoria).trim();
 
   useEffect(() => {
     listar();
@@ -55,9 +50,7 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
   const fornecedoresFiltered = (fornecedores || [])
     .filter(f => filtroAtivo === 'todos' || (filtroAtivo === 'ativo' ? f.ativo : !f.ativo))
     .filter(f => !busca || f.nome.toLowerCase().includes(busca.toLowerCase()))
-    .filter(f => !filtroCategoria || (f.categorias || []).some(cat => 
-      cat.toLowerCase().includes(filtroCategoria.toLowerCase())
-    ));
+    .filter(f => !termoAtuacao || textoAtuacao(f).includes(termoAtuacao));
 
   // ─── FORMATADORES ─────────────────────────────────────────
   const formatarCNPJ = (valor) => {
@@ -172,7 +165,12 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
         estado: form.estado || null,
         cep: form.cep.replace(/\D/g, "") || null,
         contatos: contatos,
-        categorias: form.categorias || [],
+        atuacao_segmentos: form.atuacao_segmentos,
+        atuacao_sistemas: form.atuacao_sistemas,
+        atuacao_marcas: form.atuacao_marcas,
+        atuacao_ofertas: form.atuacao_ofertas,
+        atuacao_ufs: form.atuacao_ufs,
+        marca_sugerida: form.marca_sugerida || undefined,
         email: form.email || form.contato_email,
         ativo: 1,
       };
@@ -183,6 +181,7 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
         await atualizar(modal, payload);
       }
 
+      if (form.marca_sugerida && form.marca_sugerida.trim()) await recarregarOpcoesAtuacao();
       setModal(null);
       resetForm();
       await listar();
@@ -210,7 +209,7 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
       contato_email: "",
       contato_telefone: "",
       contato_whatsapp: "",
-      categorias: [],
+      ...atuacaoVazia(),
       email: "",
     });
   };
@@ -234,7 +233,7 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
       contato_email: contato.email || "",
       contato_telefone: contato.telefone || "",
       contato_whatsapp: contato.whatsapp || "",
-      categorias: forn.categorias || [],
+      ...atuacaoDe(forn),
     });
     setModal(forn.id);
   };
@@ -474,29 +473,18 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
               </div>
             </div>
 
-            {/* ─── CATEGORIAS ─── */}
+            {/* ─── ATUAÇÃO (etapa 4) — mesmas listas do portal do fornecedor ─── */}
             <div style={{ marginBottom: 14 }}>
-              <label style={s.label}>CATEGORIAS</label>
-              <div style={{ display: "grid", gridTemplateColumns: "repeat(2, 1fr)", gap: 8 }}>
-                {categorias.map(cat => (
-                  <label key={cat} style={{ display: "flex", alignItems: "center", gap: 8, padding: "6px 10px", background: C.bg, borderRadius: 6, cursor: "pointer" }}>
-                    <input
-                      type="checkbox"
-                      checked={form.categorias.includes(cat)}
-                      onChange={e => {
-                        setForm(f => ({
-                          ...f,
-                          categorias: e.target.checked
-                            ? [...f.categorias, cat]
-                            : f.categorias.filter(c => c !== cat)
-                        }));
-                      }}
-                      style={{ cursor: "pointer" }}
-                    />
-                    <span style={{ fontSize: 11, color: C.text }}>{cat}</span>
-                  </label>
-                ))}
+              <div style={{ fontSize: 11, color: C.muted, letterSpacing: "0.08em", fontWeight: 600, marginBottom: 10 }}>
+                ATUAÇÃO
               </div>
+              <PainelAtuacao
+                opcoes={opcoesAtuacao}
+                valores={form}
+                onChange={(v) => setForm(f => ({ ...f, ...v }))}
+                C={C}
+                s={s}
+              />
             </div>
           </div>
 
@@ -551,7 +539,7 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
         {/* 🔥 FILTRO POR CATEGORIA (autocomplete simples) */}
         <input
           type="text"
-          placeholder="Filtrar por categoria..."
+          placeholder="Filtrar por atuação (ex.: hidráulica, Volvo)..."
           value={filtroCategoria}
           onChange={e => setFiltroCategoria(e.target.value)}
           style={{ ...s.input, width: 180, padding: "8px 12px", fontSize: 12 }}
@@ -597,7 +585,7 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
         }}>
           <span>FORNECEDOR</span>
           <span>CONTATO</span>
-          <span>CATEGORIAS</span>
+          <span>ATUAÇÃO</span>
           <span>TIPO</span>
           <span>STATUS</span>
         </div>
@@ -645,10 +633,12 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
                 <div style={{ fontSize: 11, color: C.accent }}>{contato.email || "—"}</div>
               </div>
 
-              {/* CATEGORIAS (resumidas) */}
+              {/* ATUAÇÃO (resumida: sistemas; marcas embaixo) */}
               <div style={{ fontSize: 10, color: C.muted }}>
-                {forn.categorias?.slice(0, 2).join(", ") || "—"}
-                {forn.categorias?.length > 2 && ` +${forn.categorias.length - 2}`}
+                <div><ResumoAtuacao opcoes={opcoesAtuacao} dimensao="sistema" codigos={forn.atuacao_sistemas} /></div>
+                {(forn.atuacao_marcas || []).length > 0 && (
+                  <div style={{ opacity: 0.8 }}><ResumoAtuacao opcoes={opcoesAtuacao} dimensao="marca" codigos={forn.atuacao_marcas} /></div>
+                )}
               </div>
 
               {/* TIPO */}
