@@ -28,6 +28,8 @@
 import { useState, useEffect, useCallback } from "react";
 import apiService from "../../services/apiService";
 
+const EMAIL_VALIDO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+
 export default function TelaMeusDadosFornecedor({ C, s }) {
   const [carregando, setCarregando] = useState(true);
   const [erroCarregar, setErroCarregar] = useState(null);
@@ -88,6 +90,14 @@ export default function TelaMeusDadosFornecedor({ C, s }) {
     }
     if (!formUsuario.email || !formUsuario.email.trim()) {
       mostrarMensagem("erro", "Seu e-mail é obrigatório.");
+      return;
+    }
+    if (formEmpresa.email_contato && !EMAIL_VALIDO.test(formEmpresa.email_contato.trim())) {
+      mostrarMensagem("erro", "E-mail da empresa inválido.");
+      return;
+    }
+    if (!EMAIL_VALIDO.test(formUsuario.email.trim())) {
+      mostrarMensagem("erro", "Seu e-mail de login é inválido.");
       return;
     }
 
@@ -244,10 +254,13 @@ export default function TelaMeusDadosFornecedor({ C, s }) {
               placeholder="Nome do representante" style={s.input} />
           </div>
           <div>
-            <label style={s.label}>E-MAIL</label>
+            <label style={s.label}>E-MAIL DA EMPRESA</label>
             <input type="email" value={formEmpresa.email_contato}
               onChange={e => setFormEmpresa(f => ({ ...f, email_contato: e.target.value }))}
-              style={s.input} />
+              placeholder="vendas@suaempresa.com.br" style={s.input} />
+            <div style={{ fontSize: 10, color: C.muted, marginTop: 4 }}>
+              Recebe pedidos de cotação, ordens de compra e não conformidades.
+            </div>
           </div>
         </div>
 
