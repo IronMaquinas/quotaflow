@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const { DB } = require('../../db');
+const { fornecedorDoTenant } = require('../../services/fornecedoresVisiveis'); // fornecedores locais do tenant + globais
 const tenantMiddleware = require('../../middleware/tenantMiddleware');
 
 // ─── LISTAR ITENS DE CONSUMO ──────────────────────────────────
@@ -25,7 +26,7 @@ router.get('/', tenantMiddleware, async (req, res) => {
     // 2. Buscar o fornecedor separadamente (para exibir o nome)
     const itensComFornecedor = await Promise.all(itens.map(async (item) => {
       const fornecedor = item.fornecedor_preferencial_id ?
-        await DB.selectOne('fornecedores', { id: item.fornecedor_preferencial_id, tenant_id: tenantId }, tenantId) : null;
+        await fornecedorDoTenant(DB, tenantId, item.fornecedor_preferencial_id) : null;
 
       const enderecos = enderecosPorItem[String(item.id)] || [];
 

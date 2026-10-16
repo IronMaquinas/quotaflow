@@ -20,6 +20,7 @@
 // Impostos/CFOP ficam pra v2.
 
 const { DB } = require('../db');
+const { fornecedorDoTenant } = require('./fornecedoresVisiveis'); // fornecedores locais do tenant + globais
 
 // ─────────────────────────────────────────────────────────────────────────
 // normalizarEntradaXml
@@ -133,7 +134,7 @@ async function validarXmlContraOc(xmlDataRaw, ordemVendaId, tenantId) {
 
   // 3. CNPJ emitente vs fornecedor
   const cnpjEmitente = xmlData.cnpj_emitente || '';
-  const fornecedor = await DB.selectOne('fornecedores', { id: ov.fornecedor_id }, tenantId);
+  const fornecedor = await fornecedorDoTenant(DB, tenantId, ov.fornecedor_id);
   const cnpjFornecedor = fornecedor?.cnpj || '';
   const cnpjStatus = cnpjEmitente === cnpjFornecedor ? 'ok' : 'divergente';
 

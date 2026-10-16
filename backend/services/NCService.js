@@ -12,6 +12,7 @@
 // reenviar (evita email duplicado por clique duplo).
 
 const { DB } = require('../db');
+const { fornecedorDoTenant } = require('./fornecedoresVisiveis'); // fornecedores locais do tenant + globais
 const { enviarEmailCotacao } = require('./emailService');
 
 async function notificarFornecedorNC(ncId, tenantId, opts = {}) {
@@ -31,7 +32,8 @@ async function notificarFornecedorNC(ncId, tenantId, opts = {}) {
     return { ja_notificado: true };
   }
 
-  const forn = await DB.selectOne('fornecedores', { id: nc.fornecedor_id, tenant_id: tenantId }, tenantId);
+  const forn = await fornecedorDoTenant(DB, tenantId, nc.fornecedor_id);
+  if (forn && !forn.email && forn.email_contato) forn.email = forn.email_contato; // e-mail mantido pelo fornecedor no portal
   if (!forn?.email) {
     throw new Error(`Fornecedor "${forn?.nome || nc.fornecedor_nome || '—'}" sem email cadastrado`);
   }

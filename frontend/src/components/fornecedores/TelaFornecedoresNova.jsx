@@ -216,6 +216,7 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
   };
 
   const handleEditar = (forn) => {
+    if (forn.tipo === "global") return; // global é somente-leitura para o tenant
     const contato = forn.contatos?.[0] || {};
     setForm({
       nome: forn.nome || "",
@@ -667,14 +668,27 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
                 <span style={{ ...s.tag(forn.ativo ? C.success : C.muted), fontSize: 10 }}>
                   {forn.ativo ? "Ativo" : "Inativo"}
                 </span>
-                <button
-                  onClick={() => handleEditar(forn)}
-                  style={{ background: "transparent", border: `1px solid ${C.border}`, borderRadius: 5, padding: "4px 8px", color: C.muted, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}
-                >
-                  ✏
-                </button>
+                {forn.tipo === "global" ? (
+                  // Global: cadastro mantido pela plataforma — tenant não edita
+                  <span
+                    title="Fornecedor da rede global: os dados são mantidos pela plataforma"
+                    style={{ border: `1px solid ${C.border}`, borderRadius: 5, padding: "4px 8px", color: C.muted, fontSize: 11, opacity: 0.6 }}
+                  >
+                    🔒
+                  </span>
+                ) : (
+                  <button
+                    onClick={() => handleEditar(forn)}
+                    style={{ background: "transparent", border: `1px solid ${C.border}`, borderRadius: 5, padding: "4px 8px", color: C.muted, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}
+                  >
+                    ✏
+                  </button>
+                )}
                 <button
                   onClick={() => handleToggleAtivo(forn)}
+                  title={forn.tipo === "global"
+                    ? (forn.ativo ? "Desativar para a minha empresa (não afeta outros clientes)" : "Reativar para a minha empresa")
+                    : (forn.ativo ? "Desativar" : "Ativar")}
                   style={{ background: "transparent", border: `1px solid ${forn.ativo ? "#ef444433" : "#22c55e33"}`, borderRadius: 5, padding: "4px 8px", color: forn.ativo ? "#ef4444" : C.success, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}
                 >
                   {forn.ativo ? "❌" : "✅"}

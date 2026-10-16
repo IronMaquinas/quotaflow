@@ -11,6 +11,7 @@
 const express = require('express');
 const router = express.Router();
 const { DB, supabase } = require('../db');
+const { mapaFornecedoresDoTenant } = require('../services/fornecedoresVisiveis');
 
 // GET /api/busca-fornecedores/:catalogoItemId?limit=3
 router.get('/:catalogoItemId', async (req, res) => {
@@ -31,15 +32,26 @@ router.get('/:catalogoItemId', async (req, res) => {
       return res.status(404).json({ erro: 'Item de catálogo não encontrado' });
     }
 
-    const { data, error } = await supabase.rpc('buscar_fornecedores_para_item', {
-      p_pn: item.codigo || '',
-      p_nome: item.nome || '',
-      p_descricao: item.descricao || '',
-      p_categoria: item.categoria || null,
-      p_limite: limite
-    });
+    // fornecedor_produtos é um catálogo global: a função SQL devolve produtos de
+    // QUALQUER fornecedor com catálogo — inclusive fornecedor local de outro tenant.
+    // Regra (2026-10): o tenant só pode ver os locais dele + os globais ativos para ele.
+    // Pede uma folga à função e filtra aqui, depois corta no limite pedido.
+    const [rpc, visiveis] = await Promise.all([
+      supabase.rpc('buscar_fornecedores_para_item', {
+        p_pn: item.codigo || '',
+        p_nome: item.nome || '',
+        p_descricao: item.descricao || '',
+        p_categoria: item.categoria || null,
+        p_limite: Math.min(limite * 5, 100)
+      }),
+      mapaFornecedoresDoTenant(DB, tenantId, { somenteAtivos: true }),
+    ]);
 
+    const { error } = rpc;
     if (error) throw new Error(error.message);
+    const data = (rpc.data || [])
+      .filter(r => visiveis[String(r.fornecedor_id)])
+      .slice(0, limite);
 
     res.json({
       catalogo_item_id: item.id,

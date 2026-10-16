@@ -3,11 +3,28 @@ const { enviarEmailCotacao } = require('./emailService');
 
 const DB = require('../db');
 const { supabase } = require('../db');
+const Visiveis = require('./fornecedoresVisiveis');
 
 class CotacaoService {
   constructor(db) {
     this.db = db;
   }
+
+  // ───────────────────────────────────────────────────────────────────────
+  // FORNECEDORES QUE ESTE TENANT PODE USAR (2026-10)
+  // Regra de negócio: locais do próprio tenant + globais da plataforma,
+  // exceto os globais que o tenant desativou para si (tenant_fornecedores).
+  // Global é identificado por `tipo`, nunca por tenant_id — funciona com o
+  // global ainda no tenant_id antigo ou já com tenant_id NULL.
+  // Antes, todas as buscas abaixo filtravam `fornecedores` por tenant_id: um
+  // global só aparecia (e só recebia e-mail de cotação) para o tenant em que
+  // tinha sido cadastrado.
+  // ───────────────────────────────────────────────────────────────────────
+  // Regra centralizada em services/fornecedoresVisiveis.js (mesma usada na busca do marketplace)
+  fornecedoresDoTenant(tenantId, opcoes) { return Visiveis.fornecedoresDoTenant(this.db, tenantId, opcoes); }
+  mapaFornecedoresDoTenant(tenantId, opcoes) { return Visiveis.mapaFornecedoresDoTenant(this.db, tenantId, opcoes); }
+  fornecedorDoTenant(tenantId, fornecedorId) { return Visiveis.fornecedorDoTenant(this.db, tenantId, fornecedorId); }
+  emailFornecedor(f) { return Visiveis.emailFornecedor(f); }
 
   // ───────────────────────────────────────────────────────────────────────
   // 1. GERAR COTAÇÕES (Da forma INTELIGENTE)
@@ -173,11 +190,8 @@ class CotacaoService {
     const todosItens = await this.db.select('fornecedor_itens',
       { tenant_id: tenantId, ativo: true }, tenantId);
 
-    // 2. Buscar todos os fornecedores ativos
-    const todosForns = await this.db.select('fornecedores',
-      { tenant_id: tenantId, ativo: true }, tenantId);
-    const fornsPorId = {};
-    todosForns.forEach(f => { fornsPorId[f.id] = f; });
+    // 2. Fornecedores ativos que o tenant pode usar (locais dele + globais)
+    const fornsPorId = await this.mapaFornecedoresDoTenant(tenantId, { somenteAtivos: true });
 
     // 3. Buscar todo o catálogo do tenant
     const todoCatalogo = await this.db.select('catalogo_itens',
@@ -200,18 +214,15 @@ class CotacaoService {
         if (modelo && cat.modelo && cat.modelo !== modelo) return null;
         if (tipoFabricante && cat.tipo_fabricante && cat.tipo_fabricante !== tipoFabricante) return null;
 
-        // Fornecedor precisa existir e ser ativo
-        const f = fornsPorId[fi.fornecedor_id];
+        // Fornecedor precisa ser visível para o tenant (local dele ou global) e ativo
+        const f = fornsPorId[String(fi.fornecedor_id)];
         if (!f) return null;
-
-        // Regra: fornecedor global OU do próprio tenant
-        if (f.tipo !== 'global' && f.tenant_id !== tenantId) return null;
 
         return {
           fornecedor_item_id: fi.id,
           fornecedor_id: fi.fornecedor_id,
-          fornecedor_nome: f.nome,
-          fornecedor_email: f.email,
+          fornecedor_nome: f.nome || f.nome_fantasia,
+          fornecedor_email: this.emailFornecedor(f),
           preco_unitario: fi.preco_unitario,
           descricao_fornecedor: fi.descricao_fornecedor,
           data_tabela: fi.data_tabela,
@@ -465,11 +476,14 @@ class CotacaoService {
 
     const fornecedorIdsArray = fornecedores.map(f => f.fornecedor_id);
     // FIX (2026-09): db.raw ignorava o ANY($2), devolvia todos os fornecedores.
-    const todosFornecedores = await this.db.select('fornecedores', { tenant_id: tenantId }, tenantId);
-    const fornecedoresData = todosFornecedores.filter(f => fornecedorIdsArray.includes(f.id));
-
+    // 2026-10: inclui globais (antes só achava fornecedor com o tenant_id do comprador,
+    // e o global de outro tenant era pulado sem e-mail — "Fornecedor X não encontrado").
+    const idsDaCotacao = new Set(fornecedorIdsArray.map(String));
+    const visiveis = await this.fornecedoresDoTenant(tenantId);
     const fornecedorMap = {};
-    fornecedoresData.forEach(f => { fornecedorMap[f.id] = f; });
+    visiveis
+      .filter(f => idsDaCotacao.has(String(f.id)))
+      .forEach(f => { fornecedorMap[f.id] = { ...f, email: this.emailFornecedor(f) }; });
 
     const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/^FRONTEND_URL=/, '');
 
@@ -838,22 +852,18 @@ class CotacaoService {
       { tenant_id: tenantId, ativo: true }, tenantId);
     const itensDoItem = todosItens.filter(fi => String(fi.item_catalogo_id) === String(itemCatalogoId));
 
-    const todosFornecedores = await this.db.select('fornecedores',
-      { tenant_id: tenantId, ativo: true }, tenantId);
-    const fornecedoresPorId = {};
-    todosFornecedores.forEach(f => { fornecedoresPorId[f.id] = f; });
+    // Fornecedores ativos que o tenant pode usar (locais dele + globais)
+    const fornecedoresPorId = await this.mapaFornecedoresDoTenant(tenantId, { somenteAtivos: true });
 
     const fornecedores = itensDoItem
       .map(fi => {
-        const f = fornecedoresPorId[fi.fornecedor_id];
+        const f = fornecedoresPorId[String(fi.fornecedor_id)];
         if (!f) return null;
-        // Regra: fornecedor global OU do próprio tenant
-        if (f.tipo !== 'global' && f.tenant_id !== tenantId) return null;
         return {
           fornecedor_item_id: fi.id,
           fornecedor_id: fi.fornecedor_id,
-          fornecedor_nome: f.nome,
-          fornecedor_email: f.email,
+          fornecedor_nome: f.nome || f.nome_fantasia,
+          fornecedor_email: this.emailFornecedor(f),
           preco_unitario: fi.preco_unitario,
           estoque_status: fi.estoque_status,
           tempo_entrega_dias: fi.tempo_entrega_dias,
@@ -1054,7 +1064,9 @@ class CotacaoService {
       return acc;
     }, {});
 
-    // 6. Para cada item, buscar fornecedores (APENAS DIRETOS, UM A UM)
+    // 6. Para cada item, buscar fornecedores (APENAS DIRETOS)
+    // Fornecedores ativos que o tenant pode usar — carregados uma vez só.
+    const fornecedoresVisiveis = await this.mapaFornecedoresDoTenant(tenantId, { somenteAtivos: true });
     const resultado = {};
 
     for (const [categoria, itensCategoria] of Object.entries(itensPorCategoria)) {
@@ -1079,17 +1091,15 @@ class CotacaoService {
         let fornecedores = [];
 
         if (fornecedorItens && fornecedorItens.length > 0) {
-          // 2. Buscar FORNECEDORES UM A UM (para evitar erro de array)
+          // 2. Só fornecedores ativos que o tenant pode usar (locais dele + globais)
           for (const fi of fornecedorItens) {
-            const fornecedor = await this.db.selectOne('fornecedores', { 
-              id: fi.fornecedor_id, 
-              ativo: 1 // 🔥 MUDE PARA 1
-            }, tenantId);
+            const fornecedor = fornecedoresVisiveis[String(fi.fornecedor_id)];
+            if (!fornecedor) continue; // inativo, desativado pelo tenant ou de outro tenant
 
             fornecedores.push({
               fornecedor_id: fi.fornecedor_id,
-              fornecedor_nome: fornecedor?.nome || 'Fornecedor não encontrado',
-              fornecedor_email: fornecedor?.email || null,
+              fornecedor_nome: fornecedor.nome || fornecedor.nome_fantasia,
+              fornecedor_email: this.emailFornecedor(fornecedor),
               preco_unitario: fi.preco_unitario,
               data_tabela: fi.data_tabela,
               estoque_status: fi.estoque_status,
@@ -1185,7 +1195,10 @@ class CotacaoService {
       }
       
       for (const fornecedorId of fornecedoresUnicos) {
-        const fornecedor = await this.db.selectOne('fornecedores', { id: fornecedorId }, tenantId);
+        const fornecedor = await this.fornecedorDoTenant(tenantId, fornecedorId);
+        if (!fornecedor) {
+          throw new Error(`Fornecedor ${fornecedorId} não encontrado ou não disponível para a sua empresa`);
+        }
         // FIX (2026-09): gerar token_acesso no INSERT. Antes o token só
         // nascia no enviarCotacao — se o comprador copiasse o link antes
         // de enviar, saía .../null, o PostgREST interpretava 'null' como
@@ -1195,8 +1208,8 @@ class CotacaoService {
           tenant_id: tenantId,
           cotacao_id: cotacaoExistente.id,
           fornecedor_id: fornecedorId,
-          fornecedor_nome: fornecedor?.nome || 'Fornecedor',
-          fornecedor_email: fornecedor?.email || null,
+          fornecedor_nome: fornecedor.nome || fornecedor.nome_fantasia || 'Fornecedor',
+          fornecedor_email: this.emailFornecedor(fornecedor),
           status: 'pendente',
           token_acesso: token,
         }, tenantId);
@@ -1251,14 +1264,17 @@ class CotacaoService {
     }
     
     for (const fornecedorId of fornecedoresUnicos) {
-      const fornecedor = await this.db.selectOne('fornecedores', { id: fornecedorId }, tenantId);
+      const fornecedor = await this.fornecedorDoTenant(tenantId, fornecedorId);
+      if (!fornecedor) {
+        throw new Error(`Fornecedor ${fornecedorId} não encontrado ou não disponível para a sua empresa`);
+      }
       const token = this.gerarTokenFornecedor(cotacao.id, fornecedorId);
       await this.db.insert('cotacao_fornecedores', {
         tenant_id: tenantId,
         cotacao_id: cotacao.id,
         fornecedor_id: fornecedorId,
-        fornecedor_nome: fornecedor?.nome || 'Fornecedor',
-        fornecedor_email: fornecedor?.email || null,
+        fornecedor_nome: fornecedor.nome || fornecedor.nome_fantasia || 'Fornecedor',
+        fornecedor_email: this.emailFornecedor(fornecedor),
         status: 'pendente',
         token_acesso: token,
       }, tenantId);
@@ -1520,7 +1536,8 @@ class CotacaoService {
       // 10. ENVIAR E-MAIL DE CONFIRMAÇÃO
       try {
         const { enviarEmailCotacao } = require('./emailService');
-        const fornecedor = await this.db.selectOne('fornecedores', { id: fornecedorId }, tenantId);
+        const fornecedorBase = await this.fornecedorDoTenant(tenantId, fornecedorId);
+        const fornecedor = fornecedorBase ? { ...fornecedorBase, email: this.emailFornecedor(fornecedorBase) } : null;
         const empresa = await this.db.selectOne('tenants', { id: tenantId });
 
         if (fornecedor?.email) {

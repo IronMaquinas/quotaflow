@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const { DB } = require('../../db');
+const { fornecedorDoTenant } = require('../../services/fornecedoresVisiveis'); // fornecedores locais do tenant + globais
 const tenantMiddleware = require('../../middleware/tenantMiddleware');
 const ValidacaoXmlService = require('../../services/ValidacaoXmlService');
 
@@ -1557,7 +1558,7 @@ router.get('/item/:itemConsumoId/trajetoria', tenantMiddleware, async (req, res)
       }
 
       if (m.tipo === 'entrada' && m.fornecedor_id) {
-        const f = await DB.selectOne('fornecedores', { id: m.fornecedor_id, tenant_id: tenantId }, tenantId);
+        const f = await fornecedorDoTenant(DB, tenantId, m.fornecedor_id);
         fornecedor_nome = f?.nome || null;
       }
 
@@ -1637,10 +1638,7 @@ router.get('/contagens-pendentes', tenantMiddleware, async (req, res) => {
       // Buscar fornecedor
       let fornecedor = null;
       if (ov?.fornecedor_id) {
-        fornecedor = await DB.selectOne('fornecedores', { 
-          id: ov.fornecedor_id, 
-          tenant_id: tenantId 
-        }, tenantId);
+        fornecedor = await fornecedorDoTenant(DB, tenantId, ov.fornecedor_id);
       }
 
       // Buscar total de tentativas
@@ -1713,7 +1711,7 @@ router.get('/ordens-em-processo', tenantMiddleware, async (req, res) => {
 
       // Buscar fornecedor
       const fornecedor = ov.fornecedor_id ? 
-        await DB.selectOne('fornecedores', { id: ov.fornecedor_id, tenant_id: tenantId }, tenantId) : 
+        await fornecedorDoTenant(DB, tenantId, ov.fornecedor_id) : 
         null;
 
       // Calcular status da OV
@@ -1837,7 +1835,7 @@ router.get('/ordens-venda', tenantMiddleware, async (req, res) => {
 
       // Buscar fornecedor
       const fornecedor = ov.fornecedor_id ?
-        await DB.selectOne('fornecedores', { id: ov.fornecedor_id, tenant_id: tenantId }, tenantId) :
+        await fornecedorDoTenant(DB, tenantId, ov.fornecedor_id) :
         null;
 
       // Calcular status dinâmico
@@ -1999,7 +1997,7 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
       try {
         const ovParaNC = await DB.selectOne('ordens_venda', { id: item.ordem_venda_id, tenant_id: tenantId }, tenantId);
         const fornecedorParaNC = ovParaNC?.fornecedor_id
-          ? await DB.selectOne('fornecedores', { id: ovParaNC.fornecedor_id, tenant_id: tenantId }, tenantId)
+          ? await fornecedorDoTenant(DB, tenantId, ovParaNC.fornecedor_id)
           : null;
 
       // FIX M4: buscar nome do usuário logado pra gravar em

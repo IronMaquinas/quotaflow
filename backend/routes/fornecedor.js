@@ -1296,11 +1296,11 @@ router.put('/me', fornecedorMiddleware, async (req, res) => {
       if (!usuarioComSenha) {
         return res.status(404).json({ erro: 'Usuário não encontrado' });
       }
-      const senhaOk = await bcrypt.compare(senha_atual, usuarioComSenha.senha);
+      const senhaOk = await bcrypt.compare(senha_atual, usuarioComSenha.senha_hash);
       if (!senhaOk) {
         return res.status(401).json({ erro: 'Senha atual incorreta' });
       }
-      dadosUsuario.senha = await bcrypt.hash(nova_senha, 10);
+      dadosUsuario.senha_hash = await bcrypt.hash(nova_senha, 10);
     }
 
     if (Object.keys(dadosUsuario).length > 0) {

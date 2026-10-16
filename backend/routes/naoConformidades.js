@@ -18,6 +18,7 @@
 const express = require('express');
 const router = express.Router();
 const { DB } = require('../db');
+const { fornecedorDoTenant } = require('../services/fornecedoresVisiveis'); // fornecedores locais do tenant + globais
 const tenantMiddleware = require('../middleware/tenantMiddleware');
 const { notificarFornecedorNC } = require('../services/NCService');
 
@@ -181,7 +182,7 @@ router.post('/', tenantMiddleware, async (req, res) => {
       // M4.4-etapa-10d-fix: grava o nome do fornecedor junto (ajuda a
       // busca por texto na lista e evita fallback `#7` em modais).
       fornecedor_nome: fornecedorIdFinal
-        ? (await DB.selectOne("fornecedores", { id: fornecedorIdFinal, tenant_id: tenantId }, tenantId))?.nome || null
+        ? (await fornecedorDoTenant(DB, tenantId, fornecedorIdFinal))?.nome || null
         : null,
       fornecedor_tratativa_status: fornecedorIdFinal ? "nao_enviado" : null,
     }, tenantId);
@@ -470,7 +471,7 @@ router.get('/:id', tenantMiddleware, async (req, res) => {
     let fornecedor_nome = nc.fornecedor_nome || null;
     if (nc.fornecedor_id) {
       try {
-        const forn = await DB.selectOne("fornecedores", { id: nc.fornecedor_id, tenant_id: tenantId }, tenantId);
+        const forn = await fornecedorDoTenant(DB, tenantId, nc.fornecedor_id);
         fornecedor_email = forn?.email || null;
         // M4.4-etapa-10d-fix: enriquece nome do fornecedor. A coluna
         // `nc.fornecedor_nome` nem sempre está preenchida (a criação
@@ -1541,7 +1542,7 @@ router.post('/:id/devolver-fornecedor', tenantMiddleware, async (req, res) => {
     // completo (cliente, item, PN, quantidade, descrição).
     try {
       const fornecedor = nc.fornecedor_id
-        ? await DB.selectOne('fornecedores', { id: nc.fornecedor_id, tenant_id: tenantId }, tenantId)
+        ? await fornecedorDoTenant(DB, tenantId, nc.fornecedor_id)
         : null;
       if (fornecedor?.email) {
         const { enviarEmailCotacao } = require('../services/emailService');

@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const { DB } = require('../db');
+const { fornecedorDoTenant } = require('../services/fornecedoresVisiveis'); // fornecedores locais do tenant + globais
 const tenantMiddleware = require('../middleware/tenantMiddleware');
 const { enviarEmailCotacao } = require('../services/emailService');
 
@@ -47,7 +48,7 @@ router.get('/', tenantMiddleware, async (req, res) => {
       (itens || []).sort((a, b) => Number(a.id) - Number(b.id));
 
       // Buscar fornecedor
-      const fornecedor = await DB.selectOne('fornecedores', { id: ov.fornecedor_id }, tenantId);
+      const fornecedor = await fornecedorDoTenant(DB, tenantId, ov.fornecedor_id);
       const cotacao = await DB.selectOne('cotacoes', { id: ov.cotacao_id }, tenantId);
 
       // M4.3-ai: contadores por categoria de item (para o badge secundário
@@ -106,9 +107,9 @@ router.get('/:id', tenantMiddleware, async (req, res) => {
     }
 
     // Buscar fornecedor
-    const fornecedorData = await DB.selectOne('fornecedores', { id: ov.fornecedor_id }, tenantId);
+    const fornecedorData = await fornecedorDoTenant(DB, tenantId, ov.fornecedor_id);
     const fornecedor_nome = fornecedorData?.nome || 'Fornecedor não identificado';
-    const fornecedor_email = fornecedorData?.email || null;
+    const fornecedor_email = fornecedorData?.email || fornecedorData?.email_contato || null;
 
     // Buscar cotação
     const cotacao = await DB.selectOne('cotacoes', { id: ov.cotacao_id }, tenantId);
@@ -171,8 +172,8 @@ router.put('/:id/status', tenantMiddleware, async (req, res) => {
     }
 
     // Buscar fornecedor para e-mail
-    const fornecedorData = await DB.selectOne('fornecedores', { id: ov.fornecedor_id }, tenantId);
-    const fornecedor_email = fornecedorData?.email || null;
+    const fornecedorData = await fornecedorDoTenant(DB, tenantId, ov.fornecedor_id);
+    const fornecedor_email = fornecedorData?.email || fornecedorData?.email_contato || null;
 
     // Atualizar status
     await DB.update('ordens_venda', ovId, {

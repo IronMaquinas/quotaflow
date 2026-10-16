@@ -21,9 +21,13 @@ router.get('/demandas', tenantMiddleware, async (req, res) => {
     }
 
     const fornIds = [...new Set(interesses.map(i => i.fornecedor_id))];
-    const fornecedores = fornIds.length ? await DB.select('fornecedores_spot', {}) : [];
+    // req.fornecedorId (fornecedorMiddleware) vem de fornecedor_usuarios.fornecedor_id,
+    // que aponta para a tabela `fornecedores`. Antes isto lia `fornecedores_spot` e só
+    // funcionava porque o Global Peças tem o mesmo id (7) nas duas tabelas.
+    const fornecedores = fornIds.length ? await DB.select('fornecedores', {}) : [];
     const fornById = {};
-    for (const f of fornecedores) fornById[f.id] = f;
+    const idsInteressados = new Set(fornIds.map(String)); // bigint pode vir como string do node-pg
+    for (const f of fornecedores) if (idsInteressados.has(String(f.id))) fornById[f.id] = f;
 
     // Gera signed URLs das fotos (batch)
     const pathsFoto = (demandas || []).map(d => d.foto_path).filter(Boolean);
@@ -46,8 +50,9 @@ router.get('/demandas', tenantMiddleware, async (req, res) => {
           return {
             id: i.id,
             fornecedor_id: i.fornecedor_id,
-            fornecedor_nome: f.nome || 'Fornecedor',
-            fornecedor_email: f.email || null,
+            // nome_fantasia/email_contato vêm do "Meus Dados" do fornecedor; nome/email, do cadastro do tenant
+            fornecedor_nome: f.nome_fantasia || f.nome || 'Fornecedor',
+            fornecedor_email: f.email_contato || f.email || null,
             fornecedor_telefone: f.telefone || null,
             fornecedor_whatsapp: f.whatsapp || null,
             mensagem: i.mensagem,

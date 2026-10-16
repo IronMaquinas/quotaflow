@@ -3,6 +3,7 @@ const express = require("express");
 const crypto = require("crypto");
 const router = express.Router();
 const { DB } = require("../db");
+const { fornecedorDoTenant } = require('../services/fornecedoresVisiveis'); // fornecedores locais do tenant + globais
 const tenantMiddleware = require("../middleware/tenantMiddleware");
 const { enviarEmailCotacao, enviarEmailResultado } = require("../services/emailService");
 const CotacaoService = require('../services/CotacaoService');
@@ -2773,7 +2774,7 @@ router.post('/:cotacaoId/fornecedores', tenantMiddleware, async (req, res) => {
     }
 
     // 2. Verificar se fornecedor existe
-    const fornecedor = await DB.selectOne('fornecedores', { id: fornecedor_id }, tenantId);
+    const fornecedor = await fornecedorDoTenant(DB, tenantId, fornecedor_id);
     if (!fornecedor) {
       return res.status(404).json({ erro: 'Fornecedor não encontrado' });
     }
@@ -2783,7 +2784,7 @@ router.post('/:cotacaoId/fornecedores', tenantMiddleware, async (req, res) => {
     const token = uuidv4();
 
     // 4. Inserir em cotacao_fornecedores
-    const contatos = fornecedor.contatos ? JSON.parse(fornecedor.contatos) : [];
+    const contatos = typeof fornecedor.contatos === 'string' ? JSON.parse(fornecedor.contatos) : (fornecedor.contatos || []);
     const emailComercial = contatos?.[0]?.email || fornecedor.email;
 
     const resultado = await DB.insert(
@@ -5186,13 +5187,13 @@ router.post('/:cotacaoId/adicionar-fornecedores', tenantMiddleware, async (req, 
         continue;
       }
 
-      const fornecedor = await DB.selectOne('fornecedores', { id: fornId }, tenantId);
+      const fornecedor = await fornecedorDoTenant(DB, tenantId, fornId);
       if (!fornecedor) {
         ignorados.push({ id: fornId, motivo: 'fornecedor não encontrado' });
         continue;
       }
 
-      const contatos = fornecedor.contatos ? JSON.parse(fornecedor.contatos) : [];
+      const contatos = typeof fornecedor.contatos === 'string' ? JSON.parse(fornecedor.contatos) : (fornecedor.contatos || []);
       const emailComercial = contatos?.[0]?.email || fornecedor.email;
       const token = uuidv4();
 

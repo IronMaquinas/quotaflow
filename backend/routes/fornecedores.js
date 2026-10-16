@@ -1,26 +1,123 @@
 // backend/routes/fornecedores.js
+//
+// Cadastro de fornecedores do lado do TENANT (comprador).
+//
+// Regras (ver doc do projeto "regras-acesso-fornecedores-e-spot.md"):
+// - O tenant vê os fornecedores que ele cadastrou (tipo 'local', tenant_id = dele)
+//   + os fornecedores GLOBAIS da plataforma (tipo 'global').
+// - Fornecedor global é mantido pela plataforma/pelo próprio fornecedor: o tenant
+//   NÃO edita nem exclui. Ele só pode "desativar para mim" — isso fica gravado no
+//   vínculo tenant_fornecedores, sem afetar os outros tenants.
+// - Um tenant nunca vê nem altera fornecedor local de outro tenant.
+//
+// Compatibilidade: a listagem identifica global pelo campo `tipo`, não pelo
+// tenant_id. Assim funciona tanto ANTES quanto DEPOIS de o tenant_id dos globais
+// ser zerado — o Global Peças não some em nenhum momento da transição.
+//
+// Limitações conhecidas do db.js (documentadas no projeto) que este arquivo
+// contorna de propósito: DB.select ignora filtro com valor null (não gera IS NULL),
+// não aceita array como filtro (IN) e DB.raw só entende alguns padrões fixos.
 
 const express = require("express");
 const router = express.Router();
 const { DB } = require("../db");
 const tenantMiddleware = require("../middleware/tenantMiddleware");
 
+// ─── Helpers ─────────────────────────────────────────────────────────────
+
+// contatos/categorias/dados_cnpj são jsonb, mas historicamente foram gravados com
+// JSON.stringify (ficam como string dentro do jsonb). Aceita os dois formatos.
+function lerJson(valor, padrao) {
+  if (valor === null || valor === undefined || valor === "") return padrao;
+  if (typeof valor !== "string") return valor;
+  try {
+    return JSON.parse(valor);
+  } catch {
+    return padrao;
+  }
+}
+
+const mesmoId = (a, b) => String(a) === String(b);
+const ehGlobal = (f) => f && f.tipo === "global";
+
+function formatar(f, extras = {}) {
+  return {
+    ...f,
+    contatos: lerJson(f.contatos, []),
+    categorias: lerJson(f.categorias, []),
+    dados_cnpj: lerJson(f.dados_cnpj, null),
+    ...extras,
+  };
+}
+
+// Global: dados públicos de cadastro + o "ativo" é o do vínculo deste tenant.
+// Campos internos do fornecedor (obs, dados de CNPJ) não vão para o tenant.
+function formatarGlobal(f, vinculo) {
+  const { obs, dados_cnpj, situacao_cnpj, ultima_consulta_cnpj, ...publico } = f;
+  return formatar(publico, {
+    tenant_id: null,
+    ativo: vinculo ? (vinculo.ativo ? 1 : 0) : 1, // sem vínculo = ativo por padrão
+    preferido: vinculo ? !!vinculo.preferido : false,
+    editavel: false,
+  });
+}
+
+// Busca um fornecedor que o tenant pode ENXERGAR (local dele ou global).
+// Retorna { fornecedor, global } ou null.
+async function buscarVisivel(id, tenantId) {
+  const f = await DB.selectOne("fornecedores", { id });
+  if (!f) return null;
+  if (ehGlobal(f)) return { fornecedor: f, global: true };
+  if (mesmoId(f.tenant_id, tenantId)) return { fornecedor: f, global: false };
+  return null; // local de outro tenant: para este tenant, não existe
+}
+
+async function vinculoDe(tenantId, fornecedorId) {
+  const lista = await DB.select("tenant_fornecedores", { tenant_id: tenantId, fornecedor_id: fornecedorId });
+  return lista && lista.length ? lista[0] : null;
+}
+
+// Cria ou atualiza o vínculo tenant ↔ fornecedor (usado para "desativar para mim").
+async function salvarVinculo(tenantId, fornecedorId, dados) {
+  const atual = await vinculoDe(tenantId, fornecedorId);
+  const agora = new Date().toISOString();
+  if (atual) {
+    return DB.update("tenant_fornecedores", atual.id, { ...dados, atualizado_em: agora });
+  }
+  return DB.insert("tenant_fornecedores", {
+    tenant_id: tenantId,
+    fornecedor_id: fornecedorId,
+    ativo: true,
+    preferido: false,
+    ...dados,
+  });
+}
+
 // ─────────────────────────────────────────────────────────────────────────
-// GET /api/fornecedores - Listar fornecedores do tenant
+// GET /api/fornecedores - Fornecedores do tenant + globais
 // ─────────────────────────────────────────────────────────────────────────
 
 router.get("/", tenantMiddleware, async (req, res) => {
   try {
-    const fornecedores = await DB.select("fornecedores", {}, req.tenantId);
-    
-    const parsed = fornecedores.map(f => ({
-      ...f,
-      contatos: f.contatos ? JSON.parse(f.contatos) : [],
-      categorias: f.categorias ? JSON.parse(f.categorias) : [],
-      dados_cnpj: f.dados_cnpj ? JSON.parse(f.dados_cnpj) : null,
-    }));
+    const [doTenant, globais, vinculos] = await Promise.all([
+      DB.select("fornecedores", {}, req.tenantId),
+      DB.select("fornecedores", { tipo: "global" }),
+      DB.select("tenant_fornecedores", { tenant_id: req.tenantId }),
+    ]);
 
-    res.json(parsed);
+    const vinculoPorFornecedor = {};
+    for (const v of vinculos || []) vinculoPorFornecedor[String(v.fornecedor_id)] = v;
+
+    // Locais do tenant (exclui globais que ainda estejam com o tenant_id dele)
+    const locais = (doTenant || [])
+      .filter((f) => !ehGlobal(f))
+      .map((f) => formatar(f, { editavel: true }));
+
+    const listaGlobais = (globais || []).map((f) => formatarGlobal(f, vinculoPorFornecedor[String(f.id)]));
+
+    // Globais primeiro, depois locais, cada grupo em ordem alfabética
+    const porNome = (a, b) => String(a.nome || "").localeCompare(String(b.nome || ""), "pt-BR");
+    res.json([...listaGlobais.sort(porNome), ...locais.sort(porNome)]);
   } catch (err) {
     console.error("❌ Erro ao listar fornecedores:", err.message);
     res.status(500).json({ erro: err.message });
@@ -28,22 +125,75 @@ router.get("/", tenantMiddleware, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────
-// GET /api/fornecedores/:id - Buscar fornecedor por ID
+// Alertas de CNPJ — declarados ANTES de "/:id" por clareza.
+// Reescritos sem DB.raw: o JOIN e o UPDATE caíam no fallback genérico do raw()
+// (nome do fornecedor nunca vinha, e "marcar como lido" não gravava nada).
+// ─────────────────────────────────────────────────────────────────────────
+
+router.get("/alertas/cnpj", tenantMiddleware, async (req, res) => {
+  try {
+    const alertas = await DB.select("cnpj_alertas", {}, req.tenantId);
+    const ids = new Set((alertas || []).map((a) => String(a.fornecedor_id)));
+
+    const nomes = {};
+    if (ids.size) {
+      const [doTenant, globais] = await Promise.all([
+        DB.select("fornecedores", {}, req.tenantId),
+        DB.select("fornecedores", { tipo: "global" }),
+      ]);
+      for (const f of [...(doTenant || []), ...(globais || [])]) {
+        if (ids.has(String(f.id))) nomes[String(f.id)] = f.nome_fantasia || f.nome;
+      }
+    }
+
+    const resultado = (alertas || [])
+      .map((a) => ({
+        id: a.id,
+        fornecedor_id: a.fornecedor_id,
+        situacao_anterior: a.situacao_anterior,
+        situacao_nova: a.situacao_nova,
+        detectado_em: a.detectado_em,
+        lido: a.lido,
+        fornecedor_nome: nomes[String(a.fornecedor_id)] || null,
+      }))
+      .sort((a, b) => new Date(b.detectado_em || 0) - new Date(a.detectado_em || 0));
+
+    res.json(resultado);
+  } catch (err) {
+    console.error("❌ Erro ao listar alertas:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+const marcarAlertaLido = async (req, res) => {
+  try {
+    const alerta = await DB.selectOne("cnpj_alertas", { id: req.params.id }, req.tenantId);
+    if (!alerta) return res.status(404).json({ erro: "Alerta não encontrado" });
+    await DB.update("cnpj_alertas", alerta.id, { lido: 1 }, req.tenantId);
+    res.json({ ok: true, mensagem: "Alerta marcado como lido" });
+  } catch (err) {
+    console.error("❌ Erro ao atualizar alerta:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+};
+// O GET usa "/alertas/cnpj" e o PUT antigo usava "/alertas-cnpj/..." — aceita os dois.
+router.put("/alertas/cnpj/:id/ler", tenantMiddleware, marcarAlertaLido);
+router.put("/alertas-cnpj/:id/ler", tenantMiddleware, marcarAlertaLido);
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/fornecedores/:id
 // ─────────────────────────────────────────────────────────────────────────
 
 router.get("/:id", tenantMiddleware, async (req, res) => {
   try {
-    const fornecedor = await DB.selectOne("fornecedores", { id: req.params.id }, req.tenantId);
-    
-    if (!fornecedor) {
-      return res.status(404).json({ erro: "Fornecedor não encontrado" });
+    const achado = await buscarVisivel(req.params.id, req.tenantId);
+    if (!achado) return res.status(404).json({ erro: "Fornecedor não encontrado" });
+
+    if (achado.global) {
+      const vinculo = await vinculoDe(req.tenantId, achado.fornecedor.id);
+      return res.json(formatarGlobal(achado.fornecedor, vinculo));
     }
-
-    fornecedor.contatos = fornecedor.contatos ? JSON.parse(fornecedor.contatos) : [];
-    fornecedor.categorias = fornecedor.categorias ? JSON.parse(fornecedor.categorias) : [];
-    fornecedor.dados_cnpj = fornecedor.dados_cnpj ? JSON.parse(fornecedor.dados_cnpj) : null;
-
-    res.json(fornecedor);
+    res.json(formatar(achado.fornecedor, { editavel: true }));
   } catch (err) {
     console.error("❌ Erro ao buscar fornecedor:", err.message);
     res.status(500).json({ erro: err.message });
@@ -51,56 +201,43 @@ router.get("/:id", tenantMiddleware, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────
-// POST /api/fornecedores - Criar novo fornecedor
+// POST /api/fornecedores - Criar fornecedor LOCAL do tenant
 // ─────────────────────────────────────────────────────────────────────────
 
 router.post("/", tenantMiddleware, async (req, res) => {
   try {
     const {
-      nome,
-      razao_social,
-      cnpj,
-      endereco,
-      numero,
-      complemento,
-      bairro,
-      cidade,
-      estado,
-      cep,
-      contatos,
-      categorias,
-      obs,
-      latitude,
-      longitude,
-      email,
+      nome, razao_social, cnpj, endereco, numero, complemento, bairro,
+      cidade, estado, cep, contatos, categorias, obs, latitude, longitude, email,
     } = req.body;
 
     if (!nome) {
       return res.status(400).json({ erro: "Nome é obrigatório" });
     }
 
-    // ✅ Validar CNPJ duplicado
-    if (cnpj) {
-      const cnpjLimpo = cnpj.replace(/\D/g, '');
-      const jaExiste = await DB.selectOne(
-        "fornecedores",
-        { cnpj: cnpjLimpo },
-        req.tenantId
-      );
-      
-      if (jaExiste) {
-        return res.status(409).json({ 
-          erro: "CNPJ já cadastrado",
-          fornecedorExistente: jaExiste.id 
+    const cnpjLimpo = cnpj ? String(cnpj).replace(/\D/g, "") : null;
+
+    if (cnpjLimpo) {
+      // Já é fornecedor global? Então já está na lista do tenant — não duplica.
+      const global = await DB.selectOne("fornecedores", { cnpj: cnpjLimpo, tipo: "global" });
+      if (global) {
+        return res.status(409).json({
+          erro: `Este CNPJ já pertence a um fornecedor da rede global (${global.nome_fantasia || global.nome}). Ele já aparece na sua lista de fornecedores.`,
+          fornecedorExistente: global.id,
+          global: true,
         });
+      }
+      // Já cadastrado por este mesmo tenant?
+      const doTenant = await DB.selectOne("fornecedores", { cnpj: cnpjLimpo }, req.tenantId);
+      if (doTenant) {
+        return res.status(409).json({ erro: "CNPJ já cadastrado", fornecedorExistente: doTenant.id });
       }
     }
 
-    // Preparar dados para inserção
-    const fornecedorData = {
+    const fornecedor = await DB.insert("fornecedores", {
       nome,
       razao_social: razao_social || null,
-      cnpj: cnpj ? cnpj.replace(/\D/g, '') : null,
+      cnpj: cnpjLimpo,
       endereco: endereco || null,
       numero: numero || null,
       complemento: complemento || null,
@@ -114,17 +251,11 @@ router.post("/", tenantMiddleware, async (req, res) => {
       latitude: latitude || null,
       longitude: longitude || null,
       email: email || null,
+      tipo: "local", // tenant nunca cria global — global é cadastrado pela plataforma
       ativo: 1,
-    };
+    }, req.tenantId);
 
-    const fornecedor = await DB.insert("fornecedores", fornecedorData, req.tenantId);
-
-    // Parsear os campos JSON para retornar no formato esperado
-    fornecedor.contatos = contatos || [];
-    fornecedor.categorias = categorias || [];
-    fornecedor.dados_cnpj = null;
-
-    res.status(201).json(fornecedor);
+    res.status(201).json(formatar(fornecedor, { editavel: true }));
   } catch (err) {
     console.error("❌ Erro ao criar fornecedor:", err.message);
     res.status(500).json({ erro: err.message });
@@ -132,82 +263,75 @@ router.post("/", tenantMiddleware, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────
-// PUT /api/fornecedores/:id - Atualizar fornecedor
+// PUT /api/fornecedores/:id
+//   Local do tenant  → atualiza o cadastro.
+//   Global           → só aceita { ativo } (e { preferido }), gravados no vínculo.
 // ─────────────────────────────────────────────────────────────────────────
+
+const CAMPOS_EDITAVEIS = [
+  "nome", "razao_social", "cnpj", "endereco", "numero", "complemento", "bairro",
+  "cidade", "estado", "cep", "contatos", "categorias", "obs", "latitude", "longitude", "email",
+];
 
 router.put("/:id", tenantMiddleware, async (req, res) => {
   try {
-    const { id } = req.params;
-    const {
-      nome,
-      razao_social,
-      cnpj,
-      endereco,
-      numero,
-      complemento,
-      bairro,
-      cidade,
-      estado,
-      cep,
-      contatos,
-      categorias,
-      obs,
-      latitude,
-      longitude,
-      email,
-      ativo,
-    } = req.body;
+    const achado = await buscarVisivel(req.params.id, req.tenantId);
+    if (!achado) return res.status(404).json({ erro: "Fornecedor não encontrado" });
 
-    // Verificar que fornecedor pertence ao tenant
-    const fornecedor = await DB.selectOne("fornecedores", { id }, req.tenantId);
-    if (!fornecedor) {
-      return res.status(404).json({ erro: "Fornecedor não encontrado" });
+    const body = req.body || {};
+
+    // ── Global: só preferências do próprio tenant ──
+    if (achado.global) {
+      const tentouEditarCadastro = CAMPOS_EDITAVEIS.some((c) => body[c] !== undefined);
+      if (tentouEditarCadastro) {
+        return res.status(403).json({
+          erro: "Fornecedor global: os dados cadastrais são mantidos pela plataforma. Você pode apenas ativá-lo ou desativá-lo para a sua empresa.",
+        });
+      }
+      const dadosVinculo = {};
+      if (body.ativo !== undefined) dadosVinculo.ativo = !!body.ativo;
+      if (body.preferido !== undefined) dadosVinculo.preferido = !!body.preferido;
+      if (Object.keys(dadosVinculo).length) {
+        await salvarVinculo(req.tenantId, achado.fornecedor.id, dadosVinculo);
+      }
+      const vinculo = await vinculoDe(req.tenantId, achado.fornecedor.id);
+      return res.json(formatarGlobal(achado.fornecedor, vinculo));
     }
 
-    // ✅ ADD ISSO AQUI - Validar CNPJ duplicado
-    if (cnpj !== undefined && cnpj) {
-      const cnpjLimpo = cnpj.replace(/\D/g, '');
-      const jaExiste = await DB.selectOne(
-        "fornecedores",
-        { cnpj: cnpjLimpo },
-        req.tenantId
-      );
-      
-      if (jaExiste && jaExiste.id !== parseInt(id)) {
-        return res.status(409).json({ 
-          erro: "CNPJ já cadastrado por outro fornecedor",
-          fornecedorExistente: jaExiste.id 
+    // ── Local do tenant ──
+    const { id } = achado.fornecedor;
+
+    if (body.cnpj) {
+      const cnpjLimpo = String(body.cnpj).replace(/\D/g, "");
+      const global = await DB.selectOne("fornecedores", { cnpj: cnpjLimpo, tipo: "global" });
+      if (global) {
+        return res.status(409).json({
+          erro: `Este CNPJ já pertence a um fornecedor da rede global (${global.nome_fantasia || global.nome}).`,
+          fornecedorExistente: global.id,
+          global: true,
         });
+      }
+      const jaExiste = await DB.selectOne("fornecedores", { cnpj: cnpjLimpo }, req.tenantId);
+      if (jaExiste && !mesmoId(jaExiste.id, id)) {
+        return res.status(409).json({ erro: "CNPJ já cadastrado por outro fornecedor", fornecedorExistente: jaExiste.id });
       }
     }
 
-    // Preparar dados para atualização (apenas campos enviados)
     const updateData = {};
-    if (nome !== undefined) updateData.nome = nome;
-    if (razao_social !== undefined) updateData.razao_social = razao_social;
-    if (cnpj !== undefined) updateData.cnpj = cnpj ? cnpj.replace(/\D/g, '') : null;    if (endereco !== undefined) updateData.endereco = endereco;
-    if (numero !== undefined) updateData.numero = numero;
-    if (complemento !== undefined) updateData.complemento = complemento;
-    if (bairro !== undefined) updateData.bairro = bairro;
-    if (cidade !== undefined) updateData.cidade = cidade;
-    if (estado !== undefined) updateData.estado = estado;
-    if (cep !== undefined) updateData.cep = cep;
-    if (contatos !== undefined) updateData.contatos = JSON.stringify(contatos);
-    if (categorias !== undefined) updateData.categorias = JSON.stringify(categorias);
-    if (obs !== undefined) updateData.obs = obs;
-    if (latitude !== undefined) updateData.latitude = latitude;
-    if (longitude !== undefined) updateData.longitude = longitude;
-    if (email !== undefined) updateData.email = email;
-    if (ativo !== undefined) updateData.ativo = ativo ? 1 : 0;
+    for (const campo of CAMPOS_EDITAVEIS) {
+      if (body[campo] === undefined) continue;
+      if (campo === "cnpj") updateData.cnpj = body.cnpj ? String(body.cnpj).replace(/\D/g, "") : null;
+      else if (campo === "contatos" || campo === "categorias") updateData[campo] = JSON.stringify(body[campo]);
+      else updateData[campo] = body[campo];
+    }
+    if (body.ativo !== undefined) updateData.ativo = body.ativo ? 1 : 0;
+    // `tipo` e `tenant_id` nunca são alterados por esta rota.
 
-    const updated = await DB.update("fornecedores", id, updateData, req.tenantId);
+    const updated = Object.keys(updateData).length
+      ? await DB.update("fornecedores", id, updateData, req.tenantId)
+      : achado.fornecedor;
 
-    // Parsear campos JSON para resposta
-    updated.contatos = updated.contatos ? JSON.parse(updated.contatos) : [];
-    updated.categorias = updated.categorias ? JSON.parse(updated.categorias) : [];
-    updated.dados_cnpj = updated.dados_cnpj ? JSON.parse(updated.dados_cnpj) : null;
-
-    res.json(updated);
+    res.json(formatar(updated, { editavel: true }));
   } catch (err) {
     console.error("❌ Erro ao atualizar fornecedor:", err.message);
     res.status(500).json({ erro: err.message });
@@ -215,68 +339,24 @@ router.put("/:id", tenantMiddleware, async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────
-// DELETE /api/fornecedores/:id - Deletar fornecedor
+// DELETE /api/fornecedores/:id - só fornecedor LOCAL do próprio tenant
 // ─────────────────────────────────────────────────────────────────────────
 
 router.delete("/:id", tenantMiddleware, async (req, res) => {
   try {
-    const { id } = req.params;
+    const achado = await buscarVisivel(req.params.id, req.tenantId);
+    if (!achado) return res.status(404).json({ erro: "Fornecedor não encontrado" });
 
-    // Verificar que fornecedor pertence ao tenant
-    const fornecedor = await DB.selectOne("fornecedores", { id }, req.tenantId);
-    if (!fornecedor) {
-      return res.status(404).json({ erro: "Fornecedor não encontrado" });
+    if (achado.global) {
+      return res.status(403).json({
+        erro: "Fornecedor global não pode ser excluído. Você pode desativá-lo para a sua empresa.",
+      });
     }
 
-    await DB.delete("fornecedores", id, req.tenantId);
+    await DB.delete("fornecedores", achado.fornecedor.id, req.tenantId);
     res.json({ ok: true, mensagem: "Fornecedor deletado" });
   } catch (err) {
     console.error("❌ Erro ao deletar fornecedor:", err.message);
-    res.status(500).json({ erro: err.message });
-  }
-});
-
-// ─────────────────────────────────────────────────────────────────────────
-// GET /api/fornecedores/alertas-cnpj - Alertas de CNPJ (mantido)
-// ─────────────────────────────────────────────────────────────────────────
-
-router.get("/alertas/cnpj", tenantMiddleware, async (req, res) => {
-  try {
-    const alertas = await DB.raw(`
-      SELECT 
-        ca.id, ca.fornecedor_id, ca.situacao_anterior, ca.situacao_nova, 
-        ca.detectado_em, ca.lido,
-        f.nome as fornecedor_nome
-      FROM cnpj_alertas ca
-      JOIN fornecedores f ON f.id = ca.fornecedor_id
-      WHERE ca.tenant_id = $1
-      ORDER BY ca.detectado_em DESC
-    `, [req.tenantId]);
-
-    res.json(alertas);
-  } catch (err) {
-    console.error("❌ Erro ao listar alertas:", err.message);
-    res.status(500).json({ erro: err.message });
-  }
-});
-
-// ─────────────────────────────────────────────────────────────────────────
-// PUT /api/fornecedores/alertas-cnpj/:id/ler - Marcar alerta como lido
-// ─────────────────────────────────────────────────────────────────────────
-
-router.put("/alertas-cnpj/:id/ler", tenantMiddleware, async (req, res) => {
-  try {
-    const { id } = req.params;
-
-    await DB.raw(`
-      UPDATE cnpj_alertas 
-      SET lido = 1 
-      WHERE id = $1 AND tenant_id = $2
-    `, [id, req.tenantId]);
-
-    res.json({ ok: true, mensagem: "Alerta marcado como lido" });
-  } catch (err) {
-    console.error("❌ Erro ao atualizar alerta:", err.message);
     res.status(500).json({ erro: err.message });
   }
 });

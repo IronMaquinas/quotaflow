@@ -13,6 +13,7 @@
 // responder exatamente como o link público — mesma regra, mesma auditoria).
 
 const { DB, supabase } = require('../db');
+const { fornecedorDoTenant } = require('./fornecedoresVisiveis'); // fornecedores locais do tenant + globais
 const { v4: uuidv4 } = require('uuid');
 const { enviarEmailCotacao } = require('./emailService');
 
@@ -34,7 +35,7 @@ async function carregarParaResposta(fornData) {
 
   // 2. Empresa e fornecedor
   const empresa = await DB.selectOne('tenants', { id: tenantId });
-  const fornecedor = await DB.selectOne('fornecedores', { id: fornecedorId }, tenantId);
+  const fornecedor = await fornecedorDoTenant(DB, tenantId, fornecedorId);
 
   // 2b. Contato do comprador — resolvido pelas policies do tenant
   // (comunicacao_*_policy). Default é 'empresa' (combinado 2026-09).
@@ -384,7 +385,8 @@ async function responderPortal(fornData, respostas, validadeDias) {
 
   // 5. Email de confirmação (best-effort)
   try {
-    const fornecedor = await DB.selectOne('fornecedores', { id: fornecedorId }, tenantId);
+    const fornecedor = await fornecedorDoTenant(DB, tenantId, fornecedorId);
+    if (fornecedor && !fornecedor.email && fornecedor.email_contato) fornecedor.email = fornecedor.email_contato;
     const empresa = await DB.selectOne('tenants', { id: tenantId });
     const cotacao = await DB.selectOne('cotacoes', { id: cotacaoId }, tenantId);
 
