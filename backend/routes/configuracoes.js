@@ -8,6 +8,7 @@ const express = require('express');
 const router = express.Router();
 const { DB } = require('../db');
 const tenantMiddleware = require('../middleware/tenantMiddleware');
+const { normalizarUF } = require('../services/matchSpot'); // validação de UF
 
 async function usuarioAtual(req, tenantId) {
   let nome = null;
@@ -274,6 +275,41 @@ router.put('/nc-notificacao', tenantMiddleware, async (req, res) => {
     res.json({ ok: true, nc_notificacao_policy: policy });
   } catch (err) {
     console.error("❌ Erro ao salvar policy de NC:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/configuracoes/empresa
+// Região (UF) da empresa: padrão do "Estado onde precisa da peça" nas
+// demandas spot e base do critério de estado do Match Score.
+// ─────────────────────────────────────────────────────────────────────────
+router.get('/empresa', tenantMiddleware, async (req, res) => {
+  try {
+    const tenant = await DB.selectOne('tenants', { id: req.tenantId });
+    res.json({ nome: tenant?.nome || null, regiao: normalizarUF(tenant?.regiao) });
+  } catch (err) {
+    console.error("❌ Erro ao buscar dados da empresa:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// PUT /api/configuracoes/empresa
+// Body: { regiao: 'SP' | 'RJ' | ... | null }
+// ─────────────────────────────────────────────────────────────────────────
+router.put('/empresa', tenantMiddleware, async (req, res) => {
+  try {
+    const raw = req.body?.regiao;
+    const regiao = raw ? normalizarUF(raw) : null;
+    if (raw && !regiao) {
+      return res.status(400).json({ erro: "Estado inválido — use a sigla (ex.: SP, RJ)" });
+    }
+    // Tabela tenants é especial — o id É o tenant_id. Sem 4º arg.
+    await DB.update('tenants', req.tenantId, { regiao });
+    res.json({ ok: true, regiao });
+  } catch (err) {
+    console.error("❌ Erro ao salvar dados da empresa:", err.message);
     res.status(500).json({ erro: err.message });
   }
 });

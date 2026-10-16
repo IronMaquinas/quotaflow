@@ -3,6 +3,7 @@
 // Tela de configurações do tenant. v1 cobre:
 //   - Jornada de trabalho (padrão)
 //   - Feriados do calendário
+//   - Empresa: região (UF) — padrão das demandas spot e do Match Score
 //
 // Padrão: mesmo estilo visual da TelaOrdemServico, com tabs no topo.
 // Componente auto-contido — só precisa das props `C` e `s` (o design
@@ -49,6 +50,7 @@ export default function TelaConfiguracoes({ C, s }) {
           { id: "feriados", label: "📅 Feriados" },
           { id: "custos", label: "💼 Custos operacionais" },
           { id: "comunicacoes", label: "📨 Comunicações" },
+          { id: "empresa", label: "🏢 Empresa" },
         ].map(tab => (
           <button key={tab.id}
             onClick={() => { setAbaAtiva(tab.id); setErro(null); }}
@@ -83,6 +85,7 @@ export default function TelaConfiguracoes({ C, s }) {
       {abaAtiva === "feriados" && <SecaoFeriados C={C} s={s} onErro={setErro} />}
       {abaAtiva === "custos" && <SecaoCustosOperacionais C={C} s={s} onErro={setErro} />}
       {abaAtiva === "comunicacoes" && <SecaoComunicacoes C={C} s={s} onErro={setErro} />}
+      {abaAtiva === "empresa" && <SecaoEmpresa C={C} s={s} onErro={setErro} />}
     </div>
   );
 }
@@ -845,6 +848,88 @@ function SecaoCustosOperacionais({ C, s, onErro }) {
               <strong>o negócio perdeu dinheiro</strong> — e sugere consolidação
               quando um fornecedor majoritário cotou todos os itens.
             </>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+// ═════════════════════════════════════════════════════════════════════════
+// SEÇÃO: EMPRESA
+// ─────────────────────────────────────────────────────────────────────────
+// Região (UF) da empresa. É o padrão do campo "Estado onde precisa da
+// peça" nas demandas do Canal Spot (que pode ser trocado em cada demanda,
+// para quem tem bases em vários estados) e o que o Match Score usa para
+// destacar fornecedores que atendem a região.
+// ═════════════════════════════════════════════════════════════════════════
+const UFS = ["AC", "AL", "AP", "AM", "BA", "CE", "DF", "ES", "GO", "MA", "MT", "MS", "MG", "PA",
+  "PB", "PR", "PE", "PI", "RJ", "RN", "RS", "RO", "RR", "SC", "SP", "SE", "TO"];
+
+function SecaoEmpresa({ C, s, onErro }) {
+  const [carregando, setCarregando] = useState(true);
+  const [salvando, setSalvando] = useState(false);
+  const [sucesso, setSucesso] = useState(false);
+  const [nome, setNome] = useState("");
+  const [regiao, setRegiao] = useState("");
+
+  useEffect(() => {
+    setCarregando(true);
+    apiService.get("/configuracoes/empresa")
+      .then(r => { setNome(r?.nome || ""); setRegiao(r?.regiao || ""); })
+      .catch(e => onErro?.(e.message || "Erro ao carregar dados da empresa"))
+      .finally(() => setCarregando(false));
+  }, [onErro]);
+
+  async function salvar() {
+    setSucesso(false);
+    onErro?.(null);
+    setSalvando(true);
+    try {
+      const r = await apiService.put("/configuracoes/empresa", { regiao: regiao || null });
+      setRegiao(r?.regiao || "");
+      setSucesso(true);
+      setTimeout(() => setSucesso(false), 3000);
+    } catch (e) {
+      onErro?.(e.message || "Erro ao salvar");
+    } finally {
+      setSalvando(false);
+    }
+  }
+
+  if (carregando) {
+    return <div style={{ color: C.muted, padding: 20 }}>Carregando configuração...</div>;
+  }
+
+  return (
+    <div style={{ maxWidth: 720 }}>
+      <div style={{ ...s.card, padding: "18px 20px", marginBottom: 16 }}>
+        <div style={{ fontSize: 12, color: C.textSub, fontWeight: 600, marginBottom: 6 }}>
+          REGIÃO DA EMPRESA
+        </div>
+        <div style={{ fontSize: 11, color: C.muted, marginBottom: 14, lineHeight: 1.6 }}>
+          Estado onde fica a sua operação principal{nome ? <> (<strong>{nome}</strong>)</> : null}.
+          Ele vem preenchido como <strong>"Estado onde precisa da peça"</strong> nas demandas do
+          Canal Spot — e pode ser trocado em cada demanda, se a peça for para outra base.
+          Fornecedores que atendem o estado da demanda aparecem com mais destaque.
+        </div>
+
+        <div style={{ display: "flex", gap: 10, alignItems: "flex-end" }}>
+          <div style={{ width: 200 }}>
+            <label style={s.label}>ESTADO</label>
+            <select value={regiao} onChange={e => setRegiao(e.target.value)}
+              style={{ ...s.input, appearance: "none" }}>
+              <option value="">— não informado —</option>
+              {UFS.map(uf => <option key={uf} value={uf}>{uf}</option>)}
+            </select>
+          </div>
+          <button onClick={salvar} disabled={salvando}
+            style={{ ...s.btn(true), padding: "10px 24px", fontSize: 13, opacity: salvando ? 0.5 : 1 }}>
+            {salvando ? "Salvando..." : "Salvar"}
+          </button>
+          {sucesso && (
+            <span style={{ fontSize: 12, color: C.success, fontWeight: 600 }}>
+              ✅ Configuração salva
+            </span>
           )}
         </div>
       </div>

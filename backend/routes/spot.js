@@ -7,6 +7,36 @@ const fornecedorMiddleware = require('../middleware/fornecedorMiddleware');
 
 const StorageSpot = require('../services/StorageSpot');
 const { normalizarDemanda } = require('../services/atuacao'); // segmento, sistema, ofertas aceitas (etapa 4)
+const { contextoDoFornecedor, pontuarDemanda, normalizarUF, ufDoTenant } = require('../services/matchSpot'); // Match Score (etapa 6)
+
+const URGENCIAS = ['baixa', 'media', 'alta'];
+
+// Campos que o comprador preenche — usados na criação e na edição da demanda.
+// Devolve { erro } ou { dados }.
+async function lerCamposDemanda(b, tenantId) {
+  const descricao = String(b.descricao_equipamento || '').trim();
+  const componente = String(b.componente || '').trim();
+  const quantidade = Number(b.quantidade);
+  if (!descricao || !componente || !(quantidade >= 1)) {
+    return { erro: 'Equipamento, componente e quantidade (mínimo 1) são obrigatórios' };
+  }
+  // Estado onde precisa da peça: o informado, ou a região da empresa
+  let uf = normalizarUF(b.uf);
+  if (!uf) uf = ufDoTenant(await DB.selectOne('tenants', { id: tenantId }));
+  return {
+    dados: {
+      descricao_equipamento: descricao,
+      marca_modelo: b.marca_modelo ? String(b.marca_modelo).trim() : null,
+      componente,
+      part_number: b.part_number ? String(b.part_number).trim() : null,
+      quantidade,
+      comentarios: b.comentarios ? String(b.comentarios).trim() : null,
+      urgencia: URGENCIAS.includes(b.urgencia) ? b.urgencia : 'media',
+      uf,
+      ...(await normalizarDemanda(DB, b)),
+    },
+  };
+}
 
 // ─── COMPRADOR ────────────────────────────────────────────────
 
@@ -266,6 +296,9 @@ router.get('/fornecedor/demandas', fornecedorMiddleware, async (req, res) => {
     const tById = {};
     for (const t of tenants) tById[t.id] = t;
 
+    // Match Score: perfil de atuação + catálogo deste fornecedor, carregados uma vez
+    const ctxMatch = await contextoDoFornecedor(DB, req.fornecedorId);
+
     // Gera signed URLs das fotos
     const fotosMap = {};
     for (const d of demandas) {
@@ -290,6 +323,8 @@ router.get('/fornecedor/demandas', fornecedorMiddleware, async (req, res) => {
           criado_em: mi.criado_em,
         } : null,
         visto_por_mim: visPorMim[d.id] || null,
+        // { pontos, faixa: combina_muito | combina | pode_interessar, motivos: [{tipo, texto}] } ou null
+        match: pontuarDemanda(d, ctxMatch, t),
         cliente_nome: u.nome || null,
         cliente_email: u.email || null,
         cliente_telefone: u.telefone || null,
@@ -306,9 +341,8 @@ router.get('/fornecedor/demandas', fornecedorMiddleware, async (req, res) => {
 router.post('/demandas', tenantMiddleware, async (req, res) => {
   try {
     const b = req.body || {};
-    if (!b.descricao_equipamento || !b.componente || !b.quantidade) {
-      return res.status(400).json({ erro: 'descricao_equipamento, componente e quantidade obrigatórios' });
-    }
+    const { erro, dados } = await lerCamposDemanda(b, req.tenantId);
+    if (erro) return res.status(400).json({ erro });
 
     // Gera número sequencial DSP-YYYY-NNNN
     const ano = new Date().getFullYear();
@@ -321,19 +355,48 @@ router.post('/demandas', tenantMiddleware, async (req, res) => {
       numero,
       tenant_id: req.tenantId,
       comprador_id: req.userId,
-      descricao_equipamento: String(b.descricao_equipamento).trim(),
-      marca_modelo: b.marca_modelo ? String(b.marca_modelo).trim() : null,
-      componente: String(b.componente).trim(),
-      part_number: b.part_number ? String(b.part_number).trim() : null,
-      quantidade: Number(b.quantidade),
-      comentarios: b.comentarios ? String(b.comentarios).trim() : null,
-      urgencia: b.urgencia || 'media',
-      ...(await normalizarDemanda(DB, b)),
+      ...dados,
       status: 'aberta',
     }, req.tenantId);
     res.status(201).json({ ok: true, demanda });
   } catch (err) {
     console.error('❌ POST /spot/demandas:', err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// PUT /spot/demandas/:id — editar demanda (comprador), só enquanto aberta.
+// Marca editada_em: o fornecedor que já respondeu vê "editada depois da sua resposta".
+router.put('/demandas/:id', tenantMiddleware, async (req, res) => {
+  try {
+    const demanda = await DB.selectOne('demandas_spot', { id: req.params.id }, req.tenantId);
+    if (!demanda || String(demanda.tenant_id) !== String(req.tenantId)) {
+      return res.status(404).json({ erro: 'Demanda não encontrada' });
+    }
+    if (demanda.status === 'encerrada') {
+      return res.status(400).json({ erro: 'Demanda encerrada: reabra antes de editar' });
+    }
+    const { erro, dados } = await lerCamposDemanda(req.body || {}, req.tenantId);
+    if (erro) return res.status(400).json({ erro });
+
+    const atualizada = await DB.update('demandas_spot', demanda.id, {
+      ...dados,
+      editada_em: new Date().toISOString(),
+    }, req.tenantId);
+    res.json({ ok: true, demanda: atualizada });
+  } catch (err) {
+    console.error('❌ PUT /spot/demandas/:id:', err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// GET /spot/config — padrão do formulário de nova demanda (estado = região da empresa)
+router.get('/config', tenantMiddleware, async (req, res) => {
+  try {
+    const tenant = await DB.selectOne('tenants', { id: req.tenantId });
+    res.json({ regiao: ufDoTenant(tenant) });
+  } catch (err) {
+    console.error('❌ GET /spot/config:', err.message);
     res.status(500).json({ erro: err.message });
   }
 });

@@ -92,7 +92,25 @@ const FORM_VAZIO = {
   segmento: '',
   sistema: '',
   ofertas_aceitas: [],
+  uf: '', // estado onde precisa da peça (padrão: região da empresa)
 };
+
+// Campos que a demanda carrega para o formulário de edição
+function formDaDemanda(d) {
+  return {
+    descricao_equipamento: d.descricao_equipamento || '',
+    marca_modelo: d.marca_modelo || '',
+    componente: d.componente || '',
+    part_number: d.part_number || '',
+    quantidade: Number(d.quantidade) || 1,
+    comentarios: d.comentarios || '',
+    urgencia: d.urgencia || 'media',
+    segmento: d.segmento || '',
+    sistema: d.sistema || '',
+    ofertas_aceitas: Array.isArray(d.ofertas_aceitas) ? d.ofertas_aceitas : [],
+    uf: d.uf || '',
+  };
+}
 
 export default function TelaCanalSpot({ C, s, fmtD }) {
   const [demandas, setDemandas] = useState([]);
@@ -105,6 +123,53 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
   const [modal, setModal] = useState(null); // <- FALTAVA: null | 'nova' | id da demanda
   const [form, setForm] = useState({ ...FORM_VAZIO });
   const { opcoes: opcoesAtuacao } = useOpcoesAtuacao();
+  const [editandoId, setEditandoId] = useState(null); // demanda em edição (modal 'editar')
+  const [salvandoForm, setSalvandoForm] = useState(false);
+  const [regiaoEmpresa, setRegiaoEmpresa] = useState('');
+
+  useEffect(() => {
+    apiService.get('/spot/config').then(r => setRegiaoEmpresa(r?.regiao || '')).catch(() => {});
+  }, []);
+
+  // Nova demanda: em branco, ou "a partir desta" (mesmo equipamento, outra peça)
+  const abrirNova = (base = null) => {
+    setForm(base
+      ? {
+          ...FORM_VAZIO,
+          descricao_equipamento: base.descricao_equipamento || '',
+          marca_modelo: base.marca_modelo || '',
+          segmento: base.segmento || '',
+          sistema: base.sistema || '',
+          ofertas_aceitas: Array.isArray(base.ofertas_aceitas) ? base.ofertas_aceitas : [],
+          urgencia: base.urgencia || 'media',
+          uf: base.uf || regiaoEmpresa,
+        }
+      : { ...FORM_VAZIO, uf: regiaoEmpresa });
+    setFotoArquivo(null);
+    setFotoPreview(null);
+    setEditandoId(null);
+    setModal('nova');
+  };
+
+  const abrirEdicao = (d) => {
+    setForm(formDaDemanda(d));
+    setEditandoId(d.id);
+    setModal('editar');
+  };
+
+  const salvarEdicao = async () => {
+    setSalvandoForm(true);
+    try {
+      await apiService.put(`/spot/demandas/${editandoId}`, form);
+      await carregarDemandas();
+      setModal(editandoId); // volta para o detalhe
+      setEditandoId(null);
+    } catch (err) {
+      alert('Erro ao salvar: ' + err.message);
+    } finally {
+      setSalvandoForm(false);
+    }
+  };
 
   const [fotoArquivo, setFotoArquivo] = useState(null);
   const [fotoPreview, setFotoPreview] = useState(null);
@@ -266,7 +331,7 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
           <div style={{ fontSize: 11, color: C.muted, letterSpacing: '0.1em' }}>COMPRAS SPOT</div>
           <div style={{ fontSize: 22, fontWeight: 700, color: C.text }}>Canal Spot</div>
         </div>
-        <button onClick={() => setModal('nova')} style={{ ...s.btn(true), padding: '9px 18px' }}>+ Nova Demanda Spot</button>
+        <button onClick={() => abrirNova()} style={{ ...s.btn(true), padding: '9px 18px' }}>+ Nova Demanda Spot</button>
       </div>
 
       {/* Filtros */}
@@ -378,7 +443,7 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
       </div>
 
       {/* MODAL - Detalhe da Demanda */}
-      {modal && modal !== 'nova' && (() => {
+      {modal && modal !== 'nova' && modal !== 'editar' && (() => {
         const d = demandas.find(x => x.id === modal);
         if (!d) return null;
         const valores = (d.interesses || [])
@@ -441,6 +506,8 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
                         Aceita: {d.ofertas_aceitas.map(o => nomeAtuacao(opcoesAtuacao, 'oferta', o)).join(', ')}
                       </div>
                     )}
+                    {d.uf && <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>📍 Precisa em {d.uf}</div>}
+                    {d.editada_em && <div style={{ fontSize: 11, color: C.muted, marginBottom: 4, fontStyle: 'italic' }}>✏ Editada em {fmtD(d.editada_em)}</div>}
                     <div style={{ fontSize: 12, color: C.muted, marginBottom: 16 }}>
                       {d.quantidade} unidade(s) · urgência {d.urgencia}
                     </div>
@@ -634,7 +701,17 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
                     ⚫ Encerrar demanda
                   </button>
                 )}
-                <button onClick={() => setModal(null)} style={{ ...s.btn(false), padding: '8px 18px' }}>Fechar</button>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                  {sit !== 'encerrada' && (
+                    <button onClick={() => abrirEdicao(d)} style={{ ...s.btn(false), padding: '8px 14px' }} title="Alterar os dados desta demanda">
+                      ✏ Editar
+                    </button>
+                  )}
+                  <button onClick={() => abrirNova(d)} style={{ ...s.btn(false), padding: '8px 14px' }} title="Outra peça do mesmo equipamento: abre o formulário já preenchido">
+                    ➕ Nova a partir desta
+                  </button>
+                  <button onClick={() => setModal(null)} style={{ ...s.btn(false), padding: '8px 18px' }}>Fechar</button>
+                </div>
               </div>
             </div>
           </div>
@@ -754,15 +831,28 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
         </div>
       )}
 
-      {/* MODAL - Nova Demanda */}
-      {modal === 'nova' && (
+      {/* MODAL - Nova Demanda / Editar demanda (mesmo formulário) */}
+      {(modal === 'nova' || modal === 'editar') && (() => {
+        const emEdicao = modal === 'editar';
+        const original = emEdicao ? demandas.find(x => x.id === editandoId) : null;
+        const jaResponderam = original ? (original.total_interesses || 0) : 0;
+        const fechar = () => { if (emEdicao) { setModal(editandoId); setEditandoId(null); } else setModal(null); };
+        return (
         <div style={{ position: 'fixed', inset: 0, background: '#00000090', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 300, padding: 20 }}>
           <div style={{ ...s.card, width: 520, maxWidth: '100%', maxHeight: '85vh', display: 'flex', flexDirection: 'column' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', padding: '18px 22px', borderBottom: `1px solid ${C.border}` }}>
-              <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>Nova Demanda Spot</div>
-              <button onClick={() => setModal(null)} style={{ background: 'transparent', border: 'none', color: C.muted, fontSize: 20, cursor: 'pointer' }}>×</button>
+              <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>
+                {emEdicao ? `Editar ${original?.numero || 'demanda'}` : 'Nova Demanda Spot'}
+              </div>
+              <button onClick={fechar} style={{ background: 'transparent', border: 'none', color: C.muted, fontSize: 20, cursor: 'pointer' }}>×</button>
             </div>
             <div style={{ padding: '20px 22px', overflowY: 'auto' }}>
+              {emEdicao && jaResponderam > 0 && (
+                <div style={{ fontSize: 12, color: '#f59e0b', background: '#f59e0b15', border: '1px solid #f59e0b55', borderRadius: 6, padding: '8px 12px', marginBottom: 14 }}>
+                  ⚠ {jaResponderam === 1 ? '1 fornecedor já respondeu' : `${jaResponderam} fornecedores já responderam`} à versão anterior.
+                  Eles verão que a demanda foi editada depois da resposta.
+                </div>
+              )}
               <div style={{ marginBottom: 12 }}><label style={s.label}>Descrição do Equipamento *</label><input value={form.descricao_equipamento} onChange={e => setForm(f => ({ ...f, descricao_equipamento: e.target.value }))} style={s.input} /></div>
               <div style={{ marginBottom: 12 }}><label style={s.label}>Marca / Modelo</label><input value={form.marca_modelo} onChange={e => setForm(f => ({ ...f, marca_modelo: e.target.value }))} style={s.input} /></div>
               <div style={{ marginBottom: 12 }}>
@@ -788,6 +878,15 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
               <div style={{ marginBottom: 12 }}><label style={s.label}>Quantidade *</label><input type="number" min="1" value={form.quantidade} onChange={e => setForm(f => ({ ...f, quantidade: parseInt(e.target.value) || 1 }))} style={s.input} /></div>
               <div style={{ marginBottom: 12 }}><label style={s.label}>Comentários</label><textarea value={form.comentarios} onChange={e => setForm(f => ({ ...f, comentarios: e.target.value }))} rows={2} style={{ ...s.input, resize: 'none' }} /></div>
               <div style={{ marginBottom: 12 }}>
+                <label style={s.label}>Estado onde precisa da peça</label>
+                <select value={form.uf} onChange={e => setForm(f => ({ ...f, uf: e.target.value }))} style={{ ...s.input, appearance: 'none' }}>
+                  <option value="">{regiaoEmpresa ? `Padrão da empresa (${regiaoEmpresa})` : '— não informado —'}</option>
+                  {(opcoesAtuacao?.uf || []).filter(o => o.codigo !== 'BR').map(o => (
+                    <option key={o.codigo} value={o.codigo}>{o.nome}{o.codigo === regiaoEmpresa ? ' (empresa)' : ''}</option>
+                  ))}
+                </select>
+              </div>
+              <div style={{ marginBottom: 12 }}>
                 <label style={s.label}>Urgência</label>
                 <select value={form.urgencia} onChange={e => setForm(f => ({ ...f, urgencia: e.target.value }))} style={{ ...s.input, appearance: 'none' }}>
                   <option value="baixa">Baixa</option>
@@ -795,6 +894,7 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
                   <option value="alta">Alta</option>
                 </select>
               </div>
+              {!emEdicao && (
               <div style={{ marginBottom: 12 }}>
                 <label style={s.label}>Foto do item (opcional)</label>
                 <input
@@ -843,14 +943,25 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
                   </div>
                 )}
               </div>
+              )}
+              {emEdicao && (
+                <div style={{ fontSize: 11, color: C.muted }}>A foto é trocada pelo botão "Trocar imagem" no detalhe da demanda.</div>
+              )}
             </div>
             <div style={{ display: 'flex', gap: 10, padding: '14px 22px', borderTop: `1px solid ${C.border}` }}>
-              <button onClick={() => setModal(null)} style={{ ...s.btn(false), flex: 1 }}>Cancelar</button>
-              <button onClick={criarDemanda} disabled={!form.descricao_equipamento || !form.componente} style={{ ...s.btn(true), flex: 1 }}>Publicar Demanda</button>
+              <button onClick={fechar} style={{ ...s.btn(false), flex: 1 }}>Cancelar</button>
+              {emEdicao ? (
+                <button onClick={salvarEdicao} disabled={salvandoForm || !form.descricao_equipamento || !form.componente} style={{ ...s.btn(true), flex: 1 }}>
+                  {salvandoForm ? 'Salvando…' : 'Salvar alterações'}
+                </button>
+              ) : (
+                <button onClick={criarDemanda} disabled={!form.descricao_equipamento || !form.componente} style={{ ...s.btn(true), flex: 1 }}>Publicar Demanda</button>
+              )}
             </div>
           </div>
         </div>
-      )}
+        );
+      })()}
     </div>
   );
 }

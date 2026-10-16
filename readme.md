@@ -1,6 +1,6 @@
 # 📦 QuotaFlow — Estrutura Completa do Projeto
 
-**Versão:** 4.2 (Canal Spot + Fornecedores Globais + Cadastro Único)
+**Versão:** 4.5 (Canal Spot + Fornecedores Globais + Cadastro Único + Perfil de Atuação + Match Score + Edição de Demanda)
 **Última atualização:** 16/10/2026
 **Status:** núcleo de compras (OS → RM → RC → OV) em produção; marketplace de fornecedores com busca unificada em produção; módulo de Não Conformidades com fluxo ISO 9001 completo; multi-perfil e reset de senha entregues; **Canal Spot** (demandas urgentes/raras) com ciclo completo comprador ↔ fornecedor; **fornecedores globais** da plataforma visíveis a todos os tenants, com isolamento total dos fornecedores locais.
 
@@ -105,6 +105,8 @@ quotaflow/
 │   │   ├── CotacaoService.js       (Lógica de cotações — buscarPorChamadoComFornecedores, etc)
 │   │   ├── CatalogoService.js
 │   │   ├── fornecedoresVisiveis.js (⭐ 10/2026 — FONTE ÚNICA da regra "fornecedores locais do tenant + globais")
+│   │   ├── atuacao.js              (⭐ 10/2026 — perfil de atuação: validação contra atuacao_opcoes, marca sugerida, campos da demanda spot)
+│   │   ├── matchSpot.js            (⭐ 10/2026 — Match Score do Canal Spot, fase 1 por regras: pontos, faixa e motivos)
 │   │   ├── emailService.js         (envio genérico + templates)
 │   │   ├── NCService.js            (M4.1 — notificação de NC ao fornecedor + emissão de token)
 │   │   ├── NCEmailTemplates.js     (M4.4 — templates de email da NC: corpoParaFornecedor / corpoParaComprador)
@@ -127,6 +129,7 @@ quotaflow/
 │   │   ├── fornecedorNC.js         (M4.2 – M4.4 — endpoints do portal do fornecedor para NC: listar, responder, anexar, reenviar)
 │   │   ├── naoConformidades.js     (M4.2 – M4.5 — endpoints do comprador para NC: CRUD, devolver, marcar-interna, vincular-item, editar-item-avulso, buscar-item)
 │   │   ├── ordensVenda.js          (listagem/detalhe/status de OV)
+│   │   ├── atuacao.js              (GET /api/atuacao/opcoes — listas do perfil de atuação; sem autenticação, são listas de referência)
 │   │   ├── spot.js                 (Canal Spot — comprador: demandas, foto, encerrar/reabrir; fornecedor: listar, visualizar, interesse)
 │   │   ├── equipamentos.js
 │   │   ├── usuarios.js             (CRUD + /me + /me/trocar-senha + requerAdmin)
@@ -200,6 +203,9 @@ quotaflow/
 │   │   │   │
 │   │   │   ├── (spot) TelaCanalSpot.jsx             (Canal Spot do comprador — demandas, situações por cor, busca, encerrar/reabrir)
 │   │   │   │
+│   │   │   ├── shared/
+│   │   │   │   └── SeletorAtuacao.jsx               (⭐ 10/2026 — chips do perfil de atuação, usado no portal, no cadastro do tenant e no Canal Spot; cache das opções)
+│   │   │   │
 │   │   │   ├── equipamentos/, catalogo/, historico/, relatorio/, financeiro/,
 │   │   │   │   inteligencia/, plano/, benchmark/, layouts/, shared/
 │   │   │
@@ -232,7 +238,7 @@ quotaflow/
 ## 🗄️ Banco de Dados
 
 ### Núcleo multi-tenant
-- **tenants** — `id | nome | cnpj | telefone | email_contato | email_admin | comunicacao_*_policy | criado_em`
+- **tenants** — `id | slug | nome | cnpj | telefone | email_contato | email_admin | plano | status | regiao (UF da operação principal — editável em Configurações → Empresa) | participa_benchmark | custo_recebimento_nf | comunicacao_*_policy | nc_notificacao_policy | criado_em | atualizado_em`
 - **usuarios** — `id | tenant_id | nome | email | telefone | perfil | ativo | criado_em | atualizado_em`. `perfil` continua sendo o "principal" (compatibilidade com checks legados); o multi-perfil de verdade vive em `usuario_perfis`. `telefone` em E.164 (`+5511999999999`).
 - **perfis** ⭐ (M4.6) — catálogo dos 6 perfis canônicos: `admin | gestor | comprador | operacao | qualidade | financeiro`. Colunas: `codigo (PK) | nome | descricao | ordem`.
 - **usuario_perfis** ⭐ (M4.6) — N:N entre usuários e perfis (multi-perfil). `usuario_id | perfil_codigo`. Não tem `tenant_id` — isolamento por transitividade (ver regra multi-tenant no `db.js`).
@@ -247,7 +253,10 @@ quotaflow/
     - `contatos` (lista de pessoas, com papel) × `nome_contato/telefone/whatsapp`: quem gravou a **lista** (tela do tenant) faz os campos soltos copiarem o 1º contato; quem gravou os **campos soltos** (Meus Dados do fornecedor) atualiza o 1º contato da lista
     - `contatos` é gravado como lista jsonb de verdade (o gatilho converte o texto que o backend ainda manda com `JSON.stringify`)
     - O gatilho **não** copia `email` para `contatos[0].email` quando o tenant edita a lista: o tenant pode ter um contato de cotação diferente do e-mail oficial
-  - ⚠ `categorias`/`dados_cnpj` continuam podendo vir como string dentro do jsonb. Ler sempre de forma tolerante aos dois formatos.
+  - **Perfil de atuação (migration 010):** `atuacao_segmentos | atuacao_sistemas | atuacao_marcas | atuacao_ofertas | atuacao_ufs` (text[], códigos de `atuacao_opcoes`; `'BR'` em `atuacao_ufs` = Brasil todo). Índices GIN para o Match Score (operador `&&`). Global: preenchido pelo próprio fornecedor no portal; local: pelo tenant. Tudo opcional.
+  - ⚠ `categorias` (lista antiga do tenant, com cara de indústria) foi **convertida** para `atuacao_sistemas` e não é mais usada; a coluna ficou só para conferência — apagar depois.
+  - ⚠ `dados_cnpj` continua podendo vir como string dentro do jsonb. Ler sempre de forma tolerante aos dois formatos.
+- **atuacao_opcoes** ⭐ (migration 010) — listas fechadas do perfil: `dimensao ('segmento' | 'sistema' | 'marca' | 'oferta' | 'uf') | codigo | nome | grupo | ordem | aprovado | sugerido_por_fornecedor_id | sugerido_por_tenant_id`, `UNIQUE(dimensao, codigo)`. Incluir opção = INSERT, sem deploy. Marca digitada em "Outra marca" entra com `aprovado = false` (aparece "em análise" só para quem sugeriu); aprovar com `UPDATE atuacao_opcoes SET aprovado = true WHERE dimensao = 'marca' AND codigo = '...'`.
 - **tenant_fornecedores** ⭐ (migration 007) — vínculo privado tenant ↔ fornecedor: `id | tenant_id | fornecedor_id (FK CASCADE) | ativo | preferido | obs | criado_em | atualizado_em`, `UNIQUE(tenant_id, fornecedor_id)`. Hoje guarda o "desativar para mim" dos globais; na etapa 2 passa a guardar também o vínculo dos locais.
 - **fornecedor_usuarios** — login do portal do fornecedor: `id (uuid) | fornecedor_id (integer → fornecedores.id) | nome | email | senha_hash | perfil | ativo | criado_em`. ⚠ A coluna de senha é **`senha_hash`** (não `senha`).
 - **fornecedores_spot** — 🪦 **órfã**. Tinha `fornecedor_origem_id | segmentos | marcas | palavras_chave` (extensão de perfil spot). Nenhuma rota usa mais; será absorvida pelo perfil de atuação (Roadmap, etapa 4).
@@ -265,7 +274,7 @@ Ver seção 5 para o fluxo completo.
 - **nao_conformidades** — ver seção 10 para o schema completo.
 
 ### Canal Spot ⭐
-- **demandas_spot** — `id | numero (DSP-YYYY-NNNN) | tenant_id | comprador_id | descricao_equipamento | marca_modelo | componente | part_number | quantidade | comentarios | urgencia | foto_path | status ('aberta' | 'encerrada') | visualizada_em | criado_em` + encerramento: `encerrada_em | encerramento_motivo ('comprado_canal' | 'comprado_fora' | 'nao_necessario' | 'outro') | fornecedor_vencedor_id | encerramento_observacao`.
+- **demandas_spot** — `id | numero (DSP-YYYY-NNNN) | tenant_id | comprador_id | descricao_equipamento | marca_modelo | componente | part_number | quantidade | comentarios | urgencia | foto_path | status ('aberta' | 'encerrada') | visualizada_em | criado_em` + encerramento: `encerrada_em | encerramento_motivo ('comprado_canal' | 'comprado_fora' | 'nao_necessario' | 'outro') | fornecedor_vencedor_id | encerramento_observacao` + atuação (migration 010, opcionais): `segmento | sistema | ofertas_aceitas (text[])` + migration 011: `uf` (estado onde precisa da peça; padrão = `tenants.regiao`; CHECK 2 letras) `| editada_em`.
 - **interesses_spot** — `id | demanda_id | tenant_id | fornecedor_id | mensagem | valor_estimado | observacao_fornecedor | status ('pendente' | 'escolhido' | 'nao_escolhido') | criado_em`.
 - **demandas_spot_visualizacoes** — uma linha por (demanda, fornecedor) na 1ª visualização.
 
@@ -296,6 +305,8 @@ Ver seção 5 para o fluxo completo.
 ### Migrations recentes
 - **007_tenant_fornecedores.sql** — cria `tenant_fornecedores`.
 - **008_fornecedores_globais_sem_tenant.sql** — `tenant_id` deixa de ser NOT NULL em `fornecedores`; globais passam a `tenant_id NULL`; CHECK `fornecedores_tenant_por_tipo`.
+- **011_demanda_spot_uf_edicao.sql** — `demandas_spot.uf` e `editada_em`; demandas existentes herdam `tenants.regiao`. Idempotente.
+- **010_perfil_atuacao.sql** — tabela `atuacao_opcoes` com as listas iniciais (8 segmentos, 20 sistemas, 32 marcas, 4 ofertas, 27 UFs + Brasil todo); colunas `atuacao_*` em `fornecedores`; `segmento/sistema/ofertas_aceitas` em `demandas_spot`; conversão `categorias → atuacao_sistemas`. Idempotente.
 - **009_fornecedores_cadastro_unico.sql** — corrige os dados atuais (contatos como lista, e-mail inválido descartado, cópias preenchidas) e cria o gatilho `fornecedores_sincroniza_cadastro`. Idempotente.
 - **Encerramento spot** — colunas `encerrada_em`, `encerramento_motivo`, `fornecedor_vencedor_id`, `encerramento_observacao` em `demandas_spot`; `em_negociacao` convertido para `aberta`.
 
@@ -375,6 +386,9 @@ Ver seção 5 para o fluxo completo.
 4. **Negociação fora do sistema** (e-mail/WhatsApp, botões dos dois lados com mensagem pré-montada).
 5. **Comprador encerra** escolhendo com 1 clique: um dos fornecedores que responderam, "comprei fora do Canal Spot", "não preciso mais" ou "outro motivo". O backend marca o interesse do vencedor como `escolhido` e todos os outros como `nao_escolhido`.
 6. **Reabrir:** demanda volta a `aberta` e todos os interesses a `pendente`.
+7. **Editar (enquanto aberta):** `PUT /spot/demandas/:id` — todos os campos, inclusive segmento, sistema, "Aceita" e estado; grava `editada_em`. Comprador vê aviso se já há respostas; fornecedor que respondeu antes vê "⚠ O comprador editou a demanda depois da sua resposta". Foto continua no botão "Trocar imagem".
+8. **Nova a partir desta:** outra peça do mesmo equipamento — formulário já preenchido (equipamento, marca, segmento, sistema, Aceita, urgência, estado), componente/PN/quantidade em branco. **Uma demanda = uma peça** (mantém o encerramento "quem forneceu?" e os indicadores simples).
+9. **Estado onde precisa da peça:** padrão = região da empresa (`GET /spot/config`); pode ser trocado por demanda (transportadora com bases em vários estados).
 
 ### Comprador — situação calculada (não é status gravado)
 | Cor | Situação |
@@ -397,6 +411,23 @@ Os prazos são aplicados **no backend** (o que expirou nem é enviado); o histó
 
 ### Foto
 Upload antes ou depois de publicar ("Adicionar imagem" / "Trocar imagem"). Compressão no navegador (lado maior 1280px, JPEG 70% — foto de celular de 4–8 MB cai para ~150–400 KB); limite de 20 MB antes de comprimir. Ao trocar, a foto antiga é removida do storage (se `StorageSpot.removerArquivo` existir).
+
+### Match Score — "Recomendadas para você" (etapa 6, fase 1)
+Calculado em `services/matchSpot.js` a cada abertura da tela do fornecedor (sem tabela — mudou a atuação, mudou a recomendação) e devolvido em `match` no `GET /spot/fornecedor/demandas`.
+
+| Critério | Pontos | Motivo mostrado |
+|---|---|---|
+| PN da demanda no catálogo do fornecedor (`fornecedor_produtos`, PN só alfanumérico) | 100 | "Você tem esse PN no catálogo" |
+| Mesmo segmento | 30 | "Você atende Guindaste" |
+| Mesmo sistema | 25 | "Você trabalha com Hidráulica" |
+| Marca citada em Marca/Modelo, equipamento ou componente (palavra inteira; "VW / MAN" casa "MAN"; "Mercedes-Benz" casa "Mercedes") | 20 | "Você atende XCMG" |
+| Atende o estado da demanda (`demandas_spot.uf`; se vazio, `tenants.regiao`) ou Brasil todo | 15 | "Você atende RJ" |
+| Oferta aceita pela demanda ∩ oferta do fornecedor | 10 | "Aceita Usada / recondicionada" |
+
+- Faixas: **≥ 60 combina muito · 30–59 combina · 1–29 pode interessar** (nunca porcentagem).
+- **Estado e oferta só reforçam**: sem casamento de PN, segmento, sistema ou marca, não há recomendação (senão "Brasil todo" recomendaria tudo).
+- **Ordena, não esconde**: na aba Em andamento, as recomendadas ainda não respondidas vêm no topo ("Recomendadas para você (n)"), com faixa e motivos; depois "Outras demandas". Detalhe mostra "Por que combina com você".
+- Fornecedor sem atuação preenchida vê aviso para preencher em Meus Dados → Atuação.
 
 ### Decisões de produto registradas
 - O clique em "Email/WhatsApp" **não** é usado como sinal de contato (o comprador pode ligar direto do celular) — a fonte confiável do desfecho é o encerramento.
@@ -557,6 +588,9 @@ npm run dev
 
 ### ✅ Em produção (16/10/2026)
 - **Canal Spot completo:** situações por cor (comprador), abas e expiração do histórico (fornecedor), busca única dos dois lados, encerrar com escolha do vencedor / reabrir, resultado para o fornecedor sem expor o vencedor, foto com compressão adicionada/trocada a qualquer momento
+- **Edição de demanda spot + região (etapa 7):** editar demanda aberta, "nova a partir desta", estado por demanda, aba Configurações → Empresa (região), Match Score lendo `tenants.regiao`
+- **Match Score fase 1 (etapa 6):** "Recomendadas para você" no topo do Canal Spot do fornecedor, com faixa (combina muito / combina / pode interessar) e motivos; aviso para quem não preencheu a atuação
+- **Perfil de atuação (etapa 4):** fornecedor marca segmentos, sistemas, marcas (+ "Outra marca" com aprovação), tipo de oferta e estados no Meus Dados; tenant marca o mesmo nos locais (substitui as antigas categorias, convertidas); demanda spot ganha segmento, sistema e "Aceita" (múltipla escolha) — tudo opcional
 - **Cadastro único do fornecedor (etapa 3):** nome, e-mail e contato iguais em todas as telas (gatilho no banco); validação de e-mail no Meus Dados (antes aceitava "Peças" como e-mail)
 - **Fornecedores globais (etapa 1 da unificação):** regra "locais + globais" em cadastro, cotação automática, vínculo e envio de RC, OV, NC, estoque, portal de resposta de cotação, validação de XML e marketplace; global somente leitura para o tenant com "desativar para mim"; migrations 007 e 008
 - **Correções de segurança/integridade:** vazamento de nome/preço de fornecedor local de outro tenant no marketplace; RC aceitava vincular fornecedor local de outro tenant; interessado do spot lido de tabela errada (`fornecedores_spot` com id coincidente); troca de senha do portal (`senha_hash`)
@@ -652,10 +686,10 @@ Lições da etapa 1 (10/2026), para as próximas entregas:
 - **Unificação de fornecedores (etapas 2 a 5).** Base para o Match Score.
   - **Etapa 2 — adiada (decisão 16/10/2026).** Diagnóstico: 5 fornecedores, nenhum CNPJ repetido. Mesmo CNPJ cadastrado como local por dois tenants é **correto** (cada um é privado). A junção só acontece quando a empresa assumir o próprio cadastro (etapa 5) ou for promovida a global. Ponto de atenção para essa junção: o id de fornecedor está em 3 formatos (`bigint` na maioria; `integer` em `fornecedor_usuarios`, `interesses_spot`, `movimentacoes_estoque`, `ordem_venda_itens`, `fornecedor_itens`, `fornecedor_upload_log`, `demandas_spot_visualizacoes`; **texto** em `itens_consumo.fornecedor_preferencial_id`) e em lista em `cotacao_itens.fornecedores_ids`.
   - **Etapa 3 — feita (16/10/2026, migration 009).** Gatilho mantém nome, e-mail e contato sincronizados (ver Banco de Dados). Aposentar as colunas-cópia (`nome`, `email_contato`) é opcional e só quando todos os leitores usarem as oficiais.
-  - **Etapa 4** — perfil de atuação em `fornecedores` com **listas fechadas** (segmentos: guindaste, empilhadeira, caminhão, ônibus, implemento…; sistemas: motor, hidráulica, pneumática, elétrica, transmissão, freios…; marcas), absorvendo e removendo `fornecedores_spot`. Catálogo deve aceitar item **sem preço** (portfólio).
+  - **Etapa 4 — feita (16/10/2026, migration 010).** Pendências: apagar `fornecedores_spot` (só dados de teste, nenhuma rota usa) e a coluna `fornecedores.categorias` depois de conferir; tela de admin para aprovar marcas sugeridas (hoje via SQL); catálogo aceitar item **sem preço** (portfólio).
   - **Etapa 5** — convite para o fornecedor local assumir o próprio cadastro (login no portal); locais viram candidatos a global (crescimento orgânico da rede).
 - **Match Score do Canal Spot** ("vagas que combinam com você", estilo LinkedIn).
-  - **Fase 1:** demanda ganha campos **segmento** e **sistema**; score por regras — PN do catálogo = match máximo (reusa `buscar_fornecedores_para_item`); fora isso, segmento 30 + sistema 25 + marca 20 + texto 25. Calculado **na criação da demanda** e gravado em `demanda_fornecedor_match (demanda_id, fornecedor_id, score, motivos)`. Destaque "Recomendadas para você" no topo de Em andamento, com o motivo ("você trabalha com XCMG e hidráulica").
+  - **Fase 1 — feita (16/10/2026, etapa 6), calculada na hora, sem tabela; ver seção Canal Spot.** Plano original: por regras — PN do catálogo = match máximo (reusa `buscar_fornecedores_para_item`); fora isso, segmento 30 + sistema 25 + marca 20 + texto 25. Calculado **na criação da demanda** e gravado em `demanda_fornecedor_match (demanda_id, fornecedor_id, score, motivos)`. Destaque "Recomendadas para você" no topo de Em andamento, com o motivo ("você trabalha com XCMG e hidráulica").
   - **Fase 2:** upload de catálogo (PDF/planilha) com extração por IA de segmentos, sistemas, marcas e PNs.
   - **Fase 3:** similaridade semântica (embeddings com `pgvector` no Supabase) + sinais de comportamento (respondeu/venceu demandas parecidas).
   - **Fase 4:** notificações — resumo diário em **um** e-mail ("pedidos que combinam com você"); e-mail individual só para "você foi escolhido".

@@ -97,6 +97,49 @@ function abaDe(d) {
 // Situações (cores) que aparecem como filtro dentro da aba "Em andamento"
 const SITUACOES_ANDAMENTO = ['nao_respondida', 'respondida', 'sem_retorno'];
 
+// Match Score (etapa 6) — faixas calculadas no backend (services/matchSpot.js).
+// Nunca mostramos porcentagem: só a faixa e o porquê.
+const FAIXAS_MATCH = {
+  combina_muito:   { label: '⭐ Combina muito', cor: '#22c55e' },
+  combina:         { label: 'Combina',          cor: '#3b82f6' },
+  pode_interessar: { label: 'Pode interessar',  cor: '#94a3b8' },
+};
+// Comprador editou a demanda depois que este fornecedor respondeu?
+const editadaDepoisDaResposta = (d) => !!(d.editada_em && d.meu_interesse &&
+  new Date(d.editada_em).getTime() > new Date(d.meu_interesse.criado_em).getTime());
+
+// Recomendada = combina com o perfil E ainda não foi respondida
+const ehRecomendada = (d) => !!(d.match && d.match.faixa && !d.meu_interesse && d.status !== 'encerrada');
+
+function TagMatch({ match }) {
+  const f = match && FAIXAS_MATCH[match.faixa];
+  if (!f) return null;
+  return (
+    <span style={{
+      fontSize: 9, padding: '2px 7px', borderRadius: 10, fontWeight: 700, whiteSpace: 'nowrap',
+      background: `${f.cor}22`, color: f.cor, border: `1px solid ${f.cor}55`,
+    }}>
+      {f.label}
+    </span>
+  );
+}
+
+function MotivosMatch({ match, C }) {
+  if (!match || !match.motivos || !match.motivos.length) return null;
+  return (
+    <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginTop: 8 }}>
+      {match.motivos.map((m, i) => (
+        <span key={i} style={{
+          fontSize: 10, padding: '2px 8px', borderRadius: 10,
+          background: C.bg, color: C.muted, border: `1px solid ${C.border}`,
+        }}>
+          {m.tipo === 'pn' ? '🎯 ' : '✓ '}{m.texto}
+        </span>
+      ))}
+    </div>
+  );
+}
+
 export default function TelaFornecedorSpot({ C, s, usuario }) {
   const [demandas, setDemandas] = useState([]);
   const { opcoes: opcoesAtuacao } = useOpcoesAtuacao(); // nomes de segmento/sistema/oferta (etapa 4)
@@ -110,6 +153,9 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
   const [valorEstimado, setValorEstimado] = useState('');
   const [observacao, setObservacao] = useState('');
   const [enviando, setEnviando] = useState(false);
+  // null = ainda não sabe; false = fornecedor não preencheu nada de atuação
+  const [temAtuacao, setTemAtuacao] = useState(null);
+  const [avisoAtuacaoFechado, setAvisoAtuacaoFechado] = useState(false);
 
   const carregar = async () => {
     try {
@@ -123,6 +169,17 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
   };
 
   useEffect(() => { carregar(); }, []);
+
+  // Perfil de atuação vazio → aviso para preencher (sem ele não há recomendação)
+  useEffect(() => {
+    apiService.get('/fornecedor/me')
+      .then(r => {
+        const f = r?.fornecedor || {};
+        const n = (v) => (Array.isArray(v) ? v.length : 0);
+        setTemAtuacao(n(f.atuacao_segmentos) + n(f.atuacao_sistemas) + n(f.atuacao_marcas) > 0);
+      })
+      .catch(() => setTemAtuacao(null));
+  }, []);
 
   const abrir = async (d) => {
     setDetalhe(d);
@@ -202,9 +259,18 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
     daAba = daAba.filter(d => situacaoFornecedor(d) === filtroSituacao);
   }
 
-  // Em andamento: mais novas no topo. Histórico: encerradas mais recentemente no topo.
+  // Em andamento: recomendadas no topo (mais pontos primeiro), depois as demais, mais novas no topo.
+  // Histórico: encerradas mais recentemente no topo.
   const dataOrdem = (d) => new Date((aba === 'andamento' ? d.criado_em : (d.encerrada_em || d.criado_em)) || 0).getTime();
-  const ordenadas = [...daAba].sort((a, b) => dataOrdem(b) - dataOrdem(a));
+  const ordenadas = [...daAba].sort((a, b) => {
+    if (aba === 'andamento') {
+      const ra = ehRecomendada(a), rb = ehRecomendada(b);
+      if (ra !== rb) return ra ? -1 : 1;
+      if (ra && rb && a.match.pontos !== b.match.pontos) return b.match.pontos - a.match.pontos;
+    }
+    return dataOrdem(b) - dataOrdem(a);
+  });
+  const totalRecomendadas = aba === 'andamento' ? ordenadas.filter(ehRecomendada).length : 0;
 
   // Resumo da aba Vencidas
   const totalVencido = porAba.vencidas.reduce((soma, d) => soma + (Number(d.meu_interesse?.valor_estimado) || 0), 0);
@@ -317,6 +383,22 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
         </div>
       )}
 
+      {/* Aviso: sem perfil de atuação não há recomendação */}
+      {aba === 'andamento' && temAtuacao === false && !avisoAtuacaoFechado && (
+        <div style={{
+          display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: 10,
+          padding: '10px 14px', marginBottom: 14, borderRadius: 6, fontSize: 12,
+          background: `${C.accent}12`, border: `1px solid ${C.accent}44`, color: C.text,
+        }}>
+          <span>
+            ⭐ <b>Receba recomendações:</b> diga com o que você trabalha (segmentos, sistemas e marcas) em
+            {' '}<b>Meus Dados → Atuação</b>. As demandas que combinam com você passam a aparecer no topo.
+          </span>
+          <button onClick={() => setAvisoAtuacaoFechado(true)} title="Fechar"
+            style={{ background: 'transparent', border: 'none', color: C.muted, fontSize: 16, cursor: 'pointer', lineHeight: 1 }}>×</button>
+        </div>
+      )}
+
       {/* Lista */}
       {ordenadas.length === 0 ? (
         <div style={{ ...s.card, padding: 40, textAlign: 'center', color: C.muted }}>
@@ -324,13 +406,24 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
         </div>
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-          {ordenadas.map(d => {
+          {ordenadas.map((d, idx) => {
+            const recomendada = aba === 'andamento' && ehRecomendada(d);
+            // títulos de seção: "Recomendadas para você" / "Outras demandas"
+            const tituloSecao = aba !== 'andamento' || totalRecomendadas === 0 ? null
+              : idx === 0 && recomendada ? `⭐ Recomendadas para você (${totalRecomendadas})`
+              : idx === totalRecomendadas ? 'Outras demandas'
+              : null;
             const sit = situacaoFornecedor(d);
             const urgente = d.urgencia === 'alta' && d.status !== 'encerrada';
             const novo = sit === 'nao_respondida' && !d.visto_por_mim;
             return (
+              <div key={d.id}>
+              {tituloSecao && (
+                <div style={{ fontSize: 11, fontWeight: 700, color: recomendada ? C.text : C.muted, letterSpacing: '0.06em', margin: idx === 0 ? '0 0 8px' : '14px 0 8px' }}>
+                  {tituloSecao.toUpperCase()}
+                </div>
+              )}
               <div
-                key={d.id}
                 onClick={() => abrir(d)}
                 style={{
                   ...s.card,
@@ -373,6 +466,7 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
                             URGENTE
                           </span>
                         )}
+                        {recomendada && <TagMatch match={d.match} />}
                         <TagSituacao d={d} situacao={sit} s={s} />
                       </div>
                     </div>
@@ -381,6 +475,16 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
                       {d.marca_modelo && ` · ${d.marca_modelo}`}
                       {d.part_number && ` · PN ${d.part_number}`}
                     </div>
+                    {d.uf && (
+                      <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>📍 Precisa em {d.uf}</div>
+                    )}
+                    {editadaDepoisDaResposta(d) ? (
+                      <div style={{ fontSize: 11, color: '#f59e0b', marginTop: 4, fontWeight: 600 }}>
+                        ⚠ O comprador editou a demanda depois da sua resposta ({tempoAtras(d.editada_em)})
+                      </div>
+                    ) : d.editada_em && d.status !== 'encerrada' ? (
+                      <div style={{ fontSize: 11, color: C.muted, marginTop: 4, fontStyle: 'italic' }}>✏ editada {tempoAtras(d.editada_em)}</div>
+                    ) : null}
                     {d.empresa_nome && (
                       <div style={{ fontSize: 11, color: C.accent, marginTop: 6, fontWeight: 500 }}>
                         🏢 {d.empresa_nome}{d.cliente_nome ? ` · ${d.cliente_nome}` : ''}
@@ -390,6 +494,7 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
                       {d.quantidade} unidade(s)
                       {d.meu_interesse?.valor_estimado != null && ` · sua proposta: ${formatarReais(d.meu_interesse.valor_estimado)}`}
                     </div>
+                    {recomendada && <MotivosMatch match={d.match} C={C} />}
                     <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11 }}>
                       <span style={{ color: C.muted }}>🕐 publicada {tempoAtras(d.criado_em)}</span>
                       {d.meu_interesse ? (
@@ -402,6 +507,7 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
                     </div>
                   </div>
                 </div>
+              </div>
               </div>
             );
           })}
@@ -457,6 +563,17 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
                     {d.encerrada_em && (
                       <div style={{ fontSize: 10, color: C.muted, marginTop: 6 }}>Encerrada {tempoAtras(d.encerrada_em)}</div>
                     )}
+                  </div>
+                )}
+
+                {/* Por que recomendamos (Match Score) */}
+                {!encerrada && d.match && d.match.motivos && d.match.motivos.length > 0 && (
+                  <div style={{ padding: '14px 22px 0' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                      <span style={{ fontSize: 10, color: C.muted, letterSpacing: '0.05em' }}>POR QUE COMBINA COM VOCÊ</span>
+                      <TagMatch match={d.match} />
+                    </div>
+                    <MotivosMatch match={d.match} C={C} />
                   </div>
                 )}
 
@@ -521,6 +638,12 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
                     {(d.ofertas_aceitas || []).length > 0 && (
                       <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>
                         Aceita: {d.ofertas_aceitas.map(o => nomeAtuacao(opcoesAtuacao, 'oferta', o)).join(', ')}
+                      </div>
+                    )}
+                    {d.uf && <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>📍 Precisa em {d.uf}</div>}
+                    {editadaDepoisDaResposta(d) && (
+                      <div style={{ fontSize: 12, color: '#f59e0b', marginBottom: 4, fontWeight: 600 }}>
+                        ⚠ Editada depois da sua resposta — confira se sua proposta ainda vale.
                       </div>
                     )}
                     {d.part_number && <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>PN: {d.part_number}</div>}
