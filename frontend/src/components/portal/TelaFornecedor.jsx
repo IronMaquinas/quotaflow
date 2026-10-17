@@ -9,6 +9,40 @@ import TelaGestaoCotacoesFornecedor from '../fornecedores/TelaGestaoCotacoesForn
 import TelaMeusDadosFornecedor from '../fornecedores/TelaMeusDadosFornecedor';
 import TelaFornecedorSpot, { temLinkSpotPendente } from './TelaFornecedorSpot';
 import TelaPainelFornecedor from './TelaPainelFornecedor';
+import apiService from '../../services/apiService';
+
+// Canal Spot é exclusivo para fornecedor verificado (global) — etapa 10c.
+// O backend recusa as rotas do Spot para fornecedor local; aqui só explicamos.
+function SpotBloqueado({ onNavegar, emAnalise }) {
+  const item = (txt) => <li style={{ marginBottom: 6 }}>{txt}</li>;
+  return (
+    <div style={{ padding: '28px 24px', maxWidth: 720 }}>
+      <div style={{ fontSize: 11, color: C.muted, letterSpacing: '0.1em' }}>OPORTUNIDADES SPOT</div>
+      <div style={{ fontSize: 22, fontWeight: 700, color: C.text, marginBottom: 16 }}>⚡ Canal Spot 🔒</div>
+      <div style={{ ...s.card, padding: '22px 24px' }}>
+        <div style={{ fontSize: 15, fontWeight: 700, color: C.text, marginBottom: 8 }}>Exclusivo para fornecedores verificados</div>
+        <div style={{ fontSize: 13, color: C.textSub, lineHeight: 1.6, marginBottom: 14 }}>
+          O Canal Spot reúne demandas urgentes de peças de transportadoras de todo o Brasil, com o contato direto dos compradores.
+          Por segurança de todos, só empresas <b style={{ color: C.text }}>verificadas pela plataforma QuotaFlow</b> têm acesso.
+        </div>
+        <div style={{ fontSize: 12, color: C.text, fontWeight: 600, marginBottom: 6 }}>Quando sua empresa é verificada, ela:</div>
+        <ul style={{ fontSize: 13, color: C.textSub, lineHeight: 1.5, margin: '0 0 16px', paddingLeft: 20 }}>
+          {item('vê e responde as demandas spot de todas as transportadoras;')}
+          {item('passa a aparecer para todos os clientes do QuotaFlow nas cotações;')}
+          {item('ganha o selo 🏅 Verificado.')}
+        </ul>
+        <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.6, padding: '12px 14px', background: C.bg, border: `1px solid ${C.border}`, borderRadius: 8 }}>
+          {emAnalise
+            ? 'Seu cadastro já está em análise pela plataforma: assim que for aprovado, o Canal Spot é liberado automaticamente.'
+            : 'A solicitação de verificação estará disponível em breve aqui no portal. Enquanto isso, sua empresa continua recebendo normalmente as cotações e os pedidos dos seus clientes.'}
+          {' '}Deixe a sua <b style={{ color: C.text }}>atuação</b> preenchida em{' '}
+          <span onClick={() => onNavegar('meus-dados')} style={{ color: C.accent, cursor: 'pointer', textDecoration: 'underline' }}>Meus Dados</span>{' '}
+          — ela é usada assim que o acesso for liberado.
+        </div>
+      </div>
+    </div>
+  );
+}
 
 const C = {
   bg: "#0a0e14",
@@ -39,6 +73,16 @@ export default function TelaFornecedor() {
   // Abre no Painel; se veio do link do e-mail (?spot=<id>), direto no Canal Spot.
   const [tela, setTela] = useState(() => (temLinkSpotPendente() ? 'oportunidades' : 'painel'));
   const [usuario, setUsuario] = useState(null);
+  // null = ainda não sabe; o backend é quem decide (fornecedor verificado = global)
+  const [spotLiberado, setSpotLiberado] = useState(null);
+  // Etapa 11a: autocadastro aguardando aprovação da plataforma
+  const [emAnalise, setEmAnalise] = useState(false);
+
+  useEffect(() => {
+    apiService.get('/fornecedor/me')
+      .then((r) => { setSpotLiberado(r?.spot_liberado !== false); setEmAnalise(!!r?.aguardando_aprovacao); })
+      .catch(() => setSpotLiberado(true)); // na dúvida a tela do Spot carrega e o backend responde
+  }, []);
 
   useEffect(() => {
     const user = JSON.parse(localStorage.getItem('usuario') || '{}');
@@ -57,7 +101,7 @@ export default function TelaFornecedor() {
     { id: 'cotacoes',      label: '📋 Minhas Cotações' },
     { id: 'pedidos',       label: '📦 Meus Pedidos' },
     { id: 'nao-conformidades', label: '⚠️ Não Conformidades' },
-    { id: 'oportunidades', label: '⚡ Oportunidades Spot' },
+    { id: 'oportunidades', label: spotLiberado === false ? '⚡ Oportunidades Spot 🔒' : '⚡ Oportunidades Spot' },
     { id: 'catalogo',      label: '📦 Catálogo' },
     { id: 'meus-dados',    label: '⚙️ Meus Dados' },
   ];
@@ -151,11 +195,20 @@ export default function TelaFornecedor() {
 
         {/* ─── CONTEÚDO ─── */}
         <div style={{ flex: 1, overflowY: 'auto', background: C.bg }}>
+        {emAnalise && (
+          <div style={{ padding: '10px 24px', background: '#3b82f618', borderBottom: '1px solid #3b82f644', fontSize: 12, color: C.text, lineHeight: 1.5 }}>
+            ⏳ <b>Cadastro em análise.</b> Sua empresa ainda não aparece para as transportadoras — a plataforma confere os dados
+            antes. Enquanto isso, complete <span onClick={() => setTela('meus-dados')} style={{ color: C.accent, cursor: 'pointer', textDecoration: 'underline' }}>Meus Dados</span> e
+            a sua atuação (o que você fornece): é o que faz as oportunidades certas chegarem até você.
+          </div>
+        )}
         {tela === 'painel' && <TelaPainelFornecedor C={C} s={s} usuario={usuario} onNavegar={setTela} />}
         {tela === 'cotacoes' && <TelaGestaoCotacoesFornecedor C={C} s={s} usuario={usuario} />}
         {tela === 'pedidos' && <TelaMeusPedidosFornecedor C={C} s={s} usuario={usuario} />}
         {tela === 'nao-conformidades' && <TelaNaoConformidadesFornecedor C={C} s={s} usuario={usuario} />}
-        {tela === 'oportunidades' && <TelaFornecedorSpot C={C} s={s} usuario={usuario} />}
+        {tela === 'oportunidades' && spotLiberado === null && <div style={{ padding: 40, color: C.muted }}>Carregando…</div>}
+        {tela === 'oportunidades' && spotLiberado === true && <TelaFornecedorSpot C={C} s={s} usuario={usuario} />}
+        {tela === 'oportunidades' && spotLiberado === false && <SpotBloqueado onNavegar={setTela} emAnalise={emAnalise} />}
         {tela === 'catalogo' && <TelaCatalogoFornecedor C={C} s={s} fmtBRL={fmtBRL} />}
         {tela === 'meus-dados' && <TelaMeusDadosFornecedor C={C} s={s} />}
         </div>

@@ -51,13 +51,26 @@ const s = {
 };
 
 export default function TelaLogin({ onLogin, onNavegarPara }) {
-  const [email, setEmail] = useState("");
+  // Etapa 11a: depois do "Criar conta", o e-mail chega preenchido
+  const [prefill] = useState(() => {
+    try {
+      const p = JSON.parse(sessionStorage.getItem("qf_login_prefill") || "null");
+      sessionStorage.removeItem("qf_login_prefill");
+      return p || {};
+    } catch { return {}; }
+  });
+  const [email, setEmail] = useState(prefill.email || "");
   const [senha, setSenha] = useState("");
   const [erro, setErro] = useState("");
   const [loading, setLoading] = useState(false);
   const [showSenha, setShowSenha] = useState(false);
 
-  const [isFornecedor, setIsFornecedor] = useState(false);
+  const [isFornecedor, setIsFornecedor] = useState(!!prefill.fornecedor);
+
+  const irParaCriarConta = () => {
+    try { sessionStorage.setItem("qf_signup_tipo", isFornecedor ? "fornecedor" : "transportadora"); } catch { /* ok */ }
+    window.location.hash = "#signup";
+  };
 
   // ─────────────────────────────────────────────────────────────────────
   // FAZER LOGIN VIA API REAL
@@ -353,6 +366,18 @@ export default function TelaLogin({ onLogin, onNavegarPara }) {
                 }}
               >
                 Esqueci minha senha
+              </button>
+            </div>
+
+            {/* Etapa 11a: criar conta (transportadora ou fornecedor) */}
+            <div style={{ marginTop: 18, paddingTop: 16, borderTop: `1px solid ${C.border}`, textAlign: 'center', fontSize: 13, color: C.muted }}>
+              {isFornecedor ? 'Sua empresa ainda não está no portal?' : 'Ainda não tem conta?'}{' '}
+              <button
+                type="button"
+                onClick={irParaCriarConta}
+                style={{ background: 'transparent', border: 'none', color: C.accent, fontSize: 13, fontWeight: 600, cursor: 'pointer', fontFamily: 'inherit', padding: 0 }}
+              >
+                {isFornecedor ? 'Cadastrar minha empresa' : 'Criar conta — 15 dias grátis'}
               </button>
             </div>
 

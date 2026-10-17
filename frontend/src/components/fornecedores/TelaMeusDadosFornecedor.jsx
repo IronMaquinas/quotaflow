@@ -44,7 +44,9 @@ export default function TelaMeusDadosFornecedor({ C, s }) {
   // Plano do fornecedor (etapa 8): só leitura aqui; o fornecedor Pro liga/desliga os e-mails
   const [plano, setPlano] = useState({ plano: "gratuito", valido_ate: null });
   const [recomendacoesEmail, setRecomendacoesEmail] = useState(true);
-  const planoProAtivo = plano.plano === "pro" && (!plano.valido_ate || new Date(plano.valido_ate) >= new Date());
+  // Canal Spot (e os recursos do Pro, que são do Spot) só para fornecedor verificado — etapa 10c
+  const [verificado, setVerificado] = useState(true);
+  const planoProAtivo = verificado && plano.plano === "pro" && (!plano.valido_ate || new Date(plano.valido_ate) >= new Date());
   const { opcoes: opcoesAtuacao, recarregar: recarregarOpcoesAtuacao } = useOpcoesAtuacao();
   const [formSenha, setFormSenha] = useState({ senha_atual: "", nova_senha: "", confirmar_senha: "" });
   const [senhaVisivel, setSenhaVisivel] = useState(false);
@@ -72,6 +74,7 @@ export default function TelaMeusDadosFornecedor({ C, s }) {
       });
       setFormAtuacao(atuacaoDe(dados.fornecedor));
       setPlano({ plano: dados.fornecedor?.plano || "gratuito", valido_ate: dados.fornecedor?.plano_valido_ate || null });
+      setVerificado(dados.spot_liberado !== false);
       setRecomendacoesEmail(dados.fornecedor?.recomendacoes_email !== false);
     } catch (err) {
       console.error("❌ Erro ao carregar Meus Dados:", err);
@@ -324,7 +327,15 @@ export default function TelaMeusDadosFornecedor({ C, s }) {
             <span style={{ fontSize: 11, color: C.muted }}>até {new Date(plano.valido_ate).toLocaleDateString("pt-BR")}</span>
           )}
         </div>
-        {planoProAtivo ? (
+        {!verificado ? (
+          <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.6, marginTop: 6 }}>
+            No plano gratuito você participa das cotações e recebe pedidos e ordens de compra dos seus clientes por e-mail.
+            <div style={{ marginTop: 6, color: C.text }}>
+              🔒 O <b>Canal Spot</b> e o <b>plano Pro</b> são exclusivos para fornecedores verificados pela plataforma.
+              A solicitação de verificação estará disponível em breve aqui no portal.
+            </div>
+          </div>
+        ) : planoProAtivo ? (
           <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer", marginTop: 10 }}>
             <input type="checkbox" checked={recomendacoesEmail} onChange={e => setRecomendacoesEmail(e.target.checked)} style={{ marginTop: 2 }} />
             <span style={{ fontSize: 12, color: C.text, lineHeight: 1.5 }}>

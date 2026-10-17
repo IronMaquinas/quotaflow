@@ -4,6 +4,9 @@
 //   • Convite de fornecedor já cadastrado (etapa 10): cria nome + senha.
 //   • Convite de fornecedor NOVO (etapa 10b): preenche CNPJ (busca na Receita),
 //     dados da empresa, atuação (opcional) e cria nome + senha.
+//   • Etapa 10c: o tenant já informa o CNPJ no convite → CNPJ, razão social e
+//     endereço vêm da Receita e ficam TRAVADOS (o backend também ignora esses
+//     campos). O fornecedor completa nome fantasia, telefone, atuação e acesso.
 // Nos dois casos já entra no portal (#/portal). Rota registrada no main.jsx.
 
 import { useState, useEffect } from "react";
@@ -122,6 +125,23 @@ export default function TelaAceitarConvite() {
       .then((c) => {
         setConvite(c);
         if (c?.ok && c.novo && c.nome_sugerido) setNome(c.nome_sugerido);
+        const r = c?.ok && c.novo ? c.empresa_receita : null;
+        if (r) {
+          setEmpresa((e) => ({
+            ...e,
+            cnpj: formatarCNPJ(r.cnpj),
+            razao_social: r.razao_social || "",
+            nome_fantasia: r.nome_fantasia || r.razao_social || "",
+            endereco: r.endereco || "",
+            numero: r.numero || "",
+            complemento: r.complemento || "",
+            bairro: r.bairro || "",
+            cidade: r.cidade || "",
+            estado: r.estado || "",
+            cep: r.cep ? formatarCEP(r.cep) : "",
+            telefone: r.telefone ? formatarTelefone(r.telefone) : "",
+          }));
+        }
       })
       .catch(() => setConvite({ ok: false, mensagem: "Erro de conexão com o servidor." }));
   }, [token]);
@@ -227,6 +247,16 @@ export default function TelaAceitarConvite() {
   };
 
   const novo = !!convite?.novo;
+  // Dados vindos da Receita no convite (etapa 10c): campo preenchido fica travado
+  const receita = novo ? convite?.empresa_receita || null : null;
+  const travado = (campo) => !!(receita && receita[campo]);
+  const estiloTravado = { ...input, opacity: 0.75, cursor: "not-allowed" };
+  const campoEmpresa = (campo, extra = {}) => ({
+    value: empresa[campo],
+    disabled: travado(campo),
+    style: travado(campo) ? estiloTravado : input,
+    ...extra,
+  });
 
   const camposAcesso = (
     <>
@@ -292,6 +322,18 @@ export default function TelaAceitarConvite() {
               {novo && (
                 <>
                   <Secao numero="1" titulo="Sua empresa">
+                    {receita && (
+                      <div style={{ fontSize: 11, color: C.muted, lineHeight: 1.5, marginBottom: 12, padding: "9px 12px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 7 }}>
+                        🔒 CNPJ, razão social e endereço vêm da <b style={{ color: C.text }}>Receita Federal</b> e não podem ser alterados aqui.
+                        Se algo estiver errado, fale com {convite.cliente || "o seu cliente"}.
+                      </div>
+                    )}
+                    {receita ? (
+                      <div style={{ marginBottom: 10 }}>
+                        <label style={label}>CNPJ</label>
+                        <input value={empresa.cnpj} disabled style={estiloTravado} />
+                      </div>
+                    ) : (
                     <div style={{ marginBottom: 10 }}>
                       <label style={label}>CNPJ</label>
                       <div style={{ display: "flex", gap: 8 }}>
@@ -318,35 +360,36 @@ export default function TelaAceitarConvite() {
                         </div>
                       )}
                     </div>
+                    )}
 
                     <div style={linha("1fr 1fr")}>
                       <Campo rotulo="NOME FANTASIA">
                         <input value={empresa.nome_fantasia} onChange={(e) => mudarEmpresa("nome_fantasia", e.target.value)} style={input} />
                       </Campo>
                       <Campo rotulo="RAZÃO SOCIAL">
-                        <input value={empresa.razao_social} onChange={(e) => mudarEmpresa("razao_social", e.target.value)} style={input} />
+                        <input {...campoEmpresa("razao_social")} onChange={(e) => mudarEmpresa("razao_social", e.target.value)} />
                       </Campo>
                     </div>
                     <div style={linha("120px 1fr 90px")}>
                       <Campo rotulo="CEP">
-                        <input value={empresa.cep} onChange={(e) => mudarEmpresa("cep", formatarCEP(e.target.value))} inputMode="numeric" style={input} />
+                        <input {...campoEmpresa("cep")} onChange={(e) => mudarEmpresa("cep", formatarCEP(e.target.value))} inputMode="numeric" />
                       </Campo>
                       <Campo rotulo="ENDEREÇO">
-                        <input value={empresa.endereco} onChange={(e) => mudarEmpresa("endereco", e.target.value)} style={input} />
+                        <input {...campoEmpresa("endereco")} onChange={(e) => mudarEmpresa("endereco", e.target.value)} />
                       </Campo>
                       <Campo rotulo="NÚMERO">
-                        <input value={empresa.numero} onChange={(e) => mudarEmpresa("numero", e.target.value)} style={input} />
+                        <input {...campoEmpresa("numero")} onChange={(e) => mudarEmpresa("numero", e.target.value)} />
                       </Campo>
                     </div>
                     <div style={linha("1fr 1fr 90px")}>
                       <Campo rotulo="BAIRRO">
-                        <input value={empresa.bairro} onChange={(e) => mudarEmpresa("bairro", e.target.value)} style={input} />
+                        <input {...campoEmpresa("bairro")} onChange={(e) => mudarEmpresa("bairro", e.target.value)} />
                       </Campo>
                       <Campo rotulo="CIDADE">
-                        <input value={empresa.cidade} onChange={(e) => mudarEmpresa("cidade", e.target.value)} style={input} />
+                        <input {...campoEmpresa("cidade")} onChange={(e) => mudarEmpresa("cidade", e.target.value)} />
                       </Campo>
                       <Campo rotulo="UF">
-                        <select value={empresa.estado} onChange={(e) => mudarEmpresa("estado", e.target.value)} style={{ ...input, padding: "10px 8px" }}>
+                        <select value={empresa.estado} disabled={travado("estado")} onChange={(e) => mudarEmpresa("estado", e.target.value)} style={{ ...(travado("estado") ? estiloTravado : input), padding: "10px 8px" }}>
                           <option value="">—</option>
                           {UFS.map((uf) => <option key={uf} value={uf}>{uf}</option>)}
                         </select>

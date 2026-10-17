@@ -28,6 +28,8 @@ router.get('/me', fornecedorMiddleware, async (req, res) => {
       // Canal Spot só para fornecedor verificado (global) — o portal usa para o menu
       spot_liberado: podeVerSpot(fornecedor),
       verificado: fornecedor?.tipo === 'global',
+      // etapa 11a: autocadastro aguardando aprovação da plataforma
+      aguardando_aprovacao: fornecedor?.tipo === 'candidato',
       usuario: {
         id: usuario.id,
         nome: usuario.nome,

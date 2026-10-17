@@ -42,55 +42,17 @@ const { enviarEmailFornecedor } = require('./emailService');
 const { normalizarAtuacao } = require('./atuacao');
 
 const DIAS_VALIDADE = 7;
-const EMAIL_VALIDO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
+// CNPJ e Receita: fonte única em services/receitaCnpj.js (etapa 11a)
+const {
+  EMAIL_VALIDO, soDigitos, normEmail, texto, cnpjValido, consultarReceita, resumoReceita, nomeDaReceita,
+  _definirConsultaReceita,
+} = require('./receitaCnpj');
 
 const hash = (token) => crypto.createHash('sha256').update(String(token)).digest('hex');
 const esc = (t) => String(t == null ? '' : t)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-const normEmail = (e) => String(e || '').trim().toLowerCase();
-const texto = (v, max = 200) => {
-  const t = String(v == null ? '' : v).trim();
-  return t ? t.slice(0, max) : null;
-};
-const soDigitos = (v) => String(v || '').replace(/\D/g, '');
 const pendente = (c) => !c.aceito_em && !c.cancelado_em;
 const expirado = (c) => new Date(c.expira_em).getTime() < Date.now();
-
-function cnpjValido(cnpj) {
-  const c = soDigitos(cnpj);
-  if (c.length !== 14 || /^(\d)\1+$/.test(c)) return false;
-  const digito = (base) => {
-    const pesos = base.length === 12 ? [5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2] : [6, 5, 4, 3, 2, 9, 8, 7, 6, 5, 4, 3, 2];
-    const soma = pesos.reduce((acc, p, i) => acc + p * Number(base[i]), 0);
-    const r = soma % 11;
-    return r < 2 ? 0 : 11 - r;
-  };
-  return digito(c.slice(0, 12)) === Number(c[12]) && digito(c.slice(0, 13)) === Number(c[13]);
-}
-
-// Só o que interessa do retorno da BrasilAPI (não guarda/expõe sócios etc.)
-function resumoReceita(rf) {
-  if (!rf) return null;
-  const endereco = [rf.descricao_tipo_de_logradouro, rf.logradouro].filter(Boolean).join(' ').trim();
-  return {
-    razao_social: texto(rf.razao_social, 160),
-    nome_fantasia: texto(rf.nome_fantasia, 120),
-    situacao: texto(rf.descricao_situacao_cadastral, 40),
-    endereco: texto(endereco, 160),
-    numero: texto(rf.numero, 20),
-    complemento: texto(rf.complemento, 80),
-    bairro: texto(rf.bairro, 80),
-    cidade: texto(rf.municipio, 80),
-    estado: rf.uf ? String(rf.uf).toUpperCase().slice(0, 2) : null,
-    cep: soDigitos(rf.cep).slice(0, 8) || null,
-    telefone: texto(rf.ddd_telefone_1, 30),
-    email: rf.email ? normEmail(rf.email) : null,
-    cnae: rf.cnae_fiscal_descricao ? texto(rf.cnae_fiscal_descricao, 160) : null,
-    abertura: texto(rf.data_inicio_atividade, 10),
-  };
-}
-
-const nomeDaReceita = (r) => (r && (r.nome_fantasia || r.razao_social)) || null;
 
 // jsonb pode chegar como objeto ou como texto
 function lerJson(v) {
@@ -118,24 +80,6 @@ function dadosReceitaParaTela(convite) {
   };
 }
 
-// Consulta pública da Receita (BrasilAPI). Nunca lança erro.
-//   { status: 'ok', dados } | { status: 'nao_encontrado' } | { status: 'indisponivel' }
-async function consultarReceitaBrasilAPI(cnpj) {
-  if (typeof fetch !== 'function') return { status: 'indisponivel' };
-  const controle = new AbortController();
-  const tempo = setTimeout(() => controle.abort(), 6000);
-  try {
-    const r = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpj}`, { signal: controle.signal });
-    if (r.status === 404) return { status: 'nao_encontrado' };
-    if (!r.ok) return { status: 'indisponivel' };
-    return { status: 'ok', dados: await r.json() };
-  } catch {
-    return { status: 'indisponivel' };
-  } finally {
-    clearTimeout(tempo);
-  }
-}
-let consultarReceita = consultarReceitaBrasilAPI;
 
 function urlDoPortal() {
   return String(process.env.FRONTEND_URL || '').replace(/\/+$/, '');
@@ -529,6 +473,7 @@ async function aceitarNovo({ convite, nome, senhaHash, empresa }) {
       tenant_id: convite.tenant_id,
       tipo: 'local',
       ativo: 1,
+      cadastro_origem: 'convite',
     }, convite.tenant_id);
     criadoAgora = true;
   }
@@ -590,5 +535,5 @@ module.exports = {
   dadosReceitaParaTela,
   DIAS_VALIDADE,
   // só para testes
-  _definirConsultaReceita: (fn) => { consultarReceita = fn || consultarReceitaBrasilAPI; },
+  _definirConsultaReceita, // delega para services/receitaCnpj.js
 };

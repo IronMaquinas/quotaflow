@@ -38,120 +38,90 @@ function gerarTokens(usuario, tenant, perfisArr = null) {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// POST /api/auth/signup
-// Criar nova transportadora + usuário admin
+// "Criar conta" pela tela de login (etapa 11a) — regras em services/cadastroPublico.js
+//
+// POST /api/auth/signup              → transportadora (CNPJ na Receita, gestor+admin,
+//                                      teste de 15 dias, Spot só depois de aprovada)
+// POST /api/auth/signup-fornecedor   → fornecedor (CNPJ na Receita, nasce
+//                                      'candidato' = aguardando aprovação)
 // ─────────────────────────────────────────────────────────────────────────────
+
+const { cadastrarTransportadora, cadastrarFornecedor, situacaoDoTenant } = require("../services/cadastroPublico");
 
 router.post("/signup", async (req, res) => {
   try {
-    const {
-      empresa_nome,
-      cnpj,
-      email_admin,
-      senha,
-      telefone,
-      regiao
-    } = req.body;
-
-    // Validações
-    if (!empresa_nome || !email_admin || !senha) {
-      return res.status(400).json({
-        erro: "Campo obrigatório faltando",
-        campos: ["empresa_nome", "email_admin", "senha"]
-      });
-    }
-
+    const b = req.body || {};
+    const senha = String(b.senha || "");
     if (senha.length < 6) {
-      return res.status(400).json({ erro: "Senha deve ter mínimo 6 caracteres" });
+      return res.status(400).json({ erro: "A senha deve ter ao menos 6 caracteres" });
     }
 
-    // Criar slug único para a transportadora
-    const slug = empresa_nome
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, "-")
-      .replace(/^-+|-+$/g, "");
+    const r = await cadastrarTransportadora({
+      cnpj: b.cnpj,
+      empresaNome: b.empresa_nome,
+      nome: b.nome || b.nome_responsavel,
+      email: b.email || b.email_admin,
+      senhaHash: bcrypt.hashSync(senha, 10),
+      telefone: b.telefone,
+      regiao: b.regiao,
+    });
+    if (r.erro) return res.status(r.status || 400).json({ erro: r.erro, motivo: r.motivo });
 
-    const slugUnico = slug + "-" + Math.random().toString(36).substr(2, 9);
-
-    // 1. Criar tenant (transportadora)
-    let tenant;
-    try {
-      tenant = await DB.insert("tenants", {
-        slug: slugUnico,
-        nome: empresa_nome,
-        cnpj: cnpj || null,
-        email_admin: email_admin,
-        plano: "starter",
-        status: "ativo",
-        regiao: regiao || "SP",
-        participa_benchmark: 1
-      });
-    } catch (err) {
-      console.error("Erro ao criar tenant:", err.message);
-      return res.status(500).json({ erro: "Erro ao criar transportadora" });
-    }
-
-    if (!tenant) {
-      return res.status(500).json({ erro: "Erro ao criar transportadora" });
-    }
-
-    // 2. Criar usuário admin
-    const senhaHash = bcrypt.hashSync(senha, 10);
-    let usuario;
-    try {
-      usuario = await DB.insert("usuarios", {
-        nome: empresa_nome + " Admin",
-        email: email_admin,
-        senha_hash: senhaHash,
-        perfil: "admin",
-        ativo: 1
-      }, tenant.id);
-    } catch (err) {
-      console.error("Erro ao criar usuário:", err.message);
-      // Deletar tenant se falhar ao criar usuário
-      try {
-        await DB.delete("tenants", tenant.id);
-      } catch (delErr) {
-        console.error("Erro ao deletar tenant:", delErr.message);
-      }
-      
-      if (err.message.includes("duplicate") || err.message.includes("unique")) {
-        return res.status(409).json({ erro: "Este email já está em uso" });
-      }
-      
-      return res.status(500).json({ erro: "Erro ao criar usuário" });
-    }
-
-    if (!usuario) {
-      return res.status(500).json({ erro: "Erro ao criar usuário" });
-    }
-
-    // 3. Gerar tokens
-    const { accessToken, refreshToken } = gerarTokens(usuario, tenant);
-
-    // 4. Responder com sucesso
+    const { tenant, usuario, perfis } = r;
+    const { accessToken, refreshToken } = gerarTokens(usuario, tenant, perfis);
     res.status(201).json({
       ok: true,
-      mensagem: "Transportadora criada com sucesso!",
-      tenant: {
-        id: tenant.id,
-        slug: tenant.slug,
-        nome: tenant.nome
-      },
-      usuario: {
-        id: usuario.id,
-        email: usuario.email,
-        perfil: usuario.perfil
-      },
-      tokens: {
-        accessToken,
-        refreshToken
-      }
+      mensagem: "Conta criada! Seu teste grátis já começou.",
+      tenant: { id: tenant.id, slug: tenant.slug, nome: tenant.nome, ...situacaoDoTenant(tenant) },
+      usuario: { id: usuario.id, email: usuario.email, nome: usuario.nome, perfil: usuario.perfil, perfis },
+      tokens: { accessToken, refreshToken },
     });
-
   } catch (err) {
     console.error("❌ Erro no signup:", err.message);
-    res.status(500).json({ erro: err.message });
+    res.status(500).json({ erro: "Não foi possível criar a conta agora. Tente de novo em instantes." });
+  }
+});
+
+router.post("/signup-fornecedor", async (req, res) => {
+  try {
+    const b = req.body || {};
+    const senha = String(b.senha || "");
+    if (senha.length < 6) {
+      return res.status(400).json({ erro: "A senha deve ter ao menos 6 caracteres" });
+    }
+
+    const r = await cadastrarFornecedor({
+      cnpj: b.cnpj,
+      nome: b.nome,
+      email: b.email,
+      senhaHash: bcrypt.hashSync(senha, 10),
+      empresa: b.empresa,
+    });
+    if (r.erro) return res.status(r.status || 400).json({ erro: r.erro, motivo: r.motivo });
+
+    const { fornecedor, usuario } = r;
+    // mesmo formato do /login-fornecedor
+    const token = jwt.sign(
+      { user_id: usuario.id, fornecedor_id: usuario.fornecedor_id },
+      process.env.JWT_SECRET,
+      { expiresIn: "7d" }
+    );
+    res.status(201).json({
+      ok: true,
+      token,
+      aguardando_aprovacao: true,
+      usuario: {
+        id: usuario.id,
+        nome: usuario.nome,
+        email: usuario.email,
+        perfil: usuario.perfil || "vendedor",
+        fornecedor_id: usuario.fornecedor_id,
+        fornecedor_nome: fornecedor.nome_fantasia || fornecedor.nome || "",
+      },
+    });
+  } catch (err) {
+    console.error("❌ Erro no signup-fornecedor:", err.message);
+    res.status(500).json({ erro: "Não foi possível criar a conta agora. Tente de novo em instantes." });
   }
 });
 
@@ -270,6 +240,10 @@ router.get("/me", tenantMiddleware, async (req, res) => {
     }
 
     const tenant = await DB.selectOne("tenants", { id: req.tenantId });
+    let plano = null;
+    if (tenant?.plano) {
+      try { plano = await DB.selectOne("planos", { codigo: tenant.plano }); } catch { /* tabela opcional */ }
+    }
 
     res.json({
       usuario: {
@@ -284,7 +258,9 @@ router.get("/me", tenantMiddleware, async (req, res) => {
         slug: tenant.slug,
         nome: tenant.nome,
         plano: tenant.plano,
-        regiao: tenant.regiao
+        regiao: tenant.regiao,
+        // etapa 11a: teste grátis e aprovação (aviso no topo do sistema)
+        ...situacaoDoTenant(tenant, plano),
       }
     });
 

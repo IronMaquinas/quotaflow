@@ -14,6 +14,14 @@ const { exigirAcessoSpot } = require('../services/acessoSpot'); // só fornecedo
 
 const URGENCIAS = ['baixa', 'media', 'alta'];
 
+// Etapa 11a: tenant criado pelo "Criar conta" fica 'pendente' até a plataforma
+// aprovar; enquanto isso usa o sistema, mas não publica no Canal Spot.
+// Tenants antigos (sem a coluna preenchida) contam como aprovados.
+const tenantPodePublicar = (t) => !!t && (t.aprovacao_status || 'aprovado') === 'aprovado';
+const MSG_TENANT_EM_ANALISE =
+  'Sua empresa está em análise pela plataforma. Assim que for aprovada, ' +
+  'você poderá publicar demandas no Canal Spot. O restante do sistema já está liberado.';
+
 // Campos que o comprador preenche — usados na criação e na edição da demanda.
 // Devolve { erro } ou { dados }.
 async function lerCamposDemanda(b, tenantId) {
@@ -345,6 +353,11 @@ router.get('/fornecedor/demandas', fornecedorMiddleware, exigirAcessoSpot, async
 // POST /spot/demandas — criar demanda
 router.post('/demandas', tenantMiddleware, async (req, res) => {
   try {
+    // Etapa 11a: transportadora nova só publica depois de aprovada pela plataforma
+    const tenantAtual = await DB.selectOne('tenants', { id: req.tenantId });
+    if (!tenantPodePublicar(tenantAtual)) {
+      return res.status(403).json({ erro: MSG_TENANT_EM_ANALISE, codigo: 'spot_tenant_em_analise' });
+    }
     const b = req.body || {};
     const { erro, dados } = await lerCamposDemanda(b, req.tenantId);
     if (erro) return res.status(400).json({ erro });
@@ -403,7 +416,11 @@ router.put('/demandas/:id', tenantMiddleware, async (req, res) => {
 router.get('/config', tenantMiddleware, async (req, res) => {
   try {
     const tenant = await DB.selectOne('tenants', { id: req.tenantId });
-    res.json({ regiao: ufDoTenant(tenant) });
+    res.json({
+      regiao: ufDoTenant(tenant),
+      pode_publicar: tenantPodePublicar(tenant), // etapa 11a
+      mensagem_bloqueio: tenantPodePublicar(tenant) ? null : MSG_TENANT_EM_ANALISE,
+    });
   } catch (err) {
     console.error('❌ GET /spot/config:', err.message);
     res.status(500).json({ erro: err.message });

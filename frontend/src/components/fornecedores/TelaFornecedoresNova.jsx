@@ -45,7 +45,9 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
 
   // Convites a fornecedores NOVOS, ainda não cadastrados (etapa 10b)
   const [convitesNovos, setConvitesNovos] = useState([]);
-  const [modalConvite, setModalConvite] = useState(null); // { email, nome } | null
+  const [modalConvite, setModalConvite] = useState(null); // { cnpj, email, nome } | null
+  // Prévia da Receita no modal (etapa 10c): { situacao: 'buscando'|'ok'|'erro', dados?, texto? }
+  const [receitaConvite, setReceitaConvite] = useState(null);
   const [enviandoConvite, setEnviandoConvite] = useState(false);
   const [erroConvite, setErroConvite] = useState("");
   const [acaoConviteId, setAcaoConviteId] = useState(null);
@@ -280,10 +282,48 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
     }
   };
 
-  // ─── CONVITE A FORNECEDOR NOVO (etapa 10b) ───────────────
+  // ─── CONVITE A FORNECEDOR NOVO (etapas 10b e 10c) ────────
+  // CNPJ obrigatório: a prévia vem da Receita (BrasilAPI, pelo navegador);
+  // o backend confere de novo no envio e grava os dados no convite.
+  const abrirModalConvite = (inicial = {}) => {
+    setErroConvite("");
+    setReceitaConvite(null);
+    setModalConvite({ cnpj: "", email: "", nome: "", ...inicial });
+  };
+
+  const buscarReceitaConvite = async (cnpjFormatado) => {
+    const cnpj = cnpjFormatado.replace(/\D/g, "");
+    if (cnpj.length !== 14) { setReceitaConvite(null); return; }
+    setReceitaConvite({ situacao: "buscando" });
+    try {
+      const res = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpj}`);
+      if (res.status === 404 || res.status === 400) {
+        setReceitaConvite({ situacao: "erro", texto: "CNPJ não encontrado na Receita Federal." });
+        return;
+      }
+      if (!res.ok) throw new Error(String(res.status));
+      const d = await res.json();
+      const sit = String(d.descricao_situacao_cadastral || "").toUpperCase();
+      if (sit && sit !== "ATIVA") {
+        setReceitaConvite({ situacao: "erro", texto: `CNPJ consta como "${d.descricao_situacao_cadastral}" na Receita. Só empresas ATIVAS podem ser convidadas.` });
+        return;
+      }
+      setReceitaConvite({ situacao: "ok", dados: d });
+      // sugere o e-mail da Receita, se o tenant ainda não digitou nenhum
+      if (d.email) setModalConvite((m) => (m && !m.email ? { ...m, email: String(d.email).toLowerCase() } : m));
+    } catch {
+      setReceitaConvite({ situacao: "erro", texto: "Não foi possível consultar a Receita agora. Tente de novo em instantes." });
+    }
+  };
+
   const enviarConviteNovo = async (e) => {
     e?.preventDefault?.();
+    const cnpj = (modalConvite?.cnpj || "").replace(/\D/g, "");
     const email = (modalConvite?.email || "").trim();
+    if (cnpj.length !== 14) {
+      setErroConvite("Informe o CNPJ do fornecedor (14 dígitos).");
+      return;
+    }
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
       setErroConvite("Informe um e-mail válido.");
       return;
@@ -291,7 +331,7 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
     setEnviandoConvite(true);
     setErroConvite("");
     try {
-      const r = await apiService.post("/fornecedores/convidar-novo", { email, nome: (modalConvite?.nome || "").trim() });
+      const r = await apiService.post("/fornecedores/convidar-novo", { cnpj, email, nome: (modalConvite?.nome || "").trim() });
       setModalConvite(null);
       await carregarConvitesNovos();
       alert(r?.mensagem || "Convite enviado!");
@@ -303,9 +343,14 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
   };
 
   const reenviarConviteNovo = async (c) => {
+    // convite antigo, sem CNPJ: abre o modal para informar o CNPJ
+    if (!c.cnpj) {
+      abrirModalConvite({ email: c.email || "", nome: c.nome || "" });
+      return;
+    }
     setAcaoConviteId(c.id);
     try {
-      const r = await apiService.post("/fornecedores/convidar-novo", { email: c.email, nome: c.nome || "" });
+      const r = await apiService.post("/fornecedores/convidar-novo", { cnpj: c.cnpj, email: c.email, nome: c.nome || "" });
       await carregarConvitesNovos();
       alert(r?.mensagem || "Convite reenviado!");
     } catch (err) {
@@ -610,7 +655,7 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button
-            onClick={() => { setErroConvite(""); setModalConvite({ email: "", nome: "" }); }}
+            onClick={() => abrirModalConvite()}
             title="O fornecedor recebe um link, cadastra a empresa e já entra no portal"
             style={{ background: "transparent", border: `1px solid ${C.accent}`, borderRadius: 6, padding: "9px 18px", color: C.accent, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
           >
@@ -635,8 +680,43 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
             </div>
             <div style={{ padding: "18px 22px" }}>
               <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.6, marginBottom: 16 }}>
-                Para um fornecedor que ainda não está na sua lista. Ele recebe um link por e-mail, cadastra a empresa
-                (CNPJ, dados e o que fornece), cria o próprio login e entra direto como seu fornecedor — sem você digitar nada.
+                Para um fornecedor que ainda não está na sua lista. Informe o CNPJ: os dados vêm da Receita Federal e
+                ficam travados no convite. Ele recebe o link por e-mail, confere os dados, completa o contato, cria o
+                próprio login e entra direto como seu fornecedor.
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={s.label}>CNPJ DO FORNECEDOR</label>
+                <input
+                  value={modalConvite.cnpj}
+                  onChange={(e) => {
+                    const v = formatarCNPJ(e.target.value.replace(/\D/g, "").slice(0, 14));
+                    setModalConvite((m) => ({ ...m, cnpj: v }));
+                    if (v.replace(/\D/g, "").length === 14) buscarReceitaConvite(v); else setReceitaConvite(null);
+                  }}
+                  placeholder="00.000.000/0000-00"
+                  inputMode="numeric"
+                  style={s.input}
+                  autoFocus
+                />
+                {receitaConvite?.situacao === "buscando" && (
+                  <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>⏳ Consultando a Receita Federal…</div>
+                )}
+                {receitaConvite?.situacao === "erro" && (
+                  <div style={{ fontSize: 11, color: "#ef4444", marginTop: 6 }}>⚠ {receitaConvite.texto}</div>
+                )}
+                {receitaConvite?.situacao === "ok" && (
+                  <div style={{ marginTop: 8, padding: "10px 12px", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 7, fontSize: 12, lineHeight: 1.5 }}>
+                    <div style={{ color: C.text, fontWeight: 600 }}>
+                      {receitaConvite.dados.nome_fantasia || receitaConvite.dados.razao_social}
+                      <span style={{ marginLeft: 8, fontSize: 10, color: "#22c55e" }}>✓ ATIVA na Receita</span>
+                    </div>
+                    {receitaConvite.dados.nome_fantasia && <div style={{ color: C.muted }}>{receitaConvite.dados.razao_social}</div>}
+                    <div style={{ color: C.muted }}>
+                      {[receitaConvite.dados.municipio, receitaConvite.dados.uf].filter(Boolean).join("/")}
+                      {receitaConvite.dados.cnae_fiscal_descricao ? ` · ${receitaConvite.dados.cnae_fiscal_descricao}` : ""}
+                    </div>
+                  </div>
+                )}
               </div>
               <div style={{ marginBottom: 12 }}>
                 <label style={s.label}>E-MAIL DO FORNECEDOR</label>
@@ -646,7 +726,6 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
                   onChange={(e) => setModalConvite((m) => ({ ...m, email: e.target.value }))}
                   placeholder="vendas@fornecedor.com.br"
                   style={s.input}
-                  autoFocus
                 />
               </div>
               <div style={{ marginBottom: 6 }}>
@@ -669,7 +748,7 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
               <button type="button" onClick={() => setModalConvite(null)} style={{ background: "transparent", border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 16px", color: C.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
                 Cancelar
               </button>
-              <button type="submit" disabled={enviandoConvite} style={{ ...s.btn(true), padding: "8px 18px", fontSize: 12, opacity: enviandoConvite ? 0.6 : 1 }}>
+              <button type="submit" disabled={enviandoConvite || receitaConvite?.situacao === "buscando" || receitaConvite?.situacao === "erro"} style={{ ...s.btn(true), padding: "8px 18px", fontSize: 12, opacity: enviandoConvite || receitaConvite?.situacao === "buscando" || receitaConvite?.situacao === "erro" ? 0.6 : 1 }}>
                 {enviandoConvite ? "Enviando…" : "Enviar convite"}
               </button>
             </div>
@@ -878,9 +957,11 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
             >
               <div style={{ flex: 1, minWidth: 200 }}>
                 <div style={{ fontSize: 13, color: C.text }}>
+                  {c.empresa ? <><b style={{ fontWeight: 600 }}>{c.empresa}</b> <span style={{ color: C.muted }}>·</span> </> : null}
                   {c.nome ? <>{c.nome} <span style={{ color: C.muted }}>·</span> </> : null}
                   <span style={{ color: C.accent }}>{c.email}</span>
                 </div>
+                {c.cnpj && <div style={{ fontSize: 10, color: C.muted, marginTop: 1 }}>CNPJ {formatarCNPJ(c.cnpj)}</div>}
                 <div style={{ fontSize: 10, color: c.expirado ? "#ef4444" : "#f59e0b", marginTop: 2 }}>
                   {c.expirado
                     ? `✉ Convite expirou em ${new Date(c.expira_em).toLocaleDateString("pt-BR")} — reenvie se ainda quiser`

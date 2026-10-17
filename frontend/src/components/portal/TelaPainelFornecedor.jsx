@@ -60,8 +60,10 @@ export default function TelaPainelFornecedor({ C, s, usuario, onNavegar }) {
   if (!dados) return <div style={{ padding: 40, color: C.muted }}>Carregando painel…</div>;
 
   const { agora, spot, cotacoes, periodo_dias: dias, plano, tem_atuacao: temAtuacao } = dados;
+  // Canal Spot só para fornecedor verificado (etapa 10c)
+  const spotLiberado = dados.spot_liberado !== false && !!spot;
   const ir = (tela) => onNavegar && onNavegar(tela);
-  const totalAgora = agora.cotacoes_aguardando + agora.pedidos_aguardando_confirmacao + agora.ncs_aguardando_resposta + agora.spot_recomendadas;
+  const totalAgora = agora.cotacoes_aguardando + agora.pedidos_aguardando_confirmacao + agora.ncs_aguardando_resposta + (spotLiberado ? agora.spot_recomendadas : 0);
 
   return (
     <div style={{ padding: "22px 24px 60px", maxWidth: 1100 }}>
@@ -81,12 +83,22 @@ export default function TelaPainelFornecedor({ C, s, usuario, onNavegar }) {
           cor="#3b82f6" onClick={() => ir("pedidos")} />
         <CardAcao C={C} s={s} numero={agora.ncs_aguardando_resposta} titulo="Não conformidades para responder"
           cor="#ef4444" onClick={() => ir("nao-conformidades")} />
-        <CardAcao C={C} s={s} numero={agora.spot_recomendadas} titulo="Demandas spot que combinam com você"
-          detalhe={agora.spot_combina_muito > 0 ? `⭐ ${agora.spot_combina_muito} combina(m) muito` : (temAtuacao ? "ainda não respondidas" : "preencha sua atuação em Meus Dados")}
-          cor="#22c55e" onClick={() => ir(temAtuacao ? "oportunidades" : "meus-dados")} />
+        {spotLiberado ? (
+          <CardAcao C={C} s={s} numero={agora.spot_recomendadas} titulo="Demandas spot que combinam com você"
+            detalhe={agora.spot_combina_muito > 0 ? `⭐ ${agora.spot_combina_muito} combina(m) muito` : (temAtuacao ? "ainda não respondidas" : "preencha sua atuação em Meus Dados")}
+            cor="#22c55e" onClick={() => ir(temAtuacao ? "oportunidades" : "meus-dados")} />
+        ) : (
+          <button type="button" onClick={() => ir("oportunidades")}
+            style={{ ...s.card, textAlign: "left", cursor: "pointer", fontFamily: "inherit", borderLeft: `4px solid ${C.border}`, padding: "16px 18px", display: "flex", flexDirection: "column", gap: 4, minHeight: 104 }}>
+            <div style={{ fontSize: 22, lineHeight: 1 }}>🔒</div>
+            <div style={{ fontSize: 13, fontWeight: 600, color: C.text }}>Canal Spot</div>
+            <div style={{ fontSize: 11, color: C.muted }}>exclusivo para fornecedores verificados — saiba mais</div>
+          </button>
+        )}
       </div>
 
       {/* ─── Canal Spot ─── */}
+      {spotLiberado && (
       <div style={{ ...s.card, padding: "18px 20px", marginBottom: 16 }}>
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12, gap: 10, flexWrap: "wrap" }}>
           <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>⚡ CANAL SPOT <span style={{ color: C.muted, fontWeight: 400 }}>· últimos {dias} dias</span></div>
@@ -106,6 +118,7 @@ export default function TelaPainelFornecedor({ C, s, usuario, onNavegar }) {
           "Decididas" são as demandas em que o comprador comprou de alguém — quando ele desiste da compra, não conta contra você.
         </div>
       </div>
+      )}
 
       {/* ─── Cotações ─── */}
       <div style={{ ...s.card, padding: "18px 20px" }}>

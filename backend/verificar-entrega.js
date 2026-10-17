@@ -5,6 +5,7 @@
 // etapa 8: plano Pro + e-mails de recomendação; etapa 9: melhorias do e-mail;
 // etapa 10: Painel do Fornecedor + convite ao fornecedor local; etapa 10b: convite
 // a fornecedor novo; etapa 10c: convite com CNPJ + Canal Spot só para verificado)
+// etapa 11a: "Criar conta", planos, teste grátis e aprovação)
 // estão no projeto exatamente como foram entregues.
 //
 // Só LÊ arquivos. Não altera nada.
@@ -41,12 +42,12 @@ const ESPERADO = {
   'services/ValidacaoXmlService.js': 'a8e0f2180da6f621272f70fb80a2b8e3',
   // etapa 4 (inclui arquivos já mexidos nas etapas 1 e 3)
   'routes/fornecedores.js': 'b0c0f9dc2bf58ad8158b53d8c243abcc', // etapa 10c
-  'routes/auth.js': '57369cc83267cbaa5d1722669e9b8048', // etapa 10c
-  'services/convitesFornecedor.js': '9e4efab1869dc96262a392cf8bce19f9', // etapa 10c
-  'routes/spot.js': 'f8f445230376edddc45c06dd60548720', // etapa 10c
+  'routes/auth.js': 'e649ed29958e0380bc72ca8127a81365', // etapa 11a
+  'services/convitesFornecedor.js': 'e887feec01143df5195371d90494b4b7', // etapa 11a
+  'routes/spot.js': 'ee346546f49efb3552b0d4048513f26b', // etapa 11a
   'services/matchSpot.js': 'fe4275090b82bd1efd52498d2176a90c', // etapa 7
   'routes/configuracoes.js': '05360fb8a4945623e1878ba336161d27', // etapa 7
-  'routes/fornecedor.js': 'f2c0387d407c56bf37356701660ced6b', // etapa 10c
+  'routes/fornecedor.js': 'e17dc0705dad922a61298ba8f787bdb4', // etapa 11a
   'routes/recomendacoes.js': '3c1fe2834a30a24198923797bce4001a', // etapa 9
   'services/recomendacoesEmail.js': '7bc5475ccffb4fd2fcec53be78e64123', // etapa 10c
   'services/emailService.js': '2daf0e597ff370e006585f919c63b525', // etapa 9
@@ -56,30 +57,33 @@ const ESPERADO = {
   'front:SeletorAtuacao.jsx': '17afaaf69d6e4cf0c105490267d188a7',
   'front:TelaMeusDadosFornecedor.jsx': '15eaa4e64cc01bb1a545d42bf31b5888', // etapa 10c
   'front:TelaFornecedoresNova.jsx': '28396f3bc910190ecc80873b54edc47d', // etapa 10c
-  'front:TelaCanalSpot.jsx': 'f4afd6de0575afed02147c500125124c', // etapa 7
+  'front:TelaCanalSpot.jsx': 'd701f0a4ac0cff3a5803de6809471d08', // etapa 11a
   'front:TelaFornecedorSpot.jsx': '449dd00ab481e0596a932aaa985f4bad', // etapa 9
-  'front:TelaFornecedor.jsx': 'fba69d240fa40860c2a598ee039098df', // etapa 10c
+  'front:TelaFornecedor.jsx': '0d8d421317e84756ad3b2c4f1838e972', // etapa 11a
   'front:TelaPainelFornecedor.jsx': 'e9742a3e808ba27df5d5f29a393b8da6', // etapa 10c
   'front:TelaAceitarConvite.jsx': 'c7d5570e73c55fdb3ef27be683e0f09b', // etapa 10c
   'front:main.jsx': '6b23fa3202e03b908c3a0f4339c79675', // etapa 10
   'front:TelaConfiguracoes.jsx': 'cdd08de70f9fe2144022bfd3fac276a3', // etapa 7
   'services/acessoSpot.js': '6ecce4d16d6b123c6ce93c1223b32f01', // etapa 10c (novo)
+  'services/receitaCnpj.js': '7dbf5258fc0304c8e91fd88d770dd552', // etapa 11a (novo)
+  'services/cadastroPublico.js': '5450065ae1d15799a3a37657a1a28e10', // etapa 11a (novo)
+  'front:App.jsx': 'f2a9b8cef641eaaa54e7dbcbbe575fce', // etapa 11a
+  'front:TelaLogin.jsx': 'cd704becd57adb12b13afdeb6f07a694', // etapa 11a
+  'front:TelaSignup.jsx': '2babead0b324d5c88876fafa49e3dd16', // etapa 11a
+  'front:AvisoPlanoTenant.jsx': '5331c1f586dbaa11ab67d4ab1059949a', // etapa 11a (novo)
 };
 
-// Antes de copiar a etapa 10c — versão que serviu de base para as alterações
+// Antes de copiar a etapa 11a — versão que serviu de base para as alterações
 const ANTES = {
-  'routes/spot.js': '3c36748fd6d1fa6b64574004d38506d1',
-  'routes/fornecedor.js': 'ad6705f337fa9e078befc9f8a9571b1c',
-  'routes/fornecedores.js': 'd97c917ccde1ca663d91875df62d05db',
-  'routes/auth.js': '9214ac9b751463fb8e53f576ffc93b48',
-  'services/convitesFornecedor.js': '0afc85e43e521fee713fe564e523ceb8',
-  'services/recomendacoesEmail.js': 'ec0668979a4e7806bb64e7f5ac00ca3d',
-  'server.js': 'a4b331a7f77e20d83d6c6078d235cb7c',
-  'front:TelaFornecedoresNova.jsx': 'a2d7cf6b167255b81c88e3a3137d16f2',
-  'front:TelaMeusDadosFornecedor.jsx': 'fe8288aee67562902d65d70064865196',
-  'front:TelaFornecedor.jsx': 'e0573ad6f434811c6275175db6e89f25',
-  'front:TelaPainelFornecedor.jsx': '6de6d3a403842cca6903c0e3498b4e08',
-  'front:TelaAceitarConvite.jsx': '66d41dec02a1029a06ec55029652e105',
+  'routes/auth.js': '57369cc83267cbaa5d1722669e9b8048',
+  'routes/spot.js': 'f8f445230376edddc45c06dd60548720',
+  'routes/fornecedor.js': 'f2c0387d407c56bf37356701660ced6b',
+  'services/convitesFornecedor.js': '9e4efab1869dc96262a392cf8bce19f9',
+  'front:TelaCanalSpot.jsx': 'f4afd6de0575afed02147c500125124c',
+  'front:TelaFornecedor.jsx': 'fba69d240fa40860c2a598ee039098df',
+  'front:App.jsx': '7b25073ba7ecf7a6d1d963b4c2540771',
+  'front:TelaLogin.jsx': '313f23d0f1ab69fa615c029e8e7c460d',
+  'front:TelaSignup.jsx': '327c4c9436c582343a27eeddcf14420a',
 };
 
 const RAIZ = process.cwd();
@@ -116,8 +120,8 @@ function localizar(chave) {
 const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
-  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 10c?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 10c)\n');
+  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 11a?\n'
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 11a)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
@@ -147,7 +151,7 @@ for (const [chave, esperado] of Object.entries(LISTA)) {
     } catch (e) {
       problemas.push('erro de sintaxe: ' + String(e.stderr || e.message).split('\n').find((l) => l.trim()));
     }
-    const reqs = conteudo.matchAll(/require\(\s*['"]([^'"]*(?:fornecedoresVisiveis|services\/atuacao|services\/matchSpot|services\/recomendacoesEmail|routes\/recomendacoes|services\/convitesFornecedor|services\/acessoSpot))['"]\s*\)/g);
+    const reqs = conteudo.matchAll(/require\(\s*['"]([^'"]*(?:fornecedoresVisiveis|services\/atuacao|services\/matchSpot|services\/recomendacoesEmail|routes\/recomendacoes|services\/convitesFornecedor|services\/acessoSpot|services\/receitaCnpj|services\/cadastroPublico))['"]\s*\)/g);
     for (const r of reqs) {
       const alvo = path.resolve(path.dirname(abs), r[1]) + '.js';
       if (!fs.existsSync(alvo)) problemas.push(`require('${r[1]}') não encontra o arquivo`);
@@ -165,13 +169,13 @@ for (const [chave, esperado] of Object.entries(LISTA)) {
 
 if (!modoAntes) {
   // Arquivos novos precisam entrar no commit
-  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js', 'services/matchSpot.js', 'services/recomendacoesEmail.js', 'routes/recomendacoes.js', 'services/convitesFornecedor.js', 'services/acessoSpot.js'];
+  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js', 'services/matchSpot.js', 'services/recomendacoesEmail.js', 'routes/recomendacoes.js', 'services/convitesFornecedor.js', 'services/acessoSpot.js', 'services/receitaCnpj.js', 'services/cadastroPublico.js'];
   try {
     for (const n of novos) {
       const rastreado = execFileSync('git', ['ls-files', n], { cwd: RAIZ, stdio: 'pipe' }).toString().trim();
       if (!rastreado) console.log(`\n⚠️  ${n} ainda não está no git (git add ${n})`);
     }
-    for (const nome of ['SeletorAtuacao.jsx', 'TelaAceitarConvite.jsx', 'TelaPainelFornecedor.jsx']) {
+    for (const nome of ['SeletorAtuacao.jsx', 'TelaAceitarConvite.jsx', 'TelaPainelFornecedor.jsx', 'AvisoPlanoTenant.jsx']) {
       const arq = acharNoFrontend(nome)[0];
       if (!arq) continue;
       const rastreado = execFileSync('git', ['ls-files', arq], { cwd: RAIZ, stdio: 'pipe' }).toString().trim();

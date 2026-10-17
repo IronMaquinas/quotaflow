@@ -126,13 +126,19 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
   const [editandoId, setEditandoId] = useState(null); // demanda em edição (modal 'editar')
   const [salvandoForm, setSalvandoForm] = useState(false);
   const [regiaoEmpresa, setRegiaoEmpresa] = useState('');
+  // Etapa 11a: empresa nova só publica depois da aprovação da plataforma
+  const [bloqueioPublicar, setBloqueioPublicar] = useState(null); // null = pode publicar | texto do motivo
 
   useEffect(() => {
-    apiService.get('/spot/config').then(r => setRegiaoEmpresa(r?.regiao || '')).catch(() => {});
+    apiService.get('/spot/config').then(r => {
+      setRegiaoEmpresa(r?.regiao || '');
+      setBloqueioPublicar(r && r.pode_publicar === false ? (r.mensagem_bloqueio || 'Sua empresa está em análise pela plataforma.') : null);
+    }).catch(() => {});
   }, []);
 
   // Nova demanda: em branco, ou "a partir desta" (mesmo equipamento, outra peça)
   const abrirNova = (base = null) => {
+    if (bloqueioPublicar) { alert(bloqueioPublicar); return; }
     setForm(base
       ? {
           ...FORM_VAZIO,
@@ -331,8 +337,14 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
           <div style={{ fontSize: 11, color: C.muted, letterSpacing: '0.1em' }}>COMPRAS SPOT</div>
           <div style={{ fontSize: 22, fontWeight: 700, color: C.text }}>Canal Spot</div>
         </div>
-        <button onClick={() => abrirNova()} style={{ ...s.btn(true), padding: '9px 18px' }}>+ Nova Demanda Spot</button>
+        <button onClick={() => abrirNova()} style={{ ...s.btn(!bloqueioPublicar), padding: '9px 18px' }} title={bloqueioPublicar || ''}>{bloqueioPublicar ? '🔒 ' : '+ '}Nova Demanda Spot</button>
       </div>
+
+      {bloqueioPublicar && (
+        <div style={{ ...s.card, padding: '12px 16px', marginBottom: 18, borderLeft: '4px solid #f59e0b', fontSize: 13, color: C.text, lineHeight: 1.5 }}>
+          ⏳ {bloqueioPublicar}
+        </div>
+      )}
 
       {/* Filtros */}
       <div style={{ display: 'flex', gap: 8, marginBottom: 18, flexWrap: 'wrap' }}>

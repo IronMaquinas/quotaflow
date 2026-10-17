@@ -30,6 +30,7 @@ import TelaRecebimento from './components/estoque/TelaRecebimento';
 import TelaOrdemServico from './components/estoque/TelaOrdemServico';
 import TelaConfiguracoes from './components/configuracoes/TelaConfiguracoes';
 import TelaNaoConformidades from "./components/naoConformidades/TelaNaoConformidades";
+import AvisoPlanoTenant from './components/shared/AvisoPlanoTenant'; // etapa 11a: teste grátis / empresa em análise
 
 import {
   useChamados,
@@ -466,6 +467,7 @@ const perfil = PERFIS[usuario.perfil] || {
 
       {/* Conteúdo */}
       <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>        
+        <AvisoPlanoTenant />
         {tela==="home"&&(
           <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:40,overflowY:"auto"}}>
             <div style={{maxWidth:600,width:"100%",textAlign:"center"}}>
