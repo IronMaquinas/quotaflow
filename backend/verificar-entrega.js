@@ -65,17 +65,18 @@ const ESPERADO = {
   'front:main.jsx': '95af54a8a84081eeddf8df975f3fb7d1', // etapa 11a.1
   'front:TelaConfiguracoes.jsx': 'cdd08de70f9fe2144022bfd3fac276a3', // etapa 7
   'services/acessoSpot.js': '6ecce4d16d6b123c6ce93c1223b32f01', // etapa 10c (novo)
-  'services/receitaCnpj.js': '7dbf5258fc0304c8e91fd88d770dd552', // etapa 11a (novo)
-  'services/cadastroPublico.js': '5450065ae1d15799a3a37657a1a28e10', // etapa 11a (novo)
+  'services/receitaCnpj.js': '7c382fbd2db545838e97cb294aa12ee2', // etapa 11a.2
+  'services/cadastroPublico.js': '40a58083ed2927b48aed7a0583688eeb', // etapa 11a.2
   'front:App.jsx': 'f2a9b8cef641eaaa54e7dbcbbe575fce', // etapa 11a
   'front:TelaLogin.jsx': 'cd704becd57adb12b13afdeb6f07a694', // etapa 11a
   'front:TelaSignup.jsx': '2babead0b324d5c88876fafa49e3dd16', // etapa 11a
   'front:AvisoPlanoTenant.jsx': '5331c1f586dbaa11ab67d4ab1059949a', // etapa 11a (novo)
 };
 
-// Antes de copiar a etapa 11a.1 — versão que serviu de base para as alterações
+// Antes de copiar a etapa 11a.2 — versão que serviu de base para as alterações
 const ANTES = {
-  'front:main.jsx': '6b23fa3202e03b908c3a0f4339c79675',
+  'services/receitaCnpj.js': '7dbf5258fc0304c8e91fd88d770dd552',
+  'services/cadastroPublico.js': '5450065ae1d15799a3a37657a1a28e10',
 };
 
 const RAIZ = process.cwd();
@@ -112,7 +113,7 @@ function localizar(chave) {
 const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
-  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 11a.1?\n'
+  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 11a.2?\n'
   : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 11a)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {

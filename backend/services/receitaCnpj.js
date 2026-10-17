@@ -31,24 +31,107 @@ function cnpjValido(cnpj) {
   return digito(c.slice(0, 12)) === Number(c[12]) && digito(c.slice(0, 13)) === Number(c[13]);
 }
 
-// Consulta pública (BrasilAPI). Nunca lança erro.
-//   { status: 'ok', dados } | { status: 'nao_encontrado' } | { status: 'indisponivel' }
-async function consultarReceitaBrasilAPI(cnpj) {
-  if (typeof fetch !== 'function') return { status: 'indisponivel' };
-  const controle = new AbortController();
-  const tempo = setTimeout(() => controle.abort(), 6000);
-  try {
-    const r = await fetch(`https://brasilapi.com.br/api/cnpj/v1/${cnpj}`, { signal: controle.signal });
-    if (r.status === 404) return { status: 'nao_encontrado' };
-    if (!r.ok) return { status: 'indisponivel' };
-    return { status: 'ok', dados: await r.json() };
-  } catch {
-    return { status: 'indisponivel' };
-  } finally {
-    clearTimeout(tempo);
-  }
+// ─── Consulta pública, com 2 fontes (etapa 11a.2) ───────────────────────────
+// 1ª BrasilAPI (2 tentativas) → 2ª CNPJ.ws (pública, 3 consultas/min).
+// Funciona em qualquer versão do Node (usa fetch se existir; senão, https).
+// Nunca lança erro:
+//   { status: 'ok', dados, fonte } | { status: 'nao_encontrado' } | { status: 'indisponivel', motivo }
+
+const https = require('https');
+const TEMPO_LIMITE_MS = 10000;
+const CABECALHOS = {
+  Accept: 'application/json',
+  'User-Agent': 'QuotaFlow/1.0 (cadastro de empresas)',
+};
+
+function obterJson(url) {
+  return new Promise((resolve) => {
+    const fim = (r) => resolve(r);
+    if (typeof fetch === 'function') {
+      const controle = new AbortController();
+      const tempo = setTimeout(() => controle.abort(), TEMPO_LIMITE_MS);
+      fetch(url, { headers: CABECALHOS, signal: controle.signal })
+        .then(async (r) => {
+          let corpo = null;
+          try { corpo = await r.json(); } catch { /* corpo não-JSON */ }
+          fim({ status: r.status, corpo });
+        })
+        .catch((e) => fim({ status: 0, erro: e.name === 'AbortError' ? 'tempo esgotado' : (e.cause?.code || e.message) }))
+        .finally(() => clearTimeout(tempo));
+      return;
+    }
+    const req = https.get(url, { headers: CABECALHOS, timeout: TEMPO_LIMITE_MS }, (res) => {
+      let txt = '';
+      res.setEncoding('utf8');
+      res.on('data', (c) => { txt += c; });
+      res.on('end', () => {
+        let corpo = null;
+        try { corpo = JSON.parse(txt); } catch { /* corpo não-JSON */ }
+        fim({ status: res.statusCode, corpo });
+      });
+    });
+    req.on('timeout', () => { req.destroy(); fim({ status: 0, erro: 'tempo esgotado' }); });
+    req.on('error', (e) => fim({ status: 0, erro: e.code || e.message }));
+  });
 }
-let consultaAtual = consultarReceitaBrasilAPI;
+
+const espera = (ms) => new Promise((r) => setTimeout(r, ms));
+
+async function viaBrasilAPI(cnpj) {
+  let ultimo = null;
+  for (let tentativa = 1; tentativa <= 2; tentativa++) {
+    const r = await obterJson(`https://brasilapi.com.br/api/cnpj/v1/${cnpj}`);
+    if (r.status === 200 && r.corpo) return { status: 'ok', dados: r.corpo, fonte: 'brasilapi' };
+    if (r.status === 404) return { status: 'nao_encontrado' };
+    ultimo = r.erro || `HTTP ${r.status}`;
+    if (tentativa === 1) await espera(800);
+  }
+  return { status: 'indisponivel', motivo: `BrasilAPI: ${ultimo}` };
+}
+
+// CNPJ.ws → mesmo formato da BrasilAPI (o resto do sistema lê um formato só)
+function deCnpjWs(c) {
+  const e = c.estabelecimento || {};
+  const ap = e.atividade_principal || {};
+  return {
+    razao_social: c.razao_social,
+    nome_fantasia: e.nome_fantasia,
+    descricao_situacao_cadastral: e.situacao_cadastral ? String(e.situacao_cadastral).toUpperCase() : null,
+    descricao_tipo_de_logradouro: e.tipo_logradouro,
+    logradouro: e.logradouro,
+    numero: e.numero,
+    complemento: e.complemento,
+    bairro: e.bairro,
+    municipio: e.cidade && e.cidade.nome,
+    uf: e.estado && e.estado.sigla,
+    cep: e.cep,
+    ddd_telefone_1: e.ddd1 && e.telefone1 ? `${e.ddd1}${e.telefone1}` : null,
+    email: e.email,
+    cnae_fiscal: ap.id,
+    cnae_fiscal_descricao: ap.descricao,
+    cnaes_secundarios: (e.atividades_secundarias || []).map((a) => ({ codigo: a.id, descricao: a.descricao })),
+    data_inicio_atividade: e.data_inicio_atividade,
+  };
+}
+
+async function viaCnpjWs(cnpj) {
+  const r = await obterJson(`https://publica.cnpj.ws/cnpj/${cnpj}`);
+  if (r.status === 200 && r.corpo) return { status: 'ok', dados: deCnpjWs(r.corpo), fonte: 'cnpj.ws' };
+  if (r.status === 404) return { status: 'nao_encontrado' };
+  return { status: 'indisponivel', motivo: `CNPJ.ws: ${r.erro || `HTTP ${r.status}`}` };
+}
+
+async function consultarReceitaPublica(cnpj) {
+  const a = await viaBrasilAPI(cnpj);
+  if (a.status !== 'indisponivel') return a;
+  const b = await viaCnpjWs(cnpj);
+  if (b.status !== 'indisponivel') return b;
+  const motivo = `${a.motivo} · ${b.motivo}`;
+  console.warn(`⚠️ [receita] CNPJ ${cnpj} não consultado — ${motivo}`);
+  return { status: 'indisponivel', motivo };
+}
+
+let consultaAtual = consultarReceitaPublica;
 const consultarReceita = (cnpj) => consultaAtual(cnpj);
 
 // Só o que interessa do retorno (não guarda nem expõe a lista de sócios)
@@ -81,11 +164,15 @@ function resumoReceita(rf) {
 const nomeDaReceita = (r) => (r && (r.nome_fantasia || r.razao_social)) || null;
 
 // Consulta + regras de bloqueio. Devolve { resumo } ou { status, erro, motivo }.
-async function conferirCnpj(cnpj, { quem = 'empresa' } = {}) {
+// permitirSemReceita: com a Receita fora do ar, segue sem os dados (devolve
+// { cnpj, resumo: null, semReceita: true }) — usado no "Criar conta", que passa
+// pela aprovação da plataforma. O convite do tenant (sem aprovação) não usa.
+async function conferirCnpj(cnpj, { quem = 'empresa', permitirSemReceita = false } = {}) {
   const c = soDigitos(cnpj);
   if (!cnpjValido(c)) return { status: 400, motivo: 'cnpj_invalido', erro: 'CNPJ inválido. Confira os 14 dígitos.' };
   const r = await consultarReceita(c);
   if (r.status === 'nao_encontrado') return { status: 400, motivo: 'cnpj_nao_encontrado', erro: 'CNPJ não encontrado na Receita Federal. Confira o número.' };
+  if (r.status !== 'ok' && permitirSemReceita) return { cnpj: c, resumo: null, semReceita: true };
   if (r.status !== 'ok') return { status: 503, motivo: 'receita_indisponivel', erro: 'Não foi possível consultar a Receita Federal agora. Tente de novo em alguns minutos.' };
   const resumo = resumoReceita(r.dados || {});
   if (resumo.situacao && resumo.situacao.toUpperCase() !== 'ATIVA') {
@@ -162,5 +249,6 @@ module.exports = {
   conferirCnpj,
   alertasCadastro,
   // só para testes
-  _definirConsultaReceita: (fn) => { consultaAtual = fn || consultarReceitaBrasilAPI; },
+  _definirConsultaReceita: (fn) => { consultaAtual = fn || consultarReceitaPublica; },
+  _deCnpjWs: deCnpjWs,
 };

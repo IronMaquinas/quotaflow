@@ -56,7 +56,11 @@ function Router() {
   }
 
   // Redirecionar se já logado e tentar acessar login/signup
-  if (isLogado && (currentPage === "login" || currentPage === "signup")) {
+  // Etapa 11a.1: só o LOGIN redireciona quem tem sessão guardada. "Criar conta"
+  // (#signup) sempre abre — senão, com uma sessão antiga no navegador (o "Sair"
+  // do sistema não limpa o localStorage), o clique em "Criar conta" voltava
+  // para o login e parecia não fazer nada.
+  if (isLogado && currentPage === "login") {
     window.location.hash = "#dashboard";
     return <div style={{ background: "#0a0e14", minHeight: "100vh" }} />;
   }

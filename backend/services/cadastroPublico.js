@@ -34,6 +34,11 @@ const {
 } = require('./receitaCnpj');
 
 const DIAS_TESTE_PADRAO = 15;
+// Receita fora do ar no cadastro: segue (a conta já nasce em análise) e avisa o admin
+const ALERTA_SEM_RECEITA = {
+  codigo: 'receita_nao_conferida',
+  texto: 'CNPJ NÃO conferido na Receita (consulta fora do ar no cadastro) — confira situação, razão social e atividade antes de aprovar',
+};
 const UFS = new Set(['AC', 'AL', 'AP', 'AM', 'BA', 'CE', 'DF', 'ES', 'GO', 'MA', 'MT', 'MS', 'MG', 'PA', 'PB', 'PR', 'PE', 'PI', 'RJ', 'RN', 'RS', 'RO', 'RR', 'SC', 'SP', 'SE', 'TO']);
 
 const esc = (t) => String(t == null ? '' : t)
@@ -110,13 +115,15 @@ async function cadastrarTransportadora({ cnpj, empresaNome, nome, email, senhaHa
     }
   }
 
-  const conf = await conferirCnpj(cnpjLimpo, { quem: 'empresa' });
+  const conf = await conferirCnpj(cnpjLimpo, { quem: 'empresa', permitirSemReceita: true });
   if (conf.erro) return conf;
-  const { resumo } = conf;
+  const resumo = conf.resumo || {};
 
   const nomeEmpresa = texto(empresaNome, 120) || nomeDaReceita(resumo);
+  if (!nomeEmpresa) return { status: 400, erro: 'Informe o nome da empresa.' };
   const uf = String(regiao || resumo.estado || '').toUpperCase();
   const alertas = alertasCadastro('cliente', resumo, emailNorm);
+  if (conf.semReceita) alertas.unshift(ALERTA_SEM_RECEITA);
   const dias = await diasDeTeste();
 
   const tenant = await DB.insert('tenants', {
@@ -133,7 +140,7 @@ async function cadastrarTransportadora({ cnpj, empresaNome, nome, email, senhaHa
     aprovacao_status: 'pendente',
     cadastro_origem: 'signup',
     alertas_cadastro: alertas,
-    dados_cnpj: resumo,
+    dados_cnpj: conf.resumo,
   });
   if (!tenant) throw new Error('Erro ao criar a transportadora');
 
@@ -201,19 +208,21 @@ async function cadastrarFornecedor({ cnpj, nome, email, senhaHash, empresa }) {
     }
   }
 
-  const conf = await conferirCnpj(cnpjLimpo, { quem: 'empresa' });
+  const conf = await conferirCnpj(cnpjLimpo, { quem: 'empresa', permitirSemReceita: true });
   if (conf.erro) return conf;
-  const { resumo } = conf;
+  const resumo = conf.resumo || {};
 
   const nomeFantasia = texto(e.nome_fantasia, 120) || nomeDaReceita(resumo);
+  if (!nomeFantasia) return { status: 400, erro: 'Informe o nome fantasia da empresa.' };
   const alertas = alertasCadastro('fornecedor', resumo, emailNorm);
+  if (conf.semReceita) alertas.unshift(ALERTA_SEM_RECEITA);
 
   let fornecedor = await DB.insert('fornecedores', {
     tipo: 'candidato',          // aguardando aprovação da plataforma
     tenant_id: null,
     nome_fantasia: nomeFantasia,
     nome: nomeFantasia,
-    razao_social: resumo.razao_social,
+    razao_social: resumo.razao_social || null,
     cnpj: cnpjLimpo,
     // endereço oficial da Receita (o fornecedor ajusta depois em Meus Dados, se preciso)
     endereco: resumo.endereco,
@@ -231,9 +240,9 @@ async function cadastrarFornecedor({ cnpj, nome, email, senhaHash, empresa }) {
     plano: 'gratuito',
     cadastro_origem: 'autocadastro',
     alertas_cadastro: alertas,
-    dados_cnpj: resumo,
-    situacao_cnpj: resumo.situacao,
-    ultima_consulta_cnpj: new Date().toISOString(),
+    dados_cnpj: conf.resumo,
+    situacao_cnpj: resumo.situacao || null,
+    ultima_consulta_cnpj: conf.semReceita ? null : new Date().toISOString(),
   });
   if (!fornecedor) throw new Error('Erro ao criar o fornecedor');
 
