@@ -8,6 +8,7 @@ import TelaNaoConformidadesFornecedor from '../fornecedores/TelaNaoConformidades
 import TelaGestaoCotacoesFornecedor from '../fornecedores/TelaGestaoCotacoesFornecedor';
 import TelaMeusDadosFornecedor from '../fornecedores/TelaMeusDadosFornecedor';
 import TelaFornecedorSpot, { temLinkSpotPendente } from './TelaFornecedorSpot';
+import TelaPainelFornecedor from './TelaPainelFornecedor';
 
 const C = {
   bg: "#0a0e14",
@@ -35,7 +36,8 @@ const fmtD = d => d ? new Date(d).toLocaleDateString('pt-BR') : '—';
 
 export default function TelaFornecedor() {
   // Chegou pelo link do e-mail de recomendação (?spot=<id>)? Abre direto no Canal Spot.
-  const [tela, setTela] = useState(() => (temLinkSpotPendente() ? 'oportunidades' : 'cotacoes'));
+  // Abre no Painel; se veio do link do e-mail (?spot=<id>), direto no Canal Spot.
+  const [tela, setTela] = useState(() => (temLinkSpotPendente() ? 'oportunidades' : 'painel'));
   const [usuario, setUsuario] = useState(null);
 
   useEffect(() => {
@@ -51,6 +53,7 @@ export default function TelaFornecedor() {
   }, []);
 
   const menuItens = [
+    { id: 'painel',        label: '📊 Painel' },
     { id: 'cotacoes',      label: '📋 Minhas Cotações' },
     { id: 'pedidos',       label: '📦 Meus Pedidos' },
     { id: 'nao-conformidades', label: '⚠️ Não Conformidades' },
@@ -148,6 +151,7 @@ export default function TelaFornecedor() {
 
         {/* ─── CONTEÚDO ─── */}
         <div style={{ flex: 1, overflowY: 'auto', background: C.bg }}>
+        {tela === 'painel' && <TelaPainelFornecedor C={C} s={s} usuario={usuario} onNavegar={setTela} />}
         {tela === 'cotacoes' && <TelaGestaoCotacoesFornecedor C={C} s={s} usuario={usuario} />}
         {tela === 'pedidos' && <TelaMeusPedidosFornecedor C={C} s={s} usuario={usuario} />}
         {tela === 'nao-conformidades' && <TelaNaoConformidadesFornecedor C={C} s={s} usuario={usuario} />}

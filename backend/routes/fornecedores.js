@@ -23,6 +23,7 @@ const router = express.Router();
 const { DB } = require("../db");
 const tenantMiddleware = require("../middleware/tenantMiddleware");
 const { normalizarAtuacao, CAMPOS_ATUACAO } = require("../services/atuacao"); // perfil de atuação (etapa 4)
+const { convidar, situacaoPortal, temLoginNoPortal } = require("../services/convitesFornecedor"); // convite (etapa 10)
 
 // ─── Helpers ─────────────────────────────────────────────────────────────
 
@@ -42,8 +43,11 @@ const mesmoId = (a, b) => String(a) === String(b);
 const ehGlobal = (f) => f && f.tipo === "global";
 
 function formatar(f, extras = {}) {
+  // Campos internos do fornecedor que o tenant nunca recebe
+  // (descadastro_token desligaria os e-mails dele; preferência é dele)
+  const { descadastro_token, recomendacoes_email, ...semInternos } = f || {};
   return {
-    ...f,
+    ...semInternos,
     contatos: lerJson(f.contatos, []),
     categorias: lerJson(f.categorias, []),
     dados_cnpj: lerJson(f.dados_cnpj, null),
@@ -110,9 +114,18 @@ router.get("/", tenantMiddleware, async (req, res) => {
     for (const v of vinculos || []) vinculoPorFornecedor[String(v.fornecedor_id)] = v;
 
     // Locais do tenant (exclui globais que ainda estejam com o tenant_id dele)
-    const locais = (doTenant || [])
-      .filter((f) => !ehGlobal(f))
-      .map((f) => formatar(f, { editavel: true }));
+    const locaisBrutos = (doTenant || []).filter((f) => !ehGlobal(f));
+    // Etapa 10: local que já tem login no portal administra os próprios dados
+    const portal = await situacaoPortal(req.tenantId, locaisBrutos.map((f) => f.id));
+    const locais = locaisBrutos.map((f) => {
+      const p = portal[String(f.id)] || {};
+      return formatar(f, {
+        editavel: !p.portal_ativo,
+        portal_ativo: !!p.portal_ativo,
+        convite_pendente_ate: p.convite_pendente_ate || null,
+        convite_email: p.convite_email || null,
+      });
+    });
 
     const listaGlobais = (globais || []).map((f) => formatarGlobal(f, vinculoPorFornecedor[String(f.id)]));
 
@@ -194,7 +207,13 @@ router.get("/:id", tenantMiddleware, async (req, res) => {
       const vinculo = await vinculoDe(req.tenantId, achado.fornecedor.id);
       return res.json(formatarGlobal(achado.fornecedor, vinculo));
     }
-    res.json(formatar(achado.fornecedor, { editavel: true }));
+    const p = (await situacaoPortal(req.tenantId, [achado.fornecedor.id]))[String(achado.fornecedor.id)] || {};
+    res.json(formatar(achado.fornecedor, {
+      editavel: !p.portal_ativo,
+      portal_ativo: !!p.portal_ativo,
+      convite_pendente_ate: p.convite_pendente_ate || null,
+      convite_email: p.convite_email || null,
+    }));
   } catch (err) {
     console.error("❌ Erro ao buscar fornecedor:", err.message);
     res.status(500).json({ erro: err.message });
@@ -304,6 +323,17 @@ router.put("/:id", tenantMiddleware, async (req, res) => {
     // ── Local do tenant ──
     const { id } = achado.fornecedor;
 
+    // Etapa 10: local que aceitou o convite é dono dos próprios dados
+    if (await temLoginNoPortal(id)) {
+      const tentouEditarCadastro = [...CAMPOS_EDITAVEIS, ...CAMPOS_ATUACAO, "marca_sugerida"]
+        .some((c) => body[c] !== undefined);
+      if (tentouEditarCadastro) {
+        return res.status(403).json({
+          erro: "Este fornecedor já está no portal e mantém os próprios dados. Você pode apenas ativá-lo ou desativá-lo.",
+        });
+      }
+    }
+
     if (body.cnpj) {
       const cnpjLimpo = String(body.cnpj).replace(/\D/g, "");
       const global = await DB.selectOne("fornecedores", { cnpj: cnpjLimpo, tipo: "global" });
@@ -357,11 +387,38 @@ router.delete("/:id", tenantMiddleware, async (req, res) => {
       });
     }
 
+    if (await temLoginNoPortal(achado.fornecedor.id)) {
+      return res.status(409).json({
+        erro: "Este fornecedor já tem acesso ao portal e não pode ser excluído. Você pode desativá-lo.",
+      });
+    }
+
     await DB.delete("fornecedores", achado.fornecedor.id, req.tenantId);
     res.json({ ok: true, mensagem: "Fornecedor deletado" });
   } catch (err) {
     console.error("❌ Erro ao deletar fornecedor:", err.message);
     res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/fornecedores/:id/convidar — convite ao fornecedor LOCAL (etapa 10)
+// Body opcional: { email } (padrão: e-mail do cadastro)
+// ─────────────────────────────────────────────────────────────────────────
+
+router.post("/:id/convidar", tenantMiddleware, async (req, res) => {
+  try {
+    const r = await convidar({
+      tenantId: req.tenantId,
+      fornecedorId: req.params.id,
+      email: req.body?.email,
+      criadoPor: req.userId,
+    });
+    if (r.erro) return res.status(r.status || 400).json({ erro: r.erro });
+    res.json({ ok: true, expira_em: r.expira_em, email: r.email, mensagem: `Convite enviado para ${r.email}` });
+  } catch (err) {
+    console.error("❌ Erro ao convidar fornecedor:", err.message || err);
+    res.status(500).json({ erro: err.message || "Erro ao enviar convite" });
   }
 });
 

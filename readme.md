@@ -1,6 +1,6 @@
 # 📦 QuotaFlow — Estrutura Completa do Projeto
 
-**Versão:** 4.7 (Canal Spot + Fornecedores Globais + Cadastro Único + Perfil de Atuação + Match Score + Edição de Demanda + Plano Pro do Fornecedor)
+**Versão:** 4.8 (Canal Spot + Fornecedores Globais + Cadastro Único + Perfil de Atuação + Match Score + Edição de Demanda + Plano Pro do Fornecedor)
 **Última atualização:** 16/10/2026
 **Status:** núcleo de compras (OS → RM → RC → OV) em produção; marketplace de fornecedores com busca unificada em produção; módulo de Não Conformidades com fluxo ISO 9001 completo; multi-perfil e reset de senha entregues; **Canal Spot** (demandas urgentes/raras) com ciclo completo comprador ↔ fornecedor; **fornecedores globais** da plataforma visíveis a todos os tenants, com isolamento total dos fornecedores locais.
 
@@ -259,6 +259,7 @@ quotaflow/
   - ⚠ `categorias` (lista antiga do tenant, com cara de indústria) foi **convertida** para `atuacao_sistemas` e não é mais usada; a coluna ficou só para conferência — apagar depois.
   - ⚠ `dados_cnpj` continua podendo vir como string dentro do jsonb. Ler sempre de forma tolerante aos dois formatos.
 - **Plano (migration 012):** `plano ('gratuito' | 'pro') | plano_valido_ate (NULL = sem vencimento) | recomendacoes_email (opt-out do fornecedor) | descadastro_token (uuid do link do e-mail)`. O plano só muda pela plataforma (SQL/admin) — `PUT /fornecedor/me` aceita apenas `recomendacoes_email`.
+- **fornecedor_convites** (migration 013) — `id | token_hash (SHA-256; token cru nunca guardado) | fornecedor_id (FK CASCADE) | tenant_id | email | criado_por | criado_em | expira_em (7 dias) | aceito_em | cancelado_em`. Novo convite cancela o pendente anterior.
 - **recomendacoes_enviadas** (migration 012) — `fornecedor_id | demanda_id | tipo ('imediato' | 'resumo') | enviado_em`, PK (fornecedor, demanda): cada demanda é avisada no máximo uma vez a cada fornecedor.
 - **recomendacoes_email_log** (migration 012) — um registro por e-mail de recomendação enviado; base da cota diária.
 - **atuacao_opcoes** ⭐ (migration 010) — listas fechadas do perfil: `dimensao ('segmento' | 'sistema' | 'marca' | 'oferta' | 'uf') | codigo | nome | grupo | ordem | aprovado | sugerido_por_fornecedor_id | sugerido_por_tenant_id`, `UNIQUE(dimensao, codigo)`. Incluir opção = INSERT, sem deploy. Marca digitada em "Outra marca" entra com `aprovado = false` (aparece "em análise" só para quem sugeriu); aprovar com `UPDATE atuacao_opcoes SET aprovado = true WHERE dimensao = 'marca' AND codigo = '...'`.
@@ -310,6 +311,7 @@ Ver seção 5 para o fluxo completo.
 ### Migrations recentes
 - **007_tenant_fornecedores.sql** — cria `tenant_fornecedores`.
 - **008_fornecedores_globais_sem_tenant.sql** — `tenant_id` deixa de ser NOT NULL em `fornecedores`; globais passam a `tenant_id NULL`; CHECK `fornecedores_tenant_por_tipo`.
+- **013_convite_fornecedor.sql** — tabela `fornecedor_convites`. Idempotente.
 - **012_plano_fornecedor_recomendacoes.sql** — plano do fornecedor, opt-out, token de descadastro, tabelas de envio. Idempotente.
 - **agendamento_supabase_resumo_diario.sql** — pg_cron + pg_net: acorda o Render às 06:57 e dispara o resumo às 07:00 (Brasília). Trocar URL e segredo antes de rodar.
 - **011_demanda_spot_uf_edicao.sql** — `demandas_spot.uf` e `editada_em`; demandas existentes herdam `tenants.regiao`. Idempotente.
@@ -454,6 +456,19 @@ Calculado em `services/matchSpot.js` a cada abertura da tela do fornecedor (sem 
 - Gratuito vê convite discreto para o Pro no Canal Spot e em Meus Dados.
 - **Ativar Pro (até existir cobrança):** `UPDATE fornecedores SET plano = 'pro', plano_valido_ate = now() + interval '6 months' WHERE id = ...;`
 - **Variáveis de ambiente (Render):** `CRON_SECRET` (≥ 16 caracteres, obrigatório), `BACKEND_URL` (link de descadastro), `FRONTEND_URL` (botão "Ver no portal"), `RECOMENDACOES_LIMITE_DIA` (opcional), `CRON_INTERNO=1` (só em servidor sempre ligado — aí o node-cron interno substitui o pg_cron).
+
+### Painel do Fornecedor (etapa 10)
+`GET /api/fornecedor/painel` (só dados do próprio fornecedor, de todos os clientes). Primeira tela do portal (`TelaPainelFornecedor.jsx`; menu "📊 Painel"; o link `?spot=` do e-mail continua abrindo direto o Canal Spot).
+- **Agora** (cada card leva à tela): cotações aguardando resposta (só cotação viva), pedidos para confirmar, NCs para responder (`enviado | visualizado | devolvida` e NC não encerrada), demandas spot que combinam e ainda não foram respondidas.
+- **Canal Spot, 90 dias:** taxa de resposta (respondidas ÷ vistas), taxa de vitória (escolhido ÷ decididas — "decididas" exclui encerramento `nao_necessario`), tempo médio da publicação à resposta, valor ganho (soma do `valor_estimado` informado nas escolhidas — ver pendência unitário × total).
+- **Cotações, 90 dias:** recebidas, respondidas, vencidas (cotações com OV para ele), valor em pedidos.
+
+### Convite ao fornecedor local (etapa 10)
+1. Tenant, na lista de Fornecedores, clica **✉** num local sem acesso → `POST /api/fornecedores/:id/convidar { email }` (padrão: e-mail do cadastro). E-mail **transacional** (grátis) com link `FRONTEND_URL/#convite?token=…`, válido 7 dias.
+2. Fornecedor abre o link → `TelaAceitarConvite.jsx` (rota `convite` no `main.jsx`) → `GET /api/auth/convite/validar` → cria nome + senha → `POST /api/auth/convite/aceitar` cria o login em `fornecedor_usuarios` e devolve o JWT → entra direto no portal.
+3. A partir daí o local é **dono dos próprios dados**: tenant recebe 403 ao editar cadastro/atuação e 409 ao excluir; continua podendo ativar/desativar. Lista mostra "🟢 No portal" / "✉ Convite enviado · vale até…".
+- Bloqueios: global (já é da plataforma), local de outro tenant, fornecedor que já tem login, e-mail que já é login de outra empresa (juntar cadastros = etapa 2, adiada).
+- A lista de fornecedores do tenant **não expõe mais** `descadastro_token` nem `recomendacoes_email` do fornecedor.
 
 ### Decisões de produto registradas
 - O clique em "Email/WhatsApp" **não** é usado como sinal de contato (o comprador pode ligar direto do celular) — a fonte confiável do desfecho é o encerramento.
@@ -614,6 +629,7 @@ npm run dev
 
 ### ✅ Em produção (16/10/2026)
 - **Canal Spot completo:** situações por cor (comprador), abas e expiração do histórico (fornecedor), busca única dos dois lados, encerrar com escolha do vencedor / reabrir, resultado para o fornecedor sem expor o vencedor, foto com compressão adicionada/trocada a qualquer momento
+- **Painel do Fornecedor + convite ao fornecedor local (etapa 10):** portal abre no Painel (o que espera ação + desempenho 90 dias no Spot e em cotações); tenant convida o local por e-mail (link 7 dias), fornecedor cria o próprio login e passa a manter os dados (tenant só ativa/desativa)
 - **Plano Pro do fornecedor (etapa 8):** alerta imediato e resumo diário por e-mail só para Pro, cota diária, descadastro, convite Pro para o gratuito; agendamento via Supabase (Render grátis dorme)
 - **Edição de demanda spot + região (etapa 7):** editar demanda aberta, "nova a partir desta", estado por demanda, aba Configurações → Empresa (região), Match Score lendo `tenants.regiao`
 - **Match Score fase 1 (etapa 6):** "Recomendadas para você" no topo do Canal Spot do fornecedor, com faixa (combina muito / combina / pode interessar) e motivos; aviso para quem não preencheu a atuação
@@ -726,6 +742,16 @@ Lições da etapa 1 (10/2026), para as próximas entregas:
 - **Calendário de Manutenção + MRP.** Visão mês/semana com cards por OS (dados já existem em `chamados` e `chamado_itens` — zero migration). Botão "Rodar MRP" projeta consumo + custo médio dos últimos 6 meses, gera previsão orçamentária. Diferencial de venda forte: "você tem R$ 47k de manutenção prevista pro Q1".
 - **Export Excel em massa.** OS, RC, OV, NC, itens de estoque. Pequena transportadora vive em Excel — tira 30% dos tickets de suporte.
 - **M4.8a — IA Embarcada (nível gestor).** Ver seção IA abaixo.
+
+### Próxima etapa (11) — cadastro completo, planos e selo de verificação (decidido 17/10/2026)
+- **"Criar conta" na tela de login**, dois caminhos:
+  - **Transportadora:** CNPJ (busca no cadastro nacional), dados da empresa, e-mail corporativo → dono entra como **gestor** (hoje o signup cria `admin` e não grava `usuario_perfis` — corrigir) → **15 dias de teste**.
+  - **Fornecedor:** CNPJ, dados, login, atuação → plano **gratuito** → entra na rede como **"não verificado"**: usa portal e Canal Spot no mesmo dia, mas **só aparece para os clientes** (cotação/cadastro) depois de verificado.
+- **Tabela `planos`** para os dois públicos: cliente `teste` (15 dias) · `bronze` · `prata` · `ouro`; fornecedor `gratuito` · `pro`. Nome, preço e lista de recursos no banco (mudar o que cada plano libera = ajuste no banco). Tenant ganha `plano` + `teste_ate`; aviso "Teste grátis — faltam X dias". **Sem bloqueio por enquanto** — entra quando o conteúdo de cada plano estiver decidido.
+- **Selo 🏅 "verificado" em 3 camadas** (ideia do Marcony, a detalhar): (1) **CNPJ ativo** — automático pela consulta que já existe; (2) **endereço** — upload de comprovante/cartão CNPJ, validado pela plataforma; (3) **telefone** — confirmado (ligação ou código por WhatsApp/SMS). Selo só com as 3; fornecedor vê o progresso ("2 de 3"). Documentos em bucket privado (LGPD), tabela `fornecedor_verificacoes (tipo, status pendente|aprovado|recusado, arquivo, analisado_por, analisado_em, obs)` + tela simples de aprovação para a plataforma.
+
+### Visão: listas de atuação em árvore, multi-segmento (decidido 17/10/2026 — não construir agora)
+O sistema nasce para transportadoras, mas pode atender outros setores (agro, construção, mineração…) no modelo "árvore que vai abrindo" (estilo Mercado Livre). A base atual já comporta: `atuacao_opcoes` usa **códigos estáveis** e o Match Score compara códigos. Quando entrar o 2º setor: colunas `vertical` e `pai` em `atuacao_opcoes` e o seletor vira árvore — nada do que existe precisa ser refeito. Até lá: aprovar marca sugerida por SQL; a tela de curadoria (aprovar marcas/opções) nasce junto com a árvore. Limpeza de `fornecedores_spot` e `fornecedores.categorias` pode ser feita a qualquer momento.
 
 ### Prioridade média — features de valor real
 

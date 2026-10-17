@@ -8,6 +8,7 @@ import App from "./App";
 import { useAuth } from "./hooks/useAuth";
 import TelaFornecedor from "./components/portal/TelaFornecedor";
 import TelaPortalFornecedor from "./components/portal/TelaPortalFornecedor";
+import TelaAceitarConvite from "./TelaAceitarConvite";
 
 console.log('🚀 main.jsx executando');
 
@@ -46,6 +47,12 @@ function Router() {
     currentPage.startsWith("/portal/")
   ) {
     return <TelaFornecedor />;
+  }
+
+  // Etapa 10: convite ao fornecedor local (link do e-mail #convite?token=...).
+  // Vem antes dos redirecionamentos de login: quem recebe o convite ainda não tem conta.
+  if (currentPage.startsWith("convite") || currentPage.startsWith("/convite")) {
+    return <TelaAceitarConvite />;
   }
 
   // Redirecionar se já logado e tentar acessar login/signup

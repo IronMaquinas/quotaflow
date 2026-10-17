@@ -559,4 +559,82 @@ router.post('/reset-password', async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────────
+// Etapa 10 — CONVITE AO FORNECEDOR LOCAL
+// O tenant convida (POST /api/fornecedores/:id/convidar); o fornecedor abre
+// <FRONTEND_URL>/#convite?token=..., cria nome + senha e já entra no portal.
+// ─────────────────────────────────────────────────────────────────────────────
+
+const { carregarConvite, aceitar: aceitarConvite } = require('../services/convitesFornecedor');
+
+const MSG_CONVITE = {
+  invalido: 'Este convite não é válido.',
+  expirado: 'Este convite expirou. Peça ao seu cliente um novo convite.',
+  usado: 'Este convite já foi usado. Entre com seu e-mail e senha.',
+  cancelado: 'Este convite foi substituído por um mais novo. Use o link do último e-mail recebido.',
+  email_em_uso: 'Este e-mail já tem acesso ao portal. Entre com seu e-mail e senha.',
+};
+
+/**
+ * GET /api/auth/convite/validar?token=xxx
+ * → { ok, empresa, cliente, email } | { ok:false, motivo, mensagem }
+ */
+router.get('/convite/validar', async (req, res) => {
+  try {
+    const r = await carregarConvite(req.query.token);
+    if (r.motivo) return res.json({ ok: false, motivo: r.motivo, mensagem: MSG_CONVITE[r.motivo] });
+    res.json({
+      ok: true,
+      empresa: r.fornecedor.nome_fantasia || r.fornecedor.nome || null,
+      cliente: r.tenant?.nome || null,
+      email: r.convite.email,
+      expira_em: r.convite.expira_em,
+    });
+  } catch (err) {
+    console.error('❌ Erro em /convite/validar:', err.message);
+    res.status(500).json({ erro: 'Erro ao validar convite' });
+  }
+});
+
+/**
+ * POST /api/auth/convite/aceitar
+ * Body: { token, nome, senha }
+ * Cria o login do fornecedor e devolve o mesmo formato do /login-fornecedor.
+ */
+router.post('/convite/aceitar', async (req, res) => {
+  try {
+    const { token, nome, senha } = req.body || {};
+    if (!token || !nome || !String(nome).trim() || !senha) {
+      return res.status(400).json({ erro: 'Nome e senha são obrigatórios' });
+    }
+    if (String(senha).length < 6) {
+      return res.status(400).json({ erro: 'A senha deve ter ao menos 6 caracteres' });
+    }
+    const r = await aceitarConvite({ token, nome, senhaHash: bcrypt.hashSync(String(senha), 10) });
+    if (r.motivo) return res.status(400).json({ erro: MSG_CONVITE[r.motivo] || 'Convite inválido', motivo: r.motivo });
+
+    const { usuario, fornecedor } = r;
+    const jwtToken = jwt.sign(
+      { user_id: usuario.id, fornecedor_id: usuario.fornecedor_id },
+      process.env.JWT_SECRET,
+      { expiresIn: '7d' }
+    );
+    res.status(201).json({
+      ok: true,
+      token: jwtToken,
+      usuario: {
+        id: usuario.id,
+        nome: usuario.nome,
+        email: usuario.email,
+        perfil: usuario.perfil || 'vendedor',
+        fornecedor_id: usuario.fornecedor_id,
+        fornecedor_nome: fornecedor?.nome_fantasia || fornecedor?.nome || '',
+      },
+    });
+  } catch (err) {
+    console.error('❌ Erro em /convite/aceitar:', err.message);
+    res.status(500).json({ erro: 'Erro ao criar acesso' });
+  }
+});
+
 module.exports = router;

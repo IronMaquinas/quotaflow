@@ -2,7 +2,8 @@
 // verificar-entrega.js — confere, em um comando, se os arquivos entregues
 // (etapa 1: fornecedores globais; etapa 3: cadastro único; etapa 4: perfil
 // de atuação; etapa 6: Match Score; etapa 7: edição da demanda + região;
-// etapa 8: plano Pro + e-mails de recomendação; etapa 9: melhorias do e-mail) estão no projeto exatamente como foram entregues.
+// etapa 8: plano Pro + e-mails de recomendação; etapa 9: melhorias do e-mail;
+// etapa 10: Painel do Fornecedor + convite ao fornecedor local) estão no projeto exatamente como foram entregues.
 //
 // Só LÊ arquivos. Não altera nada.
 // Uso (dentro da pasta backend):
@@ -37,11 +38,13 @@ const ESPERADO = {
   'services/PortalRespostaService.js': 'aff8546f40f10b238354651e8b17aefb',
   'services/ValidacaoXmlService.js': 'a8e0f2180da6f621272f70fb80a2b8e3',
   // etapa 4 (inclui arquivos já mexidos nas etapas 1 e 3)
-  'routes/fornecedores.js': 'f925b8245052e7468f7cac7da4bf7d4f',
+  'routes/fornecedores.js': '98aaa5a40a5c5d539664f0002f1a2efa', // etapa 10
+  'routes/auth.js': '2171a273d5d8cfc401a72f6c9803e2b8', // etapa 10
+  'services/convitesFornecedor.js': 'd97ffc6dec8ef3273a1d549ebe4324b0', // etapa 10
   'routes/spot.js': '3c36748fd6d1fa6b64574004d38506d1', // etapa 8
   'services/matchSpot.js': 'fe4275090b82bd1efd52498d2176a90c', // etapa 7
   'routes/configuracoes.js': '05360fb8a4945623e1878ba336161d27', // etapa 7
-  'routes/fornecedor.js': 'cb5cc262bf30583112a351a73761b8f0', // etapa 8
+  'routes/fornecedor.js': 'ad6705f337fa9e078befc9f8a9571b1c', // etapa 10
   'routes/recomendacoes.js': '3c1fe2834a30a24198923797bce4001a', // etapa 9
   'services/recomendacoesEmail.js': 'ec0668979a4e7806bb64e7f5ac00ca3d', // etapa 9
   'services/emailService.js': '2daf0e597ff370e006585f919c63b525', // etapa 9
@@ -50,20 +53,24 @@ const ESPERADO = {
   'services/atuacao.js': '8509ac0206906a7f93384350e77132bf',
   'front:SeletorAtuacao.jsx': '17afaaf69d6e4cf0c105490267d188a7',
   'front:TelaMeusDadosFornecedor.jsx': 'fe8288aee67562902d65d70064865196', // etapa 8
-  'front:TelaFornecedoresNova.jsx': '2b65c229997c5755dda5748c383aa007',
+  'front:TelaFornecedoresNova.jsx': '516c7d59a8aafb2d7365553399bf4809', // etapa 10
   'front:TelaCanalSpot.jsx': 'f4afd6de0575afed02147c500125124c', // etapa 7
   'front:TelaFornecedorSpot.jsx': '449dd00ab481e0596a932aaa985f4bad', // etapa 9
-  'front:TelaFornecedor.jsx': 'a0ea349c43d4c830fbd0524740ee35a6', // etapa 9
+  'front:TelaFornecedor.jsx': 'e0573ad6f434811c6275175db6e89f25', // etapa 10
+  'front:TelaPainelFornecedor.jsx': '6de6d3a403842cca6903c0e3498b4e08', // etapa 10
+  'front:TelaAceitarConvite.jsx': '7212bad90d49d542c37b698c3eb28220', // etapa 10
+  'front:main.jsx': '6b23fa3202e03b908c3a0f4339c79675', // etapa 10
   'front:TelaConfiguracoes.jsx': 'cdd08de70f9fe2144022bfd3fac276a3', // etapa 7
 };
 
-// Antes de copiar a etapa 9 — versão que serviu de base para as alterações
+// Antes de copiar a etapa 10 — versão que serviu de base para as alterações
 const ANTES = {
-  'routes/recomendacoes.js': 'e814b9be4cf8b1e14358575ce7905e1a',
-  'services/recomendacoesEmail.js': 'a640da411101c25fb1f9f1bfca66a2f3',
-  'services/emailService.js': 'a5c3eec4d0da25658f945f54eb54f952',
-  'front:TelaFornecedorSpot.jsx': '7059c3f2671ed872a556f0da484f728b',
-  'front:TelaFornecedor.jsx': 'f10c3c842470bb19653e4c899a61d672',
+  'routes/fornecedores.js': 'f925b8245052e7468f7cac7da4bf7d4f',
+  'routes/fornecedor.js': 'cb5cc262bf30583112a351a73761b8f0',
+  'routes/auth.js': 'bdd07eb0ae6b8db47d9a1a9db5ba057c',
+  'front:main.jsx': 'a707deea7c4956619fc0e17cb63fd957',
+  'front:TelaFornecedor.jsx': 'a0ea349c43d4c830fbd0524740ee35a6',
+  'front:TelaFornecedoresNova.jsx': '2b65c229997c5755dda5748c383aa007',
 };
 
 const RAIZ = process.cwd();
@@ -100,8 +107,8 @@ function localizar(chave) {
 const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
-  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 9?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6, 7, 8 e 9)\n');
+  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 10?\n'
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 10)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
@@ -131,7 +138,7 @@ for (const [chave, esperado] of Object.entries(LISTA)) {
     } catch (e) {
       problemas.push('erro de sintaxe: ' + String(e.stderr || e.message).split('\n').find((l) => l.trim()));
     }
-    const reqs = conteudo.matchAll(/require\(\s*['"]([^'"]*(?:fornecedoresVisiveis|services\/atuacao|services\/matchSpot|services\/recomendacoesEmail|routes\/recomendacoes))['"]\s*\)/g);
+    const reqs = conteudo.matchAll(/require\(\s*['"]([^'"]*(?:fornecedoresVisiveis|services\/atuacao|services\/matchSpot|services\/recomendacoesEmail|routes\/recomendacoes|services\/convitesFornecedor))['"]\s*\)/g);
     for (const r of reqs) {
       const alvo = path.resolve(path.dirname(abs), r[1]) + '.js';
       if (!fs.existsSync(alvo)) problemas.push(`require('${r[1]}') não encontra o arquivo`);
@@ -149,7 +156,7 @@ for (const [chave, esperado] of Object.entries(LISTA)) {
 
 if (!modoAntes) {
   // Arquivos novos precisam entrar no commit
-  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js', 'services/matchSpot.js', 'services/recomendacoesEmail.js', 'routes/recomendacoes.js'];
+  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js', 'services/matchSpot.js', 'services/recomendacoesEmail.js', 'routes/recomendacoes.js', 'services/convitesFornecedor.js'];
   try {
     for (const n of novos) {
       const rastreado = execFileSync('git', ['ls-files', n], { cwd: RAIZ, stdio: 'pipe' }).toString().trim();

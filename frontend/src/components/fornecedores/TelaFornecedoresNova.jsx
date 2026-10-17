@@ -1,6 +1,7 @@
 // components/fornecedores/TelaFornecedoresNova.jsx
 import { useState, useEffect } from "react";
 import { useFornecedores } from "../../hooks/useFornecedores";
+import apiService from "../../services/apiService";
 import { useOpcoesAtuacao, PainelAtuacao, ResumoAtuacao, atuacaoDe, atuacaoVazia, nomeAtuacao, DIMENSOES_ATUACAO } from "../shared/SeletorAtuacao";
 
 export default function TelaFornecedoresNova({ fmtD, C, s }) {
@@ -215,7 +216,8 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
   };
 
   const handleEditar = (forn) => {
-    if (forn.tipo === "global") return; // global é somente-leitura para o tenant
+    // global, e local que já está no portal (etapa 10), são somente-leitura para o tenant
+    if (forn.tipo === "global" || forn.editavel === false) return;
     const contato = forn.contatos?.[0] || {};
     setForm({
       nome: forn.nome || "",
@@ -236,6 +238,29 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
       ...atuacaoDe(forn),
     });
     setModal(forn.id);
+  };
+
+  // ─── CONVITE PARA O PORTAL (etapa 10) ────────────────────
+  const [convidandoId, setConvidandoId] = useState(null);
+  const handleConvidar = async (forn) => {
+    const sugestao = forn.convite_email || forn.email || forn.contatos?.[0]?.email || "";
+    const email = window.prompt(
+      `Enviar convite para ${forn.nome} acessar o portal de fornecedores.\n\n` +
+      `Ele cria o próprio login e passa a manter os dados da empresa (você continua podendo ativar/desativar).\n\n` +
+      `E-mail do convite:`,
+      sugestao
+    );
+    if (email == null) return;
+    setConvidandoId(forn.id);
+    try {
+      const r = await apiService.post(`/fornecedores/${forn.id}/convidar`, { email: email.trim() });
+      alert(r?.mensagem || "Convite enviado!");
+      await listar();
+    } catch (e) {
+      alert("Erro: " + (e.message || "não foi possível enviar o convite"));
+    } finally {
+      setConvidandoId(null);
+    }
   };
 
   // ─── TOGGLE ATIVO / DELETAR ──────────────────────────────
@@ -575,7 +600,7 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
       <div style={{ ...s.card, overflow: "hidden" }}>
         <div style={{ 
           display: "grid", 
-          gridTemplateColumns: "2fr 1.5fr 1fr 1fr 100px", 
+          gridTemplateColumns: "2fr 1.5fr 1fr 0.8fr 150px", 
           padding: "10px 18px", 
           background: C.bg, 
           borderBottom: `1px solid ${C.border}`, 
@@ -597,7 +622,7 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
               key={forn.id}
               style={{
                 display: "grid",
-                gridTemplateColumns: "2fr 1.5fr 1fr 1fr 100px",
+                gridTemplateColumns: "2fr 1.5fr 1fr 0.8fr 150px",
                 padding: "13px 18px",
                 borderBottom: i < fornecedoresFiltered.length - 1 ? `1px solid ${C.border}22` : "none",
                 alignItems: "center",
@@ -625,6 +650,16 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
                   )}
                 </div>
                 {forn.cidade && forn.estado && <div style={{ fontSize: 10, color: C.muted }}>{forn.cidade}/{forn.estado}</div>}
+                {forn.tipo !== "global" && forn.portal_ativo && (
+                  <div style={{ fontSize: 10, color: C.success, marginTop: 2 }} title="O fornecedor mantém os próprios dados no portal">
+                    🟢 No portal
+                  </div>
+                )}
+                {forn.tipo !== "global" && !forn.portal_ativo && forn.convite_pendente_ate && (
+                  <div style={{ fontSize: 10, color: "#f59e0b", marginTop: 2 }}>
+                    ✉ Convite enviado · vale até {new Date(forn.convite_pendente_ate).toLocaleDateString("pt-BR")}
+                  </div>
+                )}
               </div>
 
               {/* CONTATO */}
@@ -658,21 +693,33 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
                 <span style={{ ...s.tag(forn.ativo ? C.success : C.muted), fontSize: 10 }}>
                   {forn.ativo ? "Ativo" : "Inativo"}
                 </span>
-                {forn.tipo === "global" ? (
-                  // Global: cadastro mantido pela plataforma — tenant não edita
+                {forn.tipo === "global" || forn.editavel === false ? (
+                  // Global (plataforma) ou local que já está no portal (o próprio fornecedor mantém) — tenant não edita
                   <span
-                    title="Fornecedor da rede global: os dados são mantidos pela plataforma"
+                    title={forn.tipo === "global"
+                      ? "Fornecedor da rede global: os dados são mantidos pela plataforma"
+                      : "Fornecedor no portal: ele mesmo mantém os dados da empresa"}
                     style={{ border: `1px solid ${C.border}`, borderRadius: 5, padding: "4px 8px", color: C.muted, fontSize: 11, opacity: 0.6 }}
                   >
                     🔒
                   </span>
                 ) : (
-                  <button
-                    onClick={() => handleEditar(forn)}
-                    style={{ background: "transparent", border: `1px solid ${C.border}`, borderRadius: 5, padding: "4px 8px", color: C.muted, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}
-                  >
-                    ✏
-                  </button>
+                  <>
+                    <button
+                      onClick={() => handleConvidar(forn)}
+                      disabled={convidandoId === forn.id}
+                      title={forn.convite_pendente_ate ? "Reenviar convite para o portal" : "Convidar para o portal de fornecedores"}
+                      style={{ background: "transparent", border: `1px solid ${C.accent}55`, borderRadius: 5, padding: "4px 8px", color: C.accent, fontSize: 11, cursor: "pointer", fontFamily: "inherit", opacity: convidandoId === forn.id ? 0.5 : 1 }}
+                    >
+                      ✉
+                    </button>
+                    <button
+                      onClick={() => handleEditar(forn)}
+                      style={{ background: "transparent", border: `1px solid ${C.border}`, borderRadius: 5, padding: "4px 8px", color: C.muted, fontSize: 11, cursor: "pointer", fontFamily: "inherit" }}
+                    >
+                      ✏
+                    </button>
+                  </>
                 )}
                 <button
                   onClick={() => handleToggleAtivo(forn)}

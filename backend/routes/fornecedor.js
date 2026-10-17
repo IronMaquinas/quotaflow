@@ -10,6 +10,7 @@ const NfeXmlParser = require('../services/NfeXmlParser');
 const { supabase } = require('../db');
 const bcrypt = require('bcryptjs');
 const { normalizarAtuacao } = require('../services/atuacao'); // perfil de atuação (etapa 4)
+const { contextoDoFornecedor, pontuarDemanda } = require('../services/matchSpot'); // painel (etapa 10)
 
 const EMAIL_VALIDO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -32,6 +33,130 @@ router.get('/me', fornecedorMiddleware, async (req, res) => {
     });
   } catch (err) {
     console.error('❌ Erro em /me:', err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/fornecedor/painel — Painel do Fornecedor (etapa 10)
+//
+//   agora:      o que espera uma ação dele (cada número leva à tela certa)
+//   spot:       desempenho no Canal Spot nos últimos 90 dias
+//   cotacoes:   desempenho em cotações nos últimos 90 dias
+//
+// Só dados do próprio fornecedor (req.fornecedorId), de todos os clientes.
+// Nunca expõe nada de concorrente.
+// ─────────────────────────────────────────────────────────────────────────
+const DIAS_PAINEL = 90;
+
+router.get('/painel', fornecedorMiddleware, async (req, res) => {
+  try {
+    const fid = req.fornecedorId;
+    const desde = Date.now() - DIAS_PAINEL * 24 * 3600 * 1000;
+    const recente = (d) => d && new Date(d).getTime() >= desde;
+    const num = (v) => (v == null || v === '' ? 0 : Number(v) || 0);
+
+    const [cfs, ovs, ncs, interesses, visualizacoes, abertas, fornecedor] = await Promise.all([
+      DB.select('cotacao_fornecedores', { fornecedor_id: fid }),
+      DB.select('ordens_venda', { fornecedor_id: fid }),
+      DB.select('nao_conformidades', { fornecedor_id: fid }),
+      DB.select('interesses_spot', { fornecedor_id: fid }),
+      DB.select('demandas_spot_visualizacoes', { fornecedor_id: fid }),
+      DB.select('demandas_spot', { status: 'aberta' }),
+      DB.selectOne('fornecedores', { id: fid }),
+    ]);
+
+    // ── Agora ──
+    // cotações aguardando resposta (só de cotação ainda viva)
+    const pendentesCf = (cfs || []).filter((cf) => cf.status === 'pendente');
+    let cotacoesAguardando = 0;
+    for (const cf of pendentesCf) {
+      const cot = await DB.selectOne('cotacoes', { id: cf.cotacao_id });
+      if (cot && !['cancelada', 'finalizada'].includes(cot.status)) cotacoesAguardando++;
+    }
+    const pedidosAguardando = (ovs || []).filter((ov) =>
+      !ov.fornecedor_confirmou_em && ov.status !== 'cancelada' && ov.status_recebimento !== 'concluido').length;
+    const ncsAguardando = (ncs || []).filter((nc) =>
+      ['enviado', 'visualizado', 'devolvida'].includes(nc.fornecedor_tratativa_status) &&
+      !['resolvida', 'cancelada'].includes(nc.status)).length;
+
+    const respondidas = new Set((interesses || []).map((i) => String(i.demanda_id)));
+    const ctx = await contextoDoFornecedor(DB, fid);
+    const tenants = {};
+    let spotRecomendadas = 0;
+    let spotMuito = 0;
+    for (const d of abertas || []) {
+      if (respondidas.has(String(d.id))) continue;
+      if (!(String(d.tenant_id) in tenants)) tenants[String(d.tenant_id)] = await DB.selectOne('tenants', { id: d.tenant_id });
+      const m = pontuarDemanda(d, ctx, tenants[String(d.tenant_id)]);
+      if (m) { spotRecomendadas++; if (m.faixa === 'combina_muito') spotMuito++; }
+    }
+
+    // ── Spot (90 dias) ──
+    const intRecentes = (interesses || []).filter((i) => recente(i.criado_em));
+    const visRecentes = (visualizacoes || []).filter((v) => recente(v.criado_em));
+    const demandasDosInteresses = {};
+    for (const i of intRecentes) {
+      if (!(String(i.demanda_id) in demandasDosInteresses)) {
+        demandasDosInteresses[String(i.demanda_id)] = await DB.selectOne('demandas_spot', { id: i.demanda_id });
+      }
+    }
+    // decididas = o comprador comprou de alguém (no canal ou fora); desistência não conta
+    const decididas = intRecentes.filter((i) => {
+      const d = demandasDosInteresses[String(i.demanda_id)];
+      return d && d.status === 'encerrada' && d.encerramento_motivo !== 'nao_necessario';
+    });
+    const vitorias = intRecentes.filter((i) => i.status === 'escolhido');
+    const tempos = intRecentes
+      .map((i) => {
+        const d = demandasDosInteresses[String(i.demanda_id)];
+        if (!d || !d.criado_em) return null;
+        const h = (new Date(i.criado_em) - new Date(d.criado_em)) / 3600000;
+        return h >= 0 ? h : null;
+      })
+      .filter((h) => h != null);
+    const vistas = Math.max(visRecentes.length, intRecentes.length);
+
+    // ── Cotações (90 dias) ──
+    const cfRecentes = (cfs || []).filter((cf) => recente(cf.enviado_em || cf.criado_em));
+    const cotacoesRecentes = new Set(cfRecentes.map((cf) => String(cf.cotacao_id)));
+    const ovsRecentes = (ovs || []).filter((ov) => recente(ov.criado_em) && ov.status !== 'cancelada');
+    const cotacoesVencidas = new Set(ovsRecentes.filter((ov) => cotacoesRecentes.has(String(ov.cotacao_id))).map((ov) => String(ov.cotacao_id)));
+
+    const pct = (a, b) => (b > 0 ? Math.round((a / b) * 100) : null);
+    const proAtivo = fornecedor?.plano === 'pro' && (!fornecedor.plano_valido_ate || new Date(fornecedor.plano_valido_ate) >= new Date());
+
+    res.json({
+      periodo_dias: DIAS_PAINEL,
+      plano: proAtivo ? 'pro' : 'gratuito',
+      tem_atuacao: !!ctx.temPerfil,
+      agora: {
+        cotacoes_aguardando: cotacoesAguardando,
+        pedidos_aguardando_confirmacao: pedidosAguardando,
+        ncs_aguardando_resposta: ncsAguardando,
+        spot_recomendadas: spotRecomendadas,
+        spot_combina_muito: spotMuito,
+      },
+      spot: {
+        visualizadas: vistas,
+        respondidas: intRecentes.length,
+        taxa_resposta: pct(intRecentes.length, vistas),
+        decididas: decididas.length,
+        vitorias: vitorias.length,
+        taxa_vitoria: pct(vitorias.length, decididas.length),
+        tempo_medio_resposta_horas: tempos.length ? Math.round((tempos.reduce((a, b) => a + b, 0) / tempos.length) * 10) / 10 : null,
+        valor_ganho: vitorias.reduce((s, i) => s + num(i.valor_estimado), 0),
+      },
+      cotacoes: {
+        recebidas: cotacoesRecentes.size,
+        respondidas: cfRecentes.filter((cf) => cf.status !== 'pendente').length,
+        vencidas: cotacoesVencidas.size,
+        taxa_vitoria: pct(cotacoesVencidas.size, cfRecentes.filter((cf) => cf.status !== 'pendente').length),
+        valor_pedidos: ovsRecentes.reduce((s, ov) => s + num(ov.valor_total), 0),
+      },
+    });
+  } catch (err) {
+    console.error('❌ Erro em /fornecedor/painel:', err.message);
     res.status(500).json({ erro: err.message });
   }
 });
