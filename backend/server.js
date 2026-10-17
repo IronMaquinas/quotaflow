@@ -101,7 +101,10 @@ app.use('/api/estoque', tenantMiddleware, reservasRoutes);
 app.use('/api/nao-conformidades', tenantMiddleware, naoConformidadesRoutes);
 app.use('/api/configuracoes', tenantMiddleware, configuracoesRoutes);
 
-app.get('/api/spot/publicas', async (req, res) => {
+// Etapa 10c: esta rota era PÚBLICA (sem login) e listava todas as demandas abertas
+// com o nome da empresa compradora. Agora exige fornecedor logado e verificado
+// (global) — mesma regra do Canal Spot (services/acessoSpot.js).
+app.get('/api/spot/publicas', fornecedorMiddleware, require('./services/acessoSpot').exigirAcessoSpot, async (req, res) => {
   try {
     const demandasAbertas = await DB.select('demandas_spot', { status: 'aberta' });
 

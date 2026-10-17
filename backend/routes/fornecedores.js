@@ -199,7 +199,7 @@ router.put("/alertas-cnpj/:id/ler", tenantMiddleware, marcarAlertaLido);
 
 // ─────────────────────────────────────────────────────────────────────────
 // Convite a fornecedor NOVO, que ainda não está no cadastro (etapa 10b)
-//   POST   /api/fornecedores/convidar-novo   { email, nome? }
+//   POST   /api/fornecedores/convidar-novo   { cnpj, email, nome? }  (CNPJ obrigatório — etapa 10c)
 //   GET    /api/fornecedores/convites        → convites ainda não concluídos
 //   DELETE /api/fornecedores/convites/:id    → cancela
 // (declaradas antes de "/:id" para o Express não confundir "convites" com um id)
@@ -209,12 +209,16 @@ router.post("/convidar-novo", tenantMiddleware, async (req, res) => {
   try {
     const r = await convidarNovo({
       tenantId: req.tenantId,
+      cnpj: req.body?.cnpj,
       email: req.body?.email,
       nome: req.body?.nome,
       criadoPor: req.userId,
     });
     if (r.erro) return res.status(r.status || 400).json({ erro: r.erro });
-    res.json({ ok: true, expira_em: r.expira_em, email: r.email, mensagem: `Convite enviado para ${r.email}` });
+    res.json({
+      ok: true, expira_em: r.expira_em, email: r.email, empresa: r.empresa || null,
+      mensagem: `Convite enviado para ${r.email}${r.empresa ? ` (${r.empresa})` : ""}`,
+    });
   } catch (err) {
     console.error("❌ Erro ao convidar fornecedor novo:", err.message || err);
     res.status(500).json({ erro: err.message || "Erro ao enviar convite" });

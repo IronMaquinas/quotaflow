@@ -567,7 +567,7 @@ router.post('/reset-password', async (req, res) => {
 // CNPJ, dados e atuação), cria nome + senha e já entra no portal.
 // ─────────────────────────────────────────────────────────────────────────────
 
-const { carregarConvite, aceitar: aceitarConvite } = require('../services/convitesFornecedor');
+const { carregarConvite, aceitar: aceitarConvite, dadosReceitaParaTela } = require('../services/convitesFornecedor');
 
 const MSG_CONVITE = {
   invalido: 'Este convite não é válido.',
@@ -593,8 +593,10 @@ function mensagemConvite(r) {
 
 /**
  * GET /api/auth/convite/validar?token=xxx
- * → { ok, novo, empresa, cliente, email, nome_sugerido } | { ok:false, motivo, mensagem }
- *   novo = true: fornecedor ainda sem cadastro (a tela pede CNPJ, dados e atuação)
+ * → { ok, novo, empresa, cliente, email, nome_sugerido, empresa_receita } | { ok:false, motivo, mensagem }
+ *   novo = true: fornecedor ainda sem cadastro (a tela pede dados e atuação)
+ *   empresa_receita (etapa 10c): CNPJ e dados da Receita escolhidos pelo tenant —
+ *     a tela mostra travados; null em convite antigo (o fornecedor informa o CNPJ)
  */
 router.get('/convite/validar', async (req, res) => {
   try {
@@ -605,6 +607,7 @@ router.get('/convite/validar', async (req, res) => {
       novo: !!r.novo,
       empresa: r.fornecedor ? (r.fornecedor.nome_fantasia || r.fornecedor.nome || null) : null,
       nome_sugerido: r.novo ? (r.convite.nome_sugerido || null) : null,
+      empresa_receita: r.novo ? dadosReceitaParaTela(r.convite) : null,
       cliente: r.tenant?.nome || null,
       email: r.convite.email,
       expira_em: r.convite.expira_em,

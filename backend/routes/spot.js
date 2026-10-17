@@ -10,6 +10,7 @@ const { normalizarDemanda } = require('../services/atuacao'); // segmento, siste
 const { contextoDoFornecedor, pontuarDemanda, normalizarUF, ufDoTenant } = require('../services/matchSpot'); // Match Score (etapa 6)
 
 const { enviarAlertaImediato } = require('../services/recomendacoesEmail'); // e-mail Pro (etapa 8)
+const { exigirAcessoSpot } = require('../services/acessoSpot'); // só fornecedor verificado (global) vê o Spot (etapa 10c)
 
 const URGENCIAS = ['baixa', 'media', 'alta'];
 
@@ -228,9 +229,11 @@ router.post('/demandas/:id/reabrir', tenantMiddleware, async (req, res) => {
 });
 
 // ─── FORNECEDOR ───────────────────────────────────────────────
+// Todas exigem fornecedor VERIFICADO (global) — ver services/acessoSpot.js.
+// Local recebe 403 { codigo: 'spot_requer_verificacao' }.
 
 // Marca que o fornecedor viu a demanda (idempotente: só grava a 1ª vez)
-router.post('/fornecedor/demandas/:id/visualizar', fornecedorMiddleware, async (req, res) => {
+router.post('/fornecedor/demandas/:id/visualizar', fornecedorMiddleware, exigirAcessoSpot, async (req, res) => {
   try {
     const id = Number(req.params.id);
     const demanda = await DB.selectOne('demandas_spot', { id });
@@ -262,7 +265,7 @@ router.post('/fornecedor/demandas/:id/visualizar', fornecedorMiddleware, async (
   }
 });
 
-router.get('/fornecedor/demandas', fornecedorMiddleware, async (req, res) => {
+router.get('/fornecedor/demandas', fornecedorMiddleware, exigirAcessoSpot, async (req, res) => {
   try {
     const todas = await DB.select('demandas_spot', {});
     const meusInteresses = await DB.select('interesses_spot', { fornecedor_id: req.fornecedorId });
@@ -407,7 +410,7 @@ router.get('/config', tenantMiddleware, async (req, res) => {
   }
 });
 
-router.post('/fornecedor/interesse', fornecedorMiddleware, async (req, res) => {
+router.post('/fornecedor/interesse', fornecedorMiddleware, exigirAcessoSpot, async (req, res) => {
   try {
     const { demanda_id, mensagem, valor_estimado, observacao_fornecedor } = req.body;
     if (!demanda_id) return res.status(400).json({ erro: 'demanda_id obrigatório' });

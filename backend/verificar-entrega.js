@@ -4,7 +4,8 @@
 // de atuação; etapa 6: Match Score; etapa 7: edição da demanda + região;
 // etapa 8: plano Pro + e-mails de recomendação; etapa 9: melhorias do e-mail;
 // etapa 10: Painel do Fornecedor + convite ao fornecedor local; etapa 10b: convite
-// a fornecedor novo) estão no projeto exatamente como foram entregues.
+// a fornecedor novo; etapa 10c: convite com CNPJ + Canal Spot só para verificado)
+// estão no projeto exatamente como foram entregues.
 //
 // Só LÊ arquivos. Não altera nada.
 // Uso (dentro da pasta backend):
@@ -39,38 +40,46 @@ const ESPERADO = {
   'services/PortalRespostaService.js': 'aff8546f40f10b238354651e8b17aefb',
   'services/ValidacaoXmlService.js': 'a8e0f2180da6f621272f70fb80a2b8e3',
   // etapa 4 (inclui arquivos já mexidos nas etapas 1 e 3)
-  'routes/fornecedores.js': 'd97c917ccde1ca663d91875df62d05db', // etapa 10b
-  'routes/auth.js': '9214ac9b751463fb8e53f576ffc93b48', // etapa 10b
-  'services/convitesFornecedor.js': '0afc85e43e521fee713fe564e523ceb8', // etapa 10b
-  'routes/spot.js': '3c36748fd6d1fa6b64574004d38506d1', // etapa 8
+  'routes/fornecedores.js': 'b0c0f9dc2bf58ad8158b53d8c243abcc', // etapa 10c
+  'routes/auth.js': '57369cc83267cbaa5d1722669e9b8048', // etapa 10c
+  'services/convitesFornecedor.js': '9e4efab1869dc96262a392cf8bce19f9', // etapa 10c
+  'routes/spot.js': 'f8f445230376edddc45c06dd60548720', // etapa 10c
   'services/matchSpot.js': 'fe4275090b82bd1efd52498d2176a90c', // etapa 7
   'routes/configuracoes.js': '05360fb8a4945623e1878ba336161d27', // etapa 7
-  'routes/fornecedor.js': 'ad6705f337fa9e078befc9f8a9571b1c', // etapa 10
+  'routes/fornecedor.js': 'f2c0387d407c56bf37356701660ced6b', // etapa 10c
   'routes/recomendacoes.js': '3c1fe2834a30a24198923797bce4001a', // etapa 9
-  'services/recomendacoesEmail.js': 'ec0668979a4e7806bb64e7f5ac00ca3d', // etapa 9
+  'services/recomendacoesEmail.js': '7bc5475ccffb4fd2fcec53be78e64123', // etapa 10c
   'services/emailService.js': '2daf0e597ff370e006585f919c63b525', // etapa 9
-  'server.js': 'a4b331a7f77e20d83d6c6078d235cb7c', // etapa 8
+  'server.js': '6442d12f505b2c21df649a5ec683a2f3', // etapa 10c
   'routes/atuacao.js': 'cc196661189e2714bcfad96e5c1e8ad9',
   'services/atuacao.js': '8509ac0206906a7f93384350e77132bf',
   'front:SeletorAtuacao.jsx': '17afaaf69d6e4cf0c105490267d188a7',
-  'front:TelaMeusDadosFornecedor.jsx': 'fe8288aee67562902d65d70064865196', // etapa 8
-  'front:TelaFornecedoresNova.jsx': 'a2d7cf6b167255b81c88e3a3137d16f2', // etapa 10b
+  'front:TelaMeusDadosFornecedor.jsx': '15eaa4e64cc01bb1a545d42bf31b5888', // etapa 10c
+  'front:TelaFornecedoresNova.jsx': '28396f3bc910190ecc80873b54edc47d', // etapa 10c
   'front:TelaCanalSpot.jsx': 'f4afd6de0575afed02147c500125124c', // etapa 7
   'front:TelaFornecedorSpot.jsx': '449dd00ab481e0596a932aaa985f4bad', // etapa 9
-  'front:TelaFornecedor.jsx': 'e0573ad6f434811c6275175db6e89f25', // etapa 10
-  'front:TelaPainelFornecedor.jsx': '6de6d3a403842cca6903c0e3498b4e08', // etapa 10
-  'front:TelaAceitarConvite.jsx': '66d41dec02a1029a06ec55029652e105', // etapa 10b
+  'front:TelaFornecedor.jsx': 'fba69d240fa40860c2a598ee039098df', // etapa 10c
+  'front:TelaPainelFornecedor.jsx': 'e9742a3e808ba27df5d5f29a393b8da6', // etapa 10c
+  'front:TelaAceitarConvite.jsx': 'c7d5570e73c55fdb3ef27be683e0f09b', // etapa 10c
   'front:main.jsx': '6b23fa3202e03b908c3a0f4339c79675', // etapa 10
   'front:TelaConfiguracoes.jsx': 'cdd08de70f9fe2144022bfd3fac276a3', // etapa 7
+  'services/acessoSpot.js': '6ecce4d16d6b123c6ce93c1223b32f01', // etapa 10c (novo)
 };
 
-// Antes de copiar a etapa 10b — versão que serviu de base para as alterações
+// Antes de copiar a etapa 10c — versão que serviu de base para as alterações
 const ANTES = {
-  'routes/fornecedores.js': '98aaa5a40a5c5d539664f0002f1a2efa',
-  'routes/auth.js': '2171a273d5d8cfc401a72f6c9803e2b8',
-  'services/convitesFornecedor.js': 'd97ffc6dec8ef3273a1d549ebe4324b0',
-  'front:TelaFornecedoresNova.jsx': '516c7d59a8aafb2d7365553399bf4809',
-  'front:TelaAceitarConvite.jsx': '7212bad90d49d542c37b698c3eb28220',
+  'routes/spot.js': '3c36748fd6d1fa6b64574004d38506d1',
+  'routes/fornecedor.js': 'ad6705f337fa9e078befc9f8a9571b1c',
+  'routes/fornecedores.js': 'd97c917ccde1ca663d91875df62d05db',
+  'routes/auth.js': '9214ac9b751463fb8e53f576ffc93b48',
+  'services/convitesFornecedor.js': '0afc85e43e521fee713fe564e523ceb8',
+  'services/recomendacoesEmail.js': 'ec0668979a4e7806bb64e7f5ac00ca3d',
+  'server.js': 'a4b331a7f77e20d83d6c6078d235cb7c',
+  'front:TelaFornecedoresNova.jsx': 'a2d7cf6b167255b81c88e3a3137d16f2',
+  'front:TelaMeusDadosFornecedor.jsx': 'fe8288aee67562902d65d70064865196',
+  'front:TelaFornecedor.jsx': 'e0573ad6f434811c6275175db6e89f25',
+  'front:TelaPainelFornecedor.jsx': '6de6d3a403842cca6903c0e3498b4e08',
+  'front:TelaAceitarConvite.jsx': '66d41dec02a1029a06ec55029652e105',
 };
 
 const RAIZ = process.cwd();
@@ -107,8 +116,8 @@ function localizar(chave) {
 const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
-  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 10b?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 10b)\n');
+  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 10c?\n'
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 10c)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
@@ -138,7 +147,7 @@ for (const [chave, esperado] of Object.entries(LISTA)) {
     } catch (e) {
       problemas.push('erro de sintaxe: ' + String(e.stderr || e.message).split('\n').find((l) => l.trim()));
     }
-    const reqs = conteudo.matchAll(/require\(\s*['"]([^'"]*(?:fornecedoresVisiveis|services\/atuacao|services\/matchSpot|services\/recomendacoesEmail|routes\/recomendacoes|services\/convitesFornecedor))['"]\s*\)/g);
+    const reqs = conteudo.matchAll(/require\(\s*['"]([^'"]*(?:fornecedoresVisiveis|services\/atuacao|services\/matchSpot|services\/recomendacoesEmail|routes\/recomendacoes|services\/convitesFornecedor|services\/acessoSpot))['"]\s*\)/g);
     for (const r of reqs) {
       const alvo = path.resolve(path.dirname(abs), r[1]) + '.js';
       if (!fs.existsSync(alvo)) problemas.push(`require('${r[1]}') não encontra o arquivo`);
@@ -156,7 +165,7 @@ for (const [chave, esperado] of Object.entries(LISTA)) {
 
 if (!modoAntes) {
   // Arquivos novos precisam entrar no commit
-  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js', 'services/matchSpot.js', 'services/recomendacoesEmail.js', 'routes/recomendacoes.js', 'services/convitesFornecedor.js'];
+  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js', 'services/matchSpot.js', 'services/recomendacoesEmail.js', 'routes/recomendacoes.js', 'services/convitesFornecedor.js', 'services/acessoSpot.js'];
   try {
     for (const n of novos) {
       const rastreado = execFileSync('git', ['ls-files', n], { cwd: RAIZ, stdio: 'pipe' }).toString().trim();
@@ -169,6 +178,20 @@ if (!modoAntes) {
       if (!rastreado) console.log(`⚠️  frontend/src/${path.relative(FRONT, arq)} ainda não está no git`);
     }
   } catch { /* sem git disponível: ignora */ }
+
+  // Etapa 10c: /api/spot/publicas passou a exigir fornecedor verificado (era pública).
+  // Se alguma tela ainda chama essa rota sem login, ela vai parar de funcionar.
+  const usaPublicas = [];
+  (function varrer(dir) {
+    if (!fs.existsSync(dir)) return;
+    for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
+      const p = path.join(dir, e.name);
+      if (e.isDirectory()) varrer(p);
+      else if (/\.(jsx?|tsx?)$/.test(e.name) && fs.readFileSync(p, 'utf8').includes('spot/publicas')) usaPublicas.push(path.relative(FRONT, p));
+    }
+  })(FRONT);
+  if (usaPublicas.length) console.log(`\n⚠️  Estas telas chamam /api/spot/publicas (agora exige fornecedor verificado): ${usaPublicas.join(', ')} — me mande esses arquivos.`);
 
   // A rota nova precisa estar registrada no server.js
   const server = path.join(RAIZ, 'server.js');

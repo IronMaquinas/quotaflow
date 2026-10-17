@@ -6,9 +6,12 @@
 //   tenant → POST /api/fornecedores/:id/convidar
 //   fornecedor → cria nome + senha; o login fica ligado ao cadastro existente
 //
-// 2) Fornecedor NOVO, ainda sem cadastro (etapa 10b)
-//   tenant → POST /api/fornecedores/convidar-novo { email, nome? }
-//   fornecedor → preenche CNPJ, dados da empresa, atuação e login;
+// 2) Fornecedor NOVO, ainda sem cadastro (etapas 10b e 10c)
+//   tenant → POST /api/fornecedores/convidar-novo { cnpj, email, nome? }
+//            CNPJ obrigatório (10c): conferido na Receita NO ENVIO (inexistente,
+//            não ATIVO ou Receita fora do ar = não envia) e gravado no convite
+//   fornecedor → confere os dados da Receita (CNPJ, razão social e endereço
+//                travados), completa contato, atuação e login;
 //                o cadastro nasce como fornecedor LOCAL do tenant que convidou
 //                (quem convidou responde pelo fornecedor — por isso não passa
 //                pela fila de "não verificado" do autocadastro da etapa 11)
@@ -63,6 +66,56 @@ function cnpjValido(cnpj) {
     return r < 2 ? 0 : 11 - r;
   };
   return digito(c.slice(0, 12)) === Number(c[12]) && digito(c.slice(0, 13)) === Number(c[13]);
+}
+
+// Só o que interessa do retorno da BrasilAPI (não guarda/expõe sócios etc.)
+function resumoReceita(rf) {
+  if (!rf) return null;
+  const endereco = [rf.descricao_tipo_de_logradouro, rf.logradouro].filter(Boolean).join(' ').trim();
+  return {
+    razao_social: texto(rf.razao_social, 160),
+    nome_fantasia: texto(rf.nome_fantasia, 120),
+    situacao: texto(rf.descricao_situacao_cadastral, 40),
+    endereco: texto(endereco, 160),
+    numero: texto(rf.numero, 20),
+    complemento: texto(rf.complemento, 80),
+    bairro: texto(rf.bairro, 80),
+    cidade: texto(rf.municipio, 80),
+    estado: rf.uf ? String(rf.uf).toUpperCase().slice(0, 2) : null,
+    cep: soDigitos(rf.cep).slice(0, 8) || null,
+    telefone: texto(rf.ddd_telefone_1, 30),
+    email: rf.email ? normEmail(rf.email) : null,
+    cnae: rf.cnae_fiscal_descricao ? texto(rf.cnae_fiscal_descricao, 160) : null,
+    abertura: texto(rf.data_inicio_atividade, 10),
+  };
+}
+
+const nomeDaReceita = (r) => (r && (r.nome_fantasia || r.razao_social)) || null;
+
+// jsonb pode chegar como objeto ou como texto
+function lerJson(v) {
+  if (v == null || v === '') return null;
+  if (typeof v !== 'string') return v;
+  try { return JSON.parse(v); } catch { return null; }
+}
+
+// O que a tela do convite mostra travado (dados da Receita gravados no convite)
+function dadosReceitaParaTela(convite) {
+  if (!convite?.cnpj) return null;
+  const r = lerJson(convite.dados_cnpj) || {};
+  return {
+    cnpj: convite.cnpj,
+    razao_social: r.razao_social || null,
+    nome_fantasia: r.nome_fantasia || null,
+    endereco: r.endereco || null,
+    numero: r.numero || null,
+    complemento: r.complemento || null,
+    bairro: r.bairro || null,
+    cidade: r.cidade || null,
+    estado: r.estado || null,
+    cep: r.cep || null,
+    telefone: r.telefone || null,
+  };
 }
 
 // Consulta pública da Receita (BrasilAPI). Nunca lança erro.
@@ -177,15 +230,17 @@ function emailConvite({ link, fornecedor, tenant, expiraEm }) {
   return { assunto, html };
 }
 
-function emailConviteNovo({ link, nome, tenant, expiraEm }) {
+function emailConviteNovo({ link, nome, empresa, tenant, expiraEm }) {
   const cliente = tenant?.nome || 'Um cliente';
-  const assunto = `${cliente} quer receber cotações da sua empresa pelo QuotaFlow`;
+  const assunto = empresa
+    ? `${cliente} quer receber cotações de ${empresa} pelo QuotaFlow`
+    : `${cliente} quer receber cotações da sua empresa pelo QuotaFlow`;
   const saudacao = nome ? `Olá, ${esc(nome)}!` : 'Olá!';
   const html = moldura(`
     <h2 style="margin:6px 0 10px;font-size:20px;">${saudacao}</h2>
     <p style="font-size:14px;color:#334155;line-height:1.6;">
-      <b>${esc(cliente)}</b> usa o QuotaFlow para compras e convidou a sua empresa para ser fornecedora dela.
-      O cadastro leva poucos minutos: tenha o <b>CNPJ</b> em mãos.
+      <b>${esc(cliente)}</b> usa o QuotaFlow para compras e convidou ${empresa ? `<b>${esc(empresa)}</b>` : 'a sua empresa'} para ser fornecedora dela.
+      Os dados da empresa já vêm da Receita Federal: você só confere, completa o contato e cria o seu acesso.
     </p>
     ${BENEFICIOS}
     ${botao(link, 'Cadastrar minha empresa')}
@@ -240,11 +295,30 @@ async function convidar({ tenantId, fornecedorId, email, criadoPor }) {
 
 // ─── 2) Convite a fornecedor NOVO (sem cadastro) ───────────────────────────
 
-// tenant convida pelo e-mail → { ok, expira_em, email } ou { erro, status }
-async function convidarNovo({ tenantId, email, nome, criadoPor }) {
+// tenant convida pelo CNPJ + e-mail → { ok, expira_em, email, empresa } ou { erro, status }
+async function convidarNovo({ tenantId, cnpj, email, nome, criadoPor }) {
+  const cnpjLimpo = soDigitos(cnpj);
+  if (!cnpjValido(cnpjLimpo)) {
+    return { status: 400, erro: 'Informe um CNPJ válido (14 dígitos)' };
+  }
   const destino = normEmail(email);
   if (!EMAIL_VALIDO.test(destino)) {
     return { status: 400, erro: 'Informe um e-mail válido para o convite' };
+  }
+
+  // CNPJ já é de fornecedor global → já está na lista do tenant
+  const global = await DB.selectOne('fornecedores', { cnpj: cnpjLimpo, tipo: 'global' });
+  if (global) {
+    return { status: 409, erro: `Este CNPJ é de ${global.nome_fantasia || global.nome}, fornecedor verificado da rede — ele já aparece na sua lista de fornecedores.` };
+  }
+  // CNPJ que o próprio tenant já cadastrou
+  const doTenant = ((await DB.select('fornecedores', { tenant_id: tenantId, cnpj: cnpjLimpo })) || [])
+    .find((f) => f.tipo !== 'global');
+  if (doTenant) {
+    const nomeF = doTenant.nome_fantasia || doTenant.nome;
+    return (await temLoginNoPortal(doTenant.id))
+      ? { status: 409, erro: `${nomeF} já está na sua lista e já usa o portal.` }
+      : { status: 409, erro: `Você já tem ${nomeF} cadastrado com este CNPJ. Use o ✉ na linha dele para convidar.` };
   }
 
   const login = await loginPorEmail(destino);
@@ -269,11 +343,21 @@ async function convidarNovo({ tenantId, email, nome, criadoPor }) {
   const urlPortal = urlDoPortal();
   if (!urlPortal) return { status: 500, erro: 'FRONTEND_URL não configurada no servidor' };
 
-  // cancela convite pendente anterior do mesmo tenant para o mesmo e-mail
+  // Receita: obrigatória no envio — sem resposta, não convida
+  const receita = await consultarReceita(cnpjLimpo);
+  if (receita.status === 'nao_encontrado') return { status: 400, erro: 'CNPJ não encontrado na Receita Federal. Confira o número.' };
+  if (receita.status !== 'ok') return { status: 503, erro: 'Não foi possível consultar a Receita Federal agora. Tente de novo em alguns minutos.' };
+  const dadosReceita = resumoReceita(receita.dados || {});
+  if (dadosReceita.situacao && dadosReceita.situacao.toUpperCase() !== 'ATIVA') {
+    return { status: 400, erro: `Este CNPJ consta como "${dadosReceita.situacao}" na Receita Federal. Só empresas ATIVAS podem ser convidadas.` };
+  }
+
+  // cancela convite pendente anterior do mesmo tenant para o mesmo e-mail ou o mesmo CNPJ
   const anteriores = (await DB.select('fornecedor_convites', { tenant_id: tenantId })) || [];
   const agoraIso = new Date().toISOString();
   for (const c of anteriores) {
-    if (c.fornecedor_id == null && normEmail(c.email) === destino && pendente(c)) {
+    const mesmo = normEmail(c.email) === destino || (c.cnpj && c.cnpj === cnpjLimpo);
+    if (c.fornecedor_id == null && mesmo && pendente(c)) {
       await DB.update('fornecedor_convites', c.id, { cancelado_em: agoraIso });
     }
   }
@@ -287,14 +371,17 @@ async function convidarNovo({ tenantId, email, nome, criadoPor }) {
     tenant_id: tenantId,
     email: destino,
     nome_sugerido: nomeSugerido,
+    cnpj: cnpjLimpo,
+    dados_cnpj: dadosReceita,
     criado_por: criadoPor ? String(criadoPor) : null,
     expira_em: expiraEm,
   });
 
   const tenant = await DB.selectOne('tenants', { id: tenantId });
-  const { assunto, html } = emailConviteNovo({ link: `${urlPortal}/#convite?token=${token}`, nome: nomeSugerido, tenant, expiraEm });
+  const empresa = nomeDaReceita(dadosReceita);
+  const { assunto, html } = emailConviteNovo({ link: `${urlPortal}/#convite?token=${token}`, nome: nomeSugerido, empresa, tenant, expiraEm });
   await enviarEmailFornecedor(destino, assunto, html);
-  return { ok: true, expira_em: expiraEm, email: destino };
+  return { ok: true, expira_em: expiraEm, email: destino, empresa };
 }
 
 // Convites a fornecedor novo ainda não concluídos (tela de Fornecedores do tenant)
@@ -307,6 +394,8 @@ async function listarConvitesNovos(tenantId) {
       id: c.id,
       email: c.email,
       nome: c.nome_sugerido || null,
+      cnpj: c.cnpj || null,
+      empresa: nomeDaReceita(lerJson(c.dados_cnpj)),
       enviado_em: c.criado_em || null,
       expira_em: c.expira_em,
       expirado: expirado(c),
@@ -376,9 +465,20 @@ function dadosDaEmpresa(empresa, nomeUsuario) {
 
 // Fornecedor novo conclui o cadastro → { usuario, fornecedor } ou { motivo, detalhe? }
 async function aceitarNovo({ convite, nome, senhaHash, empresa }) {
-  const cnpj = soDigitos(empresa?.cnpj);
+  // Convite com CNPJ (10c): o CNPJ e os dados oficiais vêm do convite — o que o
+  // fornecedor mandar nesses campos é ignorado. Convite antigo (10b, sem CNPJ):
+  // o fornecedor informa o CNPJ.
+  const travado = !!convite.cnpj;
+  const cnpj = travado ? soDigitos(convite.cnpj) : soDigitos(empresa?.cnpj);
   if (!cnpjValido(cnpj)) return { motivo: 'cnpj_invalido' };
   const dados = dadosDaEmpresa(empresa, nome);
+  const daReceita = travado ? lerJson(convite.dados_cnpj) : null;
+  if (daReceita) {
+    for (const campo of ['razao_social', 'endereco', 'numero', 'complemento', 'bairro', 'cidade', 'estado', 'cep']) {
+      if (daReceita[campo]) dados[campo] = daReceita[campo];
+    }
+    if (!dados.nome_fantasia) dados.nome_fantasia = nomeDaReceita(daReceita);
+  }
   if (!dados.nome_fantasia) return { motivo: 'empresa_incompleta' };
 
   if (await loginPorEmail(normEmail(convite.email))) return { motivo: 'email_em_uso' };
@@ -390,18 +490,24 @@ async function aceitarNovo({ convite, nome, senhaHash, empresa }) {
     .find((f) => f.tipo !== 'global');
   if (doTenant && (await temLoginNoPortal(doTenant.id))) return { motivo: 'cnpj_ja_no_portal' };
 
-  const receita = await consultarReceita(cnpj);
-  if (receita.status === 'nao_encontrado') return { motivo: 'cnpj_nao_encontrado' };
-  const rf = receita.status === 'ok' ? receita.dados || {} : null;
-  const situacao = rf ? texto(rf.descricao_situacao_cadastral, 40) : null;
-  if (situacao && situacao.toUpperCase() !== 'ATIVA') return { motivo: 'cnpj_inativo', detalhe: situacao };
-
-  if (rf) {
-    // razão social oficial vem da Receita
-    dados.razao_social = texto(rf.razao_social, 160) || dados.razao_social;
-    dados.dados_cnpj = rf;
-    dados.situacao_cnpj = situacao;
-    dados.ultima_consulta_cnpj = new Date().toISOString();
+  if (daReceita) {
+    // já conferido na Receita no envio do convite (até 7 dias atrás)
+    dados.dados_cnpj = daReceita;
+    dados.situacao_cnpj = daReceita.situacao || null;
+    dados.ultima_consulta_cnpj = convite.criado_em || new Date().toISOString();
+  } else {
+    const receita = await consultarReceita(cnpj);
+    if (receita.status === 'nao_encontrado') return { motivo: 'cnpj_nao_encontrado' };
+    const rf = receita.status === 'ok' ? receita.dados || {} : null;
+    const situacao = rf ? texto(rf.descricao_situacao_cadastral, 40) : null;
+    if (situacao && situacao.toUpperCase() !== 'ATIVA') return { motivo: 'cnpj_inativo', detalhe: situacao };
+    if (rf) {
+      // razão social oficial vem da Receita
+      dados.razao_social = texto(rf.razao_social, 160) || dados.razao_social;
+      dados.dados_cnpj = resumoReceita(rf);
+      dados.situacao_cnpj = situacao;
+      dados.ultima_consulta_cnpj = new Date().toISOString();
+    }
   }
 
   let fornecedor;
@@ -481,6 +587,7 @@ module.exports = {
   situacaoPortal,
   temLoginNoPortal,
   cnpjValido,
+  dadosReceitaParaTela,
   DIAS_VALIDADE,
   // só para testes
   _definirConsultaReceita: (fn) => { consultarReceita = fn || consultarReceitaBrasilAPI; },

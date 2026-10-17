@@ -24,6 +24,7 @@
 
 const { DB, supabase } = require('../db');
 const { enviarEmailRecomendacao } = require('./emailService');
+const { podeVerSpot } = require('./acessoSpot'); // Spot só para verificado (etapa 10c)
 const { emailFornecedor } = require('./fornecedoresVisiveis');
 const { contextoDoFornecedor, pontuarDemanda } = require('./matchSpot');
 
@@ -66,9 +67,9 @@ function temPlanoPro(f, agora = new Date()) {
   return true;
 }
 
-// Pode receber e-mail de recomendação? (Pro + não se descadastrou + tem e-mail)
+// Pode receber e-mail de recomendação? (verificado + Pro + não se descadastrou + tem e-mail)
 function podeReceberRecomendacao(f) {
-  return temPlanoPro(f) && f.recomendacoes_email !== false && !!emailFornecedor(f) && !!f.descadastro_token;
+  return podeVerSpot(f) && temPlanoPro(f) && f.recomendacoes_email !== false && !!emailFornecedor(f) && !!f.descadastro_token;
 }
 
 // ─── Cota diária ─────────────────────────────────────────────────────────────

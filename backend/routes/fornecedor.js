@@ -11,6 +11,7 @@ const { supabase } = require('../db');
 const bcrypt = require('bcryptjs');
 const { normalizarAtuacao } = require('../services/atuacao'); // perfil de atuação (etapa 4)
 const { contextoDoFornecedor, pontuarDemanda } = require('../services/matchSpot'); // painel (etapa 10)
+const { podeVerSpot, exigirAcessoSpot } = require('../services/acessoSpot'); // Spot só para verificado (etapa 10c)
 
 const EMAIL_VALIDO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -24,6 +25,9 @@ router.get('/me', fornecedorMiddleware, async (req, res) => {
     
     res.json({
       fornecedor,
+      // Canal Spot só para fornecedor verificado (global) — o portal usa para o menu
+      spot_liberado: podeVerSpot(fornecedor),
+      verificado: fornecedor?.tipo === 'global',
       usuario: {
         id: usuario.id,
         nome: usuario.nome,
@@ -80,12 +84,15 @@ router.get('/painel', fornecedorMiddleware, async (req, res) => {
       ['enviado', 'visualizado', 'devolvida'].includes(nc.fornecedor_tratativa_status) &&
       !['resolvida', 'cancelada'].includes(nc.status)).length;
 
+    // Canal Spot: só para fornecedor verificado (etapa 10c). Local não recebe
+    // nem contagem nem indicadores do Spot.
+    const spotLiberado = podeVerSpot(fornecedor);
     const respondidas = new Set((interesses || []).map((i) => String(i.demanda_id)));
     const ctx = await contextoDoFornecedor(DB, fid);
     const tenants = {};
     let spotRecomendadas = 0;
     let spotMuito = 0;
-    for (const d of abertas || []) {
+    for (const d of spotLiberado ? abertas || [] : []) {
       if (respondidas.has(String(d.id))) continue;
       if (!(String(d.tenant_id) in tenants)) tenants[String(d.tenant_id)] = await DB.selectOne('tenants', { id: d.tenant_id });
       const m = pontuarDemanda(d, ctx, tenants[String(d.tenant_id)]);
@@ -124,11 +131,13 @@ router.get('/painel', fornecedorMiddleware, async (req, res) => {
     const cotacoesVencidas = new Set(ovsRecentes.filter((ov) => cotacoesRecentes.has(String(ov.cotacao_id))).map((ov) => String(ov.cotacao_id)));
 
     const pct = (a, b) => (b > 0 ? Math.round((a / b) * 100) : null);
-    const proAtivo = fornecedor?.plano === 'pro' && (!fornecedor.plano_valido_ate || new Date(fornecedor.plano_valido_ate) >= new Date());
+    // Pro só vale para verificado (os recursos do Pro são do Canal Spot)
+    const proAtivo = spotLiberado && fornecedor?.plano === 'pro' && (!fornecedor.plano_valido_ate || new Date(fornecedor.plano_valido_ate) >= new Date());
 
     res.json({
       periodo_dias: DIAS_PAINEL,
       plano: proAtivo ? 'pro' : 'gratuito',
+      spot_liberado: spotLiberado,
       tem_atuacao: !!ctx.temPerfil,
       agora: {
         cotacoes_aguardando: cotacoesAguardando,
@@ -137,7 +146,7 @@ router.get('/painel', fornecedorMiddleware, async (req, res) => {
         spot_recomendadas: spotRecomendadas,
         spot_combina_muito: spotMuito,
       },
-      spot: {
+      spot: !spotLiberado ? null : {
         visualizadas: vistas,
         respondidas: intRecentes.length,
         taxa_resposta: pct(intRecentes.length, vistas),
@@ -162,7 +171,9 @@ router.get('/painel', fornecedorMiddleware, async (req, res) => {
 });
 
 // POST /api/fornecedor/interesse - Manifestar interesse em demanda spot
-router.post('/interesse', fornecedorMiddleware, async (req, res) => {
+// (rota antiga — o portal usa POST /api/spot/fornecedor/interesse. Mantida
+// compatível, mas com a mesma regra: só fornecedor verificado — etapa 10c.)
+router.post('/interesse', fornecedorMiddleware, exigirAcessoSpot, async (req, res) => {
   try {
     const { demanda_id, mensagem } = req.body;
     const fornecedorId = req.fornecedorId;
@@ -171,18 +182,18 @@ router.post('/interesse', fornecedorMiddleware, async (req, res) => {
       return res.status(400).json({ erro: 'demanda_id é obrigatório' });
     }
 
-    // Buscar tenant do fornecedor
-    const fornecedor = await DB.selectOne('fornecedores', { id: fornecedorId });
-    if (!fornecedor) {
-      return res.status(404).json({ erro: 'Fornecedor não encontrado' });
-    }
-    const tenantId = fornecedor.tenant_id;
+    // O interesse pertence ao tenant DA DEMANDA (antes gravava o tenant do
+    // fornecedor — null para global, e errado para local)
+    const demanda = await DB.selectOne('demandas_spot', { id: demanda_id });
+    if (!demanda) return res.status(404).json({ erro: 'Demanda não encontrada' });
+    if (demanda.status === 'encerrada') return res.status(400).json({ erro: 'Demanda encerrada' });
+    const tenantId = demanda.tenant_id;
 
     // Verificar se já existe interesse
     const existente = await DB.selectOne('interesses_spot', {
       demanda_id,
       fornecedor_id: fornecedorId
-    }, tenantId);
+    });
 
     if (existente) {
       return res.status(409).json({ erro: 'Você já manifestou interesse nesta demanda' });
@@ -213,13 +224,12 @@ router.post('/interesse', fornecedorMiddleware, async (req, res) => {
 // teste real: fornecedor 1 via a mensagem privada de interesse do
 // fornecedor 2 na mesma demanda, e nenhum dos campos da OS/demanda
 // (componente, urgência etc.) vinha preenchido. Reescrito sem raw().
-router.get('/interesses', fornecedorMiddleware, async (req, res) => {
+router.get('/interesses', fornecedorMiddleware, exigirAcessoSpot, async (req, res) => {
   try {
     const fornecedorId = req.fornecedorId;
-    const fornecedor = await DB.selectOne('fornecedores', { id: fornecedorId });
-    const tenantId = fornecedor.tenant_id;
 
-    const meusInteresses = await DB.select('interesses_spot', { fornecedor_id: fornecedorId }, tenantId);
+    // só os interesses DELE (de qualquer tenant): o filtro é o fornecedor_id
+    const meusInteresses = (await DB.select('interesses_spot', { fornecedor_id: fornecedorId })) || [];
 
     const interessesCompletos = await Promise.all(meusInteresses.map(async (i) => {
       const demanda = await DB.selectOne('demandas_spot', { id: i.demanda_id });
