@@ -560,9 +560,11 @@ router.post('/reset-password', async (req, res) => {
 });
 
 // ─────────────────────────────────────────────────────────────────────────────
-// Etapa 10 — CONVITE AO FORNECEDOR LOCAL
-// O tenant convida (POST /api/fornecedores/:id/convidar); o fornecedor abre
-// <FRONTEND_URL>/#convite?token=..., cria nome + senha e já entra no portal.
+// Etapas 10 e 10b — CONVITE PARA O PORTAL DE FORNECEDORES
+// O tenant convida um fornecedor local já cadastrado (POST /api/fornecedores/:id/convidar)
+// ou um fornecedor novo só pelo e-mail (POST /api/fornecedores/convidar-novo).
+// O fornecedor abre <FRONTEND_URL>/#convite?token=..., (no caso do novo, preenche
+// CNPJ, dados e atuação), cria nome + senha e já entra no portal.
 // ─────────────────────────────────────────────────────────────────────────────
 
 const { carregarConvite, aceitar: aceitarConvite } = require('../services/convitesFornecedor');
@@ -573,19 +575,36 @@ const MSG_CONVITE = {
   usado: 'Este convite já foi usado. Entre com seu e-mail e senha.',
   cancelado: 'Este convite foi substituído por um mais novo. Use o link do último e-mail recebido.',
   email_em_uso: 'Este e-mail já tem acesso ao portal. Entre com seu e-mail e senha.',
+  // fornecedor novo (etapa 10b)
+  cnpj_invalido: 'CNPJ inválido. Confira os 14 dígitos.',
+  empresa_incompleta: 'Informe o nome fantasia da empresa.',
+  cnpj_global: 'Sua empresa já faz parte da rede de fornecedores QuotaFlow e já pode receber as cotações deste cliente. Entre com seu login (ou use "Esqueci minha senha").',
+  cnpj_ja_no_portal: 'Sua empresa já tem acesso ao portal para este cliente. Entre com seu login (ou use "Esqueci minha senha").',
+  cnpj_nao_encontrado: 'CNPJ não encontrado na Receita Federal. Confira o número digitado.',
+  cnpj_inativo: 'Este CNPJ não está ativo na Receita Federal.',
 };
+
+function mensagemConvite(r) {
+  if (r.motivo === 'cnpj_inativo' && r.detalhe) {
+    return `Este CNPJ consta como "${r.detalhe}" na Receita Federal. Só empresas com situação ATIVA podem se cadastrar.`;
+  }
+  return MSG_CONVITE[r.motivo] || 'Convite inválido';
+}
 
 /**
  * GET /api/auth/convite/validar?token=xxx
- * → { ok, empresa, cliente, email } | { ok:false, motivo, mensagem }
+ * → { ok, novo, empresa, cliente, email, nome_sugerido } | { ok:false, motivo, mensagem }
+ *   novo = true: fornecedor ainda sem cadastro (a tela pede CNPJ, dados e atuação)
  */
 router.get('/convite/validar', async (req, res) => {
   try {
     const r = await carregarConvite(req.query.token);
-    if (r.motivo) return res.json({ ok: false, motivo: r.motivo, mensagem: MSG_CONVITE[r.motivo] });
+    if (r.motivo) return res.json({ ok: false, motivo: r.motivo, mensagem: mensagemConvite(r) });
     res.json({
       ok: true,
-      empresa: r.fornecedor.nome_fantasia || r.fornecedor.nome || null,
+      novo: !!r.novo,
+      empresa: r.fornecedor ? (r.fornecedor.nome_fantasia || r.fornecedor.nome || null) : null,
+      nome_sugerido: r.novo ? (r.convite.nome_sugerido || null) : null,
       cliente: r.tenant?.nome || null,
       email: r.convite.email,
       expira_em: r.convite.expira_em,
@@ -598,20 +617,23 @@ router.get('/convite/validar', async (req, res) => {
 
 /**
  * POST /api/auth/convite/aceitar
- * Body: { token, nome, senha }
+ * Body: { token, nome, senha, empresa? }
+ *   empresa (só no convite de fornecedor novo): { cnpj, nome_fantasia, razao_social,
+ *     endereco, numero, complemento, bairro, cidade, estado, cep, telefone, whatsapp,
+ *     atuacao_* , marca_sugerida }
  * Cria o login do fornecedor e devolve o mesmo formato do /login-fornecedor.
  */
 router.post('/convite/aceitar', async (req, res) => {
   try {
-    const { token, nome, senha } = req.body || {};
+    const { token, nome, senha, empresa } = req.body || {};
     if (!token || !nome || !String(nome).trim() || !senha) {
       return res.status(400).json({ erro: 'Nome e senha são obrigatórios' });
     }
     if (String(senha).length < 6) {
       return res.status(400).json({ erro: 'A senha deve ter ao menos 6 caracteres' });
     }
-    const r = await aceitarConvite({ token, nome, senhaHash: bcrypt.hashSync(String(senha), 10) });
-    if (r.motivo) return res.status(400).json({ erro: MSG_CONVITE[r.motivo] || 'Convite inválido', motivo: r.motivo });
+    const r = await aceitarConvite({ token, nome, senhaHash: bcrypt.hashSync(String(senha), 10), empresa });
+    if (r.motivo) return res.status(400).json({ erro: mensagemConvite(r), motivo: r.motivo });
 
     const { usuario, fornecedor } = r;
     const jwtToken = jwt.sign(

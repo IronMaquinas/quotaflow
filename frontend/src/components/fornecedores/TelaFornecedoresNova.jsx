@@ -43,8 +43,25 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
     .join(" "));
   const termoAtuacao = semAcento(filtroCategoria).trim();
 
+  // Convites a fornecedores NOVOS, ainda não cadastrados (etapa 10b)
+  const [convitesNovos, setConvitesNovos] = useState([]);
+  const [modalConvite, setModalConvite] = useState(null); // { email, nome } | null
+  const [enviandoConvite, setEnviandoConvite] = useState(false);
+  const [erroConvite, setErroConvite] = useState("");
+  const [acaoConviteId, setAcaoConviteId] = useState(null);
+
+  const carregarConvitesNovos = async () => {
+    try {
+      const r = await apiService.get("/fornecedores/convites");
+      setConvitesNovos(Array.isArray(r) ? r : []);
+    } catch (e) {
+      console.error("❌ convites pendentes:", e);
+    }
+  };
+
   useEffect(() => {
     listar();
+    carregarConvitesNovos();
   }, []);
 
   // ─── FILTROS ──────────────────────────────────────────────
@@ -260,6 +277,54 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
       alert("Erro: " + (e.message || "não foi possível enviar o convite"));
     } finally {
       setConvidandoId(null);
+    }
+  };
+
+  // ─── CONVITE A FORNECEDOR NOVO (etapa 10b) ───────────────
+  const enviarConviteNovo = async (e) => {
+    e?.preventDefault?.();
+    const email = (modalConvite?.email || "").trim();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) {
+      setErroConvite("Informe um e-mail válido.");
+      return;
+    }
+    setEnviandoConvite(true);
+    setErroConvite("");
+    try {
+      const r = await apiService.post("/fornecedores/convidar-novo", { email, nome: (modalConvite?.nome || "").trim() });
+      setModalConvite(null);
+      await carregarConvitesNovos();
+      alert(r?.mensagem || "Convite enviado!");
+    } catch (err) {
+      setErroConvite(err.message || "Não foi possível enviar o convite.");
+    } finally {
+      setEnviandoConvite(false);
+    }
+  };
+
+  const reenviarConviteNovo = async (c) => {
+    setAcaoConviteId(c.id);
+    try {
+      const r = await apiService.post("/fornecedores/convidar-novo", { email: c.email, nome: c.nome || "" });
+      await carregarConvitesNovos();
+      alert(r?.mensagem || "Convite reenviado!");
+    } catch (err) {
+      alert("Erro: " + (err.message || "não foi possível reenviar"));
+    } finally {
+      setAcaoConviteId(null);
+    }
+  };
+
+  const cancelarConviteNovo = async (c) => {
+    if (!window.confirm(`Cancelar o convite enviado para ${c.email}? O link do e-mail deixa de funcionar.`)) return;
+    setAcaoConviteId(c.id);
+    try {
+      await apiService.delete(`/fornecedores/convites/${c.id}`);
+      await carregarConvitesNovos();
+    } catch (err) {
+      alert("Erro: " + (err.message || "não foi possível cancelar"));
+    } finally {
+      setAcaoConviteId(null);
     }
   };
 
@@ -543,13 +608,74 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
           <div style={{ fontSize: 11, color: C.muted, letterSpacing: "0.1em", marginBottom: 4 }}>GESTÃO</div>
           <div style={{ fontSize: 22, fontWeight: 700, color: C.text }}>Fornecedores</div>
         </div>
-        <button
-          onClick={() => { resetForm(); setModal("novo"); }}
-          style={{ ...s.btn(true), padding: "9px 20px", fontSize: 12 }}
-        >
-          ➕ Novo Fornecedor
-        </button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <button
+            onClick={() => { setErroConvite(""); setModalConvite({ email: "", nome: "" }); }}
+            title="O fornecedor recebe um link, cadastra a empresa e já entra no portal"
+            style={{ background: "transparent", border: `1px solid ${C.accent}`, borderRadius: 6, padding: "9px 18px", color: C.accent, fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}
+          >
+            ✉ Convidar fornecedor
+          </button>
+          <button
+            onClick={() => { resetForm(); setModal("novo"); }}
+            style={{ ...s.btn(true), padding: "9px 20px", fontSize: 12 }}
+          >
+            ➕ Novo Fornecedor
+          </button>
+        </div>
       </div>
+
+      {/* ─── MODAL: CONVIDAR FORNECEDOR NOVO ─── */}
+      {modalConvite && (
+        <div style={{ position: "fixed", inset: 0, background: "#00000090", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 20 }}>
+          <form onSubmit={enviarConviteNovo} style={{ ...s.card, width: 480, maxWidth: "100%", boxShadow: "0 24px 48px #00000060" }}>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", padding: "18px 22px", borderBottom: `1px solid ${C.border}` }}>
+              <div style={{ fontSize: 15, fontWeight: 700, color: C.text }}>Convidar fornecedor</div>
+              <button type="button" onClick={() => setModalConvite(null)} style={{ background: "transparent", border: "none", color: C.muted, fontSize: 20, cursor: "pointer", lineHeight: 1 }}>×</button>
+            </div>
+            <div style={{ padding: "18px 22px" }}>
+              <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.6, marginBottom: 16 }}>
+                Para um fornecedor que ainda não está na sua lista. Ele recebe um link por e-mail, cadastra a empresa
+                (CNPJ, dados e o que fornece), cria o próprio login e entra direto como seu fornecedor — sem você digitar nada.
+              </div>
+              <div style={{ marginBottom: 12 }}>
+                <label style={s.label}>E-MAIL DO FORNECEDOR</label>
+                <input
+                  type="email"
+                  value={modalConvite.email}
+                  onChange={(e) => setModalConvite((m) => ({ ...m, email: e.target.value }))}
+                  placeholder="vendas@fornecedor.com.br"
+                  style={s.input}
+                  autoFocus
+                />
+              </div>
+              <div style={{ marginBottom: 6 }}>
+                <label style={s.label}>NOME DO CONTATO <span style={{ fontWeight: 400 }}>(opcional — aparece na saudação do e-mail)</span></label>
+                <input
+                  value={modalConvite.nome}
+                  onChange={(e) => setModalConvite((m) => ({ ...m, nome: e.target.value }))}
+                  placeholder="Ex.: João"
+                  maxLength={120}
+                  style={s.input}
+                />
+              </div>
+              {erroConvite && (
+                <div style={{ background: "#ef444422", border: "1px solid #ef444444", borderRadius: 7, padding: "10px 14px", marginTop: 12, fontSize: 12, color: "#ef4444", lineHeight: 1.5 }}>
+                  ⚠️ {erroConvite}
+                </div>
+              )}
+            </div>
+            <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, padding: "14px 22px", borderTop: `1px solid ${C.border}` }}>
+              <button type="button" onClick={() => setModalConvite(null)} style={{ background: "transparent", border: `1px solid ${C.border}`, borderRadius: 6, padding: "8px 16px", color: C.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>
+                Cancelar
+              </button>
+              <button type="submit" disabled={enviandoConvite} style={{ ...s.btn(true), padding: "8px 18px", fontSize: 12, opacity: enviandoConvite ? 0.6 : 1 }}>
+                {enviandoConvite ? "Enviando…" : "Enviar convite"}
+              </button>
+            </div>
+          </form>
+        </div>
+      )}
 
       {/* ─── FILTROS ─── */}
       <div style={{ display: "flex", gap: 8, marginBottom: 18, flexWrap: "wrap", alignItems: "center" }}>
@@ -738,6 +864,47 @@ export default function TelaFornecedoresNova({ fmtD, C, s }) {
           <div style={{ padding: 32, textAlign: "center", color: C.muted, fontSize: 13 }}>Nenhum fornecedor encontrado</div>
         )}
       </div>
+
+      {/* ─── CONVITES AGUARDANDO CADASTRO (etapa 10b) ─── */}
+      {convitesNovos.length > 0 && (
+        <div style={{ ...s.card, overflow: "hidden", marginTop: 18 }}>
+          <div style={{ padding: "10px 18px", background: C.bg, borderBottom: `1px solid ${C.border}`, fontSize: 10, color: C.muted, letterSpacing: "0.08em" }}>
+            CONVITES AGUARDANDO CADASTRO · {convitesNovos.length}
+          </div>
+          {convitesNovos.map((c, i) => (
+            <div
+              key={c.id}
+              style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 18px", borderBottom: i < convitesNovos.length - 1 ? `1px solid ${C.border}22` : "none", flexWrap: "wrap" }}
+            >
+              <div style={{ flex: 1, minWidth: 200 }}>
+                <div style={{ fontSize: 13, color: C.text }}>
+                  {c.nome ? <>{c.nome} <span style={{ color: C.muted }}>·</span> </> : null}
+                  <span style={{ color: C.accent }}>{c.email}</span>
+                </div>
+                <div style={{ fontSize: 10, color: c.expirado ? "#ef4444" : "#f59e0b", marginTop: 2 }}>
+                  {c.expirado
+                    ? `✉ Convite expirou em ${new Date(c.expira_em).toLocaleDateString("pt-BR")} — reenvie se ainda quiser`
+                    : `✉ Enviado${c.enviado_em ? ` em ${new Date(c.enviado_em).toLocaleDateString("pt-BR")}` : ""} · vale até ${new Date(c.expira_em).toLocaleDateString("pt-BR")}`}
+                </div>
+              </div>
+              <button
+                onClick={() => reenviarConviteNovo(c)}
+                disabled={acaoConviteId === c.id}
+                style={{ background: "transparent", border: `1px solid ${C.accent}55`, borderRadius: 5, padding: "5px 10px", color: C.accent, fontSize: 11, cursor: "pointer", fontFamily: "inherit", opacity: acaoConviteId === c.id ? 0.5 : 1 }}
+              >
+                Reenviar
+              </button>
+              <button
+                onClick={() => cancelarConviteNovo(c)}
+                disabled={acaoConviteId === c.id}
+                style={{ background: "transparent", border: `1px solid ${C.border}`, borderRadius: 5, padding: "5px 10px", color: C.muted, fontSize: 11, cursor: "pointer", fontFamily: "inherit", opacity: acaoConviteId === c.id ? 0.5 : 1 }}
+              >
+                Cancelar
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
