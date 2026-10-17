@@ -7,7 +7,7 @@ import TelaMeusPedidosFornecedor from '../fornecedores/TelaMeusPedidosFornecedor
 import TelaNaoConformidadesFornecedor from '../fornecedores/TelaNaoConformidadesFornecedor';
 import TelaGestaoCotacoesFornecedor from '../fornecedores/TelaGestaoCotacoesFornecedor';
 import TelaMeusDadosFornecedor from '../fornecedores/TelaMeusDadosFornecedor';
-import TelaFornecedorSpot from './TelaFornecedorSpot';
+import TelaFornecedorSpot, { temLinkSpotPendente } from './TelaFornecedorSpot';
 
 const C = {
   bg: "#0a0e14",
@@ -34,7 +34,8 @@ const fmtBRL = v => v != null ? `R$ ${Number(v).toFixed(2).replace('.', ',')}` :
 const fmtD = d => d ? new Date(d).toLocaleDateString('pt-BR') : '—';
 
 export default function TelaFornecedor() {
-  const [tela, setTela] = useState('cotacoes');
+  // Chegou pelo link do e-mail de recomendação (?spot=<id>)? Abre direto no Canal Spot.
+  const [tela, setTela] = useState(() => (temLinkSpotPendente() ? 'oportunidades' : 'cotacoes'));
   const [usuario, setUsuario] = useState(null);
 
   useEffect(() => {

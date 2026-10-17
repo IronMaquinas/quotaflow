@@ -1,6 +1,6 @@
 # 📦 QuotaFlow — Estrutura Completa do Projeto
 
-**Versão:** 4.6 (Canal Spot + Fornecedores Globais + Cadastro Único + Perfil de Atuação + Match Score + Edição de Demanda + Plano Pro do Fornecedor)
+**Versão:** 4.7 (Canal Spot + Fornecedores Globais + Cadastro Único + Perfil de Atuação + Match Score + Edição de Demanda + Plano Pro do Fornecedor)
 **Última atualização:** 16/10/2026
 **Status:** núcleo de compras (OS → RM → RC → OV) em produção; marketplace de fornecedores com busca unificada em produção; módulo de Não Conformidades com fluxo ISO 9001 completo; multi-perfil e reset de senha entregues; **Canal Spot** (demandas urgentes/raras) com ciclo completo comprador ↔ fornecedor; **fornecedores globais** da plataforma visíveis a todos os tenants, com isolamento total dos fornecedores locais.
 
@@ -448,7 +448,9 @@ Calculado em `services/matchSpot.js` a cada abertura da tela do fornecedor (sem 
 - **"Prioridade" é de tempo, não de posição:** o Pro fica sabendo antes; a ordem das propostas que o comprador vê nunca é comprada.
 - **Cota própria:** `RECOMENDACOES_LIMITE_DIA` (padrão 60) — recomendações nunca consomem a cota do Resend (grátis = 100/dia) que os transacionais precisam.
 - **Uma demanda = no máximo um aviso por fornecedor** (imediato ou resumo, nunca os dois).
-- **Descadastro** em todo e-mail (LGPD): desliga só as recomendações; o fornecedor Pro religa em Meus Dados.
+- **Descadastro** em todo e-mail (LGPD): link no rodapé + cabeçalho `List-Unsubscribe` / `List-Unsubscribe-Post` (botão nativo "Cancelar inscrição" do Gmail/Outlook, `POST /api/recomendacoes/descadastrar/:token`). Desliga só as recomendações; o fornecedor Pro religa em Meus Dados. **Sem `BACKEND_URL` nenhum e-mail de recomendação sai** (log `❌ [recomendacoes] BACKEND_URL não configurada`).
+- **Conteúdo (etapa 9):** assunto começa pela demanda principal ("⭐ Bomba de Combustível e mais 2 demandas…", "URGENTE:" quando for o caso); cada demanda tem "Ver e responder →" que abre `FRONTEND_URL/?spot=<id>`; versão em texto puro junto com o HTML.
+- **Link direto (`?spot=<id>`):** `TelaFornecedorSpot.jsx` guarda o id no `sessionStorage` já no carregamento da página (sobrevive ao login); `TelaFornecedor.jsx` abre direto em "Oportunidades Spot"; a demanda abre no detalhe, na aba certa; se não estiver mais disponível, aparece aviso. O parâmetro é limpo da URL depois de usado.
 - Gratuito vê convite discreto para o Pro no Canal Spot e em Meus Dados.
 - **Ativar Pro (até existir cobrança):** `UPDATE fornecedores SET plano = 'pro', plano_valido_ate = now() + interval '6 months' WHERE id = ...;`
 - **Variáveis de ambiente (Render):** `CRON_SECRET` (≥ 16 caracteres, obrigatório), `BACKEND_URL` (link de descadastro), `FRONTEND_URL` (botão "Ver no portal"), `RECOMENDACOES_LIMITE_DIA` (opcional), `CRON_INTERNO=1` (só em servidor sempre ligado — aí o node-cron interno substitui o pg_cron).

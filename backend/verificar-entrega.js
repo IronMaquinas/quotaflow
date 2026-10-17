@@ -2,7 +2,7 @@
 // verificar-entrega.js — confere, em um comando, se os arquivos entregues
 // (etapa 1: fornecedores globais; etapa 3: cadastro único; etapa 4: perfil
 // de atuação; etapa 6: Match Score; etapa 7: edição da demanda + região;
-// etapa 8: plano Pro + e-mails de recomendação) estão no projeto exatamente como foram entregues.
+// etapa 8: plano Pro + e-mails de recomendação; etapa 9: melhorias do e-mail) estão no projeto exatamente como foram entregues.
 //
 // Só LÊ arquivos. Não altera nada.
 // Uso (dentro da pasta backend):
@@ -42,8 +42,9 @@ const ESPERADO = {
   'services/matchSpot.js': 'fe4275090b82bd1efd52498d2176a90c', // etapa 7
   'routes/configuracoes.js': '05360fb8a4945623e1878ba336161d27', // etapa 7
   'routes/fornecedor.js': 'cb5cc262bf30583112a351a73761b8f0', // etapa 8
-  'routes/recomendacoes.js': 'e814b9be4cf8b1e14358575ce7905e1a', // etapa 8
-  'services/recomendacoesEmail.js': 'a640da411101c25fb1f9f1bfca66a2f3', // etapa 8
+  'routes/recomendacoes.js': '3c1fe2834a30a24198923797bce4001a', // etapa 9
+  'services/recomendacoesEmail.js': 'ec0668979a4e7806bb64e7f5ac00ca3d', // etapa 9
+  'services/emailService.js': '2daf0e597ff370e006585f919c63b525', // etapa 9
   'server.js': 'a4b331a7f77e20d83d6c6078d235cb7c', // etapa 8
   'routes/atuacao.js': 'cc196661189e2714bcfad96e5c1e8ad9',
   'services/atuacao.js': '8509ac0206906a7f93384350e77132bf',
@@ -51,17 +52,18 @@ const ESPERADO = {
   'front:TelaMeusDadosFornecedor.jsx': 'fe8288aee67562902d65d70064865196', // etapa 8
   'front:TelaFornecedoresNova.jsx': '2b65c229997c5755dda5748c383aa007',
   'front:TelaCanalSpot.jsx': 'f4afd6de0575afed02147c500125124c', // etapa 7
-  'front:TelaFornecedorSpot.jsx': '7059c3f2671ed872a556f0da484f728b', // etapa 8
+  'front:TelaFornecedorSpot.jsx': '449dd00ab481e0596a932aaa985f4bad', // etapa 9
+  'front:TelaFornecedor.jsx': 'a0ea349c43d4c830fbd0524740ee35a6', // etapa 9
   'front:TelaConfiguracoes.jsx': 'cdd08de70f9fe2144022bfd3fac276a3', // etapa 7
 };
 
-// Antes de copiar a etapa 8 — versão que serviu de base para as alterações
+// Antes de copiar a etapa 9 — versão que serviu de base para as alterações
 const ANTES = {
-  'routes/spot.js': '90a8a32a6f1ee5677bc2e99dd32d7606',
-  'routes/fornecedor.js': '0b447f0e2735fefbe56da81b6a5a763d',
-  'server.js': 'e17cd05fd022ab09438557be1539f931',
-  'front:TelaMeusDadosFornecedor.jsx': '43d89224e6b9171c1dba9744c0853e29',
-  'front:TelaFornecedorSpot.jsx': '9aa4b8acd5c610a2cb78eae51e074f13',
+  'routes/recomendacoes.js': 'e814b9be4cf8b1e14358575ce7905e1a',
+  'services/recomendacoesEmail.js': 'a640da411101c25fb1f9f1bfca66a2f3',
+  'services/emailService.js': 'a5c3eec4d0da25658f945f54eb54f952',
+  'front:TelaFornecedorSpot.jsx': '7059c3f2671ed872a556f0da484f728b',
+  'front:TelaFornecedor.jsx': 'f10c3c842470bb19653e4c899a61d672',
 };
 
 const RAIZ = process.cwd();
@@ -98,8 +100,8 @@ function localizar(chave) {
 const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
-  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 8?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6, 7 e 8)\n');
+  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 9?\n'
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6, 7, 8 e 9)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

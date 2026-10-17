@@ -13,14 +13,17 @@
 //   • Cota diária própria (RECOMENDACOES_LIMITE_DIA, padrão 60): recomendação
 //     nunca consome a cota do Resend que os e-mails transacionais (cotação, OC,
 //     NC) precisam. Plano grátis do Resend = 100 e-mails/dia.
-//   • Todo e-mail tem link de descadastro (LGPD — e-mail de oferta).
+//   • Todo e-mail tem link de descadastro (LGPD — e-mail de oferta) no rodapé e
+//     no cabeçalho List-Unsubscribe (botão nativo do Gmail/Outlook). Sem
+//     BACKEND_URL configurada, NENHUM e-mail de recomendação sai.
+//   • Cada demanda tem botão que abre ela direto no portal (?spot=<id>).
 //   • Falha de e-mail nunca quebra a criação da demanda.
 //
 // E-mails transacionais (pedido de cotação, OC, NC, "você foi escolhido")
 // NÃO passam por aqui: são grátis e continuam como estão.
 
 const { DB, supabase } = require('../db');
-const { enviarEmailFornecedor } = require('./emailService');
+const { enviarEmailRecomendacao } = require('./emailService');
 const { emailFornecedor } = require('./fornecedoresVisiveis');
 const { contextoDoFornecedor, pontuarDemanda } = require('./matchSpot');
 
@@ -37,6 +40,25 @@ const esc = (t) => String(t == null ? '' : t)
   .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const semBarraFinal = (u) => String(u || '').replace(/\/+$/, '');
 
+// ─── Configuração obrigatória ────────────────────────────────────────────────
+// Sem BACKEND_URL não há link de descadastro → não envia (LGPD).
+function configuracaoOk() {
+  if (!semBarraFinal(process.env.BACKEND_URL)) {
+    console.error('❌ [recomendacoes] BACKEND_URL não configurada — e-mails de recomendação NÃO enviados (sem link de descadastro).');
+    return false;
+  }
+  return true;
+}
+
+function linkDescadastroDe(fornecedor) {
+  return `${semBarraFinal(process.env.BACKEND_URL)}/api/recomendacoes/descadastrar/${fornecedor.descadastro_token}`;
+}
+
+function linkDemanda(demanda) {
+  const portal = semBarraFinal(process.env.FRONTEND_URL);
+  return portal ? `${portal}/?spot=${encodeURIComponent(demanda.id)}` : null;
+}
+
 // ─── Plano ───────────────────────────────────────────────────────────────────
 function temPlanoPro(f, agora = new Date()) {
   if (!f || f.plano !== 'pro') return false;
@@ -46,7 +68,7 @@ function temPlanoPro(f, agora = new Date()) {
 
 // Pode receber e-mail de recomendação? (Pro + não se descadastrou + tem e-mail)
 function podeReceberRecomendacao(f) {
-  return temPlanoPro(f) && f.recomendacoes_email !== false && !!emailFornecedor(f);
+  return temPlanoPro(f) && f.recomendacoes_email !== false && !!emailFornecedor(f) && !!f.descadastro_token;
 }
 
 // ─── Cota diária ─────────────────────────────────────────────────────────────
@@ -97,21 +119,59 @@ function cartaoDemanda(item) {
       </div>
       <div style="margin-top:6px;"><b style="font-size:12px;color:${FAIXA_COR[m.faixa] || '#64748b'};">${FAIXA_TEXTO[m.faixa] || ''}</b></div>
       <div style="margin-top:4px;">${motivos}</div>
+      ${linkDemanda(d) ? `
+      <div style="margin-top:10px;">
+        <a href="${esc(linkDemanda(d))}" style="color:#2563eb;font-weight:700;font-size:13px;text-decoration:none;">Ver e responder →</a>
+      </div>` : ''}
     </div>`;
+}
+
+// Versão texto puro (ajuda a não cair no spam e aparece em leitores sem HTML)
+function textoDoEmail({ titulo, nome, tipo, itens, linkDescadastro }) {
+  const linhas = [
+    titulo.toUpperCase(),
+    '',
+    `Olá, ${nome}.`,
+    tipo === 'imediato'
+      ? 'Acabou de ser publicada uma demanda com o perfil da sua empresa. Quem responde primeiro tem mais chance.'
+      : 'Estas são as oportunidades em aberto que combinam com o que você fornece.',
+    '',
+  ];
+  for (const { demanda: d, match: m, empresa } of itens) {
+    linhas.push(`${d.numero || ''}${d.urgencia === 'alta' ? ' — URGENTE' : ''}`);
+    linhas.push(`${d.componente}`);
+    linhas.push([d.descricao_equipamento, d.marca_modelo, d.part_number ? `PN ${d.part_number}` : null].filter(Boolean).join(' · '));
+    linhas.push([empresa, d.uf, `${d.quantidade} unidade(s)`].filter(Boolean).join(' · '));
+    linhas.push(`${(FAIXA_TEXTO[m.faixa] || '').replace('⭐ ', '')}: ${(m.motivos || []).map((x) => x.texto).join('; ')}`);
+    if (linkDemanda(d)) linhas.push(`Ver e responder: ${linkDemanda(d)}`);
+    linhas.push('');
+  }
+  linhas.push('—');
+  linhas.push('Você recebe este e-mail porque sua empresa tem o plano Pro do QuotaFlow.');
+  linhas.push(`Não quer mais receber recomendações? ${linkDescadastro}`);
+  return linhas.join('\n');
+}
+
+// Assunto começando pela demanda mais importante
+function assuntoDoEmail(tipo, itens) {
+  const primeiro = itens[0];
+  const estrela = primeiro.match.faixa === 'combina_muito' ? '⭐ ' : '';
+  const urgente = primeiro.demanda.urgencia === 'alta' ? 'URGENTE: ' : '';
+  if (tipo === 'imediato' || itens.length === 1) {
+    return `${estrela}${urgente}${primeiro.demanda.componente} — demanda spot que combina com você`;
+  }
+  const outras = itens.length - 1;
+  return `${estrela}${urgente}${primeiro.demanda.componente} e mais ${outras} ${outras === 1 ? 'demanda que combina' : 'demandas que combinam'} com você`;
 }
 
 function montarEmail({ fornecedor, itens, tipo }) {
   const urlPortal = semBarraFinal(process.env.FRONTEND_URL) || '';
-  const urlApi = semBarraFinal(process.env.BACKEND_URL) || '';
-  const linkDescadastro = urlApi && fornecedor.descadastro_token
-    ? `${urlApi}/api/recomendacoes/descadastrar/${fornecedor.descadastro_token}` : null;
+  const linkDescadastro = linkDescadastroDe(fornecedor);
   const nome = fornecedor.nome_fantasia || fornecedor.nome || 'fornecedor';
   const titulo = tipo === 'imediato'
     ? 'Nova demanda que combina muito com você'
     : `${itens.length} ${itens.length === 1 ? 'demanda que combina' : 'demandas que combinam'} com você`;
-  const assunto = tipo === 'imediato'
-    ? `⭐ ${itens[0].demanda.componente} — demanda spot que combina com você`
-    : `${titulo} — Canal Spot QuotaFlow`;
+  const assunto = assuntoDoEmail(tipo, itens);
 
   const html = `
   <div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;color:#0f172a;">
@@ -126,17 +186,18 @@ function montarEmail({ fornecedor, itens, tipo }) {
     ${urlPortal ? `
     <div style="text-align:center;margin:18px 0;">
       <a href="${esc(urlPortal)}" style="background:#2563eb;color:#fff;text-decoration:none;padding:11px 22px;border-radius:6px;font-weight:700;font-size:14px;display:inline-block;">
-        Ver no portal e responder
+        Abrir o Canal Spot
       </a>
     </div>` : ''}
     <hr style="border:none;border-top:1px solid #e2e8f0;margin:18px 0 10px;">
     <p style="font-size:11px;color:#94a3b8;line-height:1.5;margin:0;">
       Você recebe este e-mail porque sua empresa tem o plano Pro do QuotaFlow e cadastrou o perfil de atuação.
-      ${linkDescadastro ? `<a href="${esc(linkDescadastro)}" style="color:#94a3b8;">Não quero mais receber recomendações por e-mail</a>.` : ''}
       Pedidos de cotação e ordens de compra continuam chegando normalmente.
+      <br><a href="${esc(linkDescadastro)}" style="color:#64748b;text-decoration:underline;">Não quero mais receber recomendações por e-mail</a>
     </p>
   </div>`;
-  return { assunto, html };
+  const texto = textoDoEmail({ titulo, nome, tipo, itens, linkDescadastro });
+  return { assunto, html, texto, linkDescadastro };
 }
 
 // ─── Núcleo comum ────────────────────────────────────────────────────────────
@@ -155,6 +216,7 @@ async function nomeEmpresa(cache, tenantId) {
 async function enviarAlertaImediato(demanda) {
   const resultado = { avaliados: 0, enviados: 0, cota_esgotada: false };
   if (!demanda || demanda.status === 'encerrada') return resultado;
+  if (!configuracaoOk()) return { ...resultado, erro: 'BACKEND_URL não configurada' };
 
   const tenant = await DB.selectOne('tenants', { id: demanda.tenant_id });
   for (const f of await fornecedoresPro()) {
@@ -167,9 +229,9 @@ async function enviarAlertaImediato(demanda) {
     if ((await demandasJaAvisadas(f.id)).has(String(demanda.id))) continue;
     if ((await enviadosHoje()) >= LIMITE_DIA) { resultado.cota_esgotada = true; break; }
 
-    const { assunto, html } = montarEmail({ fornecedor: f, tipo: 'imediato', itens: [{ demanda, match, empresa: tenant?.nome }] });
+    const email = montarEmail({ fornecedor: f, tipo: 'imediato', itens: [{ demanda, match, empresa: tenant?.nome }] });
     try {
-      await enviarEmailFornecedor(emailFornecedor(f), assunto, html);
+      await enviarEmailRecomendacao({ para: emailFornecedor(f), ...email });
       await registrarEnvio(f.id, [demanda.id], 'imediato');
       resultado.enviados++;
     } catch (e) {
@@ -183,6 +245,7 @@ async function enviarAlertaImediato(demanda) {
 // ─── Resumo diário (chamado pelo agendador) ──────────────────────────────────
 async function enviarResumoDiario() {
   const resultado = { fornecedores_pro: 0, enviados: 0, sem_novidade: 0, cota_esgotada: false, limite_dia: LIMITE_DIA };
+  if (!configuracaoOk()) return { ...resultado, erro: 'BACKEND_URL não configurada' };
   const limiteData = Date.now() - DIAS_JANELA_RESUMO * 24 * 3600 * 1000;
   const abertas = ((await DB.select('demandas_spot', { status: 'aberta' })) || [])
     .filter((d) => new Date(d.criado_em || 0).getTime() >= limiteData);
@@ -208,9 +271,9 @@ async function enviarResumoDiario() {
 
     itens.sort((a, b) => b.match.pontos - a.match.pontos);
     const doEmail = itens.slice(0, MAX_DEMANDAS_NO_RESUMO);
-    const { assunto, html } = montarEmail({ fornecedor: f, tipo: 'resumo', itens: doEmail });
+    const email = montarEmail({ fornecedor: f, tipo: 'resumo', itens: doEmail });
     try {
-      await enviarEmailFornecedor(emailFornecedor(f), assunto, html);
+      await enviarEmailRecomendacao({ para: emailFornecedor(f), ...email });
       await registrarEnvio(f.id, doEmail.map((i) => i.demanda.id), 'resumo');
       resultado.enviados++;
     } catch (e) {

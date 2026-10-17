@@ -97,6 +97,36 @@ function abaDe(d) {
 // Situações (cores) que aparecem como filtro dentro da aba "Em andamento"
 const SITUACOES_ANDAMENTO = ['nao_respondida', 'respondida', 'sem_retorno'];
 
+// ─── Link do e-mail de recomendação: <portal>/?spot=<id> abre a demanda direto ───
+// guardarLinkSpot() copia o ?spot= da URL para o sessionStorage — assim o pedido
+// sobrevive ao login. É chamada aqui e também pela casca do portal (TelaFornecedor).
+const CHAVE_LINK_SPOT = 'qf_abrir_spot';
+export function guardarLinkSpot() {
+  try {
+    const id = new URLSearchParams(window.location.search).get('spot');
+    if (id) sessionStorage.setItem(CHAVE_LINK_SPOT, id);
+    return id || sessionStorage.getItem(CHAVE_LINK_SPOT);
+  } catch { return null; }
+}
+export function temLinkSpotPendente() {
+  try { return !!(new URLSearchParams(window.location.search).get('spot') || sessionStorage.getItem(CHAVE_LINK_SPOT)); }
+  catch { return false; }
+}
+// Guarda já no carregamento da página (este módulo é importado na abertura do
+// app): se o fornecedor ainda precisar fazer login, o ?spot= não se perde.
+if (typeof window !== 'undefined') guardarLinkSpot();
+
+function limparLinkSpot() {
+  try {
+    sessionStorage.removeItem(CHAVE_LINK_SPOT);
+    const u = new URL(window.location.href);
+    if (u.searchParams.has('spot')) {
+      u.searchParams.delete('spot');
+      window.history.replaceState(window.history.state, '', u.pathname + (u.search ? u.search : '') + u.hash);
+    }
+  } catch { /* ignora */ }
+}
+
 // Match Score (etapa 6) — faixas calculadas no backend (services/matchSpot.js).
 // Nunca mostramos porcentagem: só a faixa e o porquê.
 const FAIXAS_MATCH = {
@@ -170,6 +200,27 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
   };
 
   useEffect(() => { carregar(); }, []);
+
+  // Veio do e-mail (?spot=<id>)? Depois de carregar, abre a demanda na aba certa.
+  const [linkSpotTratado, setLinkSpotTratado] = useState(false);
+  const [avisoLink, setAvisoLink] = useState(null);
+  useEffect(() => {
+    if (loading || linkSpotTratado) return;
+    setLinkSpotTratado(true);
+    const id = guardarLinkSpot();
+    if (!id) return;
+    limparLinkSpot();
+    const d = demandas.find(x => String(x.id) === String(id));
+    if (d) {
+      setAba(abaDe(d));
+      setFiltroSituacao('todas');
+      setBusca('');
+      abrir(d);
+    } else {
+      // encerrada há mais tempo ou removida: avisa em vez de não fazer nada
+      setAvisoLink('Essa demanda não está mais disponível — ela pode ter sido encerrada pelo comprador.');
+    }
+  }, [loading, linkSpotTratado, demandas]);
 
   // Perfil de atuação vazio → aviso para preencher (sem ele não há recomendação)
   useEffect(() => {
@@ -382,6 +433,19 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
             ? 'Demandas que o comprador cancelou por não precisar mais do item.'
             : 'Demandas em que o comprador optou por outro fornecedor.'}
           {' '}Mostrando as encerradas nos últimos {DIAS_NAO_VENCIDAS} dias.
+        </div>
+      )}
+
+      {/* Link do e-mail para uma demanda que não está mais disponível */}
+      {avisoLink && (
+        <div style={{
+          display: 'flex', justifyContent: 'space-between', gap: 10, alignItems: 'flex-start',
+          padding: '10px 14px', marginBottom: 14, borderRadius: 6, fontSize: 12,
+          background: '#f59e0b15', border: '1px solid #f59e0b55', color: C.text,
+        }}>
+          <span>⚠ {avisoLink}</span>
+          <button onClick={() => setAvisoLink(null)} title="Fechar"
+            style={{ background: 'transparent', border: 'none', color: C.muted, fontSize: 16, cursor: 'pointer', lineHeight: 1 }}>×</button>
         </div>
       )}
 

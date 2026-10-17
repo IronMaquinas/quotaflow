@@ -64,6 +64,28 @@ module.exports = {
   },
 
   /**
+   * E-mail de recomendação do Canal Spot (plano Pro) — com versão em texto
+   * puro (entregabilidade) e cabeçalhos List-Unsubscribe, que fazem o Gmail /
+   * Outlook mostrarem o botão nativo "Cancelar inscrição" (descadastro em 1 clique).
+   */
+  enviarEmailRecomendacao: async ({ para, assunto, html, texto, linkDescadastro }) => {
+    const { error } = await resend.emails.send({
+      from: process.env.EMAIL_FROM || 'onboarding@resend.dev',
+      to: para,
+      subject: assunto,
+      html,
+      text: texto,
+      headers: {
+        'List-Unsubscribe': `<${linkDescadastro}>`,
+        'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
+      },
+    });
+    if (error) throw error;
+    console.log(`✅ Recomendação enviada para ${para}`);
+    return { success: true };
+  },
+
+  /**
    * Notifica comprador quando fornecedor responde
    */
   enviarEmailRespostaRecebida: async (cotacaoForn) => {

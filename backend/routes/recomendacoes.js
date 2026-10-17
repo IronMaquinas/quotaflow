@@ -9,6 +9,9 @@
 //   GET  /api/recomendacoes/descadastrar/:token
 //        Link do rodapé do e-mail (LGPD). Desliga só as recomendações —
 //        pedidos de cotação e OCs continuam chegando.
+//   POST /api/recomendacoes/descadastrar/:token
+//        Descadastro em 1 clique do botão nativo do Gmail/Outlook
+//        (cabeçalho List-Unsubscribe-Post).
 //
 // Sem tenantMiddleware/fornecedorMiddleware de propósito: quem chama é o
 // agendador (com segredo) ou o próprio fornecedor clicando no e-mail (com token).
@@ -68,6 +71,17 @@ router.get('/descadastrar/:token', async (req, res) => {
   } catch (err) {
     console.error('❌ GET /recomendacoes/descadastrar:', err.message);
     res.status(500).type('html').send(pagina('Algo deu errado', 'Tente novamente em alguns minutos.'));
+  }
+});
+
+// Botão "Cancelar inscrição" do Gmail/Outlook (RFC 8058): POST sem corpo útil
+router.post('/descadastrar/:token', async (req, res) => {
+  try {
+    const f = await descadastrarPorToken(req.params.token);
+    res.status(f ? 200 : 404).json({ ok: !!f });
+  } catch (err) {
+    console.error('❌ POST /recomendacoes/descadastrar:', err.message);
+    res.status(500).json({ ok: false });
   }
 });
 
