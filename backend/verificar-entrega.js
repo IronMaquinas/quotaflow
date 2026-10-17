@@ -62,7 +62,7 @@ const ESPERADO = {
   'front:TelaFornecedor.jsx': '0d8d421317e84756ad3b2c4f1838e972', // etapa 11a
   'front:TelaPainelFornecedor.jsx': 'e9742a3e808ba27df5d5f29a393b8da6', // etapa 10c
   'front:TelaAceitarConvite.jsx': 'c7d5570e73c55fdb3ef27be683e0f09b', // etapa 10c
-  'front:main.jsx': '6b23fa3202e03b908c3a0f4339c79675', // etapa 10
+  'front:main.jsx': '95af54a8a84081eeddf8df975f3fb7d1', // etapa 11a.1
   'front:TelaConfiguracoes.jsx': 'cdd08de70f9fe2144022bfd3fac276a3', // etapa 7
   'services/acessoSpot.js': '6ecce4d16d6b123c6ce93c1223b32f01', // etapa 10c (novo)
   'services/receitaCnpj.js': '7dbf5258fc0304c8e91fd88d770dd552', // etapa 11a (novo)
@@ -73,17 +73,9 @@ const ESPERADO = {
   'front:AvisoPlanoTenant.jsx': '5331c1f586dbaa11ab67d4ab1059949a', // etapa 11a (novo)
 };
 
-// Antes de copiar a etapa 11a — versão que serviu de base para as alterações
+// Antes de copiar a etapa 11a.1 — versão que serviu de base para as alterações
 const ANTES = {
-  'routes/auth.js': '57369cc83267cbaa5d1722669e9b8048',
-  'routes/spot.js': 'f8f445230376edddc45c06dd60548720',
-  'routes/fornecedor.js': 'f2c0387d407c56bf37356701660ced6b',
-  'services/convitesFornecedor.js': '9e4efab1869dc96262a392cf8bce19f9',
-  'front:TelaCanalSpot.jsx': 'f4afd6de0575afed02147c500125124c',
-  'front:TelaFornecedor.jsx': 'fba69d240fa40860c2a598ee039098df',
-  'front:App.jsx': '7b25073ba7ecf7a6d1d963b4c2540771',
-  'front:TelaLogin.jsx': '313f23d0f1ab69fa615c029e8e7c460d',
-  'front:TelaSignup.jsx': '327c4c9436c582343a27eeddcf14420a',
+  'front:main.jsx': '6b23fa3202e03b908c3a0f4339c79675',
 };
 
 const RAIZ = process.cwd();
@@ -120,7 +112,7 @@ function localizar(chave) {
 const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
-  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 11a?\n'
+  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 11a.1?\n'
   : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 11a)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
