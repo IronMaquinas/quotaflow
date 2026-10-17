@@ -156,6 +156,7 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
   // null = ainda não sabe; false = fornecedor não preencheu nada de atuação
   const [temAtuacao, setTemAtuacao] = useState(null);
   const [avisoAtuacaoFechado, setAvisoAtuacaoFechado] = useState(false);
+  const [planoPro, setPlanoPro] = useState(null); // null = ainda não sabe (etapa 8)
 
   const carregar = async () => {
     try {
@@ -177,6 +178,7 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
         const f = r?.fornecedor || {};
         const n = (v) => (Array.isArray(v) ? v.length : 0);
         setTemAtuacao(n(f.atuacao_segmentos) + n(f.atuacao_sistemas) + n(f.atuacao_marcas) > 0);
+        setPlanoPro(f.plano === 'pro' && (!f.plano_valido_ate || new Date(f.plano_valido_ate) >= new Date()));
       })
       .catch(() => setTemAtuacao(null));
   }, []);
@@ -421,6 +423,11 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
               {tituloSecao && (
                 <div style={{ fontSize: 11, fontWeight: 700, color: recomendada ? C.text : C.muted, letterSpacing: '0.06em', margin: idx === 0 ? '0 0 8px' : '14px 0 8px' }}>
                   {tituloSecao.toUpperCase()}
+                </div>
+              )}
+              {idx === 0 && recomendada && planoPro === false && (
+                <div style={{ fontSize: 11, color: C.muted, margin: '-2px 0 10px' }}>
+                  📧 Quer receber estas oportunidades por e-mail, antes dos concorrentes? Conheça o <b style={{ color: C.text }}>plano Pro</b> em Meus Dados.
                 </div>
               )}
               <div

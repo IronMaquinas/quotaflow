@@ -1277,6 +1277,9 @@ router.put('/me', fornecedorMiddleware, async (req, res) => {
     if (whatsapp !== undefined) dadosEmpresa.whatsapp = whatsapp;
     // Perfil de atuação (segmentos, sistemas, marcas, ofertas, estados) — só os que vieram
     Object.assign(dadosEmpresa, await normalizarAtuacao(DB, req.body, { fornecedorId }));
+    // Recomendações por e-mail (plano Pro): o fornecedor liga/desliga. O plano em si
+    // (plano, plano_valido_ate) NUNCA é alterado por aqui — só pela plataforma.
+    if (req.body.recomendacoes_email !== undefined) dadosEmpresa.recomendacoes_email = !!req.body.recomendacoes_email;
 
     if (Object.keys(dadosEmpresa).length > 0) {
       if (dadosEmpresa.nome_fantasia !== undefined && !dadosEmpresa.nome_fantasia.trim()) {

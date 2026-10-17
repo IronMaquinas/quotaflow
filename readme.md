@@ -1,6 +1,6 @@
 # 📦 QuotaFlow — Estrutura Completa do Projeto
 
-**Versão:** 4.5 (Canal Spot + Fornecedores Globais + Cadastro Único + Perfil de Atuação + Match Score + Edição de Demanda)
+**Versão:** 4.6 (Canal Spot + Fornecedores Globais + Cadastro Único + Perfil de Atuação + Match Score + Edição de Demanda + Plano Pro do Fornecedor)
 **Última atualização:** 16/10/2026
 **Status:** núcleo de compras (OS → RM → RC → OV) em produção; marketplace de fornecedores com busca unificada em produção; módulo de Não Conformidades com fluxo ISO 9001 completo; multi-perfil e reset de senha entregues; **Canal Spot** (demandas urgentes/raras) com ciclo completo comprador ↔ fornecedor; **fornecedores globais** da plataforma visíveis a todos os tenants, com isolamento total dos fornecedores locais.
 
@@ -107,6 +107,7 @@ quotaflow/
 │   │   ├── fornecedoresVisiveis.js (⭐ 10/2026 — FONTE ÚNICA da regra "fornecedores locais do tenant + globais")
 │   │   ├── atuacao.js              (⭐ 10/2026 — perfil de atuação: validação contra atuacao_opcoes, marca sugerida, campos da demanda spot)
 │   │   ├── matchSpot.js            (⭐ 10/2026 — Match Score do Canal Spot, fase 1 por regras: pontos, faixa e motivos)
+│   │   ├── recomendacoesEmail.js   (⭐ 10/2026 — e-mails Pro: alerta imediato, resumo diário, cota diária, descadastro)
 │   │   ├── emailService.js         (envio genérico + templates)
 │   │   ├── NCService.js            (M4.1 — notificação de NC ao fornecedor + emissão de token)
 │   │   ├── NCEmailTemplates.js     (M4.4 — templates de email da NC: corpoParaFornecedor / corpoParaComprador)
@@ -130,6 +131,7 @@ quotaflow/
 │   │   ├── naoConformidades.js     (M4.2 – M4.5 — endpoints do comprador para NC: CRUD, devolver, marcar-interna, vincular-item, editar-item-avulso, buscar-item)
 │   │   ├── ordensVenda.js          (listagem/detalhe/status de OV)
 │   │   ├── atuacao.js              (GET /api/atuacao/opcoes — listas do perfil de atuação; sem autenticação, são listas de referência)
+│   │   ├── recomendacoes.js        (POST /resumo-diario com x-cron-secret · GET /descadastrar/:token)
 │   │   ├── spot.js                 (Canal Spot — comprador: demandas, foto, encerrar/reabrir; fornecedor: listar, visualizar, interesse)
 │   │   ├── equipamentos.js
 │   │   ├── usuarios.js             (CRUD + /me + /me/trocar-senha + requerAdmin)
@@ -256,6 +258,9 @@ quotaflow/
   - **Perfil de atuação (migration 010):** `atuacao_segmentos | atuacao_sistemas | atuacao_marcas | atuacao_ofertas | atuacao_ufs` (text[], códigos de `atuacao_opcoes`; `'BR'` em `atuacao_ufs` = Brasil todo). Índices GIN para o Match Score (operador `&&`). Global: preenchido pelo próprio fornecedor no portal; local: pelo tenant. Tudo opcional.
   - ⚠ `categorias` (lista antiga do tenant, com cara de indústria) foi **convertida** para `atuacao_sistemas` e não é mais usada; a coluna ficou só para conferência — apagar depois.
   - ⚠ `dados_cnpj` continua podendo vir como string dentro do jsonb. Ler sempre de forma tolerante aos dois formatos.
+- **Plano (migration 012):** `plano ('gratuito' | 'pro') | plano_valido_ate (NULL = sem vencimento) | recomendacoes_email (opt-out do fornecedor) | descadastro_token (uuid do link do e-mail)`. O plano só muda pela plataforma (SQL/admin) — `PUT /fornecedor/me` aceita apenas `recomendacoes_email`.
+- **recomendacoes_enviadas** (migration 012) — `fornecedor_id | demanda_id | tipo ('imediato' | 'resumo') | enviado_em`, PK (fornecedor, demanda): cada demanda é avisada no máximo uma vez a cada fornecedor.
+- **recomendacoes_email_log** (migration 012) — um registro por e-mail de recomendação enviado; base da cota diária.
 - **atuacao_opcoes** ⭐ (migration 010) — listas fechadas do perfil: `dimensao ('segmento' | 'sistema' | 'marca' | 'oferta' | 'uf') | codigo | nome | grupo | ordem | aprovado | sugerido_por_fornecedor_id | sugerido_por_tenant_id`, `UNIQUE(dimensao, codigo)`. Incluir opção = INSERT, sem deploy. Marca digitada em "Outra marca" entra com `aprovado = false` (aparece "em análise" só para quem sugeriu); aprovar com `UPDATE atuacao_opcoes SET aprovado = true WHERE dimensao = 'marca' AND codigo = '...'`.
 - **tenant_fornecedores** ⭐ (migration 007) — vínculo privado tenant ↔ fornecedor: `id | tenant_id | fornecedor_id (FK CASCADE) | ativo | preferido | obs | criado_em | atualizado_em`, `UNIQUE(tenant_id, fornecedor_id)`. Hoje guarda o "desativar para mim" dos globais; na etapa 2 passa a guardar também o vínculo dos locais.
 - **fornecedor_usuarios** — login do portal do fornecedor: `id (uuid) | fornecedor_id (integer → fornecedores.id) | nome | email | senha_hash | perfil | ativo | criado_em`. ⚠ A coluna de senha é **`senha_hash`** (não `senha`).
@@ -305,6 +310,8 @@ Ver seção 5 para o fluxo completo.
 ### Migrations recentes
 - **007_tenant_fornecedores.sql** — cria `tenant_fornecedores`.
 - **008_fornecedores_globais_sem_tenant.sql** — `tenant_id` deixa de ser NOT NULL em `fornecedores`; globais passam a `tenant_id NULL`; CHECK `fornecedores_tenant_por_tipo`.
+- **012_plano_fornecedor_recomendacoes.sql** — plano do fornecedor, opt-out, token de descadastro, tabelas de envio. Idempotente.
+- **agendamento_supabase_resumo_diario.sql** — pg_cron + pg_net: acorda o Render às 06:57 e dispara o resumo às 07:00 (Brasília). Trocar URL e segredo antes de rodar.
 - **011_demanda_spot_uf_edicao.sql** — `demandas_spot.uf` e `editada_em`; demandas existentes herdam `tenants.regiao`. Idempotente.
 - **010_perfil_atuacao.sql** — tabela `atuacao_opcoes` com as listas iniciais (8 segmentos, 20 sistemas, 32 marcas, 4 ofertas, 27 UFs + Brasil todo); colunas `atuacao_*` em `fornecedores`; `segmento/sistema/ofertas_aceitas` em `demandas_spot`; conversão `categorias → atuacao_sistemas`. Idempotente.
 - **009_fornecedores_cadastro_unico.sql** — corrige os dados atuais (contatos como lista, e-mail inválido descartado, cópias preenchidas) e cria o gatilho `fornecedores_sincroniza_cadastro`. Idempotente.
@@ -428,6 +435,23 @@ Calculado em `services/matchSpot.js` a cada abertura da tela do fornecedor (sem 
 - **Estado e oferta só reforçam**: sem casamento de PN, segmento, sistema ou marca, não há recomendação (senão "Brasil todo" recomendaria tudo).
 - **Ordena, não esconde**: na aba Em andamento, as recomendadas ainda não respondidas vêm no topo ("Recomendadas para você (n)"), com faixa e motivos; depois "Outras demandas". Detalhe mostra "Por que combina com você".
 - Fornecedor sem atuação preenchida vê aviso para preencher em Meus Dados → Atuação.
+
+### Plano do fornecedor e e-mails de recomendação (etapa 8)
+| | Gratuito | Pro |
+|---|---|---|
+| Participar de cotações, receber pedido de cotação / OC / NC / "você foi escolhido" por e-mail | ✅ | ✅ |
+| Canal Spot e "Recomendadas para você" no portal | ✅ | ✅ |
+| **Alerta imediato** por e-mail (demanda "Combina muito", ou urgente que combina) | — | ✅ |
+| **Resumo diário 7h** por e-mail (demandas abertas há até 7 dias que combinam, ainda não avisadas e não respondidas; máx. 10; sem novidade = sem e-mail) | — | ✅ |
+
+- **E-mails transacionais nunca são pagos** — quem dispara é o tenant, que paga o SaaS.
+- **"Prioridade" é de tempo, não de posição:** o Pro fica sabendo antes; a ordem das propostas que o comprador vê nunca é comprada.
+- **Cota própria:** `RECOMENDACOES_LIMITE_DIA` (padrão 60) — recomendações nunca consomem a cota do Resend (grátis = 100/dia) que os transacionais precisam.
+- **Uma demanda = no máximo um aviso por fornecedor** (imediato ou resumo, nunca os dois).
+- **Descadastro** em todo e-mail (LGPD): desliga só as recomendações; o fornecedor Pro religa em Meus Dados.
+- Gratuito vê convite discreto para o Pro no Canal Spot e em Meus Dados.
+- **Ativar Pro (até existir cobrança):** `UPDATE fornecedores SET plano = 'pro', plano_valido_ate = now() + interval '6 months' WHERE id = ...;`
+- **Variáveis de ambiente (Render):** `CRON_SECRET` (≥ 16 caracteres, obrigatório), `BACKEND_URL` (link de descadastro), `FRONTEND_URL` (botão "Ver no portal"), `RECOMENDACOES_LIMITE_DIA` (opcional), `CRON_INTERNO=1` (só em servidor sempre ligado — aí o node-cron interno substitui o pg_cron).
 
 ### Decisões de produto registradas
 - O clique em "Email/WhatsApp" **não** é usado como sinal de contato (o comprador pode ligar direto do celular) — a fonte confiável do desfecho é o encerramento.
@@ -588,6 +612,7 @@ npm run dev
 
 ### ✅ Em produção (16/10/2026)
 - **Canal Spot completo:** situações por cor (comprador), abas e expiração do histórico (fornecedor), busca única dos dois lados, encerrar com escolha do vencedor / reabrir, resultado para o fornecedor sem expor o vencedor, foto com compressão adicionada/trocada a qualquer momento
+- **Plano Pro do fornecedor (etapa 8):** alerta imediato e resumo diário por e-mail só para Pro, cota diária, descadastro, convite Pro para o gratuito; agendamento via Supabase (Render grátis dorme)
 - **Edição de demanda spot + região (etapa 7):** editar demanda aberta, "nova a partir desta", estado por demanda, aba Configurações → Empresa (região), Match Score lendo `tenants.regiao`
 - **Match Score fase 1 (etapa 6):** "Recomendadas para você" no topo do Canal Spot do fornecedor, com faixa (combina muito / combina / pode interessar) e motivos; aviso para quem não preencheu a atuação
 - **Perfil de atuação (etapa 4):** fornecedor marca segmentos, sistemas, marcas (+ "Outra marca" com aprovação), tipo de oferta e estados no Meus Dados; tenant marca o mesmo nos locais (substitui as antigas categorias, convertidas); demanda spot ganha segmento, sistema e "Aceita" (múltipla escolha) — tudo opcional
@@ -692,7 +717,7 @@ Lições da etapa 1 (10/2026), para as próximas entregas:
   - **Fase 1 — feita (16/10/2026, etapa 6), calculada na hora, sem tabela; ver seção Canal Spot.** Plano original: por regras — PN do catálogo = match máximo (reusa `buscar_fornecedores_para_item`); fora isso, segmento 30 + sistema 25 + marca 20 + texto 25. Calculado **na criação da demanda** e gravado em `demanda_fornecedor_match (demanda_id, fornecedor_id, score, motivos)`. Destaque "Recomendadas para você" no topo de Em andamento, com o motivo ("você trabalha com XCMG e hidráulica").
   - **Fase 2:** upload de catálogo (PDF/planilha) com extração por IA de segmentos, sistemas, marcas e PNs.
   - **Fase 3:** similaridade semântica (embeddings com `pgvector` no Supabase) + sinais de comportamento (respondeu/venceu demandas parecidas).
-  - **Fase 4:** notificações — resumo diário em **um** e-mail ("pedidos que combinam com você"); e-mail individual só para "você foi escolhido".
+  - **Fase 4 — feita como recurso do plano Pro (etapa 8).** Plano original: — resumo diário em **um** e-mail ("pedidos que combinam com você"); e-mail individual só para "você foi escolhido".
   - **Princípios:** mostrar faixas ("combina muito / combina / pode interessar"), não porcentagem; **recomendação ordena, não esconde** (item raro escondido é o pior erro); responsabilidade final é do comprador.
 - **M4.7b — Dashboard "Analista Sênior"** (TODO no `App.jsx`). Cada perfil vê um resumo do próprio dia: comprador (cotações aguardando resposta, OCs pendentes, aprovações), qualidade (NCs abertas, respostas de fornecedor, curadoria de item), operação (OS abertas, recebimentos, apontamentos), gestor (aprovações + KPIs consolidados), financeiro (contas do dia). Avatar clicável no canto superior direito → abre `ModalMeuPerfil`.
 - **Relatórios PDF gerenciais estilo ISO.** Reaproveita `gerarPdfNC.js`. Entrega: PDF de OS, PDF de RC aprovada, PDF de OV, e um **Relatório Mensal/Trimestral gerencial** com status de OS / cotações / recebimento / NC / manutenções em andamento. **Snapshot imutável** ao gerar (congela o JSON analisado + PDF — se o cliente editar OS depois, o relatório do mês anterior continua mostrando o que era verdade). Campo "Aprovado por [gestor] em [data]" com hash do conteúdo. Agendamento por cron (dia 1º, 8h, e-mail pro gestor). Auditoria ISO ama.
@@ -787,6 +812,7 @@ Esse cruzamento existe em SQL (2 queries + 1 merge). O LLM só interpreta o resu
 
 - **Amarração de busca a Equipamento** (ranking, não filtro rígido). Só faz sentido quando `catalogo_itens.marca/modelo/ano_fabricacao_*` estiver povoado — hoje está majoritariamente vazio. Equipamento selecionado no topo da OS vira **boost de ranking**, nunca filtro que esconde opção.
 - **Normalização de catálogo entre fornecedores** (`pn_raw` é por fornecedor; não há PN canônico cross-fornecedor). Decisão ainda em aberto — resolve via `normalizar_pn` + curadoria humana, ou via um dicionário próprio.
+- **Hospedagem (decisão 16/10/2026):** MVP com Render grátis + Supabase grátis + Netlify grátis + Resend grátis. Antes do primeiro cliente pagante: Render pago (US$ 7/mês, sem dormir) e Supabase Pro (US$ 25/mês, sem pausa por inatividade e com backup diário). Netlify grátis segue bem para o front; domínio próprio quando o nome estiver definido (atualizar `allowedOrigins` no `server.js`, `FRONTEND_URL` e o remetente verificado no Resend).
 - **Backend sem auto-restart em dev.** Considerar `nodemon` (dev) e `pm2` (prod). Hoje, se o processo cai, o app para.
 - **Higiene:** `POST /signup` não cria linha em `usuario_perfis` (fallback cobre, mas fica feio se um dia listar).
 - **Higiene:** `backend/routes_fornecedores_example.js` — provável código morto (confirmar que não é importado e remover).

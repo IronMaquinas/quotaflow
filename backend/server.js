@@ -37,6 +37,8 @@ const catalogoBuscaRouter = require('./routes/catalogoBusca');
 const naoConformidadesRoutes = require('./routes/naoConformidades');
 const configuracoesRoutes = require('./routes/configuracoes');
 const fornecedorNCRoutes = require('./routes/fornecedorNC');
+const recomendacoesRoutes = require('./routes/recomendacoes'); // e-mails Pro do Canal Spot (etapa 8)
+const { enviarResumoDiario } = require('./services/recomendacoesEmail');
 
 // ── Middlewares ──────────────────────────────
 const allowedOrigins = [
@@ -132,6 +134,8 @@ app.get('/api/spot/publicas', async (req, res) => {
 // Rotas protegidas (exigem autenticação)
 app.use('/api/spot', spotRoutes);
 app.use('/api/atuacao', require('./routes/atuacao'));
+// Sem middleware: resumo-diario exige x-cron-secret; descadastro usa token do e-mail
+app.use('/api/recomendacoes', recomendacoesRoutes);
 
 // Rota de saúde (Railway usa para verificar se o servidor está rodando)
 app.get("/health", (req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));
@@ -224,6 +228,17 @@ app.post("/api/cotacao/:token/responder", async (req, res) => {
 //   console.log("[CRON] Iniciando verificação mensal de CNPJs...");
 //   verificarCNPJsFornecedores().catch(console.error);
 // }); // COMENTAR POR ENQUANTO
+
+// ── Job: resumo diário de recomendações do Canal Spot (plano Pro) ───
+// Só liga com CRON_INTERNO=1 — use quando o servidor fica sempre ligado
+// (Render pago). No Render grátis o servidor dorme: o disparo vem do Supabase
+// (pg_cron chamando POST /api/recomendacoes/resumo-diario).
+if (process.env.CRON_INTERNO === '1') {
+  cron.schedule('0 7 * * *', () => {
+    console.log('[CRON] Resumo diário de recomendações do Canal Spot...');
+    enviarResumoDiario().catch(console.error);
+  }, { timezone: 'America/Sao_Paulo' });
+}
 
 // ── Start ────────────────────────────────────
 // Inicializar banco de dados e depois iniciar servidor

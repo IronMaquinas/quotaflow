@@ -9,6 +9,8 @@ const StorageSpot = require('../services/StorageSpot');
 const { normalizarDemanda } = require('../services/atuacao'); // segmento, sistema, ofertas aceitas (etapa 4)
 const { contextoDoFornecedor, pontuarDemanda, normalizarUF, ufDoTenant } = require('../services/matchSpot'); // Match Score (etapa 6)
 
+const { enviarAlertaImediato } = require('../services/recomendacoesEmail'); // e-mail Pro (etapa 8)
+
 const URGENCIAS = ['baixa', 'media', 'alta'];
 
 // Campos que o comprador preenche — usados na criação e na edição da demanda.
@@ -359,6 +361,10 @@ router.post('/demandas', tenantMiddleware, async (req, res) => {
       status: 'aberta',
     }, req.tenantId);
     res.status(201).json({ ok: true, demanda });
+
+    // Alerta imediato para fornecedores Pro (depois de responder: nunca atrasa
+    // nem quebra a criação da demanda)
+    enviarAlertaImediato(demanda).catch(e => console.error('❌ alerta imediato spot:', e.message || e));
   } catch (err) {
     console.error('❌ POST /spot/demandas:', err.message);
     res.status(500).json({ erro: err.message });

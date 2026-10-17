@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 // verificar-entrega.js — confere, em um comando, se os arquivos entregues
 // (etapa 1: fornecedores globais; etapa 3: cadastro único; etapa 4: perfil
-// de atuação; etapa 6: Match Score; etapa 7: edição da demanda + região) estão no projeto exatamente como foram entregues.
+// de atuação; etapa 6: Match Score; etapa 7: edição da demanda + região;
+// etapa 8: plano Pro + e-mails de recomendação) estão no projeto exatamente como foram entregues.
 //
 // Só LÊ arquivos. Não altera nada.
 // Uso (dentro da pasta backend):
@@ -37,28 +38,30 @@ const ESPERADO = {
   'services/ValidacaoXmlService.js': 'a8e0f2180da6f621272f70fb80a2b8e3',
   // etapa 4 (inclui arquivos já mexidos nas etapas 1 e 3)
   'routes/fornecedores.js': 'f925b8245052e7468f7cac7da4bf7d4f',
-  'routes/spot.js': '90a8a32a6f1ee5677bc2e99dd32d7606', // etapa 7
+  'routes/spot.js': '3c36748fd6d1fa6b64574004d38506d1', // etapa 8
   'services/matchSpot.js': 'fe4275090b82bd1efd52498d2176a90c', // etapa 7
   'routes/configuracoes.js': '05360fb8a4945623e1878ba336161d27', // etapa 7
-  'routes/fornecedor.js': '0b447f0e2735fefbe56da81b6a5a763d',
+  'routes/fornecedor.js': 'cb5cc262bf30583112a351a73761b8f0', // etapa 8
+  'routes/recomendacoes.js': 'e814b9be4cf8b1e14358575ce7905e1a', // etapa 8
+  'services/recomendacoesEmail.js': 'a640da411101c25fb1f9f1bfca66a2f3', // etapa 8
+  'server.js': 'a4b331a7f77e20d83d6c6078d235cb7c', // etapa 8
   'routes/atuacao.js': 'cc196661189e2714bcfad96e5c1e8ad9',
   'services/atuacao.js': '8509ac0206906a7f93384350e77132bf',
   'front:SeletorAtuacao.jsx': '17afaaf69d6e4cf0c105490267d188a7',
-  'front:TelaMeusDadosFornecedor.jsx': '43d89224e6b9171c1dba9744c0853e29',
+  'front:TelaMeusDadosFornecedor.jsx': 'fe8288aee67562902d65d70064865196', // etapa 8
   'front:TelaFornecedoresNova.jsx': '2b65c229997c5755dda5748c383aa007',
   'front:TelaCanalSpot.jsx': 'f4afd6de0575afed02147c500125124c', // etapa 7
-  'front:TelaFornecedorSpot.jsx': '9aa4b8acd5c610a2cb78eae51e074f13', // etapa 7
+  'front:TelaFornecedorSpot.jsx': '7059c3f2671ed872a556f0da484f728b', // etapa 8
   'front:TelaConfiguracoes.jsx': 'cdd08de70f9fe2144022bfd3fac276a3', // etapa 7
 };
 
-// Antes de copiar a etapa 7 — versão que serviu de base para as alterações
+// Antes de copiar a etapa 8 — versão que serviu de base para as alterações
 const ANTES = {
-  'routes/spot.js': '8ad9fb1bcf0afc04ba3b433af66b10c6',
-  'services/matchSpot.js': 'e24fa62f8abadfd9d318dd37ecc93b70',
-  'routes/configuracoes.js': '12e6f58c359198f2dfa9437a3daabaaa',
-  'front:TelaCanalSpot.jsx': '3814aad93cd5339bd66511097842018d',
-  'front:TelaFornecedorSpot.jsx': 'd6c9e78b6e4bebde39393766fddfd098',
-  'front:TelaConfiguracoes.jsx': '6f9285b59e4fd2242b18a3aa414248dd',
+  'routes/spot.js': '90a8a32a6f1ee5677bc2e99dd32d7606',
+  'routes/fornecedor.js': '0b447f0e2735fefbe56da81b6a5a763d',
+  'server.js': 'e17cd05fd022ab09438557be1539f931',
+  'front:TelaMeusDadosFornecedor.jsx': '43d89224e6b9171c1dba9744c0853e29',
+  'front:TelaFornecedorSpot.jsx': '9aa4b8acd5c610a2cb78eae51e074f13',
 };
 
 const RAIZ = process.cwd();
@@ -95,8 +98,8 @@ function localizar(chave) {
 const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
-  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 7?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 e 7)\n');
+  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 8?\n'
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6, 7 e 8)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
@@ -126,7 +129,7 @@ for (const [chave, esperado] of Object.entries(LISTA)) {
     } catch (e) {
       problemas.push('erro de sintaxe: ' + String(e.stderr || e.message).split('\n').find((l) => l.trim()));
     }
-    const reqs = conteudo.matchAll(/require\(\s*['"]([^'"]*(?:fornecedoresVisiveis|services\/atuacao|services\/matchSpot))['"]\s*\)/g);
+    const reqs = conteudo.matchAll(/require\(\s*['"]([^'"]*(?:fornecedoresVisiveis|services\/atuacao|services\/matchSpot|services\/recomendacoesEmail|routes\/recomendacoes))['"]\s*\)/g);
     for (const r of reqs) {
       const alvo = path.resolve(path.dirname(abs), r[1]) + '.js';
       if (!fs.existsSync(alvo)) problemas.push(`require('${r[1]}') não encontra o arquivo`);
@@ -144,7 +147,7 @@ for (const [chave, esperado] of Object.entries(LISTA)) {
 
 if (!modoAntes) {
   // Arquivos novos precisam entrar no commit
-  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js', 'services/matchSpot.js'];
+  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js', 'services/matchSpot.js', 'services/recomendacoesEmail.js', 'routes/recomendacoes.js'];
   try {
     for (const n of novos) {
       const rastreado = execFileSync('git', ['ls-files', n], { cwd: RAIZ, stdio: 'pipe' }).toString().trim();

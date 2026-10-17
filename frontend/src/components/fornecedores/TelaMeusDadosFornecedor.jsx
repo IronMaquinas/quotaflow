@@ -41,6 +41,10 @@ export default function TelaMeusDadosFornecedor({ C, s }) {
   const [formEmpresa, setFormEmpresa] = useState(null);
   const [formUsuario, setFormUsuario] = useState(null);
   const [formAtuacao, setFormAtuacao] = useState(atuacaoDe(null)); // perfil de atuação (etapa 4)
+  // Plano do fornecedor (etapa 8): só leitura aqui; o fornecedor Pro liga/desliga os e-mails
+  const [plano, setPlano] = useState({ plano: "gratuito", valido_ate: null });
+  const [recomendacoesEmail, setRecomendacoesEmail] = useState(true);
+  const planoProAtivo = plano.plano === "pro" && (!plano.valido_ate || new Date(plano.valido_ate) >= new Date());
   const { opcoes: opcoesAtuacao, recarregar: recarregarOpcoesAtuacao } = useOpcoesAtuacao();
   const [formSenha, setFormSenha] = useState({ senha_atual: "", nova_senha: "", confirmar_senha: "" });
   const [senhaVisivel, setSenhaVisivel] = useState(false);
@@ -67,6 +71,8 @@ export default function TelaMeusDadosFornecedor({ C, s }) {
         email: dados.usuario?.email || "",
       });
       setFormAtuacao(atuacaoDe(dados.fornecedor));
+      setPlano({ plano: dados.fornecedor?.plano || "gratuito", valido_ate: dados.fornecedor?.plano_valido_ate || null });
+      setRecomendacoesEmail(dados.fornecedor?.recomendacoes_email !== false);
     } catch (err) {
       console.error("❌ Erro ao carregar Meus Dados:", err);
       setErroCarregar(err.message);
@@ -110,6 +116,7 @@ export default function TelaMeusDadosFornecedor({ C, s }) {
       const resposta = await apiService.put("/fornecedor/me", {
         ...formEmpresa,
         ...formAtuacao,
+        ...(planoProAtivo ? { recomendacoes_email: recomendacoesEmail } : {}),
         nome: formUsuario.nome,
         email: formUsuario.email,
       });
@@ -299,6 +306,44 @@ export default function TelaMeusDadosFornecedor({ C, s }) {
           Nada aqui é obrigatório — mas quanto mais completo, melhores as recomendações.
         </div>
         <PainelAtuacao opcoes={opcoesAtuacao} valores={formAtuacao} onChange={setFormAtuacao} C={C} s={s} />
+      </div>
+
+      {/* ─── Plano e e-mails de recomendação (etapa 8) ─── */}
+      <div style={{ ...s.card, padding: "20px 22px", marginBottom: 18 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+          <div style={{ fontSize: 13, fontWeight: 700, color: C.text }}>PLANO</div>
+          <span style={{
+            fontSize: 10, fontWeight: 700, padding: "2px 9px", borderRadius: 10,
+            background: planoProAtivo ? "#22c55e22" : C.bg,
+            color: planoProAtivo ? "#22c55e" : C.muted,
+            border: `1px solid ${planoProAtivo ? "#22c55e55" : C.border}`,
+          }}>
+            {planoProAtivo ? "⭐ PRO" : "GRATUITO"}
+          </span>
+          {planoProAtivo && plano.valido_ate && (
+            <span style={{ fontSize: 11, color: C.muted }}>até {new Date(plano.valido_ate).toLocaleDateString("pt-BR")}</span>
+          )}
+        </div>
+        {planoProAtivo ? (
+          <label style={{ display: "flex", alignItems: "flex-start", gap: 8, cursor: "pointer", marginTop: 10 }}>
+            <input type="checkbox" checked={recomendacoesEmail} onChange={e => setRecomendacoesEmail(e.target.checked)} style={{ marginTop: 2 }} />
+            <span style={{ fontSize: 12, color: C.text, lineHeight: 1.5 }}>
+              Receber por e-mail as demandas do Canal Spot que combinam com a minha empresa
+              <span style={{ display: "block", fontSize: 11, color: C.muted }}>
+                Alerta na hora para as que combinam muito ou são urgentes, e um resumo diário às 7h com as demais.
+              </span>
+            </span>
+          </label>
+        ) : (
+          <div style={{ fontSize: 12, color: C.muted, lineHeight: 1.6, marginTop: 6 }}>
+            No plano gratuito você participa de cotações, recebe pedidos e ordens de compra por e-mail e vê as
+            recomendações do Canal Spot aqui no portal.
+            <div style={{ marginTop: 6, color: C.text }}>
+              ⭐ <b>Com o plano Pro</b>, você recebe por e-mail — antes dos concorrentes — as demandas que combinam com a sua empresa.
+              Para ativar, fale com o time QuotaFlow.
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ─── Meu acesso (usuário de login) ─── */}
