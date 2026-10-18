@@ -7,6 +7,7 @@ import TelaSignup from "./TelaSignup";
 import App from "./App";
 import { useAuth } from "./hooks/useAuth";
 import TelaFornecedor from "./components/portal/TelaFornecedor";
+import TelaConfirmarEmail from "./TelaConfirmarEmail"; // etapa 11a.3
 import TelaPortalFornecedor from "./components/portal/TelaPortalFornecedor";
 import TelaAceitarConvite from "./TelaAceitarConvite";
 
@@ -47,6 +48,12 @@ function Router() {
     currentPage.startsWith("/portal/")
   ) {
     return <TelaFornecedor />;
+  }
+
+  // Etapa 11a.3: link de confirmação de e-mail (#confirmar-email?token=...).
+  // Vem antes dos redirecionamentos de login: funciona logado ou não.
+  if (currentPage.startsWith("confirmar-email") || currentPage.startsWith("/confirmar-email")) {
+    return <TelaConfirmarEmail />;
   }
 
   // Etapa 10: convite ao fornecedor local (link do e-mail #convite?token=...).

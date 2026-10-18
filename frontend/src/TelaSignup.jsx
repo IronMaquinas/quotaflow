@@ -17,6 +17,7 @@ import { useState } from "react";
 import { API_URL } from "./utils/constants";
 import apiService from "./services/apiService";
 import { useOpcoesAtuacao, PainelAtuacao, atuacaoVazia } from "./components/shared/SeletorAtuacao";
+import CampoTelefone, { paraE164 } from "./components/shared/CampoTelefone"; // etapa 11a.3: telefone com país
 
 const C = {
   bg: "#0a0e14", surface: "#111722", border: "#1e2535", text: "#e2e8f0", textSub: "#94a3b8",
@@ -39,14 +40,6 @@ function formatarCNPJ(v) {
     .replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3")
     .replace(/\.(\d{3})(\d)/, ".$1/$2")
     .replace(/(\d{4})(\d)/, "$1-$2");
-}
-
-function formatarTelefone(v) {
-  const d = soDigitos(v).slice(0, 11);
-  if (d.length <= 2) return d;
-  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
-  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
-  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
 }
 
 function cnpjValido(cnpj) {
@@ -125,7 +118,7 @@ export default function TelaSignup() {
       }
       setReceita({ situacao: "ok", dados: d });
       setEmpresaNome((atual) => atual || d.nome_fantasia || d.razao_social || "");
-      if (d.ddd_telefone_1) setTelefone((atual) => atual || formatarTelefone(d.ddd_telefone_1));
+      if (d.ddd_telefone_1) setTelefone((atual) => atual || paraE164(d.ddd_telefone_1));
     } catch {
       // a prévia falhou, mas o servidor tenta de novo no envio
       setReceita({ situacao: "aviso", texto: "Não consegui consultar a Receita agora. Pode seguir — conferimos de novo ao criar a conta." });
@@ -285,11 +278,11 @@ export default function TelaSignup() {
             <input value={empresaNome} onChange={(e) => setEmpresaNome(e.target.value)} style={input} />
           </Campo>
           <Campo rotulo="TELEFONE">
-            <input value={telefone} onChange={(e) => setTelefone(formatarTelefone(e.target.value))} inputMode="tel" style={input} />
+            <CampoTelefone value={telefone} onChange={setTelefone} C={C} />
           </Campo>
           {!transportadora && (
             <Campo rotulo="WHATSAPP">
-              <input value={whatsapp} onChange={(e) => setWhatsapp(formatarTelefone(e.target.value))} inputMode="tel" placeholder="opcional" style={input} />
+              <CampoTelefone value={whatsapp} onChange={setWhatsapp} placeholder="opcional" C={C} />
             </Campo>
           )}
         </div>

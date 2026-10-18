@@ -13,6 +13,7 @@ import { useState, useEffect } from "react";
 import { API_URL } from "./utils/constants";
 import apiService from "./services/apiService";
 import { useOpcoesAtuacao, PainelAtuacao, atuacaoVazia } from "./components/shared/SeletorAtuacao";
+import CampoTelefone, { paraE164 } from "./components/shared/CampoTelefone"; // etapa 11a.3: telefone com país
 
 const C = {
   bg: "#0a0e14", surface: "#111722", border: "#1e2535", text: "#e2e8f0",
@@ -50,14 +51,6 @@ function formatarCNPJ(v) {
 function formatarCEP(v) {
   const d = soDigitos(v).slice(0, 8);
   return d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d;
-}
-
-function formatarTelefone(v) {
-  const d = soDigitos(v).slice(0, 11);
-  if (d.length <= 2) return d;
-  if (d.length <= 6) return `(${d.slice(0, 2)}) ${d.slice(2)}`;
-  if (d.length <= 10) return `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}`;
-  return `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}`;
 }
 
 function cnpjValido(cnpj) {
@@ -139,7 +132,7 @@ export default function TelaAceitarConvite() {
             cidade: r.cidade || "",
             estado: r.estado || "",
             cep: r.cep ? formatarCEP(r.cep) : "",
-            telefone: r.telefone ? formatarTelefone(r.telefone) : "",
+            telefone: r.telefone ? paraE164(r.telefone) : "",
           }));
         }
       })
@@ -176,7 +169,7 @@ export default function TelaAceitarConvite() {
         bairro: d.bairro || e.bairro,
         cidade: d.municipio || e.cidade,
         estado: d.uf || e.estado,
-        telefone: d.ddd_telefone_1 ? formatarTelefone(d.ddd_telefone_1) : e.telefone,
+        telefone: d.ddd_telefone_1 ? paraE164(d.ddd_telefone_1) : e.telefone,
       }));
       const situacao = String(d.descricao_situacao_cadastral || "").toUpperCase();
       if (situacao && situacao !== "ATIVA") {
@@ -397,10 +390,10 @@ export default function TelaAceitarConvite() {
                     </div>
                     <div style={{ ...linha("1fr 1fr"), marginBottom: 0 }}>
                       <Campo rotulo="TELEFONE">
-                        <input value={empresa.telefone} onChange={(e) => mudarEmpresa("telefone", formatarTelefone(e.target.value))} inputMode="tel" style={input} />
+                        <CampoTelefone value={empresa.telefone} onChange={(v) => mudarEmpresa("telefone", v)} C={C} />
                       </Campo>
                       <Campo rotulo="WHATSAPP">
-                        <input value={empresa.whatsapp} onChange={(e) => mudarEmpresa("whatsapp", formatarTelefone(e.target.value))} inputMode="tel" placeholder="opcional" style={input} />
+                        <CampoTelefone value={empresa.whatsapp} onChange={(v) => mudarEmpresa("whatsapp", v)} placeholder="opcional" C={C} />
                       </Campo>
                     </div>
                   </Secao>

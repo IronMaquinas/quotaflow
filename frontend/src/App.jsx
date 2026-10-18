@@ -270,7 +270,15 @@ export default function App() {
     // conforme os perfis do usuário logado.
     setTela("home");
   };
-  const logout = () => { setUsuario(null); setTela("home"); };
+  // Etapa 11a.3: "Sair" também limpa a sessão guardada no navegador — antes só
+  // limpava a tela, e a sessão antiga fazia o "Criar conta" voltar para o login.
+  const logout = () => {
+    ['access_token', 'refresh_token', 'usuario', 'user_type'].forEach((k) => {
+      try { localStorage.removeItem(k); } catch { /* ok */ }
+    });
+    setUsuario(null);
+    setTela("home");
+  };
 
   // Verificar permissão
   const temAcesso = (t) => {

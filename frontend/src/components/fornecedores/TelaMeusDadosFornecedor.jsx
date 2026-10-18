@@ -28,6 +28,7 @@
 import { useState, useEffect, useCallback } from "react";
 import apiService from "../../services/apiService";
 import { useOpcoesAtuacao, PainelAtuacao, atuacaoDe } from "../shared/SeletorAtuacao";
+import CampoTelefone from "../shared/CampoTelefone"; // etapa 11a.3: telefone com país
 
 const EMAIL_VALIDO = /^[^@\s]+@[^@\s]+\.[^@\s]+$/;
 
@@ -288,15 +289,15 @@ export default function TelaMeusDadosFornecedor({ C, s }) {
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 }}>
           <div>
             <label style={s.label}>TELEFONE</label>
-            <input value={formEmpresa.telefone}
-              onChange={e => setFormEmpresa(f => ({ ...f, telefone: e.target.value }))}
-              placeholder="(11) 0000-0000" style={s.input} />
+            <CampoTelefone value={formEmpresa.telefone}
+              onChange={v => setFormEmpresa(f => ({ ...f, telefone: v }))}
+              placeholder="(11) 0000-0000" C={C} altura={38} />
           </div>
           <div>
             <label style={s.label}>WHATSAPP</label>
-            <input value={formEmpresa.whatsapp}
-              onChange={e => setFormEmpresa(f => ({ ...f, whatsapp: e.target.value }))}
-              placeholder="(11) 90000-0000" style={s.input} />
+            <CampoTelefone value={formEmpresa.whatsapp}
+              onChange={v => setFormEmpresa(f => ({ ...f, whatsapp: v }))}
+              placeholder="(11) 90000-0000" C={C} altura={38} />
           </div>
         </div>
       </div>

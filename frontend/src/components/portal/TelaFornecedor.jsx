@@ -77,10 +77,27 @@ export default function TelaFornecedor() {
   const [spotLiberado, setSpotLiberado] = useState(null);
   // Etapa 11a: autocadastro aguardando aprovação da plataforma
   const [emAnalise, setEmAnalise] = useState(false);
+  // Etapa 11a.3: e-mail de login ainda não confirmado
+  const [emailPendente, setEmailPendente] = useState(false);
+  const [reenvio, setReenvio] = useState(null);
+
+  const reenviarConfirmacao = async () => {
+    setReenvio('enviando');
+    try {
+      const r = await apiService.post('/auth/reenviar-confirmacao-fornecedor', {});
+      setReenvio(r?.mensagem || 'Link reenviado.');
+    } catch (e) {
+      setReenvio(e.message || 'Não foi possível reenviar agora.');
+    }
+  };
 
   useEffect(() => {
     apiService.get('/fornecedor/me')
-      .then((r) => { setSpotLiberado(r?.spot_liberado !== false); setEmAnalise(!!r?.aguardando_aprovacao); })
+      .then((r) => {
+        setSpotLiberado(r?.spot_liberado !== false);
+        setEmAnalise(!!r?.aguardando_aprovacao);
+        setEmailPendente(r?.usuario?.email_confirmado === false);
+      })
       .catch(() => setSpotLiberado(true)); // na dúvida a tela do Spot carrega e o backend responde
   }, []);
 
@@ -200,6 +217,17 @@ export default function TelaFornecedor() {
             ⏳ <b>Cadastro em análise.</b> Sua empresa ainda não aparece para as transportadoras — a plataforma confere os dados
             antes. Enquanto isso, complete <span onClick={() => setTela('meus-dados')} style={{ color: C.accent, cursor: 'pointer', textDecoration: 'underline' }}>Meus Dados</span> e
             a sua atuação (o que você fornece): é o que faz as oportunidades certas chegarem até você.
+          </div>
+        )}
+        {emailPendente && (
+          <div style={{ padding: '9px 24px', background: '#f59e0b14', borderBottom: '1px solid #f59e0b44', fontSize: 12, color: C.text, lineHeight: 1.5 }}>
+            📧 Confirme seu e-mail pelo link que enviamos — faz parte da análise do cadastro.{' '}
+            {reenvio && reenvio !== 'enviando' ? <b>{reenvio}</b> : (
+              <button type="button" onClick={reenviarConfirmacao} disabled={reenvio === 'enviando'}
+                style={{ background: 'transparent', border: 'none', color: C.accent, textDecoration: 'underline', cursor: 'pointer', fontFamily: 'inherit', fontSize: 12, padding: 0 }}>
+                {reenvio === 'enviando' ? 'Enviando…' : 'Reenviar link'}
+              </button>
+            )}
           </div>
         )}
         {tela === 'painel' && <TelaPainelFornecedor C={C} s={s} usuario={usuario} onNavegar={setTela} />}

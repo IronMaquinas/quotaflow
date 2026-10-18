@@ -3,6 +3,7 @@
 // Faixa no topo do sistema da transportadora (etapa 11a):
 //   • empresa em análise pela plataforma → Canal Spot liberado após a aprovação
 //   • teste grátis → "faltam X dias"; teste encerrado → aviso (sem bloqueio)
+//   • e-mail ainda não confirmado → aviso com "reenviar link" (etapa 11a.3)
 // Dados: GET /api/auth/me (tenant.em_teste, dias_restantes_teste, aprovacao_status…).
 // Some nas empresas antigas/aprovadas fora do teste. Pode ser fechada na sessão.
 
@@ -17,18 +18,33 @@ function lerFechado() {
 
 export default function AvisoPlanoTenant() {
   const [tenant, setTenant] = useState(null);
+  const [emailPendente, setEmailPendente] = useState(false);
+  const [reenvio, setReenvio] = useState(null); // null | 'enviando' | texto do resultado
   const [fechado, setFechado] = useState(lerFechado);
 
   useEffect(() => {
-    apiService.get("/auth/me").then((r) => setTenant(r?.tenant || null)).catch(() => {});
+    apiService.get("/auth/me").then((r) => {
+      setTenant(r?.tenant || null);
+      setEmailPendente(r?.usuario?.email_confirmado === false);
+    }).catch(() => {});
   }, []);
+
+  const reenviar = async () => {
+    setReenvio("enviando");
+    try {
+      const r = await apiService.post("/auth/reenviar-confirmacao", {});
+      setReenvio(r?.mensagem || "Link reenviado.");
+    } catch (e) {
+      setReenvio(e.message || "Não foi possível reenviar agora.");
+    }
+  };
 
   if (!tenant || fechado) return null;
 
   const emAnalise = tenant.aprovacao_status === "pendente";
   const recusado = tenant.aprovacao_status === "recusado";
   const emTeste = !!tenant.em_teste;
-  if (!emAnalise && !recusado && !emTeste) return null;
+  if (!emAnalise && !recusado && !emTeste && !emailPendente) return null;
 
   const ate = tenant.teste_ate ? new Date(tenant.teste_ate).toLocaleDateString("pt-BR") : "";
   const dias = tenant.dias_restantes_teste;
@@ -45,6 +61,21 @@ export default function AvisoPlanoTenant() {
   }
   if (recusado) {
     mensagens.push(<span key="r">⚠️ O cadastro da sua empresa não foi aprovado para o Canal Spot. Fale com a equipe QuotaFlow.</span>);
+  }
+  if (emailPendente) {
+    mensagens.push(
+      <span key="e">
+        📧 Confirme seu e-mail pelo link que enviamos — faz parte da análise do cadastro.{" "}
+        {reenvio && reenvio !== "enviando" ? (
+          <b>{reenvio}</b>
+        ) : (
+          <button type="button" onClick={reenviar} disabled={reenvio === "enviando"}
+            style={{ background: "transparent", border: "none", color: "#93c5fd", textDecoration: "underline", cursor: "pointer", fontFamily: "inherit", fontSize: 12, padding: 0 }}>
+            {reenvio === "enviando" ? "Enviando…" : "Reenviar link"}
+          </button>
+        )}
+      </span>
+    );
   }
 
   const urgente = (emTeste && (tenant.teste_encerrado || dias <= 3)) || recusado;
