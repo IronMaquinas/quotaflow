@@ -80,6 +80,7 @@ import ModalApontamento from "./modais/ModalApontamento";
 import ModalReportarNC from "./modais/ModalReportarNC";
 import ModalDetalheRC from "./modais/ModalDetalheRC";
 import ModalDetalheRM from "./modais/ModalDetalheRM";
+import ModalTransferirOS from "../manutencao/ModalTransferirOS"; // etapa 12b.3
 
 // M4.4-etapa-7: toast reutilizável desta tela. Padrão do TelaEstoqueConsumiveis.
 function ToastView({ toast, C, onClose }) {
@@ -281,6 +282,20 @@ export default function TelaOrdemServico({
   };
 
   useEffect(() => { carregar(); }, []);
+
+  // Etapa 12b.2: nomes dos usuários para mostrar o responsável da OS (falha silenciosa)
+  const [nomesUsuarios, setNomesUsuarios] = useState({});
+  const [usuariosLista, setUsuariosLista] = useState([]);       // 12b.3
+  const [podeTransferirOS, setPodeTransferirOS] = useState(false);
+  const [transferindoOS, setTransferindoOS] = useState(false);
+  useEffect(() => {
+    apiService.get("/manutencao/usuarios")
+      .then((r) => {
+        setNomesUsuarios(Object.fromEntries((r?.usuarios || []).map((u) => [String(u.id), u.nome])));
+        setUsuariosLista(r?.usuarios || []); setPodeTransferirOS(!!r?.pode_transferir);
+      })
+      .catch(() => {});
+  }, []);
 
   // M4.4-etapa-7: limpa o toast depois de 4s
   useEffect(() => {
@@ -1474,6 +1489,7 @@ export default function TelaOrdemServico({
                 <div key={chamado.id} style={{ display: "grid", gridTemplateColumns: "1fr 2fr 110px 130px 90px 80px 90px 80px", padding: "13px 18px", borderBottom: i < chamadosFiltered.length - 1 ? `1px solid ${C.border}22` : "none", alignItems: "center" }}>                  <div style={{ fontSize: 12, fontWeight: 600, color: C.accent, fontFamily: "'IBM Plex Mono',monospace" }}>
                     {chamado.numero}
                     {totalLinhas > 1 && <span style={{ fontSize: 9, color: C.muted, marginLeft: 4 }}>({totalAtivos}/{totalLinhas} itens)</span>}
+                    {chamado.origem_plano_id && <div title="OS gerada por plano de manutenção (📅 Calendário → 🔁 Planos)" style={{ fontSize: 9, color: "#a78bfa", marginTop: 2, fontFamily: "'DM Sans',sans-serif" }}>🔁 do plano</div>}
                   </div>
                   <div><div style={{ fontSize: 12, color: C.text, fontWeight: 500 }}>{nomeExibicao}</div></div>
                   <div style={{ fontSize: 11, color: C.muted }}>{fmtD(chamado.aberto_em)}</div>
@@ -1642,7 +1658,22 @@ export default function TelaOrdemServico({
               <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}>
                 <span style={{ ...s.tag(urgenciaCfg.c), fontSize: 10 }}>{urgenciaCfg.l}</span>
                 <span style={{ ...s.tag(categoriaCfg.c), fontSize: 10 }}>{categoriaCfg.l}</span>
+                {chamadoSel.origem_plano_id && <span style={{ ...s.tag("#a78bfa"), fontSize: 10 }}>🔁 do plano</span>}
               </div>
+              {(chamadoSel.responsavel_id || (podeTransferirOS && !chamadoSel.concluida_em && !chamadoSel.cancelada_em)) && (
+                <div style={{ fontSize: 12, color: C.textSub, marginTop: 8, display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap" }}>
+                  <span>👤 Responsável: <b style={{ color: C.text }}>{chamadoSel.responsavel_id ? (nomesUsuarios[String(chamadoSel.responsavel_id)] || "—") : "não definido"}</b></span>
+                  {podeTransferirOS && !chamadoSel.concluida_em && !chamadoSel.cancelada_em && (
+                    <button onClick={() => setTransferindoOS(true)} style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 6, color: C.accent, fontSize: 11, padding: "3px 10px", cursor: "pointer", fontFamily: "inherit" }}>
+                      {chamadoSel.responsavel_id ? "⇄ Transferir" : "👤 Definir"}
+                    </button>
+                  )}
+                </div>
+              )}
+              {transferindoOS && (
+                <ModalTransferirOS C={C} s={s} os={chamadoSel} usuarios={usuariosLista} onFechar={() => setTransferindoOS(false)}
+                  onTransferido={(r) => { setTransferindoOS(false); setChamadoSel((c) => ({ ...c, responsavel_id: r.responsavel_id })); setToast({ tipo: "success", texto: r.mensagem }); }} />
+              )}
             </div>
             <div style={{ textAlign: "right" }}>
               <div style={{ fontSize: 12, color: C.muted, marginBottom: 4 }}>ABERTO EM</div>

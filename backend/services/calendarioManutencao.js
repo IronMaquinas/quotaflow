@@ -12,8 +12,10 @@
 // → item da OV (ordem_venda_itens.chamado_item_id). Também aceita OV ligada
 // direto no item da OS.
 //
-// Mão de obra própria: o sistema ainda não tem valor de hora (decisão 12a,
-// sem migration). Serviço sem OV entra só em HORAS e conta como "sem valor".
+// Mão de obra própria (12b): horas × pessoas × tenants.valor_hora. Sem valor
+// de hora cadastrado, o serviço sem OV entra só em HORAS e conta como "sem valor".
+// Serviço sem horário próprio (OS com "programação geral") usa a janela da OS:
+// até 24 h = horas reais; mais que isso = 8 h por dia de calendário.
 //
 // Regras do backend respeitadas: nada de DB.raw; nada de filtro com null;
 // ids comparados com String(); numeric chega como string → Number().
@@ -29,6 +31,21 @@ function horasHomem(ini, fim, pessoas) {
   const diffMs = new Date(fim) - new Date(ini);
   if (isNaN(diffMs) || diffMs <= 0) return 0;
   return (diffMs / 3600000) * Number(pessoas);
+}
+
+// Horas de um serviço sem horário próprio, estimadas pela janela da OS
+function horasPelaJanela(os, pessoas) {
+  if (!os.data_inicio_prevista) return 0;
+  const ini = new Date(os.data_inicio_prevista);
+  const fim = new Date(os.data_fim_prevista || os.data_inicio_prevista);
+  const h = (fim - ini) / 3600000;
+  if (!(h > 0)) return 0;
+  const p = Math.max(Number(pessoas) || 1, 1);
+  if (h <= 24) return h * p;
+  const dia = (d) => Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate());
+  const local = (d) => new Date(d.getTime() - 3 * 3600000);
+  const dias = Math.round((dia(local(fim)) - dia(local(ini))) / 86400000) + 1;
+  return dias * 8 * p;
 }
 
 function ehOS(ch) {
@@ -63,6 +80,7 @@ const ovValida = (ov) => ov && !String(ov.status || '').includes('cancel');
  */
 function montarCalendario(dados, { agora = new Date() } = {}) {
   const { osList, itensOS, itensRM, itensOV, ordensVenda, precosUltimos, precosCatalogo, equipamentos } = dados;
+  const valorHora = num(dados.valorHora) > 0 ? num(dados.valorHora) : 0;
 
   const ovPorId = new Map(ordensVenda.map((o) => [idStr(o.id), o]));
   const eqPorId = new Map((equipamentos || []).map((e) => [idStr(e.id), e]));
@@ -94,7 +112,7 @@ function montarCalendario(dados, { agora = new Date() } = {}) {
   const resultado = [];
   for (const os of osList) {
     const itens = (itensPorOS.get(idStr(os.id)) || []).filter((it) => it.status !== 'cancelado');
-    let planejado = 0, comprometido = 0, realizado = 0, horas = 0;
+    let planejado = 0, comprometido = 0, realizado = 0, horas = 0, maoDeObra = 0;
     let comValor = 0, semPreco = 0;
 
     for (const it of itens) {
@@ -114,8 +132,12 @@ function montarCalendario(dados, { agora = new Date() } = {}) {
       realizado += real;
 
       if (it.tipo === 'servico') {
-        horas += horasHomem(it.data_inicio_prevista, it.data_fim_prevista, it.qtd_pessoas_planejada);
-        if (ovItens.length) { planejado += totalOV; comValor++; }
+        const h = (it.data_inicio_prevista && it.data_fim_prevista)
+          ? horasHomem(it.data_inicio_prevista, it.data_fim_prevista, it.qtd_pessoas_planejada)
+          : horasPelaJanela(os, it.qtd_pessoas_planejada);
+        horas += h;
+        if (ovItens.length) { planejado += totalOV; comValor++; }        // serviço de terceiro (OV)
+        else if (valorHora > 0 && h > 0) { planejado += h * valorHora; maoDeObra += h * valorHora; comValor++; } // mão de obra própria
         continue;
       }
 
@@ -143,11 +165,14 @@ function montarCalendario(dados, { agora = new Date() } = {}) {
       inicio: os.data_inicio_prevista,
       fim: os.data_fim_prevista || os.data_inicio_prevista,
       situacao: situacaoOS(os, agora),
+      origem_plano_id: os.origem_plano_id || null,
+      responsavel_id: os.responsavel_id || null,
       custo: {
         planejado: arred(planejado),
         comprometido: arred(comprometido),
         realizado: arred(realizado),
         horas: Math.round(horas * 10) / 10,
+        mao_de_obra: arred(maoDeObra),
         itens: itens.length,
         itens_com_valor: comValor,
         itens_sem_preco: semPreco,
@@ -202,7 +227,7 @@ async function carregar(supabase, tenantId, { de, ate, equipamentoId }) {
   const osList = (await q(base)).filter((c) => ehOS(c) && !c.cancelada_em && ocupaIntervalo(c, de, ate));
 
   const osIds = osList.map((o) => o.id);
-  const vazio = { osList, itensOS: [], itensRM: [], itensOV: [], ordensVenda: [], precosUltimos: new Map(), precosCatalogo: new Map(), equipamentos: [] };
+  const vazio = { osList, itensOS: [], itensRM: [], itensOV: [], ordensVenda: [], precosUltimos: new Map(), precosCatalogo: new Map(), equipamentos: [], valorHora: null };
   if (!osIds.length) return vazio;
 
   const itensOS = await emLotes(osIds, (l) => q(supabase.from('chamado_itens').select('*').eq('tenant_id', tenantId).in('chamado_id', l)));
@@ -219,30 +244,52 @@ async function carregar(supabase, tenantId, { de, ate, equipamentoId }) {
 
   // Preço de referência dos materiais sem OV: último preço pago, senão catálogo
   const catIds = [...new Set(itensOS.filter((i) => i.tipo !== 'servico' && i.item_catalogo_id).map((i) => i.item_catalogo_id))];
-  const precosUltimos = new Map();
-  const precosCatalogo = new Map();
-  if (catIds.length) {
-    const historico = await emLotes(catIds, (l) => q(supabase.from('ordem_venda_itens').select('item_catalogo_id, valor_unitario, criado_em').eq('tenant_id', tenantId).in('item_catalogo_id', l)));
-    historico
-      .filter((h) => num(h.valor_unitario) > 0)
-      .sort((a, b) => String(b.criado_em || '').localeCompare(String(a.criado_em || '')))
-      .forEach((h) => { const k = idStr(h.item_catalogo_id); if (!precosUltimos.has(k)) precosUltimos.set(k, num(h.valor_unitario)); });
-    // select('*'): o catálogo do tenant pode não ter coluna de preço (12a.1 —
-    // pedir coluna inexistente derrubava a rota). Usa a primeira que existir.
-    const catalogo = await emLotes(catIds, (l) => q(supabase.from('catalogo_itens').select('*').eq('tenant_id', tenantId).in('id', l)));
-    catalogo.forEach((c) => {
-      const preco = ['preco_unitario', 'preco_referencia', 'preco', 'valor_unitario', 'custo_medio']
-        .map((k) => num(c[k])).find((v) => v > 0);
-      if (preco) precosCatalogo.set(idStr(c.id), preco);
-    });
-  }
+  const { precosUltimos, precosCatalogo } = await buscarPrecos(supabase, tenantId, catIds);
+  const valorHora = await buscarValorHora(supabase, tenantId);
 
   const eqIds = [...new Set(osList.map((o) => o.equipamento_id).filter(Boolean))];
   const equipamentos = eqIds.length
     ? await q(supabase.from('equipamentos').select('id, tag, nome').eq('tenant_id', tenantId).in('id', eqIds))
     : [];
 
-  return { osList, itensOS, itensRM, itensOV, ordensVenda, precosUltimos, precosCatalogo, equipamentos };
+  return { osList, itensOS, itensRM, itensOV, ordensVenda, precosUltimos, precosCatalogo, equipamentos, valorHora };
 }
 
-module.exports = { montarCalendario, carregar, situacaoOS, ocupaIntervalo, horasHomem };
+async function buscarPrecos(supabase, tenantId, catIds) {
+  const q = async (p) => { const { data, error } = await p; if (error) throw new Error(error.message); return data || []; };
+  const precosUltimos = new Map();
+  const precosCatalogo = new Map();
+  if (!catIds.length) return { precosUltimos, precosCatalogo };
+  const historico = await emLotes(catIds, (l) => q(supabase.from('ordem_venda_itens').select('item_catalogo_id, valor_unitario, criado_em').eq('tenant_id', tenantId).in('item_catalogo_id', l)));
+  historico
+    .filter((h) => num(h.valor_unitario) > 0)
+    .sort((a, b) => String(b.criado_em || '').localeCompare(String(a.criado_em || '')))
+    .forEach((h) => { const k = idStr(h.item_catalogo_id); if (!precosUltimos.has(k)) precosUltimos.set(k, num(h.valor_unitario)); });
+  // select('*'): o catálogo do tenant pode não ter coluna de preço (12a.1 —
+  // pedir coluna inexistente derrubava a rota). Usa a primeira que existir.
+  const catalogo = await emLotes(catIds, (l) => q(supabase.from('catalogo_itens').select('*').eq('tenant_id', tenantId).in('id', l)));
+  catalogo.forEach((c) => {
+    const preco = ['preco_unitario', 'preco_referencia', 'preco', 'valor_unitario', 'custo_medio']
+      .map((k) => num(c[k])).find((v) => v > 0);
+    if (preco) precosCatalogo.set(idStr(c.id), preco);
+  });
+  return { precosUltimos, precosCatalogo };
+}
+
+/** Map catalogoId → preço de referência (último pago, senão catálogo). Usado pelos planos (12b). */
+async function precosReferencia(supabase, tenantId, catIds) {
+  const { precosUltimos, precosCatalogo } = await buscarPrecos(supabase, tenantId, catIds);
+  const m = new Map(precosCatalogo);
+  for (const [k, v] of precosUltimos) m.set(k, v);
+  return m;
+}
+
+// tenants.valor_hora (migration 019). select('*') para não quebrar antes da migration.
+async function buscarValorHora(supabase, tenantId) {
+  const { data, error } = await supabase.from('tenants').select('*').eq('id', tenantId);
+  if (error) return null;
+  const v = num(data?.[0]?.valor_hora);
+  return v > 0 ? v : null;
+}
+
+module.exports = { montarCalendario, carregar, situacaoOS, ocupaIntervalo, horasHomem, horasPelaJanela, precosReferencia, buscarValorHora, num };

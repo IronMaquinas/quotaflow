@@ -1,6 +1,6 @@
 # 📦 QuotaFlow — Estrutura Completa do Projeto
 
-**Versão:** 4.15 (… + Painel e Convites do Fornecedor + Criar Conta + Console da Plataforma + Calendário de Manutenção)
+**Versão:** 4.16 (… + Painel e Convites do Fornecedor + Criar Conta + Console da Plataforma + Calendário de Manutenção + Planos Recorrentes)
 **Última atualização:** 18/10/2026
 **Status:** núcleo de compras (OS → RM → RC → OV) em produção; marketplace de fornecedores com busca unificada em produção; módulo de Não Conformidades com fluxo ISO 9001 completo; multi-perfil e reset de senha entregues; **Canal Spot** (demandas urgentes/raras) com ciclo completo comprador ↔ fornecedor; **fornecedores globais** da plataforma visíveis a todos os tenants, com isolamento total dos fornecedores locais.
 
@@ -105,6 +105,7 @@ quotaflow/
 │   │   ├── CotacaoService.js       (Lógica de cotações — buscarPorChamadoComFornecedores, etc)
 │   │   ├── CatalogoService.js
 │   │   ├── calendarioManutencao.js (⭐ 12a — situação da OS e custo planejado/comprometido/realizado do calendário)
+│   │   ├── planosManutencao.js     (⭐ 12b — datas dos planos recorrentes, prévia e "Gerar OS (12 meses)")
 │   │   ├── fornecedoresVisiveis.js (⭐ 10/2026 — FONTE ÚNICA da regra "fornecedores locais do tenant + globais")
 │   │   ├── atuacao.js              (⭐ 10/2026 — perfil de atuação: validação contra atuacao_opcoes, marca sugerida, campos da demanda spot)
 │   │   ├── matchSpot.js            (⭐ 10/2026 — Match Score do Canal Spot, fase 1 por regras: pontos, faixa e motivos)
@@ -133,7 +134,7 @@ quotaflow/
 │   │   ├── ordensVenda.js          (listagem/detalhe/status de OV)
 │   │   ├── atuacao.js              (GET /api/atuacao/opcoes — listas do perfil de atuação; sem autenticação, são listas de referência)
 │   │   ├── recomendacoes.js        (POST /resumo-diario com x-cron-secret · GET /descadastrar/:token)
-│   │   ├── manutencao.js           (⭐ 12a — GET /calendario, só leitura)
+│   │   ├── manutencao.js           (⭐ 12a/12b — calendário, planos recorrentes, valor da hora)
 │   │   ├── spot.js                 (Canal Spot — comprador: demandas, foto, encerrar/reabrir; fornecedor: listar, visualizar, interesse)
 │   │   ├── equipamentos.js
 │   │   ├── usuarios.js             (CRUD + /me + /me/trocar-senha + requerAdmin)
@@ -207,7 +208,9 @@ quotaflow/
 │   │   │   │   └── FormularioRespostaCotacao.jsx    (formulário compartilhado entre link público e hub autenticado)
 │   │   │   │
 │   │   │   ├── manutencao/
-│   │   │   │   └── TelaCalendarioManutencao.jsx     (⭐ 12a — folhinha Ano/Mês/Semana, painel do dia, rodapé financeiro)
+│   │   │   │   ├── TelaCalendarioManutencao.jsx     (⭐ 12a — folhinha Ano/Mês/Semana, painel do dia, rodapé financeiro)
+│   │   │   │   ├── TelaPlanosManutencao.jsx         (⭐ 12b — planos recorrentes + valor da hora; aberta pelo botão 🔁 Planos do calendário)
+│   │   │   │   └── ModalTransferirOS.jsx            (⭐ 12b.3 — definir/transferir responsável de uma OS; usado no calendário e na OS)
 │   │   │   │
 │   │   │   ├── (spot) TelaCanalSpot.jsx             (Canal Spot do comprador — demandas, situações por cor, busca, encerrar/reabrir)
 │   │   │   │
@@ -251,6 +254,14 @@ quotaflow/
 - **perfis** ⭐ (M4.6) — catálogo dos 6 perfis canônicos: `admin | gestor | comprador | operacao | qualidade | financeiro`. Colunas: `codigo (PK) | nome | descricao | ordem`.
 - **usuario_perfis** ⭐ (M4.6) — N:N entre usuários e perfis (multi-perfil). `usuario_id | perfil_codigo`. Não tem `tenant_id` — isolamento por transitividade (ver regra multi-tenant no `db.js`).
 - **equipamentos** — `id | tenant_id | tag | nome | local | fabricante | modelo | serie | ativo | criado_em`.
+- **tenants.valor_hora** ⭐ (migration 019) — R$/h da mão de obra própria (opcional, ≥ 0). Usado no custo planejado do calendário e na prévia dos planos.
+
+### Manutenção programada ⭐ (etapa 12b, migration 019)
+- **planos_manutencao** — `id (bigserial) | tenant_id | equipamento_id (FK SET NULL) | template_id (→ os_templates, FK SET NULL) | nome | descricao | categoria | urgencia | periodicidade_valor (1–3650) | periodicidade_unidade ('dias' | 'semanas' | 'meses') | proxima_data (date — âncora da série) | termina_em (date, migration 020 — NULL = sem término; CHECK ≥ proxima_data) | responsavel_id (→ usuarios, FK SET NULL, migration 021) | regra_dia_util ('proximo' padrão · 'anterior' · 'manter', migration 021) | hora_inicio (time) | duracao_horas | ativo | criado_por | criado_em | atualizado_em`. "Excluir" = `ativo = false` (as OS geradas ficam).
+- **chamados.responsavel_id** ⭐ (migration 021, FK SET NULL → usuarios) — responsável pela OS, separado de quem abriu (`tecnico_id`). Herdado do plano; muda por transferência. OS avulsa ainda não tem campo de responsável no formulário.
+- **chamados.origem_plano_id** (FK SET NULL) + **chamados.origem_plano_data** (date da ocorrência — sempre a data **nominal** da série, mesmo quando a OS foi movida para dia útil). Índice único parcial `chamados_plano_data_unico (origem_plano_id, origem_plano_data) WHERE origem_plano_id IS NOT NULL AND cancelada_em IS NULL` — nunca duas OS do mesmo plano na mesma data; OS cancelada libera a data.
+- A migration lê os tipos de `tenants.id`, `equipamentos.id`, `os_templates.id` do próprio banco antes de criar as FKs (os tipos não estão no repositório).
+- Os itens do plano vêm de **os_templates / os_template_itens** (o "Carregar modelo de manutenção" da OS) — o plano não guarda lista própria.
 
 ### Fornecedores ⭐ (atualizado 16/10/2026 — ver seção 7)
 - **fornecedores** — uma linha por empresa fornecedora. Colunas relevantes: `id (bigint) | tenant_id | tipo ('local' | 'global') | nome | nome_fantasia | razao_social | cnpj | email | email_contato | nome_contato | telefone | whatsapp | contatos (jsonb) | categorias (jsonb) | palavras_chave (text[]) | dados_cnpj (jsonb) | situacao_cnpj | ativo (integer) | ...endereço`.
@@ -319,6 +330,9 @@ Ver seção 5 para o fluxo completo.
 ### Migrations recentes
 - **007_tenant_fornecedores.sql** — cria `tenant_fornecedores`.
 - **008_fornecedores_globais_sem_tenant.sql** — `tenant_id` deixa de ser NOT NULL em `fornecedores`; globais passam a `tenant_id NULL`; CHECK `fornecedores_tenant_por_tipo`.
+- **021_plano_responsavel_dia_util.sql** — `planos_manutencao.responsavel_id` + `regra_dia_util` (CHECK), `chamados.responsavel_id`; FKs com o tipo de `usuarios.id` lido do banco. Idempotente.
+- **020_plano_termino.sql** — `planos_manutencao.termina_em` (NULL = sem término) + CHECK `termina_em >= proxima_data`. Idempotente.
+- **019_planos_manutencao.sql** — `planos_manutencao`, `chamados.origem_plano_id/origem_plano_data` + índice único, `tenants.valor_hora`. Idempotente; FKs com o tipo de id lido do banco.
 - **018_console_plataforma.sql** — `plataforma_admins`, `admin_acoes`, `fornecedores.aprovado_em/recusado_em`, chaves estrangeiras no Canal Spot (apaga órfãos antes). Idempotente.
 - **017_confirmacao_email.sql** — `usuarios/fornecedor_usuarios.email_confirmado_em` (existentes já confirmados), `email_confirmacoes`. Idempotente.
 - **016_cadastro_planos.sql** — tabela `planos`; `tenants` com teste e aprovação (remove CHECK antigo em `tenants.plano`); `fornecedores.tipo = 'candidato'`. Idempotente.
@@ -657,6 +671,7 @@ npm run dev
 - **M4.7a:** modal "Meu perfil" com abas dados/senha, `PUT /api/usuarios/me` e `POST /api/usuarios/me/trocar-senha`
 
 ### ✅ Em produção (18/10/2026)
+- **Planos de manutenção recorrentes + valor da hora (etapa 12b):** botão "🔁 Planos" no Calendário. Plano = equipamento + modelo de manutenção + "a cada N dias/semanas/meses" + data, hora e duração. "⚙ Gerar OS (12 meses)" mostra a prévia (datas, custo por OS e total, o que já existe) e cria só o que falta. OS do plano nasce **aberta, sem RC e sem RM** (materiais na fila do comprador). Selo "🔁 do plano" na lista de OS e "🔁 Plano" no calendário. Valor da hora (R$/h) na mesma tela; entra no planejado e no % do calendário.
 - **Calendário anual de manutenção (etapa 12a + 12a.1):** menu "📅 Calendário" (admin, gestor, comprador, operação). Visões Ano (folhinha), Mês e Semana; cor por situação (atrasada · em execução · programada · concluída — dia com várias OS pinta a mais urgente); filtros de equipamento, tipo e situação; clique no dia → OS do dia com "Abrir OS →" e "＋ Nova OS programada" (abre a criação com programação geral, preventiva, 08h–17h do dia). Rodapé: planejado · gasto · comprometido · falta · **% do custo conhecido**. Sem migration — ver regras em "Calendário de Manutenção" no Roadmap.
 
 ### ✅ Em produção (16/10/2026)
@@ -787,9 +802,26 @@ Ordem: **12** Calendário anual de manutenção (folhinha) + planos recorrentes 
   - **Planejado:** com OV = valor da OV; material sem OV = último preço pago do item (OV) → preço do catálogo (se existir coluna de preço) → "sem preço" (não conta como zero).
   - **Comprometido:** OV emitida não recebida · **Gasto:** `quantidade_recebida × valor_unitario`.
   - **% do custo conhecido:** itens ativos com algum valor ÷ itens ativos.
-  - **Mão de obra própria:** só em **horas** (sem valor de hora até a 12b). Consumo de estoque sem OV ainda não entra no gasto.
+  - **Mão de obra própria (12b):** horas × pessoas × `tenants.valor_hora`; sem valor da hora, só em horas (não conta no %). Serviço sem horário próprio (OS com programação geral) usa a janela da OS: até 24 h = horas reais; mais = 8 h por dia de calendário. Consumo de estoque sem OV ainda não entra no gasto.
 - **Front:** `TelaCalendarioManutencao.jsx` feito à mão com CSS grid (sem biblioteca). `App.jsx`: item `calendario` em `navItems` e `PERMISSOES`; estado `novaOSData` → `TelaOrdemServico` (props `novaOSData` / `onNovaOSAberta`). Comprador vê o calendário sem os botões de abrir/criar OS. `index.html` ganhou `<meta name="color-scheme" content="dark">` (ícones de data/hora claros em todo o app).
-- **Próximo (12b):** planos recorrentes (`planos_manutencao`), "Gerar OS do ano" com pré-visualização e sem duplicar, valor da hora (R$/h por empresa, entra no planejado e no %), medidor manual (km/horas) — os clientes ainda não têm fonte automática de km. **12c:** vencimentos de documentos; motorista com cadastro mínimo próprio.
+
+### Planos de manutenção recorrentes — etapa 12b (feita 18/10/2026)
+- **Decisões (18/10):** itens vêm de um modelo de manutenção existente; periodicidade só por **tempo** (km/horas com medidor manual ficam para depois — os clientes ainda não têm fonte de km); gera **12 meses corridos** a partir de hoje; OS geradas são OS normais com selo; **um** valor da hora por empresa.
+- **Término (12b.1, ideia do Marcony):** "Sem término" (repete até desativar) ou "Termina em <data>" — nenhuma OS é gerada depois dela; plano com término já passado aparece como **Encerrado** (sem botão de gerar). Encurtar o término de um plano que já gerou OS **não cancela nada**: a lista avisa "N OS já geradas depois do término" para o gestor cancelar na tela de OS. Lembrete: o plano nunca gera OS sozinho — só no clique em "Gerar OS (12 meses)".
+- **12b.2 (18/10, decisões do Marcony):**
+  - Botão **"Gerar OS"** (o limite de 12 meses é só de cada clique). Prévia com **caixinha por data** (todas marcadas; "marcar/desmarcar todas"); desmarcadas ficam para o próximo "Gerar OS". `POST /planos/:id/gerar { datas: [nominais], sem_itens }`.
+  - **Planejar antes:** sem modelo (ou modelo vazio) o gerar é **recusado** (400 `codigo: 'sem_modelo'`), com a orientação "monte uma OS com os itens e use 📋 Salvar como modelo"; exceção marcada na prévia: "gerar mesmo assim, sem itens" (`sem_itens: true`). Aviso fixo no topo da tela de planos.
+  - **Dia útil:** data que cai em folga ou feriado vai para o **próximo dia útil** (padrão), anterior, ou fica. Dia útil = dia da semana "Trabalho normal" na jornada da empresa (`tenant_jornadas`, Configurações; sem jornada = segunda a sexta) e que não está em `tenant_feriados`. Prévia mostra "~~31/10/2026~~ → seg., 02/11/2026 (sábado)". Procura até 60 dias; se não achar, mantém.
+  - **Responsável:** escolhido no plano entre os usuários ativos do tenant; as OS geradas herdam. Aparece no cartão do calendário ("👤 Fulano"), no detalhe da OS e na lista de planos. Calendário ganhou o filtro **Responsável** com **"👤 Só as minhas"** (o calendário devolve `eu` = `req.userId`) e "Sem responsável".
+  - **Transferir responsabilidade** (férias, desligamento): `GET /responsaveis/previa?de=&para=` e `POST /responsaveis/transferir { de, para }` — só **admin e gestor**. Move os planos do usuário e as OS dele **não concluídas e não canceladas** (concluída fica com quem fez = histórico); evento `transferencia_responsavel` em `chamado_eventos` de cada OS ("de X para Y por Z"). Destino precisa ser usuário ativo do mesmo tenant.
+  - `GET /api/manutencao/usuarios` — usuários ativos do tenant (id, nome, perfil) + `eu`.
+  - **12b.3 — transferir UMA OS** (ideia do Marcony): botão "⇄ Transferir" / "👤 Definir responsável" no cartão do dia (Calendário) e no detalhe da OS → `ModalTransferirOS.jsx` → `PUT /api/manutencao/os/:id/responsavel { para, motivo }`. **Só admin e gestor** (decisão 18/10). Vale para OS do plano **e OS avulsa** (resolve a pendência de responsável na OS avulsa sem mexer no formulário de OS). Não muda o plano (as próximas OS geradas seguem o responsável do plano). OS concluída/cancelada → 400; mesma pessoa → 400; motivo opcional vai para o histórico ("Responsabilidade transferida de X para Y por Z — férias do Pedro"). `GET /usuarios` devolve `pode_transferir`. O global continua, renomeado **"⇄ Transferir tudo de uma pessoa"** (férias/desligamento).
+  - **Dia útil (confirmado 18/10):** padrão = próximo dia útil; a OS continua editável à mão. Se o Natal (sexta) cair no sábado, é porque o sábado está "Trabalho normal" na jornada — ajuste em Configurações, não no código.
+  - **Ainda não:** tela "resumo do dia" do funcionário logado (M4.7b) — vai ler `chamados.responsavel_id`.
+- **Datas:** série ancorada em `proxima_data` (a data não anda); ocorrências passadas são ignoradas; mensal mantém o dia da âncora e encosta no fim do mês (31/01 → 28/02 → 31/03); máximo de 400 ocorrências por geração.
+- **OS gerada:** número `OS-AAAA-NNNN` (mesma regra do `gerarNumeroOS` de `cotacoes.js`, copiada em `planosManutencao.js` para não mexer no arquivo central), `status 'aberta'`, `modo_programacao 'geral'`, início = data + `hora_inicio` (Brasília), fim = início + `duracao_horas`, itens do modelo (um insert por item; se um falhar, a OS é apagada), evento `criacao` em `chamado_eventos`. **Não chama `dividirESalvarMateriais`**: a OS criada na tela gera RC/RM na hora, mas um plano mensal geraria 12 RCs de uma vez — os materiais ficam para o comprador pedir via `gerar-requisicao-material` (e, na 13b, o MRP sugere quando).
+- **Rotas** (`routes/manutencao.js`): `GET/PUT /config` (valor da hora) · `GET/POST /planos` · `PUT/DELETE /planos/:id` (DELETE desativa) · `GET /planos/:id/previa` (nada é gravado) · `POST /planos/:id/gerar`. Gravação só para **admin, gestor, operação** (403 para os demais); equipamento e modelo conferidos no tenant; plano de outro tenant → 404. Antes da migration 019 as rotas de planos respondem 409 "rode a migration".
+- **Próximo:** **12c** — vencimentos de documentos no calendário (CRLV, ANTT, seguro, tacógrafo, CNH, MOPP…), e-mail de aviso pelo agendamento diário, motorista com cadastro mínimo próprio. Depois: medidor manual (km/horas) e periodicidade por uso.
 
 ### Prioridade alta — próximo passo real
 
@@ -985,4 +1017,4 @@ Esse cruzamento existe em SQL (2 queries + 1 merge). O LLM só interpreta o resu
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 18/10/2026 (etapa 12a)
+**Última atualização deste documento:** 18/10/2026 (etapa 12b.3)

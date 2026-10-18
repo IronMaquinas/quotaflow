@@ -5,6 +5,8 @@
 // "% de custo conhecido". Só leitura — dados de GET /api/manutencao/calendario.
 import { useState, useEffect, useMemo } from "react";
 import apiService from "../../services/apiService";
+import TelaPlanosManutencao from "./TelaPlanosManutencao"; // etapa 12b
+import ModalTransferirOS from "./ModalTransferirOS"; // etapa 12b.3
 
 const MESES = ["Janeiro","Fevereiro","Março","Abril","Maio","Junho","Julho","Agosto","Setembro","Outubro","Novembro","Dezembro"];
 const SEMANA = ["Seg","Ter","Qua","Qui","Sex","Sáb","Dom"];
@@ -47,10 +49,17 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
   const [equipamentoId, setEquipamentoId] = useState("");
   const [categoria, setCategoria] = useState("");
   const [situacao, setSituacao] = useState("");
+  const [responsavel, setResponsavel] = useState(""); // 12b.2: "" | "eu" | "sem" | id
   const [dados, setDados] = useState({ os: [] });
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState("");
   const [diaSel, setDiaSel] = useState(null);
+  const [verPlanos, setVerPlanos] = useState(false); // etapa 12b
+  const [recarga, setRecarga] = useState(0);
+  const [usuarios, setUsuarios] = useState([]);          // 12b.3
+  const [podeTransferir, setPodeTransferir] = useState(false);
+  const [osTransf, setOsTransf] = useState(null);
+  const [aviso, setAviso] = useState("");
 
   const [ini, fim] = intervalo(visao, ref);
   const de = chave(ini), ate = chave(fim);
@@ -66,11 +75,27 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
       .catch((e) => { if (vivo) setErro(e.message || "Erro ao carregar"); })
       .finally(() => { if (vivo) setCarregando(false); });
     return () => { vivo = false; };
-  }, [de, ate, equipamentoId]);
+  }, [de, ate, equipamentoId, recarga]);
+
+  useEffect(() => {
+    apiService.get("/manutencao/usuarios")
+      .then((r) => { setUsuarios(r?.usuarios || []); setPodeTransferir(!!r?.pode_transferir); })
+      .catch(() => {});
+  }, []);
+  useEffect(() => { if (!aviso) return; const t = setTimeout(() => setAviso(""), 4000); return () => clearTimeout(t); }, [aviso]);
 
   const lista = useMemo(() => (dados.os || []).filter((o) =>
-    (!categoria || o.categoria === categoria) && (!situacao || o.situacao === situacao)
-  ), [dados, categoria, situacao]);
+    (!categoria || o.categoria === categoria) && (!situacao || o.situacao === situacao) &&
+    (!responsavel
+      || (responsavel === "eu" && dados.eu && String(o.responsavel_id) === String(dados.eu))
+      || (responsavel === "sem" && !o.responsavel_id)
+      || String(o.responsavel_id) === responsavel)
+  ), [dados, categoria, situacao, responsavel]);
+  const responsaveis = useMemo(() => {
+    const m = new Map();
+    for (const o of dados.os || []) if (o.responsavel_id) m.set(String(o.responsavel_id), o.responsavel || "Usuário");
+    return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]));
+  }, [dados]);
 
   const porDia = useMemo(() => {
     const m = {};
@@ -152,14 +177,21 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
     );
   }
 
+  if (verPlanos) {
+    return <TelaPlanosManutencao C={C} s={s} equipamentos={equipamentos} onVoltar={() => { setVerPlanos(false); setRecarga((n) => n + 1); }} />;
+  }
+
   const cartaoOS = (o) => (
     <div key={o.id} style={{ ...s.card, padding: 12, marginBottom: 8, borderLeft: `3px solid ${SITUACAO[o.situacao].c}` }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
         <div style={{ fontWeight: 600, fontSize: 13 }}>{o.numero} · {o.descricao || "Manutenção"}</div>
-        <span style={s.tag(SITUACAO[o.situacao].c)}>{SITUACAO[o.situacao].l}</span>
+        <span style={{ display: "flex", gap: 6 }}>
+          {o.origem_plano_id && <span style={s.tag(C.saving || "#a78bfa")} title="OS gerada por plano de manutenção">🔁 Plano</span>}
+          <span style={s.tag(SITUACAO[o.situacao].c)}>{SITUACAO[o.situacao].l}</span>
+        </span>
       </div>
       <div style={{ fontSize: 12, color: C.textSub, marginTop: 4 }}>
-        {o.equipamento || "Sem equipamento"}{o.categoria ? ` · ${CATEGORIA[o.categoria] || o.categoria}` : ""}
+        {o.responsavel ? `👤 ${o.responsavel} · ` : ""}{o.equipamento || "Sem equipamento"}{o.categoria ? ` · ${CATEGORIA[o.categoria] || o.categoria}` : ""}
         {" · "}{new Date(o.inicio).toLocaleDateString("pt-BR")} {hora(o.inicio)}
         {o.fim && o.fim !== o.inicio ? ` → ${new Date(o.fim).toLocaleDateString("pt-BR")} ${hora(o.fim)}` : ""}
       </div>
@@ -167,12 +199,19 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
         <span>Planejado <b>{brl(o.custo.planejado)}</b></span>
         {o.custo.realizado > 0 && <span style={{ color: C.success }}>Realizado <b>{brl(o.custo.realizado)}</b></span>}
         {o.custo.comprometido > 0 && <span style={{ color: C.warn }}>Comprometido <b>{brl(o.custo.comprometido)}</b></span>}
-        {o.custo.horas > 0 && <span style={{ color: C.textSub }}>{o.custo.horas} h</span>}
+        {o.custo.horas > 0 && <span style={{ color: C.textSub }}>{o.custo.horas} h{o.custo.mao_de_obra > 0 ? ` · mão de obra ${brl(o.custo.mao_de_obra)}` : ""}</span>}
         <span style={{ color: C.muted }}>{o.custo.percentual_conhecido}% do custo conhecido</span>
       </div>
-      {onAbrirOS && (
-        <button onClick={() => onAbrirOS(o.id)} style={{ ...s.btn(false), cursor: "pointer", color: C.accent, padding: "5px 12px", fontSize: 12, marginTop: 8 }}>Abrir OS →</button>
-      )}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+        {onAbrirOS && (
+          <button onClick={() => onAbrirOS(o.id)} style={{ ...s.btn(false), cursor: "pointer", color: C.accent, padding: "5px 12px", fontSize: 12, marginTop: 8 }}>Abrir OS →</button>
+        )}
+        {podeTransferir && o.situacao !== "concluida" && (
+          <button onClick={() => setOsTransf(o)} style={{ ...s.btn(false), cursor: "pointer", color: C.text, padding: "5px 12px", fontSize: 12, marginTop: 8 }}>
+            {o.responsavel_id ? "⇄ Transferir" : "👤 Definir responsável"}
+          </button>
+        )}
+      </div>
     </div>
   );
 
@@ -182,6 +221,7 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
         <h2 style={{ margin: 0, fontSize: 20, fontWeight: 700 }}>📅 Calendário de manutenção</h2>
         <div style={{ flex: 1 }} />
+        <button onClick={() => setVerPlanos(true)} style={{ ...s.btn(false), cursor: "pointer", padding: "6px 14px", fontSize: 12, color: C.text }}>🔁 Planos</button>
         {botaoVisao("ano", "Ano")}{botaoVisao("mes", "Mês")}{botaoVisao("semana", "Semana")}
       </div>
 
@@ -200,6 +240,12 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
         <select value={categoria} onChange={(e) => setCategoria(e.target.value)} style={sel}>
           <option value="">Todos os tipos</option>
           {Object.entries(CATEGORIA).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
+        </select>
+        <select value={responsavel} onChange={(e) => setResponsavel(e.target.value)} style={sel}>
+          <option value="">Todos os responsáveis</option>
+          <option value="eu">👤 Só as minhas</option>
+          {responsaveis.filter(([id]) => String(id) !== String(dados.eu)).map(([id, nome]) => <option key={id} value={id}>{nome}</option>)}
+          <option value="sem">Sem responsável</option>
         </select>
         <select value={situacao} onChange={(e) => setSituacao(e.target.value)} style={sel}>
           <option value="">Todas as situações</option>
@@ -266,7 +312,7 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
           <span style={{ color: C.warn }}>Comprometido <b>{brl(totais.comprometido)}</b></span>
           <span>Falta <b>{brl(totais.falta)}</b></span>
           {totais.horas > 0 && <span style={{ color: C.textSub }}>{Math.round(totais.horas)} h programadas</span>}
-          <span title="Itens das OS com algum valor (preço, OV ou serviço contratado) ÷ total de itens. Mão de obra própria ainda não tem valor de hora." style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "help" }}>
+          <span title={dados.valor_hora ? `Itens das OS com algum valor (preço, OV ou mão de obra a R$ ${String(dados.valor_hora).replace(".", ",")}/h) ÷ total de itens.` : "Itens das OS com algum valor (preço, OV ou serviço contratado) ÷ total de itens. Cadastre o valor da hora em 🔁 Planos para a mão de obra própria entrar no custo."} style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "help" }}>
             <span style={{ width: 80, height: 6, background: C.border, borderRadius: 3, overflow: "hidden" }}>
               <span style={{ display: "block", height: "100%", width: `${totais.pct}%`, background: totais.pct >= 80 ? C.success : totais.pct >= 40 ? C.warn : C.danger }} />
             </span>
@@ -274,6 +320,12 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
           </span>
         </div>
       </div>
+
+      {aviso && <div style={{ position: "fixed", bottom: 90, right: 24, zIndex: 90, ...s.card, padding: "10px 14px", borderColor: C.success, color: C.success, fontSize: 13 }}>✓ {aviso}</div>}
+      {osTransf && (
+        <ModalTransferirOS C={C} s={s} os={osTransf} usuarios={usuarios} onFechar={() => setOsTransf(null)}
+          onTransferido={(r) => { setOsTransf(null); setAviso(r?.mensagem || "Responsável atualizado"); setRecarga((n) => n + 1); }} />
+      )}
 
       {/* Dia selecionado */}
       {diaSel && (
