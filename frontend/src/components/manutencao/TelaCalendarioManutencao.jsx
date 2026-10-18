@@ -16,7 +16,7 @@ const SITUACAO = {
   em_execucao: { l: "Em execução", c: "#f59e0b", peso: 3 },
   programada:  { l: "Programada",  c: "#3b82f6", peso: 2 },
   concluida:   { l: "Concluída",   c: "#22c55e", peso: 1 },
-  prevista:    { l: "Prevista (sem OS)", c: "#94a3b8", peso: 0 }, // 12b.4: ocorrência de plano ainda sem OS
+  prevista:    { l: "Prevista (sem OS)", c: "#a78bfa", peso: 0 }, // 12b.4: ocorrência de plano ainda sem OS (roxo do selo 🔁)
 };
 const CATEGORIA = { corretiva: "Corretiva", preventiva: "Preventiva", preditiva: "Preditiva" };
 
@@ -61,6 +61,7 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
   const [podeTransferir, setPodeTransferir] = useState(false);
   const [podeEditarPlano, setPodeEditarPlano] = useState(false); // 12b.4
   const [gerandoPrev, setGerandoPrev] = useState(null);
+  const [dialogo, setDialogo] = useState(null); // 12b.6: { tipo: 'sem_modelo' | 'erro', msg, o } — modal do app em vez de window.confirm/alert
   const [osTransf, setOsTransf] = useState(null);
   const [aviso, setAviso] = useState("");
 
@@ -169,8 +170,10 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
           const ehHoje = k === hoje;
           if (mini) return (
             <button key={k} onClick={() => setDiaSel(k)} title={qtd ? [qtdOS ? `${qtdOS} OS` : "", qtd - qtdOS ? `${qtd - qtdOS} prevista(s)` : ""].filter(Boolean).join(" + ") : ""}
-              style={{ aspectRatio: "1", border: soPrevista ? `1px dashed ${SITUACAO.prevista.c}` : ehHoje ? `1px solid ${C.text}` : "1px solid transparent", borderRadius: 4, fontSize: 10, cursor: "pointer", padding: 0, fontFamily: "inherit",
-                background: cor && !soPrevista ? SITUACAO[cor].c : "transparent", color: cor && !soPrevista ? "#fff" : soPrevista ? C.text : C.textSub, fontWeight: cor ? 700 : 400 }}>
+              style={{ aspectRatio: "1", border: soPrevista ? `1.5px dashed ${SITUACAO.prevista.c}` : ehHoje ? `1px solid ${C.text}` : "1px solid transparent", borderRadius: 4, fontSize: 10, cursor: "pointer", padding: 0, fontFamily: "inherit",
+                background: soPrevista ? `${SITUACAO.prevista.c}33` : cor ? SITUACAO[cor].c : "transparent",
+                color: soPrevista ? "#ddd6fe" : cor ? "#fff" : C.textSub, fontWeight: cor ? 700 : 400,
+                boxShadow: soPrevista && ehHoje ? `0 0 0 1px ${C.text}` : "none" }}>
               {d.getDate()}
             </button>
           );
@@ -179,7 +182,7 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
               style={{ minHeight: 92, background: C.bg, border: `1px solid ${ehHoje ? C.accent : C.border}`, borderRadius: 6, padding: 6, cursor: "pointer", overflow: "hidden" }}>
               <div style={{ fontSize: 12, color: ehHoje ? C.accent : C.textSub, fontWeight: ehHoje ? 700 : 500, marginBottom: 4 }}>{d.getDate()}</div>
               {(porDia[k] || []).slice(0, 3).map((o) => (
-                <div key={o.id} style={{ fontSize: 10, background: o.prevista ? "transparent" : `${SITUACAO[o.situacao].c}22`, borderLeft: `3px ${o.prevista ? "dashed" : "solid"} ${SITUACAO[o.situacao].c}`, color: o.prevista ? C.textSub : C.text, borderRadius: 3, padding: "2px 5px", marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                <div key={o.id} style={{ fontSize: 10, background: o.prevista ? `${SITUACAO.prevista.c}1f` : `${SITUACAO[o.situacao].c}22`, borderLeft: `3px ${o.prevista ? "dashed" : "solid"} ${SITUACAO[o.situacao].c}`, color: o.prevista ? "#ddd6fe" : C.text, borderRadius: 3, padding: "2px 5px", marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
                   {o.prevista ? "🔁 " : `${o.numero} `}{o.descricao}
                 </div>
               ))}
@@ -204,13 +207,12 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
       setRecarga((n) => n + 1);
     } catch (e) {
       const msg = e.message || "Erro ao gerar";
-      if (!semItens && /modelo/i.test(msg) && window.confirm(`${msg}\n\nGerar mesmo assim, sem itens?`)) { setGerandoPrev(null); return gerarPrevista(o, true); }
-      setAviso(""); window.alert(msg);
+      setDialogo(!semItens && /modelo/i.test(msg) ? { tipo: "sem_modelo", msg, o } : { tipo: "erro", msg });
     } finally { setGerandoPrev(null); }
   };
 
   const cartaoPrevista = (o) => (
-    <div key={o.id} style={{ ...s.card, padding: 12, marginBottom: 8, border: `1px dashed ${SITUACAO.prevista.c}`, background: "transparent" }}>
+    <div key={o.id} style={{ ...s.card, padding: 12, marginBottom: 8, border: `1.5px dashed ${SITUACAO.prevista.c}`, background: `${SITUACAO.prevista.c}14` }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
         <div style={{ fontWeight: 600, fontSize: 13 }}>🔁 {o.descricao}</div>
         <span style={s.tag(SITUACAO.prevista.c)}>Prevista (sem OS)</span>
@@ -309,7 +311,7 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
       <div style={{ display: "flex", gap: 14, fontSize: 11, color: C.textSub, marginBottom: 12, flexWrap: "wrap" }}>
         {Object.entries(SITUACAO).map(([k, v]) => (
           <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-            <span style={{ width: 10, height: 10, borderRadius: 3, background: v.c }} />{v.l} ({lista.filter((o) => o.situacao === k).length})
+            <span style={{ width: 10, height: 10, borderRadius: 3, boxSizing: "border-box", ...(k === "prevista" ? { background: `${v.c}33`, border: `1.5px dashed ${v.c}` } : { background: v.c }) }} />{v.l} ({lista.filter((o) => o.situacao === k).length})
           </span>
         ))}
         {carregando && <span style={{ color: C.muted }}>carregando…</span>}
@@ -383,6 +385,31 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
       {osTransf && (
         <ModalTransferirOS C={C} s={s} os={osTransf} usuarios={usuarios} onFechar={() => setOsTransf(null)}
           onTransferido={(r) => { setOsTransf(null); setAviso(r?.mensagem || "Responsável atualizado"); setRecarga((n) => n + 1); }} />
+      )}
+
+      {/* 12b.6: confirmação / erro no padrão de modal do app */}
+      {dialogo && (
+        <div onClick={() => setDialogo(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 95, padding: "80px 16px" }}>
+          <div onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" style={{ ...s.card, width: "min(460px, 100%)", padding: 22, background: C.surface }}>
+            <div style={{ fontSize: 16, fontWeight: 700, color: dialogo.tipo === "erro" ? C.danger : C.warn }}>
+              {dialogo.tipo === "sem_modelo" ? "⚠ Plano sem modelo de manutenção" : "⚠ Não foi possível gerar a OS"}
+            </div>
+            <div style={{ fontSize: 13, color: C.textSub, marginTop: 10, lineHeight: 1.5 }}>{dialogo.msg}</div>
+            {dialogo.tipo === "sem_modelo" && (
+              <div style={{ fontSize: 13, color: C.text, marginTop: 12 }}>Gerar mesmo assim, <b>sem itens</b> (ex.: só inspeção)?</div>
+            )}
+            <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
+              {dialogo.tipo === "sem_modelo" ? (
+                <>
+                  <button onClick={() => setDialogo(null)} style={{ ...s.btn(false), cursor: "pointer", flex: 1, color: C.text }}>Cancelar</button>
+                  <button onClick={() => { const o = dialogo.o; setDialogo(null); gerarPrevista(o, true); }} style={{ ...s.btn(true), cursor: "pointer", flex: 1 }}>Gerar sem itens</button>
+                </>
+              ) : (
+                <button onClick={() => setDialogo(null)} style={{ ...s.btn(true), cursor: "pointer", flex: 1 }}>OK</button>
+              )}
+            </div>
+          </div>
+        </div>
       )}
 
       {/* Dia selecionado */}

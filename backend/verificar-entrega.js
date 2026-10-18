@@ -7,7 +7,7 @@
 // a fornecedor novo; etapa 10c: convite com CNPJ + Canal Spot só para verificado)
 // etapa 11a: "Criar conta", planos, teste grátis e aprovação; 11b: Console da
 // Plataforma; 11b.1: credenciais de teste só no localhost, reconfirmação de e-mail;
-// etapa 12a: calendário anual de manutenção; 12b: planos recorrentes + valor da hora; 12b.1: término do plano; 12b.2: responsável, dia útil, seleção de datas; 12b.3: transferir uma OS; 12b.4: previstas no calendário)
+// etapa 12a: calendário anual de manutenção; 12b: planos recorrentes + valor da hora; 12b.1: término do plano; 12b.2: responsável, dia útil, seleção de datas; 12b.3: transferir uma OS; 12b.4: previstas no calendário; 12b.5: destaque roxo das previstas; 12b.6: confirmação em modal do app)
 // estão no projeto exatamente como foram entregues.
 //
 // Só LÊ arquivos. Não altera nada.
@@ -83,18 +83,16 @@ const ESPERADO = {
   'front:ConsolePlataforma.jsx': '8179b62e3cf4f2be89bcd7a6c07a2e6c', // etapa 11b (novo)
   'routes/manutencao.js': '50205f3b877efe6d143691a9f90503b6', // etapa 12b.4
   'services/calendarioManutencao.js': 'bbcf04d1bb3b18b8776579d3180274e6', // etapa 12b.2
-  'front:TelaCalendarioManutencao.jsx': 'eaf67e66af7c9eba5a8f5a66e8c5e7a4', // etapa 12b.4
+  'front:TelaCalendarioManutencao.jsx': '26af6f0ba3aacc2de8056841b00cae53', // etapa 12b.6
   'front:TelaOrdemServico.jsx': '2228a53bf98e21fd9a8b9da1f0e96544', // etapa 12b.3
   'services/planosManutencao.js': 'e32588acaefd47c5cb93bbe0d70ab799', // etapa 12b.4
-  'front:TelaPlanosManutencao.jsx': 'a2dfe0b472a573dcee85c025b9f811ae', // etapa 12b.3
+  'front:TelaPlanosManutencao.jsx': '5fd8c2a3a8c6fdfb599fb98fd9ccabff', // etapa 12b.3 + texto do botão alterado pelo Marcony (18/10)
   'front:ModalTransferirOS.jsx': '8e7c1bf0d6fc9a4f88bdd9087d22cb37', // etapa 12b.3 (novo)
 };
 
-// Antes de copiar a etapa 12b.4 — versão que serviu de base para as alterações
+// Antes de copiar a etapa 12b.6 — versão que serviu de base para as alterações
 const ANTES = {
-  'services/planosManutencao.js': '5eeef54941e8895937e7b61723b2e4e0',
-  'routes/manutencao.js': 'caf7551741bc211124416f42bafc990a',
-  'front:TelaCalendarioManutencao.jsx': '9ded9a0464cde687505558f8a717105a',
+  'front:TelaCalendarioManutencao.jsx': 'c1eba2acbe6f16ebd000a7ca1f3018bf',
 };
 
 const RAIZ = process.cwd();
@@ -131,8 +129,8 @@ function localizar(chave) {
 const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
-  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 12b.4?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 12b.4)\n');
+  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 12b.6?\n'
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 12b.6)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
