@@ -47,6 +47,13 @@ function gerarTokens(usuario, tenant, perfisArr = null) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 const { cadastrarTransportadora, cadastrarFornecedor, situacaoDoTenant } = require("../services/cadastroPublico");
+const { enviarConfirmacao, confirmarEmail, reenviarConfirmacao } = require("../services/emailConfirmacao"); // etapa 11a.3
+const fornecedorMiddleware = require("../middleware/fornecedorMiddleware");
+
+// Manda o link de confirmação sem atrasar/derrubar o cadastro se o e-mail falhar
+async function mandarConfirmacao(dados) {
+  try { await enviarConfirmacao(dados); } catch (err) { console.error("⚠️ confirmação de e-mail não enviada:", err.message); }
+}
 
 router.post("/signup", async (req, res) => {
   try {
@@ -68,6 +75,7 @@ router.post("/signup", async (req, res) => {
     if (r.erro) return res.status(r.status || 400).json({ erro: r.erro, motivo: r.motivo });
 
     const { tenant, usuario, perfis } = r;
+    await mandarConfirmacao({ tipo: "usuario", loginId: usuario.id, email: usuario.email, nome: usuario.nome });
     const { accessToken, refreshToken } = gerarTokens(usuario, tenant, perfis);
     res.status(201).json({
       ok: true,
@@ -100,6 +108,7 @@ router.post("/signup-fornecedor", async (req, res) => {
     if (r.erro) return res.status(r.status || 400).json({ erro: r.erro, motivo: r.motivo });
 
     const { fornecedor, usuario } = r;
+    await mandarConfirmacao({ tipo: "fornecedor_usuario", loginId: usuario.id, email: usuario.email, nome: usuario.nome });
     // mesmo formato do /login-fornecedor
     const token = jwt.sign(
       { user_id: usuario.id, fornecedor_id: usuario.fornecedor_id },
@@ -122,6 +131,53 @@ router.post("/signup-fornecedor", async (req, res) => {
   } catch (err) {
     console.error("❌ Erro no signup-fornecedor:", err.message);
     res.status(500).json({ erro: "Não foi possível criar a conta agora. Tente de novo em instantes." });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Confirmação de e-mail (etapa 11a.3) — não bloqueia nada; regras em
+// services/emailConfirmacao.js
+//   POST /api/auth/confirmar-email                  { token }  (público, link do e-mail)
+//   POST /api/auth/reenviar-confirmacao             (transportadora logada)
+//   POST /api/auth/reenviar-confirmacao-fornecedor  (fornecedor logado)
+// ─────────────────────────────────────────────────────────────────────────────
+
+const MSG_CONFIRMACAO = {
+  invalido: "Este link de confirmação não é válido.",
+  expirado: "Este link expirou. Entre no sistema e peça um novo link na faixa do topo.",
+  substituido: "Este link foi substituído por um mais novo. Use o link do último e-mail recebido.",
+};
+
+router.post("/confirmar-email", async (req, res) => {
+  try {
+    const r = await confirmarEmail(req.body?.token);
+    if (r.motivo) return res.status(400).json({ ok: false, motivo: r.motivo, erro: MSG_CONFIRMACAO[r.motivo] });
+    res.json({ ok: true, tipo: r.tipo, ja_confirmado: !!r.ja });
+  } catch (err) {
+    console.error("❌ Erro em /confirmar-email:", err.message);
+    res.status(500).json({ erro: "Erro ao confirmar o e-mail" });
+  }
+});
+
+router.post("/reenviar-confirmacao", tenantMiddleware, async (req, res) => {
+  try {
+    const r = await reenviarConfirmacao({ tipo: "usuario", loginId: req.userId });
+    if (r.erro) return res.status(r.status || 400).json({ erro: r.erro });
+    res.json({ ok: true, mensagem: `Enviamos um novo link para ${r.email}` });
+  } catch (err) {
+    console.error("❌ Erro em /reenviar-confirmacao:", err.message);
+    res.status(500).json({ erro: "Erro ao reenviar a confirmação" });
+  }
+});
+
+router.post("/reenviar-confirmacao-fornecedor", fornecedorMiddleware, async (req, res) => {
+  try {
+    const r = await reenviarConfirmacao({ tipo: "fornecedor_usuario", loginId: req.userId });
+    if (r.erro) return res.status(r.status || 400).json({ erro: r.erro });
+    res.json({ ok: true, mensagem: `Enviamos um novo link para ${r.email}` });
+  } catch (err) {
+    console.error("❌ Erro em /reenviar-confirmacao-fornecedor:", err.message);
+    res.status(500).json({ erro: "Erro ao reenviar a confirmação" });
   }
 });
 
@@ -251,7 +307,9 @@ router.get("/me", tenantMiddleware, async (req, res) => {
         email: usuario.email,
         nome: usuario.nome,
         perfil: usuario.perfil,
-        ativo: usuario.ativo
+        ativo: usuario.ativo,
+        // etapa 11a.3: coluna ausente (antes da migration 017) conta como confirmado
+        email_confirmado: usuario.email_confirmado_em !== null,
       },
       tenant: {
         id: tenant.id,

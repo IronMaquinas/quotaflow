@@ -34,7 +34,9 @@ router.get('/me', fornecedorMiddleware, async (req, res) => {
         id: usuario.id,
         nome: usuario.nome,
         email: usuario.email,
-        perfil: usuario.perfil
+        perfil: usuario.perfil,
+        // etapa 11a.3: coluna ausente (antes da migration 017) conta como confirmado
+        email_confirmado: usuario.email_confirmado_em !== null,
       }
     });
   } catch (err) {

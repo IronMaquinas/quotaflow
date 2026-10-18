@@ -83,6 +83,7 @@ async function avisarPlataforma({ publico, nome, cnpj, resumo, email, alertas, s
       <tr><td style="padding-right:12px;color:#64748b;">E-mail</td><td>${esc(email)}</td></tr>
     </table>
     <div style="margin-top:12px;font-size:13px;"><b>Alertas</b>${listaAlertas}</div>
+    <div style="margin-top:12px;font-size:12px;color:#334155;">📧 A pessoa recebeu um link para confirmar o e-mail. Aprove de preferência depois da confirmação (coluna <b>email_confirmado_em</b> do login).</div>
     <div style="margin-top:14px;font-size:12px;color:#64748b;">Para aprovar (até a tela de aprovação existir), rode no SQL Editor do Supabase:</div>
     <pre style="background:#f1f5f9;padding:10px;border-radius:6px;font-size:12px;white-space:pre-wrap;">${esc(sqlAprovar)}</pre>
   </div>`;

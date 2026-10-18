@@ -383,6 +383,8 @@ async function criarLogin({ fornecedorId, nome, email, senhaHash }) {
     nome: String(nome).trim(),
     email,
     senha_hash: senhaHash,
+    // etapa 11a.3: abriu o link enviado para este e-mail → e-mail confirmado
+    email_confirmado_em: new Date().toISOString(),
   });
 }
 
