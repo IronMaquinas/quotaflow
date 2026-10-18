@@ -101,7 +101,24 @@ router.get('/calendario', exigirTenant, async (req, res) => {
     const cal = montarCalendario(dados);
     const nomes = new Map((await usuariosDoTenant(req).catch(() => [])).map((u) => [String(u.id), u.nome]));
     for (const o of cal.os) o.responsavel = o.responsavel_id ? (nomes.get(String(o.responsavel_id)) || null) : null;
-    res.json({ de, ate, valor_hora: dados.valorHora || null, eu: req.userId || null, ...cal });
+
+    // 12b.4: ocorrências dos planos que ainda não viraram OS (sem migration; se a 019 não rodou, vem vazio)
+    let previstas = [];
+    try {
+      previstas = await planos.previstasNoIntervalo(supabase, req.tenantId, de, ate, { equipamentoId });
+      const eqIds = [...new Set(previstas.map((p) => p.equipamento_id).filter(Boolean))];
+      const eqs = eqIds.length ? await q(supabase.from('equipamentos').select('id, tag, nome').eq('tenant_id', req.tenantId).in('id', eqIds)) : [];
+      const eqPor = new Map(eqs.map((e) => [String(e.id), `${e.tag ? e.tag + ' - ' : ''}${e.nome || ''}`]));
+      for (const p of previstas) {
+        p.equipamento = p.equipamento_id ? (eqPor.get(String(p.equipamento_id)) || null) : null;
+        p.responsavel = p.responsavel_id ? (nomes.get(String(p.responsavel_id)) || null) : null;
+      }
+    } catch (e) {
+      console.warn('⚠ [manutencao/calendario] previstas indisponíveis:', e.message);
+    }
+    const totalPrevisto = Math.round(previstas.reduce((s, p) => s + (p.custo?.total || 0), 0) * 100) / 100;
+    res.json({ de, ate, valor_hora: dados.valorHora || null, eu: req.userId || null, ...cal,
+      previstas, totais_previstas: { quantidade: previstas.length, total: totalPrevisto } });
   } catch (err) { erro500(res, 'calendario', err); }
 });
 
@@ -247,7 +264,7 @@ router.post('/planos/:id/gerar', exigirEdicao, async (req, res) => {
 // ─── Usuários e responsabilidade (12b.2) ─────────────────────────────────
 // GET /api/manutencao/usuarios — usuários ativos do tenant (para escolher responsável)
 router.get('/usuarios', exigirTenant, async (req, res) => {
-  try { res.json({ usuarios: await usuariosDoTenant(req), eu: req.userId || null, pode_transferir: perfisDe(req).some((p) => PODE_TRANSFERIR.includes(p)) }); }
+  try { res.json({ usuarios: await usuariosDoTenant(req), eu: req.userId || null, pode_transferir: perfisDe(req).some((p) => PODE_TRANSFERIR.includes(p)), pode_editar: podeEditar(req) }); }
   catch (err) { erro500(res, 'usuarios', err); }
 });
 

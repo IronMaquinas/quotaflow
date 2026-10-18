@@ -342,3 +342,49 @@ async function gerar(supabase, tenantId, plano, usuario, { hoje, datas: escolhid
 
 module.exports = { ocorrencias, janela, horarioOS, custoEstimado, validarPlano, previa, gerar, osDoPlano, itensDoModelo, valorHoraDoTenant, UNIDADES,
   montarCalendarioTrabalho, ajustarDiaUtil, calendarioTrabalho, REGRAS_DIA_UTIL };
+
+// ─── Previstas (12b.4) ───────────────────────────────────────────────────
+// Ocorrências dos planos ATIVOS que ainda não viraram OS, entre max(de, hoje) e ate.
+// Calculadas na hora (sem tabela): somem sozinhas quando a OS é gerada.
+// Devolve itens já na data do dia útil (data_os), com custo estimado por OS.
+async function previstasNoIntervalo(supabase, tenantId, de, ate, { equipamentoId, hoje } = {}) {
+  const hojeISO = janela(hoje).de;
+  const ini = de > hojeISO ? de : hojeISO;
+  if (ini > ate) return [];
+  let lista = await q(supabase.from('planos_manutencao').select('*').eq('tenant_id', tenantId));
+  lista = lista.filter((p) => p.ativo !== false && (!equipamentoId || String(p.equipamento_id) === String(equipamentoId)));
+  if (!lista.length) return [];
+
+  const ids = lista.map((p) => p.id);
+  const osGeradas = (await q(supabase.from('chamados').select('origem_plano_id, origem_plano_data, cancelada_em')
+    .eq('tenant_id', tenantId).in('origem_plano_id', ids))).filter((c) => !c.cancelada_em);
+  const existentes = new Set(osGeradas.map((c) => `${c.origem_plano_id}|${String(c.origem_plano_data).slice(0, 10)}`));
+
+  const cal = await calendarioTrabalho(supabase, tenantId);
+  const valorHora = await valorHoraDoTenant(supabase, tenantId);
+  const out = [];
+  for (const p of lista) {
+    // folga de 7 dias antes de "ini": uma data nominal anterior pode ter sido movida para dentro do intervalo
+    const folga = isoData(new Date(parseData(ini).getTime() - 7 * 86400000));
+    const datas = ocorrencias(p, folga, ate).filter((d) => !existentes.has(`${p.id}|${d}`));
+    if (!datas.length) continue;
+    const itens = await itensDoModelo(supabase, tenantId, p.template_id);
+    const catIds = [...new Set(itens.filter((i) => i.tipo !== 'servico' && i.item_catalogo_id).map((i) => i.item_catalogo_id))];
+    const precos = await precosReferencia(supabase, tenantId, catIds);
+    const custo = custoEstimado(itens, p, { precos, valorHora });
+    for (const d of datas) {
+      const aj = ajustarDiaUtil(d, p.regra_dia_util || 'proximo', cal);
+      if (aj.data < ini || aj.data > ate) continue;
+      if (d < hojeISO) continue; // ocorrência nominal já passou: não é mais "prevista"
+      const { inicio, fim } = horarioOS(aj.data, p);
+      out.push({
+        plano_id: p.id, plano_nome: p.nome, data: d, data_os: aj.data, movida_por: aj.motivo,
+        inicio, fim, categoria: p.categoria || null, equipamento_id: p.equipamento_id || null,
+        responsavel_id: p.responsavel_id || null, tem_modelo: itens.length > 0, custo,
+      });
+    }
+  }
+  return out.sort((a, b) => String(a.inicio).localeCompare(String(b.inicio)));
+}
+
+module.exports.previstasNoIntervalo = previstasNoIntervalo;

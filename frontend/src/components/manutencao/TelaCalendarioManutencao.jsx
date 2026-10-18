@@ -16,6 +16,7 @@ const SITUACAO = {
   em_execucao: { l: "Em execução", c: "#f59e0b", peso: 3 },
   programada:  { l: "Programada",  c: "#3b82f6", peso: 2 },
   concluida:   { l: "Concluída",   c: "#22c55e", peso: 1 },
+  prevista:    { l: "Prevista (sem OS)", c: "#94a3b8", peso: 0 }, // 12b.4: ocorrência de plano ainda sem OS
 };
 const CATEGORIA = { corretiva: "Corretiva", preventiva: "Preventiva", preditiva: "Preditiva" };
 
@@ -58,6 +59,8 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
   const [recarga, setRecarga] = useState(0);
   const [usuarios, setUsuarios] = useState([]);          // 12b.3
   const [podeTransferir, setPodeTransferir] = useState(false);
+  const [podeEditarPlano, setPodeEditarPlano] = useState(false); // 12b.4
+  const [gerandoPrev, setGerandoPrev] = useState(null);
   const [osTransf, setOsTransf] = useState(null);
   const [aviso, setAviso] = useState("");
 
@@ -79,21 +82,29 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
 
   useEffect(() => {
     apiService.get("/manutencao/usuarios")
-      .then((r) => { setUsuarios(r?.usuarios || []); setPodeTransferir(!!r?.pode_transferir); })
+      .then((r) => { setUsuarios(r?.usuarios || []); setPodeTransferir(!!r?.pode_transferir); setPodeEditarPlano(!!r?.pode_editar); })
       .catch(() => {});
   }, []);
   useEffect(() => { if (!aviso) return; const t = setTimeout(() => setAviso(""), 4000); return () => clearTimeout(t); }, [aviso]);
 
-  const lista = useMemo(() => (dados.os || []).filter((o) =>
+  // 12b.4: previstas viram itens "prevista" na mesma lista (id próprio; nunca entram no planejado das OS)
+  const previstas = useMemo(() => (dados.previstas || []).map((p) => ({
+    id: `prev-${p.plano_id}-${p.data}`, prevista: true, plano_id: p.plano_id, data_nominal: p.data, movida_por: p.movida_por,
+    numero: "Prevista", descricao: p.plano_nome, situacao: "prevista", categoria: p.categoria,
+    equipamento: p.equipamento, responsavel_id: p.responsavel_id, responsavel: p.responsavel, tem_modelo: p.tem_modelo,
+    inicio: p.inicio, fim: p.fim, custo_previsto: p.custo,
+  })), [dados]);
+
+  const lista = useMemo(() => [...(dados.os || []), ...previstas].filter((o) =>
     (!categoria || o.categoria === categoria) && (!situacao || o.situacao === situacao) &&
     (!responsavel
       || (responsavel === "eu" && dados.eu && String(o.responsavel_id) === String(dados.eu))
       || (responsavel === "sem" && !o.responsavel_id)
       || String(o.responsavel_id) === responsavel)
-  ), [dados, categoria, situacao, responsavel]);
+  ), [dados, previstas, categoria, situacao, responsavel]);
   const responsaveis = useMemo(() => {
     const m = new Map();
-    for (const o of dados.os || []) if (o.responsavel_id) m.set(String(o.responsavel_id), o.responsavel || "Usuário");
+    for (const o of [...(dados.os || []), ...(dados.previstas || [])]) if (o.responsavel_id) m.set(String(o.responsavel_id), o.responsavel || "Usuário");
     return [...m.entries()].sort((a, b) => a[1].localeCompare(b[1]));
   }, [dados]);
 
@@ -104,8 +115,9 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
   }, [lista]);
 
   const totais = useMemo(() => {
-    const t = { planejado: 0, comprometido: 0, realizado: 0, horas: 0, itens: 0, comValor: 0 };
+    const t = { planejado: 0, comprometido: 0, realizado: 0, horas: 0, itens: 0, comValor: 0, previsto: 0, nPrevistas: 0 };
     for (const o of lista) {
+      if (o.prevista) { t.previsto += o.custo_previsto?.total || 0; t.nPrevistas++; continue; }
       t.planejado += o.custo.planejado; t.comprometido += o.custo.comprometido; t.realizado += o.custo.realizado;
       t.horas += o.custo.horas; t.itens += o.custo.itens; t.comValor += o.custo.itens_com_valor;
     }
@@ -152,11 +164,13 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
         {celulas.map((d, i) => {
           if (!d) return <div key={"v" + i} />;
           const k = chave(d); const cor = corDoDia(k); const qtd = porDia[k]?.length || 0;
+          const qtdOS = (porDia[k] || []).filter((o) => !o.prevista).length;
+          const soPrevista = cor === "prevista";
           const ehHoje = k === hoje;
           if (mini) return (
-            <button key={k} onClick={() => setDiaSel(k)} title={qtd ? `${qtd} OS` : ""}
-              style={{ aspectRatio: "1", border: ehHoje ? `1px solid ${C.text}` : "1px solid transparent", borderRadius: 4, fontSize: 10, cursor: "pointer", padding: 0, fontFamily: "inherit",
-                background: cor ? SITUACAO[cor].c : "transparent", color: cor ? "#fff" : C.textSub, fontWeight: cor ? 700 : 400 }}>
+            <button key={k} onClick={() => setDiaSel(k)} title={qtd ? [qtdOS ? `${qtdOS} OS` : "", qtd - qtdOS ? `${qtd - qtdOS} prevista(s)` : ""].filter(Boolean).join(" + ") : ""}
+              style={{ aspectRatio: "1", border: soPrevista ? `1px dashed ${SITUACAO.prevista.c}` : ehHoje ? `1px solid ${C.text}` : "1px solid transparent", borderRadius: 4, fontSize: 10, cursor: "pointer", padding: 0, fontFamily: "inherit",
+                background: cor && !soPrevista ? SITUACAO[cor].c : "transparent", color: cor && !soPrevista ? "#fff" : soPrevista ? C.text : C.textSub, fontWeight: cor ? 700 : 400 }}>
               {d.getDate()}
             </button>
           );
@@ -165,8 +179,8 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
               style={{ minHeight: 92, background: C.bg, border: `1px solid ${ehHoje ? C.accent : C.border}`, borderRadius: 6, padding: 6, cursor: "pointer", overflow: "hidden" }}>
               <div style={{ fontSize: 12, color: ehHoje ? C.accent : C.textSub, fontWeight: ehHoje ? 700 : 500, marginBottom: 4 }}>{d.getDate()}</div>
               {(porDia[k] || []).slice(0, 3).map((o) => (
-                <div key={o.id} style={{ fontSize: 10, background: `${SITUACAO[o.situacao].c}22`, borderLeft: `3px solid ${SITUACAO[o.situacao].c}`, color: C.text, borderRadius: 3, padding: "2px 5px", marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {o.numero} {o.descricao}
+                <div key={o.id} style={{ fontSize: 10, background: o.prevista ? "transparent" : `${SITUACAO[o.situacao].c}22`, borderLeft: `3px ${o.prevista ? "dashed" : "solid"} ${SITUACAO[o.situacao].c}`, color: o.prevista ? C.textSub : C.text, borderRadius: 3, padding: "2px 5px", marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {o.prevista ? "🔁 " : `${o.numero} `}{o.descricao}
                 </div>
               ))}
               {qtd > 3 && <div style={{ fontSize: 10, color: C.muted }}>+{qtd - 3}</div>}
@@ -180,6 +194,45 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
   if (verPlanos) {
     return <TelaPlanosManutencao C={C} s={s} equipamentos={equipamentos} onVoltar={() => { setVerPlanos(false); setRecarga((n) => n + 1); }} />;
   }
+
+  // 12b.4: gerar só esta ocorrência do plano (mesmo POST do "Gerar OS", com uma data)
+  const gerarPrevista = async (o, semItens = false) => {
+    setGerandoPrev(o.id);
+    try {
+      const r = await apiService.post(`/manutencao/planos/${o.plano_id}/gerar`, { datas: [o.data_nominal], sem_itens: semItens });
+      setAviso(r?.criadas?.length ? `${r.criadas[0].numero} criada a partir do plano` : (r?.mensagem || "OS criada"));
+      setRecarga((n) => n + 1);
+    } catch (e) {
+      const msg = e.message || "Erro ao gerar";
+      if (!semItens && /modelo/i.test(msg) && window.confirm(`${msg}\n\nGerar mesmo assim, sem itens?`)) { setGerandoPrev(null); return gerarPrevista(o, true); }
+      setAviso(""); window.alert(msg);
+    } finally { setGerandoPrev(null); }
+  };
+
+  const cartaoPrevista = (o) => (
+    <div key={o.id} style={{ ...s.card, padding: 12, marginBottom: 8, border: `1px dashed ${SITUACAO.prevista.c}`, background: "transparent" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+        <div style={{ fontWeight: 600, fontSize: 13 }}>🔁 {o.descricao}</div>
+        <span style={s.tag(SITUACAO.prevista.c)}>Prevista (sem OS)</span>
+      </div>
+      <div style={{ fontSize: 12, color: C.textSub, marginTop: 4 }}>
+        {o.responsavel ? `👤 ${o.responsavel} · ` : ""}{o.equipamento || "Sem equipamento"}{o.categoria ? ` · ${CATEGORIA[o.categoria] || o.categoria}` : ""}
+        {" · "}{hora(o.inicio)} → {hora(o.fim)}
+        {o.movida_por ? ` · movida de ${o.data_nominal.split("-").reverse().join("/")} (${o.movida_por})` : ""}
+      </div>
+      <div style={{ fontSize: 12, marginTop: 6, display: "flex", gap: 14, flexWrap: "wrap" }}>
+        <span>Estimado <b>{brl(o.custo_previsto?.total)}</b></span>
+        <span style={{ color: C.muted }}>{o.custo_previsto?.percentual_conhecido || 0}% do custo conhecido</span>
+        {!o.tem_modelo && <span style={{ color: C.warn }}>plano sem modelo</span>}
+      </div>
+      {podeEditarPlano && (
+        <button onClick={() => gerarPrevista(o)} disabled={gerandoPrev === o.id}
+          style={{ ...s.btn(gerandoPrev !== o.id), cursor: "pointer", padding: "5px 12px", fontSize: 12, marginTop: 8 }}>
+          {gerandoPrev === o.id ? "Gerando…" : "⚙ Gerar esta OS"}
+        </button>
+      )}
+    </div>
+  );
 
   const cartaoOS = (o) => (
     <div key={o.id} style={{ ...s.card, padding: 12, marginBottom: 8, borderLeft: `3px solid ${SITUACAO[o.situacao].c}` }}>
@@ -291,7 +344,7 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
                   </div>
                   {(porDia[k] || []).map((o) => (
                     <div key={o.id} onClick={() => setDiaSel(k)} style={{ fontSize: 11, background: `${SITUACAO[o.situacao].c}22`, borderLeft: `3px solid ${SITUACAO[o.situacao].c}`, borderRadius: 3, padding: "4px 6px", marginBottom: 4, cursor: "pointer" }}>
-                      <div style={{ fontWeight: 600 }}>{o.numero}</div>
+                      <div style={{ fontWeight: 600 }}>{o.prevista ? "🔁 Prevista" : o.numero}</div>
                       <div style={{ color: C.textSub }}>{o.descricao}</div>
                       <div style={{ color: C.muted }}>{o.equipamento || ""}</div>
                     </div>
@@ -312,6 +365,11 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
           <span style={{ color: C.warn }}>Comprometido <b>{brl(totais.comprometido)}</b></span>
           <span>Falta <b>{brl(totais.falta)}</b></span>
           {totais.horas > 0 && <span style={{ color: C.textSub }}>{Math.round(totais.horas)} h programadas</span>}
+          {totais.nPrevistas > 0 && (
+            <span title="Ocorrências dos planos que ainda não viraram OS — custo estimado pelo modelo. Não entra no planejado." style={{ color: SITUACAO.prevista.c, cursor: "help" }}>
+              Previsto pelos planos <b>{brl(totais.previsto)}</b> ({totais.nPrevistas} sem OS)
+            </span>
+          )}
           <span title={dados.valor_hora ? `Itens das OS com algum valor (preço, OV ou mão de obra a R$ ${String(dados.valor_hora).replace(".", ",")}/h) ÷ total de itens.` : "Itens das OS com algum valor (preço, OV ou serviço contratado) ÷ total de itens. Cadastre o valor da hora em 🔁 Planos para a mão de obra própria entrar no custo."} style={{ display: "inline-flex", alignItems: "center", gap: 8, cursor: "help" }}>
             <span style={{ width: 80, height: 6, background: C.border, borderRadius: 3, overflow: "hidden" }}>
               <span style={{ display: "block", height: "100%", width: `${totais.pct}%`, background: totais.pct >= 80 ? C.success : totais.pct >= 40 ? C.warn : C.danger }} />
@@ -343,7 +401,7 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
             )}
             {(porDia[diaSel] || []).length === 0
               ? <div style={{ color: C.muted, fontSize: 13 }}>Nenhuma OS programada neste dia.</div>
-              : porDia[diaSel].map(cartaoOS)}
+              : porDia[diaSel].map((o) => (o.prevista ? cartaoPrevista(o) : cartaoOS(o)))}
           </div>
         </div>
       )}
