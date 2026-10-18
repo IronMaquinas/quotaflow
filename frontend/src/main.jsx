@@ -8,6 +8,7 @@ import App from "./App";
 import { useAuth } from "./hooks/useAuth";
 import TelaFornecedor from "./components/portal/TelaFornecedor";
 import TelaConfirmarEmail from "./TelaConfirmarEmail"; // etapa 11a.3
+import ConsolePlataforma from "./plataforma/ConsolePlataforma"; // etapa 11b
 import TelaPortalFornecedor from "./components/portal/TelaPortalFornecedor";
 import TelaAceitarConvite from "./TelaAceitarConvite";
 
@@ -48,6 +49,12 @@ function Router() {
     currentPage.startsWith("/portal/")
   ) {
     return <TelaFornecedor />;
+  }
+
+  // Etapa 11b: Console da Plataforma (#admin) — login próprio, separado de
+  // transportadora e fornecedor; não passa pelos redirecionamentos abaixo.
+  if (currentPage === "admin" || currentPage === "/admin" || currentPage.startsWith("admin/") || currentPage.startsWith("/admin/")) {
+    return <ConsolePlataforma />;
   }
 
   // Etapa 11a.3: link de confirmação de e-mail (#confirmar-email?token=...).

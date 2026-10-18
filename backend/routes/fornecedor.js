@@ -29,7 +29,10 @@ router.get('/me', fornecedorMiddleware, async (req, res) => {
       spot_liberado: podeVerSpot(fornecedor),
       verificado: fornecedor?.tipo === 'global',
       // etapa 11a: autocadastro aguardando aprovação da plataforma
-      aguardando_aprovacao: fornecedor?.tipo === 'candidato',
+      aguardando_aprovacao: fornecedor?.tipo === 'candidato' && !fornecedor?.recusado_em,
+      // etapa 11b: a plataforma recusou o cadastro (motivo vai também por e-mail)
+      cadastro_recusado: fornecedor?.tipo === 'candidato' && !!fornecedor?.recusado_em,
+      motivo_recusa: fornecedor?.tipo === 'candidato' && fornecedor?.recusado_em ? (fornecedor.aprovacao_obs || null) : null,
       usuario: {
         id: usuario.id,
         nome: usuario.nome,

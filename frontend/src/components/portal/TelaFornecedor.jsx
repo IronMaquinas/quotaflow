@@ -77,6 +77,8 @@ export default function TelaFornecedor() {
   const [spotLiberado, setSpotLiberado] = useState(null);
   // Etapa 11a: autocadastro aguardando aprovação da plataforma
   const [emAnalise, setEmAnalise] = useState(false);
+  // Etapa 11b: cadastro recusado pela plataforma (motivo)
+  const [recusa, setRecusa] = useState(null); // null | { motivo }
   // Etapa 11a.3: e-mail de login ainda não confirmado
   const [emailPendente, setEmailPendente] = useState(false);
   const [reenvio, setReenvio] = useState(null);
@@ -96,6 +98,7 @@ export default function TelaFornecedor() {
       .then((r) => {
         setSpotLiberado(r?.spot_liberado !== false);
         setEmAnalise(!!r?.aguardando_aprovacao);
+        setRecusa(r?.cadastro_recusado ? { motivo: r.motivo_recusa || null } : null);
         setEmailPendente(r?.usuario?.email_confirmado === false);
       })
       .catch(() => setSpotLiberado(true)); // na dúvida a tela do Spot carrega e o backend responde
@@ -212,6 +215,12 @@ export default function TelaFornecedor() {
 
         {/* ─── CONTEÚDO ─── */}
         <div style={{ flex: 1, overflowY: 'auto', background: C.bg }}>
+        {recusa && (
+          <div style={{ padding: '10px 24px', background: '#ef444418', borderBottom: '1px solid #ef444455', fontSize: 12, color: C.text, lineHeight: 1.5 }}>
+            ⚠️ <b>Cadastro não aprovado.</b> {recusa.motivo ? `Motivo: ${recusa.motivo}. ` : ''}Sua empresa não aparece para as transportadoras.
+            Se algum dado estiver errado, responda o e-mail que enviamos.
+          </div>
+        )}
         {emAnalise && (
           <div style={{ padding: '10px 24px', background: '#3b82f618', borderBottom: '1px solid #3b82f644', fontSize: 12, color: C.text, lineHeight: 1.5 }}>
             ⏳ <b>Cadastro em análise.</b> Sua empresa ainda não aparece para as transportadoras — a plataforma confere os dados

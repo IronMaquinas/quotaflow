@@ -467,7 +467,7 @@ const perfil = PERFIS[usuario.perfil] || {
                 fontFamily: "inherit",
                 width: "100%",
               }}
-            >ß
+            >
               Sair
             </button>
           </div>
