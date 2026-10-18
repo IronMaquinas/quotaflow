@@ -5,7 +5,9 @@
 // etapa 8: plano Pro + e-mails de recomendação; etapa 9: melhorias do e-mail;
 // etapa 10: Painel do Fornecedor + convite ao fornecedor local; etapa 10b: convite
 // a fornecedor novo; etapa 10c: convite com CNPJ + Canal Spot só para verificado)
-// etapa 11a: "Criar conta", planos, teste grátis e aprovação)
+// etapa 11a: "Criar conta", planos, teste grátis e aprovação; 11b: Console da
+// Plataforma; 11b.1: credenciais de teste só no localhost, reconfirmação de e-mail;
+// etapa 12a: calendário anual de manutenção)
 // estão no projeto exatamente como foram entregues.
 //
 // Só LÊ arquivos. Não altera nada.
@@ -47,11 +49,11 @@ const ESPERADO = {
   'routes/spot.js': 'ee346546f49efb3552b0d4048513f26b', // etapa 11a
   'services/matchSpot.js': 'fe4275090b82bd1efd52498d2176a90c', // etapa 7
   'routes/configuracoes.js': '05360fb8a4945623e1878ba336161d27', // etapa 7
-  'routes/fornecedor.js': '96961cac31e69cfc87f8ad23cb7b4d48', // etapa 11b
+  'routes/fornecedor.js': '531ae3790a252060c15f14f82af0a8ee', // etapa 11b.1
   'routes/recomendacoes.js': '3c1fe2834a30a24198923797bce4001a', // etapa 9
   'services/recomendacoesEmail.js': '7bc5475ccffb4fd2fcec53be78e64123', // etapa 10c
   'services/emailService.js': '2daf0e597ff370e006585f919c63b525', // etapa 9
-  'server.js': 'f053c0adadc4b0ec0f5761dce884578a', // etapa 11b
+  'server.js': '8f9bd3638321029d445dd18bf2275d4c', // etapa 12a
   'routes/atuacao.js': 'cc196661189e2714bcfad96e5c1e8ad9',
   'services/atuacao.js': '8509ac0206906a7f93384350e77132bf',
   'front:SeletorAtuacao.jsx': '17afaaf69d6e4cf0c105490267d188a7',
@@ -67,8 +69,8 @@ const ESPERADO = {
   'services/acessoSpot.js': '6ecce4d16d6b123c6ce93c1223b32f01', // etapa 10c (novo)
   'services/receitaCnpj.js': '7c382fbd2db545838e97cb294aa12ee2', // etapa 11a.2
   'services/cadastroPublico.js': 'eae020d28c2318b0f2f96766d9e308e2', // etapa 11a.3
-  'front:App.jsx': 'bbb6893b8b0d24cae273edc05e9a5f19', // etapa 11b
-  'front:TelaLogin.jsx': 'cd704becd57adb12b13afdeb6f07a694', // etapa 11a
+  'front:App.jsx': '99a749de2973a28bbee218c643077dc5', // etapa 12a
+  'front:TelaLogin.jsx': 'afa800fa12d684d6099a2e006cd59f13', // etapa 11b.1
   'front:TelaSignup.jsx': '345dceefb937b38e74cfef44cfc33ef3', // etapa 11a.3
   'front:AvisoPlanoTenant.jsx': '5795f00c1bc656d0525fd29b6793a96c', // etapa 11a.3
   'services/emailConfirmacao.js': 'e36296d648d6f76f6412d7de0e10c4d8', // etapa 11a.3 (novo)
@@ -79,15 +81,15 @@ const ESPERADO = {
   'middleware/plataformaMiddleware.js': 'bf2424eab233bdf7e0cb6fca9cb953b9', // etapa 11b (novo)
   'scripts/criarAdmin.js': 'd4d85894f6381dc7b31f83466f316024', // etapa 11b (novo)
   'front:ConsolePlataforma.jsx': '8179b62e3cf4f2be89bcd7a6c07a2e6c', // etapa 11b (novo)
+  'routes/manutencao.js': '85adbe526b58f47afc70e2ae8aa2ec6a', // etapa 12a (novo)
+  'services/calendarioManutencao.js': '684291aef9b65ccba40524b06d13a0aa', // etapa 12a.1
+  'front:TelaCalendarioManutencao.jsx': 'c7a03ffc13ca5d383c9db7bc2bde123c', // etapa 12a (novo)
+  'front:TelaOrdemServico.jsx': '84a7f0c3c73076ef25acceab1f74be71', // etapa 12a
 };
 
-// Antes de copiar a etapa 11b — versão que serviu de base para as alterações
+// Antes de copiar a etapa 12a.1 — versão que serviu de base para as alterações
 const ANTES = {
-  'server.js': '6442d12f505b2c21df649a5ec683a2f3',
-  'routes/fornecedor.js': 'a837e6b3d0a5dfe85e50b5933986e8b1',
-  'front:App.jsx': '3d90a07159d67986e9aafc555c5fd4e8',
-  'front:main.jsx': '457ef2bf08c94834d29216854e70bbdf',
-  'front:TelaFornecedor.jsx': '5fbffba4eb049bafdbb7eb0e959ec092',
+  'services/calendarioManutencao.js': '9cc4313f7131f98fc318ddb8afe77914',
 };
 
 const RAIZ = process.cwd();
@@ -124,8 +126,8 @@ function localizar(chave) {
 const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
-  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 11b?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 11b)\n');
+  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 12a.1?\n'
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 12a)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
@@ -155,7 +157,7 @@ for (const [chave, esperado] of Object.entries(LISTA)) {
     } catch (e) {
       problemas.push('erro de sintaxe: ' + String(e.stderr || e.message).split('\n').find((l) => l.trim()));
     }
-    const reqs = conteudo.matchAll(/require\(\s*['"]([^'"]*(?:fornecedoresVisiveis|services\/atuacao|services\/matchSpot|services\/recomendacoesEmail|routes\/recomendacoes|services\/convitesFornecedor|services\/acessoSpot|services\/receitaCnpj|services\/cadastroPublico|services\/emailConfirmacao|services\/plataformaConsole|middleware\/plataformaMiddleware))['"]\s*\)/g);
+    const reqs = conteudo.matchAll(/require\(\s*['"]([^'"]*(?:fornecedoresVisiveis|services\/atuacao|services\/matchSpot|services\/recomendacoesEmail|routes\/recomendacoes|services\/convitesFornecedor|services\/acessoSpot|services\/receitaCnpj|services\/cadastroPublico|services\/emailConfirmacao|services\/plataformaConsole|middleware\/plataformaMiddleware|services\/calendarioManutencao))['"]\s*\)/g);
     for (const r of reqs) {
       const alvo = path.resolve(path.dirname(abs), r[1]) + '.js';
       if (!fs.existsSync(alvo)) problemas.push(`require('${r[1]}') não encontra o arquivo`);
@@ -173,13 +175,13 @@ for (const [chave, esperado] of Object.entries(LISTA)) {
 
 if (!modoAntes) {
   // Arquivos novos precisam entrar no commit
-  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js', 'services/matchSpot.js', 'services/recomendacoesEmail.js', 'routes/recomendacoes.js', 'services/convitesFornecedor.js', 'services/acessoSpot.js', 'services/receitaCnpj.js', 'services/cadastroPublico.js', 'services/emailConfirmacao.js', 'routes/plataforma.js', 'services/plataformaConsole.js', 'middleware/plataformaMiddleware.js', 'scripts/criarAdmin.js'];
+  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js', 'services/matchSpot.js', 'services/recomendacoesEmail.js', 'routes/recomendacoes.js', 'services/convitesFornecedor.js', 'services/acessoSpot.js', 'services/receitaCnpj.js', 'services/cadastroPublico.js', 'services/emailConfirmacao.js', 'routes/plataforma.js', 'services/plataformaConsole.js', 'middleware/plataformaMiddleware.js', 'scripts/criarAdmin.js', 'routes/manutencao.js', 'services/calendarioManutencao.js'];
   try {
     for (const n of novos) {
       const rastreado = execFileSync('git', ['ls-files', n], { cwd: RAIZ, stdio: 'pipe' }).toString().trim();
       if (!rastreado) console.log(`\n⚠️  ${n} ainda não está no git (git add ${n})`);
     }
-    for (const nome of ['SeletorAtuacao.jsx', 'TelaAceitarConvite.jsx', 'TelaPainelFornecedor.jsx', 'AvisoPlanoTenant.jsx', 'CampoTelefone.jsx', 'TelaConfirmarEmail.jsx', 'ConsolePlataforma.jsx']) {
+    for (const nome of ['SeletorAtuacao.jsx', 'TelaAceitarConvite.jsx', 'TelaPainelFornecedor.jsx', 'AvisoPlanoTenant.jsx', 'CampoTelefone.jsx', 'TelaConfirmarEmail.jsx', 'ConsolePlataforma.jsx', 'TelaCalendarioManutencao.jsx']) {
       const arq = acharNoFrontend(nome)[0];
       if (!arq) continue;
       const rastreado = execFileSync('git', ['ls-files', arq], { cwd: RAIZ, stdio: 'pipe' }).toString().trim();
@@ -218,8 +220,42 @@ if (!modoAntes) {
     }
   }
 
+  // Etapa 11b.1: todo pacote usado no backend precisa estar no package.json
+  // (no Mac funciona com o que está instalado; no Render só entra o que está lá)
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(RAIZ, 'package.json'), 'utf8'));
+    const deps = new Set(Object.keys(pkg.dependencies || {}));
+    const nativos = new Set(require('module').builtinModules);
+    const faltam = new Map();
+    (function varrerBack(dir) {
+      for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+        if (e.name === 'node_modules' || e.name.startsWith('.')) continue;
+        const p = path.join(dir, e.name);
+        if (e.isDirectory()) { varrerBack(p); continue; }
+        if (!e.name.endsWith('.js')) continue;
+        for (const m of fs.readFileSync(p, 'utf8').matchAll(/require\(\s*['"]([^'".$][^'"$]*)['"]\s*\)/g)) {
+          const nome = m[1].startsWith('@') ? m[1].split('/').slice(0, 2).join('/') : m[1].split('/')[0];
+          if (nome.startsWith('node:') || nativos.has(nome) || deps.has(nome)) continue;
+          if (!faltam.has(nome)) faltam.set(nome, path.relative(RAIZ, p));
+        }
+      }
+    })(RAIZ);
+    if (faltam.size) {
+      falhas++;
+      console.log('\n✗ Pacotes usados no código que NÃO estão no package.json (o Render vai quebrar):');
+      for (const [n, arq] of faltam) console.log(`    ${n}  (em ${arq})`);
+      console.log(`  Corrija com: npm install --save ${[...faltam.keys()].join(' ')}`);
+    }
+  } catch (e) {
+    console.log(`\n⚠️  Não consegui conferir o package.json: ${e.message}`);
+  }
+
   // A rota nova precisa estar registrada no server.js
   const server = path.join(RAIZ, 'server.js');
+  if (fs.existsSync(server) && !/routes\/manutencao/.test(fs.readFileSync(server, 'utf8'))) {
+    falhas++;
+    console.log("\n✗ server.js não registra a rota do calendário (etapa 12a).");
+  }
   if (fs.existsSync(server) && !/routes\/atuacao/.test(fs.readFileSync(server, 'utf8'))) {
     falhas++;
     console.log("\n✗ server.js não registra a rota nova. Adicione: app.use('/api/atuacao', require('./routes/atuacao'));");

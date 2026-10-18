@@ -30,6 +30,7 @@ import TelaRecebimento from './components/estoque/TelaRecebimento';
 import TelaOrdemServico from './components/estoque/TelaOrdemServico';
 import TelaConfiguracoes from './components/configuracoes/TelaConfiguracoes';
 import TelaNaoConformidades from "./components/naoConformidades/TelaNaoConformidades";
+import TelaCalendarioManutencao from './components/manutencao/TelaCalendarioManutencao'; // etapa 12a
 import AvisoPlanoTenant from './components/shared/AvisoPlanoTenant'; // etapa 11a: teste grátis / empresa em análise
 
 import {
@@ -160,6 +161,7 @@ export default function App() {
   const relatorio = useRelatorio();
   const [tela,setTela]=useState("home");
   const [osParaAbrir, setOsParaAbrir] = useState(null);
+  const [novaOSData, setNovaOSData] = useState(null); // etapa 12a: "Nova OS programada" a partir do calendário
   const [ncParaAbrir, setNcParaAbrir] = useState(null);
   const [totalPendencias, setTotalPendencias] = useState(0);
   const [meuPerfilAberto, setMeuPerfilAberto] = useState(false);
@@ -330,6 +332,7 @@ const perfil = PERFIS[usuario.perfil] || {
   const navItems = [
     {id:"home",          l:"Início",                  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro"]},
     {id:"ordem_servico", l:"🛠️ Ordem de Serviço",    perfis:["admin","gestor","operacao","qualidade"]},
+    {id:"calendario",    l:"📅 Calendário",           perfis:["admin","gestor","comprador","operacao"]},
     {id:"recebimento",   l:"📥 Recebimento",         perfis:["admin","gestor","comprador","operacao"]},
     {id:"tecnico",       l:"🔧 Requisição de Compras",perfis:["admin","gestor","comprador","operacao"]},
     {id:"compradora",    l:"📋 Compras",              perfis:["admin","gestor","comprador"]},
@@ -534,10 +537,24 @@ const perfil = PERFIS[usuario.perfil] || {
               fmtD={fmtD}
               chamadoInicialId={osParaAbrir}
               onOSAberta={() => setOsParaAbrir(null)}
+              novaOSData={novaOSData}
+              onNovaOSAberta={() => setNovaOSData(null)}
               onIrParaNC={(ncId) => {
                 setNcParaAbrir(ncId);
                 setTela("nao_conformidades");
               }}
+            />
+          </div>
+        )}
+
+        {temAcesso(tela) && tela === "calendario" && (
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            <TelaCalendarioManutencao
+              C={C}
+              s={s}
+              equipamentos={equipamentos.dados || []}
+              onAbrirOS={temAcesso("ordem_servico") ? (id) => { setOsParaAbrir(id); setTela("ordem_servico"); } : null}
+              onNovaOS={temAcesso("ordem_servico") ? (data) => { setNovaOSData(data); setTela("ordem_servico"); } : null}
             />
           </div>
         )}
@@ -2277,6 +2294,7 @@ const PERFIS = {
 const PERMISSOES = {
   home:               ["admin","gestor","comprador","operacao","qualidade","financeiro"],
   ordem_servico:      ["admin","gestor","operacao","qualidade"],
+  calendario:         ["admin","gestor","comprador","operacao"], // etapa 12a
   recebimento:        ["admin","gestor","comprador","operacao"],
   tecnico:            ["admin","gestor","comprador","operacao"],   // Requisição de Compras
   compradora:         ["admin","gestor","comprador"],

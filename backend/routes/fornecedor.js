@@ -1438,6 +1438,7 @@ router.put('/me', fornecedorMiddleware, async (req, res) => {
 
     // ── 2) Dados do usuário logado ──
     const dadosUsuario = {};
+    let emailTrocado = false;
     if (nome !== undefined) dadosUsuario.nome = nome;
     if (email !== undefined) dadosUsuario.email = email;
 
@@ -1472,13 +1473,34 @@ router.put('/me', fornecedorMiddleware, async (req, res) => {
         if (!EMAIL_VALIDO.test(dadosUsuario.email.trim())) {
           return res.status(400).json({ erro: 'E-mail de login inválido' });
         }
+        dadosUsuario.email = dadosUsuario.email.trim();
         // e-mail é o login — garante unicidade antes de trocar
         const jaExiste = await DB.selectOne('fornecedor_usuarios', { email: dadosUsuario.email });
-        if (jaExiste && jaExiste.id !== userId) {
+        if (jaExiste && String(jaExiste.id) !== String(userId)) {
           return res.status(409).json({ erro: 'Este e-mail já está em uso por outro usuário' });
+        }
+        // e-mail de login de transportadora também não pode (o login procura nas duas tabelas)
+        const deTenant = await DB.selectOne('usuarios', { email: dadosUsuario.email });
+        if (deTenant) {
+          return res.status(409).json({ erro: 'Este e-mail já está em uso por outro usuário' });
+        }
+        // Trocou de verdade? Então o e-mail novo precisa ser confirmado (etapa 11b.1)
+        const atual = await DB.selectOne('fornecedor_usuarios', { id: userId });
+        if (atual && String(atual.email || '').toLowerCase() !== dadosUsuario.email.toLowerCase()) {
+          dadosUsuario.email_confirmado_em = null;
+          emailTrocado = true;
         }
       }
       await DB.update('fornecedor_usuarios', userId, dadosUsuario);
+    }
+
+    if (emailTrocado) {
+      try {
+        const { enviarConfirmacao } = require('../services/emailConfirmacao');
+        await enviarConfirmacao({ tipo: 'fornecedor_usuario', loginId: userId, email: dadosUsuario.email, nome: dadosUsuario.nome });
+      } catch (e) {
+        console.error('⚠️ [fornecedor/me] confirmação do e-mail novo não enviada:', e.message);
+      }
     }
 
     // Retorna o estado atualizado, no mesmo formato de GET /me
@@ -1495,7 +1517,10 @@ router.put('/me', fornecedorMiddleware, async (req, res) => {
         email: usuario.email,
         perfil: usuario.perfil
       },
-      mensagem: 'Dados atualizados com sucesso'
+      email_confirmado: !!usuario.email_confirmado_em,
+      mensagem: emailTrocado
+        ? `Dados atualizados. Enviamos um link de confirmação para ${usuario.email} — use este e-mail no próximo login.`
+        : 'Dados atualizados com sucesso'
     });
   } catch (err) {
     console.error('❌ Erro ao atualizar dados do fornecedor:', err.message);

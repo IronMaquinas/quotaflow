@@ -385,7 +385,9 @@ export default function TelaLogin({ onLogin, onNavegarPara }) {
           </form>
         </div>
 
-        {/* CREDENCIAIS DE DEMONSTRAÇÃO */}
+        {/* CREDENCIAIS DE DEMONSTRAÇÃO — só no ambiente local (npm run dev).
+            No build de produção o bloco inteiro some (import.meta.env.DEV = false). */}
+        {import.meta.env.DEV && (
         <div style={{ ...s.card, padding: "16px 18px" }}>
           <div
             style={{
@@ -487,6 +489,7 @@ export default function TelaLogin({ onLogin, onNavegarPara }) {
             Clique para preencher automaticamente
           </div>
         </div>
+        )}
       </div>
     </div>
   );

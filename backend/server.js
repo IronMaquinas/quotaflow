@@ -140,6 +140,7 @@ app.use('/api/atuacao', require('./routes/atuacao'));
 // Sem middleware: resumo-diario exige x-cron-secret; descadastro usa token do e-mail
 app.use('/api/recomendacoes', recomendacoesRoutes);
 app.use('/api/plataforma', require('./routes/plataforma')); // Console da Plataforma (etapa 11b) — autenticação própria
+app.use('/api/manutencao', tenantMiddleware, require('./routes/manutencao')); // Calendário de manutenção (etapa 12a) — só leitura
 
 // Rota de saúde (Railway usa para verificar se o servidor está rodando)
 app.get("/health", (req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));

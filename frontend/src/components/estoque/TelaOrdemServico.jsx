@@ -120,6 +120,7 @@ export default function TelaOrdemServico({
   fmtBRL, fmtD, C, s,
   chamadoInicialId, onOSAberta,
   onIrParaNC,
+  novaOSData, onNovaOSAberta, // etapa 12a: "Nova OS programada" vinda do calendário ('AAAA-MM-DD')
 }) {
   const { chamados, loading, erro, carregar, criar, atualizar, deletar } = useChamados();
   const { equipamentos } = useEquipamentos();
@@ -316,6 +317,19 @@ export default function TelaOrdemServico({
     return () => { cancelado = true; };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [chamadoInicialId]);
+
+  // Etapa 12a: o calendário pediu "Nova OS programada" para um dia —
+  // abre o modal de criação com programação "geral" já preenchida (08h–17h).
+  useEffect(() => {
+    if (!novaOSData || !/^\d{4}-\d{2}-\d{2}$/.test(novaOSData)) return;
+    setForm({ ...formVazio(), categoria: "preventiva", modoProgramacao: "geral",
+      dataInicioPrevista: `${novaOSData}T08:00`, dataFimPrevista: `${novaOSData}T17:00` });
+    setEqSearch("");
+    setShowDrop(false);
+    setModal("novo");
+    onNovaOSAberta?.();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [novaOSData]);
 
   // Carrega dados consolidados quando uma OS é selecionada (tela de detalhe):
   //  - percentual de conclusão
