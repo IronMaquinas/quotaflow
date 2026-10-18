@@ -9,6 +9,7 @@ const router = express.Router();
 const { supabase, DB } = require('../db');
 const { montarCalendario, carregar, buscarValorHora } = require('../services/calendarioManutencao');
 const planos = require('../services/planosManutencao');
+const documentosSrv = require('../services/documentos'); // 12c: camada Documentos no calendário
 
 const DATA = /^\d{4}-\d{2}-\d{2}$/;
 const PODE_EDITAR = ['admin', 'gestor', 'operacao'];
@@ -117,8 +118,20 @@ router.get('/calendario', exigirTenant, async (req, res) => {
       console.warn('⚠ [manutencao/calendario] previstas indisponíveis:', e.message);
     }
     const totalPrevisto = Math.round(previstas.reduce((s, p) => s + (p.custo?.total || 0), 0) * 100) / 100;
+
+    // 12c: camada "Documentos" — vencimentos no intervalo (sem a migration 022, vem vazio)
+    let documentos = [];
+    try {
+      const docs = await documentosSrv.documentosNoIntervalo(supabase, req.tenantId, de, ate,
+        equipamentoId ? { alvoTipo: 'equipamento', equipamentoId } : {});
+      documentos = docs.map((d) => ({ id: d.id, alvo_tipo: d.alvo_tipo, alvo_nome: d.alvo_nome, tipo_nome: d.tipo_nome, numero: d.numero,
+        vence_em: String(d.vence_em).slice(0, 10), situacao: d.situacao, dias: d.dias, tem_arquivo: d.tem_arquivo,
+        responsavel_id: d.responsavel_id || null, responsavel: d.responsavel_id ? (nomes.get(String(d.responsavel_id)) || null) : null }));
+    } catch (e) {
+      if (!/documentos|relation|does not exist/.test(e.message)) console.warn('⚠ [manutencao/calendario] documentos indisponíveis:', e.message);
+    }
     res.json({ de, ate, valor_hora: dados.valorHora || null, eu: req.userId || null, ...cal,
-      previstas, totais_previstas: { quantidade: previstas.length, total: totalPrevisto } });
+      previstas, totais_previstas: { quantidade: previstas.length, total: totalPrevisto }, documentos });
   } catch (err) { erro500(res, 'calendario', err); }
 });
 

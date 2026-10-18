@@ -7,7 +7,7 @@
 // a fornecedor novo; etapa 10c: convite com CNPJ + Canal Spot só para verificado)
 // etapa 11a: "Criar conta", planos, teste grátis e aprovação; 11b: Console da
 // Plataforma; 11b.1: credenciais de teste só no localhost, reconfirmação de e-mail;
-// etapa 12a: calendário anual de manutenção; 12b: planos recorrentes + valor da hora; 12b.1: término do plano; 12b.2: responsável, dia útil, seleção de datas; 12b.3: transferir uma OS; 12b.4: previstas no calendário; 12b.5: destaque roxo das previstas; 12b.6: confirmação em modal do app)
+// etapa 12a: calendário anual de manutenção; 12b: planos recorrentes + valor da hora; 12b.1: término do plano; 12b.2: responsável, dia útil, seleção de datas; 12b.3: transferir uma OS; 12b.4: previstas no calendário; 12b.5: destaque roxo das previstas; 12b.6: confirmação em modal do app; 12c: colaboradores e documentos com vencimento)
 // estão no projeto exatamente como foram entregues.
 //
 // Só LÊ arquivos. Não altera nada.
@@ -53,7 +53,7 @@ const ESPERADO = {
   'routes/recomendacoes.js': '3c1fe2834a30a24198923797bce4001a', // etapa 9
   'services/recomendacoesEmail.js': '7bc5475ccffb4fd2fcec53be78e64123', // etapa 10c
   'services/emailService.js': '2daf0e597ff370e006585f919c63b525', // etapa 9
-  'server.js': '8f9bd3638321029d445dd18bf2275d4c', // etapa 12a
+  'server.js': 'd586edf4be29ba47192ed524901d859e', // etapa 12c
   'routes/atuacao.js': 'cc196661189e2714bcfad96e5c1e8ad9',
   'services/atuacao.js': '8509ac0206906a7f93384350e77132bf',
   'front:SeletorAtuacao.jsx': '17afaaf69d6e4cf0c105490267d188a7',
@@ -69,7 +69,7 @@ const ESPERADO = {
   'services/acessoSpot.js': '6ecce4d16d6b123c6ce93c1223b32f01', // etapa 10c (novo)
   'services/receitaCnpj.js': '7c382fbd2db545838e97cb294aa12ee2', // etapa 11a.2
   'services/cadastroPublico.js': 'eae020d28c2318b0f2f96766d9e308e2', // etapa 11a.3
-  'front:App.jsx': '99a749de2973a28bbee218c643077dc5', // etapa 12a
+  'front:App.jsx': 'fc60854c9eb29385245860bf607f00ec', // etapa 12c
   'front:TelaLogin.jsx': 'afa800fa12d684d6099a2e006cd59f13', // etapa 11b.1
   'front:TelaSignup.jsx': '345dceefb937b38e74cfef44cfc33ef3', // etapa 11a.3
   'front:AvisoPlanoTenant.jsx': '5795f00c1bc656d0525fd29b6793a96c', // etapa 11a.3
@@ -81,18 +81,24 @@ const ESPERADO = {
   'middleware/plataformaMiddleware.js': 'bf2424eab233bdf7e0cb6fca9cb953b9', // etapa 11b (novo)
   'scripts/criarAdmin.js': 'd4d85894f6381dc7b31f83466f316024', // etapa 11b (novo)
   'front:ConsolePlataforma.jsx': '8179b62e3cf4f2be89bcd7a6c07a2e6c', // etapa 11b (novo)
-  'routes/manutencao.js': '50205f3b877efe6d143691a9f90503b6', // etapa 12b.4
+  'routes/manutencao.js': '51bbdf7cf4b30ca5249254a2df06f3fb', // etapa 12c
   'services/calendarioManutencao.js': 'bbcf04d1bb3b18b8776579d3180274e6', // etapa 12b.2
-  'front:TelaCalendarioManutencao.jsx': '26af6f0ba3aacc2de8056841b00cae53', // etapa 12b.6
+  'front:TelaCalendarioManutencao.jsx': '648e34b6a641b03a4f35fd3a53b2de8e', // etapa 12c
   'front:TelaOrdemServico.jsx': '2228a53bf98e21fd9a8b9da1f0e96544', // etapa 12b.3
   'services/planosManutencao.js': 'e32588acaefd47c5cb93bbe0d70ab799', // etapa 12b.4
   'front:TelaPlanosManutencao.jsx': '5fd8c2a3a8c6fdfb599fb98fd9ccabff', // etapa 12b.3 + texto do botão alterado pelo Marcony (18/10)
   'front:ModalTransferirOS.jsx': '8e7c1bf0d6fc9a4f88bdd9087d22cb37', // etapa 12b.3 (novo)
+  'routes/pessoas.js': 'a239f61a4f9751476b4779572e412cd2', // etapa 12c (novo)
+  'services/documentos.js': 'd722cc217f59d77c330b024c47ef8e32', // etapa 12c (novo)
+  'front:TelaPessoas.jsx': '1df6f21616431dec6678eaaad4ee336d', // etapa 12c (novo)
 };
 
-// Antes de copiar a etapa 12b.6 — versão que serviu de base para as alterações
+// Antes de copiar a etapa 12c — versão que serviu de base para as alterações
 const ANTES = {
-  'front:TelaCalendarioManutencao.jsx': 'c1eba2acbe6f16ebd000a7ca1f3018bf',
+  'server.js': '8f9bd3638321029d445dd18bf2275d4c',
+  'front:App.jsx': '99a749de2973a28bbee218c643077dc5',
+  'routes/manutencao.js': '50205f3b877efe6d143691a9f90503b6',
+  'front:TelaCalendarioManutencao.jsx': '26af6f0ba3aacc2de8056841b00cae53',
 };
 
 const RAIZ = process.cwd();
@@ -129,8 +135,8 @@ function localizar(chave) {
 const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
-  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 12b.6?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 12b.6)\n');
+  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 12c?\n'
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 12c)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
@@ -160,7 +166,7 @@ for (const [chave, esperado] of Object.entries(LISTA)) {
     } catch (e) {
       problemas.push('erro de sintaxe: ' + String(e.stderr || e.message).split('\n').find((l) => l.trim()));
     }
-    const reqs = conteudo.matchAll(/require\(\s*['"]([^'"]*(?:fornecedoresVisiveis|services\/atuacao|services\/matchSpot|services\/recomendacoesEmail|routes\/recomendacoes|services\/convitesFornecedor|services\/acessoSpot|services\/receitaCnpj|services\/cadastroPublico|services\/emailConfirmacao|services\/plataformaConsole|middleware\/plataformaMiddleware|services\/calendarioManutencao|services\/planosManutencao))['"]\s*\)/g);
+    const reqs = conteudo.matchAll(/require\(\s*['"]([^'"]*(?:fornecedoresVisiveis|services\/atuacao|services\/matchSpot|services\/recomendacoesEmail|routes\/recomendacoes|services\/convitesFornecedor|services\/acessoSpot|services\/receitaCnpj|services\/cadastroPublico|services\/emailConfirmacao|services\/plataformaConsole|middleware\/plataformaMiddleware|services\/calendarioManutencao|services\/planosManutencao|services\/documentos))['"]\s*\)/g);
     for (const r of reqs) {
       const alvo = path.resolve(path.dirname(abs), r[1]) + '.js';
       if (!fs.existsSync(alvo)) problemas.push(`require('${r[1]}') não encontra o arquivo`);
@@ -178,13 +184,13 @@ for (const [chave, esperado] of Object.entries(LISTA)) {
 
 if (!modoAntes) {
   // Arquivos novos precisam entrar no commit
-  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js', 'services/matchSpot.js', 'services/recomendacoesEmail.js', 'routes/recomendacoes.js', 'services/convitesFornecedor.js', 'services/acessoSpot.js', 'services/receitaCnpj.js', 'services/cadastroPublico.js', 'services/emailConfirmacao.js', 'routes/plataforma.js', 'services/plataformaConsole.js', 'middleware/plataformaMiddleware.js', 'scripts/criarAdmin.js', 'routes/manutencao.js', 'services/calendarioManutencao.js', 'services/planosManutencao.js', 'migrations/019_planos_manutencao.sql', 'migrations/020_plano_termino.sql', 'migrations/021_plano_responsavel_dia_util.sql'];
+  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js', 'services/matchSpot.js', 'services/recomendacoesEmail.js', 'routes/recomendacoes.js', 'services/convitesFornecedor.js', 'services/acessoSpot.js', 'services/receitaCnpj.js', 'services/cadastroPublico.js', 'services/emailConfirmacao.js', 'routes/plataforma.js', 'services/plataformaConsole.js', 'middleware/plataformaMiddleware.js', 'scripts/criarAdmin.js', 'routes/manutencao.js', 'services/calendarioManutencao.js', 'services/planosManutencao.js', 'migrations/019_planos_manutencao.sql', 'migrations/020_plano_termino.sql', 'migrations/021_plano_responsavel_dia_util.sql', 'routes/pessoas.js', 'services/documentos.js', 'migrations/022_colaboradores_documentos.sql'];
   try {
     for (const n of novos) {
       const rastreado = execFileSync('git', ['ls-files', n], { cwd: RAIZ, stdio: 'pipe' }).toString().trim();
       if (!rastreado) console.log(`\n⚠️  ${n} ainda não está no git (git add ${n})`);
     }
-    for (const nome of ['SeletorAtuacao.jsx', 'TelaAceitarConvite.jsx', 'TelaPainelFornecedor.jsx', 'AvisoPlanoTenant.jsx', 'CampoTelefone.jsx', 'TelaConfirmarEmail.jsx', 'ConsolePlataforma.jsx', 'TelaCalendarioManutencao.jsx', 'TelaPlanosManutencao.jsx', 'ModalTransferirOS.jsx']) {
+    for (const nome of ['SeletorAtuacao.jsx', 'TelaAceitarConvite.jsx', 'TelaPainelFornecedor.jsx', 'AvisoPlanoTenant.jsx', 'CampoTelefone.jsx', 'TelaConfirmarEmail.jsx', 'ConsolePlataforma.jsx', 'TelaCalendarioManutencao.jsx', 'TelaPlanosManutencao.jsx', 'ModalTransferirOS.jsx', 'TelaPessoas.jsx']) {
       const arq = acharNoFrontend(nome)[0];
       if (!arq) continue;
       const rastreado = execFileSync('git', ['ls-files', arq], { cwd: RAIZ, stdio: 'pipe' }).toString().trim();

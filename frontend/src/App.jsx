@@ -31,6 +31,7 @@ import TelaOrdemServico from './components/estoque/TelaOrdemServico';
 import TelaConfiguracoes from './components/configuracoes/TelaConfiguracoes';
 import TelaNaoConformidades from "./components/naoConformidades/TelaNaoConformidades";
 import TelaCalendarioManutencao from './components/manutencao/TelaCalendarioManutencao'; // etapa 12a
+import TelaPessoas from './components/pessoas/TelaPessoas'; // etapa 12c
 import AvisoPlanoTenant from './components/shared/AvisoPlanoTenant'; // etapa 11a: teste grátis / empresa em análise
 
 import {
@@ -349,6 +350,7 @@ const perfil = PERFIS[usuario.perfil] || {
     {id:"inteligencia",  l:"🧠 Inteligência",         perfis:["admin","gestor"]},
     {id:"benchmark",     l:"📈 Benchmark",            perfis:["admin","gestor"]},
     {id:"equipamentos",  l:"⚙ Equipamentos",          perfis:["admin","gestor","comprador","operacao"]},
+    {id:"pessoas",       l:"👷 Pessoas",               perfis:["admin","gestor","qualidade","operacao"]},
     {id:"fornecedores",  l:"🏭 Fornecedores",         perfis:["admin","gestor","comprador"]},
     {id:"portalfornecedor", l:"🏢 Portal Fornecedor", perfis:["admin","fornecedor"]},
     {id:"catalogo",      l:"📦 Catálogo",             perfis:["admin","gestor","comprador","qualidade"]},
@@ -547,6 +549,12 @@ const perfil = PERFIS[usuario.perfil] || {
           </div>
         )}
 
+        {temAcesso(tela) && tela === "pessoas" && (
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            <TelaPessoas C={C} s={s} equipamentos={equipamentos.dados || []} />
+          </div>
+        )}
+
         {temAcesso(tela) && tela === "calendario" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
             <TelaCalendarioManutencao
@@ -555,6 +563,7 @@ const perfil = PERFIS[usuario.perfil] || {
               equipamentos={equipamentos.dados || []}
               onAbrirOS={temAcesso("ordem_servico") ? (id) => { setOsParaAbrir(id); setTela("ordem_servico"); } : null}
               onNovaOS={temAcesso("ordem_servico") ? (data) => { setNovaOSData(data); setTela("ordem_servico"); } : null}
+              onAbrirPessoas={temAcesso("pessoas") ? () => setTela("pessoas") : null}
             />
           </div>
         )}
@@ -2311,6 +2320,7 @@ const PERMISSOES = {
   inteligencia:       ["admin","gestor"],
   benchmark:          ["admin","gestor"],
   equipamentos:       ["admin","gestor","comprador","operacao"],
+  pessoas:            ["admin","gestor","qualidade","operacao"], // etapa 12c
   fornecedores:       ["admin","gestor","comprador"],
   portalfornecedor:   ["admin","fornecedor"],
   catalogo:           ["admin","gestor","comprador","qualidade"],

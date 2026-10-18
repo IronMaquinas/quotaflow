@@ -16,6 +16,7 @@ const SITUACAO = {
   em_execucao: { l: "Em execução", c: "#f59e0b", peso: 3 },
   programada:  { l: "Programada",  c: "#3b82f6", peso: 2 },
   concluida:   { l: "Concluída",   c: "#22c55e", peso: 1 },
+  documento:   { l: "Documento vence", c: "#14b8a6", peso: 0.5 }, // 12c: camada Documentos
   prevista:    { l: "Prevista (sem OS)", c: "#a78bfa", peso: 0 }, // 12b.4: ocorrência de plano ainda sem OS (roxo do selo 🔁)
 };
 const CATEGORIA = { corretiva: "Corretiva", preventiva: "Preventiva", preditiva: "Preditiva" };
@@ -44,7 +45,9 @@ function diasDaOS(os) {
   return dias;
 }
 
-export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAbrirOS, onNovaOS }) {
+const DOC_SIT = { vencido: { l: "Vencido", c: "#ef4444" }, vence_30: { l: "Vence em até 30 dias", c: "#f59e0b" }, ok: { l: "Em dia", c: "#22c55e" } };
+
+export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAbrirOS, onNovaOS, onAbrirPessoas }) {
   const [visao, setVisao] = useState("ano");
   const [ref, setRef] = useState(() => new Date());
   const [equipamentoId, setEquipamentoId] = useState("");
@@ -61,7 +64,8 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
   const [podeTransferir, setPodeTransferir] = useState(false);
   const [podeEditarPlano, setPodeEditarPlano] = useState(false); // 12b.4
   const [gerandoPrev, setGerandoPrev] = useState(null);
-  const [dialogo, setDialogo] = useState(null); // 12b.6: { tipo: 'sem_modelo' | 'erro', msg, o } — modal do app em vez de window.confirm/alert
+  const [dialogo, setDialogo] = useState(null);
+  const [camadas, setCamadas] = useState({ manutencao: true, documentos: true }); // 12c // 12b.6: { tipo: 'sem_modelo' | 'erro', msg, o } — modal do app em vez de window.confirm/alert
   const [osTransf, setOsTransf] = useState(null);
   const [aviso, setAviso] = useState("");
 
@@ -96,13 +100,22 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
     inicio: p.inicio, fim: p.fim, custo_previsto: p.custo,
   })), [dados]);
 
-  const lista = useMemo(() => [...(dados.os || []), ...previstas].filter((o) =>
-    (!categoria || o.categoria === categoria) && (!situacao || o.situacao === situacao) &&
+  // 12c: documentos viram itens "documento" no dia do vencimento (camada própria)
+  const documentos = useMemo(() => (dados.documentos || []).map((d) => ({
+    id: `doc-${d.id}`, documento: true, doc: d, numero: "Documento", descricao: `${d.tipo_nome} — ${d.alvo_nome}`, situacao: "documento",
+    responsavel_id: d.responsavel_id, responsavel: d.responsavel, inicio: `${d.vence_em}T12:00:00-03:00`, fim: `${d.vence_em}T12:00:00-03:00`,
+  })), [dados]);
+
+  const lista = useMemo(() => [
+    ...(camadas.manutencao ? [...(dados.os || []), ...previstas] : []),
+    ...(camadas.documentos ? documentos : []),
+  ].filter((o) =>
+    (!categoria || o.documento || o.categoria === categoria) && (!situacao || o.situacao === situacao) &&
     (!responsavel
       || (responsavel === "eu" && dados.eu && String(o.responsavel_id) === String(dados.eu))
       || (responsavel === "sem" && !o.responsavel_id)
       || String(o.responsavel_id) === responsavel)
-  ), [dados, previstas, categoria, situacao, responsavel]);
+  ), [dados, previstas, documentos, camadas, categoria, situacao, responsavel]);
   const responsaveis = useMemo(() => {
     const m = new Map();
     for (const o of [...(dados.os || []), ...(dados.previstas || [])]) if (o.responsavel_id) m.set(String(o.responsavel_id), o.responsavel || "Usuário");
@@ -116,8 +129,9 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
   }, [lista]);
 
   const totais = useMemo(() => {
-    const t = { planejado: 0, comprometido: 0, realizado: 0, horas: 0, itens: 0, comValor: 0, previsto: 0, nPrevistas: 0 };
+    const t = { planejado: 0, comprometido: 0, realizado: 0, horas: 0, itens: 0, comValor: 0, previsto: 0, nPrevistas: 0, nDocs: 0, nDocsVencidos: 0 };
     for (const o of lista) {
+      if (o.documento) { t.nDocs++; if (o.doc.situacao === "vencido") t.nDocsVencidos++; continue; }
       if (o.prevista) { t.previsto += o.custo_previsto?.total || 0; t.nPrevistas++; continue; }
       t.planejado += o.custo.planejado; t.comprometido += o.custo.comprometido; t.realizado += o.custo.realizado;
       t.horas += o.custo.horas; t.itens += o.custo.itens; t.comValor += o.custo.itens_com_valor;
@@ -165,15 +179,17 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
         {celulas.map((d, i) => {
           if (!d) return <div key={"v" + i} />;
           const k = chave(d); const cor = corDoDia(k); const qtd = porDia[k]?.length || 0;
-          const qtdOS = (porDia[k] || []).filter((o) => !o.prevista).length;
+          const qtdOS = (porDia[k] || []).filter((o) => !o.prevista && !o.documento).length;
+          const qtdDoc = (porDia[k] || []).filter((o) => o.documento).length;
           const soPrevista = cor === "prevista";
+          const soDoc = cor === "documento";
           const ehHoje = k === hoje;
           if (mini) return (
-            <button key={k} onClick={() => setDiaSel(k)} title={qtd ? [qtdOS ? `${qtdOS} OS` : "", qtd - qtdOS ? `${qtd - qtdOS} prevista(s)` : ""].filter(Boolean).join(" + ") : ""}
-              style={{ aspectRatio: "1", border: soPrevista ? `1.5px dashed ${SITUACAO.prevista.c}` : ehHoje ? `1px solid ${C.text}` : "1px solid transparent", borderRadius: 4, fontSize: 10, cursor: "pointer", padding: 0, fontFamily: "inherit",
-                background: soPrevista ? `${SITUACAO.prevista.c}33` : cor ? SITUACAO[cor].c : "transparent",
-                color: soPrevista ? "#ddd6fe" : cor ? "#fff" : C.textSub, fontWeight: cor ? 700 : 400,
-                boxShadow: soPrevista && ehHoje ? `0 0 0 1px ${C.text}` : "none" }}>
+            <button key={k} onClick={() => setDiaSel(k)} title={qtd ? [qtdOS ? `${qtdOS} OS` : "", qtd - qtdOS - qtdDoc ? `${qtd - qtdOS - qtdDoc} prevista(s)` : "", qtdDoc ? `${qtdDoc} documento(s)` : ""].filter(Boolean).join(" + ") : ""}
+              style={{ aspectRatio: "1", border: soPrevista ? `1.5px dashed ${SITUACAO.prevista.c}` : soDoc ? `1.5px solid ${SITUACAO.documento.c}` : ehHoje ? `1px solid ${C.text}` : "1px solid transparent", borderRadius: 4, fontSize: 10, cursor: "pointer", padding: 0, fontFamily: "inherit",
+                background: soPrevista ? `${SITUACAO.prevista.c}33` : soDoc ? `${SITUACAO.documento.c}33` : cor ? SITUACAO[cor].c : "transparent",
+                color: soPrevista ? "#ddd6fe" : soDoc ? "#99f6e4" : cor ? "#fff" : C.textSub, fontWeight: cor ? 700 : 400,
+                boxShadow: (soPrevista || soDoc) && ehHoje ? `0 0 0 1px ${C.text}` : "none" }}>
               {d.getDate()}
             </button>
           );
@@ -183,7 +199,7 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
               <div style={{ fontSize: 12, color: ehHoje ? C.accent : C.textSub, fontWeight: ehHoje ? 700 : 500, marginBottom: 4 }}>{d.getDate()}</div>
               {(porDia[k] || []).slice(0, 3).map((o) => (
                 <div key={o.id} style={{ fontSize: 10, background: o.prevista ? `${SITUACAO.prevista.c}1f` : `${SITUACAO[o.situacao].c}22`, borderLeft: `3px ${o.prevista ? "dashed" : "solid"} ${SITUACAO[o.situacao].c}`, color: o.prevista ? "#ddd6fe" : C.text, borderRadius: 3, padding: "2px 5px", marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {o.prevista ? "🔁 " : `${o.numero} `}{o.descricao}
+                  {o.prevista ? "🔁 " : o.documento ? "📄 " : `${o.numero} `}{o.descricao}
                 </div>
               ))}
               {qtd > 3 && <div style={{ fontSize: 10, color: C.muted }}>+{qtd - 3}</div>}
@@ -209,6 +225,25 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
       const msg = e.message || "Erro ao gerar";
       setDialogo(!semItens && /modelo/i.test(msg) ? { tipo: "sem_modelo", msg, o } : { tipo: "erro", msg });
     } finally { setGerandoPrev(null); }
+  };
+
+  const cartaoDocumento = (o) => {
+    const d = o.doc; const sit = DOC_SIT[d.situacao] || DOC_SIT.ok;
+    return (
+      <div key={o.id} style={{ ...s.card, padding: 12, marginBottom: 8, borderLeft: `3px solid ${SITUACAO.documento.c}`, background: `${SITUACAO.documento.c}10` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+          <div style={{ fontWeight: 600, fontSize: 13 }}>📄 {d.tipo_nome}{d.numero ? <span style={{ color: C.muted, fontWeight: 400 }}> · nº {d.numero}</span> : ""}</div>
+          <span style={s.tag(sit.c)}>{sit.l}</span>
+        </div>
+        <div style={{ fontSize: 12, color: C.textSub, marginTop: 4 }}>
+          {d.alvo_tipo === "colaborador" ? "👤" : d.alvo_tipo === "equipamento" ? "⚙" : "🏢"} {d.alvo_nome} · vence {d.vence_em.split("-").reverse().join("/")}
+          {d.responsavel ? ` · resp.: ${d.responsavel}` : ""}
+        </div>
+        {onAbrirPessoas && (
+          <button onClick={() => onAbrirPessoas()} style={{ ...s.btn(false), cursor: "pointer", color: C.accent, padding: "5px 12px", fontSize: 12, marginTop: 8 }}>Ver em Pessoas → Documentos</button>
+        )}
+      </div>
+    );
   };
 
   const cartaoPrevista = (o) => (
@@ -308,10 +343,18 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
         </select>
       </div>
 
+      <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+        <span style={{ fontSize: 11, color: C.muted, letterSpacing: "0.06em" }}>CAMADAS</span>
+        {[["manutencao", "🛠 Manutenção"], ["documentos", "📄 Documentos"]].map(([k, l]) => (
+          <button key={k} onClick={() => setCamadas((c) => ({ ...c, [k]: !c[k] }))} aria-pressed={camadas[k]}
+            style={{ ...s.btn(camadas[k], k === "documentos" ? SITUACAO.documento.c : C.accent), cursor: "pointer", padding: "4px 12px", fontSize: 12 }}>{camadas[k] ? "✓ " : ""}{l}</button>
+        ))}
+      </div>
+
       <div style={{ display: "flex", gap: 14, fontSize: 11, color: C.textSub, marginBottom: 12, flexWrap: "wrap" }}>
         {Object.entries(SITUACAO).map(([k, v]) => (
           <span key={k} style={{ display: "inline-flex", alignItems: "center", gap: 5 }}>
-            <span style={{ width: 10, height: 10, borderRadius: 3, boxSizing: "border-box", ...(k === "prevista" ? { background: `${v.c}33`, border: `1.5px dashed ${v.c}` } : { background: v.c }) }} />{v.l} ({lista.filter((o) => o.situacao === k).length})
+            <span style={{ width: 10, height: 10, borderRadius: 3, boxSizing: "border-box", ...(k === "prevista" ? { background: `${v.c}33`, border: `1.5px dashed ${v.c}` } : k === "documento" ? { background: `${v.c}33`, border: `1.5px solid ${v.c}` } : { background: v.c }) }} />{v.l} ({lista.filter((o) => o.situacao === k).length})
           </span>
         ))}
         {carregando && <span style={{ color: C.muted }}>carregando…</span>}
@@ -346,7 +389,7 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
                   </div>
                   {(porDia[k] || []).map((o) => (
                     <div key={o.id} onClick={() => setDiaSel(k)} style={{ fontSize: 11, background: `${SITUACAO[o.situacao].c}22`, borderLeft: `3px solid ${SITUACAO[o.situacao].c}`, borderRadius: 3, padding: "4px 6px", marginBottom: 4, cursor: "pointer" }}>
-                      <div style={{ fontWeight: 600 }}>{o.prevista ? "🔁 Prevista" : o.numero}</div>
+                      <div style={{ fontWeight: 600 }}>{o.prevista ? "🔁 Prevista" : o.documento ? "📄 Vence" : o.numero}</div>
                       <div style={{ color: C.textSub }}>{o.descricao}</div>
                       <div style={{ color: C.muted }}>{o.equipamento || ""}</div>
                     </div>
@@ -361,12 +404,15 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
       {/* Rodapé financeiro do período visível */}
       <div style={{ position: "sticky", bottom: 0, background: C.bg, paddingTop: 12, paddingBottom: 16, marginTop: 16 }}>
         <div style={{ ...s.card, padding: "12px 16px", display: "flex", gap: 22, flexWrap: "wrap", alignItems: "center", fontSize: 13 }}>
-          <span style={{ color: C.muted, fontSize: 11, letterSpacing: "0.06em" }}>{visao === "ano" ? `ANO ${ref.getFullYear()}` : visao === "mes" ? "MÊS" : "SEMANA"} · {lista.length} OS</span>
+          <span style={{ color: C.muted, fontSize: 11, letterSpacing: "0.06em" }}>{visao === "ano" ? `ANO ${ref.getFullYear()}` : visao === "mes" ? "MÊS" : "SEMANA"} · {lista.filter((o) => !o.documento).length} OS</span>
           <span>Planejado <b>{brl(totais.planejado)}</b></span>
           <span style={{ color: C.success }}>Gasto <b>{brl(totais.realizado)}</b></span>
           <span style={{ color: C.warn }}>Comprometido <b>{brl(totais.comprometido)}</b></span>
           <span>Falta <b>{brl(totais.falta)}</b></span>
           {totais.horas > 0 && <span style={{ color: C.textSub }}>{Math.round(totais.horas)} h programadas</span>}
+          {totais.nDocs > 0 && (
+            <span style={{ color: SITUACAO.documento.c }}>📄 {totais.nDocs} documento(s) vencendo{totais.nDocsVencidos ? <b style={{ color: "#ef4444" }}> · {totais.nDocsVencidos} já vencido(s)</b> : ""}</span>
+          )}
           {totais.nPrevistas > 0 && (
             <span title="Ocorrências dos planos que ainda não viraram OS — custo estimado pelo modelo. Não entra no planejado." style={{ color: SITUACAO.prevista.c, cursor: "help" }}>
               Previsto pelos planos <b>{brl(totais.previsto)}</b> ({totais.nPrevistas} sem OS)
@@ -428,7 +474,7 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
             )}
             {(porDia[diaSel] || []).length === 0
               ? <div style={{ color: C.muted, fontSize: 13 }}>Nenhuma OS programada neste dia.</div>
-              : porDia[diaSel].map((o) => (o.prevista ? cartaoPrevista(o) : cartaoOS(o)))}
+              : porDia[diaSel].map((o) => (o.documento ? cartaoDocumento(o) : o.prevista ? cartaoPrevista(o) : cartaoOS(o)))}
           </div>
         </div>
       )}
