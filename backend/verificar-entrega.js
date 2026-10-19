@@ -50,10 +50,10 @@ const ESPERADO = {
   'services/matchSpot.js': 'fe4275090b82bd1efd52498d2176a90c', // etapa 7
   'routes/configuracoes.js': '05360fb8a4945623e1878ba336161d27', // etapa 7
   'routes/fornecedor.js': '531ae3790a252060c15f14f82af0a8ee', // etapa 11b.1
-  'routes/recomendacoes.js': '3c1fe2834a30a24198923797bce4001a', // etapa 9
+  'routes/recomendacoes.js': '68c234136ab14413eb2b758332ceb19d', // etapa 9
   'services/recomendacoesEmail.js': '7bc5475ccffb4fd2fcec53be78e64123', // etapa 10c
   'services/emailService.js': '2daf0e597ff370e006585f919c63b525', // etapa 9
-  'server.js': 'd586edf4be29ba47192ed524901d859e', // etapa 12c
+  'server.js': '5014064f2e48cd7561e1c39cfb53c8c5', // etapa 12c
   'routes/atuacao.js': 'cc196661189e2714bcfad96e5c1e8ad9',
   'services/atuacao.js': '8509ac0206906a7f93384350e77132bf',
   'front:SeletorAtuacao.jsx': '17afaaf69d6e4cf0c105490267d188a7',
@@ -91,14 +91,14 @@ const ESPERADO = {
   'routes/pessoas.js': 'a239f61a4f9751476b4779572e412cd2', // etapa 12c (novo)
   'services/documentos.js': 'd722cc217f59d77c330b024c47ef8e32', // etapa 12c (novo)
   'front:TelaPessoas.jsx': '1df6f21616431dec6678eaaad4ee336d', // etapa 12c (novo)
+  // etapa 12c.1
+  'services/avisosVencimento.js': '326d34d06a099fe41c1cb75f77e3b3af',
 };
 
-// Antes de copiar a etapa 12c — versão que serviu de base para as alterações
+// Antes de copiar a etapa 12c.1 — versão que serviu de base para as alterações
 const ANTES = {
-  'server.js': '8f9bd3638321029d445dd18bf2275d4c',
-  'front:App.jsx': '99a749de2973a28bbee218c643077dc5',
-  'routes/manutencao.js': '50205f3b877efe6d143691a9f90503b6',
-  'front:TelaCalendarioManutencao.jsx': '26af6f0ba3aacc2de8056841b00cae53',
+  'server.js': 'd586edf4be29ba47192ed524901d859e',
+  'routes/recomendacoes.js': '3c1fe2834a30a24198923797bce4001a',
 };
 
 const RAIZ = process.cwd();
@@ -135,8 +135,8 @@ function localizar(chave) {
 const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
-  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 12c?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 12c)\n');
+  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 12c.1?\n'
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 12c.1)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
@@ -184,7 +184,7 @@ for (const [chave, esperado] of Object.entries(LISTA)) {
 
 if (!modoAntes) {
   // Arquivos novos precisam entrar no commit
-  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js', 'services/matchSpot.js', 'services/recomendacoesEmail.js', 'routes/recomendacoes.js', 'services/convitesFornecedor.js', 'services/acessoSpot.js', 'services/receitaCnpj.js', 'services/cadastroPublico.js', 'services/emailConfirmacao.js', 'routes/plataforma.js', 'services/plataformaConsole.js', 'middleware/plataformaMiddleware.js', 'scripts/criarAdmin.js', 'routes/manutencao.js', 'services/calendarioManutencao.js', 'services/planosManutencao.js', 'migrations/019_planos_manutencao.sql', 'migrations/020_plano_termino.sql', 'migrations/021_plano_responsavel_dia_util.sql', 'routes/pessoas.js', 'services/documentos.js', 'migrations/022_colaboradores_documentos.sql'];
+  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js', 'services/matchSpot.js', 'services/recomendacoesEmail.js', 'routes/recomendacoes.js', 'services/convitesFornecedor.js', 'services/acessoSpot.js', 'services/receitaCnpj.js', 'services/cadastroPublico.js', 'services/emailConfirmacao.js', 'routes/plataforma.js', 'services/plataformaConsole.js', 'middleware/plataformaMiddleware.js', 'scripts/criarAdmin.js', 'routes/manutencao.js', 'services/calendarioManutencao.js', 'services/planosManutencao.js', 'migrations/019_planos_manutencao.sql', 'migrations/020_plano_termino.sql', 'migrations/021_plano_responsavel_dia_util.sql', 'routes/pessoas.js', 'services/documentos.js', 'migrations/022_colaboradores_documentos.sql', 'services/avisosVencimento.js', 'migrations/023_documento_avisos.sql'];
   try {
     for (const n of novos) {
       const rastreado = execFileSync('git', ['ls-files', n], { cwd: RAIZ, stdio: 'pipe' }).toString().trim();

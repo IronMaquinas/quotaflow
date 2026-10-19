@@ -20,6 +20,7 @@ const express = require('express');
 const crypto = require('crypto');
 const router = express.Router();
 const { enviarResumoDiario, descadastrarPorToken } = require('../services/recomendacoesEmail');
+const { enviarAvisosVencimento } = require('../services/avisosVencimento'); // etapa 12c.1
 
 function segredoConfere(recebido) {
   const esperado = process.env.CRON_SECRET || '';
@@ -38,7 +39,12 @@ router.post('/resumo-diario', async (req, res) => {
   if (resumoRodando) return res.status(409).json({ erro: 'Resumo já está em andamento' });
   resumoRodando = true;
   try {
-    res.json({ ok: true, ...(await enviarResumoDiario()) });
+    // etapa 12c.1: o mesmo disparo das 7h também manda os avisos de vencimento de documentos.
+    // Falha nos avisos nunca impede o resumo do Canal Spot (e vice-versa).
+    let avisos_vencimento;
+    try { avisos_vencimento = await enviarAvisosVencimento(); }
+    catch (e) { console.error('❌ avisos de vencimento:', e.message); avisos_vencimento = { erro: e.message }; }
+    res.json({ ok: true, ...(await enviarResumoDiario()), avisos_vencimento });
   } catch (err) {
     console.error('❌ POST /recomendacoes/resumo-diario:', err.message);
     res.status(500).json({ erro: err.message });

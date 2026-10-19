@@ -243,6 +243,8 @@ if (process.env.CRON_INTERNO === '1') {
   cron.schedule('0 7 * * *', () => {
     console.log('[CRON] Resumo diário de recomendações do Canal Spot...');
     enviarResumoDiario().catch(console.error);
+    // etapa 12c.1: avisos de vencimento de documentos (30/15/5 dias e vencido)
+    require('./services/avisosVencimento').enviarAvisosVencimento().catch(console.error);
   }, { timezone: 'America/Sao_Paulo' });
 }
 
