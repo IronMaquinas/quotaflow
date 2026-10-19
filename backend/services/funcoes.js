@@ -10,6 +10,7 @@
 // Regras do backend: sem DB.raw; ids com String(); filtros sem null (usa .is para NULL).
 
 const { listarDocumentos, tiposDoTenant } = require('./documentos');
+const E = require('./epi'); // etapa 12d.1 — kit de EPI
 
 async function q(p) { const { data, error } = await p; if (error) throw new Error(error.message); return data || []; }
 const texto = (v, max) => (v == null || String(v).trim() === '' ? null : String(v).trim().slice(0, max));
@@ -51,8 +52,8 @@ const RISCOS = [
   { codigo: 'explosao_pneu', nome: 'Explosão de pneu', grupo: 'Acidente' },
   { codigo: 'incendio', nome: 'Incêndio / explosão', grupo: 'Acidente' },
 ];
-const LISTAS = { escolaridades: ESCOLARIDADES, riscos: RISCOS };
-const CAMPOS_CONTEUDO = ['descritivo', 'requisitos', 'documentos', 'cbo', 'setor', 'escolaridade', 'riscos', 'responde_a'];
+const LISTAS = { escolaridades: ESCOLARIDADES, riscos: RISCOS, ...E.LISTAS_EPI };
+const CAMPOS_CONTEUDO = ['descritivo', 'requisitos', 'documentos', 'cbo', 'setor', 'escolaridade', 'riscos', 'responde_a', 'epis'];
 const copiarConteudo = (m) => ({
   descritivo: m.descritivo ?? null, requisitos: m.requisitos ?? null, documentos: m.documentos || [],
   epis: m.epis || [], treinamentos: m.treinamentos || [],
@@ -82,6 +83,10 @@ function validarFuncao(body, { parcial = false } = {}) {
   if (tem('riscos')) {
     if (!Array.isArray(body.riscos)) erros.push('Riscos inválidos');
     else out.riscos = [...new Set(body.riscos.map(String))].filter((r) => RISCOS.some((x) => x.codigo === r));
+  }
+  if (tem('epis')) {
+    const k = E.validarKit(body.epis);
+    if (k.erro) erros.push(k.erro); else out.epis = k.kit;
   }
   if (tem('documentos')) {
     if (!Array.isArray(body.documentos)) erros.push('Documentos exigidos inválidos');
@@ -226,7 +231,7 @@ async function editarModelo(supabase, id, body) {
   if (!m || m.tenant_id != null) return { status: 404, erro: 'Modelo não encontrado' };
   const { erros, dados } = validarFuncao(body || {}, { parcial: true });
   if (erros.length) return { status: 400, erro: erros[0] };
-  const mudou = CAMPOS_CONTEUDO.some((k) => dados[k] !== undefined && JSON.stringify(dados[k]) !== JSON.stringify(m[k] ?? (k === 'documentos' || k === 'riscos' ? [] : null)));
+  const mudou = CAMPOS_CONTEUDO.some((k) => dados[k] !== undefined && JSON.stringify(dados[k]) !== JSON.stringify(m[k] ?? (k === 'documentos' || k === 'riscos' || k === 'epis' ? [] : null)));
   const { data, error } = await supabase.from('funcoes').update({ ...dados, ...(mudou ? { versao: (Number(m.versao) || 1) + 1 } : {}), atualizado_em: new Date().toISOString() })
     .eq('id', m.id).is('tenant_id', null).select();
   if (error) { if (/funcoes_nome_unico/.test(error.message)) return { status: 409, erro: 'Já existe um modelo com esse nome' }; throw new Error(error.message); }

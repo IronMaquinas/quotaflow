@@ -2,10 +2,11 @@
 // Módulo "👷 Pessoas": abas Documentos (pessoa, equipamento e empresa, com vencimento e
 // arquivo anexo) · Colaboradores (com ficha: exigidos pela função × o que tem) ·
 // Funções (descritivo do cargo + documentos exigidos; importar da biblioteca do QuotaFlow) ·
-// EPI e Treinamentos (em breve — 12d/12e).
+// 🦺 EPI (12d.1 — TelaEpi.jsx; kit de EPI na função) · Treinamentos (em breve — 12e).
 // Confirmações sempre no modal do app (nunca window.confirm/alert).
 import { useState, useEffect, useMemo } from "react";
 import apiService from "../../services/apiService";
+import TelaEpi from "./TelaEpi"; // etapa 12d.1
 
 const ALVO = { colaborador: "Pessoa", equipamento: "Equipamento", empresa: "Empresa" };
 const SITUACAO_DOC = {
@@ -66,7 +67,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
   const [voltarFicha, setVoltarFicha] = useState(null); // reabre a ficha depois de salvar um documento
   const [buscaFuncao, setBuscaFuncao] = useState("");   // busca na aba Funções
   const [buscaBiblio, setBuscaBiblio] = useState("");   // busca na biblioteca
-  const [listas, setListas] = useState({ escolaridades: [], riscos: [] }); // 12d.0.2 (vêm da API)
+  const [listas, setListas] = useState({ escolaridades: [], riscos: [], tipos_epi: [], sugestao_por_risco: {} }); // 12d.0.2 (vêm da API)
 
   useEffect(() => { if (abaInicial) { setAba(abaInicial); onAbaConsumida?.(); } }, [abaInicial]); // eslint-disable-line
   useEffect(() => { if (!aviso) return; const t = setTimeout(() => setAviso(""), 4500); return () => clearTimeout(t); }, [aviso]);
@@ -80,7 +81,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
         apiService.get("/pessoas/documentos", historico ? { historico: "1" } : {}),
       ]);
       setConfig(cfg || {}); setColabs(c?.colaboradores || []); setDocs(d?.documentos || []); setResumo(d?.resumo || {});
-      try { const f = await apiService.get("/pessoas/funcoes"); setFuncoes(f?.funcoes || []); setListas({ escolaridades: f?.escolaridades || [], riscos: f?.riscos || [] }); setFuncoesOk(true); }
+      try { const f = await apiService.get("/pessoas/funcoes"); setFuncoes(f?.funcoes || []); setListas({ escolaridades: f?.escolaridades || [], riscos: f?.riscos || [], tipos_epi: f?.tipos_epi || [], sugestao_por_risco: f?.sugestao_por_risco || {} }); setFuncoesOk(true); }
       catch { setFuncoes([]); setFuncoesOk(false); }
     } catch (e) { setErro(e.message || "Erro ao carregar"); }
     finally { setCarregando(false); }
@@ -93,6 +94,14 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
   // busca por nome, descritivo, requisitos ou documento exigido (sem acento, sem maiúscula)
   const casaFuncao = (f, termo) => { const b = semAcento(termo.trim()); return !b || semAcento(`${f.nome} ${f.cbo || ""} ${f.setor || ""} ${f.descritivo || ""} ${f.requisitos || ""} ${(f.documentos || []).map((d) => nomeTipoCol(d.codigo)).join(" ")}`).includes(b); };
   const nomeEscolaridade = (c) => listas.escolaridades.find((e) => e.codigo === c)?.nome || c;
+  const nomeEpi = (c) => listas.tipos_epi.find((t) => t.codigo === c)?.nome || c;
+  // kit sugerido pelos riscos marcados (só acrescenta o que ainda não está no kit)
+  const sugerirKit = (f) => {
+    const ja = new Set(f.epis.map((k) => k.tipo));
+    const novos = [];
+    for (const r of f.riscos) for (const t of listas.sugestao_por_risco[r] || []) if (!ja.has(t)) { ja.add(t); novos.push({ tipo: t, quantidade: 1, troca_dias: "" }); }
+    return novos;
+  };
   const nomeRisco = (c) => listas.riscos.find((r) => r.codigo === c)?.nome || c;
   const COR_GRUPO = { "Físico": "#38bdf8", "Químico": "#f472b6", "Biológico": "#4ade80", "Ergonômico": "#fbbf24", "Acidente": "#f87171" };
   const corRisco = (c) => COR_GRUPO[listas.riscos.find((r) => r.codigo === c)?.grupo] || C.muted;
@@ -105,6 +114,11 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
         {(f.riscos || []).length > 0 && (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
             {f.riscos.map((r) => <span key={r} style={s.tag(corRisco(r))}>⚠ {nomeRisco(r)}</span>)}
+          </div>
+        )}
+        {(f.epis || []).length > 0 && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+            {f.epis.map((k) => <span key={k.tipo} style={s.tag("#22c55e")}>🦺 {nomeEpi(k.tipo)}{k.quantidade > 1 ? ` ×${k.quantidade}` : ""}{k.troca_dias ? ` · ${k.troca_dias} d` : ""}</span>)}
           </div>
         )}
       </>
@@ -181,7 +195,8 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
     try {
       const f = formFuncao;
       const corpo = { nome: f.nome, descritivo: f.descritivo, requisitos: f.requisitos, documentos: f.documentos.map((codigo) => ({ codigo })),
-        cbo: f.cbo, setor: f.setor, escolaridade: f.escolaridade || null, riscos: f.riscos, responde_a: f.responde_a };
+        cbo: f.cbo, setor: f.setor, escolaridade: f.escolaridade || null, riscos: f.riscos, responde_a: f.responde_a,
+        epis: f.epis.map((k) => ({ tipo: k.tipo, quantidade: Number(k.quantidade) || 1, troca_dias: k.troca_dias === "" || k.troca_dias == null ? null : Number(k.troca_dias) })) };
       if (f.id) await apiService.put(`/pessoas/funcoes/${f.id}`, corpo); else await apiService.post("/pessoas/funcoes", corpo);
       setFormFuncao(null); setAviso("Função salva."); await carregar();
     } catch (e) { setErro(e.message); }
@@ -254,7 +269,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       <h2 style={{ margin: "0 0 4px", fontSize: 20, fontWeight: 700 }}>👷 Pessoas e documentos</h2>
       <div style={{ fontSize: 12, color: C.textSub, marginBottom: 12 }}>Colaboradores (com ou sem login no sistema) e documentos com vencimento de pessoas, equipamentos e da empresa.</div>
       <div style={{ borderBottom: `1px solid ${C.border}`, marginBottom: 18 }}>
-        {tab("documentos", "📄 Documentos")}{tab("colaboradores", "👥 Colaboradores")}{tab("funcoes", "👔 Funções")}{tab("epi", "🦺 EPI", true)}{tab("treinamentos", "🎓 Treinamentos", true)}
+        {tab("documentos", "📄 Documentos")}{tab("colaboradores", "👥 Colaboradores")}{tab("funcoes", "👔 Funções")}{tab("epi", "🦺 EPI")}{tab("treinamentos", "🎓 Treinamentos", true)}
       </div>
 
       {aviso && <div style={{ ...s.card, padding: 12, marginBottom: 12, borderColor: C.success, color: C.success }}>✓ {aviso}</div>}
@@ -381,7 +396,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
             <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
               <div style={{ fontSize: 12, color: C.textSub, flex: "1 1 300px" }}>Cada função tem o descritivo do cargo (ISO) e os documentos exigidos. Ao ligar a função ao colaborador, a ficha dele mostra o que falta e o que está vencendo.</div>
               {editar && <button onClick={abrirBiblioteca} style={{ ...s.btn(false), cursor: "pointer", color: C.accent }}>📚 Importar da biblioteca</button>}
-              {editar && <button onClick={() => setFormFuncao({ nome: "", descritivo: "", requisitos: "", documentos: [], cbo: "", setor: "", escolaridade: "", riscos: [], responde_a: "" })} style={{ ...s.btn(true), cursor: "pointer" }}>＋ Nova função</button>}
+              {editar && <button onClick={() => setFormFuncao({ nome: "", descritivo: "", requisitos: "", documentos: [], cbo: "", setor: "", escolaridade: "", riscos: [], responde_a: "", epis: [] })} style={{ ...s.btn(true), cursor: "pointer" }}>＋ Nova função</button>}
             </div>
             {funcoes.length > 0 && <input value={buscaFuncao} onChange={(e) => setBuscaFuncao(e.target.value)} placeholder="🔍 Buscar função, atividade ou documento…" style={{ ...s.input, maxWidth: 360, padding: "7px 10px", fontSize: 12, marginBottom: 12 }} />}
             {funcoes.length > 0 && !funcoes.some((f) => casaFuncao(f, buscaFuncao)) && <div style={{ ...s.card, padding: 20, textAlign: "center", color: C.textSub, marginBottom: 10 }}>Nenhuma função com “{buscaFuncao}”. {editar && "Tente 📚 Importar da biblioteca."}</div>}
@@ -398,7 +413,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
                       </div>
                       {f.versao_nova && editar && <button onClick={() => setConfirmar({ titulo: "Atualizar da biblioteca", botao: "Atualizar", cor: C.accent, texto: `O modelo “${f.origem_nome}” tem uma versão nova. Atualizar troca o descritivo, os requisitos e os documentos exigidos de “${f.nome}” pelos do modelo (o nome fica). O que você ajustou nesses campos será substituído.`, acao: async () => { await apiService.post(`/pessoas/funcoes/${f.id}/atualizar`); return "Função atualizada com a versão nova da biblioteca."; } })}
                         style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: "#a78bfa", borderColor: "#a78bfa" }}>✨ Versão nova na biblioteca</button>}
-                      {editar && <button onClick={() => setFormFuncao({ id: f.id, nome: f.nome, descritivo: f.descritivo || "", requisitos: f.requisitos || "", documentos: (f.documentos || []).map((d) => d.codigo), cbo: f.cbo || "", setor: f.setor || "", escolaridade: f.escolaridade || "", riscos: f.riscos || [], responde_a: f.responde_a || "" })} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.text }}>Editar</button>}
+                      {editar && <button onClick={() => setFormFuncao({ id: f.id, nome: f.nome, descritivo: f.descritivo || "", requisitos: f.requisitos || "", documentos: (f.documentos || []).map((d) => d.codigo), cbo: f.cbo || "", setor: f.setor || "", escolaridade: f.escolaridade || "", riscos: f.riscos || [], responde_a: f.responde_a || "", epis: (f.epis || []).map((k) => ({ ...k, troca_dias: k.troca_dias ?? "" })) })} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.text }}>Editar</button>}
                       {editar && <button onClick={() => excluir("Excluir função", `Excluir “${f.nome}”? Só é possível se nenhum colaborador estiver com essa função.`, async () => { await apiService.delete(`/pessoas/funcoes/${f.id}`); return "Função excluída."; })}
                         style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.danger }}>Excluir</button>}
                     </div>
@@ -415,6 +430,9 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
           </>
         )
       )}
+
+      {/* ─── EPI (12d.1) ─── */}
+      {aba === "epi" && <TelaEpi C={C} s={s} funcoes={funcoes} modal={modal} campo={campo} onAviso={setAviso} onErro={setErro} />}
 
       {/* ─── modal função ─── */}
       {formFuncao && modal(<>
@@ -465,7 +483,34 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
                 })}
               </div>
             ))}
-            <div style={{ fontSize: 11, color: C.muted }}>Os riscos vão ajudar a sugerir o kit de EPI da função (próxima etapa).</div>
+          </div>
+          <div>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <span style={{ ...s.label, marginBottom: 0 }}>KIT DE EPI DA FUNÇÃO</span>
+              <div style={{ flex: 1 }} />
+              <button type="button" disabled={!formFuncao.riscos.length || !sugerirKit(formFuncao).length} onClick={() => setFormFuncao({ ...formFuncao, epis: [...formFuncao.epis, ...sugerirKit(formFuncao)] })}
+                title={formFuncao.riscos.length ? "Acrescenta os EPIs indicados para os riscos marcados" : "Marque os riscos primeiro"}
+                style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: "#a78bfa", borderColor: "#a78bfa", opacity: !formFuncao.riscos.length || !sugerirKit(formFuncao).length ? 0.45 : 1 }}>✨ Sugerir pelos riscos</button>
+              <button type="button" onClick={() => setFormFuncao({ ...formFuncao, epis: [...formFuncao.epis, { tipo: "", quantidade: 1, troca_dias: "" }] })} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.accent }}>＋ EPI</button>
+            </div>
+            {formFuncao.epis.length === 0 && <div style={{ fontSize: 12, color: C.muted }}>Nenhum EPI no kit. Marque os riscos e use “✨ Sugerir pelos riscos”, ou adicione um a um.</div>}
+            {formFuncao.epis.map((k, i) => {
+              const muda = (campoK, v) => setFormFuncao({ ...formFuncao, epis: formFuncao.epis.map((x, j) => (j === i ? { ...x, [campoK]: v } : x)) });
+              return (
+                <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6, flexWrap: "wrap" }}>
+                  <select value={k.tipo} onChange={(e) => muda("tipo", e.target.value)} style={{ ...s.input, flex: "3 1 200px", padding: "7px 10px", fontSize: 12 }}>
+                    <option value="">Tipo de EPI…</option>
+                    {listas.tipos_epi.filter((t) => t.codigo === k.tipo || !formFuncao.epis.some((x) => x.tipo === t.codigo)).map((t) => <option key={t.codigo} value={t.codigo}>{t.nome}</option>)}
+                  </select>
+                  <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: C.textSub }}>qtd
+                    <input type="number" min={1} max={99} value={k.quantidade} onChange={(e) => muda("quantidade", e.target.value)} style={{ ...s.input, width: 56, padding: "6px 8px", fontSize: 12 }} /></label>
+                  <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: C.textSub }}>troca (dias)
+                    <input type="number" min={1} max={3650} value={k.troca_dias} onChange={(e) => muda("troca_dias", e.target.value)} placeholder="—" style={{ ...s.input, width: 70, padding: "6px 8px", fontSize: 12 }} /></label>
+                  <button type="button" onClick={() => setFormFuncao({ ...formFuncao, epis: formFuncao.epis.filter((_, j) => j !== i) })} title="Tirar do kit" style={{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 16 }}>×</button>
+                </div>
+              );
+            })}
+            <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>A sugestão é um ponto de partida — confirme com o PGR/SESMT da empresa. A troca vale para o kit desta função (se vazio, usa a do item de EPI).</div>
           </div>
         </div>
         <div style={{ display: "flex", gap: 10, marginTop: 18 }}>

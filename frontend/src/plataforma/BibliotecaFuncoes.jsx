@@ -28,12 +28,17 @@ export default function BibliotecaFuncoes({ token, chamar, C, input, label, card
   const riscos = dados?.riscos || [];
   const grupos = [...new Set(riscos.map((r) => r.grupo))];
   const nomeRisco = (c) => riscos.find((r) => r.codigo === c)?.nome || c;
+  const tiposEpi = dados?.tipos_epi || [];
+  const sugestao = dados?.sugestao_por_risco || {};
+  const nomeEpi = (c) => tiposEpi.find((t) => t.codigo === c)?.nome || c;
+  const sugerir = (f) => { const ja = new Set(f.epis.map((k) => k.tipo)); const out = []; for (const r of f.riscos) for (const t of sugestao[r] || []) if (!ja.has(t)) { ja.add(t); out.push({ tipo: t, quantidade: 1, troca_dias: "" }); } return out; };
 
   const salvar = async () => {
     setSalvando(true);
     try {
       const corpo = { nome: form.nome, descritivo: form.descritivo, requisitos: form.requisitos, documentos: form.documentos.map((codigo) => ({ codigo })),
-        cbo: form.cbo, setor: form.setor, escolaridade: form.escolaridade || null, riscos: form.riscos, responde_a: form.responde_a };
+        cbo: form.cbo, setor: form.setor, escolaridade: form.escolaridade || null, riscos: form.riscos, responde_a: form.responde_a,
+        epis: form.epis.map((k) => ({ tipo: k.tipo, quantidade: Number(k.quantidade) || 1, troca_dias: k.troca_dias === "" || k.troca_dias == null ? null : Number(k.troca_dias) })) };
       const r = form.id ? await chamar(token, "PUT", `/biblioteca/funcoes/${form.id}`, corpo) : await chamar(token, "POST", "/biblioteca/funcoes", corpo);
       onAviso({ tipo: "ok", texto: form.id ? (r?.versao_subiu ? `Modelo salvo — versão ${r.modelo?.versao}. Quem importou verá "versão nova".` : "Modelo salvo.") : "Modelo criado na biblioteca." });
       setForm(null); await carregar();
@@ -55,7 +60,7 @@ export default function BibliotecaFuncoes({ token, chamar, C, input, label, card
         <div style={{ fontSize: 13, color: C.sub, flex: 1, minWidth: 240 }}>
           Modelos de função que todas as transportadoras veem em <b style={{ color: C.text }}>👷 Pessoas → Funções → Importar da biblioteca</b>. Importar faz uma cópia que a empresa adapta.
         </div>
-        <button type="button" onClick={() => setForm({ nome: "", descritivo: "", requisitos: "", documentos: [], cbo: "", setor: "", escolaridade: "", riscos: [], responde_a: "" })} style={btn(C.accent)}>＋ Novo modelo</button>
+        <button type="button" onClick={() => setForm({ nome: "", descritivo: "", requisitos: "", documentos: [], cbo: "", setor: "", escolaridade: "", riscos: [], responde_a: "", epis: [] })} style={btn(C.accent)}>＋ Novo modelo</button>
       </div>
 
       {dados.modelos.length > 0 && (
@@ -70,7 +75,7 @@ export default function BibliotecaFuncoes({ token, chamar, C, input, label, card
               <div style={{ fontWeight: 700, fontSize: 14, flex: 1, minWidth: 200 }}>{m.nome}</div>
               <span style={tag(C.violet)}>v{m.versao || 1}</span>
               <span style={tag(C.muted)}>{m.importacoes} empresa(s) importaram</span>
-              <button type="button" onClick={() => setForm({ id: m.id, nome: m.nome, descritivo: m.descritivo || "", requisitos: m.requisitos || "", documentos: (m.documentos || []).map((d) => d.codigo), cbo: m.cbo || "", setor: m.setor || "", escolaridade: m.escolaridade || "", riscos: m.riscos || [], responde_a: m.responde_a || "" })} style={btn(C.accent, false)}>Editar</button>
+              <button type="button" onClick={() => setForm({ id: m.id, nome: m.nome, descritivo: m.descritivo || "", requisitos: m.requisitos || "", documentos: (m.documentos || []).map((d) => d.codigo), cbo: m.cbo || "", setor: m.setor || "", escolaridade: m.escolaridade || "", riscos: m.riscos || [], responde_a: m.responde_a || "", epis: (m.epis || []).map((k) => ({ ...k, troca_dias: k.troca_dias ?? "" })) })} style={btn(C.accent, false)}>Editar</button>
               <button type="button" onClick={() => setConfirmar(m)} style={btn(C.danger, false)}>Tirar da biblioteca</button>
             </div>
             {[m.cbo && `CBO ${m.cbo}`, m.setor, m.escolaridade && escolaridades.find((e) => e.codigo === m.escolaridade)?.nome, m.responde_a && `responde a ${m.responde_a}`].filter(Boolean).length > 0 && (
@@ -80,6 +85,7 @@ export default function BibliotecaFuncoes({ token, chamar, C, input, label, card
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
               {(m.documentos || []).map((d) => <span key={d.codigo} style={tag(C.accent)}>📄 {nomeTipo(d.codigo)}</span>)}
               {(m.riscos || []).map((r) => <span key={r} style={tag(C.warn)}>⚠ {nomeRisco(r)}</span>)}
+              {(m.epis || []).map((k) => <span key={k.tipo} style={tag(C.success)}>🦺 {nomeEpi(k.tipo)}{k.quantidade > 1 ? ` ×${k.quantidade}` : ""}</span>)}
             </div>
           </div>
         ))}
@@ -135,7 +141,29 @@ export default function BibliotecaFuncoes({ token, chamar, C, input, label, card
                 })}
               </div>
             ))}
-            {form.id && <div style={{ fontSize: 11, color: C.muted, marginTop: 8 }}>Mudou descritivo, requisitos, documentos, CBO, setor, escolaridade, riscos ou "responde a" → sobe a versão e as empresas que importaram veem "versão nova" (elas decidem se atualizam).</div>}
+            <div style={{ display: "flex", alignItems: "center", gap: 8, margin: "12px 0 6px" }}>
+              <span style={{ ...label, marginBottom: 0 }}>KIT DE EPI</span>
+              <div style={{ flex: 1 }} />
+              <button type="button" onClick={() => setForm({ ...form, epis: [...form.epis, ...sugerir(form)] })} disabled={!sugerir(form).length} style={{ ...btn(C.violet, false), opacity: sugerir(form).length ? 1 : 0.45 }}>✨ Sugerir pelos riscos</button>
+              <button type="button" onClick={() => setForm({ ...form, epis: [...form.epis, { tipo: "", quantidade: 1, troca_dias: "" }] })} style={btn(C.accent, false)}>＋ EPI</button>
+            </div>
+            {form.epis.map((k, i) => {
+              const muda = (c, v) => setForm({ ...form, epis: form.epis.map((x, j) => (j === i ? { ...x, [c]: v } : x)) });
+              return (
+                <div key={i} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 6, flexWrap: "wrap" }}>
+                  <select value={k.tipo} onChange={(e) => muda("tipo", e.target.value)} style={{ ...input, flex: "3 1 200px", padding: "7px 10px", fontSize: 12 }}>
+                    <option value="">Tipo de EPI…</option>
+                    {tiposEpi.filter((t) => t.codigo === k.tipo || !form.epis.some((x) => x.tipo === t.codigo)).map((t) => <option key={t.codigo} value={t.codigo}>{t.nome}</option>)}
+                  </select>
+                  <span style={{ fontSize: 11, color: C.sub }}>qtd</span>
+                  <input type="number" min={1} max={99} value={k.quantidade} onChange={(e) => muda("quantidade", e.target.value)} style={{ ...input, width: 56, padding: "6px 8px", fontSize: 12 }} />
+                  <span style={{ fontSize: 11, color: C.sub }}>troca (dias)</span>
+                  <input type="number" min={1} max={3650} value={k.troca_dias} onChange={(e) => muda("troca_dias", e.target.value)} style={{ ...input, width: 70, padding: "6px 8px", fontSize: 12 }} />
+                  <button type="button" onClick={() => setForm({ ...form, epis: form.epis.filter((_, j) => j !== i) })} style={{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 16 }}>×</button>
+                </div>
+              );
+            })}
+            {form.id && <div style={{ fontSize: 11, color: C.muted, marginTop: 8 }}>Mudou descritivo, requisitos, documentos, CBO, setor, escolaridade, riscos, kit de EPI ou "responde a" → sobe a versão e as empresas que importaram veem "versão nova" (elas decidem se atualizam).</div>}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
               <button type="button" onClick={() => setForm(null)} style={btn(C.muted, false)}>Cancelar</button>
               <button type="button" onClick={salvar} disabled={salvando || !form.nome.trim()} style={{ ...btn(C.accent), opacity: salvando || !form.nome.trim() ? 0.5 : 1 }}>{salvando ? "Salvando…" : "Salvar"}</button>

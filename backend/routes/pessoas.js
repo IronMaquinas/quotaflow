@@ -1,5 +1,6 @@
 // routes/pessoas.js — etapa 12c: colaboradores e documentos com vencimento
 //                     etapa 12d.0: funções (cargos) + biblioteca + ficha do colaborador
+//                     etapa 12d.1: EPI (item de consumo marcado como EPI, CA, endereço EPI)
 // Registrado no server.js com tenantMiddleware: app.use('/api/pessoas', tenantMiddleware, ...)
 //
 // Ver:     admin, gestor, qualidade, operacao   (CPF só aparece para quem edita — LGPD)
@@ -9,6 +10,7 @@ const router = express.Router();
 const { supabase } = require('../db');
 const D = require('../services/documentos');
 const F = require('../services/funcoes'); // etapa 12d.0
+const E = require('../services/epi');     // etapa 12d.1
 
 const VER = ['admin', 'gestor', 'qualidade', 'operacao'];
 const EDITAR = ['admin', 'gestor', 'qualidade'];
@@ -32,6 +34,10 @@ function erro(res, onde, err) {
   if (/funcoes|funcao_id/.test(m) && /does not exist|não existe|relation|column/.test(m)) {
     return res.status(409).json({ erro: 'Rode as migrations 024 e 025 antes (funções)' });
   }
+  if (/epi_itens/.test(m) && /does not exist|não existe|relation|schema cache/.test(m)) {
+    return res.status(409).json({ erro: 'Rode a migration 026 antes (EPI)' });
+  }
+  if (/epi_itens_item_unico/.test(m)) return res.status(409).json({ erro: 'Esse item já está marcado como EPI' });
   if (/funcoes_nome_unico/.test(m)) return res.status(409).json({ erro: 'Já existe uma função com esse nome' });
   if (/colaboradores|documento_tipos|documentos/.test(m) && /does not exist|não existe|relation/.test(m)) {
     return res.status(409).json({ erro: 'Rode a migration 022 antes (colaboradores e documentos)' });
@@ -376,6 +382,86 @@ router.get('/colaboradores/:id/ficha', exigirVer, async (req, res) => {
       itens: f.itens, resumo: f.resumo, pode_editar: podeEditar(req),
     });
   } catch (err) { erro(res, 'ficha', err); }
+});
+
+// ─── EPI (etapa 12d.1) ───────────────────────────────────────────────────
+// O EPI é um item de consumo do Estoque marcado como EPI. Saldo = o do Estoque.
+router.get('/epi', exigirVer, async (req, res) => {
+  try {
+    let endereco = null;
+    try { endereco = await E.garantirEnderecoEpi(supabase, req.tenantId); }
+    catch (e) { console.warn('⚠️ [pessoas/epi] endereço EPI não criado:', e.message); }
+    res.json({ itens: await E.listarEpiItens(supabase, req.tenantId), endereco, ...E.LISTAS_EPI, pode_editar: podeEditar(req) });
+  } catch (err) { erro(res, 'epi', err); }
+});
+
+// Itens de consumo para escolher qual marcar como EPI
+router.get('/epi/itens-consumo', exigirEditar, async (req, res) => {
+  try {
+    const itens = (await q(supabase.from('itens_consumo').select('*').eq('tenant_id', req.tenantId))).filter((i) => i.ativo !== false);
+    const epis = (await q(supabase.from('epi_itens').select('*').eq('tenant_id', req.tenantId))).filter((e) => e.ativo !== false);
+    const ja = new Set(epis.map((e) => String(e.item_consumo_id)));
+    res.json({ itens: itens.map((i) => ({ id: i.id, nome: i.nome, sku: i.sku || null, unidade: i.unidade_medida || 'UN', saldo: Number(i.saldo_atual) || 0, ja_epi: ja.has(String(i.id)) }))
+      .sort((a, b) => String(a.nome).localeCompare(String(b.nome))) });
+  } catch (err) { erro(res, 'epi', err); }
+});
+
+// POST /epi/itens { item_consumo_id | novo_item: { nome, unidade_medida, sku }, tipo, ca, ca_validade, troca_dias, obs }
+router.post('/epi/itens', exigirEditar, async (req, res) => {
+  try {
+    const { erros, dados } = E.validarEpiItem(req.body || {});
+    if (erros.length) return res.status(400).json({ erro: erros[0], erros });
+    let itemId = req.body?.item_consumo_id;
+    let criado = null;
+    if (!itemId) {
+      const nome = String(req.body?.novo_item?.nome || '').trim();
+      if (!nome) return res.status(400).json({ erro: 'Escolha um item do estoque ou informe o nome do item novo' });
+      const { data, error } = await supabase.from('itens_consumo').insert([{
+        tenant_id: req.tenantId, nome: nome.slice(0, 200), sku: req.body.novo_item.sku ? String(req.body.novo_item.sku).trim().slice(0, 60) : null,
+        unidade_medida: String(req.body.novo_item.unidade_medida || 'UN').trim().slice(0, 10) || 'UN',
+        saldo_atual: 0, quantidade_lotes_automatico: 1, ativo: true,
+      }]).select();
+      if (error) throw new Error(error.message);
+      criado = data[0]; itemId = criado.id;
+    } else {
+      const it = (await q(supabase.from('itens_consumo').select('*').eq('tenant_id', req.tenantId).eq('id', itemId)))[0];
+      if (!it) return res.status(404).json({ erro: 'Item do estoque não encontrado' });
+    }
+    const existente = (await q(supabase.from('epi_itens').select('*').eq('tenant_id', req.tenantId).eq('item_consumo_id', itemId)))[0];
+    if (existente && existente.ativo !== false) return res.status(409).json({ erro: 'Esse item já está marcado como EPI' });
+    let r;
+    if (existente) r = await supabase.from('epi_itens').update({ ...dados, ativo: true, atualizado_em: new Date().toISOString() }).eq('id', existente.id).eq('tenant_id', req.tenantId).select();
+    else r = await supabase.from('epi_itens').insert([{ ...dados, tenant_id: req.tenantId, item_consumo_id: itemId }]).select();
+    if (r.error) {
+      if (criado) await supabase.from('itens_consumo').delete().eq('id', criado.id).eq('tenant_id', req.tenantId); // não deixa item órfão
+      throw new Error(r.error.message);
+    }
+    res.status(201).json({ ...r.data[0], item_criado: !!criado });
+  } catch (err) { erro(res, 'epi', err); }
+});
+
+router.put('/epi/itens/:id', exigirEditar, async (req, res) => {
+  try {
+    if (!idValido(req.params.id)) return res.status(404).json({ erro: 'EPI não encontrado' });
+    const e = (await q(supabase.from('epi_itens').select('*').eq('tenant_id', req.tenantId).eq('id', req.params.id)))[0];
+    if (!e) return res.status(404).json({ erro: 'EPI não encontrado' });
+    const { erros, dados } = E.validarEpiItem(req.body || {}, { parcial: true });
+    if (erros.length) return res.status(400).json({ erro: erros[0], erros });
+    const { data, error } = await supabase.from('epi_itens').update({ ...dados, atualizado_em: new Date().toISOString() }).eq('id', e.id).eq('tenant_id', req.tenantId).select();
+    if (error) throw new Error(error.message);
+    res.json(data[0]);
+  } catch (err) { erro(res, 'epi', err); }
+});
+
+// Desmarcar como EPI: o item continua no Estoque; o histórico de entregas (12d.2) fica
+router.delete('/epi/itens/:id', exigirEditar, async (req, res) => {
+  try {
+    if (!idValido(req.params.id)) return res.status(404).json({ erro: 'EPI não encontrado' });
+    const { data, error } = await supabase.from('epi_itens').update({ ativo: false, atualizado_em: new Date().toISOString() }).eq('tenant_id', req.tenantId).eq('id', req.params.id).select();
+    if (error) throw new Error(error.message);
+    if (!data?.length) return res.status(404).json({ erro: 'EPI não encontrado' });
+    res.json({ ok: true });
+  } catch (err) { erro(res, 'epi', err); }
 });
 
 module.exports = router;
