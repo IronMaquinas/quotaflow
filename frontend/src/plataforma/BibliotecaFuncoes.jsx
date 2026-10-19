@@ -5,11 +5,16 @@
 // Tirar da biblioteca só desativa: as cópias das empresas continuam intactas.
 import { useState, useEffect, useCallback } from "react";
 
+const semAcento = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+// busca por nome, descritivo, requisitos ou documento exigido (sem acento, sem maiúscula)
+const casa = (m, b, nomeTipo) => !b || semAcento(`${m.nome} ${m.cbo || ""} ${m.setor || ""} ${m.descritivo || ""} ${m.requisitos || ""} ${(m.documentos || []).map((d) => nomeTipo(d.codigo)).join(" ")}`).includes(b);
+
 export default function BibliotecaFuncoes({ token, chamar, C, input, label, card, btn, tag, onAviso }) {
   const [dados, setDados] = useState(null);
   const [form, setForm] = useState(null);
   const [confirmar, setConfirmar] = useState(null);
   const [salvando, setSalvando] = useState(false);
+  const [busca, setBusca] = useState("");
 
   const carregar = useCallback(async () => {
     try { setDados(await chamar(token, "GET", "/biblioteca/funcoes")); }
@@ -19,11 +24,16 @@ export default function BibliotecaFuncoes({ token, chamar, C, input, label, card
 
   const tipos = dados?.tipos_documento || [];
   const nomeTipo = (c) => tipos.find((t) => t.codigo === c)?.nome || c;
+  const escolaridades = dados?.escolaridades || [];
+  const riscos = dados?.riscos || [];
+  const grupos = [...new Set(riscos.map((r) => r.grupo))];
+  const nomeRisco = (c) => riscos.find((r) => r.codigo === c)?.nome || c;
 
   const salvar = async () => {
     setSalvando(true);
     try {
-      const corpo = { nome: form.nome, descritivo: form.descritivo, requisitos: form.requisitos, documentos: form.documentos.map((codigo) => ({ codigo })) };
+      const corpo = { nome: form.nome, descritivo: form.descritivo, requisitos: form.requisitos, documentos: form.documentos.map((codigo) => ({ codigo })),
+        cbo: form.cbo, setor: form.setor, escolaridade: form.escolaridade || null, riscos: form.riscos, responde_a: form.responde_a };
       const r = form.id ? await chamar(token, "PUT", `/biblioteca/funcoes/${form.id}`, corpo) : await chamar(token, "POST", "/biblioteca/funcoes", corpo);
       onAviso({ tipo: "ok", texto: form.id ? (r?.versao_subiu ? `Modelo salvo — versão ${r.modelo?.versao}. Quem importou verá "versão nova".` : "Modelo salvo.") : "Modelo criado na biblioteca." });
       setForm(null); await carregar();
@@ -45,23 +55,31 @@ export default function BibliotecaFuncoes({ token, chamar, C, input, label, card
         <div style={{ fontSize: 13, color: C.sub, flex: 1, minWidth: 240 }}>
           Modelos de função que todas as transportadoras veem em <b style={{ color: C.text }}>👷 Pessoas → Funções → Importar da biblioteca</b>. Importar faz uma cópia que a empresa adapta.
         </div>
-        <button type="button" onClick={() => setForm({ nome: "", descritivo: "", requisitos: "", documentos: [] })} style={btn(C.accent)}>＋ Novo modelo</button>
+        <button type="button" onClick={() => setForm({ nome: "", descritivo: "", requisitos: "", documentos: [], cbo: "", setor: "", escolaridade: "", riscos: [], responde_a: "" })} style={btn(C.accent)}>＋ Novo modelo</button>
       </div>
 
+      {dados.modelos.length > 0 && (
+        <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="🔍 Buscar modelo por função, atividade ou documento…" style={{ ...input, maxWidth: 420, marginBottom: 12 }} />
+      )}
+      {dados.modelos.length > 0 && !dados.modelos.some((m) => casa(m, semAcento(busca.trim()), nomeTipo)) && <div style={{ ...card, padding: 20, color: C.sub, textAlign: "center" }}>Nenhum modelo com “{busca}”.</div>}
       {dados.modelos.length === 0 && <div style={{ ...card, padding: 24, color: C.sub, textAlign: "center" }}>Nenhum modelo. Rode a migration 024 ou crie o primeiro.</div>}
       <div style={{ display: "grid", gap: 10 }}>
-        {dados.modelos.map((m) => (
+        {dados.modelos.filter((m) => casa(m, semAcento(busca.trim()), nomeTipo)).map((m) => (
           <div key={m.id} style={{ ...card, padding: "14px 16px" }}>
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               <div style={{ fontWeight: 700, fontSize: 14, flex: 1, minWidth: 200 }}>{m.nome}</div>
               <span style={tag(C.violet)}>v{m.versao || 1}</span>
               <span style={tag(C.muted)}>{m.importacoes} empresa(s) importaram</span>
-              <button type="button" onClick={() => setForm({ id: m.id, nome: m.nome, descritivo: m.descritivo || "", requisitos: m.requisitos || "", documentos: (m.documentos || []).map((d) => d.codigo) })} style={btn(C.accent, false)}>Editar</button>
+              <button type="button" onClick={() => setForm({ id: m.id, nome: m.nome, descritivo: m.descritivo || "", requisitos: m.requisitos || "", documentos: (m.documentos || []).map((d) => d.codigo), cbo: m.cbo || "", setor: m.setor || "", escolaridade: m.escolaridade || "", riscos: m.riscos || [], responde_a: m.responde_a || "" })} style={btn(C.accent, false)}>Editar</button>
               <button type="button" onClick={() => setConfirmar(m)} style={btn(C.danger, false)}>Tirar da biblioteca</button>
             </div>
+            {[m.cbo && `CBO ${m.cbo}`, m.setor, m.escolaridade && escolaridades.find((e) => e.codigo === m.escolaridade)?.nome, m.responde_a && `responde a ${m.responde_a}`].filter(Boolean).length > 0 && (
+              <div style={{ fontSize: 12, color: C.sub, marginTop: 6 }}>{[m.cbo && `CBO ${m.cbo}`, m.setor, m.escolaridade && escolaridades.find((e) => e.codigo === m.escolaridade)?.nome, m.responde_a && `responde a ${m.responde_a}`].filter(Boolean).join(" · ")}</div>
+            )}
             <div style={{ fontSize: 12, color: C.sub, marginTop: 6, lineHeight: 1.5 }}>{(m.descritivo || "").slice(0, 220)}{(m.descritivo || "").length > 220 ? "…" : ""}</div>
             <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
               {(m.documentos || []).map((d) => <span key={d.codigo} style={tag(C.accent)}>📄 {nomeTipo(d.codigo)}</span>)}
+              {(m.riscos || []).map((r) => <span key={r} style={tag(C.warn)}>⚠ {nomeRisco(r)}</span>)}
             </div>
           </div>
         ))}
@@ -73,6 +91,19 @@ export default function BibliotecaFuncoes({ token, chamar, C, input, label, card
             <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 14 }}>{form.id ? "Editar modelo" : "Novo modelo de função"}</div>
             <label style={{ display: "block", marginBottom: 12 }}><span style={label}>NOME</span>
               <input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} style={input} /></label>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+              <label style={{ flex: "1 1 120px" }}><span style={label}>CBO</span>
+                <input value={form.cbo} onChange={(e) => setForm({ ...form, cbo: e.target.value })} placeholder="7825-10" style={input} /></label>
+              <label style={{ flex: "2 1 200px" }}><span style={label}>SETOR / ÁREA</span>
+                <input value={form.setor} onChange={(e) => setForm({ ...form, setor: e.target.value })} placeholder="Manutenção / Oficina" style={input} /></label>
+            </div>
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+              <label style={{ flex: "1 1 180px" }}><span style={label}>ESCOLARIDADE MÍNIMA</span>
+                <select value={form.escolaridade} onChange={(e) => setForm({ ...form, escolaridade: e.target.value })} style={input}>
+                  <option value="">Não definida</option>{escolaridades.map((x) => <option key={x.codigo} value={x.codigo}>{x.nome}</option>)}</select></label>
+              <label style={{ flex: "2 1 200px" }}><span style={label}>RESPONDE A</span>
+                <input value={form.responde_a} onChange={(e) => setForm({ ...form, responde_a: e.target.value })} placeholder="Encarregado de manutenção" style={input} /></label>
+            </div>
             <label style={{ display: "block", marginBottom: 12 }}><span style={label}>DESCRITIVO (ATIVIDADES E RESPONSABILIDADES)</span>
               <textarea rows={6} value={form.descritivo} onChange={(e) => setForm({ ...form, descritivo: e.target.value })} style={{ ...input, resize: "vertical" }} /></label>
             <label style={{ display: "block", marginBottom: 12 }}><span style={label}>REQUISITOS (ESCOLARIDADE, EXPERIÊNCIA, HABILITAÇÃO)</span>
@@ -89,7 +120,22 @@ export default function BibliotecaFuncoes({ token, chamar, C, input, label, card
                 );
               })}
             </div>
-            {form.id && <div style={{ fontSize: 11, color: C.muted, marginTop: 8 }}>Mudou descritivo, requisitos ou documentos → sobe a versão e as empresas que importaram veem "versão nova" (elas decidem se atualizam).</div>}
+            <span style={{ ...label, marginTop: 10 }}>RISCOS DA FUNÇÃO (PGR)</span>
+            {grupos.map((g) => (
+              <div key={g} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontSize: 11, color: C.sub, width: 78, fontWeight: 600 }}>{g}</span>
+                {riscos.filter((r) => r.grupo === g).map((r) => {
+                  const on = form.riscos.includes(r.codigo);
+                  return (
+                    <label key={r.codigo} style={{ ...tag(on ? C.warn : C.muted), cursor: "pointer", padding: "4px 9px", fontSize: 12, display: "flex", gap: 5, alignItems: "center" }}>
+                      <input type="checkbox" checked={on} onChange={() => setForm({ ...form, riscos: on ? form.riscos.filter((c) => c !== r.codigo) : [...form.riscos, r.codigo] })} />
+                      {r.nome}
+                    </label>
+                  );
+                })}
+              </div>
+            ))}
+            {form.id && <div style={{ fontSize: 11, color: C.muted, marginTop: 8 }}>Mudou descritivo, requisitos, documentos, CBO, setor, escolaridade, riscos ou "responde a" → sobe a versão e as empresas que importaram veem "versão nova" (elas decidem se atualizam).</div>}
             <div style={{ display: "flex", justifyContent: "flex-end", gap: 8, marginTop: 16 }}>
               <button type="button" onClick={() => setForm(null)} style={btn(C.muted, false)}>Cancelar</button>
               <button type="button" onClick={salvar} disabled={salvando || !form.nome.trim()} style={{ ...btn(C.accent), opacity: salvando || !form.nome.trim() ? 0.5 : 1 }}>{salvando ? "Salvando…" : "Salvar"}</button>

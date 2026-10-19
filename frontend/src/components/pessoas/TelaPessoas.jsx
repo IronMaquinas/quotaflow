@@ -22,6 +22,7 @@ const SITUACAO_FICHA = {
   sem_vencimento: { l: "Em dia",         c: "#22c55e", i: "🟢" },
 };
 const SITUACAO_COLAB = { ativo: "Ativo", afastado: "Afastado", desligado: "Desligado" };
+const semAcento = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 const dataBR = (s) => (s ? String(s).slice(0, 10).split("-").reverse().join("/") : "—");
 const somaMeses = (iso, meses) => {
   const [y, m, d] = iso.split("-").map(Number);
@@ -63,6 +64,9 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
   const [biblio, setBiblio] = useState(null);      // { modelos, aberto }
   const [ficha, setFicha] = useState(null);        // resposta de /colaboradores/:id/ficha
   const [voltarFicha, setVoltarFicha] = useState(null); // reabre a ficha depois de salvar um documento
+  const [buscaFuncao, setBuscaFuncao] = useState("");   // busca na aba Funções
+  const [buscaBiblio, setBuscaBiblio] = useState("");   // busca na biblioteca
+  const [listas, setListas] = useState({ escolaridades: [], riscos: [] }); // 12d.0.2 (vêm da API)
 
   useEffect(() => { if (abaInicial) { setAba(abaInicial); onAbaConsumida?.(); } }, [abaInicial]); // eslint-disable-line
   useEffect(() => { if (!aviso) return; const t = setTimeout(() => setAviso(""), 4500); return () => clearTimeout(t); }, [aviso]);
@@ -76,7 +80,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
         apiService.get("/pessoas/documentos", historico ? { historico: "1" } : {}),
       ]);
       setConfig(cfg || {}); setColabs(c?.colaboradores || []); setDocs(d?.documentos || []); setResumo(d?.resumo || {});
-      try { const f = await apiService.get("/pessoas/funcoes"); setFuncoes(f?.funcoes || []); setFuncoesOk(true); }
+      try { const f = await apiService.get("/pessoas/funcoes"); setFuncoes(f?.funcoes || []); setListas({ escolaridades: f?.escolaridades || [], riscos: f?.riscos || [] }); setFuncoesOk(true); }
       catch { setFuncoes([]); setFuncoesOk(false); }
     } catch (e) { setErro(e.message || "Erro ao carregar"); }
     finally { setCarregando(false); }
@@ -85,6 +89,27 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
 
   const editar = !!config.pode_editar;
   const tiposPorAlvo = (alvo) => (config.tipos || []).filter((t) => t.alvo === alvo);
+  const nomeTipoCol = (codigo) => tiposPorAlvo("colaborador").find((t) => t.codigo === codigo)?.nome || codigo;
+  // busca por nome, descritivo, requisitos ou documento exigido (sem acento, sem maiúscula)
+  const casaFuncao = (f, termo) => { const b = semAcento(termo.trim()); return !b || semAcento(`${f.nome} ${f.cbo || ""} ${f.setor || ""} ${f.descritivo || ""} ${f.requisitos || ""} ${(f.documentos || []).map((d) => nomeTipoCol(d.codigo)).join(" ")}`).includes(b); };
+  const nomeEscolaridade = (c) => listas.escolaridades.find((e) => e.codigo === c)?.nome || c;
+  const nomeRisco = (c) => listas.riscos.find((r) => r.codigo === c)?.nome || c;
+  const COR_GRUPO = { "Físico": "#38bdf8", "Químico": "#f472b6", "Biológico": "#4ade80", "Ergonômico": "#fbbf24", "Acidente": "#f87171" };
+  const corRisco = (c) => COR_GRUPO[listas.riscos.find((r) => r.codigo === c)?.grupo] || C.muted;
+  // linha "CBO · setor · escolaridade · responde a" e os riscos, usados no cartão, na biblioteca e na ficha
+  const infoFuncao = (f) => {
+    const partes = [f.cbo && `CBO ${f.cbo}`, f.setor, f.escolaridade && `Escolaridade: ${nomeEscolaridade(f.escolaridade)}`, f.responde_a && `Responde a: ${f.responde_a}`].filter(Boolean);
+    return (
+      <>
+        {partes.length > 0 && <div style={{ fontSize: 12, color: C.textSub, marginTop: 6 }}>{partes.join(" · ")}</div>}
+        {(f.riscos || []).length > 0 && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+            {f.riscos.map((r) => <span key={r} style={s.tag(corRisco(r))}>⚠ {nomeRisco(r)}</span>)}
+          </div>
+        )}
+      </>
+    );
+  };
   const nomeUsuario = (id) => (config.usuarios || []).find((u) => String(u.id) === String(id))?.nome;
 
   const docsFiltrados = useMemo(() => {
@@ -142,7 +167,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
     catch (e) { setErro(e.message); }
   };
   const abrirBiblioteca = async () => {
-    try { const r = await apiService.get("/pessoas/funcoes/biblioteca"); setBiblio({ modelos: r?.modelos || [], aberto: null }); }
+    try { const r = await apiService.get("/pessoas/funcoes/biblioteca"); setBuscaBiblio(""); setBiblio({ modelos: r?.modelos || [], aberto: null }); }
     catch (e) { setErro(e.message); }
   };
   const importar = async (m) => {
@@ -155,7 +180,8 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
     setSalvando(true); setErro("");
     try {
       const f = formFuncao;
-      const corpo = { nome: f.nome, descritivo: f.descritivo, requisitos: f.requisitos, documentos: f.documentos.map((codigo) => ({ codigo })) };
+      const corpo = { nome: f.nome, descritivo: f.descritivo, requisitos: f.requisitos, documentos: f.documentos.map((codigo) => ({ codigo })),
+        cbo: f.cbo, setor: f.setor, escolaridade: f.escolaridade || null, riscos: f.riscos, responde_a: f.responde_a };
       if (f.id) await apiService.put(`/pessoas/funcoes/${f.id}`, corpo); else await apiService.post("/pessoas/funcoes", corpo);
       setFormFuncao(null); setAviso("Função salva."); await carregar();
     } catch (e) { setErro(e.message); }
@@ -355,13 +381,15 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
             <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
               <div style={{ fontSize: 12, color: C.textSub, flex: "1 1 300px" }}>Cada função tem o descritivo do cargo (ISO) e os documentos exigidos. Ao ligar a função ao colaborador, a ficha dele mostra o que falta e o que está vencendo.</div>
               {editar && <button onClick={abrirBiblioteca} style={{ ...s.btn(false), cursor: "pointer", color: C.accent }}>📚 Importar da biblioteca</button>}
-              {editar && <button onClick={() => setFormFuncao({ nome: "", descritivo: "", requisitos: "", documentos: [] })} style={{ ...s.btn(true), cursor: "pointer" }}>＋ Nova função</button>}
+              {editar && <button onClick={() => setFormFuncao({ nome: "", descritivo: "", requisitos: "", documentos: [], cbo: "", setor: "", escolaridade: "", riscos: [], responde_a: "" })} style={{ ...s.btn(true), cursor: "pointer" }}>＋ Nova função</button>}
             </div>
+            {funcoes.length > 0 && <input value={buscaFuncao} onChange={(e) => setBuscaFuncao(e.target.value)} placeholder="🔍 Buscar função, atividade ou documento…" style={{ ...s.input, maxWidth: 360, padding: "7px 10px", fontSize: 12, marginBottom: 12 }} />}
+            {funcoes.length > 0 && !funcoes.some((f) => casaFuncao(f, buscaFuncao)) && <div style={{ ...s.card, padding: 20, textAlign: "center", color: C.textSub, marginBottom: 10 }}>Nenhuma função com “{buscaFuncao}”. {editar && "Tente 📚 Importar da biblioteca."}</div>}
             {funcoes.length === 0 ? (
               <div style={{ ...s.card, padding: 28, textAlign: "center", color: C.textSub }}>Nenhuma função ainda. Comece importando da biblioteca do QuotaFlow (motorista, mecânico, eletricista…) e adapte à sua empresa.</div>
             ) : (
               <div style={{ display: "grid", gap: 10 }}>
-                {funcoes.map((f) => (
+                {funcoes.filter((f) => casaFuncao(f, buscaFuncao)).map((f) => (
                   <div key={f.id} style={{ ...s.card, padding: "14px 16px" }}>
                     <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
                       <div style={{ flex: "1 1 220px", minWidth: 0 }}>
@@ -370,10 +398,11 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
                       </div>
                       {f.versao_nova && editar && <button onClick={() => setConfirmar({ titulo: "Atualizar da biblioteca", botao: "Atualizar", cor: C.accent, texto: `O modelo “${f.origem_nome}” tem uma versão nova. Atualizar troca o descritivo, os requisitos e os documentos exigidos de “${f.nome}” pelos do modelo (o nome fica). O que você ajustou nesses campos será substituído.`, acao: async () => { await apiService.post(`/pessoas/funcoes/${f.id}/atualizar`); return "Função atualizada com a versão nova da biblioteca."; } })}
                         style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: "#a78bfa", borderColor: "#a78bfa" }}>✨ Versão nova na biblioteca</button>}
-                      {editar && <button onClick={() => setFormFuncao({ id: f.id, nome: f.nome, descritivo: f.descritivo || "", requisitos: f.requisitos || "", documentos: (f.documentos || []).map((d) => d.codigo) })} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.text }}>Editar</button>}
+                      {editar && <button onClick={() => setFormFuncao({ id: f.id, nome: f.nome, descritivo: f.descritivo || "", requisitos: f.requisitos || "", documentos: (f.documentos || []).map((d) => d.codigo), cbo: f.cbo || "", setor: f.setor || "", escolaridade: f.escolaridade || "", riscos: f.riscos || [], responde_a: f.responde_a || "" })} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.text }}>Editar</button>}
                       {editar && <button onClick={() => excluir("Excluir função", `Excluir “${f.nome}”? Só é possível se nenhum colaborador estiver com essa função.`, async () => { await apiService.delete(`/pessoas/funcoes/${f.id}`); return "Função excluída."; })}
                         style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.danger }}>Excluir</button>}
                     </div>
+                    {infoFuncao(f)}
                     {f.descritivo && <div style={{ fontSize: 12, color: C.textSub, marginTop: 8, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{f.descritivo.length > 260 ? f.descritivo.slice(0, 260) + "…" : f.descritivo}</div>}
                     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
                       {(f.documentos || []).length === 0 ? <span style={{ fontSize: 11, color: C.muted }}>Nenhum documento exigido</span>
@@ -392,6 +421,17 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
         <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 16 }}>{formFuncao.id ? "Editar função" : "Nova função"}</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {campo("NOME DA FUNÇÃO", <input value={formFuncao.nome} onChange={(e) => setFormFuncao({ ...formFuncao, nome: e.target.value })} placeholder="ex.: Motorista carreteiro" style={s.input} />)}
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            {campo("CBO (OPCIONAL)", <input value={formFuncao.cbo} onChange={(e) => setFormFuncao({ ...formFuncao, cbo: e.target.value })} placeholder="7825-10" style={s.input} />, "1 1 120px")}
+            {campo("SETOR / ÁREA", <input value={formFuncao.setor} onChange={(e) => setFormFuncao({ ...formFuncao, setor: e.target.value })} placeholder="Oficina, tráfego, armazém…" list="qf-setores" style={s.input} />, "2 1 200px")}
+          </div>
+          <datalist id="qf-setores">{[...new Set(funcoes.map((f) => f.setor).filter(Boolean))].map((x) => <option key={x} value={x} />)}</datalist>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            {campo("ESCOLARIDADE MÍNIMA", <select value={formFuncao.escolaridade} onChange={(e) => setFormFuncao({ ...formFuncao, escolaridade: e.target.value })} style={s.input}>
+              <option value="">Não definida</option>{listas.escolaridades.map((x) => <option key={x.codigo} value={x.codigo}>{x.nome}</option>)}</select>, "1 1 180px")}
+            {campo("RESPONDE A (SUPERIOR IMEDIATO)", <input value={formFuncao.responde_a} onChange={(e) => setFormFuncao({ ...formFuncao, responde_a: e.target.value })} placeholder="Supervisor de tráfego…" list="qf-cargos" style={s.input} />, "2 1 200px")}
+          </div>
+          <datalist id="qf-cargos">{funcoes.filter((f) => f.id !== formFuncao.id).map((f) => <option key={f.id} value={f.nome} />)}</datalist>
           {campo("DESCRITIVO (ATIVIDADES E RESPONSABILIDADES)", <textarea rows={6} value={formFuncao.descritivo} onChange={(e) => setFormFuncao({ ...formFuncao, descritivo: e.target.value })} style={{ ...s.input, resize: "vertical" }} />)}
           {campo("REQUISITOS (ESCOLARIDADE, EXPERIÊNCIA, HABILITAÇÃO)", <textarea rows={3} value={formFuncao.requisitos} onChange={(e) => setFormFuncao({ ...formFuncao, requisitos: e.target.value })} style={{ ...s.input, resize: "vertical" }} />)}
           <div>
@@ -409,6 +449,24 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
             </div>
             <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>Precisa de outro (NR-35, curso de empilhadeira…)? Crie em ＋ Novo documento → ＋ Outro tipo, de “Pessoa”.</div>
           </div>
+          <div>
+            <span style={s.label}>RISCOS DA FUNÇÃO (PGR)</span>
+            {[...new Set(listas.riscos.map((r) => r.grupo))].map((g) => (
+              <div key={g} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", marginBottom: 6 }}>
+                <span style={{ fontSize: 11, color: COR_GRUPO[g] || C.muted, width: 78, fontWeight: 600 }}>{g}</span>
+                {listas.riscos.filter((r) => r.grupo === g).map((r) => {
+                  const on = formFuncao.riscos.includes(r.codigo);
+                  return (
+                    <label key={r.codigo} style={{ ...s.tag(on ? COR_GRUPO[g] : C.muted), cursor: "pointer", padding: "5px 9px", fontSize: 12, display: "flex", gap: 5, alignItems: "center" }}>
+                      <input type="checkbox" checked={on} onChange={() => setFormFuncao({ ...formFuncao, riscos: on ? formFuncao.riscos.filter((c) => c !== r.codigo) : [...formFuncao.riscos, r.codigo] })} />
+                      {r.nome}
+                    </label>
+                  );
+                })}
+              </div>
+            ))}
+            <div style={{ fontSize: 11, color: C.muted }}>Os riscos vão ajudar a sugerir o kit de EPI da função (próxima etapa).</div>
+          </div>
         </div>
         <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
           <button onClick={() => setFormFuncao(null)} style={{ ...s.btn(false), cursor: "pointer", flex: 1, color: C.text }}>Cancelar</button>
@@ -420,9 +478,11 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       {biblio && modal(<>
         <div style={{ fontSize: 17, fontWeight: 700 }}>📚 Biblioteca de funções do QuotaFlow</div>
         <div style={{ fontSize: 12, color: C.textSub, margin: "4px 0 14px" }}>Importar faz uma cópia para a sua empresa — depois é só adaptar à sua realidade.</div>
+        {biblio.modelos.length > 0 && <input value={buscaBiblio} onChange={(e) => setBuscaBiblio(e.target.value)} autoFocus placeholder="🔍 Buscar por função, atividade ou documento (ex.: motorista, freio, MOPP)…" style={{ ...s.input, padding: "8px 10px", fontSize: 13, marginBottom: 10 }} />}
         {biblio.modelos.length === 0 && <div style={{ color: C.muted, fontSize: 13 }}>Nenhum modelo disponível.</div>}
+        {biblio.modelos.length > 0 && !biblio.modelos.some((m) => casaFuncao(m, buscaBiblio)) && <div style={{ color: C.muted, fontSize: 13, marginBottom: 8 }}>Nenhum modelo com “{buscaBiblio}”. Crie com ＋ Nova função.</div>}
         <div style={{ display: "grid", gap: 8 }}>
-          {biblio.modelos.map((m) => (
+          {biblio.modelos.filter((m) => casaFuncao(m, buscaBiblio)).map((m) => (
             <div key={m.id} style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 12px" }}>
               <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
                 <button onClick={() => setBiblio({ ...biblio, aberto: biblio.aberto === m.id ? null : m.id })} style={{ background: "none", border: "none", color: C.text, fontWeight: 600, fontSize: 13, cursor: "pointer", fontFamily: "inherit", textAlign: "left", flex: 1, padding: 0 }}>
@@ -433,7 +493,8 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
               </div>
               {biblio.aberto === m.id && (
                 <div style={{ fontSize: 12, color: C.textSub, marginTop: 8, lineHeight: 1.55 }}>
-                  <div style={{ whiteSpace: "pre-wrap" }}>{m.descritivo}</div>
+                  {infoFuncao(m)}
+                  <div style={{ whiteSpace: "pre-wrap", marginTop: 6 }}>{m.descritivo}</div>
                   {m.requisitos && <div style={{ marginTop: 6 }}><b style={{ color: C.text }}>Requisitos:</b> {m.requisitos}</div>}
                   <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
                     {(m.documentos || []).map((d) => <span key={d.codigo} style={s.tag(C.accent)}>📄 {tiposPorAlvo("colaborador").find((t) => t.codigo === d.codigo)?.nome || d.codigo}</span>)}
@@ -490,6 +551,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
             {ficha.funcao.descritivo && (
               <details style={{ marginTop: 14, fontSize: 12, color: C.textSub }}>
                 <summary style={{ cursor: "pointer", color: C.text }}>Descritivo do cargo</summary>
+                {infoFuncao(ficha.funcao)}
                 <div style={{ whiteSpace: "pre-wrap", marginTop: 6, lineHeight: 1.55 }}>{ficha.funcao.descritivo}</div>
                 {ficha.funcao.requisitos && <div style={{ marginTop: 6 }}><b style={{ color: C.text }}>Requisitos:</b> {ficha.funcao.requisitos}</div>}
               </details>

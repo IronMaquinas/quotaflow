@@ -30,7 +30,7 @@ function exigirEditar(req, res, next) {
 function erro(res, onde, err) {
   const m = String(err?.message || '');
   if (/funcoes|funcao_id/.test(m) && /does not exist|não existe|relation|column/.test(m)) {
-    return res.status(409).json({ erro: 'Rode a migration 024 antes (funções)' });
+    return res.status(409).json({ erro: 'Rode as migrations 024 e 025 antes (funções)' });
   }
   if (/funcoes_nome_unico/.test(m)) return res.status(409).json({ erro: 'Já existe uma função com esse nome' });
   if (/colaboradores|documento_tipos|documentos/.test(m) && /does not exist|não existe|relation/.test(m)) {
@@ -295,7 +295,7 @@ router.delete('/documentos/:id', exigirEditar, async (req, res) => {
 
 // ─── Funções (etapa 12d.0) ───────────────────────────────────────────────
 router.get('/funcoes', exigirVer, async (req, res) => {
-  try { res.json({ funcoes: await F.listarFuncoes(supabase, req.tenantId), pode_editar: podeEditar(req) }); }
+  try { res.json({ funcoes: await F.listarFuncoes(supabase, req.tenantId), ...F.LISTAS, pode_editar: podeEditar(req) }); }
   catch (err) { erro(res, 'funcoes', err); }
 });
 
@@ -371,7 +371,8 @@ router.get('/colaboradores/:id/ficha', exigirVer, async (req, res) => {
     const f = fichas.get(String(c.id));
     res.json({
       colaborador: { id: c.id, nome: c.nome, situacao: c.situacao, funcao_id: c.funcao_id, funcao: c.funcao },
-      funcao: f.funcao ? { id: f.funcao.id, nome: f.funcao.nome, descritivo: f.funcao.descritivo, requisitos: f.funcao.requisitos } : null,
+      funcao: f.funcao ? { id: f.funcao.id, nome: f.funcao.nome, descritivo: f.funcao.descritivo, requisitos: f.funcao.requisitos, cbo: f.funcao.cbo || null, setor: f.funcao.setor || null, escolaridade: f.funcao.escolaridade || null, riscos: f.funcao.riscos || [], responde_a: f.funcao.responde_a || null } : null,
+      ...F.LISTAS,
       itens: f.itens, resumo: f.resumo, pode_editar: podeEditar(req),
     });
   } catch (err) { erro(res, 'ficha', err); }

@@ -15,6 +15,50 @@ async function q(p) { const { data, error } = await p; if (error) throw new Erro
 const texto = (v, max) => (v == null || String(v).trim() === '' ? null : String(v).trim().slice(0, max));
 const idValido = (id) => /^\d+$/.test(String(id));
 
+// 12d.0.2 — listas fixas (fonte única: o frontend recebe pela API)
+const ESCOLARIDADES = [
+  { codigo: 'fundamental_incompleto', nome: 'Fundamental incompleto' },
+  { codigo: 'fundamental_completo', nome: 'Fundamental completo' },
+  { codigo: 'medio_incompleto', nome: 'Médio incompleto' },
+  { codigo: 'medio_completo', nome: 'Médio completo' },
+  { codigo: 'tecnico', nome: 'Técnico' },
+  { codigo: 'superior_incompleto', nome: 'Superior incompleto' },
+  { codigo: 'superior_completo', nome: 'Superior completo' },
+  { codigo: 'pos_graduacao', nome: 'Pós-graduação' },
+];
+// Grupos do PGR (NR-1/NR-9): físico, químico, biológico, ergonômico, acidente
+const RISCOS = [
+  { codigo: 'ruido', nome: 'Ruído', grupo: 'Físico' },
+  { codigo: 'vibracao', nome: 'Vibração', grupo: 'Físico' },
+  { codigo: 'calor', nome: 'Calor / sol', grupo: 'Físico' },
+  { codigo: 'frio', nome: 'Frio (câmara fria)', grupo: 'Físico' },
+  { codigo: 'umidade', nome: 'Umidade', grupo: 'Físico' },
+  { codigo: 'radiacao', nome: 'Radiação (solda)', grupo: 'Físico' },
+  { codigo: 'quimico', nome: 'Óleos, graxas e solventes', grupo: 'Químico' },
+  { codigo: 'poeira_fumos', nome: 'Poeira e fumos', grupo: 'Químico' },
+  { codigo: 'produtos_perigosos', nome: 'Produtos perigosos (carga)', grupo: 'Químico' },
+  { codigo: 'biologico', nome: 'Agentes biológicos', grupo: 'Biológico' },
+  { codigo: 'postura', nome: 'Postura', grupo: 'Ergonômico' },
+  { codigo: 'levantamento', nome: 'Levantamento de peso', grupo: 'Ergonômico' },
+  { codigo: 'repetitivo', nome: 'Movimento repetitivo', grupo: 'Ergonômico' },
+  { codigo: 'jornada', nome: 'Jornada longa / noturna', grupo: 'Ergonômico' },
+  { codigo: 'transito', nome: 'Trânsito', grupo: 'Acidente' },
+  { codigo: 'altura', nome: 'Trabalho em altura', grupo: 'Acidente' },
+  { codigo: 'queda', nome: 'Queda (subir/descer do veículo, piso)', grupo: 'Acidente' },
+  { codigo: 'eletricidade', nome: 'Eletricidade', grupo: 'Acidente' },
+  { codigo: 'maquinas', nome: 'Máquinas e ferramentas', grupo: 'Acidente' },
+  { codigo: 'prensamento', nome: 'Prensamento / esmagamento', grupo: 'Acidente' },
+  { codigo: 'explosao_pneu', nome: 'Explosão de pneu', grupo: 'Acidente' },
+  { codigo: 'incendio', nome: 'Incêndio / explosão', grupo: 'Acidente' },
+];
+const LISTAS = { escolaridades: ESCOLARIDADES, riscos: RISCOS };
+const CAMPOS_CONTEUDO = ['descritivo', 'requisitos', 'documentos', 'cbo', 'setor', 'escolaridade', 'riscos', 'responde_a'];
+const copiarConteudo = (m) => ({
+  descritivo: m.descritivo ?? null, requisitos: m.requisitos ?? null, documentos: m.documentos || [],
+  epis: m.epis || [], treinamentos: m.treinamentos || [],
+  cbo: m.cbo ?? null, setor: m.setor ?? null, escolaridade: m.escolaridade ?? null, riscos: m.riscos || [], responde_a: m.responde_a ?? null,
+});
+
 function validarFuncao(body, { parcial = false } = {}) {
   const erros = [], out = {};
   const tem = (k) => body[k] !== undefined;
@@ -24,6 +68,21 @@ function validarFuncao(body, { parcial = false } = {}) {
   }
   if (tem('descritivo')) out.descritivo = texto(body.descritivo, 8000);
   if (tem('requisitos')) out.requisitos = texto(body.requisitos, 4000);
+  if (tem('cbo')) {
+    const c = texto(body.cbo, 10);
+    if (c && !/^\d{4}-?\d{2}$/.test(c)) erros.push('CBO no formato 0000-00');
+    else out.cbo = c ? `${c.replace('-', '').slice(0, 4)}-${c.replace('-', '').slice(4)}` : null;
+  }
+  if (tem('setor')) out.setor = texto(body.setor, 80);
+  if (tem('responde_a')) out.responde_a = texto(body.responde_a, 120);
+  if (tem('escolaridade')) {
+    const e = texto(body.escolaridade, 40);
+    if (e && !ESCOLARIDADES.some((x) => x.codigo === e)) erros.push('Escolaridade inválida'); else out.escolaridade = e;
+  }
+  if (tem('riscos')) {
+    if (!Array.isArray(body.riscos)) erros.push('Riscos inválidos');
+    else out.riscos = [...new Set(body.riscos.map(String))].filter((r) => RISCOS.some((x) => x.codigo === r));
+  }
   if (tem('documentos')) {
     if (!Array.isArray(body.documentos)) erros.push('Documentos exigidos inválidos');
     else {
@@ -79,8 +138,7 @@ async function importar(supabase, tenantId, bibliotecaId, { nome } = {}) {
     return { status: 409, erro: `Sua empresa já tem a função "${nomeFinal}". Importe com outro nome ou edite a existente.` };
   }
   const { data, error } = await supabase.from('funcoes').insert([{
-    tenant_id: tenantId, nome: nomeFinal, descritivo: m.descritivo, requisitos: m.requisitos,
-    documentos: m.documentos || [], epis: m.epis || [], treinamentos: m.treinamentos || [],
+    tenant_id: tenantId, nome: nomeFinal, ...copiarConteudo(m),
     origem_id: m.id, origem_versao: m.versao || 1,
   }]).select();
   if (error) throw new Error(error.message);
@@ -94,8 +152,7 @@ async function atualizarDaBiblioteca(supabase, tenantId, funcaoId) {
   const m = f.origem_id != null ? await funcaoPorId(supabase, f.origem_id) : null;
   if (!m || m.tenant_id != null) return { status: 400, erro: 'Esta função não veio da biblioteca' };
   const { data, error } = await supabase.from('funcoes').update({
-    descritivo: m.descritivo, requisitos: m.requisitos, documentos: m.documentos || [],
-    epis: m.epis || [], treinamentos: m.treinamentos || [], origem_versao: m.versao || 1,
+    ...copiarConteudo(m), origem_versao: m.versao || 1,
     atualizado_em: new Date().toISOString(),
   }).eq('id', f.id).eq('tenant_id', tenantId).select();
   if (error) throw new Error(error.message);
@@ -152,6 +209,7 @@ async function bibliotecaConsole(supabase) {
     .filter((t) => t.alvo === 'colaborador' && t.ativo !== false).sort((a, b) => (a.ordem || 0) - (b.ordem || 0));
   return {
     modelos: modelos.map((m) => ({ ...m, importacoes: copias.filter((c) => String(c.origem_id) === String(m.id) && c.ativo !== false).length })),
+    ...LISTAS,
     tipos_documento: tipos.map((t) => ({ codigo: t.codigo, nome: t.nome, validade_meses_padrao: t.validade_meses_padrao })),
   };
 }
@@ -168,7 +226,7 @@ async function editarModelo(supabase, id, body) {
   if (!m || m.tenant_id != null) return { status: 404, erro: 'Modelo não encontrado' };
   const { erros, dados } = validarFuncao(body || {}, { parcial: true });
   if (erros.length) return { status: 400, erro: erros[0] };
-  const mudou = ['descritivo', 'requisitos', 'documentos'].some((k) => dados[k] !== undefined && JSON.stringify(dados[k]) !== JSON.stringify(m[k] ?? (k === 'documentos' ? [] : null)));
+  const mudou = CAMPOS_CONTEUDO.some((k) => dados[k] !== undefined && JSON.stringify(dados[k]) !== JSON.stringify(m[k] ?? (k === 'documentos' || k === 'riscos' ? [] : null)));
   const { data, error } = await supabase.from('funcoes').update({ ...dados, ...(mudou ? { versao: (Number(m.versao) || 1) + 1 } : {}), atualizado_em: new Date().toISOString() })
     .eq('id', m.id).is('tenant_id', null).select();
   if (error) { if (/funcoes_nome_unico/.test(error.message)) return { status: 409, erro: 'Já existe um modelo com esse nome' }; throw new Error(error.message); }
@@ -183,5 +241,5 @@ async function desativarModelo(supabase, id) {
   return { ok: true };
 }
 
-module.exports = { bibliotecaConsole, criarModelo, editarModelo, desativarModelo,
+module.exports = { LISTAS, ESCOLARIDADES, RISCOS, bibliotecaConsole, criarModelo, editarModelo, desativarModelo,
   validarFuncao, biblioteca, funcaoPorId, listarFuncoes, importar, atualizarDaBiblioteca, montarFicha, fichasDoTenant, doTenant };
