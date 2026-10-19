@@ -1,4 +1,5 @@
 // routes/pessoas.js — etapa 12c: colaboradores e documentos com vencimento
+//                     etapa 12d.0: funções (cargos) + biblioteca + ficha do colaborador
 // Registrado no server.js com tenantMiddleware: app.use('/api/pessoas', tenantMiddleware, ...)
 //
 // Ver:     admin, gestor, qualidade, operacao   (CPF só aparece para quem edita — LGPD)
@@ -7,6 +8,7 @@ const express = require('express');
 const router = express.Router();
 const { supabase } = require('../db');
 const D = require('../services/documentos');
+const F = require('../services/funcoes'); // etapa 12d.0
 
 const VER = ['admin', 'gestor', 'qualidade', 'operacao'];
 const EDITAR = ['admin', 'gestor', 'qualidade'];
@@ -27,6 +29,10 @@ function exigirEditar(req, res, next) {
 }
 function erro(res, onde, err) {
   const m = String(err?.message || '');
+  if (/funcoes|funcao_id/.test(m) && /does not exist|não existe|relation|column/.test(m)) {
+    return res.status(409).json({ erro: 'Rode a migration 024 antes (funções)' });
+  }
+  if (/funcoes_nome_unico/.test(m)) return res.status(409).json({ erro: 'Já existe uma função com esse nome' });
   if (/colaboradores|documento_tipos|documentos/.test(m) && /does not exist|não existe|relation/.test(m)) {
     return res.status(409).json({ erro: 'Rode a migration 022 antes (colaboradores e documentos)' });
   }
@@ -67,6 +73,16 @@ async function conferirVinculosDoc(req, dados) {
   return null;
 }
 
+// 12d.0: função escolhida tem de ser do tenant; o texto "funcao" acompanha o nome (histórico)
+async function conferirFuncao(req, dados) {
+  if (dados.funcao_id === undefined) return null;
+  if (!dados.funcao_id) { dados.funcao_id = null; return null; }
+  const f = await F.funcaoPorId(supabase, dados.funcao_id);
+  if (!F.doTenant(f, req.tenantId) || f.ativo === false) return 'Função não encontrada';
+  dados.funcao = f.nome;
+  return null;
+}
+
 // ─── Configuração da tela ────────────────────────────────────────────────
 router.get('/config', exigirVer, async (req, res) => {
   try {
@@ -100,10 +116,18 @@ router.get('/colaboradores', exigirVer, async (req, res) => {
     const lista = await q(supabase.from('colaboradores').select('*').eq('tenant_id', req.tenantId));
     const docs = await D.listarDocumentos(supabase, req.tenantId, { alvoTipo: 'colaborador' });
     const editar = podeEditar(req);
+    // 12d.0: ficha pela função (se a migration 024 ainda não rodou, a lista funciona igual sem ela)
+    let fichas = new Map();
+    try { fichas = await F.fichasDoTenant(supabase, req.tenantId, lista); }
+    catch (e) { if (!/funcoes|funcao_id/.test(String(e.message))) throw e; }
     const out = lista.map((c) => {
       const meus = docs.filter((d) => String(d.colaborador_id) === String(c.id));
+      const ficha = fichas.get(String(c.id));
       return {
         ...c,
+        funcao_nome: ficha?.funcao?.nome || c.funcao || null,
+        exigidos: ficha?.resumo?.total || 0,
+        pendencias: ficha?.resumo?.pendencias || 0,
         cpf: editar ? c.cpf : (c.cpf ? `***.***.***-${c.cpf.slice(-2)}` : null), // LGPD: CPF completo só para quem edita
         documentos: meus.length,
         vencidos: meus.filter((d) => d.situacao === 'vencido').length,
@@ -119,6 +143,7 @@ router.post('/colaboradores', exigirEditar, async (req, res) => {
     const { erros, dados } = D.validarColaborador(req.body || {});
     if (erros.length) return res.status(400).json({ erro: erros[0], erros });
     if (dados.usuario_id && !(await usuarioDoTenant(req, dados.usuario_id))) return res.status(400).json({ erro: 'Usuário não encontrado' });
+    const fe = await conferirFuncao(req, dados); if (fe) return res.status(400).json({ erro: fe });
     const { data, error } = await supabase.from('colaboradores').insert([{ ...dados, tenant_id: req.tenantId }]).select();
     if (error) throw new Error(error.message);
     res.status(201).json(data[0]);
@@ -132,6 +157,7 @@ router.put('/colaboradores/:id', exigirEditar, async (req, res) => {
     const { erros, dados } = D.validarColaborador(req.body || {}, { parcial: true });
     if (erros.length) return res.status(400).json({ erro: erros[0], erros });
     if (dados.usuario_id && !(await usuarioDoTenant(req, dados.usuario_id))) return res.status(400).json({ erro: 'Usuário não encontrado' });
+    const fe = await conferirFuncao(req, dados); if (fe) return res.status(400).json({ erro: fe });
     const { data, error } = await supabase.from('colaboradores').update({ ...dados, atualizado_em: new Date().toISOString() })
       .eq('id', c.id).eq('tenant_id', req.tenantId).select();
     if (error) throw new Error(error.message);
@@ -265,6 +291,90 @@ router.delete('/documentos/:id', exigirEditar, async (req, res) => {
     await D.removerArquivo(supabase, doc.arquivo_path);
     res.json({ ok: true });
   } catch (err) { erro(res, 'documentos', err); }
+});
+
+// ─── Funções (etapa 12d.0) ───────────────────────────────────────────────
+router.get('/funcoes', exigirVer, async (req, res) => {
+  try { res.json({ funcoes: await F.listarFuncoes(supabase, req.tenantId), pode_editar: podeEditar(req) }); }
+  catch (err) { erro(res, 'funcoes', err); }
+});
+
+router.get('/funcoes/biblioteca', exigirVer, async (req, res) => {
+  try {
+    const minhas = await F.listarFuncoes(supabase, req.tenantId);
+    const importadas = new Set(minhas.filter((f) => f.origem_id != null).map((f) => String(f.origem_id)));
+    res.json({ modelos: (await F.biblioteca(supabase)).map((m) => ({ ...m, ja_importado: importadas.has(String(m.id)) })) });
+  } catch (err) { erro(res, 'biblioteca', err); }
+});
+
+router.post('/funcoes/importar', exigirEditar, async (req, res) => {
+  try {
+    const r = await F.importar(supabase, req.tenantId, req.body?.biblioteca_id, { nome: req.body?.nome });
+    if (r.erro) return res.status(r.status).json({ erro: r.erro });
+    res.status(201).json(r.funcao);
+  } catch (err) { erro(res, 'importar', err); }
+});
+
+router.post('/funcoes', exigirEditar, async (req, res) => {
+  try {
+    const { erros, dados } = F.validarFuncao(req.body || {});
+    if (erros.length) return res.status(400).json({ erro: erros[0], erros });
+    const { data, error } = await supabase.from('funcoes').insert([{ ...dados, tenant_id: req.tenantId }]).select();
+    if (error) throw new Error(error.message);
+    res.status(201).json(data[0]);
+  } catch (err) { erro(res, 'funcoes', err); }
+});
+
+router.put('/funcoes/:id', exigirEditar, async (req, res) => {
+  try {
+    const f = await F.funcaoPorId(supabase, req.params.id);
+    if (!F.doTenant(f, req.tenantId)) return res.status(404).json({ erro: 'Função não encontrada' });
+    const { erros, dados } = F.validarFuncao(req.body || {}, { parcial: true });
+    if (erros.length) return res.status(400).json({ erro: erros[0], erros });
+    const { data, error } = await supabase.from('funcoes').update({ ...dados, atualizado_em: new Date().toISOString() })
+      .eq('id', f.id).eq('tenant_id', req.tenantId).select();
+    if (error) throw new Error(error.message);
+    // o nome acompanha nos colaboradores (texto de histórico)
+    if (dados.nome && dados.nome !== f.nome) await supabase.from('colaboradores').update({ funcao: dados.nome }).eq('tenant_id', req.tenantId).eq('funcao_id', f.id);
+    res.json(data[0]);
+  } catch (err) { erro(res, 'funcoes', err); }
+});
+
+// POST /funcoes/:id/atualizar — traz a versão nova do modelo da biblioteca
+router.post('/funcoes/:id/atualizar', exigirEditar, async (req, res) => {
+  try {
+    const r = await F.atualizarDaBiblioteca(supabase, req.tenantId, req.params.id);
+    if (r.erro) return res.status(r.status).json({ erro: r.erro });
+    res.json(r.funcao);
+  } catch (err) { erro(res, 'atualizar', err); }
+});
+
+// Excluir: sem colaborador ligado apaga; com colaborador, não deixa (troque a função deles antes)
+router.delete('/funcoes/:id', exigirEditar, async (req, res) => {
+  try {
+    const f = await F.funcaoPorId(supabase, req.params.id);
+    if (!F.doTenant(f, req.tenantId)) return res.status(404).json({ erro: 'Função não encontrada' });
+    const usando = (await q(supabase.from('colaboradores').select('*').eq('tenant_id', req.tenantId).eq('funcao_id', f.id)));
+    if (usando.length) return res.status(409).json({ erro: `${usando.length} colaborador(es) têm a função "${f.nome}". Troque a função deles antes de excluir.` });
+    const { error } = await supabase.from('funcoes').delete().eq('id', f.id).eq('tenant_id', req.tenantId);
+    if (error) throw new Error(error.message);
+    res.json({ ok: true });
+  } catch (err) { erro(res, 'funcoes', err); }
+});
+
+// GET /colaboradores/:id/ficha — documentos exigidos pela função × o que ele tem
+router.get('/colaboradores/:id/ficha', exigirVer, async (req, res) => {
+  try {
+    const c = await colaboradorDoTenant(req, req.params.id);
+    if (!c) return res.status(404).json({ erro: 'Colaborador não encontrado' });
+    const fichas = await F.fichasDoTenant(supabase, req.tenantId, [c]);
+    const f = fichas.get(String(c.id));
+    res.json({
+      colaborador: { id: c.id, nome: c.nome, situacao: c.situacao, funcao_id: c.funcao_id, funcao: c.funcao },
+      funcao: f.funcao ? { id: f.funcao.id, nome: f.funcao.nome, descritivo: f.funcao.descritivo, requisitos: f.funcao.requisitos } : null,
+      itens: f.itens, resumo: f.resumo, pode_editar: podeEditar(req),
+    });
+  } catch (err) { erro(res, 'ficha', err); }
 });
 
 module.exports = router;

@@ -1,7 +1,7 @@
 # 📦 QuotaFlow — Estrutura Completa do Projeto
 
-**Versão:** 4.16 (… + Painel e Convites do Fornecedor + Criar Conta + Console da Plataforma + Calendário de Manutenção + Planos Recorrentes)
-**Última atualização:** 18/10/2026
+**Versão:** 4.19 (… + Painel e Convites do Fornecedor + Criar Conta + Console da Plataforma + Calendário de Manutenção + Planos Recorrentes + Pessoas e Documentos + Aviso de Vencimento por E-mail + Funções e Biblioteca)
+**Última atualização:** 19/10/2026
 **Status:** núcleo de compras (OS → RM → RC → OV) em produção; marketplace de fornecedores com busca unificada em produção; módulo de Não Conformidades com fluxo ISO 9001 completo; multi-perfil e reset de senha entregues; **Canal Spot** (demandas urgentes/raras) com ciclo completo comprador ↔ fornecedor; **fornecedores globais** da plataforma visíveis a todos os tenants, com isolamento total dos fornecedores locais.
 
 ---
@@ -106,6 +106,9 @@ quotaflow/
 │   │   ├── CatalogoService.js
 │   │   ├── calendarioManutencao.js (⭐ 12a — situação da OS e custo planejado/comprometido/realizado do calendário)
 │   │   ├── planosManutencao.js     (⭐ 12b — datas dos planos recorrentes, prévia e "Gerar OS (12 meses)")
+│   │   ├── avisosVencimento.js     (⭐ 12c.1 — e-mail diário de vencimento 30/15/5 dias e vencido; registra em documento_avisos)
+│   │   ├── funcoes.js              (⭐ 12d.0 — funções/cargos: biblioteca, importar (cópia), versão nova, ficha do colaborador)
+│   │   ├── documentos.js           (⭐ 12c — colaboradores/documentos: validação, situação do vencimento, arquivo no bucket privado)
 │   │   ├── fornecedoresVisiveis.js (⭐ 10/2026 — FONTE ÚNICA da regra "fornecedores locais do tenant + globais")
 │   │   ├── atuacao.js              (⭐ 10/2026 — perfil de atuação: validação contra atuacao_opcoes, marca sugerida, campos da demanda spot)
 │   │   ├── matchSpot.js            (⭐ 10/2026 — Match Score do Canal Spot, fase 1 por regras: pontos, faixa e motivos)
@@ -133,8 +136,9 @@ quotaflow/
 │   │   ├── naoConformidades.js     (M4.2 – M4.5 — endpoints do comprador para NC: CRUD, devolver, marcar-interna, vincular-item, editar-item-avulso, buscar-item)
 │   │   ├── ordensVenda.js          (listagem/detalhe/status de OV)
 │   │   ├── atuacao.js              (GET /api/atuacao/opcoes — listas do perfil de atuação; sem autenticação, são listas de referência)
-│   │   ├── recomendacoes.js        (POST /resumo-diario com x-cron-secret · GET /descadastrar/:token)
+│   │   ├── recomendacoes.js        (POST /resumo-diario com x-cron-secret — também dispara os avisos de vencimento (12c.1) · GET /descadastrar/:token)
 │   │   ├── manutencao.js           (⭐ 12a/12b — calendário, planos recorrentes, valor da hora)
+│   │   ├── pessoas.js              (⭐ 12c — /api/pessoas: colaboradores, tipos de documento, documentos, renovar, arquivo · 12d.0: funções, biblioteca, importar, atualizar, ficha)
 │   │   ├── spot.js                 (Canal Spot — comprador: demandas, foto, encerrar/reabrir; fornecedor: listar, visualizar, interesse)
 │   │   ├── equipamentos.js
 │   │   ├── usuarios.js             (CRUD + /me + /me/trocar-senha + requerAdmin)
@@ -212,6 +216,9 @@ quotaflow/
 │   │   │   │   ├── TelaPlanosManutencao.jsx         (⭐ 12b — planos recorrentes + valor da hora; aberta pelo botão 🔁 Planos do calendário)
 │   │   │   │   └── ModalTransferirOS.jsx            (⭐ 12b.3 — definir/transferir responsável de uma OS; usado no calendário e na OS)
 │   │   │   │
+│   │   │   ├── pessoas/
+│   │   │   │   └── TelaPessoas.jsx                  (⭐ 12c/12d.0 — 👷 Pessoas: abas Documentos · Colaboradores (📋 Ficha) · 👔 Funções · EPI/Treinamentos em breve)
+│   │   │   │
 │   │   │   ├── (spot) TelaCanalSpot.jsx             (Canal Spot do comprador — demandas, situações por cor, busca, encerrar/reabrir)
 │   │   │   │
 │   │   │   ├── shared/
@@ -255,6 +262,15 @@ quotaflow/
 - **usuario_perfis** ⭐ (M4.6) — N:N entre usuários e perfis (multi-perfil). `usuario_id | perfil_codigo`. Não tem `tenant_id` — isolamento por transitividade (ver regra multi-tenant no `db.js`).
 - **equipamentos** — `id | tenant_id | tag | nome | local | fabricante | modelo | serie | ativo | criado_em`.
 - **tenants.valor_hora** ⭐ (migration 019) — R$/h da mão de obra própria (opcional, ≥ 0). Usado no custo planejado do calendário e na prévia dos planos.
+
+### Pessoas e documentos ⭐ (etapa 12c, migration 022)
+- **colaboradores** — `id (bigserial) | tenant_id | nome | cpf (só dígitos; UNIQUE por tenant quando preenchido) | funcao | admissao | situacao ('ativo' | 'afastado' | 'desligado') | telefone | email | usuario_id (→ usuarios, opcional, SET NULL) | obs | criado_em | atualizado_em`. Separado de `usuarios` (decisão 18/10): motorista/ajudante/mecânico sem login. **Colaborador com documentos não é apagado** (409) — marca "desligado" (histórico é prova legal); desligado sai do resumo e do calendário.
+- **documento_tipos** — `id | tenant_id (NULL = lista padrão do sistema) | alvo ('colaborador' | 'equipamento' | 'empresa') | codigo | nome | validade_meses_padrao | ordem | ativo`. Padrão (12): CNH, MOPP, ASO, toxicológico · CRLV, ANTT/RNTRC, seguro, aferição do tacógrafo, certificado de calibração · alvará, licença ambiental, AVCB. O tenant cria os seus (código `p_…`); tipo do tenant com o mesmo código substitui o padrão.
+- **documentos** — `id | tenant_id | alvo_tipo | colaborador_id (CASCADE) | equipamento_id (CASCADE) | tipo_id (SET NULL) | tipo_nome (cópia) | numero | emitido_em | vence_em (NULL = sem vencimento) | responsavel_id (→ usuarios) | arquivo_path | arquivo_nome | arquivo_mime | obs | substituido_por (renovado por) | criado_por | criado_em | atualizado_em`. CHECK de coerência alvo × ids e `vence_em >= emitido_em`.
+- **Bucket privado `documentos`** (criado pela migration): `tenant-{id}/doc-{id}/{timestamp}-{aleatório}.{ext}`; PDF/JPG/PNG/WEBP até 10 MB, enviado em base64 no JSON (mesmo padrão da NC); aberto só por link assinado de 1 h.
+- **documento_avisos** ⭐ (12c.1, migration 023) — `documento_id (→ documentos, CASCADE) | marco ('30' | '15' | '5' | 'vencido') | destinatarios | enviado_em`, PK `(documento_id, marco)`. Cada marco de cada documento é avisado uma vez só.
+- **funcoes** ⭐ (12d.0, migration 024) — `id (bigserial) | tenant_id (NULL = BIBLIOTECA do QuotaFlow) | nome | descritivo | requisitos | documentos jsonb [{codigo, obs}] | epis jsonb (12d) | treinamentos jsonb (12e) | versao | origem_id (→ funcoes, SET NULL) | origem_versao | ativo | criado_em | atualizado_em`. Nome único por tenant (`funcoes_nome_unico`, só ativas). `documentos[].codigo` = `documento_tipos.codigo` de alvo colaborador (o tipo do tenant com mesmo código vale). Seed: 8 modelos de transportadora (motorista carreteiro, MOPP, mecânico, eletricista, borracheiro, ajudante/conferente, lavador, tráfego/administrativo).
+- **colaboradores.funcao_id** ⭐ (migration 024) — função ligada (SET NULL). O texto `funcao` continua com o nome (histórico) e acompanha quando a função é renomeada.
 
 ### Manutenção programada ⭐ (etapa 12b, migration 019)
 - **planos_manutencao** — `id (bigserial) | tenant_id | equipamento_id (FK SET NULL) | template_id (→ os_templates, FK SET NULL) | nome | descricao | categoria | urgencia | periodicidade_valor (1–3650) | periodicidade_unidade ('dias' | 'semanas' | 'meses') | proxima_data (date — âncora da série) | termina_em (date, migration 020 — NULL = sem término; CHECK ≥ proxima_data) | responsavel_id (→ usuarios, FK SET NULL, migration 021) | regra_dia_util ('proximo' padrão · 'anterior' · 'manter', migration 021) | hora_inicio (time) | duracao_horas | ativo | criado_por | criado_em | atualizado_em`. "Excluir" = `ativo = false` (as OS geradas ficam).
@@ -330,6 +346,7 @@ Ver seção 5 para o fluxo completo.
 ### Migrations recentes
 - **007_tenant_fornecedores.sql** — cria `tenant_fornecedores`.
 - **008_fornecedores_globais_sem_tenant.sql** — `tenant_id` deixa de ser NOT NULL em `fornecedores`; globais passam a `tenant_id NULL`; CHECK `fornecedores_tenant_por_tipo`.
+- **022_colaboradores_documentos.sql** — `colaboradores`, `documento_tipos` (+ 12 tipos padrão), `documentos`, bucket privado `documentos`. Idempotente; FKs com os tipos de id lidos do banco.
 - **021_plano_responsavel_dia_util.sql** — `planos_manutencao.responsavel_id` + `regra_dia_util` (CHECK), `chamados.responsavel_id`; FKs com o tipo de `usuarios.id` lido do banco. Idempotente.
 - **020_plano_termino.sql** — `planos_manutencao.termina_em` (NULL = sem término) + CHECK `termina_em >= proxima_data`. Idempotente.
 - **019_planos_manutencao.sql** — `planos_manutencao`, `chamados.origem_plano_id/origem_plano_data` + índice único, `tenants.valor_hora`. Idempotente; FKs com o tipo de id lido do banco.
@@ -671,6 +688,9 @@ npm run dev
 - **M4.7a:** modal "Meu perfil" com abas dados/senha, `PUT /api/usuarios/me` e `POST /api/usuarios/me/trocar-senha`
 
 ### ✅ Em produção (18/10/2026)
+- **👷 Pessoas e documentos (etapa 12c):** menu "👷 Pessoas" (admin, gestor, qualidade, operação; editar só admin, gestor, qualidade). Aba **Documentos**: cartões vencidos / vence em 30 dias / em dia (clicáveis como filtro), busca, filtro por alvo e colaborador, histórico de renovados; novo documento de pessoa, equipamento ou empresa com tipo, número, emissão (sugere o vencimento pela validade do tipo), vencimento, responsável por renovar e arquivo (PDF/foto); **↻ Renovar** (o anterior vai para o histórico); abrir arquivo por link assinado; excluir só para cadastro errado (modal do app). Aba **Colaboradores** (CPF validado; completo só para quem edita — LGPD; ligação opcional ao login). **Calendário** ganhou **camadas** (🛠 Manutenção · 📄 Documentos): documento aparece no dia do vencimento em verde-azulado, cartão com situação e "Ver em Pessoas"; rodapé "📄 N documento(s) vencendo · X já vencido(s)". Abas EPI e Treinamentos aparecem como "em breve".
+- **📧 Aviso de vencimento por e-mail (etapa 12c.1):** todo dia às 7h (mesmo disparo do resumo do Canal Spot — pg_cron chamando `POST /api/recomendacoes/resumo-diario`, ou `CRON_INTERNO=1`) o sistema avisa documentos que chegaram a **30, 15 ou 5 dias** do vencimento e, uma vez, quando **vencem**. Recebem: usuários ativos **admin e gestor** (perfil em `usuarios.perfil` ou `usuario_perfis`) + o **responsável** do documento. **Um e-mail por pessoa por dia** com a lista; sem novidade = sem e-mail. Cada marco sai uma vez só (`documento_avisos`); se o servidor ficou dias fora, manda só o marco mais urgente. Substituído (renovado) e colaborador desligado não entram; renovar recomeça os avisos para o novo documento. Se o envio falhar para todos, tenta de novo no dia seguinte. Falha nos avisos nunca impede o resumo do Spot. A resposta do disparo traz `avisos_vencimento: { tenants, documentos, emails, falhas }`. Usa o Resend (conta na cota de 100/dia do plano grátis).
+- **👔 Funções e biblioteca (etapa 12d.0):** aba **👔 Funções** em Pessoas (ver: admin, gestor, qualidade, operação; editar: admin, gestor, qualidade). Cada função tem **descritivo do cargo** (atividades/responsabilidades — requisito ISO), **requisitos** e **documentos exigidos** (tipos de pessoa: ASO, CNH, MOPP, toxicológico, tipos próprios). **📚 Importar da biblioteca**: modelos do QuotaFlow vistos por todos os tenants; importar **copia** para o tenant, que adapta. Se o modelo mudar no Console, a cópia mostra **✨ Versão nova na biblioteca** → "Atualizar" (modal do app) troca descritivo/requisitos/documentos e mantém o nome; nada muda sozinho. Excluir função só sem colaborador ligado (409). **Colaborador**: campo Função vira lista dos modelos; quem tinha só texto ganha a **sugestão** do modelo de mesmo nome (confirma ao salvar). **📋 Ficha** do colaborador: exigidos × o que ele tem (🔴 falta/vencido · 🟡 vencendo · 🟢 em dia), com "＋ Cadastrar"/"↻ Renovar" que abre o documento já preenchido e volta para a ficha. Ao ligar/trocar a função, a ficha abre sozinha (decisão b: só mostra as pendências novas — sem recolher nada). Lista de colaboradores mostra "Ficha · N pendência(s)". Antes da migration 024 a tela funciona como na 12c (aba Funções pede a migration). **Console da Plataforma → 📚 Biblioteca de funções**: criar/editar modelos (editar descritivo, requisitos ou documentos sobe a versão), ver quantas empresas importaram, "Tirar da biblioteca" (só desativa; cópias ficam). Rotas: `GET/POST /api/plataforma/biblioteca/funcoes`, `PUT/DELETE …/:id` (auditoria em `admin_acoes`). Ainda não: e-mail diário de documento **faltando** (hoje o e-mail avisa só vencimento) — entra junto com EPI.
 - **Planos de manutenção recorrentes + valor da hora (etapa 12b):** botão "🔁 Planos" no Calendário. Plano = equipamento + modelo de manutenção + "a cada N dias/semanas/meses" + data, hora e duração. "⚙ Gerar OS (12 meses)" mostra a prévia (datas, custo por OS e total, o que já existe) e cria só o que falta. OS do plano nasce **aberta, sem RC e sem RM** (materiais na fila do comprador). Selo "🔁 do plano" na lista de OS e "🔁 Plano" no calendário. Valor da hora (R$/h) na mesma tela; entra no planejado e no % do calendário.
 - **Calendário anual de manutenção (etapa 12a + 12a.1):** menu "📅 Calendário" (admin, gestor, comprador, operação). Visões Ano (folhinha), Mês e Semana; cor por situação (atrasada · em execução · programada · concluída — dia com várias OS pinta a mais urgente); filtros de equipamento, tipo e situação; clique no dia → OS do dia com "Abrir OS →" e "＋ Nova OS programada" (abre a criação com programação geral, preventiva, 08h–17h do dia). Rodapé: planejado · gasto · comprometido · falta · **% do custo conhecido**. Sem migration — ver regras em "Calendário de Manutenção" no Roadmap.
 
@@ -827,7 +847,9 @@ Ordem: **12** Calendário anual de manutenção (folhinha) + planos recorrentes 
 
 ### "Parte ISO" — 12c, 12d, 12e (decidido 18/10/2026 com o Marcony) — ver `claude/plano-etapas-12-a-17.md`
 - **Colaboradores separados de Usuários** (ligação opcional); módulo **"👷 Pessoas"** com abas Colaboradores · Documentos e vencimentos · EPI · Treinamentos; **Equipamentos** ganham aba Documentos (CRLV, ANTT, seguro, aferição de tacógrafo, certificado de calibração); documentos da empresa (alvará, licença ambiental, AVCB); calendário com camadas (Manutenção · Documentos · Treinamentos · EPI); e-mail 30/15/5 dias.
-- **Ordem:** 12c (colaboradores + vencimentos + camadas + e-mail) → **12d EPI** (CA, ficha NR-6, nº de rastreabilidade por movimento `EPI-AAAA-NNNN`, assinatura desenhada na tela do aparelho de quem entrega com "Limpar e refazer", PDF) → **12e Treinamentos** (matriz por função, turmas/plano de ação no calendário, certificado renova a validade).
+- **12c — entregue** (colaboradores, documentos com vencimento e arquivo, camadas no calendário). Decisões: lista inicial de 12 tipos (o cliente cria outros); aviso por e-mail para admin, gestor e o responsável do documento; menu "👷 Pessoas" abaixo de Equipamentos. **12c.1 — entregue** (e-mail de aviso 30/15/5 dias e vencido pelo agendamento das 7h, migration 023). Documentos de equipamento ficam, por enquanto, em Pessoas → Documentos (filtro "Equipamento"); a aba dentro da tela de Equipamentos fica para depois.
+- **12d.0 — entregue** (funções/cargos com descritivo + documentos exigidos, biblioteca do QuotaFlow no Console com importar = cópia e aviso de versão nova, ficha do colaborador; migration 024). Decidido 19/10 com o Marcony: modelos de função como os modelos de OS, banco de descritivos acessível a todos os tenants (mesmo padrão que vai servir ao **banco de inspeções**); trocar de função só mostra as novas pendências. **Próxima: 12d EPI** — kit de EPI na função (`funcoes.epis`), entrega já carrega o kit da função.
+- **Ordem:** 12c (colaboradores + vencimentos + camadas + e-mail) → 12d.0 (funções + biblioteca + ficha) → **12d EPI** (CA, ficha NR-6, nº de rastreabilidade por movimento `EPI-AAAA-NNNN`, assinatura desenhada na tela do aparelho de quem entrega com "Limpar e refazer", PDF) → **12e Treinamentos** (matriz por função, turmas/plano de ação no calendário, certificado renova a validade).
 
 ### Prioridade alta — próximo passo real
 
@@ -1023,4 +1045,4 @@ Esse cruzamento existe em SQL (2 queries + 1 merge). O LLM só interpreta o resu
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 18/10/2026 (etapa 12b.6)
+**Última atualização deste documento:** 19/10/2026 (etapa 12d.0)

@@ -2,11 +2,12 @@
 //
 // Console da Plataforma (etapa 11b) — <endereço>/#admin
 // Login próprio (plataforma_admins), separado de transportadora e fornecedor.
-// Abas: Visão geral · Aprovações · Transportadoras · Fornecedores
+// Abas: Visão geral · Aprovações · Transportadoras · Fornecedores · Biblioteca de funções (12d.0)
 // Token guardado em localStorage "plataforma_token" (não mistura com o do sistema).
 
 import { useState, useEffect, useCallback } from "react";
 import { API_URL } from "../utils/constants";
+import BibliotecaFuncoes from "./BibliotecaFuncoes"; // etapa 12d.0
 
 const C = {
   bg: "#0a0e14", surface: "#111722", surface2: "#0d131d", border: "#1e2535", text: "#e2e8f0", sub: "#94a3b8",
@@ -391,6 +392,7 @@ export default function ConsolePlataforma() {
     { id: "aprovacoes", t: `Aprovações${qtdPendentes ? ` (${qtdPendentes})` : ""}` },
     { id: "transportadoras", t: "Transportadoras" },
     { id: "fornecedores", t: "Fornecedores" },
+    { id: "funcoes", t: "📚 Biblioteca de funções" },
   ];
 
   return (
@@ -428,6 +430,7 @@ export default function ConsolePlataforma() {
         {aba === "aprovacoes" && <Aprovacoes dados={pend} ocupadoId={ocupadoId} onAcao={(a, tipo, item) => { setMotivo(""); setAcao({ acao: a, tipo, item }); }} />}
         {aba === "transportadoras" && <Lista tipo="tenant" dados={tenants} />}
         {aba === "fornecedores" && <Lista tipo="fornecedor" dados={forns} />}
+        {aba === "funcoes" && <BibliotecaFuncoes token={token} chamar={chamar} C={C} input={input} label={label} card={card} btn={btn} tag={tag} onAviso={setAviso} />}
       </div>
 
       {acao && (

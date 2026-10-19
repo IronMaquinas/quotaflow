@@ -72,6 +72,7 @@ function validarColaborador(body, { parcial = false } = {}) {
     if (e && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) erros.push('E-mail inválido'); else out.email = e || null;
   }
   if (tem('usuario_id')) out.usuario_id = body.usuario_id || null;
+  if (tem('funcao_id')) out.funcao_id = body.funcao_id && /^\d+$/.test(String(body.funcao_id)) ? String(body.funcao_id) : null; // 12d.0
   if (tem('obs')) out.obs = body.obs ? String(body.obs).slice(0, 2000) : null;
   return { erros, dados: out };
 }
