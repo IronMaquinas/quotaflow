@@ -207,6 +207,12 @@ async function fichasDoTenant(supabase, tenantId, colaboradores) {
 
 
 // ─── Biblioteca — Console da Plataforma ─────────────────────────────────
+// kit da biblioteca: só tipos do catálogo de EPI (sem a 027, a lista fixa)
+async function kitDoCatalogo(supabase, kit) {
+  const cat = await E.catalogoEpi(supabase).catch(() => E.TIPOS_EPI);
+  const cod = new Set(cat.map((t) => t.codigo));
+  return kit.filter((k) => cod.has(k.tipo));
+}
 async function bibliotecaConsole(supabase) {
   const modelos = await biblioteca(supabase);
   const copias = await q(supabase.from('funcoes').select('*').not('origem_id', 'is', null));
@@ -215,12 +221,14 @@ async function bibliotecaConsole(supabase) {
   return {
     modelos: modelos.map((m) => ({ ...m, importacoes: copias.filter((c) => String(c.origem_id) === String(m.id) && c.ativo !== false).length })),
     ...LISTAS,
+    tipos_epi: await E.catalogoEpi(supabase).catch(() => E.TIPOS_EPI), // 12d.1b: catálogo do banco
     tipos_documento: tipos.map((t) => ({ codigo: t.codigo, nome: t.nome, validade_meses_padrao: t.validade_meses_padrao })),
   };
 }
 async function criarModelo(supabase, body) {
   const { erros, dados } = validarFuncao(body || {});
   if (erros.length) return { status: 400, erro: erros[0] };
+  if (dados.epis) dados.epis = await kitDoCatalogo(supabase, dados.epis);
   const { data, error } = await supabase.from('funcoes').insert([{ ...dados, tenant_id: null, versao: 1 }]).select();
   if (error) { if (/funcoes_nome_unico/.test(error.message)) return { status: 409, erro: 'Já existe um modelo com esse nome' }; throw new Error(error.message); }
   return { modelo: data[0] };
@@ -231,6 +239,7 @@ async function editarModelo(supabase, id, body) {
   if (!m || m.tenant_id != null) return { status: 404, erro: 'Modelo não encontrado' };
   const { erros, dados } = validarFuncao(body || {}, { parcial: true });
   if (erros.length) return { status: 400, erro: erros[0] };
+  if (dados.epis) dados.epis = await kitDoCatalogo(supabase, dados.epis);
   const mudou = CAMPOS_CONTEUDO.some((k) => dados[k] !== undefined && JSON.stringify(dados[k]) !== JSON.stringify(m[k] ?? (k === 'documentos' || k === 'riscos' || k === 'epis' ? [] : null)));
   const { data, error } = await supabase.from('funcoes').update({ ...dados, ...(mudou ? { versao: (Number(m.versao) || 1) + 1 } : {}), atualizado_em: new Date().toISOString() })
     .eq('id', m.id).is('tenant_id', null).select();

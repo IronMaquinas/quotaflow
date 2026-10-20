@@ -1,6 +1,8 @@
 // routes/pessoas.js — etapa 12c: colaboradores e documentos com vencimento
 //                     etapa 12d.0: funções (cargos) + biblioteca + ficha do colaborador
 //                     etapa 12d.1: EPI (item de consumo marcado como EPI, CA, endereço EPI)
+//                     etapa 12d.1b: catálogo de tipos de EPI (lista do admin + do tenant), tamanhos
+//                     etapa 12d.2: entrega de EPI (ficha NR-6 com assinatura), painel por colaborador, selo de conformidade
 // Registrado no server.js com tenantMiddleware: app.use('/api/pessoas', tenantMiddleware, ...)
 //
 // Ver:     admin, gestor, qualidade, operacao   (CPF só aparece para quem edita — LGPD)
@@ -11,6 +13,8 @@ const { supabase } = require('../db');
 const D = require('../services/documentos');
 const F = require('../services/funcoes'); // etapa 12d.0
 const E = require('../services/epi');     // etapa 12d.1
+const EE = require('../services/epiEntregas'); // etapa 12d.2
+const CF = require('../services/conformidade'); // etapa 12d.2
 
 const VER = ['admin', 'gestor', 'qualidade', 'operacao'];
 const EDITAR = ['admin', 'gestor', 'qualidade'];
@@ -37,6 +41,13 @@ function erro(res, onde, err) {
   if (/epi_itens/.test(m) && /does not exist|não existe|relation|schema cache/.test(m)) {
     return res.status(409).json({ erro: 'Rode a migration 026 antes (EPI)' });
   }
+  if (/epi_tipos|tamanho|tam_calcado|tam_camisa|tam_calca|tam_luva/.test(m) && /does not exist|não existe|relation|schema cache|column/.test(m)) {
+    return res.status(409).json({ erro: 'Rode a migration 027 antes (catálogo de EPI e tamanhos)' });
+  }
+  if (/epi_entregas|epi_entrega_itens/.test(m) && /does not exist|não existe|relation|schema cache/.test(m)) {
+    return res.status(409).json({ erro: 'Rode a migration 028 antes (entregas de EPI)' });
+  }
+  if (/epi_entregas_numero_unico/.test(m)) return res.status(409).json({ erro: 'Duas entregas ao mesmo tempo — tente de novo' });
   if (/epi_itens_item_unico/.test(m)) return res.status(409).json({ erro: 'Esse item já está marcado como EPI' });
   if (/funcoes_nome_unico/.test(m)) return res.status(409).json({ erro: 'Já existe uma função com esse nome' });
   if (/colaboradores|documento_tipos|documentos/.test(m) && /does not exist|não existe|relation/.test(m)) {
@@ -126,14 +137,21 @@ router.get('/colaboradores', exigirVer, async (req, res) => {
     let fichas = new Map();
     try { fichas = await F.fichasDoTenant(supabase, req.tenantId, lista); }
     catch (e) { if (!/funcoes|funcao_id/.test(String(e.message))) throw e; }
+    // 12d.2: status de EPI para o selo (antes da migration 028 o selo sai sem o pilar EPI)
+    let baseEpi = null;
+    try { baseEpi = await EE.carregarBase(supabase, req.tenantId); }
+    catch (e) { if (!/epi_|funcoes|tam_/.test(String(e.message))) throw e; }
     const out = lista.map((c) => {
       const meus = docs.filter((d) => String(d.colaborador_id) === String(c.id));
       const ficha = fichas.get(String(c.id));
+      const epi = baseEpi ? EE.statusColaborador(c, baseEpi).resumo : null;
+      const seloC = CF.selo({ funcaoLigada: !!ficha?.funcao, docs: ficha?.resumo, epi });
       return {
         ...c,
         funcao_nome: ficha?.funcao?.nome || c.funcao || null,
         exigidos: ficha?.resumo?.total || 0,
         pendencias: ficha?.resumo?.pendencias || 0,
+        selo: seloC, epi_resumo: epi,
         cpf: editar ? c.cpf : (c.cpf ? `***.***.***-${c.cpf.slice(-2)}` : null), // LGPD: CPF completo só para quem edita
         documentos: meus.length,
         vencidos: meus.filter((d) => d.situacao === 'vencido').length,
@@ -301,7 +319,7 @@ router.delete('/documentos/:id', exigirEditar, async (req, res) => {
 
 // ─── Funções (etapa 12d.0) ───────────────────────────────────────────────
 router.get('/funcoes', exigirVer, async (req, res) => {
-  try { res.json({ funcoes: await F.listarFuncoes(supabase, req.tenantId), ...F.LISTAS, pode_editar: podeEditar(req) }); }
+  try { res.json({ funcoes: await F.listarFuncoes(supabase, req.tenantId), ...F.LISTAS, tipos_epi: await E.tiposDoTenant(supabase, req.tenantId), pode_editar: podeEditar(req) }); }
   catch (err) { erro(res, 'funcoes', err); }
 });
 
@@ -325,6 +343,7 @@ router.post('/funcoes', exigirEditar, async (req, res) => {
   try {
     const { erros, dados } = F.validarFuncao(req.body || {});
     if (erros.length) return res.status(400).json({ erro: erros[0], erros });
+    if (dados.epis) { const cod = await codigosEpi(req); dados.epis = dados.epis.filter((k) => cod.has(k.tipo)); } // só tipos que existem
     const { data, error } = await supabase.from('funcoes').insert([{ ...dados, tenant_id: req.tenantId }]).select();
     if (error) throw new Error(error.message);
     res.status(201).json(data[0]);
@@ -337,6 +356,7 @@ router.put('/funcoes/:id', exigirEditar, async (req, res) => {
     if (!F.doTenant(f, req.tenantId)) return res.status(404).json({ erro: 'Função não encontrada' });
     const { erros, dados } = F.validarFuncao(req.body || {}, { parcial: true });
     if (erros.length) return res.status(400).json({ erro: erros[0], erros });
+    if (dados.epis) { const cod = await codigosEpi(req); dados.epis = dados.epis.filter((k) => cod.has(k.tipo)); } // só tipos que existem
     const { data, error } = await supabase.from('funcoes').update({ ...dados, atualizado_em: new Date().toISOString() })
       .eq('id', f.id).eq('tenant_id', req.tenantId).select();
     if (error) throw new Error(error.message);
@@ -375,7 +395,12 @@ router.get('/colaboradores/:id/ficha', exigirVer, async (req, res) => {
     if (!c) return res.status(404).json({ erro: 'Colaborador não encontrado' });
     const fichas = await F.fichasDoTenant(supabase, req.tenantId, [c]);
     const f = fichas.get(String(c.id));
+    let epi = null;
+    try { epi = EE.statusColaborador(c, await EE.carregarBase(supabase, req.tenantId)); }
+    catch (e) { if (!/epi_|tam_/.test(String(e.message))) throw e; }
     res.json({
+      epi: epi ? { itens: epi.itens, resumo: epi.resumo, extras: epi.extras } : null,
+      selo: CF.selo({ funcaoLigada: !!f.funcao, docs: f.resumo, epi: epi?.resumo }),
       colaborador: { id: c.id, nome: c.nome, situacao: c.situacao, funcao_id: c.funcao_id, funcao: c.funcao },
       funcao: f.funcao ? { id: f.funcao.id, nome: f.funcao.nome, descritivo: f.funcao.descritivo, requisitos: f.funcao.requisitos, cbo: f.funcao.cbo || null, setor: f.funcao.setor || null, escolaridade: f.funcao.escolaridade || null, riscos: f.funcao.riscos || [], responde_a: f.funcao.responde_a || null } : null,
       ...F.LISTAS,
@@ -389,11 +414,22 @@ router.get('/colaboradores/:id/ficha', exigirVer, async (req, res) => {
 router.get('/epi', exigirVer, async (req, res) => {
   try {
     let endereco = null;
-    try { endereco = await E.garantirEnderecoEpi(supabase, req.tenantId); }
+    try { endereco = await E.garantirEnderecoEpi(supabase, req.tenantId); await E.garantirRecebimento(supabase, req.tenantId); }
     catch (e) { console.warn('⚠️ [pessoas/epi] endereço EPI não criado:', e.message); }
-    res.json({ itens: await E.listarEpiItens(supabase, req.tenantId), endereco, ...E.LISTAS_EPI, pode_editar: podeEditar(req) });
+    res.json({ itens: await E.listarEpiItens(supabase, req.tenantId), endereco, ...E.LISTAS_EPI, tipos_epi: await E.tiposDoTenant(supabase, req.tenantId), pode_editar: podeEditar(req) });
   } catch (err) { erro(res, 'epi', err); }
 });
+
+// POST /epi/tipos { nome, grade, troca_dias_padrao } — tipo de EPI próprio do tenant (12d.1b)
+router.post('/epi/tipos', exigirEditar, async (req, res) => {
+  try {
+    const r = await E.criarTipoTenant(supabase, req.tenantId, req.body);
+    if (r.erro) return res.status(r.status).json({ erro: r.erro });
+    res.status(201).json(r.tipo);
+  } catch (err) { erro(res, 'epi', err); }
+});
+
+const codigosEpi = async (req) => new Set((await E.tiposDoTenant(supabase, req.tenantId)).map((t) => t.codigo));
 
 // Itens de consumo para escolher qual marcar como EPI
 router.get('/epi/itens-consumo', exigirEditar, async (req, res) => {
@@ -409,13 +445,18 @@ router.get('/epi/itens-consumo', exigirEditar, async (req, res) => {
 // POST /epi/itens { item_consumo_id | novo_item: { nome, unidade_medida, sku }, tipo, ca, ca_validade, troca_dias, obs }
 router.post('/epi/itens', exigirEditar, async (req, res) => {
   try {
-    const { erros, dados } = E.validarEpiItem(req.body || {});
+    const codigos = await codigosEpi(req);
+    const { erros, dados } = E.validarEpiItem(req.body || {}, { codigos });
     if (erros.length) return res.status(400).json({ erro: erros[0], erros });
     let itemId = req.body?.item_consumo_id;
     let criado = null;
     if (!itemId) {
-      const nome = String(req.body?.novo_item?.nome || '').trim();
-      if (!nome) return res.status(400).json({ erro: 'Escolha um item do estoque ou informe o nome do item novo' });
+      // 12d.1b: "Novo EPI" cria o item no Estoque por trás. Nome = descrição (ou o tipo) + tamanho.
+      const tipoNome = (await E.tiposDoTenant(supabase, req.tenantId)).find((t) => t.codigo === dados.tipo)?.nome;
+      const base = String(req.body?.novo_item?.nome || tipoNome || '').trim();
+      if (!base) return res.status(400).json({ erro: 'Escolha um item do estoque ou informe o nome do item novo' });
+      const nome = dados.tamanho && !base.toLowerCase().includes(`tam. ${dados.tamanho}`.toLowerCase()) ? `${base} — tam. ${dados.tamanho}` : base;
+      req.body.novo_item = req.body.novo_item || {};
       const { data, error } = await supabase.from('itens_consumo').insert([{
         tenant_id: req.tenantId, nome: nome.slice(0, 200), sku: req.body.novo_item.sku ? String(req.body.novo_item.sku).trim().slice(0, 60) : null,
         unidade_medida: String(req.body.novo_item.unidade_medida || 'UN').trim().slice(0, 10) || 'UN',
@@ -445,7 +486,7 @@ router.put('/epi/itens/:id', exigirEditar, async (req, res) => {
     if (!idValido(req.params.id)) return res.status(404).json({ erro: 'EPI não encontrado' });
     const e = (await q(supabase.from('epi_itens').select('*').eq('tenant_id', req.tenantId).eq('id', req.params.id)))[0];
     if (!e) return res.status(404).json({ erro: 'EPI não encontrado' });
-    const { erros, dados } = E.validarEpiItem(req.body || {}, { parcial: true });
+    const { erros, dados } = E.validarEpiItem(req.body || {}, { parcial: true, codigos: await codigosEpi(req) });
     if (erros.length) return res.status(400).json({ erro: erros[0], erros });
     const { data, error } = await supabase.from('epi_itens').update({ ...dados, atualizado_em: new Date().toISOString() }).eq('id', e.id).eq('tenant_id', req.tenantId).select();
     if (error) throw new Error(error.message);
@@ -462,6 +503,60 @@ router.delete('/epi/itens/:id', exigirEditar, async (req, res) => {
     if (!data?.length) return res.status(404).json({ erro: 'EPI não encontrado' });
     res.json({ ok: true });
   } catch (err) { erro(res, 'epi', err); }
+});
+
+// ─── Entregas de EPI (etapa 12d.2) ────────────────────────────────────────
+// Entregar e devolver: admin, gestor, qualidade e operação (a central de EPI). Sem aprovação de retirada.
+async function usuarioLogado(req) {
+  if (!req.userId) return null;
+  const u = await usuarioDoTenant(req, req.userId).catch(() => null);
+  return { id: req.userId, nome: u?.nome || u?.email || null };
+}
+
+router.get('/epi/painel', exigirVer, async (req, res) => {
+  try { res.json({ colaboradores: await EE.painel(supabase, req.tenantId), motivos: EE.MOTIVOS, aviso_troca_dias: EE.AVISO_TROCA_DIAS }); }
+  catch (err) { erro(res, 'epi-painel', err); }
+});
+
+router.post('/epi/entregas', exigirVer, async (req, res) => {
+  try {
+    const r = await EE.registrarEntrega(supabase, req.tenantId, await usuarioLogado(req), req.body || {});
+    if (r.erro) return res.status(r.status).json({ erro: r.erro });
+    res.status(201).json(r);
+  } catch (err) { erro(res, 'epi-entrega', err); }
+});
+
+router.post('/epi/entrega-itens/:id/devolver', exigirVer, async (req, res) => {
+  try {
+    if (!idValido(req.params.id)) return res.status(404).json({ erro: 'Item não encontrado' });
+    const r = await EE.devolver(supabase, req.tenantId, await usuarioLogado(req), req.params.id, req.body || {});
+    if (r.erro) return res.status(r.status).json({ erro: r.erro });
+    res.json(r);
+  } catch (err) { erro(res, 'epi-devolver', err); }
+});
+
+router.get('/epi/colaboradores/:id/historico', exigirVer, async (req, res) => {
+  try {
+    const c = await colaboradorDoTenant(req, req.params.id);
+    if (!c) return res.status(404).json({ erro: 'Colaborador não encontrado' });
+    res.json({ entregas: await EE.historico(supabase, req.tenantId, c.id) });
+  } catch (err) { erro(res, 'epi-historico', err); }
+});
+
+// Ficha de EPI (NR-6) para imprimir/salvar em PDF: empresa, colaborador, todas as entregas com assinatura
+router.get('/epi/colaboradores/:id/ficha-nr6', exigirVer, async (req, res) => {
+  try {
+    const c = await colaboradorDoTenant(req, req.params.id);
+    if (!c) return res.status(404).json({ erro: 'Colaborador não encontrado' });
+    const t = (await q(supabase.from('tenants').select('*').eq('id', req.tenantId)))[0] || {};
+    const editar = podeEditar(req);
+    res.json({
+      empresa: { nome: t.nome_fantasia || t.nome || t.razao_social || 'Empresa', razao_social: t.razao_social || t.nome || null, cnpj: t.cnpj || null },
+      colaborador: { id: c.id, nome: c.nome, cpf: c.cpf ? (editar ? c.cpf : `***.***.***-${c.cpf.slice(-2)}`) : null, funcao: c.funcao || null, admissao: c.admissao || null, situacao: c.situacao },
+      entregas: await EE.historico(supabase, req.tenantId, c.id, { comAssinatura: true }),
+      gerado_em: new Date().toISOString(),
+    });
+  } catch (err) { erro(res, 'epi-ficha', err); }
 });
 
 module.exports = router;

@@ -10,6 +10,7 @@
 //   POST /transportadoras/:id/aprovar · /recusar { motivo } · DELETE /transportadoras/:id
 //   POST /fornecedores/:id/aprovar    · /recusar { motivo } · DELETE /fornecedores/:id
 //   GET/POST /biblioteca/funcoes · PUT/DELETE /biblioteca/funcoes/:id   (etapa 12d.0 — modelos de função)
+//   GET/POST /biblioteca/epi-tipos · PUT /biblioteca/epi-tipos/:id     (etapa 12d.1b — catálogo de EPI)
 //
 // Login só para quem está em plataforma_admins (ativo) E na variável
 // PLATAFORMA_ADMINS. Limite: 5 tentativas erradas por e-mail a cada 15 min.
@@ -22,6 +23,7 @@ const { plataformaMiddleware, gerarTokenPlataforma, emailAutorizado } = require(
 const C = require('../services/plataformaConsole');
 const { supabase } = require('../db');
 const F = require('../services/funcoes'); // etapa 12d.0
+const E = require('../services/epi');     // etapa 12d.1b
 
 const tentativas = new Map(); // email → { n, desde }
 const JANELA_MS = 15 * 60 * 1000;
@@ -94,5 +96,13 @@ router.get('/biblioteca/funcoes', responder(() => F.bibliotecaConsole(supabase))
 router.post('/biblioteca/funcoes', responder(async (req) => { const r = await F.criarModelo(supabase, req.body); if (!r.erro) await C.registrar(req.plataformaAdmin, 'funcao_criar', 'funcao', r.modelo.id, { nome: r.modelo.nome }).catch(() => {}); return r; }));
 router.put('/biblioteca/funcoes/:id', responder(async (req) => { const r = await F.editarModelo(supabase, req.params.id, req.body); if (!r.erro) await C.registrar(req.plataformaAdmin, 'funcao_editar', 'funcao', req.params.id, { versao_subiu: r.versao_subiu }).catch(() => {}); return r; }));
 router.delete('/biblioteca/funcoes/:id', responder(async (req) => { const r = await F.desativarModelo(supabase, req.params.id); if (!r.erro) await C.registrar(req.plataformaAdmin, 'funcao_desativar', 'funcao', req.params.id, null).catch(() => {}); return r; }));
+
+// ─── Catálogo de tipos de EPI (etapa 12d.1b) ──────────────────────────────
+router.get('/biblioteca/epi-tipos', responder(async () => {
+  const todos = await (async () => { const { data, error } = await supabase.from('epi_tipos').select('*').is('tenant_id', null); if (error) throw new Error(error.message); return data || []; })();
+  return { tipos: todos.sort((a, b) => (a.ordem - b.ordem) || String(a.nome).localeCompare(String(b.nome))), grades: E.GRADES };
+}));
+router.post('/biblioteca/epi-tipos', responder(async (req) => { const r = await E.criarTipoCatalogo(supabase, req.body); if (!r.erro) await C.registrar(req.plataformaAdmin, 'epi_tipo_criar', 'epi_tipo', r.tipo.id, { nome: r.tipo.nome }).catch(() => {}); return r; }));
+router.put('/biblioteca/epi-tipos/:id', responder(async (req) => { const r = await E.editarTipoCatalogo(supabase, req.params.id, req.body); if (!r.erro) await C.registrar(req.plataformaAdmin, 'epi_tipo_editar', 'epi_tipo', req.params.id, null).catch(() => {}); return r; }));
 
 module.exports = router;

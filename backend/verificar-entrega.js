@@ -37,7 +37,7 @@ const ESPERADO = {
   'routes/cotacoes.js': '5a83261606ba1146511c64c560b6e058',
   'routes/naoConformidades.js': '4f27a368d0e2d4ff921a173c98347cea',
   'routes/ordensVenda.js': 'ba32842c49096f072788b51d10248ca4',
-  'routes/estoque/movimentacoes.js': '33c7e355b664b4d7cd72ef1afaba0c60',
+  'routes/estoque/movimentacoes.js': '7df44d7b2bfac732846bd98fee2cada9', // etapa 12d.2
   'routes/estoque/itensConsumo.js': '47011b41ff3d33ac8ad31954084c2321',
   'services/NCService.js': 'a9432a05c6bfb78719497119235bbe44',
   'services/PortalRespostaService.js': 'aff8546f40f10b238354651e8b17aefb',
@@ -76,11 +76,11 @@ const ESPERADO = {
   'services/emailConfirmacao.js': 'e36296d648d6f76f6412d7de0e10c4d8', // etapa 11a.3 (novo)
   'front:CampoTelefone.jsx': 'fd407b33d7859334a1270903cf7b227b', // etapa 11a.3 (novo)
   'front:TelaConfirmarEmail.jsx': 'dbf759fd98f257a436cfe47874c72d9f', // etapa 11a.3 (novo)
-  'routes/plataforma.js': 'ebaa8f73dfb6f98328c80ac9ed4e0ad5', // etapa 12d.0
+  'routes/plataforma.js': '6650da72679f470e0750dc17584e28fa', // etapa 12d.1b
   'services/plataformaConsole.js': '134a0e0c11ae0fb7df0173979a4550da', // etapa 11b (novo)
   'middleware/plataformaMiddleware.js': 'bf2424eab233bdf7e0cb6fca9cb953b9', // etapa 11b (novo)
   'scripts/criarAdmin.js': 'd4d85894f6381dc7b31f83466f316024', // etapa 11b (novo)
-  'front:ConsolePlataforma.jsx': '78f1e4171b3977a4da85a115ba52ca62', // etapa 12d.0
+  'front:ConsolePlataforma.jsx': '4799ddb2f50ed6bc17661dc367c31061', // etapa 12d.1b
   'routes/manutencao.js': '51bbdf7cf4b30ca5249254a2df06f3fb', // etapa 12c
   'services/calendarioManutencao.js': 'bbcf04d1bb3b18b8776579d3180274e6', // etapa 12b.2
   'front:TelaCalendarioManutencao.jsx': '648e34b6a641b03a4f35fd3a53b2de8e', // etapa 12c
@@ -88,23 +88,29 @@ const ESPERADO = {
   'services/planosManutencao.js': 'e32588acaefd47c5cb93bbe0d70ab799', // etapa 12b.4
   'front:TelaPlanosManutencao.jsx': '5fd8c2a3a8c6fdfb599fb98fd9ccabff', // etapa 12b.3 + texto do botão alterado pelo Marcony (18/10)
   'front:ModalTransferirOS.jsx': '8e7c1bf0d6fc9a4f88bdd9087d22cb37', // etapa 12b.3 (novo)
-  'routes/pessoas.js': 'ee09f7425783a61930cf669ca8fda8e0', // etapa 12d.1
-  'services/documentos.js': 'cbae4a2b3f39141587cc11356eb2e900', // etapa 12d.0
-  'front:TelaPessoas.jsx': '7fb9c1261f72b88534e1a61d8281c605', // etapa 12d.1
+  'routes/pessoas.js': '6a06fd550b0af5de88e10d7b565946bd', // etapa 12d.2
+  'services/documentos.js': 'a7de4be5ace0f3619b24bc21f027632c', // etapa 12d.1b
+  'front:TelaPessoas.jsx': '1bb8d02cb32dc5f022e99bc066487e03', // etapa 12d.2
   // etapa 12c.1
   'services/avisosVencimento.js': '326d34d06a099fe41c1cb75f77e3b3af',
-  'services/funcoes.js': '0833f47959cbd698459520bc0b234f5a', // etapa 12d.1
+  'services/funcoes.js': 'd78f58bdf21c33c4bbf5f253c6b3f052', // etapa 12d.1b
   'front:BibliotecaFuncoes.jsx': '4e034707e49d56e5e490b0be73cb5468', // etapa 12d.1
-  'services/epi.js': '25de570c1533a710d1d346d80863255e', // etapa 12d.1 (novo)
-  'front:TelaEpi.jsx': 'e77722b4b9ec30ce8790d39e0ac76bf0', // etapa 12d.1 (novo)
+  'services/epi.js': '9b0dccea86e23c7d5f3af1132159f0ee', // etapa 12d.1b
+  'front:TelaEpi.jsx': 'a0a341eb89e20d06799f420fbb41609d', // etapa 12d.2
+  'front:BibliotecaEpi.jsx': 'e54d2c680ad3692518681de67bf00169', // etapa 12d.1b (novo)
+  'services/epiEntregas.js': '12ca0be8867a105f8215bc2dfb00d6ba', // etapa 12d.2 (novo)
+  'services/conformidade.js': '7f1377d6f573adda0411209864ced1e6', // etapa 12d.2 (novo)
+  'front:GestaoEpi.jsx': 'd4837ff8d5f105d8eecbf7756a78dc19', // etapa 12d.2 (novo)
+  'front:AssinaturaTela.jsx': 'db713a14a03390f9072d06f1de697b90', // etapa 12d.2 (novo)
+  'front:gerarFichaEpi.js': 'c2e443b6ef6d97726787608b310a22bd', // etapa 12d.2 (novo)
 };
 
-// Antes de copiar a etapa 12d.1 — versão que serviu de base para as alterações
+// Antes de copiar a etapa 12d.2 — versão que serviu de base para as alterações (12d.1b)
 const ANTES = {
-  'front:TelaPessoas.jsx': '69bb92b3092f7be77ab00c72d80da855',
-  'front:BibliotecaFuncoes.jsx': 'b23eb286ff23eb3a83290d4eab3196e2',
-  'routes/pessoas.js': '666e03d25ae596477d802b9b832ac0b5',
-  'services/funcoes.js': 'c22b4c9e4ed3d6b44297ca401f8d61dd',
+  'routes/pessoas.js': 'c4b6383ef0cacf19e2deaed52c591d88',
+  'routes/estoque/movimentacoes.js': '33c7e355b664b4d7cd72ef1afaba0c60',
+  'front:TelaEpi.jsx': '887beb7e485937c805d45d2741743bfc',
+  'front:TelaPessoas.jsx': '5d12b185de6d0e85db75352acd3f96c9',
 };
 
 const RAIZ = process.cwd();
@@ -141,8 +147,8 @@ function localizar(chave) {
 const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
-  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 12d.1?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 12d.1)\n');
+  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 12d.2?\n'
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 12d.2)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
@@ -190,7 +196,7 @@ for (const [chave, esperado] of Object.entries(LISTA)) {
 
 if (!modoAntes) {
   // Arquivos novos precisam entrar no commit
-  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js', 'services/matchSpot.js', 'services/recomendacoesEmail.js', 'routes/recomendacoes.js', 'services/convitesFornecedor.js', 'services/acessoSpot.js', 'services/receitaCnpj.js', 'services/cadastroPublico.js', 'services/emailConfirmacao.js', 'routes/plataforma.js', 'services/plataformaConsole.js', 'middleware/plataformaMiddleware.js', 'scripts/criarAdmin.js', 'routes/manutencao.js', 'services/calendarioManutencao.js', 'services/planosManutencao.js', 'migrations/019_planos_manutencao.sql', 'migrations/020_plano_termino.sql', 'migrations/021_plano_responsavel_dia_util.sql', 'routes/pessoas.js', 'services/documentos.js', 'migrations/022_colaboradores_documentos.sql', 'services/avisosVencimento.js', 'migrations/023_documento_avisos.sql', 'services/funcoes.js', 'migrations/024_funcoes.sql', 'migrations/025_funcoes_detalhes.sql', 'services/epi.js', 'migrations/026_epi_itens.sql'];
+  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js', 'services/matchSpot.js', 'services/recomendacoesEmail.js', 'routes/recomendacoes.js', 'services/convitesFornecedor.js', 'services/acessoSpot.js', 'services/receitaCnpj.js', 'services/cadastroPublico.js', 'services/emailConfirmacao.js', 'routes/plataforma.js', 'services/plataformaConsole.js', 'middleware/plataformaMiddleware.js', 'scripts/criarAdmin.js', 'routes/manutencao.js', 'services/calendarioManutencao.js', 'services/planosManutencao.js', 'migrations/019_planos_manutencao.sql', 'migrations/020_plano_termino.sql', 'migrations/021_plano_responsavel_dia_util.sql', 'routes/pessoas.js', 'services/documentos.js', 'migrations/022_colaboradores_documentos.sql', 'services/avisosVencimento.js', 'migrations/023_documento_avisos.sql', 'services/funcoes.js', 'migrations/024_funcoes.sql', 'migrations/025_funcoes_detalhes.sql', 'services/epi.js', 'migrations/026_epi_itens.sql', 'migrations/027_epi_catalogo_tamanhos.sql', 'services/epiEntregas.js', 'services/conformidade.js', 'migrations/028_epi_entregas.sql'];
   try {
     for (const n of novos) {
       const rastreado = execFileSync('git', ['ls-files', n], { cwd: RAIZ, stdio: 'pipe' }).toString().trim();

@@ -22,6 +22,14 @@ const SITUACAO_FICHA = {
   ok:             { l: "Em dia",         c: "#22c55e", i: "🟢" },
   sem_vencimento: { l: "Em dia",         c: "#22c55e", i: "🟢" },
 };
+// 12d.2 — selo de conformidade (🟡 = falta registrar, NÃO é não conformidade; 🔴 = algo vencido)
+const SELO = {
+  conforme:     { l: "Conforme",      i: "🟢", c: "#22c55e" },
+  em_andamento: { l: "Em andamento",  i: "🟡", c: "#f59e0b" },
+  atencao:      { l: "Atenção",       i: "🔴", c: "#ef4444" },
+};
+const PILAR = { funcao: { i: "👔", l: "Função" }, documentos: { i: "📄", l: "Documentos" }, epi: { i: "🦺", l: "EPIs" }, treinamentos: { i: "🎓", l: "Treinamentos" } };
+const SIT_EPI = { ok: { l: "Em dia", c: "#22c55e", i: "🟢" }, vence: { l: "Troca em breve", c: "#f59e0b", i: "🟡" }, vencido: { l: "Troca vencida", c: "#ef4444", i: "🔴" }, nao_entregue: { l: "Não entregue", c: "#94a3b8", i: "⚪" } };
 const SITUACAO_COLAB = { ativo: "Ativo", afastado: "Afastado", desligado: "Desligado" };
 const semAcento = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 const dataBR = (s) => (s ? String(s).slice(0, 10).split("-").reverse().join("/") : "—");
@@ -139,6 +147,10 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
     try {
       const { id, documentos, vencidos, a_vencer, criado_em, atualizado_em, tenant_id, funcao_nome, exigidos, pendencias, funcao_original, sugerida, ...corpo } = formColab;
       if (!funcoesOk) delete corpo.funcao_id;
+      // 12d.1b: tamanhos — se a migration 027 ainda não rodou (campos não vêm do banco) e nada foi digitado, não envia
+      const TAMS = ["tam_calcado", "tam_camisa", "tam_calca", "tam_luva"];
+      if (!formColab.tem_tamanhos && TAMS.every((k) => !corpo[k])) TAMS.forEach((k) => delete corpo[k]);
+      delete corpo.tem_tamanhos;
       const salvo = id ? await apiService.put(`/pessoas/colaboradores/${id}`, corpo) : await apiService.post("/pessoas/colaboradores", corpo);
       setFormColab(null); setAviso(id ? "Colaborador atualizado." : "Colaborador cadastrado."); await carregar();
       // decisão (b): função nova/trocada → mostra a ficha com as pendências
@@ -217,7 +229,8 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       const igual = funcoes.find((f) => f.nome.trim().toLowerCase() === String(c.funcao).trim().toLowerCase());
       if (igual) { funcao_id = String(igual.id); sugerida = true; }
     }
-    setFormColab({ ...c, cpf: c.cpf || "", admissao: c.admissao ? String(c.admissao).slice(0, 10) : "", usuario_id: c.usuario_id || "", telefone: c.telefone || "", email: c.email || "", funcao: c.funcao || "", obs: c.obs || "", funcao_id, funcao_original: c.funcao_id ? String(c.funcao_id) : "", sugerida });
+    setFormColab({ ...c, cpf: c.cpf || "", admissao: c.admissao ? String(c.admissao).slice(0, 10) : "", usuario_id: c.usuario_id || "", telefone: c.telefone || "", email: c.email || "", funcao: c.funcao || "", obs: c.obs || "", funcao_id, funcao_original: c.funcao_id ? String(c.funcao_id) : "", sugerida,
+      tem_tamanhos: c.tam_calcado !== undefined, tam_calcado: c.tam_calcado || "", tam_camisa: c.tam_camisa || "", tam_calca: c.tam_calca || "", tam_luva: c.tam_luva || "" });
   };
 
   const salvarNovoTipo = async () => {
@@ -348,7 +361,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
           <div style={{ display: "flex", marginBottom: 14 }}>
             <div style={{ fontSize: 12, color: C.textSub, alignSelf: "center" }}>Motoristas, ajudantes, mecânicos… não precisam ter login. Quem tem pode ser ligado ao usuário.</div>
             <div style={{ flex: 1 }} />
-            {editar && <button onClick={() => setFormColab({ nome: "", cpf: "", funcao: "", funcao_id: "", funcao_original: "", admissao: "", situacao: "ativo", telefone: "", email: "", usuario_id: "", obs: "" })} style={{ ...s.btn(true), cursor: "pointer" }}>＋ Novo colaborador</button>}
+            {editar && <button onClick={() => setFormColab({ nome: "", cpf: "", funcao: "", funcao_id: "", funcao_original: "", tam_calcado: "", tam_camisa: "", tam_calca: "", tam_luva: "", admissao: "", situacao: "ativo", telefone: "", email: "", usuario_id: "", obs: "" })} style={{ ...s.btn(true), cursor: "pointer" }}>＋ Novo colaborador</button>}
           </div>
           {colabs.length === 0 && !carregando ? (
             <div style={{ ...s.card, padding: 28, textAlign: "center", color: C.textSub }}>Nenhum colaborador cadastrado.</div>
@@ -358,7 +371,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
                 <div key={c.id} style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", padding: "12px 16px", borderBottom: i < colabs.length - 1 ? `1px solid ${C.border}` : "none", opacity: c.situacao === "desligado" ? 0.55 : 1 }}>
                   <div style={{ flex: "2 1 220px" }}>
                     <div style={{ fontWeight: 600, fontSize: 13 }}>{c.nome} {c.situacao !== "ativo" && <span style={s.tag(C.muted)}>{SITUACAO_COLAB[c.situacao]}</span>}</div>
-                    <div style={{ fontSize: 12, color: C.textSub }}>{c.funcao_nome || c.funcao || "Sem função"}{c.funcao && !c.funcao_id && funcoesOk ? <span style={{ color: C.muted }}> (sem modelo)</span> : ""}{c.cpf ? ` · CPF ${c.cpf}` : ""}{c.usuario_id ? ` · login: ${nomeUsuario(c.usuario_id) || "—"}` : ""}</div>
+                    <div style={{ fontSize: 12, color: C.textSub }}>{c.funcao_nome || c.funcao || "Sem função"}{c.funcao && !c.funcao_id && funcoesOk ? <span style={{ color: C.muted }}> (sem modelo)</span> : ""}{c.cpf ? ` · CPF ${c.cpf}` : ""}{[c.tam_calcado && `👟 ${c.tam_calcado}`, c.tam_camisa && `👕 ${c.tam_camisa}`, c.tam_calca && `👖 ${c.tam_calca}`, c.tam_luva && `🧤 ${c.tam_luva}`].filter(Boolean).map((t) => ` · ${t}`).join("")}{c.usuario_id ? ` · login: ${nomeUsuario(c.usuario_id) || "—"}` : ""}</div>
                   </div>
                   <button onClick={() => { setFiltroColab(String(c.id)); setFiltroAlvo(""); setFiltroSit(""); setAba("documentos"); }}
                     style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: C.textSub, fontFamily: "inherit", flex: "1 1 160px", textAlign: "left" }}>
@@ -367,10 +380,21 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
                     {c.a_vencer > 0 && <span style={{ color: SITUACAO_DOC.vence_30.c }}> · {c.a_vencer} a vencer</span>}
                   </button>
                   {funcoesOk && (
+                    c.selo ? (() => {
+                      const sl = SELO[c.selo.nivel] || SELO.em_andamento;
+                      return (
+                        <button onClick={() => abrirFicha(c.id)} title="Abrir a ficha: função, documentos e EPIs"
+                          style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.text, borderColor: sl.c, textAlign: "left" }}>
+                          <span style={{ color: sl.c, fontWeight: 700 }}>{sl.i} {c.selo.geral}%</span>
+                          <span style={{ color: C.textSub }}> · {c.selo.pilares.map((p) => `${PILAR[p.pilar]?.i || ""} ${p.pilar === "funcao" ? (p.pct ? "✓" : "✗") : `${p.feitos}/${p.total}`}`).join("  ")}</span>
+                          {c.selo.vencidos > 0 && <span style={{ color: sl.c }}> · {c.selo.vencidos} vencido(s)</span>}
+                        </button>
+                      );
+                    })() : (
                     <button onClick={() => abrirFicha(c.id)} title="Documentos exigidos pela função × o que ele tem"
                       style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: c.pendencias > 0 ? SITUACAO_FICHA.falta.c : C.text, borderColor: c.pendencias > 0 ? SITUACAO_FICHA.falta.c : undefined }}>
                       📋 Ficha{c.pendencias > 0 ? ` · ${c.pendencias} pendência(s)` : c.exigidos > 0 ? " · completa" : ""}
-                    </button>
+                    </button>)
                   )}
                   {editar && (
                     <div style={{ display: "flex", gap: 6 }}>
@@ -432,7 +456,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       )}
 
       {/* ─── EPI (12d.1) ─── */}
-      {aba === "epi" && <TelaEpi C={C} s={s} funcoes={funcoes} modal={modal} campo={campo} onAviso={setAviso} onErro={setErro} />}
+      {aba === "epi" && <TelaEpi C={C} s={s} funcoes={funcoes} listas={listas} modal={modal} campo={campo} onAviso={setAviso} onErro={setErro} onFuncoesMudou={carregar} />}
 
       {/* ─── modal função ─── */}
       {formFuncao && modal(<>
@@ -559,6 +583,22 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       {ficha && modal(<>
         <div style={{ fontSize: 17, fontWeight: 700 }}>📋 Ficha — {ficha.colaborador.nome}</div>
         <div style={{ fontSize: 12, color: C.textSub, marginTop: 4 }}>{ficha.funcao ? <>Função: <b style={{ color: C.text }}>{ficha.funcao.nome}</b></> : "Sem função ligada a um modelo — escolha a função no cadastro do colaborador."}</div>
+        {ficha.selo && (() => {
+          const sl = SELO[ficha.selo.nivel] || SELO.em_andamento;
+          return (
+            <div style={{ marginTop: 12, padding: "10px 12px", border: `1px solid ${sl.c}`, borderRadius: 8, background: `${sl.c}12` }}>
+              <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
+                <span style={{ fontSize: 18, fontWeight: 800, color: sl.c }}>{sl.i} {ficha.selo.geral}%</span>
+                <span style={{ fontSize: 13, fontWeight: 600, color: sl.c }}>{sl.l}</span>
+                <span style={{ fontSize: 11, color: C.textSub }}>{ficha.selo.nivel === "atencao" ? "há item vencido — evidência de não conformidade" : ficha.selo.nivel === "em_andamento" ? "falta registrar itens no sistema — não é não conformidade" : "tudo registrado e em dia"}</span>
+              </div>
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", marginTop: 6, fontSize: 12, color: C.textSub }}>
+                {ficha.selo.pilares.map((p) => <span key={p.pilar}>{PILAR[p.pilar]?.i} {PILAR[p.pilar]?.l}: <b style={{ color: p.vencidos ? SELO.atencao.c : p.pct >= 100 ? SELO.conforme.c : C.text }}>{p.pct}%</b>{p.pilar !== "funcao" ? ` (${p.feitos}/${p.total})` : ""}</span>)}
+                <span style={{ color: C.muted }}>🎓 Treinamentos: em breve</span>
+              </div>
+            </div>
+          );
+        })()}
         {ficha.funcao && (
           <>
             <div style={{ display: "flex", gap: 10, margin: "14px 0", flexWrap: "wrap" }}>
@@ -591,6 +631,25 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
                     </div>
                   );
                 })}
+              </div>
+            )}
+            {ficha.epi && ficha.epi.itens.length > 0 && (
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>🦺 EPIs da função</div>
+                <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
+                  {ficha.epi.itens.map((it, i) => {
+                    const sc = SIT_EPI[it.situacao] || SIT_EPI.nao_entregue;
+                    const det = it.situacao === "nao_entregue" ? "Não entregue" : it.proxima_troca ? (it.dias < 0 ? `Troca venceu há ${-it.dias} dia(s)` : `Troca em ${dataBR(it.proxima_troca)}`) : "Em uso";
+                    return (
+                      <div key={it.tipo} style={{ display: "flex", gap: 10, alignItems: "center", padding: "8px 12px", borderBottom: i < ficha.epi.itens.length - 1 ? `1px solid ${C.border}` : "none", fontSize: 12 }}>
+                        <span>{sc.i}</span>
+                        <div style={{ flex: 1 }}><b>{it.tipo_nome}</b>{it.item ? <span style={{ color: C.muted }}> · {it.item.item_nome}{it.item.ca ? ` · CA ${it.item.ca}` : ""}</span> : null}</div>
+                        <span style={{ color: sc.c }}>{det}</span>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Para entregar ou trocar: aba 🦺 EPI → 👷 Gestão de funcionários.</div>
               </div>
             )}
             {ficha.funcao.descritivo && (
@@ -631,6 +690,15 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             {campo("TELEFONE", <input value={formColab.telefone} onChange={(e) => setFormColab({ ...formColab, telefone: e.target.value })} style={s.input} />, "1 1 160px")}
             {campo("E-MAIL", <input value={formColab.email} onChange={(e) => setFormColab({ ...formColab, email: e.target.value })} style={s.input} />, "1 1 200px")}
+          </div>
+          <div>
+            <span style={s.label}>TAMANHOS (PARA A ENTREGA DE EPI)</span>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              {[["tam_calcado", "👟 Calçado", "42"], ["tam_camisa", "👕 Camisa", "M"], ["tam_calca", "👖 Calça", "42"], ["tam_luva", "🧤 Luva", "9"]].map(([k, l, ph]) => (
+                <label key={k} style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, color: C.textSub }}>{l}
+                  <input value={formColab[k] || ""} onChange={(e) => setFormColab({ ...formColab, [k]: e.target.value })} placeholder={ph} style={{ ...s.input, width: 64, padding: "6px 8px", fontSize: 12 }} /></label>
+              ))}
+            </div>
           </div>
           {campo("LOGIN NO SISTEMA (OPCIONAL)", <select value={formColab.usuario_id} onChange={(e) => setFormColab({ ...formColab, usuario_id: e.target.value })} style={s.input}>
             <option value="">Não tem login</option>{(config.usuarios || []).map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}</select>)}

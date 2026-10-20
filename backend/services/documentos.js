@@ -72,6 +72,7 @@ function validarColaborador(body, { parcial = false } = {}) {
     if (e && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e)) erros.push('E-mail inválido'); else out.email = e || null;
   }
   if (tem('usuario_id')) out.usuario_id = body.usuario_id || null;
+  for (const k of ['tam_calcado', 'tam_camisa', 'tam_calca', 'tam_luva']) if (tem(k)) out[k] = body[k] ? String(body[k]).trim().slice(0, 10) : null; // 12d.1b
   if (tem('funcao_id')) out.funcao_id = body.funcao_id && /^\d+$/.test(String(body.funcao_id)) ? String(body.funcao_id) : null; // 12d.0
   if (tem('obs')) out.obs = body.obs ? String(body.obs).slice(0, 2000) : null;
   return { erros, dados: out };

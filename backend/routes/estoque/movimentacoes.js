@@ -396,7 +396,8 @@ router.post('/', tenantMiddleware, async (req, res) => {
       aprovado_por: SISTEMA_UUID,
       aprovado_em: new Date(),
       status: 'aprovado',
-      numero_solicitacao: solicitacao.numero_solicitacao
+      // 12d.2 (correção): sem aprovação não existe solicitação — antes dava "solicitacao is not defined"
+      numero_solicitacao: null
     }, tenantId);
 
     // Atualizar saldo
