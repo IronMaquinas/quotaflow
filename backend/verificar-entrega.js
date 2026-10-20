@@ -69,7 +69,7 @@ const ESPERADO = {
   'services/acessoSpot.js': '6ecce4d16d6b123c6ce93c1223b32f01', // etapa 10c (novo)
   'services/receitaCnpj.js': '7c382fbd2db545838e97cb294aa12ee2', // etapa 11a.2
   'services/cadastroPublico.js': 'eae020d28c2318b0f2f96766d9e308e2', // etapa 11a.3
-  'front:App.jsx': 'fc60854c9eb29385245860bf607f00ec', // etapa 12c
+  'front:App.jsx': '19da56abf646003522a6d0aef8ed6854', // etapa 12d.3
   'front:TelaLogin.jsx': 'afa800fa12d684d6099a2e006cd59f13', // etapa 11b.1
   'front:TelaSignup.jsx': '345dceefb937b38e74cfef44cfc33ef3', // etapa 11a.3
   'front:AvisoPlanoTenant.jsx': '5795f00c1bc656d0525fd29b6793a96c', // etapa 11a.3
@@ -81,36 +81,44 @@ const ESPERADO = {
   'middleware/plataformaMiddleware.js': 'bf2424eab233bdf7e0cb6fca9cb953b9', // etapa 11b (novo)
   'scripts/criarAdmin.js': 'd4d85894f6381dc7b31f83466f316024', // etapa 11b (novo)
   'front:ConsolePlataforma.jsx': '4799ddb2f50ed6bc17661dc367c31061', // etapa 12d.1b
-  'routes/manutencao.js': '51bbdf7cf4b30ca5249254a2df06f3fb', // etapa 12c
+  'routes/manutencao.js': '577c5a2faac8b4f0b020801978143c93', // etapa 12e.1
   'services/calendarioManutencao.js': 'bbcf04d1bb3b18b8776579d3180274e6', // etapa 12b.2
-  'front:TelaCalendarioManutencao.jsx': '648e34b6a641b03a4f35fd3a53b2de8e', // etapa 12c
+  'front:TelaCalendarioManutencao.jsx': '1692610f2b5f2c954329890acecd0886', // etapa 12e.1
   'front:TelaOrdemServico.jsx': '2228a53bf98e21fd9a8b9da1f0e96544', // etapa 12b.3
   'services/planosManutencao.js': 'e32588acaefd47c5cb93bbe0d70ab799', // etapa 12b.4
   'front:TelaPlanosManutencao.jsx': '5fd8c2a3a8c6fdfb599fb98fd9ccabff', // etapa 12b.3 + texto do botão alterado pelo Marcony (18/10)
   'front:ModalTransferirOS.jsx': '8e7c1bf0d6fc9a4f88bdd9087d22cb37', // etapa 12b.3 (novo)
-  'routes/pessoas.js': '6a06fd550b0af5de88e10d7b565946bd', // etapa 12d.2
+  'routes/pessoas.js': '105d99e4b44bb479bdb0d12652667836', // etapa 12e.1
   'services/documentos.js': 'a7de4be5ace0f3619b24bc21f027632c', // etapa 12d.1b
-  'front:TelaPessoas.jsx': '1bb8d02cb32dc5f022e99bc066487e03', // etapa 12d.2
+  'front:TelaPessoas.jsx': '160202ab946b4c182ac56ccfc053f2ae', // etapa 12e.1
   // etapa 12c.1
-  'services/avisosVencimento.js': '326d34d06a099fe41c1cb75f77e3b3af',
-  'services/funcoes.js': 'd78f58bdf21c33c4bbf5f253c6b3f052', // etapa 12d.1b
+  'services/avisosVencimento.js': 'e43d0373f61a7e12eccdcc5861cd0e6b', // etapa 12d.3
+  'services/funcoes.js': '0e5d5fa3f8eb3a3bf3760eec74039854', // etapa 12e.1
   'front:BibliotecaFuncoes.jsx': '4e034707e49d56e5e490b0be73cb5468', // etapa 12d.1
   'services/epi.js': '9b0dccea86e23c7d5f3af1132159f0ee', // etapa 12d.1b
-  'front:TelaEpi.jsx': 'a0a341eb89e20d06799f420fbb41609d', // etapa 12d.2
+  'front:TelaEpi.jsx': 'f9a0279f2d8916f32549f4a3f7108438', // etapa 12d.3
   'front:BibliotecaEpi.jsx': 'e54d2c680ad3692518681de67bf00169', // etapa 12d.1b (novo)
-  'services/epiEntregas.js': '12ca0be8867a105f8215bc2dfb00d6ba', // etapa 12d.2 (novo)
-  'services/conformidade.js': '7f1377d6f573adda0411209864ced1e6', // etapa 12d.2 (novo)
-  'front:GestaoEpi.jsx': 'd4837ff8d5f105d8eecbf7756a78dc19', // etapa 12d.2 (novo)
+  'services/epiEntregas.js': 'fec08c1dc85c386e57e5a01474871c8f', // etapa 12d.3
+  'services/conformidade.js': '33c1f7f480e49d63c92ca9a9361b660b', // etapa 12e.1
+  'front:GestaoEpi.jsx': '6c823820e98a6d78c736540aea8e67f8', // etapa 12d.3
   'front:AssinaturaTela.jsx': 'db713a14a03390f9072d06f1de697b90', // etapa 12d.2 (novo)
-  'front:gerarFichaEpi.js': 'c2e443b6ef6d97726787608b310a22bd', // etapa 12d.2 (novo)
+  'front:gerarFichaEpi.js': '1a5de92e2896fc8095784b082269b1a3', // etapa 12d.3
+  'services/historicoFuncoes.js': 'e8460900c6f40ee55328c3aac638dffe', // etapa 12d.3 (novo)
+  'services/avisosPessoas.js': 'cd207065ddcab3ea52960e0cec5ce761', // etapa 12e.1
+  'services/treinamentos.js': '9032ab4452ae8572620f155ceb4a2632', // etapa 12e.1 (novo)
+  'front:TelaTreinamentos.jsx': '63bfa5e3cae3b69c662505ac160f571f', // etapa 12e.1 (novo)
+  'front:gerarListaPresenca.js': 'd03c15aa070beadb0c0dbe1e90d498ce', // etapa 12e.1 (novo)
 };
 
-// Antes de copiar a etapa 12d.2 — versão que serviu de base para as alterações (12d.1b)
+// Antes de copiar a etapa 12e.1 — base: 12e.0
 const ANTES = {
-  'routes/pessoas.js': 'c4b6383ef0cacf19e2deaed52c591d88',
-  'routes/estoque/movimentacoes.js': '33c7e355b664b4d7cd72ef1afaba0c60',
-  'front:TelaEpi.jsx': '887beb7e485937c805d45d2741743bfc',
-  'front:TelaPessoas.jsx': '5d12b185de6d0e85db75352acd3f96c9',
+  'routes/pessoas.js': 'd9316dc0ae704f0b066609330c5fc561',
+  'routes/manutencao.js': 'bb5e3a94790b7d604148e51189ee3111',
+  'services/conformidade.js': '84e625b41834c4cacd858f0658b78cf9',
+  'services/avisosPessoas.js': 'e9adf2350dda4fe48c21d376ee84a0ed',
+  'services/funcoes.js': 'd78f58bdf21c33c4bbf5f253c6b3f052',
+  'front:TelaPessoas.jsx': '1ecedde31e215dc0e8f287347fa9ed3a',
+  'front:TelaCalendarioManutencao.jsx': '3157f96a2d4390617e6409f12e8d7402',
 };
 
 const RAIZ = process.cwd();
@@ -147,8 +155,8 @@ function localizar(chave) {
 const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
-  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 12d.2?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 12d.2)\n');
+  ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 12e.1?\n'
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 12e.1)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
@@ -196,7 +204,7 @@ for (const [chave, esperado] of Object.entries(LISTA)) {
 
 if (!modoAntes) {
   // Arquivos novos precisam entrar no commit
-  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js', 'services/matchSpot.js', 'services/recomendacoesEmail.js', 'routes/recomendacoes.js', 'services/convitesFornecedor.js', 'services/acessoSpot.js', 'services/receitaCnpj.js', 'services/cadastroPublico.js', 'services/emailConfirmacao.js', 'routes/plataforma.js', 'services/plataformaConsole.js', 'middleware/plataformaMiddleware.js', 'scripts/criarAdmin.js', 'routes/manutencao.js', 'services/calendarioManutencao.js', 'services/planosManutencao.js', 'migrations/019_planos_manutencao.sql', 'migrations/020_plano_termino.sql', 'migrations/021_plano_responsavel_dia_util.sql', 'routes/pessoas.js', 'services/documentos.js', 'migrations/022_colaboradores_documentos.sql', 'services/avisosVencimento.js', 'migrations/023_documento_avisos.sql', 'services/funcoes.js', 'migrations/024_funcoes.sql', 'migrations/025_funcoes_detalhes.sql', 'services/epi.js', 'migrations/026_epi_itens.sql', 'migrations/027_epi_catalogo_tamanhos.sql', 'services/epiEntregas.js', 'services/conformidade.js', 'migrations/028_epi_entregas.sql'];
+  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js', 'services/matchSpot.js', 'services/recomendacoesEmail.js', 'routes/recomendacoes.js', 'services/convitesFornecedor.js', 'services/acessoSpot.js', 'services/receitaCnpj.js', 'services/cadastroPublico.js', 'services/emailConfirmacao.js', 'routes/plataforma.js', 'services/plataformaConsole.js', 'middleware/plataformaMiddleware.js', 'scripts/criarAdmin.js', 'routes/manutencao.js', 'services/calendarioManutencao.js', 'services/planosManutencao.js', 'migrations/019_planos_manutencao.sql', 'migrations/020_plano_termino.sql', 'migrations/021_plano_responsavel_dia_util.sql', 'routes/pessoas.js', 'services/documentos.js', 'migrations/022_colaboradores_documentos.sql', 'services/avisosVencimento.js', 'migrations/023_documento_avisos.sql', 'services/funcoes.js', 'migrations/024_funcoes.sql', 'migrations/025_funcoes_detalhes.sql', 'services/epi.js', 'migrations/026_epi_itens.sql', 'migrations/027_epi_catalogo_tamanhos.sql', 'services/epiEntregas.js', 'services/conformidade.js', 'migrations/028_epi_entregas.sql', 'services/historicoFuncoes.js', 'services/avisosPessoas.js', 'migrations/029_historico_funcoes_avisos.sql', 'services/treinamentos.js', 'migrations/030_treinamentos.sql'];
   try {
     for (const n of novos) {
       const rastreado = execFileSync('git', ['ls-files', n], { cwd: RAIZ, stdio: 'pipe' }).toString().trim();

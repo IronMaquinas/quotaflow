@@ -8,6 +8,8 @@
 //   • Destinatários: usuários ativos admin ou gestor do tenant + o responsável do documento.
 //   • Um e-mail por pessoa por dia, com a lista de documentos. Sem novidade = sem e-mail.
 //   • Documento substituído (renovado) e colaborador desligado não entram.
+//   • 12d.3: o mesmo e-mail traz também troca de EPI, CA de EPI e documento exigido não cadastrado
+//     (services/avisosPessoas.js — só para admin e gestor; controle em avisos_enviados).
 //   • Roda junto com o resumo diário das 7h (POST /api/recomendacoes/resumo-diario
 //     e cron interno). Falha aqui nunca quebra o resumo do Canal Spot.
 //
@@ -16,6 +18,7 @@
 const { supabase } = require('../db');
 const { enviarEmailCotacao } = require('./emailService');
 const { listarDocumentos } = require('./documentos');
+const AP = require('./avisosPessoas'); // etapa 12d.3
 
 const PERFIS_AVISO = ['admin', 'gestor'];
 const PAUSA_ENTRE_ENVIOS_MS = 600; // Resend: ~2 requisições/segundo
@@ -57,7 +60,7 @@ function textoPrazo(d) {
   return `<b style="color:${d.dias <= 5 ? '#dc2626' : d.dias <= 15 ? '#d97706' : '#2563eb'}">vence em ${d.dias} dia(s)</b>`;
 }
 
-function montarEmail(nome, docs) {
+function montarEmail(nome, docs, extras = []) {
   const portal = String(process.env.FRONTEND_URL || '').replace(/\/+$/, '');
   const linhas = docs.map((d) => `
     <tr>
@@ -68,15 +71,16 @@ function montarEmail(nome, docs) {
     </tr>`).join('');
   return `
   <div style="font-family:Arial,sans-serif;max-width:640px;color:#111827">
-    <h2 style="margin:0 0 8px">📄 Documentos vencendo</h2>
-    <p>Olá${nome ? ', ' + esc(nome) : ''}. Estes documentos precisam de atenção:</p>
-    <table style="border-collapse:collapse;width:100%;font-size:14px">
+    <h2 style="margin:0 0 8px">${docs.length ? '📄 Documentos vencendo' : '👷 Avisos de pessoas'}</h2>
+    <p>Olá${nome ? ', ' + esc(nome) : ''}. ${docs.length ? 'Estes documentos precisam de atenção:' : 'Estes itens precisam de atenção:'}</p>
+    ${docs.length ? `<table style="border-collapse:collapse;width:100%;font-size:14px">
       <tr style="background:#f3f4f6;text-align:left">
         <th style="padding:8px">Documento</th><th style="padding:8px">De</th><th style="padding:8px">Vencimento</th><th style="padding:8px">Prazo</th>
       </tr>${linhas}
-    </table>
+    </table>` : ''}
+    ${AP.secoesHtml(extras)}
     ${portal ? `<p style="margin-top:16px"><a href="${esc(portal)}" style="background:#14b8a6;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">Abrir o QuotaFlow</a></p>` : ''}
-    <p style="font-size:12px;color:#6b7280;margin-top:16px">Para renovar, abra 👷 Pessoas → Documentos → Renovar. Você recebe este aviso por ser admin/gestor ou responsável pelo documento.</p>
+    <p style="font-size:12px;color:#6b7280;margin-top:16px">Documentos: 👷 Pessoas → Documentos → Renovar. EPI: 👷 Pessoas → 🦺 EPI → Gestão de funcionários / Estoque. Você recebe este aviso por ser admin/gestor ou responsável pelo documento.</p>
   </div>`;
 }
 
@@ -101,10 +105,13 @@ async function destinatariosDoTenant(tenantId) {
 
 /** Roda para todos os tenants. Devolve contagem. agora/enviar injetáveis para teste. */
 async function enviarAvisosVencimento({ agora = new Date(), enviar = enviarEmailCotacao, pausaMs = PAUSA_ENTRE_ENVIOS_MS } = {}) {
-  const r = { tenants: 0, documentos: 0, emails: 0, falhas: 0 };
-  // só tenants que têm documento com vencimento
+  const r = { tenants: 0, documentos: 0, pessoas: 0, emails: 0, falhas: 0 };
+  // tenants com documento com vencimento + (12d.3) tenants com colaborador ativo
   const comVenc = await q(supabase.from('documentos').select('id, tenant_id, vence_em'));
-  const tenantIds = [...new Set(comVenc.filter((d) => d.vence_em).map((d) => String(d.tenant_id)))];
+  let comColab = [];
+  try { comColab = (await q(supabase.from('colaboradores').select('id, tenant_id, situacao'))).filter((c) => c.situacao !== 'desligado'); }
+  catch (e) { console.warn('⚠️ [avisos] colaboradores indisponível:', e.message); }
+  const tenantIds = [...new Set([...comVenc.filter((d) => d.vence_em).map((d) => String(d.tenant_id)), ...comColab.map((c) => String(c.tenant_id))])];
 
   for (const tenantId of tenantIds) {
     try {
@@ -118,14 +125,17 @@ async function enviarAvisosVencimento({ agora = new Date(), enviar = enviarEmail
         avisados.get(k).add(a.marco);
       }
       const lista = pendentes(docs, avisados);
-      if (!lista.length) continue;
+      let extras = [];
+      try { extras = await AP.pendentes(supabase, tenantId, agora); }
+      catch (e) { console.error(`❌ [avisos-pessoas] tenant ${tenantId}:`, e.message); }
+      if (!lista.length && !extras.length) continue;
       r.tenants++;
 
       const { porId, gestores } = await destinatariosDoTenant(tenantId);
-      const caixa = new Map(); // email -> { nome, docs }
+      const caixa = new Map(); // email -> { nome, docs, extras }
       const por = (u, d) => {
         const k = String(u.email).trim().toLowerCase();
-        if (!caixa.has(k)) caixa.set(k, { email: u.email, nome: u.nome, docs: [] });
+        if (!caixa.has(k)) caixa.set(k, { email: u.email, nome: u.nome, docs: [], extras: [] });
         const c = caixa.get(k);
         if (!c.docs.some((x) => String(x.id) === String(d.id))) c.docs.push(d);
       };
@@ -138,17 +148,28 @@ async function enviarAvisosVencimento({ agora = new Date(), enviar = enviarEmail
         contagem.set(String(d.id), new Set(alvo.map((u) => String(u.email).toLowerCase())).size);
       }
 
+      // 12d.3: avisos de pessoas vão para admin e gestor
+      if (extras.length) for (const u of gestores) {
+        const k = String(u.email).trim().toLowerCase();
+        if (!caixa.has(k)) caixa.set(k, { email: u.email, nome: u.nome, docs: [], extras: [] });
+        caixa.get(k).extras = extras;
+      }
+      let extrasEnviados = 0;
+
       const okDocs = new Set();
       for (const c of caixa.values()) {
         c.docs.sort((a, b) => a.dias - b.dias);
         const n = c.docs.length;
-        const assunto = n === 1
+        const assunto = !n
+          ? `👷 ${c.extras.length} aviso(s) de pessoas: EPI e documentos`
+          : n === 1 && !c.extras.length
           ? `📄 ${c.docs[0].dias < 0 ? 'Documento vencido' : 'Documento vence em ' + c.docs[0].dias + ' dia(s)'}: ${c.docs[0].tipo_nome || ''} — ${c.docs[0].alvo_nome}`
-          : `📄 ${n} documentos vencendo ou vencidos`;
+          : `📄 ${n} documento(s) vencendo${c.extras.length ? ` + ${c.extras.length} aviso(s) de EPI/pessoas` : ' ou vencidos'}`;
         try {
-          await enviar(c.email, assunto, montarEmail(c.nome, c.docs));
+          await enviar(c.email, assunto, montarEmail(c.nome, c.docs, c.extras));
           r.emails++;
           for (const d of c.docs) okDocs.add(String(d.id));
+          if (c.extras.length) extrasEnviados++;
         } catch (e) {
           r.falhas++;
           console.error(`❌ [avisos] e-mail para ${c.email}:`, e.message || e);
@@ -164,13 +185,14 @@ async function enviarAvisosVencimento({ agora = new Date(), enviar = enviarEmail
         if (error) console.error('❌ [avisos] registrar:', error.message);
       }
       r.documentos += registrar.length;
+      if (extras.length && extrasEnviados) { await AP.registrar(supabase, tenantId, extras, extrasEnviados); r.pessoas += extras.length; }
       if (!caixa.size) console.warn(`⚠️ [avisos] tenant ${tenantId}: ${lista.length} documento(s) a avisar mas nenhum admin/gestor com e-mail`);
     } catch (e) {
       r.falhas++;
       console.error(`❌ [avisos] tenant ${tenantId}:`, e.message);
     }
   }
-  console.log(`📄 [avisos] vencimento: ${r.documentos} documento(s), ${r.emails} e-mail(s), ${r.falhas} falha(s)`);
+  console.log(`📄 [avisos] vencimento: ${r.documentos} documento(s), ${r.pessoas} aviso(s) de pessoas, ${r.emails} e-mail(s), ${r.falhas} falha(s)`);
   return r;
 }
 

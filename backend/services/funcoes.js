@@ -53,7 +53,7 @@ const RISCOS = [
   { codigo: 'incendio', nome: 'Incêndio / explosão', grupo: 'Acidente' },
 ];
 const LISTAS = { escolaridades: ESCOLARIDADES, riscos: RISCOS, ...E.LISTAS_EPI };
-const CAMPOS_CONTEUDO = ['descritivo', 'requisitos', 'documentos', 'cbo', 'setor', 'escolaridade', 'riscos', 'responde_a', 'epis'];
+const CAMPOS_CONTEUDO = ['descritivo', 'requisitos', 'documentos', 'cbo', 'setor', 'escolaridade', 'riscos', 'responde_a', 'epis', 'treinamentos'];
 const copiarConteudo = (m) => ({
   descritivo: m.descritivo ?? null, requisitos: m.requisitos ?? null, documentos: m.documentos || [],
   epis: m.epis || [], treinamentos: m.treinamentos || [],
@@ -83,6 +83,10 @@ function validarFuncao(body, { parcial = false } = {}) {
   if (tem('riscos')) {
     if (!Array.isArray(body.riscos)) erros.push('Riscos inválidos');
     else out.riscos = [...new Set(body.riscos.map(String))].filter((r) => RISCOS.some((x) => x.codigo === r));
+  }
+  if (tem('treinamentos')) { // 12e.1: treinamentos exigidos [{ codigo }]
+    if (!Array.isArray(body.treinamentos)) erros.push('Treinamentos exigidos inválidos');
+    else out.treinamentos = [...new Set(body.treinamentos.map((t) => String(typeof t === 'string' ? t : t?.codigo || '')).filter((c) => /^[a-z0-9_]{1,60}$/.test(c)))].slice(0, 40).map((codigo) => ({ codigo }));
   }
   if (tem('epis')) {
     const k = E.validarKit(body.epis);
@@ -240,7 +244,7 @@ async function editarModelo(supabase, id, body) {
   const { erros, dados } = validarFuncao(body || {}, { parcial: true });
   if (erros.length) return { status: 400, erro: erros[0] };
   if (dados.epis) dados.epis = await kitDoCatalogo(supabase, dados.epis);
-  const mudou = CAMPOS_CONTEUDO.some((k) => dados[k] !== undefined && JSON.stringify(dados[k]) !== JSON.stringify(m[k] ?? (k === 'documentos' || k === 'riscos' || k === 'epis' ? [] : null)));
+  const mudou = CAMPOS_CONTEUDO.some((k) => dados[k] !== undefined && JSON.stringify(dados[k]) !== JSON.stringify(m[k] ?? (k === 'documentos' || k === 'riscos' || k === 'epis' || k === 'treinamentos' ? [] : null)));
   const { data, error } = await supabase.from('funcoes').update({ ...dados, ...(mudou ? { versao: (Number(m.versao) || 1) + 1 } : {}), atualizado_em: new Date().toISOString() })
     .eq('id', m.id).is('tenant_id', null).select();
   if (error) { if (/funcoes_nome_unico/.test(error.message)) return { status: 409, erro: 'Já existe um modelo com esse nome' }; throw new Error(error.message); }

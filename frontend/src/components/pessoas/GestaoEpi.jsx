@@ -20,7 +20,7 @@ const dataIsoBR = (s) => (s ? String(s).slice(0, 10).split("-").reverse().join("
 const semAcento = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 const fmtQtd = (n) => Number(n || 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 });
 
-export default function GestaoEpi({ C, s, modal, campo, epiItens = [], nomeTipo, onAviso, onErro, onMudou }) {
+export default function GestaoEpi({ C, s, modal, campo, epiItens = [], nomeTipo, onAviso, onErro, onMudou, onCadastrarEpi, podeCadastrar }) {
   const [dados, setDados] = useState(null);
   const [busca, setBusca] = useState("");
   const [filtro, setFiltro] = useState("");
@@ -62,6 +62,19 @@ export default function GestaoEpi({ C, s, modal, campo, epiItens = [], nomeTipo,
       })),
     });
   };
+  // 12d.3: cadastrou um EPI pelo atalho → a linha vazia daquele tipo já pega o item novo
+  useEffect(() => {
+    if (!entrega) return;
+    let mudou = false;
+    const linhas = entrega.linhas.map((l) => {
+      if (l.epi_item_id || !l.tipo) return l;
+      const op = epiItens.find((e) => e.tipo === l.tipo && e.item_ativo !== false);
+      if (!op) return l;
+      mudou = true; return { ...l, epi_item_id: String(op.id) };
+    });
+    if (mudou) setEntrega({ ...entrega, linhas });
+  }, [epiItens]); // eslint-disable-line
+
   const opcoesDo = (tipo) => epiItens.filter((e) => (!tipo || e.tipo === tipo) && e.item_ativo !== false);
   const epiPor = (id) => epiItens.find((e) => String(e.id) === String(id));
   const mudaLinha = (k, campoL, v) => setEntrega({ ...entrega, linhas: entrega.linhas.map((l, j) => (j === k ? { ...l, [campoL]: v } : l)) });
@@ -155,6 +168,10 @@ export default function GestaoEpi({ C, s, modal, campo, epiItens = [], nomeTipo,
                   const det = i.situacao === "nao_entregue" ? "não entregue" : i.proxima_troca ? (i.dias < 0 ? `troca venceu há ${-i.dias} d` : `troca em ${dataIsoBR(i.proxima_troca)}`) : "em uso";
                   return <span key={i.tipo} title={i.item ? `${i.item.item_nome} · entregue em ${dataBR(i.item.entregue_em)}` : ""} style={s.tag(sc.c)}>{sc.i} {i.tipo_nome} · {det}</span>;
                 })}
+                {(c.extras || []).map((x) => (
+                  <button key={`x${x.id}`} onClick={() => abrirHistorico(c)} title="Recebido numa função anterior ou fora do kit — se não usa mais, registre a devolução no Histórico"
+                    style={{ ...s.tag("#a78bfa"), cursor: "pointer", fontFamily: "inherit", border: "none" }}>↩ {nomeTipo(x.tipo) || x.item_nome} · fora do kit atual</button>
+                ))}
               </div>
             </div>
           ))}
@@ -186,7 +203,9 @@ export default function GestaoEpi({ C, s, modal, campo, epiItens = [], nomeTipo,
                 </select>
                 <label style={{ display: "flex", alignItems: "center", gap: 4, fontSize: 11, color: C.textSub }}>qtd
                   <input type="number" min={1} value={l.quantidade} onChange={(ev) => mudaLinha(k, "quantidade", ev.target.value)} style={{ ...s.input, width: 56, padding: "5px 6px", fontSize: 12 }} /></label>
-                <span style={{ fontSize: 11, color: e?.ca_situacao === "vencido" || !e?.ca ? SIT.vencido.c : C.muted, minWidth: 70 }}>{e ? (e.ca ? `CA ${e.ca}` : "sem CA") : ""}</span>
+                {!ops.length && l.kit && podeCadastrar && onCadastrarEpi
+                  ? <button type="button" onClick={() => onCadastrarEpi(l.tipo)} style={{ ...s.btn(false), cursor: "pointer", padding: "4px 10px", fontSize: 11, color: C.accent }}>＋ Cadastrar</button>
+                  : <span style={{ fontSize: 11, color: e?.ca_situacao === "vencido" || !e?.ca ? SIT.vencido.c : C.muted, minWidth: 70 }}>{e ? (e.ca ? `CA ${e.ca}` : "sem CA") : ""}</span>}
               </div>
             );
           })}

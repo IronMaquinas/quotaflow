@@ -144,7 +144,7 @@ export default function TelaEpi({ C, s, funcoes = [], listas = {}, modal, campo,
     <>
       <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>{sub("gestao", "👷 Gestão de funcionários")}{sub("kits", "🧰 Kits por função")}{sub("estoque", "📦 Estoque")}</div>
 
-      {vista === "gestao" && <GestaoEpi C={C} s={s} modal={modal} campo={campo} epiItens={itens} nomeTipo={nomeTipo} onAviso={onAviso} onErro={onErro} onMudou={carregar} />}
+      {vista === "gestao" && <GestaoEpi C={C} s={s} modal={modal} campo={campo} epiItens={itens} nomeTipo={nomeTipo} onAviso={onAviso} onErro={onErro} onMudou={carregar} onCadastrarEpi={(tipo) => abrirNovo(tipo)} podeCadastrar={editar} />}
 
       {vista === "estoque" && (<>
       <div style={{ fontSize: 12, color: C.textSub, marginBottom: 12 }}>

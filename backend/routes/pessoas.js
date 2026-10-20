@@ -3,6 +3,8 @@
 //                     etapa 12d.1: EPI (item de consumo marcado como EPI, CA, endereço EPI)
 //                     etapa 12d.1b: catálogo de tipos de EPI (lista do admin + do tenant), tamanhos
 //                     etapa 12d.2: entrega de EPI (ficha NR-6 com assinatura), painel por colaborador, selo de conformidade
+//                     etapa 12d.3: histórico de funções do colaborador
+//                     etapa 12e.1: treinamentos (catálogo, turmas, presença assinada, registro manual) + pilar 🎓
 // Registrado no server.js com tenantMiddleware: app.use('/api/pessoas', tenantMiddleware, ...)
 //
 // Ver:     admin, gestor, qualidade, operacao   (CPF só aparece para quem edita — LGPD)
@@ -15,6 +17,8 @@ const F = require('../services/funcoes'); // etapa 12d.0
 const E = require('../services/epi');     // etapa 12d.1
 const EE = require('../services/epiEntregas'); // etapa 12d.2
 const CF = require('../services/conformidade'); // etapa 12d.2
+const HF = require('../services/historicoFuncoes'); // etapa 12d.3
+const TR = require('../services/treinamentos'); // etapa 12e.1
 
 const VER = ['admin', 'gestor', 'qualidade', 'operacao'];
 const EDITAR = ['admin', 'gestor', 'qualidade'];
@@ -48,6 +52,10 @@ function erro(res, onde, err) {
     return res.status(409).json({ erro: 'Rode a migration 028 antes (entregas de EPI)' });
   }
   if (/epi_entregas_numero_unico/.test(m)) return res.status(409).json({ erro: 'Duas entregas ao mesmo tempo — tente de novo' });
+  if (/treinamento/.test(m) && /does not exist|não existe|relation|schema cache/.test(m)) {
+    return res.status(409).json({ erro: 'Rode a migration 030 antes (treinamentos)' });
+  }
+  if (/treinamento_participacoes_unica/.test(m)) return res.status(409).json({ erro: 'Colaborador já está nesta turma' });
   if (/epi_itens_item_unico/.test(m)) return res.status(409).json({ erro: 'Esse item já está marcado como EPI' });
   if (/funcoes_nome_unico/.test(m)) return res.status(409).json({ erro: 'Já existe uma função com esse nome' });
   if (/colaboradores|documento_tipos|documentos/.test(m) && /does not exist|não existe|relation/.test(m)) {
@@ -141,17 +149,21 @@ router.get('/colaboradores', exigirVer, async (req, res) => {
     let baseEpi = null;
     try { baseEpi = await EE.carregarBase(supabase, req.tenantId); }
     catch (e) { if (!/epi_|funcoes|tam_/.test(String(e.message))) throw e; }
+    let baseTr = null; // 12e.1
+    try { baseTr = await TR.carregarBase(supabase, req.tenantId); }
+    catch (e) { if (!/treinamento|funcoes/.test(String(e.message))) throw e; }
     const out = lista.map((c) => {
       const meus = docs.filter((d) => String(d.colaborador_id) === String(c.id));
       const ficha = fichas.get(String(c.id));
       const epi = baseEpi ? EE.statusColaborador(c, baseEpi).resumo : null;
-      const seloC = CF.selo({ funcaoLigada: !!ficha?.funcao, docs: ficha?.resumo, epi });
+      const trein = baseTr ? TR.statusColaborador(c, baseTr).resumo : null;
+      const seloC = CF.selo({ funcaoLigada: !!ficha?.funcao, docs: ficha?.resumo, epi, trein });
       return {
         ...c,
         funcao_nome: ficha?.funcao?.nome || c.funcao || null,
         exigidos: ficha?.resumo?.total || 0,
         pendencias: ficha?.resumo?.pendencias || 0,
-        selo: seloC, epi_resumo: epi,
+        selo: seloC, epi_resumo: epi, trein_resumo: trein,
         cpf: editar ? c.cpf : (c.cpf ? `***.***.***-${c.cpf.slice(-2)}` : null), // LGPD: CPF completo só para quem edita
         documentos: meus.length,
         vencidos: meus.filter((d) => d.situacao === 'vencido').length,
@@ -166,10 +178,17 @@ router.post('/colaboradores', exigirEditar, async (req, res) => {
   try {
     const { erros, dados } = D.validarColaborador(req.body || {});
     if (erros.length) return res.status(400).json({ erro: erros[0], erros });
+    if (!dados.cpf) return res.status(400).json({ erro: 'Informe o CPF do colaborador (obrigatório — identifica a pessoa nos treinamentos e no dossiê)' }); // 12e.0
     if (dados.usuario_id && !(await usuarioDoTenant(req, dados.usuario_id))) return res.status(400).json({ erro: 'Usuário não encontrado' });
     const fe = await conferirFuncao(req, dados); if (fe) return res.status(400).json({ erro: fe });
+    const mud = HF.validarMudanca(req.body); if (mud.erro) return res.status(400).json({ erro: mud.erro });
     const { data, error } = await supabase.from('colaboradores').insert([{ ...dados, tenant_id: req.tenantId }]).select();
     if (error) throw new Error(error.message);
+    // 12d.3: 1º período no histórico de funções (admissão)
+    if (data[0].funcao_id || data[0].funcao) {
+      await HF.registrarMudanca(supabase, req.tenantId, data[0], { funcao_id: data[0].funcao_id || null, funcao_nome: data[0].funcao }, { desde: mud.desde || data[0].admissao || null, motivo: mud.motivo || 'admissao', obs: mud.obs, por: req.userId })
+        .catch((e) => console.warn('⚠️ [pessoas] histórico de funções:', e.message));
+    }
     res.status(201).json(data[0]);
   } catch (err) { erro(res, 'colaboradores', err); }
 });
@@ -180,8 +199,21 @@ router.put('/colaboradores/:id', exigirEditar, async (req, res) => {
     if (!c) return res.status(404).json({ erro: 'Colaborador não encontrado' });
     const { erros, dados } = D.validarColaborador(req.body || {}, { parcial: true });
     if (erros.length) return res.status(400).json({ erro: erros[0], erros });
+    // 12e.0: CPF obrigatório — quem já existe sem CPF precisa preencher ao editar
+    if (!(dados.cpf !== undefined ? dados.cpf : c.cpf)) return res.status(400).json({ erro: 'Informe o CPF do colaborador (obrigatório desde a etapa 12e)' });
     if (dados.usuario_id && !(await usuarioDoTenant(req, dados.usuario_id))) return res.status(400).json({ erro: 'Usuário não encontrado' });
     const fe = await conferirFuncao(req, dados); if (fe) return res.status(400).json({ erro: fe });
+    // 12d.3: mudou a função → registra no histórico ANTES (se a data for inválida, nada é gravado)
+    const mudouFuncao = (dados.funcao_id !== undefined && String(dados.funcao_id || '') !== String(c.funcao_id || ''))
+      || (dados.funcao_id === undefined && dados.funcao !== undefined && (dados.funcao || '') !== (c.funcao || ''));
+    if (mudouFuncao) {
+      const mud = HF.validarMudanca(req.body); if (mud.erro) return res.status(400).json({ erro: mud.erro });
+      const tirou = dados.funcao_id === null && c.funcao_id != null; // ficou sem função: só fecha o período atual
+      const novo = tirou ? { funcao_id: null, funcao_nome: null }
+        : { funcao_id: dados.funcao_id !== undefined ? dados.funcao_id : c.funcao_id, funcao_nome: dados.funcao !== undefined ? dados.funcao : c.funcao };
+      const r = await HF.registrarMudanca(supabase, req.tenantId, c, novo, { ...mud, por: req.userId });
+      if (r.erro) return res.status(r.status).json({ erro: r.erro });
+    }
     const { data, error } = await supabase.from('colaboradores').update({ ...dados, atualizado_em: new Date().toISOString() })
       .eq('id', c.id).eq('tenant_id', req.tenantId).select();
     if (error) throw new Error(error.message);
@@ -319,7 +351,12 @@ router.delete('/documentos/:id', exigirEditar, async (req, res) => {
 
 // ─── Funções (etapa 12d.0) ───────────────────────────────────────────────
 router.get('/funcoes', exigirVer, async (req, res) => {
-  try { res.json({ funcoes: await F.listarFuncoes(supabase, req.tenantId), ...F.LISTAS, tipos_epi: await E.tiposDoTenant(supabase, req.tenantId), pode_editar: podeEditar(req) }); }
+  try {
+    let treinamentos = []; // 12e.1: para escolher os exigidos na função
+    try { treinamentos = (await TR.catalogo(supabase, req.tenantId)).map((t) => ({ codigo: t.codigo, nome: t.nome, validade_meses: t.validade_meses })); }
+    catch (e) { if (!/treinamento/.test(String(e.message))) throw e; }
+    res.json({ funcoes: await F.listarFuncoes(supabase, req.tenantId), ...F.LISTAS, tipos_epi: await E.tiposDoTenant(supabase, req.tenantId), treinamentos, pode_editar: podeEditar(req) });
+  }
   catch (err) { erro(res, 'funcoes', err); }
 });
 
@@ -398,9 +435,13 @@ router.get('/colaboradores/:id/ficha', exigirVer, async (req, res) => {
     let epi = null;
     try { epi = EE.statusColaborador(c, await EE.carregarBase(supabase, req.tenantId)); }
     catch (e) { if (!/epi_|tam_/.test(String(e.message))) throw e; }
+    let trein = null; // 12e.1
+    try { trein = TR.statusColaborador(c, await TR.carregarBase(supabase, req.tenantId)); }
+    catch (e) { if (!/treinamento/.test(String(e.message))) throw e; }
     res.json({
       epi: epi ? { itens: epi.itens, resumo: epi.resumo, extras: epi.extras } : null,
-      selo: CF.selo({ funcaoLigada: !!f.funcao, docs: f.resumo, epi: epi?.resumo }),
+      treinamentos: trein ? { itens: trein.itens, resumo: trein.resumo } : null,
+      selo: CF.selo({ funcaoLigada: !!f.funcao, docs: f.resumo, epi: epi?.resumo, trein: trein?.resumo }),
       colaborador: { id: c.id, nome: c.nome, situacao: c.situacao, funcao_id: c.funcao_id, funcao: c.funcao },
       funcao: f.funcao ? { id: f.funcao.id, nome: f.funcao.nome, descritivo: f.funcao.descritivo, requisitos: f.funcao.requisitos, cbo: f.funcao.cbo || null, setor: f.funcao.setor || null, escolaridade: f.funcao.escolaridade || null, riscos: f.funcao.riscos || [], responde_a: f.funcao.responde_a || null } : null,
       ...F.LISTAS,
@@ -505,6 +546,15 @@ router.delete('/epi/itens/:id', exigirEditar, async (req, res) => {
   } catch (err) { erro(res, 'epi', err); }
 });
 
+// GET /colaboradores/:id/funcoes — histórico de funções (12d.3)
+router.get('/colaboradores/:id/funcoes', exigirVer, async (req, res) => {
+  try {
+    const c = await colaboradorDoTenant(req, req.params.id);
+    if (!c) return res.status(404).json({ erro: 'Colaborador não encontrado' });
+    res.json({ historico: await HF.listar(supabase, req.tenantId, c.id), motivos: HF.MOTIVOS });
+  } catch (err) { erro(res, 'historico-funcoes', err); }
+});
+
 // ─── Entregas de EPI (etapa 12d.2) ────────────────────────────────────────
 // Entregar e devolver: admin, gestor, qualidade e operação (a central de EPI). Sem aprovação de retirada.
 async function usuarioLogado(req) {
@@ -554,9 +604,77 @@ router.get('/epi/colaboradores/:id/ficha-nr6', exigirVer, async (req, res) => {
       empresa: { nome: t.nome_fantasia || t.nome || t.razao_social || 'Empresa', razao_social: t.razao_social || t.nome || null, cnpj: t.cnpj || null },
       colaborador: { id: c.id, nome: c.nome, cpf: c.cpf ? (editar ? c.cpf : `***.***.***-${c.cpf.slice(-2)}`) : null, funcao: c.funcao || null, admissao: c.admissao || null, situacao: c.situacao },
       entregas: await EE.historico(supabase, req.tenantId, c.id, { comAssinatura: true }),
+      historico_funcoes: (await HF.listar(supabase, req.tenantId, c.id)).map((h) => ({ funcao_nome: h.funcao_nome, inicio: h.inicio, fim: h.fim, motivo: h.motivo })),
       gerado_em: new Date().toISOString(),
     });
   } catch (err) { erro(res, 'epi-ficha', err); }
 });
+
+// ─── Treinamentos (etapa 12e.1) ───────────────────────────────────────────
+// Catálogo: editar = admin, gestor, qualidade. Turmas, presença e registro manual: quem vê Pessoas (inclui operação).
+const responderTR = (fn) => async (req, res) => {
+  try { const r = await fn(req); if (r && r.erro) return res.status(r.status || 400).json({ erro: r.erro }); res.json(r); }
+  catch (err) { if (err.status) return res.status(err.status).json({ erro: err.message }); erro(res, 'treinamentos', err); }
+};
+const turmaOu404 = async (req) => { const t = await TR.turmaDoTenant(supabase, req.tenantId, req.params.id); if (!t) throw Object.assign(new Error('Turma não encontrada'), { status: 404 }); return t; };
+
+router.get('/treinamentos', exigirVer, responderTR(async (req) => ({ treinamentos: await TR.catalogo(supabase, req.tenantId), tipos: TR.TIPOS, modalidades: TR.MODALIDADES, pode_editar: podeEditar(req) })));
+router.post('/treinamentos', exigirEditar, responderTR((req) => TR.criarTreinamento(supabase, req.tenantId, req.body)));
+router.put('/treinamentos/:id', exigirEditar, responderTR(async (req) => {
+  if (!idValido(req.params.id)) return { status: 404, erro: 'Treinamento não encontrado' };
+  const { erros, dados } = TR.validarTreinamento(req.body || {}, { parcial: true });
+  if (erros.length) return { status: 400, erro: erros[0] };
+  const { data, error } = await supabase.from('treinamentos').update({ ...dados, atualizado_em: new Date().toISOString() }).eq('id', req.params.id).eq('tenant_id', req.tenantId).select();
+  if (error) throw new Error(error.message);
+  if (!data?.length) return { status: 404, erro: 'Treinamento não encontrado' };
+  return { treinamento: data[0] };
+}));
+router.delete('/treinamentos/:id', exigirEditar, responderTR(async (req) => { // desativa (o histórico das turmas fica)
+  if (!idValido(req.params.id)) return { status: 404, erro: 'Treinamento não encontrado' };
+  const { data, error } = await supabase.from('treinamentos').update({ ativo: false, atualizado_em: new Date().toISOString() }).eq('id', req.params.id).eq('tenant_id', req.tenantId).select();
+  if (error) throw new Error(error.message);
+  if (!data?.length) return { status: 404, erro: 'Treinamento não encontrado' };
+  return { ok: true };
+}));
+
+router.get('/treinamentos/painel', exigirVer, responderTR(async (req) => ({ colaboradores: await TR.painel(supabase, req.tenantId) })));
+router.get('/treinamentos/turmas', exigirVer, responderTR(async (req) => ({ turmas: await TR.listarTurmas(supabase, req.tenantId) })));
+router.post('/treinamentos/turmas', exigirVer, responderTR(async (req) => TR.criarTurma(supabase, req.tenantId, req.userId, req.body)));
+router.get('/treinamentos/turmas/:id', exigirVer, responderTR(async (req) => {
+  const t = await turmaOu404(req);
+  return { turma: t, participantes: await TR.participantes(supabase, req.tenantId, t.id) };
+}));
+router.post('/treinamentos/turmas/:id/participantes', exigirVer, responderTR(async (req) => TR.adicionarParticipantes(supabase, req.tenantId, await turmaOu404(req), req.body?.colaboradores)));
+router.delete('/treinamentos/turmas/:id/participantes/:colab', exigirVer, responderTR(async (req) => TR.removerParticipante(supabase, req.tenantId, await turmaOu404(req), req.params.colab)));
+router.post('/treinamentos/turmas/:id/assinar', exigirVer, responderTR(async (req) => TR.assinarPresenca(supabase, req.tenantId, await turmaOu404(req), req.body?.colaborador_id, req.body?.assinatura_png)));
+router.post('/treinamentos/turmas/:id/concluir', exigirVer, responderTR(async (req) => TR.concluirTurma(supabase, req.tenantId, await turmaOu404(req))));
+router.post('/treinamentos/turmas/:id/cancelar', exigirVer, responderTR(async (req) => {
+  const t = await turmaOu404(req);
+  if (t.status !== 'agendada') return { status: 400, erro: 'Só turma agendada pode ser cancelada' };
+  const { error } = await supabase.from('treinamento_turmas').update({ status: 'cancelada' }).eq('id', t.id).eq('tenant_id', req.tenantId);
+  if (error) throw new Error(error.message);
+  return { ok: true };
+}));
+router.get('/treinamentos/turmas/:id/evidencia', exigirVer, responderTR(async (req) => {
+  const t = await turmaOu404(req);
+  if (!t.evidencia_path) return { status: 404, erro: 'Sem evidência anexa' };
+  return { url: await D.linkArquivo(supabase, t.evidencia_path), nome: t.evidencia_nome };
+}));
+// Lista de presença para imprimir/PDF (com as assinaturas)
+router.get('/treinamentos/turmas/:id/lista-presenca', exigirVer, responderTR(async (req) => {
+  const t = await turmaOu404(req);
+  const emp = (await q(supabase.from('tenants').select('*').eq('id', req.tenantId)))[0] || {};
+  const editar = podeEditar(req);
+  const ps = (await TR.participantes(supabase, req.tenantId, t.id, { comAssinatura: true }))
+    .map((p) => ({ ...p, cpf: p.cpf ? (editar ? p.cpf : `***.***.***-${String(p.cpf).slice(-2)}`) : null }));
+  const tr = t.treinamento_id ? (await q(supabase.from('treinamentos').select('*').eq('id', t.treinamento_id)))[0] : null;
+  return { empresa: { nome: emp.nome_fantasia || emp.nome || emp.razao_social || 'Empresa', razao_social: emp.razao_social || emp.nome || null, cnpj: emp.cnpj || null },
+    turma: t, conteudo: tr?.conteudo || null, norma: tr?.norma || null, participantes: ps, gerado_em: new Date().toISOString() };
+}));
+router.get('/colaboradores/:id/treinamentos', exigirVer, responderTR(async (req) => {
+  const c = await colaboradorDoTenant(req, req.params.id);
+  if (!c) return { status: 404, erro: 'Colaborador não encontrado' };
+  return { historico: await TR.historico(supabase, req.tenantId, c.id) };
+}));
 
 module.exports = router;

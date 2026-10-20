@@ -281,4 +281,26 @@ async function historico(supabase, tenantId, colaboradorId, { comAssinatura = fa
   }));
 }
 
-module.exports = { MOTIVOS, AVISO_TROCA_DIAS, situacaoTipo, sugerirItem, statusColaborador, carregarBase, painel, planoBaixa, validarAssinatura, registrarEntrega, devolver, historico, hojeBR };
+/** Calendário (camada 🦺): trocas de EPI em uso e validades de CA entre de e ate (YYYY-MM-DD) */
+async function eventosNoIntervalo(supabase, tenantId, de, ate, { agora } = {}) {
+  const hoje = hojeBR(agora);
+  const dentro = (d) => d && String(d).slice(0, 10) >= de && String(d).slice(0, 10) <= ate;
+  const out = [];
+  const colabs = new Map((await q(supabase.from('colaboradores').select('*').eq('tenant_id', tenantId))).filter((c) => c.situacao !== 'desligado').map((c) => [String(c.id), c]));
+  try {
+    const its = (await q(supabase.from('epi_entrega_itens').select('*').eq('tenant_id', tenantId))).filter((i) => !i.devolvido_em && dentro(i.proxima_troca) && colabs.has(String(i.colaborador_id)));
+    for (const i of its) {
+      const d = String(i.proxima_troca).slice(0, 10), dias = diasAte(hoje, d);
+      out.push({ id: `troca-${i.id}`, tipo: 'troca', data: d, dias, situacao: dias < 0 ? 'vencido' : dias <= AVISO_TROCA_DIAS ? 'vence' : 'ok',
+        titulo: `Troca: ${i.item_nome}`, de: colabs.get(String(i.colaborador_id)).nome, colaborador_id: i.colaborador_id });
+    }
+  } catch (e) { if (!/epi_entrega_itens/.test(String(e.message))) throw e; }
+  const epis = await E.listarEpiItens(supabase, tenantId, { agora });
+  for (const e of epis.filter((x) => x.item_ativo && dentro(x.ca_validade))) {
+    out.push({ id: `ca-${e.id}`, tipo: 'ca', data: String(e.ca_validade).slice(0, 10), dias: e.ca_dias, situacao: e.ca_situacao === 'vencido' ? 'vencido' : e.ca_situacao === 'vence_30' ? 'vence' : 'ok',
+      titulo: `CA ${e.ca || ''} vence: ${e.item_nome}`, de: 'Estoque de EPI' });
+  }
+  return out.sort((a, b) => a.data.localeCompare(b.data));
+}
+
+module.exports = { eventosNoIntervalo, MOTIVOS, AVISO_TROCA_DIAS, situacaoTipo, sugerirItem, statusColaborador, carregarBase, painel, planoBaixa, validarAssinatura, registrarEntrega, devolver, historico, hojeBR };

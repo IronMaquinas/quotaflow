@@ -10,6 +10,8 @@ const { supabase, DB } = require('../db');
 const { montarCalendario, carregar, buscarValorHora } = require('../services/calendarioManutencao');
 const planos = require('../services/planosManutencao');
 const documentosSrv = require('../services/documentos'); // 12c: camada Documentos no calendário
+const epiEntregasSrv = require('../services/epiEntregas'); // 12d.3: camada 🦺 EPI no calendário
+const treinamentosSrv = require('../services/treinamentos'); // 12e.1: camada 🎓 Treinamentos no calendário
 
 const DATA = /^\d{4}-\d{2}-\d{2}$/;
 const PODE_EDITAR = ['admin', 'gestor', 'operacao'];
@@ -130,8 +132,20 @@ router.get('/calendario', exigirTenant, async (req, res) => {
     } catch (e) {
       if (!/documentos|relation|does not exist/.test(e.message)) console.warn('⚠ [manutencao/calendario] documentos indisponíveis:', e.message);
     }
+    // 12d.3: camada "EPI" — trocas de EPI em uso e validade de CA (sem as migrations 026/028, vem vazio)
+    let epi = [];
+    if (!equipamentoId) {
+      try { epi = await epiEntregasSrv.eventosNoIntervalo(supabase, req.tenantId, de, ate); }
+      catch (e) { if (!/epi_|colaboradores|relation|does not exist|schema cache/.test(e.message)) console.warn('⚠ [manutencao/calendario] EPI indisponível:', e.message); }
+    }
+    // 12e.1: camada "Treinamentos" — turmas agendadas e vencimentos (sem a migration 030, vem vazio)
+    let treinamentos = [];
+    if (!equipamentoId) {
+      try { treinamentos = await treinamentosSrv.eventosNoIntervalo(supabase, req.tenantId, de, ate); }
+      catch (e) { if (!/treinamento|funcoes|colaboradores|relation|does not exist|schema cache/.test(e.message)) console.warn('⚠ [manutencao/calendario] treinamentos indisponíveis:', e.message); }
+    }
     res.json({ de, ate, valor_hora: dados.valorHora || null, eu: req.userId || null, ...cal,
-      previstas, totais_previstas: { quantidade: previstas.length, total: totalPrevisto }, documentos });
+      previstas, totais_previstas: { quantidade: previstas.length, total: totalPrevisto }, documentos, epi, treinamentos });
   } catch (err) { erro500(res, 'calendario', err); }
 });
 

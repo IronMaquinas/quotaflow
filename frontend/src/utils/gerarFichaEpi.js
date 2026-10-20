@@ -33,13 +33,13 @@ const CSS = `
   @page { size: A4 landscape; margin: 8mm; }
 `;
 
-export function gerarHtmlFichaEpi({ empresa = {}, colaborador = {}, entregas = [], gerado_em }) {
+export function gerarHtmlFichaEpi({ empresa = {}, colaborador = {}, entregas = [], historico_funcoes = [], gerado_em }) {
   const linhas = [];
   for (const e of entregas) {
     const itens = e.itens || [];
     itens.forEach((i, k) => {
       linhas.push(`<tr>
-        ${k === 0 ? `<td rowspan="${itens.length}">${dataBR(e.entregue_em)}</td><td rowspan="${itens.length}" class="num">${esc(e.numero)}</td>` : ""}
+        ${k === 0 ? `<td rowspan="${itens.length}">${dataBR(e.entregue_em)}</td><td rowspan="${itens.length}" class="num">${esc(e.numero)}</td><td rowspan="${itens.length}">${esc(e.funcao_nome || "—")}</td>` : ""}
         <td>${esc(i.item_nome)}</td><td class="num">${esc(i.ca || "—")}</td><td>${esc(i.tamanho || "—")}</td>
         <td style="text-align:right">${esc(Number(i.quantidade).toLocaleString("pt-BR"))}</td>
         ${k === 0 ? `<td rowspan="${itens.length}">${esc(MOTIVO[e.motivo] || e.motivo)}</td>` : ""}
@@ -62,6 +62,7 @@ export function gerarHtmlFichaEpi({ empresa = {}, colaborador = {}, entregas = [
       <div><b>Função</b>${esc(colaborador.funcao || "—")}</div>
       <div><b>Admissão</b>${dataIsoBR(colaborador.admissao)}</div>
     </div>
+    ${historico_funcoes.length > 1 ? `<div class="termo" style="text-align:left"><b>Histórico de funções:</b> ${historico_funcoes.map((h) => `${esc(h.funcao_nome)} (${dataIsoBR(h.inicio)} → ${h.fim ? dataIsoBR(h.fim) : "atual"})`).join(" · ")}</div>` : ""}
     <div class="termo">
       Declaro ter recebido gratuitamente os Equipamentos de Proteção Individual abaixo, com Certificado de Aprovação (CA),
       e ter sido orientado(a) sobre o uso correto, a guarda e a conservação. Comprometo-me a usá-los apenas para a finalidade
@@ -70,8 +71,8 @@ export function gerarHtmlFichaEpi({ empresa = {}, colaborador = {}, entregas = [
       ao uso do EPI fornecido constitui ato faltoso.
     </div>
     <table>
-      <thead><tr><th>Data</th><th>Nº ficha</th><th>EPI</th><th>CA</th><th>Tam.</th><th>Qtd</th><th>Motivo</th><th>Próx. troca</th><th>Devolução</th><th>Assinatura do colaborador</th></tr></thead>
-      <tbody>${linhas.join("") || `<tr><td colspan="10" style="text-align:center;color:#666;padding:14px">Nenhuma entrega registrada.</td></tr>`}</tbody>
+      <thead><tr><th>Data</th><th>Nº ficha</th><th>Função na época</th><th>EPI</th><th>CA</th><th>Tam.</th><th>Qtd</th><th>Motivo</th><th>Próx. troca</th><th>Devolução</th><th>Assinatura do colaborador</th></tr></thead>
+      <tbody>${linhas.join("") || `<tr><td colspan="11" style="text-align:center;color:#666;padding:14px">Nenhuma entrega registrada.</td></tr>`}</tbody>
     </table>
     <div class="rod">
       <div>Assinaturas coletadas na tela do QuotaFlow, no momento da entrega. Cada entrega guarda um código de integridade (SHA-256):</div>

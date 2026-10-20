@@ -163,6 +163,7 @@ export default function App() {
   const [tela,setTela]=useState("home");
   const [osParaAbrir, setOsParaAbrir] = useState(null);
   const [novaOSData, setNovaOSData] = useState(null); // etapa 12a: "Nova OS programada" a partir do calendário
+  const [abaPessoas, setAbaPessoas] = useState(null); // etapa 12d.3: abrir Pessoas numa aba (ex.: "epi") a partir do calendário
   const [ncParaAbrir, setNcParaAbrir] = useState(null);
   const [totalPendencias, setTotalPendencias] = useState(0);
   const [meuPerfilAberto, setMeuPerfilAberto] = useState(false);
@@ -551,7 +552,7 @@ const perfil = PERFIS[usuario.perfil] || {
 
         {temAcesso(tela) && tela === "pessoas" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
-            <TelaPessoas C={C} s={s} equipamentos={equipamentos.dados || []} />
+            <TelaPessoas C={C} s={s} equipamentos={equipamentos.dados || []} abaInicial={abaPessoas} onAbaConsumida={() => setAbaPessoas(null)} />
           </div>
         )}
 
@@ -563,7 +564,7 @@ const perfil = PERFIS[usuario.perfil] || {
               equipamentos={equipamentos.dados || []}
               onAbrirOS={temAcesso("ordem_servico") ? (id) => { setOsParaAbrir(id); setTela("ordem_servico"); } : null}
               onNovaOS={temAcesso("ordem_servico") ? (data) => { setNovaOSData(data); setTela("ordem_servico"); } : null}
-              onAbrirPessoas={temAcesso("pessoas") ? () => setTela("pessoas") : null}
+              onAbrirPessoas={temAcesso("pessoas") ? (aba) => { setAbaPessoas(typeof aba === "string" ? aba : null); setTela("pessoas"); } : null}
             />
           </div>
         )}
