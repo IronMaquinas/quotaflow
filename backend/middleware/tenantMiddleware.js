@@ -40,6 +40,14 @@ function tenantMiddleware(req, res, next) {
       ? decoded.perfis
       : [decoded.perfil].filter(Boolean);
 
+    // Etapa 12e.2b: perfil "colaborador" (sozinho) só acessa "Meus treinamentos" e o próprio cadastro.
+    // Fica AQUI porque várias rotas só exigem o login — sem isso o colaborador chamaria a API inteira.
+    if (req.perfis.length > 0 && req.perfis.every((p) => p === "colaborador")) {
+      const url = String(req.originalUrl || "").split("?")[0];
+      const livre = /^\/api\/meus-treinamentos(\/|$)/.test(url) || /^\/api\/usuarios\/me(\/|$)/.test(url) || /^\/api\/auth\//.test(url);
+      if (!livre) return res.status(403).json({ erro: "Seu acesso é só a Meus treinamentos" });
+    }
+
     next();
   } catch (err) {
     if (err.name === "TokenExpiredError") {

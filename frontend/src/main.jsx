@@ -11,6 +11,7 @@ import TelaConfirmarEmail from "./TelaConfirmarEmail"; // etapa 11a.3
 import ConsolePlataforma from "./plataforma/ConsolePlataforma"; // etapa 11b
 import TelaPortalFornecedor from "./components/portal/TelaPortalFornecedor";
 import TelaAceitarConvite from "./TelaAceitarConvite";
+import TelaProvaPublica from "./TelaProvaPublica"; // etapa 12e.2b
 
 console.log('🚀 main.jsx executando');
 
@@ -61,6 +62,11 @@ function Router() {
   // Vem antes dos redirecionamentos de login: funciona logado ou não.
   if (currentPage.startsWith("confirmar-email") || currentPage.startsWith("/confirmar-email")) {
     return <TelaConfirmarEmail />;
+  }
+
+  // Etapa 12e.2b: link externo da prova de treinamento (#prova?t=...) — público, CPF + data de nascimento.
+  if (currentPage.startsWith("prova") || currentPage.startsWith("/prova")) {
+    return <TelaProvaPublica />;
   }
 
   // Etapa 10: convite ao fornecedor local (link do e-mail #convite?token=...).

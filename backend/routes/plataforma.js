@@ -11,6 +11,8 @@
 //   POST /fornecedores/:id/aprovar    · /recusar { motivo } · DELETE /fornecedores/:id
 //   GET/POST /biblioteca/funcoes · PUT/DELETE /biblioteca/funcoes/:id   (etapa 12d.0 — modelos de função)
 //   GET/POST /biblioteca/epi-tipos · PUT /biblioteca/epi-tipos/:id     (etapa 12d.1b — catálogo de EPI)
+//   GET/POST /biblioteca/treinamentos · PUT/DELETE /biblioteca/treinamentos/:id  (etapa 12e.2a — conteúdo + prova)
+//   POST/GET /biblioteca/treinamentos/material   (etapa 12e.2b — PDF de apoio no bucket privado)
 //
 // Login só para quem está em plataforma_admins (ativo) E na variável
 // PLATAFORMA_ADMINS. Limite: 5 tentativas erradas por e-mail a cada 15 min.
@@ -24,6 +26,7 @@ const C = require('../services/plataformaConsole');
 const { supabase } = require('../db');
 const F = require('../services/funcoes'); // etapa 12d.0
 const E = require('../services/epi');     // etapa 12d.1b
+const TR = require('../services/treinamentos'); // etapa 12e.2a
 
 const tentativas = new Map(); // email → { n, desde }
 const JANELA_MS = 15 * 60 * 1000;
@@ -104,5 +107,13 @@ router.get('/biblioteca/epi-tipos', responder(async () => {
 }));
 router.post('/biblioteca/epi-tipos', responder(async (req) => { const r = await E.criarTipoCatalogo(supabase, req.body); if (!r.erro) await C.registrar(req.plataformaAdmin, 'epi_tipo_criar', 'epi_tipo', r.tipo.id, { nome: r.tipo.nome }).catch(() => {}); return r; }));
 router.put('/biblioteca/epi-tipos/:id', responder(async (req) => { const r = await E.editarTipoCatalogo(supabase, req.params.id, req.body); if (!r.erro) await C.registrar(req.plataformaAdmin, 'epi_tipo_editar', 'epi_tipo', req.params.id, null).catch(() => {}); return r; }));
+
+// ─── Biblioteca de treinamentos (etapa 12e.2a) ────────────────────────────
+router.get('/biblioteca/treinamentos', responder(() => TR.bibliotecaConsole(supabase)));
+router.post('/biblioteca/treinamentos/material', responder((req) => TR.subirMaterial(supabase, 'biblioteca', { base64: req.body?.base64, nome: req.body?.nome }))); // 12e.2b — PDF de apoio
+router.get('/biblioteca/treinamentos/material', responder((req) => TR.linkMaterialGestor(supabase, req.query.path, ['biblioteca/'])));
+router.post('/biblioteca/treinamentos', responder(async (req) => { const r = await TR.criarModelo(supabase, req.body); if (!r.erro) await C.registrar(req.plataformaAdmin, 'treinamento_criar', 'treinamento', r.modelo.id, { nome: r.modelo.nome }).catch(() => {}); return r; }));
+router.put('/biblioteca/treinamentos/:id', responder(async (req) => { const r = await TR.editarModelo(supabase, req.params.id, req.body); if (!r.erro) await C.registrar(req.plataformaAdmin, 'treinamento_editar', 'treinamento', req.params.id, { versao_subiu: r.versao_subiu }).catch(() => {}); return r; }));
+router.delete('/biblioteca/treinamentos/:id', responder(async (req) => { const r = await TR.desativarModelo(supabase, req.params.id); if (!r.erro) await C.registrar(req.plataformaAdmin, 'treinamento_desativar', 'treinamento', req.params.id, null).catch(() => {}); return r; }));
 
 module.exports = router;

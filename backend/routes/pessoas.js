@@ -19,6 +19,8 @@ const EE = require('../services/epiEntregas'); // etapa 12d.2
 const CF = require('../services/conformidade'); // etapa 12d.2
 const HF = require('../services/historicoFuncoes'); // etapa 12d.3
 const TR = require('../services/treinamentos'); // etapa 12e.1
+const PO = require('../services/provaOnline'); // etapa 12e.2b
+const bcrypt = require('bcryptjs');            // etapa 12e.2b (acesso do colaborador)
 
 const VER = ['admin', 'gestor', 'qualidade', 'operacao'];
 const EDITAR = ['admin', 'gestor', 'qualidade'];
@@ -52,6 +54,10 @@ function erro(res, onde, err) {
     return res.status(409).json({ erro: 'Rode a migration 028 antes (entregas de EPI)' });
   }
   if (/epi_entregas_numero_unico/.test(m)) return res.status(409).json({ erro: 'Duas entregas ao mesmo tempo — tente de novo' });
+  if (/secoes|prova|horas|data_nascimento/.test(m) && /does not exist|não existe|schema cache|column/.test(m)) {
+    return res.status(409).json({ erro: 'Rode a migration 031 antes (conteúdo, prova e horas de treinamento)' });
+  }
+  if (/treinamento_tentativas|tentativas_extra|link_token|link_ativo/.test(m)) return res.status(409).json({ erro: 'Rode a migration 032 antes (prova online)' });
   if (/treinamento/.test(m) && /does not exist|não existe|relation|schema cache/.test(m)) {
     return res.status(409).json({ erro: 'Rode a migration 030 antes (treinamentos)' });
   }
@@ -165,6 +171,7 @@ router.get('/colaboradores', exigirVer, async (req, res) => {
         pendencias: ficha?.resumo?.pendencias || 0,
         selo: seloC, epi_resumo: epi, trein_resumo: trein,
         cpf: editar ? c.cpf : (c.cpf ? `***.***.***-${c.cpf.slice(-2)}` : null), // LGPD: CPF completo só para quem edita
+        ...(c.data_nascimento !== undefined ? { data_nascimento: editar ? c.data_nascimento : null } : {}), // 12e.2a — LGPD idem
         documentos: meus.length,
         vencidos: meus.filter((d) => d.situacao === 'vencido').length,
         a_vencer: meus.filter((d) => d.situacao === 'vence_30').length,
@@ -436,11 +443,11 @@ router.get('/colaboradores/:id/ficha', exigirVer, async (req, res) => {
     try { epi = EE.statusColaborador(c, await EE.carregarBase(supabase, req.tenantId)); }
     catch (e) { if (!/epi_|tam_/.test(String(e.message))) throw e; }
     let trein = null; // 12e.1
-    try { trein = TR.statusColaborador(c, await TR.carregarBase(supabase, req.tenantId)); }
+    try { trein = TR.statusColaborador(c, await TR.carregarBase(supabase, req.tenantId)); trein.horas = TR.resumoHoras(await TR.historico(supabase, req.tenantId, c.id)); } // 12e.2a: ⏱
     catch (e) { if (!/treinamento/.test(String(e.message))) throw e; }
     res.json({
       epi: epi ? { itens: epi.itens, resumo: epi.resumo, extras: epi.extras } : null,
-      treinamentos: trein ? { itens: trein.itens, resumo: trein.resumo } : null,
+      treinamentos: trein ? { itens: trein.itens, resumo: trein.resumo, horas: trein.horas || null } : null,
       selo: CF.selo({ funcaoLigada: !!f.funcao, docs: f.resumo, epi: epi?.resumo, trein: trein?.resumo }),
       colaborador: { id: c.id, nome: c.nome, situacao: c.situacao, funcao_id: c.funcao_id, funcao: c.funcao },
       funcao: f.funcao ? { id: f.funcao.id, nome: f.funcao.nome, descritivo: f.funcao.descritivo, requisitos: f.funcao.requisitos, cbo: f.funcao.cbo || null, setor: f.funcao.setor || null, escolaridade: f.funcao.escolaridade || null, riscos: f.funcao.riscos || [], responde_a: f.funcao.responde_a || null } : null,
@@ -637,13 +644,27 @@ router.delete('/treinamentos/:id', exigirEditar, responderTR(async (req) => { //
   return { ok: true };
 }));
 
+// 12e.2a: biblioteca do QuotaFlow (importar / atualizar) e horas creditadas
+router.get('/treinamentos/biblioteca', exigirVer, responderTR(async (req) => ({ modelos: await TR.bibliotecaParaTenant(supabase, req.tenantId) })));
+router.post('/treinamentos/importar', exigirEditar, responderTR((req) => TR.importar(supabase, req.tenantId, req.body?.biblioteca_id)));
+router.post('/treinamentos/:id/atualizar', exigirEditar, responderTR((req) => TR.atualizarDaBiblioteca(supabase, req.tenantId, req.params.id)));
+router.get('/treinamentos/horas', exigirVer, responderTR((req) => TR.relatorioHoras(supabase, req.tenantId, { de: req.query.de, ate: req.query.ate })));
+
 router.get('/treinamentos/painel', exigirVer, responderTR(async (req) => ({ colaboradores: await TR.painel(supabase, req.tenantId) })));
 router.get('/treinamentos/turmas', exigirVer, responderTR(async (req) => ({ turmas: await TR.listarTurmas(supabase, req.tenantId) })));
 router.post('/treinamentos/turmas', exigirVer, responderTR(async (req) => TR.criarTurma(supabase, req.tenantId, req.userId, req.body)));
 router.get('/treinamentos/turmas/:id', exigirVer, responderTR(async (req) => {
   const t = await turmaOu404(req);
-  return { turma: t, participantes: await TR.participantes(supabase, req.tenantId, t.id) };
+  let prova = {}; // 12e.2b: situação da prova online por participante (antes da migration 032 vem vazio)
+  try { prova = await PO.situacaoTurma(supabase, req.tenantId, t); } catch (e) { if (!/treinamento_tentativas|tentativas_extra/.test(String(e.message))) throw e; }
+  return { turma: t, participantes: await TR.participantes(supabase, req.tenantId, t.id), prova };
 }));
+// 12e.2b: link externo da prova (CPF + nascimento) e liberar novas tentativas
+router.post('/treinamentos/turmas/:id/link', exigirVer, responderTR(async (req) => PO.gerarLink(supabase, req.tenantId, await turmaOu404(req), { ativo: req.body?.ativo !== false })));
+router.post('/treinamentos/turmas/:id/liberar/:colab', exigirVer, responderTR(async (req) => PO.liberarTentativas(supabase, req.tenantId, await turmaOu404(req), req.params.colab)));
+// 12e.2b: PDF de apoio enviado ao QuotaFlow
+router.post('/treinamentos/material', exigirEditar, responderTR((req) => TR.subirMaterial(supabase, `tenant-${req.tenantId}`, { base64: req.body?.base64, nome: req.body?.nome })));
+router.get('/treinamentos/material', exigirVer, responderTR((req) => TR.linkMaterialGestor(supabase, req.query.path, [`tenant-${req.tenantId}/`, 'biblioteca/'])));
 router.post('/treinamentos/turmas/:id/participantes', exigirVer, responderTR(async (req) => TR.adicionarParticipantes(supabase, req.tenantId, await turmaOu404(req), req.body?.colaboradores)));
 router.delete('/treinamentos/turmas/:id/participantes/:colab', exigirVer, responderTR(async (req) => TR.removerParticipante(supabase, req.tenantId, await turmaOu404(req), req.params.colab)));
 router.post('/treinamentos/turmas/:id/assinar', exigirVer, responderTR(async (req) => TR.assinarPresenca(supabase, req.tenantId, await turmaOu404(req), req.body?.colaborador_id, req.body?.assinatura_png)));
@@ -674,7 +695,98 @@ router.get('/treinamentos/turmas/:id/lista-presenca', exigirVer, responderTR(asy
 router.get('/colaboradores/:id/treinamentos', exigirVer, responderTR(async (req) => {
   const c = await colaboradorDoTenant(req, req.params.id);
   if (!c) return { status: 404, erro: 'Colaborador não encontrado' };
-  return { historico: await TR.historico(supabase, req.tenantId, c.id) };
+  const historico = await TR.historico(supabase, req.tenantId, c.id);
+  return { historico, horas: TR.resumoHoras(historico) };
 }));
+
+// ─── 12e.2b: aniversariantes do mês (só dia/mês — LGPD) ───────────────────
+router.get('/aniversariantes', exigirVer, async (req, res) => {
+  try {
+    const hoje = TR.hojeBR();
+    const mes = /^(0?[1-9]|1[0-2])$/.test(String(req.query.mes || '')) ? String(req.query.mes).padStart(2, '0') : hoje.slice(5, 7);
+    const lista = await q(supabase.from('colaboradores').select('*').eq('tenant_id', req.tenantId));
+    const out = lista.filter((c) => c.situacao !== 'desligado' && c.data_nascimento && String(c.data_nascimento).slice(5, 7) === mes)
+      .map((c) => ({ id: c.id, nome: c.nome, funcao: c.funcao || null, dia: Number(String(c.data_nascimento).slice(8, 10)) }))
+      .sort((a, b) => a.dia - b.dia || String(a.nome).localeCompare(String(b.nome)));
+    res.json({ mes: Number(mes), hoje_dia: hoje.slice(5, 7) === mes ? Number(hoje.slice(8, 10)) : null, aniversariantes: out, sem_data: lista.filter((c) => c.situacao !== 'desligado' && !c.data_nascimento).length });
+  } catch (err) {
+    if (/data_nascimento/.test(String(err.message))) return res.json({ aniversariantes: [], sem_migration: true });
+    erro(res, 'aniversariantes', err);
+  }
+});
+
+// ─── 12e.2b: acesso do colaborador ("🎓 Meus treinamentos") ───────────────
+// perfis efetivos (usuario_perfis; se vazio, a coluna usuarios.perfil — legado)
+async function perfisDoUsuario(u) {
+  const l = (await q(supabase.from('usuario_perfis').select('*').eq('usuario_id', u.id))).map((x) => x.perfil_codigo);
+  return l.length ? l : [u.perfil].filter(Boolean);
+}
+// Cria um usuário de perfil "colaborador" (não conta na cobrança do plano) ligado ao colaborador.
+router.post('/colaboradores/:id/acesso', exigirEditar, async (req, res) => {
+  try {
+    const c = await colaboradorDoTenant(req, req.params.id);
+    if (!c) return res.status(404).json({ erro: 'Colaborador não encontrado' });
+    if (c.situacao === 'desligado') return res.status(400).json({ erro: 'Colaborador desligado' });
+    const email = String(req.body?.email || c.email || '').trim().toLowerCase();
+    const senha = String(req.body?.senha || '');
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return res.status(400).json({ erro: 'Informe um e-mail válido' });
+    if (senha.length < 6) return res.status(400).json({ erro: 'Senha com no mínimo 6 caracteres' });
+    if (c.usuario_id) {
+      const u = await usuarioDoTenant(req, c.usuario_id);
+      if (u) {
+        const perfis = await perfisDoUsuario(u);
+        if (perfis.some((p) => p !== 'colaborador')) return res.status(409).json({ erro: `${c.nome} já tem um usuário do sistema (${u.email}) — ele já vê "Meus treinamentos" no menu dele.` });
+        const { error } = await supabase.from('usuarios').update({ email, senha_hash: bcrypt.hashSync(senha, 10), ativo: 1 }).eq('id', u.id).eq('tenant_id', req.tenantId);
+        if (error) throw new Error(error.message);
+        return res.json({ ok: true, email, reativado: true });
+      }
+    }
+    // o login procura o e-mail em todas as empresas → tem de ser único no sistema
+    const mesmo = await q(supabase.from('usuarios').select('id').eq('email', email));
+    if (mesmo.length) return res.status(409).json({ erro: 'Esse e-mail já é usado por outro usuário do QuotaFlow' });
+    const { data, error } = await supabase.from('usuarios').insert([{ tenant_id: req.tenantId, nome: c.nome, email, senha_hash: bcrypt.hashSync(senha, 10), perfil: 'colaborador', ativo: 1 }]).select();
+    if (error) throw new Error(error.message);
+    const u = data[0];
+    try {
+      const e1 = await supabase.from('usuario_perfis').insert([{ usuario_id: u.id, perfil_codigo: 'colaborador' }]);
+      if (e1.error) throw new Error(e1.error.message);
+      const e2 = await supabase.from('colaboradores').update({ usuario_id: u.id, email: c.email || email }).eq('id', c.id).eq('tenant_id', req.tenantId);
+      if (e2.error) throw new Error(e2.error.message);
+    } catch (e) {
+      await supabase.from('usuario_perfis').delete().eq('usuario_id', u.id);
+      await supabase.from('usuarios').delete().eq('id', u.id).eq('tenant_id', req.tenantId);
+      if (/perfil|foreign key|violates/.test(String(e.message))) return res.status(409).json({ erro: 'Rode a migration 032 antes (perfil Colaborador)' });
+      throw e;
+    }
+    res.status(201).json({ ok: true, email });
+  } catch (err) {
+    if (/check constraint|perfil/.test(String(err.message))) return res.status(409).json({ erro: 'Rode a migration 032 antes (perfil Colaborador)' });
+    erro(res, 'acesso', err);
+  }
+});
+router.delete('/colaboradores/:id/acesso', exigirEditar, async (req, res) => {
+  try {
+    const c = await colaboradorDoTenant(req, req.params.id);
+    if (!c || !c.usuario_id) return res.status(404).json({ erro: 'Colaborador sem acesso' });
+    const u = await usuarioDoTenant(req, c.usuario_id);
+    if (!u) return res.status(404).json({ erro: 'Colaborador sem acesso' });
+    if ((await perfisDoUsuario(u)).some((p) => p !== 'colaborador')) return res.status(409).json({ erro: 'É um usuário do sistema — desative em Usuários' });
+    const { error } = await supabase.from('usuarios').update({ ativo: 0 }).eq('id', c.usuario_id).eq('tenant_id', req.tenantId);
+    if (error) throw new Error(error.message);
+    res.json({ ok: true });
+  } catch (err) { erro(res, 'acesso', err); }
+});
+// Situação do acesso (para a tela do colaborador)
+router.get('/colaboradores/:id/acesso', exigirVer, async (req, res) => {
+  try {
+    const c = await colaboradorDoTenant(req, req.params.id);
+    if (!c) return res.status(404).json({ erro: 'Colaborador não encontrado' });
+    if (!c.usuario_id) return res.json({ tem: false });
+    const u = await usuarioDoTenant(req, c.usuario_id);
+    if (!u) return res.json({ tem: false });
+    const perfis = await perfisDoUsuario(u);
+    res.json({ tem: true, email: u.email, ativo: !!u.ativo, so_colaborador: perfis.length > 0 && perfis.every((p) => p === 'colaborador') });
+  } catch (err) { erro(res, 'acesso', err); }
+});
 
 module.exports = router;

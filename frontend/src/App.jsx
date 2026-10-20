@@ -32,6 +32,7 @@ import TelaConfiguracoes from './components/configuracoes/TelaConfiguracoes';
 import TelaNaoConformidades from "./components/naoConformidades/TelaNaoConformidades";
 import TelaCalendarioManutencao from './components/manutencao/TelaCalendarioManutencao'; // etapa 12a
 import TelaPessoas from './components/pessoas/TelaPessoas'; // etapa 12c
+import TelaMeusTreinamentos from './components/pessoas/TelaMeusTreinamentos'; // etapa 12e.2b
 import AvisoPlanoTenant from './components/shared/AvisoPlanoTenant'; // etapa 11a: teste grátis / empresa em análise
 
 import {
@@ -330,6 +331,20 @@ const perfil = PERFIS[usuario.perfil] || {
   icon: '👤',
 };
 
+  // Etapa 12e.2b: perfil "colaborador" (sozinho) só vê "🎓 Meus treinamentos" — tela própria, sem o menu do sistema.
+  // (o backend também barra o resto da API para esse perfil — middleware/tenantMiddleware.js)
+  const perfisLogado = Array.isArray(usuario?.perfis) && usuario.perfis.length > 0 ? usuario.perfis : [usuario?.perfil].filter(Boolean);
+  if (perfisLogado.length > 0 && perfisLogado.every((p) => p === "colaborador")) return (
+    <div style={{ background: C.bg, height: "100vh", display: "flex", flexDirection: "column", color: C.text, fontFamily: "-apple-system, 'Segoe UI', Roboto, sans-serif" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 20px", borderBottom: `1px solid ${C.border}` }}>
+        <div style={{ fontWeight: 800, fontSize: 16, flex: 1 }}>QuotaFlow</div>
+        <div style={{ fontSize: 12, color: C.textSub }}>{usuario.nome}</div>
+        <button onClick={logout} style={{ background: "transparent", border: `1px solid ${C.border}`, borderRadius: 6, padding: "6px 12px", color: C.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Sair</button>
+      </div>
+      <div style={{ flex: 1, overflow: "hidden" }}><TelaMeusTreinamentos /></div>
+    </div>
+  );
+
   // Nav items filtrados por perfil
   const navItems = [
     {id:"home",          l:"Início",                  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro"]},
@@ -352,6 +367,7 @@ const perfil = PERFIS[usuario.perfil] || {
     {id:"benchmark",     l:"📈 Benchmark",            perfis:["admin","gestor"]},
     {id:"equipamentos",  l:"⚙ Equipamentos",          perfis:["admin","gestor","comprador","operacao"]},
     {id:"pessoas",       l:"👷 Pessoas",               perfis:["admin","gestor","qualidade","operacao"]},
+    {id:"meus_treinamentos", l:"🎓 Meus treinamentos",  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro"]}, // etapa 12e.2b
     {id:"fornecedores",  l:"🏭 Fornecedores",         perfis:["admin","gestor","comprador"]},
     {id:"portalfornecedor", l:"🏢 Portal Fornecedor", perfis:["admin","fornecedor"]},
     {id:"catalogo",      l:"📦 Catálogo",             perfis:["admin","gestor","comprador","qualidade"]},
@@ -556,6 +572,7 @@ const perfil = PERFIS[usuario.perfil] || {
           </div>
         )}
 
+        {temAcesso(tela) && tela === "meus_treinamentos" && <TelaMeusTreinamentos />}
         {temAcesso(tela) && tela === "calendario" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
             <TelaCalendarioManutencao
@@ -2322,6 +2339,7 @@ const PERMISSOES = {
   benchmark:          ["admin","gestor"],
   equipamentos:       ["admin","gestor","comprador","operacao"],
   pessoas:            ["admin","gestor","qualidade","operacao"], // etapa 12c
+  meus_treinamentos:  ["admin","gestor","comprador","operacao","qualidade","financeiro","colaborador"], // etapa 12e.2b
   fornecedores:       ["admin","gestor","comprador"],
   portalfornecedor:   ["admin","fornecedor"],
   catalogo:           ["admin","gestor","comprador","qualidade"],

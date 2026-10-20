@@ -63,6 +63,10 @@ function validarColaborador(body, { parcial = false } = {}) {
   if (tem('admissao')) {
     if (body.admissao && !DATA.test(String(body.admissao))) erros.push('Data de admissão inválida'); else out.admissao = body.admissao || null;
   }
+  if (tem('data_nascimento')) { // 12e.2a — 2º fator do link da prova e aniversariantes
+    const d = body.data_nascimento;
+    if (d && (!DATA.test(String(d)) || String(d) > new Date().toISOString().slice(0, 10) || String(d) < '1900-01-01')) erros.push('Data de nascimento inválida'); else out.data_nascimento = d || null;
+  }
   if (tem('situacao')) {
     if (!SITUACOES_COLAB.includes(body.situacao)) erros.push('Situação inválida'); else out.situacao = body.situacao;
   }

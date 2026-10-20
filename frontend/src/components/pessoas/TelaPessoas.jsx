@@ -8,6 +8,7 @@ import { useState, useEffect, useMemo } from "react";
 import apiService from "../../services/apiService";
 import TelaEpi from "./TelaEpi"; // etapa 12d.1
 import TelaTreinamentos from "./TelaTreinamentos"; // etapa 12e.1
+import { AcessoColaborador, CardAniversariantes } from "./AcessoColaborador"; // etapa 12e.2b
 
 const ALVO = { colaborador: "Pessoa", equipamento: "Equipamento", empresa: "Empresa" };
 const SITUACAO_DOC = {
@@ -160,6 +161,11 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       const TAMS = ["tam_calcado", "tam_camisa", "tam_calca", "tam_luva"];
       if (!formColab.tem_tamanhos && TAMS.every((k) => !corpo[k])) TAMS.forEach((k) => delete corpo[k]);
       delete corpo.tem_tamanhos;
+      if (!formColab.tem_nascimento && !corpo.data_nascimento) delete corpo.data_nascimento; // 12e.2a: antes da migration 031
+      delete corpo.tem_nascimento;
+      // 12e.2b: login não mexido no formulário → não envia (o acesso a "Meus treinamentos" pode ter sido criado enquanto o form estava aberto)
+      if (id && String(corpo.usuario_id || "") === String(formColab.usuario_original || "")) delete corpo.usuario_id;
+      delete corpo.usuario_original;
       const salvo = id ? await apiService.put(`/pessoas/colaboradores/${id}`, corpo) : await apiService.post("/pessoas/colaboradores", corpo);
       setFormColab(null); setAviso(id ? "Colaborador atualizado." : "Colaborador cadastrado."); await carregar();
       // decisão (b): função nova/trocada → mostra a ficha com as pendências
@@ -244,7 +250,8 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       const igual = funcoes.find((f) => f.nome.trim().toLowerCase() === String(c.funcao).trim().toLowerCase());
       if (igual) { funcao_id = String(igual.id); sugerida = true; }
     }
-    setFormColab({ ...c, cpf: c.cpf || "", admissao: c.admissao ? String(c.admissao).slice(0, 10) : "", usuario_id: c.usuario_id || "", telefone: c.telefone || "", email: c.email || "", funcao: c.funcao || "", obs: c.obs || "", funcao_id, funcao_original: c.funcao_id ? String(c.funcao_id) : "", sugerida, funcao_desde: new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10), funcao_motivo: "promocao",
+    setFormColab({ ...c, cpf: c.cpf || "", admissao: c.admissao ? String(c.admissao).slice(0, 10) : "", usuario_id: c.usuario_id || "", usuario_original: c.usuario_id || "", telefone: c.telefone || "", email: c.email || "", funcao: c.funcao || "", obs: c.obs || "", funcao_id, funcao_original: c.funcao_id ? String(c.funcao_id) : "", sugerida, funcao_desde: new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10), funcao_motivo: "promocao",
+      tem_nascimento: c.data_nascimento !== undefined, data_nascimento: c.data_nascimento ? String(c.data_nascimento).slice(0, 10) : "",
       tem_tamanhos: c.tam_calcado !== undefined, tam_calcado: c.tam_calcado || "", tam_camisa: c.tam_camisa || "", tam_calca: c.tam_calca || "", tam_luva: c.tam_luva || "" });
   };
 
@@ -376,8 +383,9 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
           <div style={{ display: "flex", marginBottom: 14 }}>
             <div style={{ fontSize: 12, color: C.textSub, alignSelf: "center" }}>Motoristas, ajudantes, mecânicos… não precisam ter login. Quem tem pode ser ligado ao usuário.</div>
             <div style={{ flex: 1 }} />
-            {editar && <button onClick={() => setFormColab({ nome: "", cpf: "", funcao: "", funcao_id: "", funcao_original: "", tam_calcado: "", tam_camisa: "", tam_calca: "", tam_luva: "", admissao: "", situacao: "ativo", telefone: "", email: "", usuario_id: "", obs: "" })} style={{ ...s.btn(true), cursor: "pointer" }}>＋ Novo colaborador</button>}
+            {editar && <button onClick={() => setFormColab({ nome: "", cpf: "", funcao: "", funcao_id: "", funcao_original: "", tam_calcado: "", tam_camisa: "", tam_calca: "", tam_luva: "", admissao: "", data_nascimento: "", situacao: "ativo", telefone: "", email: "", usuario_id: "", obs: "" })} style={{ ...s.btn(true), cursor: "pointer" }}>＋ Novo colaborador</button>}
           </div>
+          <CardAniversariantes C={C} s={s} />
           {colabs.length === 0 && !carregando ? (
             <div style={{ ...s.card, padding: 28, textAlign: "center", color: C.textSub }}>Nenhum colaborador cadastrado.</div>
           ) : (
@@ -699,6 +707,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
                 <div style={{ marginTop: 14 }}>
                   <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>🎓 Treinamentos
                     <span style={{ fontWeight: 400, fontSize: 12, color: C.textSub }}> · {r.ok + r.vence} de {r.total} em dia{partes.length ? <> · <span style={{ color: r.vencido || r.falta ? "#ef4444" : "#f59e0b" }}>{partes.join(" · ")}</span></> : ""}</span>
+                    {ficha.treinamentos.horas && <span style={{ ...s.tag("#a855f7"), marginLeft: 8 }} title="Horas de treinamento creditadas">⏱ {Number(ficha.treinamentos.horas.ano).toLocaleString("pt-BR")} h no ano · {Number(ficha.treinamentos.horas.total).toLocaleString("pt-BR")} h no total</span>}
                   </div>
                   <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
                     {ficha.treinamentos.itens.map((it, i) => (
@@ -765,6 +774,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
           {funcoesOk && funcoes.length === 0 && <div style={{ fontSize: 12, color: C.muted, marginTop: -4 }}>Dica: crie ou importe funções na aba 👔 Funções para o sistema saber quais documentos cada cargo exige.</div>}
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             {campo("ADMISSÃO", <input type="date" value={formColab.admissao} onChange={(e) => setFormColab({ ...formColab, admissao: e.target.value })} style={s.input} />, "1 1 160px")}
+            {campo("NASCIMENTO", <input type="date" value={formColab.data_nascimento || ""} max={new Date().toISOString().slice(0, 10)} onChange={(e) => setFormColab({ ...formColab, data_nascimento: e.target.value })} title="Confirma a identidade na prova online e entra nos aniversariantes do mês" style={s.input} />, "1 1 150px")}
             {campo("SITUAÇÃO", <select value={formColab.situacao} onChange={(e) => setFormColab({ ...formColab, situacao: e.target.value })} style={s.input}>
               {Object.entries(SITUACAO_COLAB).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>, "1 1 160px")}
           </div>
@@ -785,6 +795,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
             <option value="">Não tem login</option>{(config.usuarios || []).map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}</select>)}
           {campo("OBSERVAÇÕES", <textarea rows={2} value={formColab.obs} onChange={(e) => setFormColab({ ...formColab, obs: e.target.value })} style={{ ...s.input, resize: "vertical" }} />)}
           <div style={{ fontSize: 11, color: C.muted }}>CPF é obrigatório (identifica a pessoa nos treinamentos e no dossiê) e é dado pessoal (LGPD): só admin, gestor e qualidade veem completo.</div>
+          {formColab.id && <AcessoColaborador C={C} s={s} colaboradorId={formColab.id} emailPadrao={formColab.email} onAviso={setAviso} onErro={setErro} />}
         </div>
         <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
           <button onClick={() => setFormColab(null)} style={{ ...s.btn(false), cursor: "pointer", flex: 1, color: C.text }}>Cancelar</button>
