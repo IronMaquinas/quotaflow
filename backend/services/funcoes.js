@@ -53,7 +53,7 @@ const RISCOS = [
   { codigo: 'explosao_pneu', nome: 'Explosão de pneu', grupo: 'Acidente' },
   { codigo: 'incendio', nome: 'Incêndio / explosão', grupo: 'Acidente' },
 ];
-const LISTAS = { escolaridades: ESCOLARIDADES, riscos: RISCOS, ...E.LISTAS_EPI, cnh_categorias: K.CNH_CATEGORIAS, sugestoes_competencias: K.SUGESTOES }; // 12e.3: CNH + sugestões
+const LISTAS = { escolaridades: ESCOLARIDADES, riscos: RISCOS, ...E.LISTAS_EPI, cnh_categorias: K.CNH_CATEGORIAS, sugestoes_competencias: K.SUGESTOES, niveis_competencia: K.NIVEIS }; // 12e.3: CNH + sugestões
 const CAMPOS_CONTEUDO = ['descritivo', 'requisitos', 'documentos', 'cbo', 'setor', 'escolaridade', 'riscos', 'responde_a', 'epis', 'treinamentos', 'cnh_categoria', 'competencias'];
 const copiarConteudo = (m) => ({
   descritivo: m.descritivo ?? null, requisitos: m.requisitos ?? null, documentos: m.documentos || [],

@@ -8,10 +8,22 @@
 //                    observação e evidência opcional; reavaliar_meses opcional (vencida = reavaliar)
 // Regra do selo (decidida com o Marcony, 21/10): não informado, não avaliado, não atende ou reavaliação vencida =
 //   item PENDENTE (🟡) — nunca 🔴 sozinho. Ok = conta como em dia.
+// 12e.3.1: avaliação com NOTA de 1 a 4 (1 não atende · 2 em desenvolvimento · 3 atende · 4 referência); cada competência
+//   da função tem um NÍVEL ESPERADO (padrão 3) — "atende" = nota ≥ esperado. Competência pode ligar TREINAMENTOS que a
+//   sustentam: na Ficha aparece "🎓 em dia · falta avaliação prática" ou "⚠ sem o treinamento"; na avaliação, os em dia
+//   viram evidência (cópia). O treinamento NUNCA marca "atende" sozinho — competência é prática, quem decide é o gestor.
 // Regras do backend: sem DB.raw; ids com String(); filtros sem null.
 
 const crypto = require('crypto');
 const D = require('./documentos');
+const TR = require('./treinamentos');
+const NIVEIS = [
+  { nivel: 1, nome: 'Não atende', desc: 'não faz, ou faz com risco' },
+  { nivel: 2, nome: 'Em desenvolvimento', desc: 'faz com supervisão' },
+  { nivel: 3, nome: 'Atende', desc: 'faz sozinho, no padrão' },
+  { nivel: 4, nome: 'Referência', desc: 'faz muito bem e pode ensinar' },
+];
+const nivelDe = (a) => (a.nivel != null ? Number(a.nivel) : a.atende ? 3 : 1);
 
 async function q(p) { const { data, error } = await p; if (error) throw new Error(error.message); return data || []; }
 const texto = (v, max) => (v == null || String(v).trim() === '' ? null : String(v).trim().slice(0, max));
@@ -62,7 +74,10 @@ function validarLista(lista) {
     vistos.add(codigo);
     const r = x?.reavaliar_meses === '' || x?.reavaliar_meses == null ? null : parseInt(x.reavaliar_meses, 10);
     if (r !== null && !(r >= 1 && r <= 120)) return { erro: `“${nome}”: reavaliação entre 1 e 120 meses` };
-    out.push({ codigo, nome, reavaliar_meses: r });
+    const ne = x?.nivel_esperado === '' || x?.nivel_esperado == null ? 3 : parseInt(x.nivel_esperado, 10);
+    if (!(ne >= 1 && ne <= 4)) return { erro: `“${nome}”: nível esperado de 1 a 4` };
+    const trs = [...new Set((Array.isArray(x?.treinamentos) ? x.treinamentos : []).map((t) => String(typeof t === 'string' ? t : t?.codigo || '')).filter((c) => /^[a-z0-9_]{1,60}$/.test(c)))].slice(0, 10);
+    out.push({ codigo, nome, reavaliar_meses: r, nivel_esperado: ne, treinamentos: trs });
   }
   return { competencias: out };
 }
@@ -79,7 +94,28 @@ async function carregarBase(supabase, tenantId) {
     q(supabase.from('funcoes').select('*').eq('tenant_id', tenantId)),
     q(supabase.from('colaborador_competencias').select('*').eq('tenant_id', tenantId)),
   ]);
-  return { colabs, funcoes, avals };
+  let tr = { treinos: [], turmas: [], parts: [] }; // treinamentos ligados às competências (antes da 030 fica vazio)
+  try { const b = await TR.carregarBase(supabase, tenantId); tr = { treinos: b.treinos, turmas: b.turmas, parts: b.parts }; }
+  catch (e) { if (!/treinamento/.test(String(e.message))) throw e; }
+  return { colabs, funcoes, avals, tr };
+}
+
+/** Situação dos treinamentos ligados a uma competência, para o colaborador: ok · vencido · falta */
+function treinosDaCompetencia(colab, codigos, base, hoje) {
+  const tr = base.tr || { treinos: [], turmas: [], parts: [] };
+  const turmaPor = new Map(tr.turmas.map((t) => [String(t.id), t]));
+  return (codigos || []).map((codigo) => {
+    const t = tr.treinos.find((x) => x.codigo === codigo && x.ativo !== false) || tr.treinos.find((x) => x.codigo === codigo);
+    if (!t) return { codigo, nome: codigo, situacao: 'falta', existe: false };
+    const feitos = tr.parts.filter((p) => String(p.colaborador_id) === String(colab.id))
+      .map((p) => ({ p, tu: turmaPor.get(String(p.turma_id)) }))
+      .filter(({ p, tu }) => tu && String(tu.treinamento_id) === String(t.id) && TR.contaFeito(p, tu))
+      .sort((a, b) => TR.dataFeito(b.p, b.tu).localeCompare(TR.dataFeito(a.p, a.tu)));
+    const u = feitos[0];
+    if (!u) return { codigo, nome: t.nome, situacao: 'falta', existe: true };
+    const va = u.p.valido_ate || (u.tu.validade_meses ? TR.validoAte(u.tu) : null);
+    return { codigo, nome: t.nome, existe: true, situacao: va && String(va).slice(0, 10) < hoje ? 'vencido' : 'ok', turma_id: u.tu.id, concluido_em: TR.dataFeito(u.p, u.tu), valido_ate: va };
+  });
 }
 
 /** Situação de cada competência exigida pela função para o colaborador */
@@ -100,10 +136,12 @@ function statusColaborador(colab, base, ESCOLARIDADES, hoje = hojeBR()) {
   const minhas = base.avals.filter((a) => String(a.colaborador_id) === String(colab.id));
   for (const c of (Array.isArray(funcao?.competencias) ? funcao.competencias : [])) {
     const ult = minhas.filter((a) => a.codigo === c.codigo).sort((a, b) => String(b.avaliado_em).localeCompare(String(a.avaliado_em)) || Number(b.id) - Number(a.id))[0];
+    const esperado = Number(c.nivel_esperado || 3);
     let situacao = 'pendente';
-    if (ult) situacao = !ult.atende ? 'nao_atende' : ult.valido_ate && String(ult.valido_ate).slice(0, 10) < hoje ? 'reavaliar' : 'ok';
-    itens.push({ tipo: 'competencia', codigo: c.codigo, nome: c.nome, reavaliar_meses: c.reavaliar_meses || null, situacao,
-      ultima: ult ? { id: ult.id, atende: ult.atende, avaliado_em: ult.avaliado_em, valido_ate: ult.valido_ate, avaliado_por_nome: ult.avaliado_por_nome, obs: ult.obs, tem_evidencia: !!ult.evidencia_path } : null,
+    if (ult) situacao = nivelDe(ult) < esperado ? 'nao_atende' : ult.valido_ate && String(ult.valido_ate).slice(0, 10) < hoje ? 'reavaliar' : 'ok';
+    itens.push({ tipo: 'competencia', codigo: c.codigo, nome: c.nome, reavaliar_meses: c.reavaliar_meses || null, nivel_esperado: esperado, situacao,
+      treinamentos: treinosDaCompetencia(colab, c.treinamentos, base, hoje),
+      ultima: ult ? { id: ult.id, atende: nivelDe(ult) >= esperado, nivel: nivelDe(ult), avaliado_em: ult.avaliado_em, valido_ate: ult.valido_ate, avaliado_por_nome: ult.avaliado_por_nome, obs: ult.obs, tem_evidencia: !!ult.evidencia_path, evidencia_treinamentos: ult.evidencia_treinamentos || [] } : null,
       avaliacoes: minhas.filter((a) => a.codigo === c.codigo).length });
   }
   const resumo = { total: itens.length, ok: 0, pendente: 0, nao_atende: 0, reavaliar: 0 };
@@ -116,7 +154,10 @@ async function avaliar(supabase, tenantId, { usuarioId, usuarioNome }, colab, bo
   const funcao = colab.funcao_id != null ? (await q(supabase.from('funcoes').select('*').eq('tenant_id', tenantId).eq('id', colab.funcao_id)))[0] : null;
   const c = (Array.isArray(funcao?.competencias) ? funcao.competencias : []).find((x) => x.codigo === body?.codigo);
   if (!c) return { status: 400, erro: 'Competência não exigida pela função do colaborador' };
-  if (typeof body.atende !== 'boolean') return { status: 400, erro: 'Marque atende ou não atende' };
+  const nivel = body.nivel != null && body.nivel !== '' ? parseInt(body.nivel, 10) : typeof body.atende === 'boolean' ? (body.atende ? 3 : 1) : NaN;
+  if (!(nivel >= 1 && nivel <= 4)) return { status: 400, erro: 'Escolha a nota de 1 a 4' };
+  const esperado = Number(c.nivel_esperado || 3);
+  const atende = nivel >= esperado;
   const em = DATA.test(String(body.avaliado_em || '')) ? body.avaliado_em : hojeBR(agora);
   if (em > hojeBR(agora)) return { status: 400, erro: 'A data da avaliação não pode ser futura' };
   let path = null;
@@ -126,9 +167,15 @@ async function avaliar(supabase, tenantId, { usuarioId, usuarioNome }, colab, bo
     const { error } = await supabase.storage.from(D.BUCKET).upload(path, Buffer.from(String(body.evidencia_base64), 'base64'), { contentType: body.evidencia_mime, upsert: false });
     if (error) throw new Error(`Falha ao subir a evidência: ${error.message}`);
   }
+  // treinamentos ligados e em dia na hora → evidência (cópia)
+  let evid = [];
+  if ((c.treinamentos || []).length) {
+    const base = await carregarBase(supabase, tenantId);
+    evid = treinosDaCompetencia(colab, c.treinamentos, base, em).filter((t) => t.situacao === 'ok').map((t) => ({ codigo: t.codigo, nome: t.nome, turma_id: t.turma_id, concluido_em: t.concluido_em, valido_ate: t.valido_ate }));
+  }
   const { data, error } = await supabase.from('colaborador_competencias').insert([{
-    tenant_id: tenantId, colaborador_id: colab.id, codigo: c.codigo, nome: c.nome, atende: body.atende, avaliado_em: em,
-    valido_ate: body.atende && c.reavaliar_meses ? somaMeses(em, c.reavaliar_meses) : null,
+    tenant_id: tenantId, colaborador_id: colab.id, codigo: c.codigo, nome: c.nome, atende, nivel, nivel_esperado: esperado, evidencia_treinamentos: evid, avaliado_em: em,
+    valido_ate: atende && c.reavaliar_meses ? somaMeses(em, c.reavaliar_meses) : null,
     avaliado_por: usuarioId || null, avaliado_por_nome: usuarioNome || null,
     evidencia_path: path, evidencia_nome: path ? texto(body.evidencia_nome, 200) || 'evidencia' : null, evidencia_mime: path ? body.evidencia_mime : null,
     obs: texto(body.obs, 1000),
@@ -139,7 +186,7 @@ async function avaliar(supabase, tenantId, { usuarioId, usuarioNome }, colab, bo
 
 async function historico(supabase, tenantId, colaboradorId) {
   return (await q(supabase.from('colaborador_competencias').select('*').eq('tenant_id', tenantId).eq('colaborador_id', colaboradorId)))
-    .map((a) => ({ ...a, evidencia_path: undefined, tem_evidencia: !!a.evidencia_path }))
+    .map((a) => ({ ...a, nivel: nivelDe(a), evidencia_path: undefined, tem_evidencia: !!a.evidencia_path }))
     .sort((a, b) => String(b.avaliado_em).localeCompare(String(a.avaliado_em)) || Number(b.id) - Number(a.id));
 }
 
@@ -150,4 +197,4 @@ async function linkEvidencia(supabase, tenantId, avaliacaoId) {
   return { url: await D.linkArquivo(supabase, a.evidencia_path), nome: a.evidencia_nome };
 }
 
-module.exports = { CNH_CATEGORIAS, SUGESTOES, cobreCNH, validarLista, validarCNH, carregarBase, statusColaborador, avaliar, historico, linkEvidencia, somaMeses };
+module.exports = { NIVEIS, nivelDe, treinosDaCompetencia, CNH_CATEGORIAS, SUGESTOES, cobreCNH, validarLista, validarCNH, carregarBase, statusColaborador, avaliar, historico, linkEvidencia, somaMeses };

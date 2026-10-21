@@ -11,6 +11,7 @@ const semAcento = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036
 const casa = (m, b, nomeTipo) => !b || semAcento(`${m.nome} ${m.cbo || ""} ${m.setor || ""} ${m.descritivo || ""} ${m.requisitos || ""} ${(m.documentos || []).map((d) => nomeTipo(d.codigo)).join(" ")}`).includes(b);
 
 export default function BibliotecaFuncoes({ token, chamar, C, input, label, card, btn, tag, onAviso }) {
+  const [treinosBib, setTreinosBib] = useState([]); // 12e.3.1: treinamentos da biblioteca (mesmo código ao importar)
   const [dados, setDados] = useState(null);
   const [form, setForm] = useState(null);
   const [confirmar, setConfirmar] = useState(null);
@@ -20,6 +21,7 @@ export default function BibliotecaFuncoes({ token, chamar, C, input, label, card
   const carregar = useCallback(async () => {
     try { setDados(await chamar(token, "GET", "/biblioteca/funcoes")); }
     catch (e) { onAviso({ tipo: "erro", texto: e.message }); }
+    try { setTreinosBib(((await chamar(token, "GET", "/biblioteca/treinamentos"))?.modelos || []).filter((m) => m.ativo !== false).map((m) => ({ codigo: m.codigo, nome: m.nome }))); } catch { /* sem a 030/031 */ } // 12e.3.1
   }, [token, chamar, onAviso]);
   useEffect(() => { carregar(); }, [carregar]);
 
@@ -77,7 +79,7 @@ export default function BibliotecaFuncoes({ token, chamar, C, input, label, card
               <div style={{ fontWeight: 700, fontSize: 14, flex: 1, minWidth: 200 }}>{m.nome}</div>
               <span style={tag(C.violet)}>v{m.versao || 1}</span>
               <span style={tag(C.muted)}>{m.importacoes} empresa(s) importaram</span>
-              <button type="button" onClick={() => setForm({ id: m.id, nome: m.nome, descritivo: m.descritivo || "", requisitos: m.requisitos || "", documentos: (m.documentos || []).map((d) => d.codigo), cbo: m.cbo || "", setor: m.setor || "", escolaridade: m.escolaridade || "", riscos: m.riscos || [], responde_a: m.responde_a || "", epis: (m.epis || []).map((k) => ({ ...k, troca_dias: k.troca_dias ?? "" })), cnh_categoria: m.cnh_categoria || "", competencias: (m.competencias || []).map((c) => ({ ...c, reavaliar_meses: c.reavaliar_meses ?? "" })) })} style={btn(C.accent, false)}>Editar</button>
+              <button type="button" onClick={() => setForm({ id: m.id, nome: m.nome, descritivo: m.descritivo || "", requisitos: m.requisitos || "", documentos: (m.documentos || []).map((d) => d.codigo), cbo: m.cbo || "", setor: m.setor || "", escolaridade: m.escolaridade || "", riscos: m.riscos || [], responde_a: m.responde_a || "", epis: (m.epis || []).map((k) => ({ ...k, troca_dias: k.troca_dias ?? "" })), cnh_categoria: m.cnh_categoria || "", competencias: (m.competencias || []).map((c) => ({ ...c, reavaliar_meses: c.reavaliar_meses ?? "", nivel_esperado: c.nivel_esperado || 3, treinamentos: c.treinamentos || [] })) })} style={btn(C.accent, false)}>Editar</button>
               <button type="button" onClick={() => setConfirmar(m)} style={btn(C.danger, false)}>Tirar da biblioteca</button>
             </div>
             {[m.cbo && `CBO ${m.cbo}`, m.setor, m.escolaridade && escolaridades.find((e) => e.codigo === m.escolaridade)?.nome, m.responde_a && `responde a ${m.responde_a}`].filter(Boolean).length > 0 && (
@@ -115,7 +117,7 @@ export default function BibliotecaFuncoes({ token, chamar, C, input, label, card
               <label style={{ flex: "2 1 200px" }}><span style={label}>RESPONDE A</span>
                 <input value={form.responde_a} onChange={(e) => setForm({ ...form, responde_a: e.target.value })} placeholder="Encarregado de manutenção" style={input} /></label>
             </div>
-            <div style={{ marginBottom: 12 }}><EditorCompetencias valor={form.competencias || []} onChange={(v) => setForm((f) => ({ ...f, competencias: v }))} sugestoes={dados?.sugestoes_competencias || []}
+            <div style={{ marginBottom: 12 }}><EditorCompetencias valor={form.competencias || []} onChange={(v) => setForm((f) => ({ ...f, competencias: v }))} sugestoes={dados?.sugestoes_competencias || []} treinamentos={treinosBib}
               ui={{ text: C.text, sub: C.sub, border: C.border, accent: C.accent, danger: C.danger, input, label, tag }} /></div>
             <label style={{ display: "block", marginBottom: 12 }}><span style={label}>DESCRITIVO (ATIVIDADES E RESPONSABILIDADES)</span>
               <textarea rows={6} value={form.descritivo} onChange={(e) => setForm({ ...form, descritivo: e.target.value })} style={{ ...input, resize: "vertical" }} /></label>

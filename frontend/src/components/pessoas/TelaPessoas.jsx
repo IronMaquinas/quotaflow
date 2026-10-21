@@ -10,6 +10,7 @@ import TelaEpi from "./TelaEpi"; // etapa 12d.1
 import TelaTreinamentos from "./TelaTreinamentos"; // etapa 12e.1
 import { AcessoColaborador, CardAniversariantes } from "./AcessoColaborador"; // etapa 12e.2b
 import FichaCompetencias from "./FichaCompetencias"; // etapa 12e.3
+import PainelDossie from "./PainelDossie"; // etapa 12f
 import EditorCompetencias, { limparCompetencias } from "../shared/EditorCompetencias"; // etapa 12e.3
 
 const ALVO = { colaborador: "Pessoa", equipamento: "Equipamento", empresa: "Empresa" };
@@ -68,6 +69,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
   const [busca, setBusca] = useState("");
   const [historico, setHistorico] = useState(false);
   const [formColab, setFormColab] = useState(null);
+  const [abertas, setAbertas] = useState(() => new Set()); // 12e.3.1: funções abertas no acordeão (padrão: fechadas)
   const [formDoc, setFormDoc] = useState(null); // { modo: 'novo' | 'editar' | 'renovar', ...campos }
   const [novoTipo, setNovoTipo] = useState(null);
   const [confirmar, setConfirmar] = useState(null); // { titulo, texto, acao }
@@ -119,36 +121,38 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
   const nomeRisco = (c) => listas.riscos.find((r) => r.codigo === c)?.nome || c;
   const COR_GRUPO = { "Físico": "#38bdf8", "Químico": "#f472b6", "Biológico": "#4ade80", "Ergonômico": "#fbbf24", "Acidente": "#f87171" };
   const corRisco = (c) => COR_GRUPO[listas.riscos.find((r) => r.codigo === c)?.grupo] || C.muted;
-  // linha "CBO · setor · escolaridade · responde a" e os riscos, usados no cartão, na biblioteca e na ficha
-  const infoFuncao = (f) => {
-    const partes = [f.cbo && `CBO ${f.cbo}`, f.setor, f.escolaridade && `Escolaridade: ${nomeEscolaridade(f.escolaridade)}`, f.responde_a && `Responde a: ${f.responde_a}`].filter(Boolean);
+  // 12e.3.1: detalhes da função AGRUPADOS por categoria, com divisores (cartão aberto, biblioteca e ficha)
+  const nomeTreino = (c) => listas.treinamentos.find((x) => x.codigo === c)?.nome || c;
+  const infoFuncao = (f, { completo = false } = {}) => {
+    const ident = [f.cbo && `CBO ${f.cbo}`, f.setor, f.escolaridade && `Escolaridade: ${nomeEscolaridade(f.escolaridade)}`, f.cnh_categoria && `CNH ${f.cnh_categoria}`, f.responde_a && `Responde a: ${f.responde_a}`].filter(Boolean);
+    const grupo = (titulo, conteudo) => (
+      <div style={{ borderTop: `1px solid ${C.border}`, paddingTop: 8, marginTop: 8 }}>
+        <div style={{ fontSize: 10, color: C.muted, fontWeight: 700, letterSpacing: ".08em", marginBottom: 6 }}>{titulo}</div>
+        {conteudo}
+      </div>
+    );
+    const chips = (lista) => <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{lista}</div>;
+    const docs = f.documentos || [];
     return (
       <>
-        {partes.length > 0 && <div style={{ fontSize: 12, color: C.textSub, marginTop: 6 }}>{partes.join(" · ")}</div>}
-        {(f.riscos || []).length > 0 && (
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
-            {f.riscos.map((r) => <span key={r} style={s.tag(corRisco(r))}>⚠ {nomeRisco(r)}</span>)}
-          </div>
-        )}
-        {(f.cnh_categoria || (f.competencias || []).length > 0) && (
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
-            {f.cnh_categoria && <span style={s.tag("#0ea5e9")}>🪪 CNH {f.cnh_categoria}+</span>}
-            {(f.competencias || []).map((c) => <span key={c.codigo} style={s.tag("#0ea5e9")}>🧩 {c.nome}{c.reavaliar_meses ? ` · ${c.reavaliar_meses} m` : ""}</span>)}
-          </div>
-        )}
-        {(f.treinamentos || []).length > 0 && (
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
-            {f.treinamentos.map((t) => <span key={t.codigo} style={s.tag("#ec4899")}>🎓 {listas.treinamentos.find((x) => x.codigo === t.codigo)?.nome || t.codigo}</span>)}
-          </div>
-        )}
-        {(f.epis || []).length > 0 && (
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
-            {f.epis.map((k) => <span key={k.tipo} style={s.tag("#22c55e")}>🦺 {nomeEpi(k.tipo)}{k.quantidade > 1 ? ` ×${k.quantidade}` : ""}{k.troca_dias ? ` · ${k.troca_dias} d` : ""}</span>)}
-          </div>
-        )}
+        {ident.length > 0 && grupo("IDENTIFICAÇÃO", <div style={{ fontSize: 12, color: C.textSub }}>{ident.join(" · ")}</div>)}
+        {completo && f.descritivo && grupo("DESCRITIVO", <div style={{ fontSize: 12, color: C.textSub, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{f.descritivo}</div>)}
+        {completo && f.requisitos && grupo("REQUISITOS", <div style={{ fontSize: 12, color: C.textSub, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{f.requisitos}</div>)}
+        {(f.riscos || []).length > 0 && grupo(`⚠ RISCOS (PGR) · ${f.riscos.length}`, chips(f.riscos.map((r) => <span key={r} style={s.tag(corRisco(r))}>{nomeRisco(r)}</span>)))}
+        {(f.competencias || []).length > 0 && grupo(`🧩 COMPETÊNCIAS · ${f.competencias.length}`, chips(f.competencias.map((c) => <span key={c.codigo} style={s.tag("#0ea5e9")}>{c.nome} · nível {c.nivel_esperado || 3}{c.reavaliar_meses ? ` · ${c.reavaliar_meses} m` : ""}{(c.treinamentos || []).length ? ` · 🎓 ${c.treinamentos.map(nomeTreino).join(", ")}` : ""}</span>)))}
+        {(f.treinamentos || []).length > 0 && grupo(`🎓 TREINAMENTOS · ${f.treinamentos.length}`, chips(f.treinamentos.map((t) => <span key={t.codigo} style={s.tag("#ec4899")}>{nomeTreino(t.codigo)}</span>)))}
+        {(f.epis || []).length > 0 && grupo(`🦺 EPIs · ${f.epis.length}`, chips(f.epis.map((k) => <span key={k.tipo} style={s.tag("#22c55e")}>{nomeEpi(k.tipo)}{k.quantidade > 1 ? ` ×${k.quantidade}` : ""}{k.troca_dias ? ` · ${k.troca_dias} d` : ""}</span>)))}
+        {completo && grupo(`📄 DOCUMENTOS · ${docs.length}`, docs.length === 0 ? <span style={{ fontSize: 11, color: C.muted }}>Nenhum documento exigido</span>
+          : chips(docs.map((d) => <span key={d.codigo} style={s.tag(C.accent)}>{tiposPorAlvo("colaborador").find((t) => t.codigo === d.codigo)?.nome || d.codigo}</span>)))}
       </>
     );
   };
+  // linha resumida do cartão fechado
+  const resumoFuncao = (f) => [
+    (f.documentos || []).length && `📄 ${f.documentos.length}`, (f.epis || []).length && `🦺 ${f.epis.length}`,
+    (f.treinamentos || []).length && `🎓 ${f.treinamentos.length}`, (f.competencias || []).length && `🧩 ${f.competencias.length}`,
+    (f.riscos || []).length && `⚠ ${f.riscos.length}`,
+  ].filter(Boolean).join("  ");
   const nomeUsuario = (id) => (config.usuarios || []).find((u) => String(u.id) === String(id))?.nome;
 
   const docsFiltrados = useMemo(() => {
@@ -467,24 +471,19 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
             ) : (
               <div style={{ display: "grid", gap: 10 }}>
                 {funcoes.filter((f) => casaFuncao(f, buscaFuncao)).map((f) => (
-                  <div key={f.id} style={{ ...s.card, padding: "14px 16px" }}>
+                  <div key={f.id} style={{ ...s.card, padding: "12px 16px" }}>
                     <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-                      <div style={{ flex: "1 1 220px", minWidth: 0 }}>
-                        <div style={{ fontWeight: 700, fontSize: 14 }}>{f.nome}</div>
-                        <div style={{ fontSize: 12, color: C.textSub }}>👥 {f.colaboradores} colaborador(es){f.origem_nome ? ` · 📚 da biblioteca: ${f.origem_nome}` : " · criada pela empresa"}</div>
+                      <div onClick={() => setAbertas((a) => { const n = new Set(a); n.has(f.id) ? n.delete(f.id) : n.add(f.id); return n; })} style={{ flex: "1 1 220px", minWidth: 0, cursor: "pointer" }} title="Abrir / fechar detalhes">
+                        <div style={{ fontWeight: 700, fontSize: 14 }}><span style={{ color: C.muted, display: "inline-block", width: 16 }}>{abertas.has(f.id) || buscaFuncao.trim() ? "▾" : "▸"}</span>{f.nome}</div>
+                        <div style={{ fontSize: 12, color: C.textSub, paddingLeft: 16 }}>👥 {f.colaboradores} colaborador(es){f.origem_nome ? " · 📚 biblioteca" : " · criada pela empresa"}{resumoFuncao(f) ? <span style={{ color: C.muted }}> · {resumoFuncao(f)}</span> : ""}</div>
                       </div>
                       {f.versao_nova && editar && <button onClick={() => setConfirmar({ titulo: "Atualizar da biblioteca", botao: "Atualizar", cor: C.accent, texto: `O modelo “${f.origem_nome}” tem uma versão nova. Atualizar troca o descritivo, os requisitos e os documentos exigidos de “${f.nome}” pelos do modelo (o nome fica). O que você ajustou nesses campos será substituído.`, acao: async () => { await apiService.post(`/pessoas/funcoes/${f.id}/atualizar`); return "Função atualizada com a versão nova da biblioteca."; } })}
                         style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: "#a78bfa", borderColor: "#a78bfa" }}>✨ Versão nova na biblioteca</button>}
-                      {editar && <button onClick={() => setFormFuncao({ id: f.id, nome: f.nome, descritivo: f.descritivo || "", requisitos: f.requisitos || "", documentos: (f.documentos || []).map((d) => d.codigo), cbo: f.cbo || "", setor: f.setor || "", escolaridade: f.escolaridade || "", riscos: f.riscos || [], responde_a: f.responde_a || "", epis: (f.epis || []).map((k) => ({ ...k, troca_dias: k.troca_dias ?? "" })), treinamentos: (f.treinamentos || []).map((t) => t.codigo), cnh_categoria: f.cnh_categoria || "", competencias: (f.competencias || []).map((c) => ({ ...c, reavaliar_meses: c.reavaliar_meses ?? "" })) })} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.text }}>Editar</button>}
+                      {editar && <button onClick={() => setFormFuncao({ id: f.id, nome: f.nome, descritivo: f.descritivo || "", requisitos: f.requisitos || "", documentos: (f.documentos || []).map((d) => d.codigo), cbo: f.cbo || "", setor: f.setor || "", escolaridade: f.escolaridade || "", riscos: f.riscos || [], responde_a: f.responde_a || "", epis: (f.epis || []).map((k) => ({ ...k, troca_dias: k.troca_dias ?? "" })), treinamentos: (f.treinamentos || []).map((t) => t.codigo), cnh_categoria: f.cnh_categoria || "", competencias: (f.competencias || []).map((c) => ({ ...c, reavaliar_meses: c.reavaliar_meses ?? "", nivel_esperado: c.nivel_esperado || 3, treinamentos: c.treinamentos || [] })) })} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.text }}>Editar</button>}
                       {editar && <button onClick={() => excluir("Excluir função", `Excluir “${f.nome}”? Só é possível se nenhum colaborador estiver com essa função.`, async () => { await apiService.delete(`/pessoas/funcoes/${f.id}`); return "Função excluída."; })}
                         style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.danger }}>Excluir</button>}
                     </div>
-                    {infoFuncao(f)}
-                    {f.descritivo && <div style={{ fontSize: 12, color: C.textSub, marginTop: 8, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{f.descritivo.length > 260 ? f.descritivo.slice(0, 260) + "…" : f.descritivo}</div>}
-                    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
-                      {(f.documentos || []).length === 0 ? <span style={{ fontSize: 11, color: C.muted }}>Nenhum documento exigido</span>
-                        : f.documentos.map((d) => <span key={d.codigo} style={s.tag(C.accent)}>📄 {tiposPorAlvo("colaborador").find((t) => t.codigo === d.codigo)?.nome || d.codigo}</span>)}
-                    </div>
+                    {(abertas.has(f.id) || buscaFuncao.trim()) && <div style={{ paddingLeft: 16 }}>{infoFuncao(f, { completo: true })}</div>}
                   </div>
                 ))}
               </div>
@@ -534,7 +533,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
             </div>
             <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>Precisa de outro (NR-35, curso de empilhadeira…)? Crie em ＋ Novo documento → ＋ Outro tipo, de “Pessoa”.</div>
           </div>
-          <EditorCompetencias valor={formFuncao.competencias || []} onChange={(v) => setFormFuncao((f) => ({ ...f, competencias: v }))} sugestoes={listas.sugestoes_competencias}
+          <EditorCompetencias valor={formFuncao.competencias || []} onChange={(v) => setFormFuncao((f) => ({ ...f, competencias: v }))} sugestoes={listas.sugestoes_competencias} treinamentos={listas.treinamentos}
             ui={{ text: C.text, sub: C.textSub, border: C.border, accent: C.accent, danger: C.danger, input: s.input, label: s.label, tag: s.tag }} />
           <div>
             <span style={s.label}>TREINAMENTOS EXIGIDOS</span>
@@ -717,6 +716,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
                 <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Para entregar ou trocar: aba 🦺 EPI → 👷 Gestão de funcionários.</div>
               </div>
             )}
+            {ficha.pode_editar && <PainelDossie C={C} s={s} colaboradorId={ficha.colaborador.id} onErro={setErro} onAviso={setAviso} />}
             {ficha.competencias && <FichaCompetencias C={C} s={s} colaboradorId={ficha.colaborador.id} dados={ficha.competencias} podeEditar={ficha.pode_editar}
               onMudou={() => abrirFicha(ficha.colaborador.id)} onAviso={setAviso} onErro={setErro}
               onEditarCadastro={() => { const c = colabs.find((x) => String(x.id) === String(ficha.colaborador.id)); if (c) { setFicha(null); editarColab(c); } }} />}

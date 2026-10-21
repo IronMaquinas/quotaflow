@@ -21,6 +21,7 @@ const HF = require('../services/historicoFuncoes'); // etapa 12d.3
 const TR = require('../services/treinamentos'); // etapa 12e.1
 const PO = require('../services/provaOnline'); // etapa 12e.2b
 const K = require('../services/competencias'); // etapa 12e.3
+const DS = require('../services/dossie'); // etapa 12f
 const bcrypt = require('bcryptjs');            // etapa 12e.2b (acesso do colaborador)
 
 const VER = ['admin', 'gestor', 'qualidade', 'operacao'];
@@ -58,6 +59,7 @@ function erro(res, onde, err) {
   if (/secoes|prova|horas|data_nascimento/.test(m) && /does not exist|não existe|schema cache|column/.test(m)) {
     return res.status(409).json({ erro: 'Rode a migration 031 antes (conteúdo, prova e horas de treinamento)' });
   }
+  if (/nivel_esperado|evidencia_treinamentos|"nivel"|'nivel'|column colaborador_competencias.nivel/.test(m)) return res.status(409).json({ erro: 'Rode a migration 034 antes (nota das competências)' });
   if (/colaborador_competencias|cnh_categoria|competencias|escolaridade/.test(m) && /does not exist|não existe|schema cache|column|relation/.test(m)) return res.status(409).json({ erro: 'Rode a migration 033 antes (competências)' });
   if (/treinamento_tentativas|tentativas_extra|link_token|link_ativo/.test(m)) return res.status(409).json({ erro: 'Rode a migration 032 antes (prova online)' });
   if (/treinamento/.test(m) && /does not exist|não existe|relation|schema cache/.test(m)) {
@@ -740,6 +742,31 @@ router.get('/competencias/:id/evidencia', exigirVer, async (req, res) => {
     if (r.erro) return res.status(r.status).json({ erro: r.erro });
     res.json(r);
   } catch (err) { erro(res, 'competencias', err); }
+});
+
+// ─── 12f: dossiê do colaborador (LGPD: só admin, gestor, qualidade; cada geração fica registrada) ──────
+router.post('/colaboradores/:id/dossie', exigirEditar, async (req, res) => {
+  try {
+    const c = await colaboradorDoTenant(req, req.params.id);
+    if (!c) return res.status(404).json({ erro: 'Colaborador não encontrado' });
+    const u = await usuarioDoTenant(req, req.userId).catch(() => null);
+    const r = await DS.gerar(supabase, req.tenantId, c, req.body || {}, { usuarioId: req.userId, usuarioNome: u?.nome || req.userEmail || null, ip: req.ip });
+    if (r.erro) return res.status(r.status).json({ erro: r.erro });
+    res.json(r);
+  } catch (err) {
+    if (/dossie_registros/.test(String(err.message))) return res.status(409).json({ erro: 'Rode a migration 035 antes (dossiê)' });
+    erro(res, 'dossie', err);
+  }
+});
+router.get('/colaboradores/:id/dossies', exigirEditar, async (req, res) => {
+  try {
+    const c = await colaboradorDoTenant(req, req.params.id);
+    if (!c) return res.status(404).json({ erro: 'Colaborador não encontrado' });
+    res.json({ registros: await DS.registros(supabase, req.tenantId, c.id) });
+  } catch (err) {
+    if (/dossie_registros/.test(String(err.message))) return res.json({ registros: [], sem_migration: true });
+    erro(res, 'dossie', err);
+  }
 });
 
 // ─── 12e.2b: aniversariantes do mês (só dia/mês — LGPD) ───────────────────
