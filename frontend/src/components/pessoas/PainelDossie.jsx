@@ -6,7 +6,7 @@ import { useState } from "react";
 import apiService from "../../services/apiService";
 import { abrirDossie, prepararJanela } from "../../utils/gerarDossie";
 
-const SECOES = [["dados", "Dados e selo"], ["funcoes", "Função e histórico"], ["documentos", "Documentos"], ["epi", "EPIs"], ["treinamentos", "Treinamentos"], ["competencias", "Competências"]];
+const SECOES = [["dados", "Dados e selo"], ["funcoes", "Função e histórico"], ["documentos", "Documentos"], ["epi", "EPIs"], ["treinamentos", "Treinamentos"], ["competencias", "Competências"], ["multas", "Multas"], ["disciplinar", "Disciplinar"]]; // 12g: + multas · 12h: + disciplinar
 const MOTIVOS = [["auditoria", "Auditoria (ISO / cliente)"], ["trabalhista", "Processo trabalhista"], ["colaborador", "Pedido do colaborador"], ["desligamento", "Desligamento"], ["outro", "Outro"]];
 const dataBR = (s) => (s ? String(s).slice(0, 10).split("-").reverse().join("/") : "—");
 const hoje = () => new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);

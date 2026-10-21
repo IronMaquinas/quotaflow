@@ -6,6 +6,7 @@
 //   • doc_falta  — documento exigido pela função e ainda não cadastrado ('falta', uma vez por colaborador+tipo+função)
 //   • trein_venc — treinamento exigido vencendo em 30 dias ('30') e vencido ('vencido')  (12e.1)
 //   • trein_falta — treinamento exigido pela função e nunca feito ('falta', uma vez por colaborador+treinamento+função)
+//   • multa_indicacao / multa_venc — 12g: prazo de indicação do condutor (5 dias, vencido) e vencimento (5 dias, vencido)
 //   • trein_faltou — turma encerrada com quem não fez/não assinou → reagendar (uma vez por turma; só para o GESTOR — 12e.2d)
 // Cada marco sai uma vez (tabela avisos_enviados). Se o servidor ficou dias fora, manda só o mais urgente.
 // Destinatários: admin e gestor (o responsável do documento continua só nos avisos de documento).
@@ -18,7 +19,7 @@ const TR = require('./treinamentos'); // 12e.1
 async function q(p) { const { data, error } = await p; if (error) throw new Error(error.message); return data || []; }
 const hojeBR = (agora = new Date()) => new Date(agora.getTime() - 3 * 3600000).toISOString().slice(0, 10);
 const diasAte = (de, ate) => Math.round((Date.parse(String(ate).slice(0, 10) + 'T00:00:00Z') - Date.parse(de + 'T00:00:00Z')) / 86400000);
-const ORDEM = { falta: 1, '30': 1, '15': 2, vencido: 3 };
+const ORDEM = { falta: 1, '30': 1, '15': 2, '5': 2, vencido: 3 }; // 12g: '5' (multas)
 
 function marcoTroca(dias) { return dias == null ? null : dias < 0 ? 'vencido' : dias <= 15 ? '15' : null; }
 function marcoCA(dias) { return dias == null ? null : dias < 0 ? 'vencido' : dias <= 30 ? '30' : null; }
@@ -76,6 +77,23 @@ async function candidatos(supabase, tenantId, agora = new Date()) {
     }
   } catch (e) { if (!/treinamento/.test(String(e.message))) throw e; }
 
+  // 12g: multas abertas — indicação do condutor e vencimento (só para o gestor)
+  try {
+    const MU = require('./multas');
+    for (const m of (await q(supabase.from('multas').select('*').eq('tenant_id', tenantId))).filter((x) => MU.ABERTOS.includes(x.status))) {
+      const de = [m.veiculo, m.colaborador_nome].filter(Boolean).join(' · ') || 'Multa';
+      const marco = (dias) => (dias < 0 ? 'vencido' : dias <= 5 ? '5' : null);
+      if (m.status === 'recebida' && m.prazo_indicacao) {
+        const dias = diasAte(hoje, m.prazo_indicacao); const mk = marco(dias);
+        if (mk) out.push({ categoria: 'multa_indicacao', chave: `multa_ind:${m.id}`, marco: mk, dias, data: String(m.prazo_indicacao).slice(0, 10), titulo: `Indicar condutor — auto ${m.auto_numero || '—'}`, de });
+      }
+      if (m.vencimento) {
+        const dias = diasAte(hoje, m.vencimento); const mk = marco(dias);
+        if (mk) out.push({ categoria: 'multa_venc', chave: `multa_venc:${m.id}`, marco: mk, dias, data: String(m.vencimento).slice(0, 10), titulo: `Multa vence — auto ${m.auto_numero || '—'}${m.valor != null ? ` (R$ ${Number(m.valor).toFixed(2).replace('.', ',')})` : ''}`, de });
+      }
+    }
+  } catch (e) { if (!/multas/.test(String(e.message))) throw e; }
+
   // 12e.2d: turma encerrada nos últimos 7 dias com faltas → uma linha por turma (o colaborador NÃO recebe e-mail)
   try {
     await TR.fecharOnlineVencidas(supabase, tenantId); // aproveita a rotina das 7h para encerrar online com prazo vencido
@@ -110,7 +128,7 @@ async function registrar(supabase, tenantId, itens, destinatarios) {
   if (error) console.error('❌ [avisos-pessoas] registrar:', error.message);
 }
 
-const TITULO = { epi_troca: '🦺 Troca de EPI', epi_ca: '🦺 CA de EPI', doc_falta: '📋 Documento exigido não cadastrado', trein_venc: '🎓 Treinamento vencendo', trein_falta: '🎓 Treinamento exigido não realizado', trein_faltou: '🎓 Turma encerrada com faltas — reagendar' };
+const TITULO = { epi_troca: '🦺 Troca de EPI', epi_ca: '🦺 CA de EPI', doc_falta: '📋 Documento exigido não cadastrado', trein_venc: '🎓 Treinamento vencendo', trein_falta: '🎓 Treinamento exigido não realizado', trein_faltou: '🎓 Turma encerrada com faltas — reagendar', multa_indicacao: '🚦 Multa — indicar o condutor', multa_venc: '🚦 Multa vencendo' };
 const esc = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const dataBR = (d) => (d ? String(d).slice(0, 10).split('-').reverse().join('/') : '—');
 function prazo(i) {
@@ -122,7 +140,7 @@ function prazo(i) {
 }
 /** Seções HTML para o e-mail diário */
 function secoesHtml(itens) {
-  const cats = ['epi_troca', 'epi_ca', 'trein_venc', 'trein_faltou', 'doc_falta', 'trein_falta'].filter((c) => itens.some((i) => i.categoria === c));
+  const cats = ['multa_indicacao', 'multa_venc', 'epi_troca', 'epi_ca', 'trein_venc', 'trein_faltou', 'doc_falta', 'trein_falta'].filter((c) => itens.some((i) => i.categoria === c));
   return cats.map((c) => `
     <h3 style="margin:18px 0 6px;font-size:15px">${TITULO[c]}</h3>
     <table style="border-collapse:collapse;width:100%;font-size:14px">

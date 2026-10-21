@@ -12,6 +12,7 @@ const planos = require('../services/planosManutencao');
 const documentosSrv = require('../services/documentos'); // 12c: camada Documentos no calendário
 const epiEntregasSrv = require('../services/epiEntregas'); // 12d.3: camada 🦺 EPI no calendário
 const treinamentosSrv = require('../services/treinamentos'); // 12e.1: camada 🎓 Treinamentos no calendário
+const multasSrv = require('../services/multas'); // 12g: camada 🚦 Multas no calendário
 
 const DATA = /^\d{4}-\d{2}-\d{2}$/;
 const PODE_EDITAR = ['admin', 'gestor', 'operacao'];
@@ -144,8 +145,12 @@ router.get('/calendario', exigirTenant, async (req, res) => {
       try { treinamentos = await treinamentosSrv.eventosNoIntervalo(supabase, req.tenantId, de, ate); }
       catch (e) { if (!/treinamento|funcoes|colaboradores|relation|does not exist|schema cache/.test(e.message)) console.warn('⚠ [manutencao/calendario] treinamentos indisponíveis:', e.message); }
     }
+    // 12g: camada "Multas" — prazo de indicação do condutor e vencimento (sem a migration 036, vem vazio)
+    let multas = [];
+    try { multas = await multasSrv.eventosNoIntervalo(supabase, req.tenantId, de, ate, { equipamentoId }); }
+    catch (e) { if (!/multas|relation|does not exist|schema cache/.test(e.message)) console.warn('⚠ [manutencao/calendario] multas indisponíveis:', e.message); }
     res.json({ de, ate, valor_hora: dados.valorHora || null, eu: req.userId || null, ...cal,
-      previstas, totais_previstas: { quantidade: previstas.length, total: totalPrevisto }, documentos, epi, treinamentos });
+      previstas, totais_previstas: { quantidade: previstas.length, total: totalPrevisto }, documentos, epi, treinamentos, multas });
   } catch (err) { erro500(res, 'calendario', err); }
 });
 

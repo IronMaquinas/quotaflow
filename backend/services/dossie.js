@@ -15,10 +15,12 @@ const HF = require('./historicoFuncoes');
 const TR = require('./treinamentos');
 const K = require('./competencias');
 const CF = require('./conformidade');
+const MU = require('./multas'); // 12g
+const DI = require('./disciplinar'); // 12h
 
 async function q(p) { const { data, error } = await p; if (error) throw new Error(error.message); return data || []; }
 const DATA = /^\d{4}-\d{2}-\d{2}$/;
-const SECOES = ['dados', 'funcoes', 'documentos', 'epi', 'treinamentos', 'competencias'];
+const SECOES = ['dados', 'funcoes', 'documentos', 'epi', 'treinamentos', 'competencias', 'multas', 'disciplinar']; // 12g: + multas · 12h: + disciplinar
 const MOTIVOS = ['auditoria', 'trabalhista', 'colaborador', 'desligamento', 'outro'];
 const tenta = async (fn, padrao, re) => { try { return await fn(); } catch (e) { if (re.test(String(e.message))) return padrao; throw e; } };
 const dia = (v) => (v ? String(v).slice(0, 10) : null);
@@ -96,6 +98,18 @@ async function montar(supabase, tenantId, colab, { de, ate, secoes = SECOES } = 
     const grupos = new Map();
     for (const a of avals) { if (!grupos.has(a.codigo)) grupos.set(a.codigo, { codigo: a.codigo, nome: a.nome, avaliacoes: [] }); grupos.get(a.codigo).avaliacoes.push({ em: a.avaliado_em, nivel: a.nivel, nivel_esperado: a.nivel_esperado, por: a.avaliado_por_nome, obs: a.obs, evidencia: a.evidencia_nome || null, treinamentos: (a.evidencia_treinamentos || []).map((t) => t.nome) }); }
     out.competencias = { atual: stK.itens.map((i) => ({ tipo: i.tipo, nome: i.nome, situacao: i.situacao, exigido: i.exigido || null, atual: i.atual || null, nivel: i.ultima?.nivel ?? null, nivel_esperado: i.nivel_esperado ?? null })), evolucao: [...grupos.values()] };
+  }
+  if (quer.has('multas')) {
+    const l = await tenta(() => MU.listar(supabase, tenantId, { colaboradorId: colab.id }), [], /multas/);
+    out.multas = { resumo: MU.resumoColaborador(l), lista: l.filter((m) => dentro(m.data_infracao)).sort((a, b) => String(a.data_infracao).localeCompare(String(b.data_infracao)))
+      .map((m) => ({ data: m.data_infracao, hora: m.hora_infracao, veiculo: m.veiculo, auto: m.auto_numero, orgao: m.orgao, infracao: [m.infracao_codigo, m.infracao_descricao].filter(Boolean).join(' — '), gravidade: m.gravidade, pontos: m.pontos, valor: m.valor,
+        status: m.status_nome, valor_pago: m.valor_pago, valor_descontado: m.valor_descontado, parcelas: m.parcelas_desconto, aceite: m.tem_aceite ? { em: m.aceite_em, hash: m.aceite_hash } : null, motivo_cancelamento: m.motivo_cancelamento })) };
+  }
+  if (quer.has('disciplinar')) {
+    const l = await tenta(() => DI.listar(supabase, tenantId, { colaboradorId: colab.id }), [], /medidas_disciplinares/);
+    out.disciplinar = { resumo: DI.resumoColaborador(l), lista: l.filter((m) => dentro(m.data_aplicacao)).sort((a, b) => String(a.data_aplicacao).localeCompare(String(b.data_aplicacao)))
+      .map((m) => ({ data_fato: m.data_fato, data_aplicacao: m.data_aplicacao, tipo: m.tipo_nome, categoria: m.categoria_nome, descricao: m.descricao, dias_suspensao: m.dias_suspensao, suspensao_inicio: m.suspensao_inicio, suspensao_fim: m.suspensao_fim,
+        ciencia: m.ciencia, ciencia_em: m.ciencia_em, ciencia_hash: m.ciencia_hash, testemunhas: m.testemunhas.map((t) => (t.cpf ? `${t.nome} (CPF ${String(t.cpf).replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4')})` : t.nome)), aplicado_por: m.aplicado_por_nome, status: m.status, cancelamento_motivo: m.cancelamento_motivo })) };
   }
   return out;
 }

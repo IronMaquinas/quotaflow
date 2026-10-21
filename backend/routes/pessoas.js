@@ -22,6 +22,8 @@ const TR = require('../services/treinamentos'); // etapa 12e.1
 const PO = require('../services/provaOnline'); // etapa 12e.2b
 const K = require('../services/competencias'); // etapa 12e.3
 const DS = require('../services/dossie'); // etapa 12f
+const MU = require('../services/multas'); // etapa 12g
+const DI = require('../services/disciplinar'); // etapa 12h
 const bcrypt = require('bcryptjs');            // etapa 12e.2b (acesso do colaborador)
 
 const VER = ['admin', 'gestor', 'qualidade', 'operacao'];
@@ -59,6 +61,8 @@ function erro(res, onde, err) {
   if (/secoes|prova|horas|data_nascimento/.test(m) && /does not exist|não existe|schema cache|column/.test(m)) {
     return res.status(409).json({ erro: 'Rode a migration 031 antes (conteúdo, prova e horas de treinamento)' });
   }
+  if (/medidas_disciplinares/.test(m) && /does not exist|não existe|schema cache|relation/.test(m)) return res.status(409).json({ erro: 'Rode a migration 037 antes (medidas disciplinares)' });
+  if (/multas/.test(m) && /does not exist|não existe|schema cache|relation/.test(m)) return res.status(409).json({ erro: 'Rode a migration 036 antes (multas)' });
   if (/nivel_esperado|evidencia_treinamentos|"nivel"|'nivel'|column colaborador_competencias.nivel/.test(m)) return res.status(409).json({ erro: 'Rode a migration 034 antes (nota das competências)' });
   if (/colaborador_competencias|cnh_categoria|competencias|escolaridade/.test(m) && /does not exist|não existe|schema cache|column|relation/.test(m)) return res.status(409).json({ erro: 'Rode a migration 033 antes (competências)' });
   if (/treinamento_tentativas|tentativas_extra|link_token|link_ativo/.test(m)) return res.status(409).json({ erro: 'Rode a migration 032 antes (prova online)' });
@@ -463,6 +467,8 @@ router.get('/colaboradores/:id/ficha', exigirVer, async (req, res) => {
       treinamentos: trein ? { itens: trein.itens, resumo: trein.resumo, horas: trein.horas || null } : null,
       selo: CF.selo({ funcaoLigada: !!f.funcao, docs: f.resumo, epi: epi?.resumo, trein: trein?.resumo, comp: comp?.resumo }),
       competencias: comp ? { itens: comp.itens, resumo: comp.resumo } : null,
+      disciplinar: podeEditar(req) ? await (async () => { try { const l = await DI.listar(supabase, req.tenantId, { colaboradorId: c.id }); return { lista: l.slice(0, 20), resumo: DI.resumoColaborador(l) }; } catch (e) { if (/medidas_disciplinares/.test(String(e.message))) return null; throw e; } })() : null, // 12h (LGPD: só quem edita)
+      multas: await (async () => { try { const l = await MU.listar(supabase, req.tenantId, { colaboradorId: c.id }); return { lista: l.slice(0, 20), resumo: MU.resumoColaborador(l) }; } catch (e) { if (/multas/.test(String(e.message))) return null; throw e; } })(), // 12g
       colaborador_comp: { escolaridade: c.escolaridade ?? null, cnh_categoria: c.cnh_categoria ?? null },
       colaborador: { id: c.id, nome: c.nome, situacao: c.situacao, funcao_id: c.funcao_id, funcao: c.funcao },
       funcao: f.funcao ? { id: f.funcao.id, nome: f.funcao.nome, descritivo: f.funcao.descritivo, requisitos: f.funcao.requisitos, cbo: f.funcao.cbo || null, setor: f.funcao.setor || null, escolaridade: f.funcao.escolaridade || null, riscos: f.funcao.riscos || [], responde_a: f.funcao.responde_a || null } : null,
@@ -743,6 +749,48 @@ router.get('/competencias/:id/evidencia', exigirVer, async (req, res) => {
     res.json(r);
   } catch (err) { erro(res, 'competencias', err); }
 });
+
+// ─── 12g: multas de trânsito ─────────────────────────────────────────────
+const quem = async (req) => { const u = await usuarioDoTenant(req, req.userId).catch(() => null); return { usuarioId: req.userId, usuarioNome: u?.nome || req.userEmail || null }; };
+const multaOu404 = async (req) => { const m = await MU.multaDoTenant(supabase, req.tenantId, req.params.id); if (!m) throw Object.assign(new Error('Multa não encontrada'), { status: 404 }); return m; };
+router.get('/multas', exigirVer, responderTR(async (req) => {
+  const eqs = await q(supabase.from('equipamentos').select('*').eq('tenant_id', req.tenantId)).catch(() => []);
+  const us = (await q(supabase.from('usuarios').select('*').eq('tenant_id', req.tenantId))).filter((u) => u.ativo !== false && u.ativo !== 0 && u.perfil !== 'colaborador');
+  return { multas: await MU.listar(supabase, req.tenantId), gravidades: MU.GRAVIDADES, status: MU.STATUS_NOME, prazo_indicacao_dias: MU.PRAZO_INDICACAO_DIAS, pode_editar: podeEditar(req),
+    equipamentos: eqs.filter((e) => e.ativo !== false).map((e) => ({ id: e.id, tag: e.tag, nome: e.nome })).sort((a, b) => String(a.tag || a.nome).localeCompare(String(b.tag || b.nome))),
+    usuarios: us.map((u) => ({ id: u.id, nome: u.nome })).sort((a, b) => String(a.nome).localeCompare(String(b.nome))) };
+}));
+router.post('/multas', exigirEditar, responderTR(async (req) => MU.criar(supabase, req.tenantId, await quem(req), req.body)));
+router.put('/multas/:id', exigirEditar, responderTR(async (req) => MU.editar(supabase, req.tenantId, await quem(req), await multaOu404(req), req.body)));
+router.post('/multas/:id/status', exigirEditar, responderTR(async (req) => MU.mudarStatus(supabase, req.tenantId, await quem(req), await multaOu404(req), req.body)));
+router.get('/multas/:id/arquivo', exigirVer, responderTR(async (req) => { const m = await multaOu404(req); if (!m.arquivo_path) return { status: 404, erro: 'Sem notificação anexa' }; return { url: await D.linkArquivo(supabase, m.arquivo_path), nome: m.arquivo_nome }; }));
+router.get('/multas/:id/termo', exigirVer, responderTR(async (req) => MU.termoAssinado(supabase, req.tenantId, await multaOu404(req))));
+router.get('/multas/:id/previa-termo', exigirEditar, responderTR(async (req) => ({ termo: MU.termoDesconto(await multaOu404(req), { valor: Number(req.query.valor) || 0, parcelas: parseInt(req.query.parcelas, 10) || 1 }) })));
+router.delete('/multas/:id', exigirEditar, responderTR(async (req) => { // só cadastro errado (ainda "recebida")
+  const m = await multaOu404(req);
+  if (m.status !== 'recebida') return { status: 400, erro: 'Só dá para excluir multa ainda "Recebida" — depois disso, use Cancelada' };
+  if (m.tarefa_id) await supabase.from('tarefas').delete().eq('id', m.tarefa_id).eq('tenant_id', req.tenantId);
+  const { error } = await supabase.from('multas').delete().eq('id', m.id).eq('tenant_id', req.tenantId);
+  if (error) throw new Error(error.message);
+  if (m.arquivo_path) await D.removerArquivo(supabase, m.arquivo_path);
+  return { ok: true };
+}));
+
+// ─── 12h: medidas disciplinares (LGPD: só admin, gestor, qualidade) ─────────
+router.get('/disciplinar', exigirEditar, responderTR(async (req) => {
+  const lista = await DI.listar(supabase, req.tenantId);
+  const porColab = new Map();
+  for (const m of lista) { const k = String(m.colaborador_id); if (!porColab.has(k)) porColab.set(k, []); porColab.get(k).push(m); }
+  const resumos = Object.fromEntries([...porColab.entries()].map(([k, l]) => [k, DI.resumoColaborador(l)]));
+  return { medidas: lista, resumos, tipos: DI.TIPOS, categorias: DI.CATEGORIAS };
+}));
+router.get('/disciplinar/sugestao/:colab', exigirEditar, responderTR(async (req) => ({ ...DI.resumoColaborador(await DI.listar(supabase, req.tenantId, { colaboradorId: req.params.colab })) })));
+router.post('/disciplinar/previa', exigirEditar, responderTR((req) => DI.previa(supabase, req.tenantId, req.body || {})));
+router.post('/disciplinar', exigirEditar, responderTR(async (req) => DI.criar(supabase, req.tenantId, await quem(req), req.body)));
+router.post('/disciplinar/:id/ciencia', exigirEditar, responderTR(async (req) => DI.colherCiencia(supabase, req.tenantId, await quem(req), req.params.id, req.body))); // 12h.1
+router.post('/disciplinar/:id/cancelar', exigirEditar, responderTR(async (req) => DI.cancelar(supabase, req.tenantId, await quem(req), req.params.id, req.body?.motivo)));
+router.get('/disciplinar/:id/documento', exigirEditar, responderTR((req) => DI.documento(supabase, req.tenantId, req.params.id)));
+router.get('/disciplinar/:id/arquivo', exigirEditar, responderTR((req) => DI.linkArquivo(supabase, req.tenantId, req.params.id)));
 
 // ─── 12f: dossiê do colaborador (LGPD: só admin, gestor, qualidade; cada geração fica registrada) ──────
 router.post('/colaboradores/:id/dossie', exigirEditar, async (req, res) => {

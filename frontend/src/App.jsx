@@ -2092,12 +2092,13 @@ function TelaPlanoAcao({ tarefas, setTarefas, onVoltar }) {
   const total = tarefas.dados.length;
   const concluidas = tarefas.dados.filter(t=>t.status==="concluida").length;
   const emAndamento = tarefas.dados.filter(t=>t.status==="em_andamento").length;
-  const atrasadas = tarefas.dados.filter(t=>t.status!=="concluida"&&t.status!=="cancelada"&&t.prazo&&new Date(t.prazo)<new Date()).length;
+  const atrasadas = tarefas.dados.filter(t=>t.status!=="concluida"&&t.status!=="cancelada"&&t.prazo&&String(t.prazo).slice(0,10)<new Date(Date.now()-3*3600000).toISOString().slice(0,10)).length; // 12h: compara só a data
   const pctConclusao = total ? Math.round(concluidas/total*100) : 0;
 
   const fmtDataPrazo = (d) => {
     if (!d) return "—";
-    const dt = new Date(d);
+    // 12h: "2026-11-05" (só data) virava 04/11 no fuso de Brasília (lido como UTC) — monta a data no horário local
+    const dt = /^\d{4}-\d{2}-\d{2}$/.test(String(d)) ? new Date(Number(String(d).slice(0, 4)), Number(String(d).slice(5, 7)) - 1, Number(String(d).slice(8, 10))) : new Date(d);
     const hoje = new Date();
     hoje.setHours(0,0,0,0);
     const diff = Math.ceil((dt-hoje)/86400000);

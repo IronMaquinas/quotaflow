@@ -19,6 +19,7 @@ const SITUACAO = {
   documento:   { l: "Documento vence", c: "#14b8a6", peso: 0.5 }, // 12c: camada Documentos
   epi:         { l: "EPI (troca / CA)", c: "#f97316", peso: 0.4 }, // 12d.3: camada 🦺 EPI
   treino:      { l: "Treinamento", c: "#ec4899", peso: 0.45 }, // 12e.1: camada 🎓 Treinamentos
+  multa:       { l: "Multa (prazo)", c: "#dc2626", peso: 0.45 }, // 12g: camada 🚦 Multas
   prevista:    { l: "Prevista (sem OS)", c: "#a78bfa", peso: 0 }, // 12b.4: ocorrência de plano ainda sem OS (roxo do selo 🔁)
 };
 const CATEGORIA = { corretiva: "Corretiva", preventiva: "Preventiva", preditiva: "Preditiva" };
@@ -67,7 +68,7 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
   const [podeEditarPlano, setPodeEditarPlano] = useState(false); // 12b.4
   const [gerandoPrev, setGerandoPrev] = useState(null);
   const [dialogo, setDialogo] = useState(null);
-  const [camadas, setCamadas] = useState({ manutencao: true, documentos: true, epi: true, treinamentos: true }); // 12c · 12d.3: + EPI · 12e.1: + treinamentos // 12b.6: { tipo: 'sem_modelo' | 'erro', msg, o } — modal do app em vez de window.confirm/alert
+  const [camadas, setCamadas] = useState({ manutencao: true, documentos: true, epi: true, treinamentos: true, multas: true }); // 12g: + multas // 12c · 12d.3: + EPI · 12e.1: + treinamentos // 12b.6: { tipo: 'sem_modelo' | 'erro', msg, o } — modal do app em vez de window.confirm/alert
   const [osTransf, setOsTransf] = useState(null);
   const [aviso, setAviso] = useState("");
 
@@ -120,18 +121,25 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
     inicio: `${e.data}T12:00:00-03:00`, fim: `${e.data}T12:00:00-03:00`,
   })), [dados]);
 
+  // 12g: prazo de indicação do condutor e vencimento das multas abertas (camada própria; fora da contagem de OS)
+  const multasCal = useMemo(() => (dados.multas || []).map((e) => ({
+    id: `mu-${e.id}`, documento: true, multa: true, doc: e, numero: "Multa", descricao: `${e.titulo} — ${e.de}`, situacao: "multa",
+    inicio: `${e.data}T12:00:00-03:00`, fim: `${e.data}T12:00:00-03:00`,
+  })), [dados]);
+
   const lista = useMemo(() => [
     ...(camadas.manutencao ? [...(dados.os || []), ...previstas] : []),
     ...(camadas.documentos ? documentos : []),
     ...(camadas.epi ? epis : []),
     ...(camadas.treinamentos ? treinos : []),
+    ...(camadas.multas ? multasCal : []),
   ].filter((o) =>
     (!categoria || o.documento || o.categoria === categoria) && (!situacao || o.situacao === situacao) &&
     (!responsavel
       || (responsavel === "eu" && dados.eu && String(o.responsavel_id) === String(dados.eu))
       || (responsavel === "sem" && !o.responsavel_id)
       || String(o.responsavel_id) === responsavel)
-  ), [dados, previstas, documentos, epis, treinos, camadas, categoria, situacao, responsavel]);
+  ), [dados, previstas, documentos, epis, treinos, multasCal, camadas, categoria, situacao, responsavel]);
   const responsaveis = useMemo(() => {
     const m = new Map();
     for (const o of [...(dados.os || []), ...(dados.previstas || [])]) if (o.responsavel_id) m.set(String(o.responsavel_id), o.responsavel || "Usuário");
@@ -145,8 +153,9 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
   }, [lista]);
 
   const totais = useMemo(() => {
-    const t = { planejado: 0, comprometido: 0, realizado: 0, horas: 0, itens: 0, comValor: 0, previsto: 0, nPrevistas: 0, nDocs: 0, nDocsVencidos: 0, nEpi: 0, nEpiVencidos: 0, nTr: 0, nTrVencidos: 0 };
+    const t = { planejado: 0, comprometido: 0, realizado: 0, horas: 0, itens: 0, comValor: 0, previsto: 0, nPrevistas: 0, nDocs: 0, nDocsVencidos: 0, nEpi: 0, nEpiVencidos: 0, nTr: 0, nTrVencidos: 0, nMu: 0, nMuVencidos: 0 };
     for (const o of lista) {
+      if (o.multa) { t.nMu++; if (o.doc.situacao === "vencido") t.nMuVencidos++; continue; } // 12g
       if (o.treino) { t.nTr++; if (o.doc.situacao === "vencido") t.nTrVencidos++; continue; }
       if (o.epi) { t.nEpi++; if (o.doc.situacao === "vencido") t.nEpiVencidos++; continue; }
       if (o.documento) { t.nDocs++; if (o.doc.situacao === "vencido") t.nDocsVencidos++; continue; }
@@ -217,7 +226,7 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
               <div style={{ fontSize: 12, color: ehHoje ? C.accent : C.textSub, fontWeight: ehHoje ? 700 : 500, marginBottom: 4 }}>{d.getDate()}</div>
               {(porDia[k] || []).slice(0, 3).map((o) => (
                 <div key={o.id} style={{ fontSize: 10, background: o.prevista ? `${SITUACAO.prevista.c}1f` : `${SITUACAO[o.situacao].c}22`, borderLeft: `3px ${o.prevista ? "dashed" : "solid"} ${SITUACAO[o.situacao].c}`, color: o.prevista ? "#ddd6fe" : C.text, borderRadius: 3, padding: "2px 5px", marginBottom: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
-                  {o.prevista ? "🔁 " : o.treino ? "🎓 " : o.epi ? "🦺 " : o.documento ? "📄 " : `${o.numero} `}{o.descricao}
+                  {o.prevista ? "🔁 " : o.multa ? "🚦 " : o.treino ? "🎓 " : o.epi ? "🦺 " : o.documento ? "📄 " : `${o.numero} `}{o.descricao}
                 </div>
               ))}
               {qtd > 3 && <div style={{ fontSize: 10, color: C.muted }}>+{qtd - 3}</div>}
@@ -277,6 +286,21 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
         {onAbrirPessoas && (
           <button onClick={() => onAbrirPessoas("epi")} style={{ ...s.btn(false), cursor: "pointer", color: C.accent, padding: "5px 12px", fontSize: 12, marginTop: 8 }}>Ver em Pessoas → 🦺 EPI</button>
         )}
+      </div>
+    );
+  };
+
+  // 12g: cartão da camada 🚦 Multas
+  const cartaoMulta = (o) => {
+    const e = o.doc; const cor = e.situacao === "vencido" ? "#ef4444" : e.situacao === "vence" ? "#f59e0b" : SITUACAO.multa.c;
+    return (
+      <div key={o.id} style={{ ...s.card, padding: 12, marginBottom: 8, borderLeft: `3px solid ${SITUACAO.multa.c}`, background: `${SITUACAO.multa.c}10` }}>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, alignItems: "center" }}>
+          <div style={{ fontWeight: 600, fontSize: 13 }}>🚦 {e.titulo}</div>
+          <span style={s.tag(cor)}>{e.dias < 0 ? `venceu há ${-e.dias} d` : e.dias === 0 ? "hoje" : `em ${e.dias} d`}</span>
+        </div>
+        <div style={{ fontSize: 12, color: C.textSub, marginTop: 4 }}>{e.de} · {e.data.split("-").reverse().join("/")}</div>
+        {onAbrirPessoas && <button onClick={() => onAbrirPessoas("multas")} style={{ ...s.btn(false), cursor: "pointer", color: C.accent, padding: "5px 12px", fontSize: 12, marginTop: 8 }}>Ver em Pessoas → 🚦 Multas</button>}
       </div>
     );
   };
@@ -397,9 +421,9 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
 
       <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
         <span style={{ fontSize: 11, color: C.muted, letterSpacing: "0.06em" }}>CAMADAS</span>
-        {[["manutencao", "🛠 Manutenção"], ["documentos", "📄 Documentos"], ["epi", "🦺 EPI"], ["treinamentos", "🎓 Treinamentos"]].map(([k, l]) => (
+        {[["manutencao", "🛠 Manutenção"], ["documentos", "📄 Documentos"], ["epi", "🦺 EPI"], ["treinamentos", "🎓 Treinamentos"], ["multas", "🚦 Multas"]].map(([k, l]) => (
           <button key={k} onClick={() => setCamadas((c) => ({ ...c, [k]: !c[k] }))} aria-pressed={camadas[k]}
-            style={{ ...s.btn(camadas[k], k === "documentos" ? SITUACAO.documento.c : k === "epi" ? SITUACAO.epi.c : k === "treinamentos" ? SITUACAO.treino.c : C.accent), cursor: "pointer", padding: "4px 12px", fontSize: 12 }}>{camadas[k] ? "✓ " : ""}{l}</button>
+            style={{ ...s.btn(camadas[k], k === "documentos" ? SITUACAO.documento.c : k === "epi" ? SITUACAO.epi.c : k === "treinamentos" ? SITUACAO.treino.c : k === "multas" ? SITUACAO.multa.c : C.accent), cursor: "pointer", padding: "4px 12px", fontSize: 12 }}>{camadas[k] ? "✓ " : ""}{l}</button>
         ))}
       </div>
 
@@ -441,7 +465,7 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
                   </div>
                   {(porDia[k] || []).map((o) => (
                     <div key={o.id} onClick={() => setDiaSel(k)} style={{ fontSize: 11, background: `${SITUACAO[o.situacao].c}22`, borderLeft: `3px solid ${SITUACAO[o.situacao].c}`, borderRadius: 3, padding: "4px 6px", marginBottom: 4, cursor: "pointer" }}>
-                      <div style={{ fontWeight: 600 }}>{o.prevista ? "🔁 Prevista" : o.treino ? "🎓 Treinamento" : o.epi ? "🦺 EPI" : o.documento ? "📄 Vence" : o.numero}</div>
+                      <div style={{ fontWeight: 600 }}>{o.prevista ? "🔁 Prevista" : o.multa ? "🚦 Multa" : o.treino ? "🎓 Treinamento" : o.epi ? "🦺 EPI" : o.documento ? "📄 Vence" : o.numero}</div>
                       <div style={{ color: C.textSub }}>{o.descricao}</div>
                       <div style={{ color: C.muted }}>{o.equipamento || ""}</div>
                     </div>
@@ -465,6 +489,7 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
           {totais.nDocs > 0 && (
             <span style={{ color: SITUACAO.documento.c }}>📄 {totais.nDocs} documento(s) vencendo{totais.nDocsVencidos ? <b style={{ color: "#ef4444" }}> · {totais.nDocsVencidos} já vencido(s)</b> : ""}</span>
           )}
+          {totais.nMu > 0 && <span style={{ color: SITUACAO.multa.c }}>🚦 {totais.nMu} prazo(s) de multa{totais.nMuVencidos ? <b style={{ color: "#ef4444" }}> · {totais.nMuVencidos} vencido(s)</b> : ""}</span>}
           {totais.nTr > 0 && (
             <span style={{ color: SITUACAO.treino.c }}>🎓 {totais.nTr} treinamento(s){totais.nTrVencidos ? <b style={{ color: "#ef4444" }}> · {totais.nTrVencidos} vencido(s)</b> : ""}</span>
           )}
@@ -532,7 +557,7 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
             )}
             {(porDia[diaSel] || []).length === 0
               ? <div style={{ color: C.muted, fontSize: 13 }}>Nenhuma OS programada neste dia.</div>
-              : porDia[diaSel].map((o) => (o.treino ? cartaoTreino(o) : o.epi ? cartaoEpi(o) : o.documento ? cartaoDocumento(o) : o.prevista ? cartaoPrevista(o) : cartaoOS(o)))}
+              : porDia[diaSel].map((o) => (o.multa ? cartaoMulta(o) : o.treino ? cartaoTreino(o) : o.epi ? cartaoEpi(o) : o.documento ? cartaoDocumento(o) : o.prevista ? cartaoPrevista(o) : cartaoOS(o)))}
           </div>
         </div>
       )}

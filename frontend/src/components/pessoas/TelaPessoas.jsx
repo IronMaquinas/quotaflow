@@ -11,6 +11,8 @@ import TelaTreinamentos from "./TelaTreinamentos"; // etapa 12e.1
 import { AcessoColaborador, CardAniversariantes } from "./AcessoColaborador"; // etapa 12e.2b
 import FichaCompetencias from "./FichaCompetencias"; // etapa 12e.3
 import PainelDossie from "./PainelDossie"; // etapa 12f
+import TelaMultas from "./TelaMultas"; // etapa 12g
+import TelaDisciplinar from "./TelaDisciplinar"; // etapa 12h
 import EditorCompetencias, { limparCompetencias } from "../shared/EditorCompetencias"; // etapa 12e.3
 
 const ALVO = { colaborador: "Pessoa", equipamento: "Equipamento", empresa: "Empresa" };
@@ -321,7 +323,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       <h2 style={{ margin: "0 0 4px", fontSize: 20, fontWeight: 700 }}>👷 Pessoas e documentos</h2>
       <div style={{ fontSize: 12, color: C.textSub, marginBottom: 12 }}>Colaboradores (com ou sem login no sistema) e documentos com vencimento de pessoas, equipamentos e da empresa.</div>
       <div style={{ borderBottom: `1px solid ${C.border}`, marginBottom: 18 }}>
-        {tab("documentos", "📄 Documentos")}{tab("colaboradores", "👥 Colaboradores")}{tab("funcoes", "👔 Funções")}{tab("epi", "🦺 EPI")}{tab("treinamentos", "🎓 Treinamentos")}
+        {tab("documentos", "📄 Documentos")}{tab("colaboradores", "👥 Colaboradores")}{tab("funcoes", "👔 Funções")}{tab("epi", "🦺 EPI")}{tab("treinamentos", "🎓 Treinamentos")}{tab("multas", "🚦 Multas")}{editar && tab("disciplinar", "⚖ Disciplinar")}
       </div>
 
       {aviso && <div style={{ ...s.card, padding: 12, marginBottom: 12, borderColor: C.success, color: C.success }}>✓ {aviso}</div>}
@@ -493,6 +495,8 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       )}
 
       {/* ─── Treinamentos (12e.1) ─── */}
+      {aba === "disciplinar" && editar && <TelaDisciplinar C={C} s={s} modal={modal} campo={campo} colabs={colabs} onAviso={setAviso} onErro={setErro} />}
+      {aba === "multas" && <TelaMultas C={C} s={s} modal={modal} campo={campo} colabs={colabs} onAviso={setAviso} onErro={setErro} />}
       {aba === "treinamentos" && <TelaTreinamentos C={C} s={s} modal={modal} campo={campo} colabs={colabs} onAviso={setAviso} onErro={setErro} onMudou={carregar} />}
 
       {/* ─── EPI (12d.1) ─── */}
@@ -714,6 +718,43 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
                   })}
                 </div>
                 <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Para entregar ou trocar: aba 🦺 EPI → 👷 Gestão de funcionários.</div>
+              </div>
+            )}
+            {ficha.disciplinar && ficha.disciplinar.lista.length > 0 && ( /* 12h — só quem edita recebe */
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>⚖ Disciplinar
+                  <span style={{ fontWeight: 400, fontSize: 12, color: C.textSub }}> · 12 meses: {ficha.disciplinar.resumo.por_tipo_12m.orientacao} orientação(ões), {ficha.disciplinar.resumo.por_tipo_12m.advertencia} advertência(s), {ficha.disciplinar.resumo.por_tipo_12m.suspensao} suspensão(ões){ficha.disciplinar.resumo.dias_suspensao_12m ? ` (${ficha.disciplinar.resumo.dias_suspensao_12m} d)` : ""}</span>
+                </div>
+                <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
+                  {ficha.disciplinar.lista.map((m, i) => (
+                    <div key={m.id} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", padding: "7px 12px", borderBottom: i < ficha.disciplinar.lista.length - 1 ? `1px solid ${C.border}` : "none", fontSize: 12, opacity: m.status === "cancelada" ? 0.5 : 1 }}>
+                      <span style={{ width: 74 }}>{String(m.data_aplicacao).slice(0, 10).split("-").reverse().join("/")}</span>
+                      <span style={s.tag({ orientacao: "#3b82f6", advertencia: "#f59e0b", suspensao: "#ef4444", justa_causa: "#7f1d1d" }[m.tipo])}>{m.tipo_nome}{m.dias_suspensao ? ` ${m.dias_suspensao} d` : ""}</span>
+                      <span style={{ flex: "2 1 200px", color: C.textSub }}>{m.categoria_nome} · {m.descricao.length > 80 ? `${m.descricao.slice(0, 80)}…` : m.descricao}</span>
+                      {m.status === "cancelada" && <span style={s.tag(C.muted)}>Cancelada</span>}
+                      {m.status === "vigente" && m.ciencia === "pendente" && <span style={s.tag("#f59e0b")}>⏳ aguardando ciência</span>}
+                    </div>
+                  ))}
+                </div>
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>💡 Próxima sugerida: {ficha.disciplinar.resumo.sugestao.tipo === "orientacao" ? "orientação" : ficha.disciplinar.resumo.sugestao.tipo === "advertencia" ? "advertência escrita" : ficha.disciplinar.resumo.sugestao.tipo === "suspensao" ? "suspensão" : "avaliar justa causa com o jurídico"} — {ficha.disciplinar.resumo.sugestao.motivo}. Detalhes: aba ⚖ Disciplinar.</div>
+              </div>
+            )}
+            {ficha.multas && ficha.multas.lista.length > 0 && ( /* 12g */
+              <div style={{ marginTop: 14 }}>
+                <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>🚦 Multas
+                  <span style={{ fontWeight: 400, fontSize: 12, color: C.textSub }}> · {ficha.multas.resumo.total_12m} nos últimos 12 meses · {ficha.multas.resumo.pontos_12m} pontos{ficha.multas.resumo.abertas ? <> · <span style={{ color: "#f59e0b" }}>{ficha.multas.resumo.abertas} aberta(s)</span></> : ""}{ficha.multas.resumo.descontado_total ? ` · descontado: ${Number(ficha.multas.resumo.descontado_total).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}` : ""}</span>
+                </div>
+                <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>
+                  {ficha.multas.lista.map((m, i) => (
+                    <div key={m.id} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "center", padding: "7px 12px", borderBottom: i < ficha.multas.lista.length - 1 ? `1px solid ${C.border}` : "none", fontSize: 12, opacity: m.status === "cancelada" ? 0.55 : 1 }}>
+                      <span style={{ width: 74 }}>{String(m.data_infracao).slice(0, 10).split("-").reverse().join("/")}</span>
+                      <span style={{ flex: "2 1 200px" }}>{m.infracao_descricao || m.infracao_codigo || "Infração"}{m.pontos != null ? <span style={{ color: C.muted }}> · {m.pontos} pts</span> : ""}<span style={{ color: C.muted }}> · {m.veiculo}</span></span>
+                      <span>{m.valor != null ? Number(m.valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : "—"}</span>
+                      <span style={s.tag(m.aberta ? "#f59e0b" : m.status === "cancelada" ? C.muted : "#22c55e")}>{m.status_nome}{m.tem_aceite ? " ✍" : ""}</span>
+                    </div>
+                  ))}
+                </div>
+                <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Detalhes e situação: aba 🚦 Multas.</div>
               </div>
             )}
             {ficha.competencias && <FichaCompetencias C={C} s={s} colaboradorId={ficha.colaborador.id} dados={ficha.competencias} podeEditar={ficha.pode_editar}

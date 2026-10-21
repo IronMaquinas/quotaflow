@@ -3,7 +3,7 @@
 // Dossiê do colaborador — HTML "printável" (mesmo padrão do gerarFichaEpi.js: aba nova + window.print() → "Salvar como PDF").
 // Capa (empresa, colaborador, período, código de verificação, quem gerou e por quê — LGPD) e as seções escolhidas:
 // 1 Dados e selo · 2 Função e histórico de funções · 3 Documentos · 4 EPIs (com assinatura) · 5 Treinamentos (horas,
-// notas, tentativas, certificados) · 6 Competências (situação atual e EVOLUÇÃO nota a nota).
+// notas, tentativas, certificados) · 6 Competências (situação atual e EVOLUÇÃO nota a nota) · 7 Multas (12g).
 
 const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const dBR = (s) => (s ? String(s).slice(0, 10).split("-").reverse().join("/") : "—");
@@ -133,6 +133,31 @@ export function gerarHtmlDossie(d) {
           </tbody></table></div>`).join("") : `<div class="vazio">Nenhuma avaliação no período.</div>`}`));
   }
 
+  // 7. multas (12g)
+  if (tem("multas")) {
+    const mu = d.multas || { lista: [], resumo: {} };
+    const brl = (v) => (v == null ? "—" : Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
+    const r = mu.resumo || {};
+    partes.push(sec("Multas de trânsito", `
+      <div class="bloco" style="white-space:normal"><b>Últimos 12 meses:</b> ${r.total_12m || 0} multa(s) · ${r.pontos_12m || 0} ponto(s)${r.abertas ? ` · <span class="amar">${r.abertas} em aberto</span>` : ""} · <b>Total descontado do colaborador:</b> ${brl(r.descontado_total || 0)}</div>
+      ${mu.lista.length ? `<table><thead><tr><th>Data</th><th>Veículo · auto · órgão</th><th>Infração</th><th>Pts</th><th>Valor</th><th>Situação</th></tr></thead><tbody>
+        ${mu.lista.map((m) => `<tr><td>${dBR(m.data)}${m.hora ? ` ${esc(m.hora)}` : ""}</td><td>${esc([m.veiculo, m.auto && `auto ${m.auto}`, m.orgao].filter(Boolean).join(" · "))}</td><td>${esc(m.infracao || "—")}</td><td>${m.pontos ?? "—"}</td><td>${brl(m.valor)}</td>
+          <td>${esc(m.status)}${m.valor_pago != null ? `<br/>pago ${brl(m.valor_pago)}` : ""}${m.valor_descontado != null ? `<br/>descontado ${brl(m.valor_descontado)}${m.parcelas > 1 ? ` em ${m.parcelas}x` : ""}` : ""}${m.aceite ? `<br/><span class="ok">✍ aceite assinado ${dataHora(m.aceite.em)}</span><div class="hash">${esc(m.aceite.hash)}</div>` : ""}${m.motivo_cancelamento ? `<br/>${esc(m.motivo_cancelamento)}` : ""}</td></tr>`).join("")}
+        </tbody></table>` : `<div class="vazio">Nenhuma multa no período.</div>`}`));
+  }
+
+  // 8. disciplinar (12h)
+  if (tem("disciplinar")) {
+    const di = d.disciplinar || { lista: [], resumo: { por_tipo_12m: {} } };
+    const p = di.resumo.por_tipo_12m || {};
+    partes.push(sec("Medidas disciplinares", `
+      <div class="bloco" style="white-space:normal"><b>Últimos 12 meses:</b> ${p.orientacao || 0} orientação(ões) · ${p.advertencia || 0} advertência(s) · ${p.suspensao || 0} suspensão(ões)${di.resumo.dias_suspensao_12m ? ` (${di.resumo.dias_suspensao_12m} dia(s))` : ""}</div>
+      ${di.lista.length ? `<table><thead><tr><th>Aplicada</th><th>Medida</th><th>Motivo · fato</th><th>Ciência</th><th>Por</th></tr></thead><tbody>
+        ${di.lista.map((m) => `<tr${m.status === "cancelada" ? ' style="opacity:.55"' : ""}><td>${dBR(m.data_aplicacao)}<br/><span style="color:#666">fato ${dBR(m.data_fato)}</span></td><td>${esc(m.tipo)}${m.dias_suspensao ? `<br/>${m.dias_suspensao} d (${dBR(m.suspensao_inicio)} a ${dBR(m.suspensao_fim)})` : ""}${m.status === "cancelada" ? `<br/><span class="ruim">CANCELADA: ${esc(m.cancelamento_motivo || "")}</span>` : ""}</td>
+          <td><b>${esc(m.categoria)}</b><br/>${esc(m.descricao)}</td><td>${m.ciencia === "assinada" ? `✍ assinada ${dataHora(m.ciencia_em)}<div class="hash">${esc(m.ciencia_hash || "")}</div>` : m.ciencia === "recusa" ? `recusou — testemunhas: ${esc(m.testemunhas.join(", "))}` : m.ciencia === "pendente" ? `<span class="amar">aguardando ciência</span>` : m.ciencia === "papel" ? `assinou no papel ${dataHora(m.ciencia_em)} (anexo no sistema)` : "verbal (registrada)"}</td><td>${esc(m.aplicado_por || "—")}</td></tr>`).join("")}
+        </tbody></table>` : `<div class="vazio">Nenhuma medida no período.</div>`}`));
+  }
+
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Dossiê — ${esc(c.nome)}</title><style>${CSS}</style></head><body><div class="pagina">
     <div class="capa">
       <div style="font-size:14px;font-weight:700">${esc(e.razao_social || e.nome)}</div><div class="linha">${e.cnpj ? `CNPJ ${esc(fmtCNPJ(e.cnpj))}` : ""}</div>
@@ -144,7 +169,7 @@ export function gerarHtmlDossie(d) {
         <b>Código de verificação:</b> ${esc(d.codigo)}<br/>
         <b>Emitido em:</b> ${dataHora(d.gerado_em)}${d.gerado_por_nome ? ` · <b>por:</b> ${esc(d.gerado_por_nome)}` : ""}<br/>
         <b>Finalidade:</b> ${esc(MOTIVO[d.motivo] || d.motivo || "—")}<br/>
-        <b>Conteúdo:</b> ${(d.secoes || []).map((s) => ({ dados: "Dados e selo", funcoes: "Função e histórico", documentos: "Documentos", epi: "EPIs", treinamentos: "Treinamentos", competencias: "Competências" }[s])).join(" · ")}
+        <b>Conteúdo:</b> ${(d.secoes || []).map((s) => ({ dados: "Dados e selo", funcoes: "Função e histórico", documentos: "Documentos", epi: "EPIs", treinamentos: "Treinamentos", competencias: "Competências", multas: "Multas", disciplinar: "Disciplinar" }[s])).join(" · ")}
       </div>
       <div class="confid">DOCUMENTO CONFIDENCIAL — contém dados pessoais (LGPD, Lei 13.709/2018). Uso restrito à finalidade indicada; a emissão fica registrada no sistema (quem, quando e por quê). Não compartilhe além do necessário.</div>
     </div>
