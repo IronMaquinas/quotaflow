@@ -716,7 +716,6 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
                 <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Para entregar ou trocar: aba 🦺 EPI → 👷 Gestão de funcionários.</div>
               </div>
             )}
-            {ficha.pode_editar && <PainelDossie C={C} s={s} colaboradorId={ficha.colaborador.id} onErro={setErro} onAviso={setAviso} />}
             {ficha.competencias && <FichaCompetencias C={C} s={s} colaboradorId={ficha.colaborador.id} dados={ficha.competencias} podeEditar={ficha.pode_editar}
               onMudou={() => abrirFicha(ficha.colaborador.id)} onAviso={setAviso} onErro={setErro}
               onEditarCadastro={() => { const c = colabs.find((x) => String(x.id) === String(ficha.colaborador.id)); if (c) { setFicha(null); editarColab(c); } }} />}
@@ -764,8 +763,9 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
             )}
           </>
         )}
-        <div style={{ display: "flex", marginTop: 18 }}>
-          <button onClick={() => setFicha(null)} style={{ ...s.btn(false), cursor: "pointer", flex: 1, color: C.text }}>Fechar</button>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 18 }}>
+          {ficha.pode_editar && <PainelDossie C={C} s={s} colaboradorId={ficha.colaborador.id} onErro={setErro} onAviso={setAviso} rodape />}
+          <button onClick={() => setFicha(null)} style={{ ...s.btn(true), cursor: "pointer", flex: 1 }}>Fechar</button>
         </div>
       </>, () => setFicha(null), 620)}
 

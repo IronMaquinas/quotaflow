@@ -11,7 +11,8 @@ const MOTIVOS = [["auditoria", "Auditoria (ISO / cliente)"], ["trabalhista", "Pr
 const dataBR = (s) => (s ? String(s).slice(0, 10).split("-").reverse().join("/") : "—");
 const hoje = () => new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
 
-export default function PainelDossie({ C, s, colaboradorId, onErro, onAviso }) {
+// rodape = botão em destaque ao lado do "Fechar"; o painel abre por cima do rodapé (ocupa a linha inteira)
+export default function PainelDossie({ C, s, colaboradorId, onErro, onAviso, rodape = false }) {
   const [aberto, setAberto] = useState(false);
   const [f, setF] = useState({ tipo: "ano", de: "", ate: hoje(), secoes: SECOES.map(([k]) => k), motivo: "auditoria", motivo_obs: "" });
   const [regs, setRegs] = useState(null);
@@ -27,11 +28,13 @@ export default function PainelDossie({ C, s, colaboradorId, onErro, onAviso }) {
     } catch (e) { try { janela?.close(); } catch { /* ok */ } onErro(e.message); }
     finally { setGerando(false); }
   };
-  if (!aberto) return <button onClick={abrir} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 12px", fontSize: 12, color: C.text }}>📑 Gerar dossiê</button>;
+  if (!aberto) return rodape
+    ? <button onClick={abrir} style={{ ...s.btn(false), cursor: "pointer", flex: 1, color: C.text }}>📑 Gerar dossiê</button>
+    : <button onClick={abrir} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 12px", fontSize: 12, color: C.text }}>📑 Gerar dossiê</button>;
   const ok = !gerando && f.secoes.length > 0 && (f.tipo !== "intervalo" || (f.de && f.ate && f.de <= f.ate));
   const op = (k, l) => <label key={k} style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}><input type="radio" checked={f.tipo === k} onChange={() => setF({ ...f, tipo: k })} />{l}</label>;
   return (
-    <div style={{ border: `1px dashed ${C.accent}`, borderRadius: 8, padding: 12, marginTop: 12, fontSize: 12 }}>
+    <div style={{ border: `1px dashed ${C.accent}`, borderRadius: 8, padding: 12, marginTop: rodape ? 0 : 12, fontSize: 12, ...(rodape ? { flex: "1 1 100%", order: -1 } : {}) }}>
       <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
         <b style={{ flex: 1, fontSize: 13 }}>📑 Dossiê do colaborador</b>
         <button onClick={() => setAberto(false)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 16 }}>×</button>
