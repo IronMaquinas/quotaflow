@@ -11,6 +11,7 @@ import { useState, useEffect, useCallback } from "react";
 import apiService from "../../services/apiService";
 import ModalDetalheNC from "./ModalDetalheNC";
 import ModalNovaNC from "./ModalNovaNC";
+import TelaAutuacoes from "./TelaAutuacoes"; // etapa 12i — autuações da empresa (requisito legal)
 
 // ─────────────────────────────────────────────────────────────────────────
 // CONSTANTES DE UI
@@ -55,6 +56,9 @@ export default function TelaNaoConformidades({ C, s, fmtD, onIrParaOS, initialNC
   const [ncAbertaId, setNcAbertaId] = useState(null);
   // M4.5: abertura manual de NC (modal novo)
   const [novaNCAberta, setNovaNCAberta] = useState(false);
+  // 12i: aba "🏛 Autuações" (requisito legal da empresa) + NC de causa raiz aberta a partir dela
+  const [vista, setVista] = useState("ncs");
+  const [ncAut, setNcAut] = useState(null);
 
   // M4.3-e: deep link interno. Quando TelaRecebimento chama onIrParaNC,
   // App seta initialNCId e troca de tela. Aqui consumimos 1x e
@@ -103,14 +107,25 @@ export default function TelaNaoConformidades({ C, s, fmtD, onIrParaOS, initialNC
             QUALIDADE
           </div>
           <div style={{ fontSize: 22, fontWeight: 700, color: C.text }}>
-            Não Conformidades
+            Não conformidades e autuações
           </div>
         </div>
-        <button
-          onClick={() => setNovaNCAberta(true)}
-          style={{ ...s.btn(true), padding: "9px 20px", fontSize: 12 }}>
-          ➕ Nova NC
-        </button>
+      </div>
+
+      {/* 12i: abas */}
+      <div style={{ display: "flex", gap: 0, borderBottom: `1px solid ${C.border}`, marginBottom: 16 }}>
+        {[["ncs", "⚠️ Não conformidades"], ["autuacoes", "🏛 Autuações (requisito legal)"]].map(([k, l]) => (
+          <button key={k} onClick={() => setVista(k)} style={{ background: "none", border: "none", borderBottom: `2px solid ${vista === k ? C.accent : "transparent"}`, color: vista === k ? C.text : C.textSub, padding: "8px 14px", fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+        ))}
+      </div>
+
+      {vista === "autuacoes" ? (<>
+        <TelaAutuacoes C={C} s={s} onAbrirNC={(id) => { setNcAut(id); carregar(); }} />
+        {ncAut && <ModalDetalheNC ncId={ncAut} onFechar={() => setNcAut(null)} onAtualizar={carregar} onIrParaOS={onIrParaOS} s={s} C={C} fmtD={fmtD} />}
+      </>) : (<>
+      {/* 12i: "Nova NC" dentro da aba (igual ao "Nova autuação") */}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 12 }}>
+        <button onClick={() => setNovaNCAberta(true)} style={{ ...s.btn(true), padding: "9px 20px", fontSize: 12 }}>＋ Nova NC</button>
       </div>
 
       {/* KPIs */}
@@ -510,6 +525,7 @@ export default function TelaNaoConformidades({ C, s, fmtD, onIrParaOS, initialNC
           </div>
         );
       })}
+      </>)}
     </div>
   );
 }

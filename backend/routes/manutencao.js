@@ -13,6 +13,7 @@ const documentosSrv = require('../services/documentos'); // 12c: camada Document
 const epiEntregasSrv = require('../services/epiEntregas'); // 12d.3: camada 🦺 EPI no calendário
 const treinamentosSrv = require('../services/treinamentos'); // 12e.1: camada 🎓 Treinamentos no calendário
 const multasSrv = require('../services/multas'); // 12g: camada 🚦 Multas no calendário
+const autuacoesSrv = require('../services/autuacoes'); // 12i: camada 🏛 Autuações no calendário
 
 const DATA = /^\d{4}-\d{2}-\d{2}$/;
 const PODE_EDITAR = ['admin', 'gestor', 'operacao'];
@@ -149,8 +150,14 @@ router.get('/calendario', exigirTenant, async (req, res) => {
     let multas = [];
     try { multas = await multasSrv.eventosNoIntervalo(supabase, req.tenantId, de, ate, { equipamentoId }); }
     catch (e) { if (!/multas|relation|does not exist|schema cache/.test(e.message)) console.warn('⚠ [manutencao/calendario] multas indisponíveis:', e.message); }
+    // 12i: camada "Autuações" — prazos de defesa/recurso e vencimento (sem a migration 039, vem vazio)
+    let autuacoes = [];
+    if (!equipamentoId) {
+      try { autuacoes = await autuacoesSrv.eventosNoIntervalo(supabase, req.tenantId, de, ate); }
+      catch (e) { if (!/autuacoes|relation|does not exist|schema cache/.test(e.message)) console.warn('⚠ [manutencao/calendario] autuações indisponíveis:', e.message); }
+    }
     res.json({ de, ate, valor_hora: dados.valorHora || null, eu: req.userId || null, ...cal,
-      previstas, totais_previstas: { quantidade: previstas.length, total: totalPrevisto }, documentos, epi, treinamentos, multas });
+      previstas, totais_previstas: { quantidade: previstas.length, total: totalPrevisto }, documentos, epi, treinamentos, multas, autuacoes });
   } catch (err) { erro500(res, 'calendario', err); }
 });
 
