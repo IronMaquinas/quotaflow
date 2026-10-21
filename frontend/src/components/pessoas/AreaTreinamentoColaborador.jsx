@@ -8,6 +8,14 @@
 import { useState, useEffect } from "react";
 import TextoAula from "../shared/TextoAula";
 import { embedVideo } from "../shared/EditorConteudoTreinamento";
+import { abrirCertificado, prepararJanela } from "../../utils/gerarCertificado"; // 12e.2c
+
+/** 12e.2c: baixa o certificado (api.certificado(turmaId) → dados) */
+export async function baixarCertificado(api, turmaId, onErro) {
+  const janela = prepararJanela("Gerando o certificado…");
+  try { abrirCertificado(await api.certificado(turmaId), janela); }
+  catch (e) { try { janela?.close(); } catch { /* ok */ } onErro?.(e.message); }
+}
 
 export const CORES = { bg: "#0a0e14", surface: "#111722", border: "#1e2535", accent: "#3b82f6", success: "#22c55e", warn: "#f59e0b", danger: "#ef4444", muted: "#64748b", text: "#e2e8f0", textSub: "#94a3b8" };
 const C = CORES;
@@ -67,12 +75,13 @@ export default function AulaEProva({ api, turmaId, onVoltar, onMudou }) {
       {onVoltar && <button onClick={onVoltar} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 13, padding: 0, marginBottom: 10, fontFamily: "inherit" }}>← Meus treinamentos</button>}
       <div style={{ fontSize: 20, fontWeight: 700 }}>🎓 {d.treinamento}</div>
       <div style={{ fontSize: 13, color: C.textSub, margin: "4px 0 14px" }}>
-        {d.norma ? `${d.norma} · ` : ""}{d.carga_horaria ? `${fmtH(d.carga_horaria)} · ` : ""}{d.tem_prova ? `prova: ${d.perguntas} perguntas, mínimo ${d.nota_minima}%` : "sem prova"}
+        {d.prazo && !d.concluido && !d.encerrada ? <b style={{ color: C.warn }}>⏳ prazo até {dataBR(d.prazo)} · </b> : ""}{d.norma ? `${d.norma} · ` : ""}{d.carga_horaria ? `${fmtH(d.carga_horaria)} · ` : ""}{d.tem_prova ? `prova: ${d.perguntas} perguntas, mínimo ${d.nota_minima}%` : "sem prova"}
       </div>
 
       {d.concluido && (
         <div style={{ ...card, padding: 14, borderColor: C.success, marginBottom: 14 }}>
           <div style={{ fontWeight: 700, color: C.success }}>✓ Concluído{d.nota != null ? ` — nota ${Number(d.nota).toLocaleString("pt-BR")}%` : ""}</div>
+          {api.certificado && <button onClick={() => baixarCertificado(api, turmaId, setErro)} style={{ ...botao(true, C.success), float: "right", padding: "7px 14px", fontSize: 13 }}>🎓 Baixar certificado</button>}
           <div style={{ fontSize: 13, color: C.textSub, marginTop: 4 }}>em {d.concluido_em ? new Date(d.concluido_em).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "—"}{d.valido_ate ? ` · válido até ${dataBR(d.valido_ate)}` : ""}{d.carga_horaria ? ` · ${fmtH(d.carga_horaria)} creditadas` : ""}</div>
         </div>
       )}
@@ -163,7 +172,7 @@ export default function AulaEProva({ api, turmaId, onVoltar, onMudou }) {
 }
 
 /** Lista de "Meus treinamentos" (colaborador logado) */
-export function ListaMeusTreinamentos({ dados, onAbrir }) {
+export function ListaMeusTreinamentos({ dados, onAbrir, onCertificado }) {
   const { pendentes = [], historico = [], horas, colaborador } = dados || {};
   return (
     <div style={{ color: C.text }}>
@@ -183,7 +192,7 @@ export function ListaMeusTreinamentos({ dados, onAbrir }) {
           <button key={t.turma_id} onClick={() => onAbrir(t.turma_id)} style={{ ...card, padding: 14, textAlign: "left", cursor: "pointer", color: C.text, fontFamily: "inherit" }}>
             <div style={{ fontWeight: 700, fontSize: 15 }}>{t.treinamento}</div>
             <div style={{ fontSize: 12, color: C.textSub, marginTop: 4 }}>
-              {t.carga_horaria ? `${fmtH(t.carga_horaria)} · ` : ""}{t.tem_prova ? `prova ${t.tentativas_usadas}/${t.tentativas_max} tentativas` : "sem prova"}
+              {t.prazo ? <b style={{ color: C.warn }}>⏳ até {dataBR(t.prazo)} · </b> : ""}{t.carga_horaria ? `${fmtH(t.carga_horaria)} · ` : ""}{t.tem_prova ? `prova ${t.tentativas_usadas}/${t.tentativas_max} tentativas` : "sem prova"}
               {t.situacao === "esgotou" ? <span style={{ color: C.danger }}> · tentativas esgotadas — fale com o responsável</span> : t.situacao === "reprovado" ? <span style={{ color: C.warn }}> · reprovado — revise e tente de novo</span> : ""}
             </div>
           </button>
@@ -199,6 +208,7 @@ export function ListaMeusTreinamentos({ dados, onAbrir }) {
               {h.nota != null && <div style={{ color: C.textSub }}>nota {Number(h.nota).toLocaleString("pt-BR")}%</div>}
               <div style={{ color: "#a855f7" }}>⏱ {fmtH(h.horas)}</div>
               <div style={{ color: C.textSub }}>{h.valido_ate ? `válido até ${dataBR(h.valido_ate)}` : "não vence"}</div>
+              {onCertificado && <button onClick={() => onCertificado(h.turma_id)} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 13, padding: 0, fontFamily: "inherit" }}>🎓 Certificado</button>}
             </div>
           ))}
         </div>

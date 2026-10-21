@@ -356,19 +356,40 @@ async function assinarPresenca(supabase, tenantId, turma, colaboradorId, png, ag
   return { participacao: { ...data[0], assinatura_png: undefined } };
 }
 
-/** Concluir: grava a validade de quem assinou; quem não assinou fica como faltou */
-async function concluirTurma(supabase, tenantId, turma) {
+/** Concluir (= encerrar): grava a validade de quem assinou; quem não assinou fica como faltou.
+ *  forcar = encerramento automático (prazo da turma online vencido) — fecha mesmo sem ninguém. */
+async function concluirTurma(supabase, tenantId, turma, { forcar = false } = {}) {
   if (turma.status !== 'agendada') return { status: 400, erro: 'A turma não está agendada' };
   const ps = await q(supabase.from('treinamento_participacoes').select('*').eq('tenant_id', tenantId).eq('turma_id', turma.id));
-  if (!ps.some((p) => p.presente)) return { status: 400, erro: turma.modalidade === 'online' ? 'Ninguém concluiu ainda (assinatura ou prova)' : 'Ninguém assinou a presença ainda' };
-  const r = await supabase.from('treinamento_turmas').update({ status: 'concluida', concluida_em: new Date().toISOString() }).eq('id', turma.id).eq('tenant_id', tenantId).select();
+  if (!forcar && !ps.some((p) => p.presente)) return { status: 400, erro: turma.modalidade === 'online' ? 'Ninguém concluiu ainda (assinatura ou prova)' : 'Ninguém assinou a presença ainda' };
+  const r = await supabase.from('treinamento_turmas').update({ status: 'concluida', concluida_em: new Date().toISOString(), ...(turma.modalidade === 'online' ? { link_ativo: false } : {}) }).eq('id', turma.id).eq('tenant_id', tenantId).eq('status', 'agendada').select();
   if (r.error) throw new Error(r.error.message);
+  if (!r.data?.length) return { status: 409, erro: 'A turma já foi encerrada' };
   const va = validoAte(turma);
   for (const p of ps.filter((x) => x.presente && !(turma.modalidade === 'online' && x.valido_ate))) await supabase.from('treinamento_participacoes').update({ valido_ate: va }).eq('id', p.id).eq('tenant_id', tenantId);
   return { turma: r.data[0], presentes: ps.filter((p) => p.presente).length, faltaram: ps.filter((p) => !p.presente).length };
 }
 
+// ─── 12e.2d: encerramento automático da turma ONLINE ───────────────────────
+// • prazo ("Até" = data_fim) vencido → encerra (quem não fez = faltou). Conferido ao abrir lista/turma/link — sem rotina agendada.
+// • todos os participantes concluíram → encerra na hora (provaOnline.js chama depois da aprovação).
+const prazoVencido = (t, hoje = hojeBR()) => t.modalidade === 'online' && t.status === 'agendada' && !!t.data_fim && String(t.data_fim).slice(0, 10) < hoje;
+async function fecharOnlineVencidas(supabase, tenantId, turmas = null) {
+  const ts = turmas || await q(supabase.from('treinamento_turmas').select('*').eq('tenant_id', tenantId).eq('status', 'agendada'));
+  let n = 0;
+  for (const t of ts.filter((x) => prazoVencido(x))) { const r = await concluirTurma(supabase, tenantId, t, { forcar: true }); if (!r.erro) n++; }
+  return n;
+}
+async function fecharSeTodosConcluiram(supabase, tenantId, turma) {
+  if (turma.modalidade !== 'online' || turma.status !== 'agendada') return false;
+  const ps = await q(supabase.from('treinamento_participacoes').select('*').eq('tenant_id', tenantId).eq('turma_id', turma.id));
+  if (!ps.length || !ps.every((p) => p.presente && p.aprovado !== false)) return false;
+  const r = await concluirTurma(supabase, tenantId, turma);
+  return !r.erro;
+}
+
 async function listarTurmas(supabase, tenantId) {
+  await fecharOnlineVencidas(supabase, tenantId); // 12e.2d
   const ts = await q(supabase.from('treinamento_turmas').select('*').eq('tenant_id', tenantId));
   const ps = await q(supabase.from('treinamento_participacoes').select('*').eq('tenant_id', tenantId));
   return ts.map((t) => {
@@ -469,6 +490,7 @@ function statusColaborador(colab, base, hoje = hojeBR()) {
 }
 
 async function painel(supabase, tenantId, { agora } = {}) {
+  await fecharOnlineVencidas(supabase, tenantId); // 12e.2d
   const base = await carregarBase(supabase, tenantId);
   const hoje = hojeBR(agora);
   const horas = horasPorColaborador(base, { de: `${hoje.slice(0, 4)}-01-01`, ate: `${hoje.slice(0, 4)}-12-31` }); // 12e.2a
@@ -519,5 +541,6 @@ module.exports = {
   validarSecoes, validarProva, corrigirProva, provaSemGabarito,
   bibliotecaConsole, criarModelo, editarModelo, desativarModelo, bibliotecaParaTenant, importar, atualizarDaBiblioteca,
   horasDe, horasPorColaborador, relatorioHoras, resumoHoras,
+  prazoVencido, fecharOnlineVencidas, fecharSeTodosConcluiram, // 12e.2d
   contaFeito, dataFeito, MATERIAL_PATH, subirMaterial, linkMaterialGestor, // 12e.2b
 };

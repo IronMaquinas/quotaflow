@@ -7,6 +7,7 @@
 //   GET  /:turma/material/:i       link (1 h) do PDF de apoio da seção i
 //   POST /:turma/prova             { respostas: [índice por pergunta] }
 //   POST /:turma/concluir          treinamento sem prova: "Concluí o conteúdo"
+//   GET  /:turma/certificado       certificado (12e.2c) — só se concluiu
 
 const express = require('express');
 const router = express.Router();
@@ -34,6 +35,7 @@ router.get('/', responder(async (req) => ({ colaborador: { nome: req.colaborador
 router.get('/:turma', responder((req) => P.abrir(supabase, req.tenantId, req.colaborador.id, req.params.turma)));
 router.get('/:turma/material/:i', responder((req) => P.linkMaterial(supabase, req.tenantId, req.colaborador.id, req.params.turma, req.params.i)));
 router.post('/:turma/prova', responder((req) => P.enviarProva(supabase, req.tenantId, req.colaborador.id, req.params.turma, { respostas: req.body?.respostas, meio: 'logado', usuarioId: req.userId, ip: req.ip })));
+router.get('/:turma/certificado', responder((req) => P.certificado(supabase, req.tenantId, req.params.turma, req.colaborador.id)));
 router.post('/:turma/concluir', responder((req) => P.concluirSemProva(supabase, req.tenantId, req.colaborador.id, req.params.turma, { meio: 'logado' })));
 
 module.exports = router;

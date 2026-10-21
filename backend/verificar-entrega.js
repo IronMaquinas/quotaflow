@@ -88,55 +88,54 @@ const ESPERADO = {
   'services/planosManutencao.js': 'e32588acaefd47c5cb93bbe0d70ab799', // etapa 12b.4
   'front:TelaPlanosManutencao.jsx': '5fd8c2a3a8c6fdfb599fb98fd9ccabff', // etapa 12b.3 + texto do botão alterado pelo Marcony (18/10)
   'front:ModalTransferirOS.jsx': '8e7c1bf0d6fc9a4f88bdd9087d22cb37', // etapa 12b.3 (novo)
-  'routes/pessoas.js': '7609bca9f3034700a06994ea2110da47', // etapa 12e.2b
-  'services/documentos.js': 'e43a738265140f4099737d0e48f61fe1', // etapa 12e.2a
-  'front:TelaPessoas.jsx': '882b2f2003cbfd35c12fe38c71035727', // etapa 12e.2b
+  'routes/pessoas.js': '2b1bc6aa1303e20cd0639ae94b5396d9', // etapa 12e.3
+  'services/documentos.js': 'e4e3f50ffd6ade91d5c2a51a0b115900', // etapa 12e.3
+  'front:TelaPessoas.jsx': '4416b61d83a2f79f196a6f17ea7635ea', // etapa 12e.3
   // etapa 12c.1
   'services/avisosVencimento.js': 'e43d0373f61a7e12eccdcc5861cd0e6b', // etapa 12d.3
-  'services/funcoes.js': '0e5d5fa3f8eb3a3bf3760eec74039854', // etapa 12e.1
-  'front:BibliotecaFuncoes.jsx': '4e034707e49d56e5e490b0be73cb5468', // etapa 12d.1
+  'services/funcoes.js': '6110cb0cc1286943c41c432292ac29d7', // etapa 12e.3
+  'front:BibliotecaFuncoes.jsx': 'db84993cfe5d2b7e8c508b04652f4ce5', // etapa 12e.3
   'services/epi.js': '9b0dccea86e23c7d5f3af1132159f0ee', // etapa 12d.1b
   'front:TelaEpi.jsx': 'f9a0279f2d8916f32549f4a3f7108438', // etapa 12d.3
   'front:BibliotecaEpi.jsx': 'e54d2c680ad3692518681de67bf00169', // etapa 12d.1b (novo)
   'services/epiEntregas.js': 'fec08c1dc85c386e57e5a01474871c8f', // etapa 12d.3
-  'services/conformidade.js': '33c1f7f480e49d63c92ca9a9361b660b', // etapa 12e.1
+  'services/conformidade.js': '7194d1cb671096ee3fb63e2fd82364d8', // etapa 12e.3
   'front:GestaoEpi.jsx': '6c823820e98a6d78c736540aea8e67f8', // etapa 12d.3
   'front:AssinaturaTela.jsx': 'db713a14a03390f9072d06f1de697b90', // etapa 12d.2 (novo)
   'front:gerarFichaEpi.js': '1a5de92e2896fc8095784b082269b1a3', // etapa 12d.3
   'services/historicoFuncoes.js': 'e8460900c6f40ee55328c3aac638dffe', // etapa 12d.3 (novo)
-  'services/avisosPessoas.js': 'cd207065ddcab3ea52960e0cec5ce761', // etapa 12e.1
-  'services/treinamentos.js': '567e982f32ff3c8f2c2e25b1425d4cc8', // etapa 12e.2b
-  'front:TelaTreinamentos.jsx': 'edf308770f97ba75fd11fdde6b375aee', // etapa 12e.2b
-  'front:gerarListaPresenca.js': '3bdbb5014f26498fab0396dc6e41e21d', // etapa 12e.2b
+  'services/avisosPessoas.js': '1f41aaa6adeecce30611db268291cfc4', // etapa 12e.2d.1
+  'services/treinamentos.js': '7ce6b7d886e7b2036d5820f2113ba71a', // etapa 12e.2d
+  'front:TelaTreinamentos.jsx': 'dbea7b15f5a26ae9083082344158e948', // etapa 12e.2d
+  'front:gerarListaPresenca.js': 'db8967998f2a9b73299bde5dfb858e60', // etapa 12e.2b.3
   'migrations/031_treinamentos_conteudo_horas.sql': 'ec5ffd0cf4814b65add59c253be196fa', // etapa 12e.2a (novo)
   'front:BibliotecaTreinamentos.jsx': 'bc7bf51426be20050569f0beab486d19', // etapa 12e.2b
   'front:EditorConteudoTreinamento.jsx': 'a770330072bfc50fcf5f5e8ab5485d51', // etapa 12e.2b
-  'services/provaOnline.js': 'b0b809d29b509ba95d106e6b7ca693fe', // etapa 12e.2b (novo)
-  'routes/meusTreinamentos.js': '672fc343ce237cc0710eaed2e616b510', // etapa 12e.2b (novo)
-  'routes/provaPublica.js': '61729810ce530a5ce528d2f85b1fc00b', // etapa 12e.2b (novo)
+  'services/provaOnline.js': 'fc0ee6d8a2ffd42bb2bf143e121e25da', // etapa 12e.2d
+  'routes/meusTreinamentos.js': '2325068ee6d623683677fa3aee7947ab', // etapa 12e.2c
+  'routes/provaPublica.js': '88db8424e165984224d9ff2550c27e06', // etapa 12e.2c
   'middleware/tenantMiddleware.js': 'a3bb6c2a4289dee172cde44c91b7d07a', // etapa 12e.2b
   'migrations/032_prova_online_colaborador.sql': '89db0b8f09c60f29496ee58e87b5685f', // etapa 12e.2b (novo)
-  'front:AreaTreinamentoColaborador.jsx': 'a37d35c2a8af8f84296b4ba9575a207b', // etapa 12e.2b (novo)
-  'front:TelaMeusTreinamentos.jsx': '22c9b949a39c4285ac1df015647d99dc', // etapa 12e.2b (novo)
-  'front:AcessoColaborador.jsx': '4af6b971e9602a1f1a053f7c1cf87d93', // etapa 12e.2b (novo)
+  'front:AreaTreinamentoColaborador.jsx': '99e0bc8564158e497d8ad57fb6f4a8a5', // etapa 12e.2d
+  'front:TelaMeusTreinamentos.jsx': '4132dd9a42d3b6ab79264bdd6a1fe20c', // etapa 12e.2c
+  'front:AcessoColaborador.jsx': '9c34d578c4b9a47bb5c801f69f805bf1', // etapa 12e.2b.1
   'front:TextoAula.jsx': '9bf737cb738368965db7ef010bbe27bc', // etapa 12e.2b (novo)
-  'front:TelaProvaPublica.jsx': '5be6916bcdd00932fee2e0fcdc304dfe', // etapa 12e.2b (novo)
+  'front:TelaProvaPublica.jsx': '49710bac997c6660ce0b1ce7b8da18f9', // etapa 12e.2d
+  'front:gerarCertificado.js': '29860358a88203517163c34ffe2fdd6f', // etapa 12e.2c (novo)
+  'services/competencias.js': '70eef169566df3fd5a49d6d0b6ea0c07', // etapa 12e.3 (novo)
+  'migrations/033_competencias.sql': '5a84726fdb2ad6fc09b8ca12353384e4', // etapa 12e.3 (novo)
+  'front:FichaCompetencias.jsx': '2aed1db0e320f058abfac58e05fce298', // etapa 12e.3 (novo)
+  'front:EditorCompetencias.jsx': '0ed00973592fd94f72a7208cc155c460', // etapa 12e.3 (novo)
 };
 
-// Antes de copiar a etapa 12e.2b — base: 12e.2a
+// Antes de copiar a etapa 12e.3 — base: 12e.2d.1
 const ANTES = {
-  'services/treinamentos.js': '6b5ad46c5470a0cd8f6a1d434f693946',
-  'routes/pessoas.js': '569bd049cb872f3e6be6cc0800e5ae55',
-  'routes/plataforma.js': '2d8c227d0e261e4143e2c458c445622c',
-  'middleware/tenantMiddleware.js': 'c3d9efb2637619e482e2f20250b616af',
-  'server.js': '5014064f2e48cd7561e1c39cfb53c8c5',
-  'front:TelaTreinamentos.jsx': '389253678f9f2914425139dcbdfbaef2',
-  'front:TelaPessoas.jsx': '85189055210619acc89a050613444d6c',
-  'front:EditorConteudoTreinamento.jsx': '7a821ae607023215fe65472de1d68df4',
-  'front:BibliotecaTreinamentos.jsx': 'a4281a92992f3e4e8c3e6999f643bf72',
-  'front:App.jsx': '19da56abf646003522a6d0aef8ed6854',
-  'front:main.jsx': 'b51aa6ff0005dd1ff6c5b49f0545006a',
-  'front:gerarListaPresenca.js': 'd03c15aa070beadb0c0dbe1e90d498ce',
+  'services/funcoes.js': '0e5d5fa3f8eb3a3bf3760eec74039854',
+  'services/documentos.js': 'e43a738265140f4099737d0e48f61fe1',
+  'services/conformidade.js': '33c1f7f480e49d63c92ca9a9361b660b',
+  'routes/pessoas.js': '0a39aab8c788dcf8b34bfe49b2e2d458',
+  'front:TelaPessoas.jsx': '882b2f2003cbfd35c12fe38c71035727',
+  'front:BibliotecaFuncoes.jsx': '4e034707e49d56e5e490b0be73cb5468',
 };
 
 const RAIZ = process.cwd();
@@ -174,7 +173,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 12e.1?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 12e.1)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 12e.3)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
@@ -222,13 +221,13 @@ for (const [chave, esperado] of Object.entries(LISTA)) {
 
 if (!modoAntes) {
   // Arquivos novos precisam entrar no commit
-  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js', 'services/matchSpot.js', 'services/recomendacoesEmail.js', 'routes/recomendacoes.js', 'services/convitesFornecedor.js', 'services/acessoSpot.js', 'services/receitaCnpj.js', 'services/cadastroPublico.js', 'services/emailConfirmacao.js', 'routes/plataforma.js', 'services/plataformaConsole.js', 'middleware/plataformaMiddleware.js', 'scripts/criarAdmin.js', 'routes/manutencao.js', 'services/calendarioManutencao.js', 'services/planosManutencao.js', 'migrations/019_planos_manutencao.sql', 'migrations/020_plano_termino.sql', 'migrations/021_plano_responsavel_dia_util.sql', 'routes/pessoas.js', 'services/documentos.js', 'migrations/022_colaboradores_documentos.sql', 'services/avisosVencimento.js', 'migrations/023_documento_avisos.sql', 'services/funcoes.js', 'migrations/024_funcoes.sql', 'migrations/025_funcoes_detalhes.sql', 'services/epi.js', 'migrations/026_epi_itens.sql', 'migrations/027_epi_catalogo_tamanhos.sql', 'services/epiEntregas.js', 'services/conformidade.js', 'migrations/028_epi_entregas.sql', 'services/historicoFuncoes.js', 'services/avisosPessoas.js', 'migrations/029_historico_funcoes_avisos.sql', 'services/treinamentos.js', 'migrations/030_treinamentos.sql', 'migrations/031_treinamentos_conteudo_horas.sql', 'services/provaOnline.js', 'routes/meusTreinamentos.js', 'routes/provaPublica.js', 'migrations/032_prova_online_colaborador.sql'];
+  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js', 'services/matchSpot.js', 'services/recomendacoesEmail.js', 'routes/recomendacoes.js', 'services/convitesFornecedor.js', 'services/acessoSpot.js', 'services/receitaCnpj.js', 'services/cadastroPublico.js', 'services/emailConfirmacao.js', 'routes/plataforma.js', 'services/plataformaConsole.js', 'middleware/plataformaMiddleware.js', 'scripts/criarAdmin.js', 'routes/manutencao.js', 'services/calendarioManutencao.js', 'services/planosManutencao.js', 'migrations/019_planos_manutencao.sql', 'migrations/020_plano_termino.sql', 'migrations/021_plano_responsavel_dia_util.sql', 'routes/pessoas.js', 'services/documentos.js', 'migrations/022_colaboradores_documentos.sql', 'services/avisosVencimento.js', 'migrations/023_documento_avisos.sql', 'services/funcoes.js', 'migrations/024_funcoes.sql', 'migrations/025_funcoes_detalhes.sql', 'services/epi.js', 'migrations/026_epi_itens.sql', 'migrations/027_epi_catalogo_tamanhos.sql', 'services/epiEntregas.js', 'services/conformidade.js', 'migrations/028_epi_entregas.sql', 'services/historicoFuncoes.js', 'services/avisosPessoas.js', 'migrations/029_historico_funcoes_avisos.sql', 'services/treinamentos.js', 'migrations/030_treinamentos.sql', 'migrations/031_treinamentos_conteudo_horas.sql', 'services/provaOnline.js', 'routes/meusTreinamentos.js', 'routes/provaPublica.js', 'migrations/032_prova_online_colaborador.sql', 'services/competencias.js', 'migrations/033_competencias.sql'];
   try {
     for (const n of novos) {
       const rastreado = execFileSync('git', ['ls-files', n], { cwd: RAIZ, stdio: 'pipe' }).toString().trim();
       if (!rastreado) console.log(`\n⚠️  ${n} ainda não está no git (git add ${n})`);
     }
-    for (const nome of ['SeletorAtuacao.jsx', 'TelaAceitarConvite.jsx', 'TelaPainelFornecedor.jsx', 'AvisoPlanoTenant.jsx', 'CampoTelefone.jsx', 'TelaConfirmarEmail.jsx', 'ConsolePlataforma.jsx', 'TelaCalendarioManutencao.jsx', 'TelaPlanosManutencao.jsx', 'ModalTransferirOS.jsx', 'TelaPessoas.jsx', 'BibliotecaTreinamentos.jsx', 'EditorConteudoTreinamento.jsx', 'AreaTreinamentoColaborador.jsx', 'TelaMeusTreinamentos.jsx', 'AcessoColaborador.jsx', 'TextoAula.jsx', 'TelaProvaPublica.jsx']) {
+    for (const nome of ['SeletorAtuacao.jsx', 'TelaAceitarConvite.jsx', 'TelaPainelFornecedor.jsx', 'AvisoPlanoTenant.jsx', 'CampoTelefone.jsx', 'TelaConfirmarEmail.jsx', 'ConsolePlataforma.jsx', 'TelaCalendarioManutencao.jsx', 'TelaPlanosManutencao.jsx', 'ModalTransferirOS.jsx', 'TelaPessoas.jsx', 'BibliotecaTreinamentos.jsx', 'EditorConteudoTreinamento.jsx', 'AreaTreinamentoColaborador.jsx', 'TelaMeusTreinamentos.jsx', 'AcessoColaborador.jsx', 'TextoAula.jsx', 'TelaProvaPublica.jsx', 'gerarCertificado.js', 'FichaCompetencias.jsx', 'EditorCompetencias.jsx']) {
       const arq = acharNoFrontend(nome)[0];
       if (!arq) continue;
       const rastreado = execFileSync('git', ['ls-files', arq], { cwd: RAIZ, stdio: 'pipe' }).toString().trim();

@@ -8,6 +8,7 @@
 //   GET  /:token/material/:i       link (1 h) do PDF de apoio
 //   POST /:token/prova             { respostas }
 //   POST /:token/concluir          sem prova: "Concluí o conteúdo"
+//   GET  /:token/certificado       certificado (12e.2c)
 // Limite: 8 identificações erradas por link + IP a cada 15 min.
 
 const express = require('express');
@@ -51,6 +52,7 @@ router.post('/:token/entrar', responder(async (req) => {
 router.get('/:token/treinamento', responder((req) => P.abrir(supabase, req.sessao.tenantId, req.sessao.colaboradorId, req.sessao.turmaId), { sessao: true }));
 router.get('/:token/material/:i', responder((req) => P.linkMaterial(supabase, req.sessao.tenantId, req.sessao.colaboradorId, req.sessao.turmaId, req.params.i), { sessao: true }));
 router.post('/:token/prova', responder((req) => P.enviarProva(supabase, req.sessao.tenantId, req.sessao.colaboradorId, req.sessao.turmaId, { respostas: req.body?.respostas, meio: 'link', ip: req.ip }), { sessao: true }));
+router.get('/:token/certificado', responder((req) => P.certificado(supabase, req.sessao.tenantId, req.sessao.turmaId, req.sessao.colaboradorId), { sessao: true }));
 router.post('/:token/concluir', responder((req) => P.concluirSemProva(supabase, req.sessao.tenantId, req.sessao.colaboradorId, req.sessao.turmaId, { meio: 'link' }), { sessao: true }));
 
 module.exports = router;

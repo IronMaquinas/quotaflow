@@ -17,7 +17,7 @@ export function AcessoColaborador({ C, s, colaboradorId, emailPadrao, onAviso, o
   if (!st || st.erro) return null;
   const salvar = async () => {
     setSalvando(true);
-    try { const r = await apiService.post(`/pessoas/colaboradores/${colaboradorId}/acesso`, form); onAviso(`Acesso liberado: ${r.email}. Passe o e-mail e a senha para o colaborador.`); setForm(null); await carregar(); }
+    try { const r = await apiService.post(`/pessoas/colaboradores/${colaboradorId}/acesso`, form); onAviso(`Acesso liberado: ${r.email} · senha: ${r.senha_cpf ? "o CPF (só números)" : "a que você digitou"}. Passe para o colaborador.`); setForm(null); await carregar(); }
     catch (e) { onErro(e.message); }
     finally { setSalvando(false); }
   };
@@ -43,9 +43,9 @@ export function AcessoColaborador({ C, s, colaboradorId, emailPadrao, onAviso, o
       {form && (
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8, alignItems: "center" }}>
           <input value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="e-mail de login" disabled={st.tem} style={{ ...s.input, flex: "2 1 200px", padding: "6px 10px", fontSize: 12 }} />
-          <input value={form.senha} onChange={(e) => setForm({ ...form, senha: e.target.value })} placeholder="senha (mín. 6)" type="text" style={{ ...s.input, flex: "1 1 130px", padding: "6px 10px", fontSize: 12 }} />
+          <input value={form.senha} onChange={(e) => setForm({ ...form, senha: e.target.value })} placeholder="senha — vazio = CPF (só números)" type="text" style={{ ...s.input, flex: "1 1 130px", padding: "6px 10px", fontSize: 12 }} />
           <button type="button" onClick={() => setForm(null)} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.text }}>Cancelar</button>
-          <button type="button" disabled={salvando || form.senha.length < 6 || !form.email} onClick={salvar} style={{ ...s.btn(!salvando && form.senha.length >= 6 && !!form.email), padding: "5px 12px", fontSize: 12 }}>{salvando ? "Salvando…" : "Salvar acesso"}</button>
+          <button type="button" disabled={salvando || (form.senha.length > 0 && form.senha.length < 6) || !form.email} onClick={salvar} style={{ ...s.btn(!salvando && !(form.senha.length > 0 && form.senha.length < 6) && !!form.email), padding: "5px 12px", fontSize: 12 }}>{salvando ? "Salvando…" : "Salvar acesso"}</button>
         </div>
       )}
     </div>

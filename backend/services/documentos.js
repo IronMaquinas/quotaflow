@@ -63,6 +63,11 @@ function validarColaborador(body, { parcial = false } = {}) {
   if (tem('admissao')) {
     if (body.admissao && !DATA.test(String(body.admissao))) erros.push('Data de admissão inválida'); else out.admissao = body.admissao || null;
   }
+  if (tem('escolaridade')) out.escolaridade = body.escolaridade ? String(body.escolaridade).slice(0, 40) : null; // 12e.3 (validada na rota)
+  if (tem('cnh_categoria')) {
+    const c = body.cnh_categoria ? String(body.cnh_categoria).trim().toUpperCase() : null;
+    if (c && !['A', 'B', 'C', 'D', 'E', 'AB', 'AC', 'AD', 'AE'].includes(c)) erros.push('Categoria de CNH inválida'); else out.cnh_categoria = c;
+  }
   if (tem('data_nascimento')) { // 12e.2a — 2º fator do link da prova e aniversariantes
     const d = body.data_nascimento;
     if (d && (!DATA.test(String(d)) || String(d) > new Date().toISOString().slice(0, 10) || String(d) < '1900-01-01')) erros.push('Data de nascimento inválida'); else out.data_nascimento = d || null;

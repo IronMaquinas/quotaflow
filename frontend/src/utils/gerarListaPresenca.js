@@ -22,8 +22,9 @@ const CSS = `
   .dados b { display: block; font-size: 9px; color: #666; text-transform: uppercase; font-weight: 600; }
   .bloco { border: 1px solid #ccc; padding: 8px; margin-bottom: 10px; white-space: pre-wrap; }
   table { width: 100%; border-collapse: collapse; }
-  th, td { border: 1px solid #bbb; padding: 4px 6px; vertical-align: middle; }
-  th { background: #eee; font-size: 9px; text-transform: uppercase; }
+  th, td { border: 1px solid #bbb; padding: 3px 5px; vertical-align: middle; font-size: 9.5px; }
+  td.nw { white-space: nowrap; }
+  th { background: #eee; font-size: 8.5px; text-transform: uppercase; }
   td.ass { width: 150px; height: 46px; text-align: center; } td.ass img { max-width: 140px; max-height: 42px; }
   .rod { margin-top: 14px; display: flex; justify-content: space-between; gap: 30px; }
   .linha { flex: 1; border-top: 1px solid #111; padding-top: 4px; text-align: center; font-size: 10px; margin-top: 30px; }
@@ -34,8 +35,8 @@ const CSS = `
 
 export function gerarHtmlListaPresenca({ empresa = {}, turma = {}, conteudo, norma, participantes = [], gerado_em }) {
   const linhas = participantes.map((p, i) => `<tr>
-      <td style="text-align:center">${i + 1}</td><td>${esc(p.nome)}</td><td>${esc(fmtCPF(p.cpf))}</td><td>${esc(p.funcao || "—")}</td>
-      <td>${p.assinado_em ? dataHora(p.assinado_em) : (p.presente ? "presente" : "")}</td>
+      <td style="text-align:center">${i + 1}</td><td>${esc(p.nome)}</td><td class="nw">${esc(fmtCPF(p.cpf))}</td><td>${esc(p.funcao || "—")}</td>
+      <td class="nw">${p.assinado_em ? dataHora(p.assinado_em) : (p.presente ? "presente" : "")}</td>
       <td class="ass">${p.assinatura_png ? `<img src="${p.assinatura_png}" alt="assinatura"/>` : p.presente && turma.modalidade === "online" ? `<span style="font-size:9px">${p.aprovado ? `Prova online — nota ${esc(Number(p.nota).toLocaleString("pt-BR"))}%` : "Concluiu online (declaração)"}</span>` : ""}</td></tr>`).join(""); // 12e.2b
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Lista de presença — ${esc(turma.treinamento_nome)}</title><style>${CSS}</style></head><body>
   <div class="pagina">

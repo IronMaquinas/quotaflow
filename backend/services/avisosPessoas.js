@@ -6,6 +6,7 @@
 //   • doc_falta  — documento exigido pela função e ainda não cadastrado ('falta', uma vez por colaborador+tipo+função)
 //   • trein_venc — treinamento exigido vencendo em 30 dias ('30') e vencido ('vencido')  (12e.1)
 //   • trein_falta — treinamento exigido pela função e nunca feito ('falta', uma vez por colaborador+treinamento+função)
+//   • trein_faltou — turma encerrada com quem não fez/não assinou → reagendar (uma vez por turma; só para o GESTOR — 12e.2d)
 // Cada marco sai uma vez (tabela avisos_enviados). Se o servidor ficou dias fora, manda só o mais urgente.
 // Destinatários: admin e gestor (o responsável do documento continua só nos avisos de documento).
 // Sem as migrations 028/029, devolve lista vazia (nunca quebra o e-mail dos documentos).
@@ -74,6 +75,22 @@ async function candidatos(supabase, tenantId, agora = new Date()) {
       }
     }
   } catch (e) { if (!/treinamento/.test(String(e.message))) throw e; }
+
+  // 12e.2d: turma encerrada nos últimos 7 dias com faltas → uma linha por turma (o colaborador NÃO recebe e-mail)
+  try {
+    await TR.fecharOnlineVencidas(supabase, tenantId); // aproveita a rotina das 7h para encerrar online com prazo vencido
+    const ha7 = new Date(agora.getTime() - 7 * 86400000).toISOString();
+    const turmas = (await q(supabase.from('treinamento_turmas').select('*').eq('tenant_id', tenantId).eq('status', 'concluida'))).filter((t) => t.concluida_em && t.concluida_em >= ha7 && t.modalidade !== 'manual');
+    if (turmas.length) {
+      const parts = await q(supabase.from('treinamento_participacoes').select('*').eq('tenant_id', tenantId).in('turma_id', turmas.map((t) => t.id)));
+      for (const t of turmas) {
+        const faltaram = parts.filter((p) => String(p.turma_id) === String(t.id) && !p.presente).map((p) => ativos.get(String(p.colaborador_id))?.nome).filter(Boolean).sort();
+        if (!faltaram.length) continue;
+        const nomes = faltaram.length > 4 ? `${faltaram.slice(0, 4).join(', ')} e mais ${faltaram.length - 4}` : faltaram.join(', ');
+        out.push({ categoria: 'trein_faltou', chave: `trein_faltou:${t.id}`, marco: 'falta', dias: null, data: String(t.data).slice(0, 10), titulo: `${t.treinamento_nome} — ${faltaram.length} não ${faltaram.length === 1 ? "fez" : "fizeram"}`, de: nomes });
+      }
+    }
+  } catch (e) { if (!/treinamento/.test(String(e.message))) throw e; }
   return out;
 }
 
@@ -93,10 +110,11 @@ async function registrar(supabase, tenantId, itens, destinatarios) {
   if (error) console.error('❌ [avisos-pessoas] registrar:', error.message);
 }
 
-const TITULO = { epi_troca: '🦺 Troca de EPI', epi_ca: '🦺 CA de EPI', doc_falta: '📋 Documento exigido não cadastrado', trein_venc: '🎓 Treinamento vencendo', trein_falta: '🎓 Treinamento exigido não realizado' };
+const TITULO = { epi_troca: '🦺 Troca de EPI', epi_ca: '🦺 CA de EPI', doc_falta: '📋 Documento exigido não cadastrado', trein_venc: '🎓 Treinamento vencendo', trein_falta: '🎓 Treinamento exigido não realizado', trein_faltou: '🎓 Turma encerrada com faltas — reagendar' };
 const esc = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const dataBR = (d) => (d ? String(d).slice(0, 10).split('-').reverse().join('/') : '—');
 function prazo(i) {
+  if (i.categoria === 'trein_faltou') return '<b style="color:#d97706">reagendar</b>';
   if (i.marco === 'falta') return '<b style="color:#d97706">cadastrar</b>';
   if (i.dias < 0) return `<b style="color:#dc2626">venceu há ${-i.dias} dia(s)</b>`;
   if (i.dias === 0) return '<b style="color:#dc2626">vence hoje</b>';
@@ -104,7 +122,7 @@ function prazo(i) {
 }
 /** Seções HTML para o e-mail diário */
 function secoesHtml(itens) {
-  const cats = ['epi_troca', 'epi_ca', 'trein_venc', 'doc_falta', 'trein_falta'].filter((c) => itens.some((i) => i.categoria === c));
+  const cats = ['epi_troca', 'epi_ca', 'trein_venc', 'trein_faltou', 'doc_falta', 'trein_falta'].filter((c) => itens.some((i) => i.categoria === c));
   return cats.map((c) => `
     <h3 style="margin:18px 0 6px;font-size:15px">${TITULO[c]}</h3>
     <table style="border-collapse:collapse;width:100%;font-size:14px">

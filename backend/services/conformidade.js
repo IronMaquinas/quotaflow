@@ -12,6 +12,8 @@
 //     pode existir fora do sistema; não é não conformidade) · 🔴 atencao = algo VENCIDO (não conformidade).
 //   • Função sem nenhuma exigência (sem documentos e sem kit): 🟢 100% "nada exigido".
 //   • 12e.1: pilar 🎓 Treinamentos — em dia (ok + vence) ÷ exigidos; vencido conta como vencido; agendado ainda é falta.
+//   • 12e.3: pilar 🧩 Competências — escolaridade, CNH e a lista atende/não atende da função. ok ÷ exigidos;
+//     pendente / não atende / reavaliar = falta (🟡), NUNCA vencido (decidido 21/10).
 
 const pct = (a, b) => (b > 0 ? Math.round((a / b) * 100) : null);
 
@@ -21,7 +23,7 @@ const pct = (a, b) => (b > 0 ? Math.round((a / b) * 100) : null);
  * @param {object}  p.docs  resumo da ficha de documentos { total, falta, vencido, vence_30, ok, sem_vencimento }
  * @param {object}  p.epi   resumo de EPI { total, ok, vence, vencido, nao_entregue } (null se ainda não há EPI)
  */
-function selo({ funcaoLigada, docs, epi, trein }) {
+function selo({ funcaoLigada, docs, epi, trein, comp }) {
   if (!funcaoLigada) return { nivel: 'sem_funcao', geral: null, feitos: 0, total: 0, faltam: null, vencidos: 0, pilares: [] };
   const pilares = [];
   if (docs && docs.total > 0) {
@@ -35,6 +37,9 @@ function selo({ funcaoLigada, docs, epi, trein }) {
   if (trein && trein.total > 0) {
     const emDia = (trein.ok || 0) + (trein.vence || 0);
     pilares.push({ pilar: 'treinamentos', pct: pct(emDia, trein.total), vencidos: trein.vencido || 0, feitos: emDia, total: trein.total });
+  }
+  if (comp && comp.total > 0) {
+    pilares.push({ pilar: 'competencias', pct: pct(comp.ok || 0, comp.total), vencidos: 0, feitos: comp.ok || 0, total: comp.total });
   }
   const feitos = pilares.reduce((s, p) => s + p.feitos, 0);
   const total = pilares.reduce((s, p) => s + p.total, 0);

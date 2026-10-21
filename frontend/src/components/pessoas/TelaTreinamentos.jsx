@@ -15,6 +15,7 @@ import EditorConteudoTreinamento, { limparConteudo } from "../shared/EditorConte
 import apiService from "../../services/apiService";
 import AssinaturaTela from "../shared/AssinaturaTela";
 import { abrirListaPresenca, prepararJanela } from "../../utils/gerarListaPresenca";
+import { abrirCertificado, abrirAvaliacao, prepararJanela as janelaCert } from "../../utils/gerarCertificado"; // 12e.2c
 
 const SIT = {
   ok:       { l: "Em dia",   i: "✓",  c: "#22c55e" },
@@ -123,6 +124,13 @@ export default function TelaTreinamentos({ C, s, modal, campo, colabs = [], onAv
     try { abrirListaPresenca(await apiService.get(`/pessoas/treinamentos/turmas/${id}/lista-presenca`), janela); }
     catch (e) { try { janela?.close(); } catch { /* ok */ } onErro(e.message); }
   };
+  const imprimir = async (tipo, turmaId, colabId) => { // 12e.2c: certificado / comprovante da avaliação
+    const janela = janelaCert(tipo === "certificado" ? "Gerando o certificado…" : "Gerando o comprovante…");
+    try {
+      const d = await apiService.get(`/pessoas/treinamentos/turmas/${turmaId}/${tipo}/${colabId}`);
+      (tipo === "certificado" ? abrirCertificado : abrirAvaliacao)(d, janela);
+    } catch (e) { try { janela?.close(); } catch { /* ok */ } onErro(e.message); }
+  };
   const abrirEvidencia = async (id) => {
     try { const r = await apiService.get(`/pessoas/treinamentos/turmas/${id}/evidencia`); if (r?.url) window.open(r.url, "_blank", "noopener"); } catch (e) { onErro(e.message); }
   };
@@ -177,8 +185,8 @@ export default function TelaTreinamentos({ C, s, modal, campo, colabs = [], onAv
                   const sc = SIT[i.situacao];
                   const det = i.situacao === "agendado" ? `turma ${dataBR(i.agendado.data)}` : i.situacao === "falta" ? "não realizado" : i.valido_ate ? (i.dias < 0 ? `venceu ${dataBR(i.valido_ate)}` : `válido até ${dataBR(i.valido_ate)}`) : "sem vencimento";
                   return (
-                    <button key={i.codigo} onClick={() => (["falta", "vencido", "vence"].includes(i.situacao) && i.existe ? (setVista("turmas"), novaTurma(false, i.codigo)) : i.agendado ? (setVista("turmas"), abrirTurma(i.agendado.turma_id)) : null)}
-                      title={["falta", "vencido", "vence"].includes(i.situacao) ? "Agendar turma com quem precisa deste treinamento" : ""}
+                    <button key={i.codigo} onClick={() => (["falta", "vencido", "vence"].includes(i.situacao) && i.existe ? (setVista("turmas"), novaTurma(false, i.codigo)) : i.agendado ? abrirTurma(i.agendado.turma_id) : i.ultimo ? abrirTurma(i.ultimo.turma_id) : null)}
+                      title={["falta", "vencido", "vence"].includes(i.situacao) ? "Agendar turma com quem precisa deste treinamento" : i.ultimo || i.agendado ? "Abrir a turma (presença, nota, tentativas)" : ""}
                       style={{ ...s.tag(sc.c), cursor: "pointer", fontFamily: "inherit", border: "none" }}>{sc.i} {i.nome} · {det}</button>
                   );
                 })}
@@ -186,7 +194,7 @@ export default function TelaTreinamentos({ C, s, modal, campo, colabs = [], onAv
             </div>
           ))}
         </div>
-        <div style={{ fontSize: 11, color: C.muted, marginTop: 8 }}>Clique num treinamento faltando ou vencido para agendar uma turma já com todos que precisam dele.</div>
+        <div style={{ fontSize: 11, color: C.muted, marginTop: 8 }}>Clique num treinamento em dia ou agendado para abrir a turma (presença, nota, tentativas); faltando ou vencido, para agendar uma turma já com todos que precisam dele.</div>
       </>)}
 
       {/* ─── 📅 turmas ─── */}
@@ -340,7 +348,7 @@ export default function TelaTreinamentos({ C, s, modal, campo, colabs = [], onAv
               <option value="">Escolha…</option>{treinos.map((t) => <option key={t.id} value={t.id}>{t.nome}</option>)}</select>)}
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               {campo(manual ? "REALIZADO EM" : "DATA", <input type="date" value={f.data} max={manual ? hoje() : undefined} onChange={(e) => setFormTurma({ ...f, data: e.target.value })} style={s.input} />, "1 1 150px")}
-              {campo("ATÉ (SE DUROU MAIS DE 1 DIA)", <input type="date" value={f.data_fim} min={f.data || undefined} onChange={(e) => setFormTurma({ ...f, data_fim: e.target.value })} style={s.input} />, "1 1 150px")}
+              {campo(f.modalidade === "online" ? "PRAZO PARA FAZER (ATÉ)" : "ATÉ (SE DUROU MAIS DE 1 DIA)", <input type="date" value={f.data_fim} min={f.data || undefined} onChange={(e) => setFormTurma({ ...f, data_fim: e.target.value })} style={s.input} />, "1 1 150px")}
               {!manual && campo("MODALIDADE", <select value={f.modalidade} onChange={(e) => setFormTurma({ ...f, modalidade: e.target.value })} style={s.input}><option value="presencial">Presencial</option><option value="online">Online</option></select>, "1 1 130px")}
             </div>
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
@@ -387,6 +395,7 @@ export default function TelaTreinamentos({ C, s, modal, campo, colabs = [], onAv
               <span style={s.tag(ST[t.status].c)}>{ST[t.status].l}</span>
             </div>
             <div style={{ fontSize: 12, color: C.textSub, margin: "4px 0 12px" }}>{dataBR(t.data)}{t.data_fim ? ` a ${dataBR(t.data_fim)}` : ""} · {MOD[t.modalidade]}{t.instrutor ? ` · instrutor: ${t.instrutor}` : ""}{t.carga_horaria ? ` · ${Number(t.carga_horaria).toLocaleString("pt-BR")} h` : ""}{t.local ? ` · ${t.local}` : ""}{t.validade_meses ? ` · válido por ${t.validade_meses} meses` : ""}</div>
+            {online && t.status === "agendada" && <div style={{ fontSize: 11, color: C.textSub, marginTop: -8, marginBottom: 10 }}>{t.data_fim ? <>⏳ Prazo para fazer: <b style={{ color: C.text }}>até {dataBR(t.data_fim)}</b> — depois disso a turma se encerra sozinha.</> : "Sem prazo — encerra sozinha quando todos concluírem, ou pelo botão 🔒 Encerrar."}</div>}
             {online && (
               <div style={{ border: `1px solid ${C.accent}55`, borderRadius: 8, padding: 10, marginBottom: 10, fontSize: 12 }}>
                 <div style={{ color: C.textSub, marginBottom: 6 }}>💻 <b style={{ color: C.text }}>Online</b>: cada participante faz {pv.tem_prova ? `a prova (mínimo ${pv.nota_minima}%)` : "o conteúdo e declara que concluiu"} em <b style={{ color: C.text }}>🎓 Meus treinamentos</b> (se tiver acesso) ou pelo link abaixo, com CPF + data de nascimento. Aprovado = presença + horas.</div>
@@ -408,6 +417,8 @@ export default function TelaTreinamentos({ C, s, modal, campo, colabs = [], onAv
                     <span style={{ fontSize: 11, color: C.textSub }} title="Tentativas usadas / permitidas · melhor nota">📝 {x.usadas}/{x.max}{x.melhor != null ? ` · ${Number(x.melhor).toLocaleString("pt-BR")}%` : ""}{x.meio ? ` · ${x.meio === "link" ? "pelo link" : "logado"}` : ""}</span>
                     {x.esgotou && t.status === "agendada" && <button onClick={async () => { try { await apiService.post(`/pessoas/treinamentos/turmas/${t.id}/liberar/${p.colaborador_id}`); onAviso(`Novas tentativas liberadas para ${p.nome}.`); await abrirTurma(t.id); } catch (e) { onErro(e.message); } }} style={{ ...s.btn(true, "#f59e0b"), cursor: "pointer", padding: "4px 10px", fontSize: 11 }}>↻ Liberar tentativas</button>}
                   </>); })()}
+                  {p.presente && p.aprovado !== false && (t.status === "concluida" || online) && <button onClick={() => imprimir("certificado", t.id, p.colaborador_id)} title="Certificado" style={{ ...s.btn(false), cursor: "pointer", padding: "3px 8px", fontSize: 11, color: C.text }}>🎓 Certificado</button>}
+                  {editar && online && pv.por_colaborador?.[String(p.colaborador_id)]?.usadas > 0 && <button onClick={() => imprimir("avaliacao", t.id, p.colaborador_id)} title="Comprovante da avaliação (com gabarito)" style={{ ...s.btn(false), cursor: "pointer", padding: "3px 8px", fontSize: 11, color: C.text }}>📄 Avaliação</button>}
                   {p.presente
                     ? <span style={s.tag("#22c55e")}>✓ {t.modalidade === "manual" ? "Participou" : online && p.aprovado ? `Aprovado ${p.nota != null ? `${Number(p.nota).toLocaleString("pt-BR")}% ` : ""}${p.assinado_em ? new Date(p.assinado_em).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : ""}` : online && !p.assinou ? `Concluiu ${p.assinado_em ? new Date(p.assinado_em).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : ""}` : `Assinou ${p.assinado_em ? new Date(p.assinado_em).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : ""}`}</span>
                     : t.status === "agendada"
@@ -436,7 +447,11 @@ export default function TelaTreinamentos({ C, s, modal, campo, colabs = [], onAv
               ) : <button onClick={() => setAddPart([])} style={{ background: "none", border: "none", color: C.accent, fontSize: 12, cursor: "pointer", marginTop: 8, padding: 0, fontFamily: "inherit" }}>＋ Adicionar participante</button>
             )}
             <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
-              {t.status === "agendada" && <button onClick={() => acaoTurma("concluir")} disabled={!ps.some((p) => p.presente)} title={ps.some((p) => p.presente) ? "" : "Colha ao menos uma assinatura"} style={{ ...s.btn(ps.some((p) => p.presente), C.success), cursor: "pointer", flex: "1 1 160px" }}>✓ Concluir turma</button>}
+              {t.status === "agendada" && (() => { // 12e.2d: "Encerrar" com o que vai acontecer
+                const feitos = ps.filter((p) => p.presente).length, nao = ps.length - feitos;
+                return <button onClick={() => setConfirmar({ titulo: "Encerrar turma", botao: "🔒 Encerrar", texto: `${feitos} concluíram${nao ? ` · ${nao} ainda não ${online ? "fizeram" : "assinaram"} — vão ficar como "faltou"` : ""}. Depois de encerrar, ninguém mais entra${online ? " (o link da prova para de aceitar tentativas)" : ""} e a turma sai das agendadas.`, acao: async () => { const r = await apiService.post(`/pessoas/treinamentos/turmas/${t.id}/concluir`); await abrirTurma(t.id); return `Turma encerrada: ${r?.presentes || 0} concluíram${r?.faltaram ? `, ${r.faltaram} faltaram` : ""}.`; } })}
+                  disabled={!feitos} title={feitos ? "" : online ? "Ninguém concluiu ainda" : "Colha ao menos uma assinatura"} style={{ ...s.btn(!!feitos, C.success), cursor: "pointer", flex: "1 1 160px" }}>🔒 Encerrar turma</button>;
+              })()}
               {t.modalidade !== "manual" && <button onClick={() => imprimirLista(t.id)} style={{ ...s.btn(false), cursor: "pointer", flex: "1 1 140px", color: C.text }}>🖨 Lista de presença</button>}
               {t.evidencia_path && <button onClick={() => abrirEvidencia(t.id)} style={{ ...s.btn(false), cursor: "pointer", flex: "1 1 140px", color: C.accent }}>📎 Ver evidência</button>}
               {t.status === "agendada" && <button onClick={() => setConfirmar({ titulo: "Cancelar turma", texto: `Cancelar a turma de ${dataBR(t.data)}? As assinaturas já colhidas ficam no histórico, mas não valem como treinamento.`, botao: "Cancelar turma", acao: async () => { await apiService.post(`/pessoas/treinamentos/turmas/${t.id}/cancelar`); await abrirTurma(t.id); return "Turma cancelada."; } })} style={{ ...s.btn(false), cursor: "pointer", flex: "0 1 auto", color: C.danger }}>Cancelar turma</button>}

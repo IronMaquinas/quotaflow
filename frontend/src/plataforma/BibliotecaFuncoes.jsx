@@ -4,6 +4,7 @@
 // Editar descritivo/requisitos/documentos sobe a versão → as empresas que importaram veem "versão nova".
 // Tirar da biblioteca só desativa: as cópias das empresas continuam intactas.
 import { useState, useEffect, useCallback } from "react";
+import EditorCompetencias, { limparCompetencias } from "../components/shared/EditorCompetencias"; // 12e.3
 
 const semAcento = (t) => String(t || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 // busca por nome, descritivo, requisitos ou documento exigido (sem acento, sem maiúscula)
@@ -38,6 +39,7 @@ export default function BibliotecaFuncoes({ token, chamar, C, input, label, card
     try {
       const corpo = { nome: form.nome, descritivo: form.descritivo, requisitos: form.requisitos, documentos: form.documentos.map((codigo) => ({ codigo })),
         cbo: form.cbo, setor: form.setor, escolaridade: form.escolaridade || null, riscos: form.riscos, responde_a: form.responde_a,
+        ...((dados?.modelos || []).some((m) => m.competencias !== undefined) || form.cnh_categoria || (form.competencias || []).length ? { cnh_categoria: form.cnh_categoria || null, competencias: limparCompetencias(form.competencias) } : {}), // 12e.3
         epis: form.epis.map((k) => ({ tipo: k.tipo, quantidade: Number(k.quantidade) || 1, troca_dias: k.troca_dias === "" || k.troca_dias == null ? null : Number(k.troca_dias) })) };
       const r = form.id ? await chamar(token, "PUT", `/biblioteca/funcoes/${form.id}`, corpo) : await chamar(token, "POST", "/biblioteca/funcoes", corpo);
       onAviso({ tipo: "ok", texto: form.id ? (r?.versao_subiu ? `Modelo salvo — versão ${r.modelo?.versao}. Quem importou verá "versão nova".` : "Modelo salvo.") : "Modelo criado na biblioteca." });
@@ -60,7 +62,7 @@ export default function BibliotecaFuncoes({ token, chamar, C, input, label, card
         <div style={{ fontSize: 13, color: C.sub, flex: 1, minWidth: 240 }}>
           Modelos de função que todas as transportadoras veem em <b style={{ color: C.text }}>👷 Pessoas → Funções → Importar da biblioteca</b>. Importar faz uma cópia que a empresa adapta.
         </div>
-        <button type="button" onClick={() => setForm({ nome: "", descritivo: "", requisitos: "", documentos: [], cbo: "", setor: "", escolaridade: "", riscos: [], responde_a: "", epis: [] })} style={btn(C.accent)}>＋ Novo modelo</button>
+        <button type="button" onClick={() => setForm({ nome: "", descritivo: "", requisitos: "", documentos: [], cbo: "", setor: "", escolaridade: "", riscos: [], responde_a: "", epis: [], cnh_categoria: "", competencias: [] })} style={btn(C.accent)}>＋ Novo modelo</button>
       </div>
 
       {dados.modelos.length > 0 && (
@@ -75,7 +77,7 @@ export default function BibliotecaFuncoes({ token, chamar, C, input, label, card
               <div style={{ fontWeight: 700, fontSize: 14, flex: 1, minWidth: 200 }}>{m.nome}</div>
               <span style={tag(C.violet)}>v{m.versao || 1}</span>
               <span style={tag(C.muted)}>{m.importacoes} empresa(s) importaram</span>
-              <button type="button" onClick={() => setForm({ id: m.id, nome: m.nome, descritivo: m.descritivo || "", requisitos: m.requisitos || "", documentos: (m.documentos || []).map((d) => d.codigo), cbo: m.cbo || "", setor: m.setor || "", escolaridade: m.escolaridade || "", riscos: m.riscos || [], responde_a: m.responde_a || "", epis: (m.epis || []).map((k) => ({ ...k, troca_dias: k.troca_dias ?? "" })) })} style={btn(C.accent, false)}>Editar</button>
+              <button type="button" onClick={() => setForm({ id: m.id, nome: m.nome, descritivo: m.descritivo || "", requisitos: m.requisitos || "", documentos: (m.documentos || []).map((d) => d.codigo), cbo: m.cbo || "", setor: m.setor || "", escolaridade: m.escolaridade || "", riscos: m.riscos || [], responde_a: m.responde_a || "", epis: (m.epis || []).map((k) => ({ ...k, troca_dias: k.troca_dias ?? "" })), cnh_categoria: m.cnh_categoria || "", competencias: (m.competencias || []).map((c) => ({ ...c, reavaliar_meses: c.reavaliar_meses ?? "" })) })} style={btn(C.accent, false)}>Editar</button>
               <button type="button" onClick={() => setConfirmar(m)} style={btn(C.danger, false)}>Tirar da biblioteca</button>
             </div>
             {[m.cbo && `CBO ${m.cbo}`, m.setor, m.escolaridade && escolaridades.find((e) => e.codigo === m.escolaridade)?.nome, m.responde_a && `responde a ${m.responde_a}`].filter(Boolean).length > 0 && (
@@ -107,9 +109,14 @@ export default function BibliotecaFuncoes({ token, chamar, C, input, label, card
               <label style={{ flex: "1 1 180px" }}><span style={label}>ESCOLARIDADE MÍNIMA</span>
                 <select value={form.escolaridade} onChange={(e) => setForm({ ...form, escolaridade: e.target.value })} style={input}>
                   <option value="">Não definida</option>{escolaridades.map((x) => <option key={x.codigo} value={x.codigo}>{x.nome}</option>)}</select></label>
+              <label style={{ flex: "1 1 120px" }}><span style={label}>CNH MÍNIMA</span>
+                <select value={form.cnh_categoria || ""} onChange={(e) => setForm({ ...form, cnh_categoria: e.target.value })} style={input}>
+                  <option value="">Não exige</option>{(dados?.cnh_categorias || []).map((x) => <option key={x} value={x}>{x}</option>)}</select></label>
               <label style={{ flex: "2 1 200px" }}><span style={label}>RESPONDE A</span>
                 <input value={form.responde_a} onChange={(e) => setForm({ ...form, responde_a: e.target.value })} placeholder="Encarregado de manutenção" style={input} /></label>
             </div>
+            <div style={{ marginBottom: 12 }}><EditorCompetencias valor={form.competencias || []} onChange={(v) => setForm((f) => ({ ...f, competencias: v }))} sugestoes={dados?.sugestoes_competencias || []}
+              ui={{ text: C.text, sub: C.sub, border: C.border, accent: C.accent, danger: C.danger, input, label, tag }} /></div>
             <label style={{ display: "block", marginBottom: 12 }}><span style={label}>DESCRITIVO (ATIVIDADES E RESPONSABILIDADES)</span>
               <textarea rows={6} value={form.descritivo} onChange={(e) => setForm({ ...form, descritivo: e.target.value })} style={{ ...input, resize: "vertical" }} /></label>
             <label style={{ display: "block", marginBottom: 12 }}><span style={label}>REQUISITOS (ESCOLARIDADE, EXPERIÊNCIA, HABILITAÇÃO)</span>

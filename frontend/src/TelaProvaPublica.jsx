@@ -47,6 +47,7 @@ export default function TelaProvaPublica() {
     material: (_t, i) => chamar("GET", `/material/${i}`),
     prova: (_t, respostas) => chamar("POST", "/prova", { respostas }),
     concluir: () => chamar("POST", "/concluir", {}),
+    certificado: () => chamar("GET", "/certificado"), // 12e.2c
   };
 
   return (
@@ -62,8 +63,8 @@ export default function TelaProvaPublica() {
           : (
             <div style={{ ...card, padding: 22, maxWidth: 420, margin: "30px auto 0" }}>
               <div style={{ fontSize: 18, fontWeight: 700 }}>🎓 {info.treinamento}</div>
-              <div style={{ fontSize: 13, color: C.textSub, margin: "6px 0 18px" }}>{info.encerrada ? "Esta turma já foi encerrada." : "Para começar, confirme quem você é."}</div>
-              {!info.encerrada && (<>
+              <div style={{ fontSize: 13, color: C.textSub, margin: "6px 0 18px" }}>{info.encerrada ? "Esta turma já foi encerrada — entre para ver seu resultado e baixar o certificado." : <>Para começar, confirme quem você é.{info.prazo ? <><br /><b style={{ color: C.warn }}>⏳ Prazo: até {String(info.prazo).slice(0, 10).split("-").reverse().join("/")}</b></> : null}</>}</div>
+              {(<>
                 <label style={{ display: "block", marginBottom: 12 }}><span style={{ fontSize: 11, color: C.muted, fontWeight: 600, letterSpacing: ".08em" }}>CPF</span>
                   <input value={cpf} onChange={(e) => setCpf(mascCPF(e.target.value))} inputMode="numeric" placeholder="000.000.000-00" style={input} /></label>
                 <label style={{ display: "block", marginBottom: 16 }}><span style={{ fontSize: 11, color: C.muted, fontWeight: 600, letterSpacing: ".08em" }}>DATA DE NASCIMENTO</span>

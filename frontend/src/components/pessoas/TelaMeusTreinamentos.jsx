@@ -3,13 +3,14 @@
 // Tudo vem de /api/meus-treinamentos (o backend acha o colaborador pelo usuário logado).
 import { useState, useEffect } from "react";
 import apiService from "../../services/apiService";
-import AulaEProva, { ListaMeusTreinamentos, CORES, card } from "./AreaTreinamentoColaborador";
+import AulaEProva, { ListaMeusTreinamentos, CORES, card, baixarCertificado } from "./AreaTreinamentoColaborador";
 
 const api = {
   abrir: (t) => apiService.get(`/meus-treinamentos/${t}`),
   material: (t, i) => apiService.get(`/meus-treinamentos/${t}/material/${i}`),
   prova: (t, respostas) => apiService.post(`/meus-treinamentos/${t}/prova`, { respostas }),
   concluir: (t) => apiService.post(`/meus-treinamentos/${t}/concluir`, {}),
+  certificado: (t) => apiService.get(`/meus-treinamentos/${t}/certificado`), // 12e.2c
 };
 
 export default function TelaMeusTreinamentos() {
@@ -23,7 +24,8 @@ export default function TelaMeusTreinamentos() {
       {erro && !dados ? <div style={{ ...card, padding: 20, color: CORES.textSub }}>{erro}</div>
         : !dados ? <div style={{ color: CORES.muted }}>Carregando…</div>
         : aberta ? <AulaEProva api={api} turmaId={aberta} onVoltar={() => { setAberta(null); carregar(); }} onMudou={carregar} />
-        : <ListaMeusTreinamentos dados={dados} onAbrir={setAberta} />}
+        : <ListaMeusTreinamentos dados={dados} onAbrir={setAberta} onCertificado={(t) => baixarCertificado(api, t, setErro)} />}
+      {erro && dados && <div style={{ color: CORES.danger, fontSize: 13, marginTop: 10 }}>{erro}</div>}
     </div>
   );
 }

@@ -31,16 +31,16 @@ function lerSessao(token) {
 
 async function turmaPorLink(supabase, token) {
   if (!/^[a-f0-9]{32,64}$/.test(String(token || ''))) return null;
-  const t = (await q(supabase.from('treinamento_turmas').select('*').eq('link_token', token)))[0];
-  return t && t.link_ativo ? t : null;
+  let t = (await q(supabase.from('treinamento_turmas').select('*').eq('link_token', token)))[0];
+  if (t && TR.prazoVencido(t)) { await TR.fecharOnlineVencidas(supabase, t.tenant_id, [t]); t = (await q(supabase.from('treinamento_turmas').select('*').eq('id', t.id)))[0]; } // 12e.2d
+  return t && (t.link_ativo || t.status === 'concluida') ? t : null; // encerrada: o link ainda abre (certificado), mas não aceita prova
 }
 
 /** Link externo: CPF + nascimento têm de bater com um participante da turma */
 async function identificar(supabase, token, { cpf, nascimento }) {
   const turma = await turmaPorLink(supabase, token);
   if (!turma) return { status: 404, erro: 'Link inválido ou desativado. Peça um novo ao responsável pelo treinamento.' };
-  if (turma.status !== 'agendada') return { status: 400, erro: 'Esta turma já foi encerrada.' };
-  const c = soDigitos(cpf);
+  const c = soDigitos(cpf); // 12e.2d: turma encerrada ainda deixa entrar (ver resultado e baixar o certificado)
   if (c.length !== 11 || !/^\d{4}-\d{2}-\d{2}$/.test(String(nascimento || ''))) return { status: 400, erro: 'Informe o CPF e a data de nascimento.' };
   const ps = await q(supabase.from('treinamento_participacoes').select('*').eq('tenant_id', turma.tenant_id).eq('turma_id', turma.id));
   const colabs = ps.length ? await q(supabase.from('colaboradores').select('*').eq('tenant_id', turma.tenant_id).in('id', ps.map((p) => p.colaborador_id))) : [];
@@ -53,7 +53,7 @@ async function infoLink(supabase, token) {
   const turma = await turmaPorLink(supabase, token);
   if (!turma) return { status: 404, erro: 'Link inválido ou desativado.' };
   const emp = (await q(supabase.from('tenants').select('*').eq('id', turma.tenant_id)))[0] || {};
-  return { treinamento: turma.treinamento_nome, empresa: emp.nome_fantasia || emp.nome || emp.razao_social || 'Empresa', encerrada: turma.status !== 'agendada' };
+  return { treinamento: turma.treinamento_nome, empresa: emp.nome_fantasia || emp.nome || emp.razao_social || 'Empresa', encerrada: turma.status !== 'agendada', prazo: turma.data_fim || null };
 }
 
 // ─── colaborador logado ──────────────────────────────────────────────────
@@ -65,7 +65,8 @@ async function colaboradorDoUsuario(supabase, tenantId, usuarioId) {
 // ─── núcleo ──────────────────────────────────────────────────────────────
 async function contexto(supabase, tenantId, colaboradorId, turmaId) {
   if (!/^\d+$/.test(String(turmaId || ''))) return { status: 404, erro: 'Turma não encontrada' };
-  const turma = await TR.turmaDoTenant(supabase, tenantId, turmaId);
+  let turma = await TR.turmaDoTenant(supabase, tenantId, turmaId);
+  if (turma && TR.prazoVencido(turma)) { await TR.fecharOnlineVencidas(supabase, tenantId, [turma]); turma = await TR.turmaDoTenant(supabase, tenantId, turmaId); } // 12e.2d
   if (!turma || turma.modalidade !== 'online' || turma.status === 'cancelada') return { status: 404, erro: 'Treinamento online não encontrado' };
   const p = (await q(supabase.from('treinamento_participacoes').select('*').eq('tenant_id', tenantId).eq('turma_id', turma.id).eq('colaborador_id', colaboradorId)))[0];
   if (!p) return { status: 403, erro: 'Você não está nesta turma' };
@@ -82,7 +83,7 @@ function resumo(ctx) {
   const usadas = tents.length;
   return {
     turma_id: turma.id, treinamento: turma.treinamento_nome, norma: tr?.norma || null, tipo: tr?.tipo || null,
-    carga_horaria: turma.carga_horaria, data: turma.data, validade_meses: turma.validade_meses, encerrada: turma.status !== 'agendada',
+    carga_horaria: turma.carga_horaria, data: turma.data, prazo: turma.modalidade === 'online' ? turma.data_fim || null : null, validade_meses: turma.validade_meses, encerrada: turma.status !== 'agendada',
     tem_prova: !!prova, nota_minima: prova?.nota_minima ?? null, perguntas: prova?.perguntas?.length || 0,
     tentativas_usadas: usadas, tentativas_max: max, restantes: Math.max(0, max - usadas),
     concluido: aprovado, nota: p.nota, valido_ate: p.valido_ate, concluido_em: p.assinado_em,
@@ -153,7 +154,7 @@ async function enviarProva(supabase, tenantId, colaboradorId, turmaId, { respost
     meio: meio === 'link' ? 'link' : 'logado', usuario_id: usuarioId || null, ip: ip ? String(ip).slice(0, 60) : null, hash, criado_em: agora.toISOString(),
   }]);
   if (error) { if (/treinamento_tentativas_numero_unico/.test(error.message)) return { status: 409, erro: 'Tentativa enviada duas vezes — recarregue a página' }; throw new Error(error.message); }
-  if (r.aprovado) await marcarConcluido(supabase, tenantId, ctx, { nota: r.nota, hash, agora });
+  if (r.aprovado) { await marcarConcluido(supabase, tenantId, ctx, { nota: r.nota, hash, agora }); await TR.fecharSeTodosConcluiram(supabase, tenantId, ctx.turma); } // 12e.2d
   else if (ctx.p.nota == null || r.nota > Number(ctx.p.nota)) await supabase.from('treinamento_participacoes').update({ nota: r.nota }).eq('id', ctx.p.id).eq('tenant_id', tenantId);
   const restantes = Math.max(0, ctx.max - numero);
   return { nota: r.nota, acertos: r.acertos, total: r.total, aprovado: r.aprovado, nota_minima: ctx.prova.nota_minima, restantes, numero };
@@ -168,6 +169,7 @@ async function concluirSemProva(supabase, tenantId, colaboradorId, turmaId, { me
   if (ctx.p.presente) return { status: 400, erro: 'Já concluído' };
   const hash = crypto.createHash('sha256').update(JSON.stringify({ turma: String(ctx.turma.id), colaborador: String(colaboradorId), declaracao: 'conclui_conteudo', meio, em: agora.toISOString() })).digest('hex');
   await marcarConcluido(supabase, tenantId, ctx, { hash, agora });
+  await TR.fecharSeTodosConcluiram(supabase, tenantId, ctx.turma); // 12e.2d
   return { ok: true };
 }
 
@@ -214,3 +216,59 @@ module.exports = {
   gerarSessao, lerSessao, turmaPorLink, identificar, infoLink, colaboradorDoUsuario,
   meusTreinamentos, abrir, linkMaterial, enviarProva, concluirSemProva, liberarTentativas, situacaoTurma, gerarLink,
 };
+
+// ─── 12e.2c: certificado e comprovante da avaliação ──────────────────────
+async function dadosEmpresa(supabase, tenantId) {
+  const emp = (await q(supabase.from('tenants').select('*').eq('id', tenantId)))[0] || {};
+  return { nome: emp.nome_fantasia || emp.nome || emp.razao_social || 'Empresa', razao_social: emp.razao_social || emp.nome || null, cnpj: emp.cnpj || null };
+}
+const mascarar = (cpf) => (cpf ? `***.***.***-${String(cpf).slice(-2)}` : null);
+
+/** Dados do certificado — só para quem concluiu (presente e não reprovado; turma concluída ou online aprovada) */
+async function certificado(supabase, tenantId, turmaId, colaboradorId, { cpfCompleto = true } = {}) {
+  if (!/^\d+$/.test(String(turmaId || '')) || !/^\d+$/.test(String(colaboradorId || ''))) return { status: 404, erro: 'Não encontrado' };
+  const turma = await TR.turmaDoTenant(supabase, tenantId, turmaId);
+  if (!turma) return { status: 404, erro: 'Turma não encontrada' };
+  const p = (await q(supabase.from('treinamento_participacoes').select('*').eq('tenant_id', tenantId).eq('turma_id', turma.id).eq('colaborador_id', colaboradorId)))[0];
+  if (!p || !TR.contaFeito(p, turma)) return { status: 400, erro: 'Certificado só para quem concluiu o treinamento' };
+  const col = (await q(supabase.from('colaboradores').select('*').eq('tenant_id', tenantId).eq('id', colaboradorId)))[0] || {};
+  const tr = turma.treinamento_id ? (await q(supabase.from('treinamentos').select('*').eq('id', turma.treinamento_id)))[0] : null;
+  const concluido = TR.dataFeito(p, turma);
+  const valido = p.valido_ate || (turma.validade_meses ? TR.somaMeses(concluido, turma.validade_meses) : null);
+  const codigo = crypto.createHash('sha256').update(JSON.stringify({ t: String(tenantId), tu: String(turma.id), c: String(colaboradorId), h: p.assinatura_hash || null, concluido, valido })).digest('hex').slice(0, 16).toUpperCase();
+  return {
+    empresa: await dadosEmpresa(supabase, tenantId),
+    colaborador: { nome: col.nome, cpf: cpfCompleto ? col.cpf : mascarar(col.cpf), funcao: col.funcao || null },
+    treinamento: { nome: turma.treinamento_nome, norma: tr?.norma || null, tipo: tr?.tipo || null, conteudo: tr?.conteudo || null, secoes: (tr?.secoes || []).map((x) => x.titulo) },
+    turma: { id: turma.id, data: turma.data, data_fim: turma.data_fim, modalidade: turma.modalidade, instrutor: turma.instrutor, local: turma.local, carga_horaria: turma.carga_horaria },
+    concluido_em: concluido, nota: p.nota != null ? Number(p.nota) : null, valido_ate: valido, horas: TR.horasDe(p, turma),
+    codigo: `${codigo.slice(0, 4)}-${codigo.slice(4, 8)}-${codigo.slice(8, 12)}-${codigo.slice(12, 16)}`, gerado_em: new Date().toISOString(),
+  };
+}
+
+/** Comprovante da avaliação (com gabarito) — só para o gestor */
+async function avaliacao(supabase, tenantId, turmaId, colaboradorId, { cpfCompleto = true } = {}) {
+  if (!/^\d+$/.test(String(turmaId || '')) || !/^\d+$/.test(String(colaboradorId || ''))) return { status: 404, erro: 'Não encontrado' };
+  const turma = await TR.turmaDoTenant(supabase, tenantId, turmaId);
+  if (!turma) return { status: 404, erro: 'Turma não encontrada' };
+  const p = (await q(supabase.from('treinamento_participacoes').select('*').eq('tenant_id', tenantId).eq('turma_id', turma.id).eq('colaborador_id', colaboradorId)))[0];
+  if (!p) return { status: 404, erro: 'Colaborador não está nesta turma' };
+  const tents = (await q(supabase.from('treinamento_tentativas').select('*').eq('tenant_id', tenantId).eq('participacao_id', p.id))).sort((a, b) => a.numero - b.numero);
+  if (!tents.length) return { status: 404, erro: 'Nenhuma tentativa de prova' };
+  const col = (await q(supabase.from('colaboradores').select('*').eq('tenant_id', tenantId).eq('id', colaboradorId)))[0] || {};
+  return {
+    empresa: await dadosEmpresa(supabase, tenantId),
+    colaborador: { nome: col.nome, cpf: cpfCompleto ? col.cpf : mascarar(col.cpf), funcao: col.funcao || null },
+    turma: { id: turma.id, treinamento_nome: turma.treinamento_nome, data: turma.data, instrutor: turma.instrutor, carga_horaria: turma.carga_horaria },
+    situacao: p.presente && p.aprovado !== false ? 'aprovado' : 'nao_aprovado', tentativas_extra: Number(p.tentativas_extra || 0),
+    tentativas: tents.map((x) => ({
+      numero: x.numero, em: x.criado_em, meio: x.meio, ip: x.ip, nota: Number(x.nota), acertos: x.acertos, total: x.total, aprovado: x.aprovado, hash: x.hash,
+      nota_minima: x.prova?.nota_minima,
+      perguntas: (x.prova?.perguntas || []).map((pq, i) => ({ enunciado: pq.enunciado, alternativas: pq.alternativas, correta: pq.correta, marcada: (x.respostas || [])[i] })),
+    })),
+    gerado_em: new Date().toISOString(),
+  };
+}
+
+module.exports.certificado = certificado;
+module.exports.avaliacao = avaliacao;

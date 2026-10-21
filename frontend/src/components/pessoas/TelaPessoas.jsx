@@ -9,6 +9,8 @@ import apiService from "../../services/apiService";
 import TelaEpi from "./TelaEpi"; // etapa 12d.1
 import TelaTreinamentos from "./TelaTreinamentos"; // etapa 12e.1
 import { AcessoColaborador, CardAniversariantes } from "./AcessoColaborador"; // etapa 12e.2b
+import FichaCompetencias from "./FichaCompetencias"; // etapa 12e.3
+import EditorCompetencias, { limparCompetencias } from "../shared/EditorCompetencias"; // etapa 12e.3
 
 const ALVO = { colaborador: "Pessoa", equipamento: "Equipamento", empresa: "Empresa" };
 const SITUACAO_DOC = {
@@ -31,7 +33,7 @@ const SELO = {
   atencao:      { l: "Atenção",       i: "🔴", c: "#ef4444" },
   sem_funcao:   { l: "Defina a função", i: "⚪", c: "#94a3b8" }, // 12d.3.1: sem função não dá para avaliar
 };
-const PILAR = { funcao: { i: "👔", l: "Função" }, documentos: { i: "📄", l: "Documentos" }, epi: { i: "🦺", l: "EPIs" }, treinamentos: { i: "🎓", l: "Treinamentos" } };
+const PILAR = { funcao: { i: "👔", l: "Função" }, documentos: { i: "📄", l: "Documentos" }, epi: { i: "🦺", l: "EPIs" }, treinamentos: { i: "🎓", l: "Treinamentos" }, competencias: { i: "🧩", l: "Competências" } };
 const SIT_EPI = { ok: { l: "Em dia", c: "#22c55e", i: "🟢" }, vence: { l: "Troca em breve", c: "#f59e0b", i: "🟡" }, vencido: { l: "Troca vencida", c: "#ef4444", i: "🔴" }, nao_entregue: { l: "Não entregue", c: "#94a3b8", i: "⚪" } };
 const MOTIVO_FUNCAO = { promocao: "Promoção", transferencia: "Transferência", readaptacao: "Readaptação", correcao: "Correção de cadastro", admissao: "Admissão", outro: "Outro" }; // 12d.3
 const SITUACAO_COLAB = { ativo: "Ativo", afastado: "Afastado", desligado: "Desligado" };
@@ -79,7 +81,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
   const [voltarFicha, setVoltarFicha] = useState(null); // reabre a ficha depois de salvar um documento
   const [buscaFuncao, setBuscaFuncao] = useState("");   // busca na aba Funções
   const [buscaBiblio, setBuscaBiblio] = useState("");   // busca na biblioteca
-  const [listas, setListas] = useState({ escolaridades: [], riscos: [], tipos_epi: [], sugestao_por_risco: {}, treinamentos: [] }); // 12d.0.2 (vêm da API)
+  const [listas, setListas] = useState({ escolaridades: [], riscos: [], tipos_epi: [], sugestao_por_risco: {}, treinamentos: [], cnh_categorias: [], sugestoes_competencias: [] }); // 12d.0.2 (vêm da API)
 
   useEffect(() => { if (abaInicial) { setAba(abaInicial); onAbaConsumida?.(); } }, [abaInicial]); // eslint-disable-line
   useEffect(() => { if (!aviso) return; const t = setTimeout(() => setAviso(""), 4500); return () => clearTimeout(t); }, [aviso]);
@@ -93,7 +95,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
         apiService.get("/pessoas/documentos", historico ? { historico: "1" } : {}),
       ]);
       setConfig(cfg || {}); setColabs(c?.colaboradores || []); setDocs(d?.documentos || []); setResumo(d?.resumo || {});
-      try { const f = await apiService.get("/pessoas/funcoes"); setFuncoes(f?.funcoes || []); setListas({ escolaridades: f?.escolaridades || [], riscos: f?.riscos || [], tipos_epi: f?.tipos_epi || [], sugestao_por_risco: f?.sugestao_por_risco || {}, treinamentos: f?.treinamentos || [] }); setFuncoesOk(true); }
+      try { const f = await apiService.get("/pessoas/funcoes"); setFuncoes(f?.funcoes || []); setListas({ escolaridades: f?.escolaridades || [], riscos: f?.riscos || [], tipos_epi: f?.tipos_epi || [], sugestao_por_risco: f?.sugestao_por_risco || {}, treinamentos: f?.treinamentos || [], cnh_categorias: f?.cnh_categorias || [], sugestoes_competencias: f?.sugestoes_competencias || [] }); setFuncoesOk(true); }
       catch { setFuncoes([]); setFuncoesOk(false); }
     } catch (e) { setErro(e.message || "Erro ao carregar"); }
     finally { setCarregando(false); }
@@ -126,6 +128,12 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
         {(f.riscos || []).length > 0 && (
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
             {f.riscos.map((r) => <span key={r} style={s.tag(corRisco(r))}>⚠ {nomeRisco(r)}</span>)}
+          </div>
+        )}
+        {(f.cnh_categoria || (f.competencias || []).length > 0) && (
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
+            {f.cnh_categoria && <span style={s.tag("#0ea5e9")}>🪪 CNH {f.cnh_categoria}+</span>}
+            {(f.competencias || []).map((c) => <span key={c.codigo} style={s.tag("#0ea5e9")}>🧩 {c.nome}{c.reavaliar_meses ? ` · ${c.reavaliar_meses} m` : ""}</span>)}
           </div>
         )}
         {(f.treinamentos || []).length > 0 && (
@@ -163,6 +171,8 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       delete corpo.tem_tamanhos;
       if (!formColab.tem_nascimento && !corpo.data_nascimento) delete corpo.data_nascimento; // 12e.2a: antes da migration 031
       delete corpo.tem_nascimento;
+      if (!formColab.tem_comp && !corpo.escolaridade && !corpo.cnh_categoria) { delete corpo.escolaridade; delete corpo.cnh_categoria; } // 12e.3: antes da migration 033
+      delete corpo.tem_comp;
       // 12e.2b: login não mexido no formulário → não envia (o acesso a "Meus treinamentos" pode ter sido criado enquanto o form estava aberto)
       if (id && String(corpo.usuario_id || "") === String(formColab.usuario_original || "")) delete corpo.usuario_id;
       delete corpo.usuario_original;
@@ -222,6 +232,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
     catch (e) { setErro(e.message); }
     finally { setSalvando(false); }
   };
+  const compOk = funcoes.some((x) => x.competencias !== undefined); // 12e.3: migration 033 já rodou?
   const salvarFuncao = async () => {
     setSalvando(true); setErro("");
     try {
@@ -229,6 +240,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       const corpo = { nome: f.nome, descritivo: f.descritivo, requisitos: f.requisitos, documentos: f.documentos.map((codigo) => ({ codigo })),
         cbo: f.cbo, setor: f.setor, escolaridade: f.escolaridade || null, riscos: f.riscos, responde_a: f.responde_a,
         treinamentos: (f.treinamentos || []).map((codigo) => ({ codigo })),
+        ...(compOk || f.cnh_categoria || (f.competencias || []).length ? { cnh_categoria: f.cnh_categoria || null, competencias: limparCompetencias(f.competencias) } : {}), // 12e.3
         epis: f.epis.map((k) => ({ tipo: k.tipo, quantidade: Number(k.quantidade) || 1, troca_dias: k.troca_dias === "" || k.troca_dias == null ? null : Number(k.troca_dias) })) };
       if (f.id) await apiService.put(`/pessoas/funcoes/${f.id}`, corpo); else await apiService.post("/pessoas/funcoes", corpo);
       setFormFuncao(null); setAviso("Função salva."); await carregar();
@@ -251,6 +263,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       if (igual) { funcao_id = String(igual.id); sugerida = true; }
     }
     setFormColab({ ...c, cpf: c.cpf || "", admissao: c.admissao ? String(c.admissao).slice(0, 10) : "", usuario_id: c.usuario_id || "", usuario_original: c.usuario_id || "", telefone: c.telefone || "", email: c.email || "", funcao: c.funcao || "", obs: c.obs || "", funcao_id, funcao_original: c.funcao_id ? String(c.funcao_id) : "", sugerida, funcao_desde: new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10), funcao_motivo: "promocao",
+      tem_comp: c.escolaridade !== undefined, escolaridade: c.escolaridade || "", cnh_categoria: c.cnh_categoria || "", // 12e.3
       tem_nascimento: c.data_nascimento !== undefined, data_nascimento: c.data_nascimento ? String(c.data_nascimento).slice(0, 10) : "",
       tem_tamanhos: c.tam_calcado !== undefined, tam_calcado: c.tam_calcado || "", tam_camisa: c.tam_camisa || "", tam_calca: c.tam_calca || "", tam_luva: c.tam_luva || "" });
   };
@@ -383,7 +396,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
           <div style={{ display: "flex", marginBottom: 14 }}>
             <div style={{ fontSize: 12, color: C.textSub, alignSelf: "center" }}>Motoristas, ajudantes, mecânicos… não precisam ter login. Quem tem pode ser ligado ao usuário.</div>
             <div style={{ flex: 1 }} />
-            {editar && <button onClick={() => setFormColab({ nome: "", cpf: "", funcao: "", funcao_id: "", funcao_original: "", tam_calcado: "", tam_camisa: "", tam_calca: "", tam_luva: "", admissao: "", data_nascimento: "", situacao: "ativo", telefone: "", email: "", usuario_id: "", obs: "" })} style={{ ...s.btn(true), cursor: "pointer" }}>＋ Novo colaborador</button>}
+            {editar && <button onClick={() => setFormColab({ nome: "", cpf: "", funcao: "", funcao_id: "", funcao_original: "", tam_calcado: "", tam_camisa: "", tam_calca: "", tam_luva: "", admissao: "", data_nascimento: "", escolaridade: "", cnh_categoria: "", situacao: "ativo", telefone: "", email: "", usuario_id: "", obs: "" })} style={{ ...s.btn(true), cursor: "pointer" }}>＋ Novo colaborador</button>}
           </div>
           <CardAniversariantes C={C} s={s} />
           {colabs.length === 0 && !carregando ? (
@@ -445,7 +458,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
             <div style={{ display: "flex", gap: 10, marginBottom: 14, flexWrap: "wrap", alignItems: "center" }}>
               <div style={{ fontSize: 12, color: C.textSub, flex: "1 1 300px" }}>Cada função tem o descritivo do cargo (ISO) e os documentos exigidos. Ao ligar a função ao colaborador, a ficha dele mostra o que falta e o que está vencendo.</div>
               {editar && <button onClick={abrirBiblioteca} style={{ ...s.btn(false), cursor: "pointer", color: C.accent }}>📚 Importar da biblioteca</button>}
-              {editar && <button onClick={() => setFormFuncao({ nome: "", descritivo: "", requisitos: "", documentos: [], cbo: "", setor: "", escolaridade: "", riscos: [], responde_a: "", epis: [], treinamentos: [] })} style={{ ...s.btn(true), cursor: "pointer" }}>＋ Nova função</button>}
+              {editar && <button onClick={() => setFormFuncao({ nome: "", descritivo: "", requisitos: "", documentos: [], cbo: "", setor: "", escolaridade: "", riscos: [], responde_a: "", epis: [], treinamentos: [], cnh_categoria: "", competencias: [] })} style={{ ...s.btn(true), cursor: "pointer" }}>＋ Nova função</button>}
             </div>
             {funcoes.length > 0 && <input value={buscaFuncao} onChange={(e) => setBuscaFuncao(e.target.value)} placeholder="🔍 Buscar função, atividade ou documento…" style={{ ...s.input, maxWidth: 360, padding: "7px 10px", fontSize: 12, marginBottom: 12 }} />}
             {funcoes.length > 0 && !funcoes.some((f) => casaFuncao(f, buscaFuncao)) && <div style={{ ...s.card, padding: 20, textAlign: "center", color: C.textSub, marginBottom: 10 }}>Nenhuma função com “{buscaFuncao}”. {editar && "Tente 📚 Importar da biblioteca."}</div>}
@@ -462,7 +475,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
                       </div>
                       {f.versao_nova && editar && <button onClick={() => setConfirmar({ titulo: "Atualizar da biblioteca", botao: "Atualizar", cor: C.accent, texto: `O modelo “${f.origem_nome}” tem uma versão nova. Atualizar troca o descritivo, os requisitos e os documentos exigidos de “${f.nome}” pelos do modelo (o nome fica). O que você ajustou nesses campos será substituído.`, acao: async () => { await apiService.post(`/pessoas/funcoes/${f.id}/atualizar`); return "Função atualizada com a versão nova da biblioteca."; } })}
                         style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: "#a78bfa", borderColor: "#a78bfa" }}>✨ Versão nova na biblioteca</button>}
-                      {editar && <button onClick={() => setFormFuncao({ id: f.id, nome: f.nome, descritivo: f.descritivo || "", requisitos: f.requisitos || "", documentos: (f.documentos || []).map((d) => d.codigo), cbo: f.cbo || "", setor: f.setor || "", escolaridade: f.escolaridade || "", riscos: f.riscos || [], responde_a: f.responde_a || "", epis: (f.epis || []).map((k) => ({ ...k, troca_dias: k.troca_dias ?? "" })), treinamentos: (f.treinamentos || []).map((t) => t.codigo) })} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.text }}>Editar</button>}
+                      {editar && <button onClick={() => setFormFuncao({ id: f.id, nome: f.nome, descritivo: f.descritivo || "", requisitos: f.requisitos || "", documentos: (f.documentos || []).map((d) => d.codigo), cbo: f.cbo || "", setor: f.setor || "", escolaridade: f.escolaridade || "", riscos: f.riscos || [], responde_a: f.responde_a || "", epis: (f.epis || []).map((k) => ({ ...k, troca_dias: k.troca_dias ?? "" })), treinamentos: (f.treinamentos || []).map((t) => t.codigo), cnh_categoria: f.cnh_categoria || "", competencias: (f.competencias || []).map((c) => ({ ...c, reavaliar_meses: c.reavaliar_meses ?? "" })) })} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.text }}>Editar</button>}
                       {editar && <button onClick={() => excluir("Excluir função", `Excluir “${f.nome}”? Só é possível se nenhum colaborador estiver com essa função.`, async () => { await apiService.delete(`/pessoas/funcoes/${f.id}`); return "Função excluída."; })}
                         style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.danger }}>Excluir</button>}
                     </div>
@@ -499,6 +512,8 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             {campo("ESCOLARIDADE MÍNIMA", <select value={formFuncao.escolaridade} onChange={(e) => setFormFuncao({ ...formFuncao, escolaridade: e.target.value })} style={s.input}>
               <option value="">Não definida</option>{listas.escolaridades.map((x) => <option key={x.codigo} value={x.codigo}>{x.nome}</option>)}</select>, "1 1 180px")}
+            {campo("CNH MÍNIMA", <select value={formFuncao.cnh_categoria || ""} onChange={(e) => setFormFuncao({ ...formFuncao, cnh_categoria: e.target.value })} style={s.input}>
+              <option value="">Não exige</option>{listas.cnh_categorias.map((x) => <option key={x} value={x}>{x}{x === "E" ? " (cobre B, C, D)" : x === "D" ? " (cobre B, C)" : x === "C" ? " (cobre B)" : ""}</option>)}</select>, "1 1 130px")}
             {campo("RESPONDE A (SUPERIOR IMEDIATO)", <input value={formFuncao.responde_a} onChange={(e) => setFormFuncao({ ...formFuncao, responde_a: e.target.value })} placeholder="Supervisor de tráfego…" list="qf-cargos" style={s.input} />, "2 1 200px")}
           </div>
           <datalist id="qf-cargos">{funcoes.filter((f) => f.id !== formFuncao.id).map((f) => <option key={f.id} value={f.nome} />)}</datalist>
@@ -519,6 +534,8 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
             </div>
             <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>Precisa de outro (NR-35, curso de empilhadeira…)? Crie em ＋ Novo documento → ＋ Outro tipo, de “Pessoa”.</div>
           </div>
+          <EditorCompetencias valor={formFuncao.competencias || []} onChange={(v) => setFormFuncao((f) => ({ ...f, competencias: v }))} sugestoes={listas.sugestoes_competencias}
+            ui={{ text: C.text, sub: C.textSub, border: C.border, accent: C.accent, danger: C.danger, input: s.input, label: s.label, tag: s.tag }} />
           <div>
             <span style={s.label}>TREINAMENTOS EXIGIDOS</span>
             <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -700,6 +717,9 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
                 <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Para entregar ou trocar: aba 🦺 EPI → 👷 Gestão de funcionários.</div>
               </div>
             )}
+            {ficha.competencias && <FichaCompetencias C={C} s={s} colaboradorId={ficha.colaborador.id} dados={ficha.competencias} podeEditar={ficha.pode_editar}
+              onMudou={() => abrirFicha(ficha.colaborador.id)} onAviso={setAviso} onErro={setErro}
+              onEditarCadastro={() => { const c = colabs.find((x) => String(x.id) === String(ficha.colaborador.id)); if (c) { setFicha(null); editarColab(c); } }} />}
             {ficha.treinamentos && ficha.treinamentos.itens.length > 0 && (() => {
               const r = ficha.treinamentos.resumo; const COR = { ok: "#22c55e", vence: "#f59e0b", vencido: "#ef4444", agendado: "#3b82f6", falta: "#94a3b8" }; const IC = { ok: "🟢", vence: "🟡", vencido: "🔴", agendado: "📅", falta: "⚪" };
               const partes = [r.falta ? `${r.falta} não realizado(s)` : "", r.agendado ? `${r.agendado} agendado(s)` : "", r.vencido ? `${r.vencido} vencido(s)` : "", r.vence ? `${r.vence} vencendo` : ""].filter(Boolean);
@@ -778,6 +798,14 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
             {campo("SITUAÇÃO", <select value={formColab.situacao} onChange={(e) => setFormColab({ ...formColab, situacao: e.target.value })} style={s.input}>
               {Object.entries(SITUACAO_COLAB).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>, "1 1 160px")}
           </div>
+          {funcoesOk && (formColab.tem_comp || !formColab.id) && ( /* 12e.3: comparadas com a função (🧩 na Ficha) */
+            <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+              {campo("ESCOLARIDADE", <select value={formColab.escolaridade || ""} onChange={(e) => setFormColab({ ...formColab, escolaridade: e.target.value })} style={s.input}>
+                <option value="">Não informada</option>{listas.escolaridades.map((x) => <option key={x.codigo} value={x.codigo}>{x.nome}</option>)}</select>, "2 1 200px")}
+              {campo("CATEGORIA DA CNH", <select value={formColab.cnh_categoria || ""} onChange={(e) => setFormColab({ ...formColab, cnh_categoria: e.target.value })} style={s.input}>
+                <option value="">Sem CNH / não informada</option>{listas.cnh_categorias.map((x) => <option key={x} value={x}>{x}</option>)}</select>, "1 1 140px")}
+            </div>
+          )}
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             {campo("TELEFONE", <input value={formColab.telefone} onChange={(e) => setFormColab({ ...formColab, telefone: e.target.value })} style={s.input} />, "1 1 160px")}
             {campo("E-MAIL", <input value={formColab.email} onChange={(e) => setFormColab({ ...formColab, email: e.target.value })} style={s.input} />, "1 1 200px")}
