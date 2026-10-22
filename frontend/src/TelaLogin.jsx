@@ -445,7 +445,7 @@ export default function TelaLogin({ onLogin, onNavegarPara }) {
 
             <button
               type="button"
-              onClick={() => preencherDemo("teste@xyz.com.br", "123456")}
+              onClick={() => preencherDemo("marconymonteiro@uol.com.br", "123456")}
               style={{
                 background: C.bg,
                 border: `1px solid ${C.border}`,

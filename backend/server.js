@@ -144,7 +144,8 @@ app.use('/api/manutencao', tenantMiddleware, require('./routes/manutencao')); //
 app.use('/api/pessoas', tenantMiddleware, require('./routes/pessoas')); // Colaboradores e documentos com vencimento (etapa 12c)
 app.use('/api/meus-treinamentos', tenantMiddleware, require('./routes/meusTreinamentos')); // etapa 12e.2b — colaborador logado
 app.use('/api/prova', require('./routes/provaPublica'));
-app.use('/api/autuacoes', tenantMiddleware, require('./routes/autuacoes')); // etapa 12i — autuações da empresa (requisito legal) // etapa 12e.2b — link externo da prova (público, CPF + nascimento)
+app.use('/api/autuacoes', tenantMiddleware, require('./routes/autuacoes'));
+app.use('/api/inspecoes', tenantMiddleware, require('./routes/inspecoes')); // etapa 14a — inspeções de equipamento // etapa 12i — autuações da empresa (requisito legal) // etapa 12e.2b — link externo da prova (público, CPF + nascimento)
 
 // Rota de saúde (Railway usa para verificar se o servidor está rodando)
 app.get("/health", (req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));

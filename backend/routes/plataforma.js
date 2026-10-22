@@ -27,6 +27,7 @@ const { supabase } = require('../db');
 const F = require('../services/funcoes'); // etapa 12d.0
 const E = require('../services/epi');     // etapa 12d.1b
 const TR = require('../services/treinamentos'); // etapa 12e.2a
+const INSP = require('../services/inspecoes'); // etapa 14a
 
 const tentativas = new Map(); // email → { n, desde }
 const JANELA_MS = 15 * 60 * 1000;
@@ -115,5 +116,12 @@ router.get('/biblioteca/treinamentos/material', responder((req) => TR.linkMateri
 router.post('/biblioteca/treinamentos', responder(async (req) => { const r = await TR.criarModelo(supabase, req.body); if (!r.erro) await C.registrar(req.plataformaAdmin, 'treinamento_criar', 'treinamento', r.modelo.id, { nome: r.modelo.nome }).catch(() => {}); return r; }));
 router.put('/biblioteca/treinamentos/:id', responder(async (req) => { const r = await TR.editarModelo(supabase, req.params.id, req.body); if (!r.erro) await C.registrar(req.plataformaAdmin, 'treinamento_editar', 'treinamento', req.params.id, { versao_subiu: r.versao_subiu }).catch(() => {}); return r; }));
 router.delete('/biblioteca/treinamentos/:id', responder(async (req) => { const r = await TR.desativarModelo(supabase, req.params.id); if (!r.erro) await C.registrar(req.plataformaAdmin, 'treinamento_desativar', 'treinamento', req.params.id, null).catch(() => {}); return r; }));
+
+// ─── Biblioteca de modelos de inspeção (etapa 14a) ────────────────────────
+router.get('/biblioteca/inspecoes', responder(() => INSP.bibliotecaConsole(supabase)));
+router.post('/biblioteca/inspecoes/imagem', responder((req) => INSP.subirImagemModelo(supabase, 'biblioteca', req.body || {})));
+router.post('/biblioteca/inspecoes', responder(async (req) => { const r = await INSP.criarModeloBib(supabase, req.body); if (!r.erro) await C.registrar(req.plataformaAdmin, 'inspecao_modelo_criar', 'inspecao_modelo', r.modelo.id, { nome: r.modelo.nome }).catch(() => {}); return r; }));
+router.put('/biblioteca/inspecoes/:id', responder(async (req) => { const r = await INSP.editarModeloBib(supabase, req.params.id, req.body); if (!r.erro) await C.registrar(req.plataformaAdmin, 'inspecao_modelo_editar', 'inspecao_modelo', req.params.id, { versao_subiu: r.versao_subiu }).catch(() => {}); return r; }));
+router.get('/biblioteca/inspecoes/:id/imagens', responder(async (req) => { const { data } = await supabase.from('inspecao_modelos').select('*').is('tenant_id', null).eq('id', req.params.id); return { imagens: data?.[0] ? await INSP.linksImagens(supabase, data[0]) : {} }; }));
 
 module.exports = router;

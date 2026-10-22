@@ -30,6 +30,7 @@ import TelaRecebimento from './components/estoque/TelaRecebimento';
 import TelaOrdemServico from './components/estoque/TelaOrdemServico';
 import TelaConfiguracoes from './components/configuracoes/TelaConfiguracoes';
 import TelaNaoConformidades from "./components/naoConformidades/TelaNaoConformidades";
+import TelaInspecoes from "./components/inspecoes/TelaInspecoes"; // etapa 14a
 import TelaCalendarioManutencao from './components/manutencao/TelaCalendarioManutencao'; // etapa 12a
 import TelaPessoas from './components/pessoas/TelaPessoas'; // etapa 12c
 import TelaMeusTreinamentos from './components/pessoas/TelaMeusTreinamentos'; // etapa 12e.2b
@@ -366,6 +367,7 @@ const perfil = PERFIS[usuario.perfil] || {
     {id:"inteligencia",  l:"🧠 Inteligência",         perfis:["admin","gestor"]},
     {id:"benchmark",     l:"📈 Benchmark",            perfis:["admin","gestor"]},
     {id:"equipamentos",  l:"⚙ Equipamentos",          perfis:["admin","gestor","comprador","operacao"]},
+    {id:"inspecoes",     l:"🔍 Inspeções",             perfis:["admin","gestor","comprador","operacao","qualidade"]}, // etapa 14a
     {id:"pessoas",       l:"👷 Pessoas",               perfis:["admin","gestor","qualidade","operacao"]},
     {id:"meus_treinamentos", l:"🎓 Meus treinamentos",  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro"]}, // etapa 12e.2b
     {id:"fornecedores",  l:"🏭 Fornecedores",         perfis:["admin","gestor","comprador"]},
@@ -729,6 +731,12 @@ const perfil = PERFIS[usuario.perfil] || {
         {temAcesso(tela) && tela === "configuracoes" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
             <TelaConfiguracoes C={C} s={s} />
+          </div>)}
+
+        {temAcesso(tela) && tela === "inspecoes" && (
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            <TelaInspecoes C={C} s={s}
+              onAbrirOS={temAcesso("ordem_servico") ? (dados) => { setNovaOSData(dados); setTela("ordem_servico"); } : null} />
           </div>)}
 
         {temAcesso(tela) && tela === "nao_conformidades" && (
@@ -2339,6 +2347,7 @@ const PERMISSOES = {
   inteligencia:       ["admin","gestor"],
   benchmark:          ["admin","gestor"],
   equipamentos:       ["admin","gestor","comprador","operacao"],
+  inspecoes:          ["admin","gestor","comprador","operacao","qualidade"], // etapa 14a
   pessoas:            ["admin","gestor","qualidade","operacao"], // etapa 12c
   meus_treinamentos:  ["admin","gestor","comprador","operacao","qualidade","financeiro","colaborador"], // etapa 12e.2b
   fornecedores:       ["admin","gestor","comprador"],

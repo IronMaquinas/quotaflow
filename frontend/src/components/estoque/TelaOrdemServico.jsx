@@ -336,6 +336,17 @@ export default function TelaOrdemServico({
   // Etapa 12a: o calendário pediu "Nova OS programada" para um dia —
   // abre o modal de criação com programação "geral" já preenchida (08h–17h).
   useEffect(() => {
+    // Etapa 14a: OS a partir de um item "não OK" da inspeção — { inspecao: { id, ponto_id }, equipamento_id, equipamento_nome, descricao, servico_nome, urgencia }
+    if (novaOSData && typeof novaOSData === "object" && novaOSData.inspecao) {
+      const d = novaOSData;
+      setForm({ ...formVazio(), categoria: "corretiva", urgencia: d.urgencia || "media", equipamentoId: d.equipamento_id || "", descricaoGeral: d.descricao || "",
+        servico_nome: d.servico_nome || "", itens: [{ ...novoServico("planejado"), nome: d.servico_nome || "Reparo", descricao: d.descricao || "" }], origemInspecao: d.inspecao });
+      setEqSearch(d.equipamento_nome || "");
+      setShowDrop(false);
+      setModal("novo");
+      onNovaOSAberta?.();
+      return;
+    }
     if (!novaOSData || !/^\d{4}-\d{2}-\d{2}$/.test(novaOSData)) return;
     setForm({ ...formVazio(), categoria: "preventiva", modoProgramacao: "geral",
       dataInicioPrevista: `${novaOSData}T08:00`, dataFimPrevista: `${novaOSData}T17:00` });
@@ -635,6 +646,10 @@ export default function TelaOrdemServico({
         alert("Ordem de Serviço atualizada com sucesso!");
       } else {
         const resposta = await criar(payload);
+        // Etapa 14a: OS aberta a partir da inspeção → registra na inspeção (sem travar se falhar)
+        if (form.origemInspecao?.id && resposta?.id) {
+          try { await apiService.post(`/inspecoes/${form.origemInspecao.id}/os`, { ponto_id: form.origemInspecao.ponto_id, os_id: resposta.id, os_numero: resposta.numero || null }); } catch (e) { console.warn("⚠️ OS ↔ inspeção:", e.message); }
+        }
         await carregar();
         for (const it of itensComNumero) {
           if (it.tipo === "material" && it.item_catalogo_id && it.status_estoque !== "sem_estoque") {

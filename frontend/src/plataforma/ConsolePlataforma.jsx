@@ -2,7 +2,7 @@
 //
 // Console da Plataforma (etapa 11b) — <endereço>/#admin
 // Login próprio (plataforma_admins), separado de transportadora e fornecedor.
-// Abas: Visão geral · Aprovações · Transportadoras · Fornecedores · Biblioteca de funções (12d.0) · Catálogo de EPI (12d.1b) · Biblioteca de treinamentos (12e.2a)
+// Abas: Visão geral · Aprovações · Transportadoras · Fornecedores · Biblioteca de funções (12d.0) · Catálogo de EPI (12d.1b) · Biblioteca de treinamentos (12e.2a) · Biblioteca de inspeções (14a)
 // Token guardado em localStorage "plataforma_token" (não mistura com o do sistema).
 
 import { useState, useEffect, useCallback } from "react";
@@ -10,6 +10,7 @@ import { API_URL } from "../utils/constants";
 import BibliotecaFuncoes from "./BibliotecaFuncoes"; // etapa 12d.0
 import BibliotecaEpi from "./BibliotecaEpi"; // etapa 12d.1b
 import BibliotecaTreinamentos from "./BibliotecaTreinamentos"; // etapa 12e.2a
+import BibliotecaInspecoes from "./BibliotecaInspecoes"; // etapa 14a
 
 const C = {
   bg: "#0a0e14", surface: "#111722", surface2: "#0d131d", border: "#1e2535", text: "#e2e8f0", sub: "#94a3b8",
@@ -397,6 +398,7 @@ export default function ConsolePlataforma() {
     { id: "funcoes", t: "📚 Biblioteca de funções" },
     { id: "epi", t: "🦺 Catálogo de EPI" },
     { id: "treinamentos", t: "🎓 Biblioteca de treinamentos" },
+    { id: "inspecoes", t: "🔍 Biblioteca de inspeções" },
   ];
 
   return (
@@ -437,6 +439,7 @@ export default function ConsolePlataforma() {
         {aba === "funcoes" && <BibliotecaFuncoes token={token} chamar={chamar} C={C} input={input} label={label} card={card} btn={btn} tag={tag} onAviso={setAviso} />}
         {aba === "epi" && <BibliotecaEpi token={token} chamar={chamar} C={C} input={input} label={label} card={card} btn={btn} tag={tag} onAviso={setAviso} />}
         {aba === "treinamentos" && <BibliotecaTreinamentos token={token} chamar={chamar} C={C} input={input} label={label} card={card} btn={btn} tag={tag} onAviso={setAviso} />}
+        {aba === "inspecoes" && <BibliotecaInspecoes token={token} chamar={chamar} C={C} input={input} label={label} card={card} btn={btn} tag={tag} onAviso={setAviso} />}
       </div>
 
       {acao && (

@@ -1,0 +1,265 @@
+// backend/server.js
+require("dotenv").config();
+const express = require("express");
+const fileUpload = require("express-fileupload");
+const cors = require("cors");
+const cron = require("node-cron");
+
+const { DB, initializeDB } = require("./db");
+const tenantMiddleware = require("./middleware/tenantMiddleware");
+const fornecedorMiddleware = require("./middleware/fornecedorMiddleware");
+const authRoutes = require("./routes/auth");
+const cotacoesRoutes = require("./routes/cotacoes");
+const fornecedoresRoutes = require("./routes/fornecedores");
+const emailRoutes = require("./routes/email");
+const cnpjRoutes = require("./routes/cnpj");
+const usuariosRoutes = require("./routes/usuarios");
+const equipamentosRouter = require('./routes/equipamentos');
+const tarefasRoutes = require('./routes/tarefas');
+const catalogoRoutes = require("./routes/catalogo");
+
+const app = express();
+const PORT = process.env.PORT || 3001;
+const ordensVendaRoutes = require('./routes/ordensVenda');
+const spotRoutes = require('./routes/spot');
+const fornecedorRoutes = require('./routes/fornecedor');
+const itensConsumoRoutes = require('./routes/estoque/itensConsumo');
+const movimentacoesRoutes = require('./routes/estoque/movimentacoes');
+const recompraRoutes = require('./routes/estoque/recompra');
+const configEstoqueRoutes = require('./routes/estoque/configuracoes');
+const solicitacoesRoutes = require('./routes/estoque/solicitacoes');
+const ordemServicoRoutes = require('./routes/estoque/ordemServico');
+const reservasRoutes = require('./routes/estoque/reservas');
+const enderecosRoutes = require('./routes/estoque/enderecos'); // M4.4-etapa-6c
+const fornecedorProdutosRouter = require('./routes/fornecedorProdutos');
+const buscaFornecedoresRouter = require('./routes/buscaFornecedores');
+const catalogoBuscaRouter = require('./routes/catalogoBusca');
+const naoConformidadesRoutes = require('./routes/naoConformidades');
+const configuracoesRoutes = require('./routes/configuracoes');
+const fornecedorNCRoutes = require('./routes/fornecedorNC');
+const recomendacoesRoutes = require('./routes/recomendacoes'); // e-mails Pro do Canal Spot (etapa 8)
+const { enviarResumoDiario } = require('./services/recomendacoesEmail');
+
+// ── Middlewares ──────────────────────────────
+const allowedOrigins = [
+  'https://kotuno.netlify.app',
+  'https://quotaflow.netlify.app',
+  'http://localhost:5173'
+];
+
+app.use(cors({
+  origin: function (origin, callback) {
+    // Permite requisições sem origin (ex: Postman) ou se origin estiver na lista
+    if (!origin || allowedOrigins.includes(origin)) {
+      callback(null, true);
+    } else {
+      callback(new Error('Not allowed by CORS'));
+    }
+  },
+  credentials: true
+}));
+app.use(express.json({ limit: '15mb' }));
+app.use(fileUpload());
+
+// M4.6: reescreve PATCH → PUT. O front (apiService.js) chama PATCH em
+// várias rotas (chamados, cotacoes, fornecedores, equipamentos, tarefas),
+// mas o backend registra tudo como PUT. Normaliza o método ANTES do router.
+app.use((req, res, next) => {
+  if (req.method === 'PATCH') {
+    req.method = 'PUT';
+  }
+  next();
+});
+
+// ── Rotas ────────────────────────────────────
+app.use("/api/auth",         authRoutes);
+app.use("/api/cotacoes",     cotacoesRoutes);
+app.use("/api/catalogo",     tenantMiddleware, catalogoRoutes);
+app.use("/api/fornecedores", tenantMiddleware, fornecedoresRoutes); // Fornecedor do Cliente
+app.use("/api/email",        tenantMiddleware, emailRoutes);
+app.use("/api/cnpj",         tenantMiddleware, cnpjRoutes);
+app.use("/api/usuarios",     tenantMiddleware, usuariosRoutes);
+app.use('/api/equipamentos', tenantMiddleware, equipamentosRouter);
+app.use('/api/tarefas',      tenantMiddleware, tarefasRoutes);
+app.use('/api', require('./routes/portalFornecedor'));
+app.use('/api/ordens-venda', tenantMiddleware, ordensVendaRoutes);
+app.use('/api/fornecedor', fornecedorRoutes); // Fornecedor anunciante com perfil de fornecedor exclusivo
+app.use('/api/fornecedor', fornecedorProdutosRouter); // Upload/listagem de produtos do fornecedor (mesmo domínio de fornecedorRoutes)
+app.use('/api/fornecedor/nao-conformidades', fornecedorNCRoutes);
+app.use('/api/busca-fornecedores', tenantMiddleware, buscaFornecedoresRouter);
+app.use('/api/catalogo', tenantMiddleware, catalogoBuscaRouter);
+app.use('/api/estoque/itens', tenantMiddleware, itensConsumoRoutes);
+app.use('/api/estoque/movimentacoes', tenantMiddleware, movimentacoesRoutes);
+app.use('/api/estoque/recompra', tenantMiddleware, recompraRoutes);
+app.use('/api/estoque/configuracoes', tenantMiddleware, configEstoqueRoutes);
+app.use('/api/estoque/solicitacoes', tenantMiddleware, solicitacoesRoutes);
+// M4.4-etapa-6c: catálogo de endereços (CRUD)
+app.use('/api/estoque/enderecos', tenantMiddleware, enderecosRoutes);
+app.use('/api/estoque', solicitacoesRoutes);
+app.use('/api/estoque/ordem-servico', tenantMiddleware, ordemServicoRoutes);
+app.use('/api/estoque', tenantMiddleware, reservasRoutes);
+app.use('/api/nao-conformidades', tenantMiddleware, naoConformidadesRoutes);
+app.use('/api/configuracoes', tenantMiddleware, configuracoesRoutes);
+
+// Etapa 10c: esta rota era PÚBLICA (sem login) e listava todas as demandas abertas
+// com o nome da empresa compradora. Agora exige fornecedor logado e verificado
+// (global) — mesma regra do Canal Spot (services/acessoSpot.js).
+app.get('/api/spot/publicas', fornecedorMiddleware, require('./services/acessoSpot').exigirAcessoSpot, async (req, res) => {
+  try {
+    const demandasAbertas = await DB.select('demandas_spot', { status: 'aberta' });
+
+    const demandas = await Promise.all(demandasAbertas.map(async (ds) => {
+      const tenant = await DB.selectOne('tenants', { id: ds.tenant_id });
+      return {
+        id: ds.id,
+        tenant_id: ds.tenant_id,
+        descricao_equipamento: ds.descricao_equipamento,
+        marca_modelo: ds.marca_modelo,
+        componente: ds.componente,
+        part_number: ds.part_number,
+        quantidade: ds.quantidade,
+        comentarios: ds.comentarios,
+        urgencia: ds.urgencia,
+        criado_em: ds.criado_em,
+        empresa_nome: tenant?.nome ?? null
+      };
+    }));
+
+    demandas.sort((a, b) => new Date(b.criado_em) - new Date(a.criado_em));
+
+    res.json(demandas);
+  } catch (err) {
+    console.error('❌ Erro ao listar demandas públicas:', err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// Rotas protegidas (exigem autenticação)
+app.use('/api/spot', spotRoutes);
+app.use('/api/atuacao', require('./routes/atuacao'));
+// Sem middleware: resumo-diario exige x-cron-secret; descadastro usa token do e-mail
+app.use('/api/recomendacoes', recomendacoesRoutes);
+app.use('/api/plataforma', require('./routes/plataforma')); // Console da Plataforma (etapa 11b) — autenticação própria
+app.use('/api/manutencao', tenantMiddleware, require('./routes/manutencao')); // Calendário de manutenção (etapa 12a) — só leitura
+app.use('/api/pessoas', tenantMiddleware, require('./routes/pessoas')); // Colaboradores e documentos com vencimento (etapa 12c)
+app.use('/api/meus-treinamentos', tenantMiddleware, require('./routes/meusTreinamentos')); // etapa 12e.2b — colaborador logado
+app.use('/api/prova', require('./routes/provaPublica'));
+app.use('/api/autuacoes', tenantMiddleware, require('./routes/autuacoes'));
+app.use('/api/inspecoes', tenantMiddleware, require('./routes/inspecoes')); // etapa 14a — inspeções de equipamento // etapa 12i — autuações da empresa (requisito legal) // etapa 12e.2b — link externo da prova (público, CPF + nascimento)
+
+// Rota de saúde (Railway usa para verificar se o servidor está rodando)
+app.get("/health", (req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));
+
+app.get("/api/cotacao/:token", async (req, res) => {
+  try {
+    const { token } = req.params;
+
+    const cf = await DB.selectOne('cotacao_fornecedores', { token });
+    if (!cf) {
+      return res.status(404).json({ erro: "Cotação não encontrada ou link inválido." });
+    }
+
+    const cotacao = await DB.selectOne('cotacoes', { id: cf.cotacao_id });
+    const chamado = cotacao ? await DB.selectOne('chamados', { id: cotacao.chamado_id }) : null;
+    const tenant = await DB.selectOne('tenants', { id: cf.tenant_id });
+
+    res.json({
+      id: cf.id,
+      tenant_id: cf.tenant_id,
+      cotacao_id: cf.cotacao_id,
+      fornecedor_nome: cf.fornecedor_nome,
+      fornecedor_email: cf.fornecedor_email,
+      token: cf.token,
+      status: cf.status,
+      valor: cf.valor,
+      prazo: cf.prazo,
+      frete: cf.frete,
+      valor_frete: cf.valor_frete,
+      obs: cf.obs,
+      data_resposta: cf.data_resposta,
+      enviado_em: cf.enviado_em,
+      chamado_id: chamado?.id ?? null,
+      chamado_status: cotacao?.status ?? null,
+      numero: chamado?.numero ?? null,
+      peca: chamado?.peca ?? null,
+      codigo: chamado?.codigo ?? null,
+      urgencia: chamado?.urgencia ?? null,
+      empresa_nome: tenant?.nome ?? null
+    });
+  } catch (err) {
+    console.error("❌ Erro ao buscar cotação:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// FIX (2026-09, mesmo problema): a query original usava
+// "UPDATE cotacao_fornecedores SET ... WHERE token = $6" via DB.raw() — sem
+// nenhum "FROM", então nem cai no fallback genérico de SELECT, quebra com
+// "Raw query não suportada". Reescrito sem raw(): busca o registro pelo
+// token de verdade (DB.selectOne) e atualiza só aquela linha.
+app.post("/api/cotacao/:token/responder", async (req, res) => {
+  try {
+    const { token } = req.params;
+    const { valor, prazo, frete, valorFrete, obs } = req.body;
+
+    const cot = await DB.selectOne('cotacao_fornecedores', { token });
+    if (!cot) {
+      return res.status(404).json({ erro: "Link inválido." });
+    }
+
+    if (cot.status === "respondido") {
+      return res.status(400).json({ erro: "Esta cotação já foi respondida." });
+    }
+
+    const atualizado = await DB.update('cotacao_fornecedores', cot.id, {
+      status: 'respondido',
+      valor,
+      prazo,
+      frete: frete || "CIF",
+      valor_frete: valorFrete || 0,
+      obs: obs || "",
+      data_resposta: new Date()
+    });
+
+    // Notificar comprador por e-mail
+    const { enviarEmailRespostaRecebida } = require("./services/emailService");
+    enviarEmailRespostaRecebida(atualizado).catch(console.error);
+
+    res.json({ ok: true, mensagem: "Proposta recebida! Um e-mail de confirmação foi enviado.", cotacao: atualizado });
+  } catch (err) {
+    console.error("❌ Erro ao responder cotação:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ── Job: monitoramento mensal de CNPJs ───────
+// Roda no dia 1 de cada mês às 8h
+// cron.schedule("0 8 1 * *", () => {
+//   console.log("[CRON] Iniciando verificação mensal de CNPJs...");
+//   verificarCNPJsFornecedores().catch(console.error);
+// }); // COMENTAR POR ENQUANTO
+
+// ── Job: resumo diário de recomendações do Canal Spot (plano Pro) ───
+// Só liga com CRON_INTERNO=1 — use quando o servidor fica sempre ligado
+// (Render pago). No Render grátis o servidor dorme: o disparo vem do Supabase
+// (pg_cron chamando POST /api/recomendacoes/resumo-diario).
+if (process.env.CRON_INTERNO === '1') {
+  cron.schedule('0 7 * * *', () => {
+    console.log('[CRON] Resumo diário de recomendações do Canal Spot...');
+    enviarResumoDiario().catch(console.error);
+    // etapa 12c.1: avisos de vencimento de documentos (30/15/5 dias e vencido)
+    require('./services/avisosVencimento').enviarAvisosVencimento().catch(console.error);
+  }, { timezone: 'America/Sao_Paulo' });
+}
+
+// ── Start ────────────────────────────────────
+// Inicializar banco de dados e depois iniciar servidor
+initializeDB().then(() => {
+  app.listen(PORT, () => {
+    console.log(`✅ QuotaFlow backend rodando na porta ${PORT}`);
+    console.log(`   Ambiente: ${process.env.NODE_ENV || "development"}`);
+  });
+}).catch(err => {
+  console.error("❌ Falha ao inicializar banco de dados:", err.message);
+  process.exit(1);
+});
