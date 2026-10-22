@@ -44,8 +44,9 @@ function tenantMiddleware(req, res, next) {
     // Fica AQUI porque várias rotas só exigem o login — sem isso o colaborador chamaria a API inteira.
     if (req.perfis.length > 0 && req.perfis.every((p) => p === "colaborador")) {
       const url = String(req.originalUrl || "").split("?")[0];
-      const livre = /^\/api\/meus-treinamentos(\/|$)/.test(url) || /^\/api\/usuarios\/me(\/|$)/.test(url) || /^\/api\/auth\//.test(url);
-      if (!livre) return res.status(403).json({ erro: "Seu acesso é só a Meus treinamentos" });
+      const livre = /^\/api\/meus-treinamentos(\/|$)/.test(url) || /^\/api\/usuarios\/me(\/|$)/.test(url) || /^\/api\/auth\//.test(url)
+        || /^\/api\/inspecoes(\/|$)/.test(url); // 14b.1: "Minhas inspeções" — a rota limita ao que o colaborador pode
+      if (!livre) return res.status(403).json({ erro: "Seu acesso é só a Meus treinamentos e Minhas inspeções" });
     }
 
     next();

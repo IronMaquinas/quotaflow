@@ -16,19 +16,28 @@ export function gerarHtmlInspecao({ inspecao: i, fotos = {}, imagens = {}, empre
   const resp = new Map((i.respostas || []).map((r) => [r.ponto_id, r]));
   const vistas = i.modelo?.vistas || [];
   const [resTxt, resCor] = RES[i.resultado] || [i.resultado, "#111"];
+  const fechado = (r) => r.status === "nok" && (r.resolvido || r.resolucao_posterior || (i.os_abertas || []).some((o) => o.ponto_id === r.ponto_id && o.concluida_em)); // 14b.1.4
+  const nokL = (i.respostas || []).filter((r) => r.status === "nok"); const corr = nokL.length > 0 && nokL.every(fechado);
   const desenho = (v) => {
     const fundo = renderToStaticMarkup(createElement(FundoVista, { imagem: v.imagem, url: imagens[v.imagem] }));
     const pins = v.pontos.map((p, k) => { const st = resp.get(p.id)?.status; return `<div class="pin" style="left:${p.x}%;top:${p.y}%;background:${COR[st] || "#3b82f6"}">${k + 1}</div>`; }).join("");
     return `<div class="desenho">${fundo}${pins}</div>`;
   };
+  const osItem = (r) => { const o = (i.os_abertas || []).find((x) => x.ponto_id === r.ponto_id); if (!o || r.status !== "nok") return ""; const n = esc(o.os_numero || `OS ${o.os_id}`); return o.concluida_em ? `<div class="obs" style="color:#16a34a">✓ Corrigido na <b>${n}</b> (concluída em ${dataHora(o.concluida_em)})</div>` : `<div class="obs" style="color:#2563eb">🛠 <b>${n}</b> em andamento</div>`; }; // 14b.1.5
   const linhas = (v) => v.pontos.map((p, k) => {
     const r = resp.get(p.id) || {};
     const val = r.valor != null ? ` — ${esc(r.valor)}${r.unidade ? ` ${esc(r.unidade)}` : ""}` : "";
-    return `<tr><td class="n">${k + 1}</td><td>${esc(p.rotulo)}${p.critico ? ' <span class="crit">crítico</span>' : ""}${r.obs ? `<div class="obs">${esc(r.obs)}</div>` : ""}</td><td class="st" style="color:${COR[r.status] || "#111"}">${ST[r.status] || "—"}${val}${r.impede ? "<div class=\"obs\" style=\"color:#dc2626\">impede o uso</div>" : ""}</td></tr>`;
+    // 14b.1.5: como na tela — observação, "impede o uso" e a correção na coluna da descrição; o status só com o selo
+    const ok = (t) => `<div class="obs" style="color:#16a34a">${t}</div>`;
+    const desc = `${r.obs ? `<div class="obs">${esc(r.obs)}${r.impede ? ' · <span style="color:#dc2626">impede o uso</span>' : ""}</div>` : r.impede ? '<div class="obs" style="color:#dc2626">impede o uso</div>' : ""}`
+      + (r.resolvido ? ok(`🔧 Resolvido na hora: ${esc(r.resolucao)}`) : "")
+      + (r.resolucao_posterior ? ok(`✓ Resolvido sem OS: ${esc(r.resolucao_posterior.texto)} (${esc(r.resolucao_posterior.por)}, ${dataHora(r.resolucao_posterior.em)})`) : "")
+      + osItem(r);
+    return `<tr><td class="n">${k + 1}</td><td>${esc(p.rotulo)}${p.critico ? ' <span class="crit">crítico</span>' : ""}${desc}</td><td class="st" style="color:${COR[r.status] || "#111"}">${fechado(r) ? '<span class="corr">✓ CORRIGIDO</span> ' : ""}${ST[r.status] || "—"}${val}</td></tr>`;
   }).join("");
   const fotosHtml = (i.respostas || []).filter((r) => (r.fotos || []).length).map((r) => `<figure><div class="fts">${r.fotos.map((p) => (fotos[p] ? `<img src="${esc(fotos[p])}"/>` : "")).join("")}</div><figcaption><b style="color:${COR[r.status]}">${ST[r.status]}</b> · ${esc(r.vista)} → ${esc(r.rotulo)}${r.obs ? ` — ${esc(r.obs)}` : ""}</figcaption></figure>`).join("");
-  const os = (i.os_abertas || []).map((o) => `<li>OS ${esc(o.os_numero || o.os_id)} — ${esc((i.respostas || []).find((r) => r.ponto_id === o.ponto_id)?.rotulo || "")}</li>`).join("");
-  const info = [["Equipamento", i.equipamento_nome], ["Modelo de inspeção", i.modelo_nome], ["Concluída em", dataHora(i.concluida_em)], ["Inspecionado por", `${i.executor_nome || "—"}${i.executor_tipo === "terceiro" ? " (terceiro)" : ""}`],
+  const os = (i.os_abertas || []).map((o) => `<li>${esc(o.os_numero || `OS ${o.os_id}`)} — ${esc((i.respostas || []).find((r) => r.ponto_id === o.ponto_id)?.rotulo || "")} · ${o.concluida_em ? `concluída em ${dataHora(o.concluida_em)}` : "em andamento"}</li>`).join("");
+  const info = [["Equipamento", i.equipamento_nome], ["Modelo de inspeção", i.modelo_nome], ["Concluída em", dataHora(i.concluida_em)], ["Inspecionado por", `${i.executor_nome || "—"}${i.executor_tipo === "terceiro" ? ` (terceiro${i.terceiro?.empresa ? ` — ${i.terceiro.empresa}` : ""})` : ""}`], ...(i.terceiro?.cpf ? [["CPF de quem inspecionou", String(i.terceiro.cpf).replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4")]] : []),
     ...(i.km != null ? [["Km", Number(i.km).toLocaleString("pt-BR")]] : []), ...(i.horimetro != null ? [["Horímetro", `${Number(i.horimetro).toLocaleString("pt-BR")} h`]] : []),
     ...(i.local ? [["Local", i.local]] : []), ...(i.cliente ? [["Cliente / contrato", i.cliente]] : []), ...(i.gps ? [["GPS", `${i.gps.lat.toFixed(5)}, ${i.gps.lng.toFixed(5)}`]] : [])];
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Inspeção — ${esc(i.equipamento_nome)}</title><style>
@@ -41,8 +50,8 @@ export function gerarHtmlInspecao({ inspecao: i, fotos = {}, imagens = {}, empre
   .vista { display: grid; grid-template-columns: 46% 1fr; gap: 10px; page-break-inside: avoid; margin-bottom: 4mm; }
   .desenho { position: relative; border: 1px solid #ddd; } .desenho svg { display: block; width: 100%; }
   .pin { position: absolute; transform: translate(-50%,-50%); width: 16px; height: 16px; border-radius: 50%; color: #fff; font-size: 8px; font-weight: 700; display: flex; align-items: center; justify-content: center; border: 1.5px solid #fff; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
-  table { width: 100%; border-collapse: collapse; } td { border-bottom: 1px solid #eee; padding: 3px 4px; vertical-align: top; color: #111; font-size: 11.5px; } td.n { width: 16px; color: #666; } td.st { width: 80px; font-weight: 700; text-align: right; }
-  .crit { font-size: 8px; color: #dc2626; border: 1px solid #dc2626; border-radius: 3px; padding: 0 3px; } .obs { font-weight: 400; color: #444; font-size: 10.5px; }
+  table { width: 100%; border-collapse: collapse; } td { border-bottom: 1px solid #eee; padding: 3px 4px; vertical-align: top; color: #111; font-size: 11.5px; } td.n { width: 16px; color: #666; } td.st { width: 150px; white-space: nowrap; font-weight: 700; text-align: right; }
+  .crit { font-size: 8px; color: #dc2626; border: 1px solid #dc2626; border-radius: 3px; padding: 0 3px; } .obs { font-weight: 400; color: #444; font-size: 10.5px; } .corr { font-size: 8.5px; color: #16a34a; border: 1px solid #16a34a; border-radius: 3px; padding: 1px 4px; vertical-align: middle; }
   figure { margin: 0 0 4mm; page-break-inside: avoid; } .fts { display: flex; gap: 4px; flex-wrap: wrap; } .fts img { width: 56mm; height: 42mm; object-fit: cover; border: 1px solid #ccc; } figcaption { font-size: 10.5px; margin-top: 2px; }
   .ass { margin-top: 8mm; text-align: center; } .ass img { max-width: 240px; max-height: 80px; border-bottom: 1px solid #111; }
   .hash { font-family: "Courier New", monospace; font-size: 8.5px; color: #888; word-break: break-all; margin-top: 8mm; }
@@ -52,15 +61,15 @@ export function gerarHtmlInspecao({ inspecao: i, fotos = {}, imagens = {}, empre
   </style></head><body><div class="pagina">
     <div style="display:flex;justify-content:space-between;border-bottom:2px solid #111;padding-bottom:6px">
       <div><b style="font-size:14px">${esc(empresa.razao_social || empresa.nome)}</b><div style="color:#555;font-size:10px">${empresa.cnpj ? `CNPJ ${esc(fmtCNPJ(empresa.cnpj))}` : ""}</div></div>
-      <div style="text-align:right;font-size:10px;color:#555">Relatório de inspeção nº ${esc(i.id)}<br/>emitido em ${dataHora(new Date())}</div>
+      <div style="text-align:right;font-size:10px;color:#555">Relatório de inspeção ${esc(i.numero || `nº ${i.id}`)}<br/>emitido em ${dataHora(new Date())}</div>
     </div>
     <h1>Relatório de inspeção de equipamento</h1>
-    <span class="res" style="color:${resCor};border-color:${resCor}">${resTxt}</span>
+    <span class="res" style="color:${resCor};border-color:${resCor}">${resTxt}</span>${corr ? ' <span class="res" style="color:#16a34a;border-color:#16a34a">✓ CORRIGIDO</span>' : ""}
     <div class="grade">${info.map(([l, v]) => `<div><b>${esc(l)}</b>${esc(v)}</div>`).join("")}</div>
     ${i.obs ? `<div><b>Observações:</b> ${esc(i.obs)}</div>` : ""}
     ${vistas.map((v) => `<h2>${esc(v.nome)}</h2><div class="vista">${desenho(v)}<table>${linhas(v)}</table></div>`).join("")}
     ${fotosHtml ? `<h2>Fotos</h2>${fotosHtml}` : ""}
-    ${os ? `<h2>Ordens de serviço abertas</h2><ul>${os}</ul>` : ""}
+    ${os ? `<h2>Ordens de serviço</h2><ul>${os}</ul>` : ""}
     ${liberacao ? `<h2>Liberação do equipamento</h2><div>Liberado por <b>${esc(liberacao.liberado_por_nome)}</b> em ${dataHora(liberacao.criado_em)} — ${esc(liberacao.motivo_liberacao)}</div>` : ""}
     <div class="ass">${i.assinatura_png ? `<img src="${i.assinatura_png}" alt="assinatura"/>` : ""}<div>${esc(i.executor_nome)} — assinado na tela em ${dataHora(i.concluida_em)}</div></div>
     <div class="hash">Inspeção registrada no QuotaFlow${i.origem === "link" ? " (link de terceiros)" : ""}. Integridade (SHA-256): ${esc(i.hash)}</div>

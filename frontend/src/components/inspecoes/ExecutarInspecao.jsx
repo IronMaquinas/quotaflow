@@ -2,6 +2,8 @@
 // Fazer a inspeção (pensada para o celular): registro (km/horímetro/local/cliente) → uma tela por vista (desenho com os
 // pontos + lista: OK / Não OK / N.A., foto, "impede o uso") → resumo + assinatura → concluir.
 // Tudo é guardado NO APARELHO a cada toque (rascunho). Concluiu sem internet → fica na fila e envia sozinho quando voltar.
+// 14b.1: "🔧 Resolvi na hora" no item não OK (conta o que fez — não bloqueia) · usado também pelo link de terceiros
+//   (carregarPrep / enviarFn / extraCorpo vindos da tela pública).
 import { useState, useEffect, useRef, useMemo } from "react";
 import apiService from "../../services/apiService";
 import AssinaturaTela from "../shared/AssinaturaTela";
@@ -13,7 +15,8 @@ const CAMPO = { km: ["Km (hodômetro)", "number"], horimetro: ["Horímetro (h)",
 const urlFoto = (f) => f.previa || `data:${f.mime};base64,${f.base64}`;
 
 /** item: rascunho da fila (retomar) — ou { equipamento, modeloId } para começar */
-export default function ExecutarInspecao({ tenant, equipamento, modeloId, rascunho, onFechar, onConcluida, C, s }) {
+export default function ExecutarInspecao({ tenant, equipamento, modeloId, rascunho, onFechar, onConcluida, C, s, carregarPrep, chavePrep, enviarFn, extraCorpo }) {
+  const enviarAgora = enviarFn || ((corpo) => apiService.post("/inspecoes/enviar", corpo));
   const [it, setIt] = useState(rascunho || null);
   const [erro, setErro] = useState(null);
   const [passo, setPasso] = useState(rascunho?.passo ?? 0); // 0 = registro, 1..n = vistas, n+1 = finalizar
@@ -26,13 +29,13 @@ export default function ExecutarInspecao({ tenant, equipamento, modeloId, rascun
   // começa: busca o modelo (ou usa o que ficou guardado no aparelho, se estiver sem internet)
   useEffect(() => {
     if (rascunho) return;
-    const chave = `qf-insp-prep-${tenant}-${equipamento.id}-${modeloId || "padrao"}`;
+    const chave = `qf-insp-prep-${tenant}-${chavePrep || `${equipamento.id}-${modeloId || "padrao"}`}`;
     (async () => {
       let prep = null;
-      try { prep = await apiService.get(`/inspecoes/preparar/${equipamento.id}`, modeloId ? { modelo_id: modeloId } : {}); try { localStorage.setItem(chave, JSON.stringify(prep)); } catch { /* ok */ } }
+      try { prep = carregarPrep ? await carregarPrep() : await apiService.get(`/inspecoes/preparar/${equipamento.id}`, modeloId ? { modelo_id: modeloId } : {}); try { localStorage.setItem(chave, JSON.stringify(prep)); } catch { /* ok */ } }
       catch (e) { try { prep = JSON.parse(localStorage.getItem(chave) || "null"); } catch { /* ok */ } if (!prep) return setErro(e.body ? e.message : "Sem internet e este modelo ainda não foi aberto neste aparelho. Conecte-se uma vez para baixar o modelo."); }
       const novo = { uid: Fila.novoUid(), tenant, situacao: "rascunho", prep, passo: 0, rotulo: [prep.equipamento.tag, prep.equipamento.nome].filter(Boolean).join(" — "),
-        corpo: { equipamento_id: prep.equipamento.id, modelo_id: prep.modelo.id, iniciada_em: new Date().toISOString(), km: "", horimetro: "", local: "", cliente: "", respostas: {}, obs: "" } };
+        corpo: { ...(extraCorpo || {}), equipamento_id: prep.equipamento.id, modelo_id: prep.modelo.id, iniciada_em: new Date().toISOString(), km: "", horimetro: "", local: "", cliente: "", respostas: {}, obs: "" } };
       novo.corpo.cliente_uid = novo.uid;
       setIt(novo); Fila.salvar(novo);
       try { navigator.geolocation?.getCurrentPosition((p) => setIt((x) => { const y = { ...x, corpo: { ...x.corpo, gps: { lat: p.coords.latitude, lng: p.coords.longitude, precisao: p.coords.accuracy } } }; Fila.salvar(y); return y; }), () => {}, { timeout: 8000, maximumAge: 300000 }); } catch { /* ok */ }
@@ -53,6 +56,7 @@ export default function ExecutarInspecao({ tenant, equipamento, modeloId, rascun
     const r = resp(p.id);
     if (!respondido(p)) return "verificar";
     if (r.status === "nok" && p.tipo === "ok_nok" && !String(r.obs || "").trim()) return "descrever o problema";
+    if (r.status === "nok" && r.resolvido && !String(r.resolucao || "").trim()) return "contar o que foi feito";
     const precisa = r.status !== "na" && p.foto_obrigatoria !== false && (p.foto === "sempre" || ((p.foto || "se_nok") === "se_nok" && r.status === "nok"));
     if (precisa && !(r.fotos || []).length) return "tirar a foto";
     return null;
@@ -60,7 +64,7 @@ export default function ExecutarInspecao({ tenant, equipamento, modeloId, rascun
   const resumo = useMemo(() => {
     const pts = vistas.flatMap((v) => v.pontos.map((p) => ({ ...p, vista: v.nome })));
     const nok = pts.filter((p) => resp(p.id).status === "nok");
-    return { total: pts.length, nok, impede: nok.filter((p) => p.critico || resp(p.id).impede), pendentes: pts.filter((p) => falta(p)) };
+    return { total: pts.length, nok, impede: nok.filter((p) => !resp(p.id).resolvido && (p.critico || resp(p.id).impede)), pendentes: pts.filter((p) => falta(p)) };
   }, [it]); // eslint-disable-line
 
   const validarRegistro = () => {
@@ -93,7 +97,7 @@ export default function ExecutarInspecao({ tenant, equipamento, modeloId, rascun
     await Fila.salvar(fila); // guardado no aparelho ANTES de tentar enviar
     setEnviando(true);
     try {
-      const r = await apiService.post("/inspecoes/enviar", corpo);
+      const r = await enviarAgora(corpo);
       await Fila.remover(it.uid);
       onConcluida({ ...r.inspecao, equipamento: prep.equipamento, offline: false });
     } catch (e) {
@@ -203,8 +207,10 @@ export default function ExecutarInspecao({ tenant, equipamento, modeloId, rascun
               <div style={{ marginTop: 10 }}>
                 {r.status === "nok" && <>
                   <textarea rows={2} value={r.obs || ""} onChange={(e) => setResp(p.id, { obs: e.target.value })} placeholder="O que está errado?" style={{ ...s.input, fontSize: 14, resize: "vertical", marginBottom: 8 }} />
-                  {p.critico ? <div style={{ fontSize: 12, color: C.danger, marginBottom: 8 }}>⛔ Item crítico — o equipamento ficará bloqueado até o gestor liberar.</div>
-                    : <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, marginBottom: 8, cursor: "pointer" }}><input type="checkbox" checked={!!r.impede} onChange={(e) => setResp(p.id, { impede: e.target.checked })} style={{ width: 18, height: 18 }} /><span><b>Impede o uso</b> (bloqueia o equipamento)</span></label>}
+                  <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, marginBottom: 8, cursor: "pointer" }}><input type="checkbox" checked={!!r.resolvido} onChange={(e) => setResp(p.id, { resolvido: e.target.checked })} style={{ width: 18, height: 18 }} /><span><b>🔧 Resolvi na hora</b> (consertei aqui mesmo)</span></label>
+                  {r.resolvido && <textarea rows={2} value={r.resolucao || ""} onChange={(e) => setResp(p.id, { resolucao: e.target.value })} placeholder="O que foi feito? (ex.: troquei a lâmpada, reapertei a mangueira)" style={{ ...s.input, fontSize: 14, resize: "vertical", marginBottom: 8, borderColor: f === "contar o que foi feito" ? C.danger : undefined }} />}
+                  {!r.resolvido && (p.critico ? <div style={{ fontSize: 12, color: C.danger, marginBottom: 8 }}>⛔ Item crítico — o equipamento ficará bloqueado até o gestor liberar.</div>
+                    : <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, marginBottom: 8, cursor: "pointer" }}><input type="checkbox" checked={!!r.impede} onChange={(e) => setResp(p.id, { impede: e.target.checked })} style={{ width: 18, height: 18 }} /><span><b>Impede o uso</b> (bloqueia o equipamento)</span></label>)}
                 </>}
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                   {(r.fotos || []).map((ft, i) => (
@@ -236,7 +242,7 @@ export default function ExecutarInspecao({ tenant, equipamento, modeloId, rascun
     <div style={{ ...s.card, padding: 14, marginBottom: 12, borderColor: res[1] }}>
       <div style={{ fontSize: 17, fontWeight: 700, color: res[1] }}>{res[0]}</div>
       <div style={{ fontSize: 13, color: C.textSub, marginTop: 4 }}>{resumo.total} pontos verificados · {resumo.nok.length} não OK</div>
-      {resumo.nok.map((p) => <div key={p.id} style={{ fontSize: 13, marginTop: 6 }}>✕ <b>{p.vista}</b> → {p.rotulo}: {resp(p.id).obs}{(p.critico || resp(p.id).impede) && <span style={{ color: C.danger }}> (impede o uso)</span>}</div>)}
+      {resumo.nok.map((p) => <div key={p.id} style={{ fontSize: 13, marginTop: 6 }}>{resp(p.id).resolvido ? "🔧" : "✕"} <b>{p.vista}</b> → {p.rotulo}: {resp(p.id).obs}{resp(p.id).resolvido ? <span style={{ color: C.success }}> — resolvido: {resp(p.id).resolucao}</span> : (p.critico || resp(p.id).impede) && <span style={{ color: C.danger }}> (impede o uso)</span>}</div>)}
       {resumo.pendentes.length > 0 && <div style={{ color: C.warn, fontSize: 13, marginTop: 8 }}>Ainda falta: {resumo.pendentes.map((p) => p.rotulo).join(", ")}</div>}
     </div>
     <label style={{ display: "block", marginBottom: 12 }}><span style={s.label}>OBSERVAÇÕES (OPCIONAL)</span><textarea rows={2} value={it.corpo.obs || ""} onChange={(e) => setCorpo("obs", e.target.value)} style={{ ...s.input, resize: "vertical" }} /></label>

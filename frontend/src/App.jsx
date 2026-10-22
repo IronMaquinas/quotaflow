@@ -164,6 +164,7 @@ export default function App() {
   const relatorio = useRelatorio();
   const [tela,setTela]=useState("home");
   const [osParaAbrir, setOsParaAbrir] = useState(null);
+  const [abaColaborador, setAbaColaborador] = useState("treinos"); // 14b.1: tela do colaborador
   const [novaOSData, setNovaOSData] = useState(null); // etapa 12a: "Nova OS programada" a partir do calendário
   const [abaPessoas, setAbaPessoas] = useState(null); // etapa 12d.3: abrir Pessoas numa aba (ex.: "epi") a partir do calendário
   const [ncParaAbrir, setNcParaAbrir] = useState(null);
@@ -342,7 +343,13 @@ const perfil = PERFIS[usuario.perfil] || {
         <div style={{ fontSize: 12, color: C.textSub }}>{usuario.nome}</div>
         <button onClick={logout} style={{ background: "transparent", border: `1px solid ${C.border}`, borderRadius: 6, padding: "6px 12px", color: C.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Sair</button>
       </div>
-      <div style={{ flex: 1, overflow: "hidden" }}><TelaMeusTreinamentos /></div>
+      {/* 14b.1: abas do colaborador — 🎓 treinamentos | 🔍 inspeções */}
+      <div style={{ display: "flex", gap: 4, padding: "6px 12px", borderBottom: `1px solid ${C.border}` }}>
+        {[["treinos", "🎓 Treinamentos"], ["inspecoes", "🔍 Inspeções"]].map(([k, l]) => (
+          <button key={k} onClick={() => setAbaColaborador(k)} style={{ background: "transparent", border: "none", borderBottom: `2px solid ${abaColaborador === k ? C.accent : "transparent"}`, padding: "8px 12px", color: abaColaborador === k ? C.text : C.muted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
+        ))}
+      </div>
+      <div style={{ flex: 1, overflow: abaColaborador === "inspecoes" ? "auto" : "hidden" }}>{abaColaborador === "inspecoes" ? <TelaInspecoes C={C} s={s} embutida /> : <TelaMeusTreinamentos />}</div>
     </div>
   );
 
@@ -736,7 +743,8 @@ const perfil = PERFIS[usuario.perfil] || {
         {temAcesso(tela) && tela === "inspecoes" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
             <TelaInspecoes C={C} s={s}
-              onAbrirOS={temAcesso("ordem_servico") ? (dados) => { setNovaOSData(dados); setTela("ordem_servico"); } : null} />
+              onAbrirOS={temAcesso("ordem_servico") ? (dados) => { setNovaOSData(dados); setTela("ordem_servico"); } : null}
+              onIrParaOS={temAcesso("ordem_servico") ? (id) => { setOsParaAbrir(id); setTela("ordem_servico"); } : null} />
           </div>)}
 
         {temAcesso(tela) && tela === "nao_conformidades" && (

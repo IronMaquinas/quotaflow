@@ -12,6 +12,7 @@ import ConsolePlataforma from "./plataforma/ConsolePlataforma"; // etapa 11b
 import TelaPortalFornecedor from "./components/portal/TelaPortalFornecedor";
 import TelaAceitarConvite from "./TelaAceitarConvite";
 import TelaProvaPublica from "./TelaProvaPublica"; // etapa 12e.2b
+import TelaInspecaoPublica from "./TelaInspecaoPublica"; // etapa 14b.1
 
 console.log('🚀 main.jsx executando');
 
@@ -67,6 +68,11 @@ function Router() {
   // Etapa 12e.2b: link externo da prova de treinamento (#prova?t=...) — público, CPF + data de nascimento.
   if (currentPage.startsWith("prova") || currentPage.startsWith("/prova")) {
     return <TelaProvaPublica />;
+  }
+
+  // Etapa 14b.1: link de inspeção de terceiros (#inspecao?t=...) — público, nome + CPF + empresa.
+  if (currentPage.startsWith("inspecao") || currentPage.startsWith("/inspecao")) {
+    return <TelaInspecaoPublica />;
   }
 
   // Etapa 10: convite ao fornecedor local (link do e-mail #convite?token=...).

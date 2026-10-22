@@ -4098,6 +4098,12 @@ router.post("/chamados/:id/concluir", tenantMiddleware, async (req, res) => {
       );
     }
 
+    // 14b.1.2: OS ligada a item de inspeção → marca corrigido e libera o equipamento se nada mais impede o uso
+    try {
+      const { supabase } = require("../db");
+      await require("../services/inspecoes").osConcluida(supabase, tenantId, { usuarioId: req.userId || null, usuarioNome: operadorNome }, chamadoId);
+    } catch (e) { console.error("⚠️ [inspeções] ao concluir OS:", e.message); }
+
     res.json({
       ok: true,
       chamado: osAtualizada,

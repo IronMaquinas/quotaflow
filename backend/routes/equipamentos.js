@@ -31,7 +31,9 @@ router.post("/", tenantMiddleware, async (req, res) => {
 // dando 404. Ambos passam a funcionar com o mesmo handler.
 async function atualizarEquipamento(req, res) {
   try {
-    await DB.update("equipamentos", req.params.id, req.body, req.tenantId);
+    // 14b.2: bloqueio/liberação só pelas Inspeções (com evidência) — editar o equipamento não mexe nisso
+    const { bloqueado, bloqueio_motivo, bloqueio_inspecao_id, bloqueado_em, ...dados } = req.body || {}; // eslint-disable-line no-unused-vars
+    await DB.update("equipamentos", req.params.id, dados, req.tenantId);
     const eq = await DB.selectOne("equipamentos", { id: req.params.id }, req.tenantId);
     res.json(eq);
   } catch (err) {

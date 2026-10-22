@@ -11,7 +11,7 @@ const CAMPO_NOME = { km: "Km (hodômetro)", horimetro: "Horímetro", local: "Loc
 const idNovo = (p = "p") => `${p}_${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const lerBase64 = (file) => new Promise((ok, falha) => { const r = new FileReader(); r.onload = () => ok(String(r.result)); r.onerror = () => falha(new Error("Não foi possível ler a imagem")); r.readAsDataURL(file); });
 
-export const modeloVazio = () => ({ nome: "", categoria: "cavalo", frequencia: "pre_uso", descricao: "", campos: ["km"], vistas: [{ codigo: idNovo("v"), nome: "Lateral", imagem: "esquema:cavalo_lateral", pontos: [] }] });
+export const modeloVazio = () => ({ nome: "", tipo: "equipamento", categoria: "cavalo", frequencia: "pre_uso", descricao: "", campos: ["km"], vistas: [{ codigo: idNovo("v"), nome: "Lateral", imagem: "esquema:cavalo_lateral", pontos: [] }] });
 
 export default function EditorModeloInspecao({ inicial, listas, subirImagem, urls = {}, onSalvar, onCancelar, salvando, C, s, titulo }) {
   const [m, setM] = useState(() => JSON.parse(JSON.stringify(inicial || modeloVazio())));
@@ -53,7 +53,7 @@ export default function EditorModeloInspecao({ inicial, listas, subirImagem, url
     if (!m.nome.trim()) return setErro("Informe o nome do modelo");
     for (const v of m.vistas) { if (!v.nome.trim()) return setErro("Toda vista precisa de nome"); const semNome = v.pontos.find((p) => !String(p.rotulo || "").trim()); if (semNome) { setIv(m.vistas.indexOf(v)); setSel(semNome.id); return setErro(`Dê um nome ao ponto selecionado na vista “${v.nome}”`); } }
     if (!m.vistas.some((v) => v.pontos.length)) return setErro("Cadastre pelo menos um ponto (clique no desenho)");
-    onSalvar({ nome: m.nome, categoria: m.categoria, frequencia: m.frequencia, descricao: m.descricao, campos: m.campos, vistas: m.vistas });
+    onSalvar({ nome: m.nome, ...(listas.tipos ? { tipo: m.tipo || "equipamento" } : {}), categoria: m.categoria, frequencia: m.frequencia, descricao: m.descricao, campos: m.campos, vistas: m.vistas });
   };
 
   const lb = (t) => <span style={s.label}>{t}</span>;
@@ -63,6 +63,7 @@ export default function EditorModeloInspecao({ inicial, listas, subirImagem, url
       <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 14 }}>{titulo || (m.id ? `Editar — ${m.nome}` : "Novo modelo de inspeção")}</div>
       <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 10 }}>
         <label style={{ flex: "2 1 260px" }}>{lb("NOME DO MODELO")}<input value={m.nome} onChange={(e) => setM({ ...m, nome: e.target.value })} placeholder="Cavalo mecânico — pré-uso" style={s.input} /></label>
+        {listas.tipos && <label style={{ flex: "1 1 200px" }}>{lb("TIPO")}<select value={m.tipo || "equipamento"} onChange={(e) => setM({ ...m, tipo: e.target.value })} style={s.input}>{listas.tipos.map((c) => <option key={c.codigo} value={c.codigo}>{c.nome}</option>)}</select></label>}
         <label style={{ flex: "1 1 160px" }}>{lb("CATEGORIA")}<select value={m.categoria} onChange={(e) => setM({ ...m, categoria: e.target.value })} style={s.input}>{listas.categorias.map((c) => <option key={c.codigo} value={c.codigo}>{c.nome}</option>)}</select></label>
         <label style={{ flex: "1 1 160px" }}>{lb("FREQUÊNCIA")}<select value={m.frequencia} onChange={(e) => setM({ ...m, frequencia: e.target.value })} style={s.input}>{listas.frequencias.map((c) => <option key={c.codigo} value={c.codigo}>{c.nome}</option>)}</select></label>
       </div>

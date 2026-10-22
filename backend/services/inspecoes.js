@@ -11,6 +11,8 @@
 //   • "não OK" + "impede o uso" (ou ponto crítico não OK) → equipamento BLOQUEADO (evidência); o gestor libera com motivo
 //     (equipamento_liberacoes). Do item não OK o gestor abre uma OS (vai para a rotina de OS existente).
 //   • resultado: aprovado (tudo OK/N/A) · ressalvas (não OK que não impede) · reprovado (algo impede o uso).
+// 14b.1: tipo do modelo (equipamento | carregamento | transito | descarregamento), número INSP-AAAA-NNNN, "resolvi na hora"
+//   (item não OK consertado ali mesmo — não bloqueia, fica como ressalva com o que foi feito) e link de inspeção de terceiros.
 // Regras do backend: sem DB.raw; ids com String(); filtros sem null.
 
 const crypto = require('crypto');
@@ -30,6 +32,10 @@ const FREQUENCIAS = [
   { codigo: 'mensal', nome: 'Mensal' }, { codigo: 'avulsa', nome: 'Avulsa (sem frequência)' },
 ];
 const CAMPOS = ['km', 'horimetro', 'local', 'cliente'];
+const TIPOS = [ // 14b.1 — os 3 últimos são os gatilhos da futura Autorização de Transporte (AT)
+  { codigo: 'equipamento', nome: 'Equipamento (pré-uso / rotina)' }, { codigo: 'carregamento', nome: 'Carregamento (acomodação, amarração, sinalização)' },
+  { codigo: 'transito', nome: 'Em trânsito (parada de verificação)' }, { codigo: 'descarregamento', nome: 'Descarregamento (entrega)' },
+];
 const ESQUEMAS = ['cavalo_frente', 'cavalo_lateral', 'cavalo_traseira', 'carreta_lateral', 'carreta_traseira', 'onibus_lateral', 'onibus_frente',
   'empilhadeira_lateral', 'retro_lateral', 'utilitario_lateral', 'painel', 'motor', 'eixos'];
 const IMG_PATH = /^(tenant-\d+|biblioteca)\/insp-modelo\/[\w.-]+\.(jpg|png|webp)$/;
@@ -67,6 +73,7 @@ function validarModelo(body, opcoes = {}) {
   if (!parcial || tem('nome')) { const n = texto(body.nome, 120); if (!n) erros.push('Informe o nome do modelo'); else out.nome = n; }
   if (tem('categoria')) { if (!CATEGORIAS.some((c) => c.codigo === body.categoria)) erros.push('Categoria inválida'); else out.categoria = body.categoria; }
   if (tem('frequencia')) { if (!FREQUENCIAS.some((c) => c.codigo === body.frequencia)) erros.push('Frequência inválida'); else out.frequencia = body.frequencia; }
+  if (tem('tipo')) { if (!TIPOS.some((c) => c.codigo === body.tipo)) erros.push('Tipo inválido'); else out.tipo = body.tipo; }
   if (tem('descricao')) out.descricao = texto(body.descricao, 1000);
   if (tem('campos')) out.campos = (Array.isArray(body.campos) ? body.campos : []).filter((c) => CAMPOS.includes(c));
   if (!parcial || tem('vistas')) { const r = validarVistas(body.vistas, opcoes); if (r.erro) erros.push(r.erro); else out.vistas = r.vistas; }
@@ -76,9 +83,9 @@ const totalPontos = (m) => (m.vistas || []).reduce((s, v) => s + (v.pontos || []
 const resumoModelo = (m) => ({ ...m, pontos_qtd: totalPontos(m), vistas_qtd: (m.vistas || []).length, criticos_qtd: (m.vistas || []).reduce((s, v) => s + v.pontos.filter((p) => p.critico).length, 0) });
 
 // ─── biblioteca (Console) ─────────────────────────────────────────────────
-const CONTEUDO = ['nome', 'categoria', 'frequencia', 'descricao', 'vistas', 'campos'];
+const CONTEUDO = ['nome', 'tipo', 'categoria', 'frequencia', 'descricao', 'vistas', 'campos'];
 async function bibliotecaTodos(supabase) { return (await q(supabase.from('inspecao_modelos').select('*').is('tenant_id', null))).sort((a, b) => String(a.nome).localeCompare(String(b.nome))); }
-async function bibliotecaConsole(supabase) { return { modelos: (await bibliotecaTodos(supabase)).map(resumoModelo), categorias: CATEGORIAS, frequencias: FREQUENCIAS, esquemas: ESQUEMAS }; }
+async function bibliotecaConsole(supabase) { return { modelos: (await bibliotecaTodos(supabase)).map(resumoModelo), categorias: CATEGORIAS, frequencias: FREQUENCIAS, tipos: TIPOS, esquemas: ESQUEMAS }; }
 async function criarModeloBib(supabase, body) {
   const { erros, dados } = validarModelo(body || {}, { prefixos: ['biblioteca/'] });
   if (erros.length) return { status: 400, erro: erros[0] };
@@ -172,7 +179,7 @@ async function equipamentos(supabase, tenantId) {
     const minhas = ins.filter((i) => String(i.equipamento_id) === String(e.id)).sort((a, b) => String(b.concluida_em).localeCompare(String(a.concluida_em)));
     const u = minhas[0];
     return { id: e.id, tag: e.tag, nome: e.nome, local: e.local, inspecao_modelo_id: e.inspecao_modelo_id || null, bloqueado: !!e.bloqueado, bloqueio_motivo: e.bloqueio_motivo || null, bloqueado_em: e.bloqueado_em || null, bloqueio_inspecao_id: e.bloqueio_inspecao_id || null,
-      ultima: u ? { id: u.id, em: u.concluida_em, resultado: u.resultado, executor: u.executor_nome, km: u.km, horimetro: u.horimetro } : null, total: minhas.length };
+      ultima: u ? { id: u.id, numero: u.numero || null, em: u.concluida_em, resultado: u.resultado, executor: u.executor_nome, km: u.km, horimetro: u.horimetro } : null, total: minhas.length };
   }).sort((a, b) => (b.bloqueado - a.bloqueado) || String(a.tag || a.nome).localeCompare(String(b.tag || b.nome)));
 }
 async function definirModeloEquipamento(supabase, tenantId, equipId, modeloId) {
@@ -195,8 +202,25 @@ async function preparar(supabase, tenantId, equipId, modeloId) {
   const maxKm = ins.reduce((mx, i) => (i.km != null && Number(i.km) > mx ? Number(i.km) : mx), 0);
   const maxH = ins.reduce((mx, i) => (i.horimetro != null && Number(i.horimetro) > mx ? Number(i.horimetro) : mx), 0);
   return { equipamento: { id: e.id, tag: e.tag, nome: e.nome, bloqueado: !!e.bloqueado, bloqueio_motivo: e.bloqueio_motivo || null },
-    modelo: { id: m.id, nome: m.nome, categoria: m.categoria, frequencia: m.frequencia, campos: m.campos || [], vistas: m.vistas }, imagens: await linksImagens(supabase, m),
+    modelo: { id: m.id, nome: m.nome, tipo: m.tipo || 'equipamento', descricao: m.descricao || null, categoria: m.categoria, frequencia: m.frequencia, campos: m.campos || [], vistas: m.vistas }, imagens: await linksImagens(supabase, m),
     ultima: { km: maxKm || null, horimetro: maxH || null, em: ins[0]?.concluida_em || null } };
+}
+
+/** 14b.1: veículo do próprio terceiro (não cadastrado) — só o modelo; sem última leitura nem bloqueio */
+async function prepararAvulso(supabase, tenantId, { placa, descricao }, modeloId) {
+  const m = (await q(supabase.from('inspecao_modelos').select('*').eq('tenant_id', tenantId).eq('id', modeloId)))[0];
+  if (!m || m.ativo === false) return { status: 404, erro: 'Modelo não encontrado' };
+  const pl = texto(placa, 12); if (!pl) return { status: 400, erro: 'Informe a placa do veículo' };
+  return { equipamento: { id: null, tag: pl.toUpperCase(), nome: texto(descricao, 80) || 'Veículo do terceiro', bloqueado: false },
+    modelo: { id: m.id, nome: m.nome, tipo: m.tipo || 'equipamento', descricao: m.descricao || null, categoria: m.categoria, frequencia: m.frequencia, campos: m.campos || [], vistas: m.vistas },
+    imagens: await linksImagens(supabase, m), ultima: { km: null, horimetro: null, em: null } };
+}
+async function proximoNumero(supabase, tenantId, agoraIso, salto = 0) {
+  const ano = new Date(new Date(agoraIso).getTime() - 3 * 3600000).getUTCFullYear();
+  const pre = `INSP-${ano}-`;
+  const l = (await q(supabase.from('inspecoes').select('*').eq('tenant_id', tenantId))).filter((i) => String(i.numero || '').startsWith(pre));
+  const max = l.reduce((mx, i) => { const n = Number(String(i.numero || '').slice(pre.length)); return Number.isFinite(n) && n > mx ? n : mx; }, 0);
+  return `${pre}${String(max + 1 + salto).padStart(4, '0')}`;
 }
 
 // ─── envio da inspeção ────────────────────────────────────────────────────
@@ -209,12 +233,13 @@ const FOTO_MIME = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp
  *   assinatura_png, obs }
  * executor: { tipo: 'colaborador'|'usuario'|'terceiro', colaborador_id, usuario_id, nome, terceiro }
  */
-async function enviar(supabase, tenantId, executor, body = {}, { origem = 'app' } = {}) {
+async function enviar(supabase, tenantId, executor, body = {}, opcoes = {}) {
+  const { origem = 'app', linkId = null } = opcoes;
   const uid = texto(body.cliente_uid, 60);
   if (!uid || !/^[\w-]{8,60}$/.test(uid)) return { status: 400, erro: 'Inspeção sem identificador — recarregue a página' };
   const ja = (await q(supabase.from('inspecoes').select('*').eq('tenant_id', tenantId).eq('cliente_uid', uid)))[0];
   if (ja) return { inspecao: { id: ja.id, resultado: ja.resultado }, repetido: true }; // reenvio da fila offline
-  const prep = await preparar(supabase, tenantId, body.equipamento_id, body.modelo_id);
+  const prep = opcoes.avulso ? await prepararAvulso(supabase, tenantId, opcoes.avulso, body.modelo_id) : await preparar(supabase, tenantId, body.equipamento_id, body.modelo_id);
   if (prep.erro) return prep;
   const { equipamento: e, modelo: m, ultima } = prep;
   const campos = m.campos || [];
@@ -247,8 +272,10 @@ async function enviar(supabase, tenantId, executor, body = {}, { origem = 'app' 
       const path = `tenant-${tenantId}/insp-${uid}/${p.id}-${++nFotos}.${ext}`;
       fotosParaSubir.push({ path, buf, mime: f.mime }); caminhos.push(path);
     }
-    const impede = st === 'nok' && (p.critico || r.impede === true);
-    saida.push({ ponto_id: p.id, vista: p.vista, rotulo: p.rotulo, tipo: p.tipo, critico: !!p.critico, status: st, valor, unidade: p.unidade || null, obs: texto(r.obs, 500), impede, fotos: caminhos });
+    const resolvido = st === 'nok' && r.resolvido === true; // 14b.1: "resolvi na hora"
+    if (resolvido && !texto(r.resolucao, 500)) return { status: 400, erro: `Conte o que foi feito para resolver: ${p.rotulo}` };
+    const impede = st === 'nok' && !resolvido && (p.critico || r.impede === true);
+    saida.push({ ponto_id: p.id, vista: p.vista, rotulo: p.rotulo, tipo: p.tipo, critico: !!p.critico, status: st, valor, unidade: p.unidade || null, obs: texto(r.obs, 500), impede, resolvido, resolucao: resolvido ? texto(r.resolucao, 500) : null, fotos: caminhos });
   }
   for (const f of fotosParaSubir) {
     const { error } = await supabase.storage.from(D.BUCKET).upload(f.path, f.buf, { contentType: f.mime, upsert: true });
@@ -257,26 +284,35 @@ async function enviar(supabase, tenantId, executor, body = {}, { origem = 'app' 
   const resultado = saida.some((x) => x.impede) ? 'reprovado' : saida.some((x) => x.status === 'nok') ? 'ressalvas' : 'aprovado';
   const agora = new Date().toISOString();
   const gps = body.gps && Number.isFinite(Number(body.gps.lat)) && Number.isFinite(Number(body.gps.lng)) ? { lat: Number(body.gps.lat), lng: Number(body.gps.lng), precisao: Number(body.gps.precisao) || null } : null;
-  const reg = { tenant_id: tenantId, cliente_uid: uid, modelo_id: m.id, modelo_nome: m.nome, modelo: m, equipamento_id: e.id, equipamento_nome: [e.tag, e.nome].filter(Boolean).join(' — '),
+  const reg = { tenant_id: tenantId, cliente_uid: uid, tipo: m.tipo || 'equipamento', link_id: linkId, modelo_id: m.id, modelo_nome: m.nome, modelo: m, equipamento_id: e.id, equipamento_nome: [e.tag, e.nome].filter(Boolean).join(' — '),
     executor_tipo: executor.tipo, colaborador_id: executor.colaborador_id || null, usuario_id: executor.usuario_id || null, executor_nome: executor.nome || '—', terceiro: executor.terceiro || null,
     km: campos.includes('km') ? km : null, horimetro: campos.includes('horimetro') ? hor : null, local: texto(body.local, 200), cliente: texto(body.cliente, 200), gps,
     iniciada_em: body.iniciada_em && !Number.isNaN(Date.parse(body.iniciada_em)) ? new Date(body.iniciada_em).toISOString() : null, concluida_em: agora,
     resultado, respostas: saida, assinatura_png: body.assinatura_png, origem, obs: texto(body.obs, 1000) };
   reg.hash = crypto.createHash('sha256').update(JSON.stringify({ t: String(tenantId), uid, e: String(e.id), km: reg.km, h: reg.horimetro, r: saida.map((x) => [x.ponto_id, x.status, x.valor]), em: agora }) + body.assinatura_png).digest('hex');
-  const { data, error } = await supabase.from('inspecoes').insert([reg]).select();
-  if (error) { if (/inspecoes_cliente_uid_unico/.test(error.message)) return { inspecao: { cliente_uid: uid }, repetido: true }; throw new Error(error.message); }
-  const ins = data[0];
-  if (resultado === 'reprovado') {
+  let ins = null;
+  for (let tentativa = 0; tentativa < 5 && !ins; tentativa++) { // número INSP-AAAA-NNNN (corrida: tenta o próximo)
+    reg.numero = await proximoNumero(supabase, tenantId, agora, tentativa);
+    const { data, error } = await supabase.from('inspecoes').insert([reg]).select();
+    if (!error) { ins = data[0]; break; }
+    if (/inspecoes_cliente_uid_unico/.test(error.message)) return { inspecao: { cliente_uid: uid }, repetido: true };
+    if (!/inspecoes_numero_unico/.test(error.message)) throw new Error(error.message);
+  }
+  if (!ins) throw new Error('Não foi possível numerar a inspeção — tente de novo');
+  if (resultado === 'reprovado' && e.id) {
     const motivo = saida.filter((x) => x.impede).map((x) => `${x.rotulo}${x.obs ? ` (${x.obs})` : ''}`).join('; ').slice(0, 500);
     await supabase.from('equipamentos').update({ bloqueado: true, bloqueio_motivo: motivo, bloqueio_inspecao_id: ins.id, bloqueado_em: agora }).eq('id', e.id).eq('tenant_id', tenantId);
   }
-  return { inspecao: { id: ins.id, resultado, nao_ok: saida.filter((x) => x.status === 'nok').length, bloqueou: resultado === 'reprovado' } };
+  return { inspecao: { id: ins.id, numero: ins.numero, resultado, nao_ok: saida.filter((x) => x.status === 'nok').length, bloqueou: resultado === 'reprovado' } };
 }
 
 // ─── consulta ─────────────────────────────────────────────────────────────
-const leve = (i) => ({ id: i.id, equipamento_id: i.equipamento_id, equipamento_nome: i.equipamento_nome, modelo_nome: i.modelo_nome, executor_nome: i.executor_nome, executor_tipo: i.executor_tipo,
+/** 14b.1.4: todos os itens não OK já resolvidos (na hora, sem OS ou OS concluída)? O resultado registrado não muda. */
+const corrigida = (i) => { const nok = (i.respostas || []).filter((r) => r.status === 'nok'); return nok.length > 0 && nok.every((r) => r.resolvido || r.resolucao_posterior || (i.os_abertas || []).some((o) => o.ponto_id === r.ponto_id && o.concluida_em)); };
+const leve = (i) => ({ id: i.id, numero: i.numero || null, tipo: i.tipo || 'equipamento', colaborador_id: i.colaborador_id, equipamento_id: i.equipamento_id, equipamento_nome: i.equipamento_nome, modelo_nome: i.modelo_nome, executor_nome: i.executor_nome, executor_tipo: i.executor_tipo,
   terceiro: i.terceiro, km: i.km, horimetro: i.horimetro, local: i.local, cliente: i.cliente, concluida_em: i.concluida_em, resultado: i.resultado, origem: i.origem,
-  nao_ok: (i.respostas || []).filter((r) => r.status === 'nok').length, impede: (i.respostas || []).filter((r) => r.impede).length, os_abertas: i.os_abertas || [] });
+  nao_ok: (i.respostas || []).filter((r) => r.status === 'nok').length, corrigida: corrigida(i), // 14b.1.4
+  impede: (i.respostas || []).filter((r) => r.impede).length, os_abertas: i.os_abertas || [] });
 async function listar(supabase, tenantId, { equipamentoId, de, ate } = {}) {
   let b = supabase.from('inspecoes').select('*').eq('tenant_id', tenantId);
   if (equipamentoId) b = b.eq('equipamento_id', equipamentoId);
@@ -293,16 +329,66 @@ async function detalhe(supabase, tenantId, id) {
   return { inspecao: i, fotos, imagens: await linksImagens(supabase, i.modelo), empresa: { nome: emp.nome_fantasia || emp.nome || emp.razao_social || 'Empresa', razao_social: emp.razao_social || emp.nome || null, cnpj: emp.cnpj || null } };
 }
 
-/** Libera um equipamento bloqueado (evidência: quem, quando, por quê) */
+/** Libera um equipamento bloqueado (evidência: quem, quando, por quê).
+ *  14b.2: primeiro desbloqueia e CONFERE (antes, uma falha no update passava em silêncio e o equipamento seguia
+ *  bloqueado com a evidência gravada); depois grava a evidência. */
 async function liberar(supabase, tenantId, { usuarioId, usuarioNome }, equipId, motivo) {
   const e = (await q(supabase.from('equipamentos').select('*').eq('tenant_id', tenantId).eq('id', equipId)))[0];
   if (!e) return { status: 404, erro: 'Equipamento não encontrado' };
   if (!e.bloqueado) return { status: 400, erro: 'O equipamento não está bloqueado' };
   const mot = texto(motivo, 500); if (!mot || mot.length < 5) return { status: 400, erro: 'Explique por que está liberando (ex.: reparo feito na OS nº…, liberação provisória até…)' };
+  const { data: upd, error: eu } = await supabase.from('equipamentos').update({ bloqueado: false, bloqueio_motivo: null, bloqueio_inspecao_id: null, bloqueado_em: null }).eq('id', e.id).eq('tenant_id', tenantId).select();
+  if (eu) throw new Error(`Não foi possível desbloquear o equipamento: ${eu.message}`);
+  if (!upd?.length || upd[0].bloqueado) return { status: 500, erro: 'O banco não aceitou o desbloqueio do equipamento — mande esta mensagem para conferência.' };
   const { error } = await supabase.from('equipamento_liberacoes').insert([{ tenant_id: tenantId, equipamento_id: e.id, inspecao_id: e.bloqueio_inspecao_id || null, motivo_bloqueio: e.bloqueio_motivo, motivo_liberacao: mot, liberado_por: usuarioId || null, liberado_por_nome: usuarioNome || null }]);
   if (error) throw new Error(error.message);
-  await supabase.from('equipamentos').update({ bloqueado: false, bloqueio_motivo: null, bloqueio_inspecao_id: null, bloqueado_em: null }).eq('id', e.id).eq('tenant_id', tenantId);
   return { ok: true };
+}
+
+/** 14b.2: "✅ Resolver sem OS" no item não OK (correção local / empresa sem OS). Se era o último item que impedia o uso
+ *  e o equipamento está bloqueado por esta inspeção, já libera (com evidência). */
+async function resolverSemOS(supabase, tenantId, quemFez, inspId, { ponto_id, texto: t } = {}) {
+  const i = /^\d+$/.test(String(inspId)) ? (await q(supabase.from('inspecoes').select('*').eq('tenant_id', tenantId).eq('id', inspId)))[0] : null;
+  if (!i) return { status: 404, erro: 'Inspeção não encontrada' };
+  const resp = i.respostas || [];
+  const k = resp.findIndex((r) => r.ponto_id === ponto_id);
+  if (k < 0 || resp[k].status !== 'nok') return { status: 400, erro: 'Item não encontrado ou não está "não OK"' };
+  if (resp[k].resolvido || resp[k].resolucao_posterior) return { status: 400, erro: 'Este item já foi resolvido' };
+  const txt = texto(t, 500); if (!txt || txt.length < 5) return { status: 400, erro: 'Conte o que foi feito (ex.: lâmpada trocada pelo motorista)' };
+  const novas = resp.map((r, j) => (j === k ? { ...r, resolucao_posterior: { texto: txt, por: quemFez.usuarioNome || null, por_id: quemFez.usuarioId || null, em: new Date().toISOString() } } : r));
+  const { error } = await supabase.from('inspecoes').update({ respostas: novas }).eq('id', i.id).eq('tenant_id', tenantId);
+  if (error) throw new Error(error.message);
+  const x = await liberarSeResolvida(supabase, tenantId, quemFez, { ...i, respostas: novas });
+  if (x.erro) return x;
+  return { ok: true, ...x };
+}
+
+/** 14b.1.2: item que impede o uso conta como resolvido quando foi "resolvido na hora", "resolvido sem OS" ou a OS dele foi
+ *  CONCLUÍDA. Se todos estão resolvidos e o equipamento está bloqueado por esta inspeção → libera com evidência. */
+const osConcluidaDe = (i, r) => (i.os_abertas || []).find((o) => o.ponto_id === r.ponto_id && o.concluida_em);
+async function liberarSeResolvida(supabase, tenantId, quemFez, i) {
+  const pendentes = (i.respostas || []).filter((r) => r.impede && !r.resolucao_posterior && !osConcluidaDe(i, r));
+  if (pendentes.length || !i.equipamento_id) return { liberou: false, pendentes: pendentes.map((r) => r.rotulo) };
+  const e = (await q(supabase.from('equipamentos').select('*').eq('tenant_id', tenantId).eq('id', i.equipamento_id)))[0];
+  if (!e?.bloqueado || String(e.bloqueio_inspecao_id) !== String(i.id)) return { liberou: false, pendentes: [] };
+  const lista = (i.respostas || []).filter((r) => r.impede).map((r) => { const o = osConcluidaDe(i, r); return `${r.rotulo}: ${r.resolucao_posterior ? `resolvido sem OS — ${r.resolucao_posterior.texto}` : `corrigido na ${o.os_numero || `OS ${o.os_id}`}`}`; }).join('; ');
+  const x = await liberar(supabase, tenantId, quemFez, e.id, `Liberação automática — itens que impediam o uso resolvidos (${i.numero || `inspeção ${i.id}`}): ${lista}`.slice(0, 500));
+  if (x.erro) return x;
+  return { liberou: true, pendentes: [] };
+}
+
+/** 14b.1.2: chamada quando uma OS é concluída — marca a OS como concluída nas inspeções ligadas a ela e libera o
+ *  equipamento se não sobrou item impedindo o uso. Nunca derruba a conclusão da OS (erros só no log). */
+async function osConcluida(supabase, tenantId, quemFez, osId, quando = new Date().toISOString()) {
+  const lista = (await q(supabase.from('inspecoes').select('*').eq('tenant_id', tenantId))).filter((i) => (i.os_abertas || []).some((o) => String(o.os_id) === String(osId) && !o.concluida_em));
+  const res = [];
+  for (const i of lista) {
+    const os = i.os_abertas.map((o) => (String(o.os_id) === String(osId) ? { ...o, concluida_em: quando } : o));
+    const { error } = await supabase.from('inspecoes').update({ os_abertas: os }).eq('id', i.id).eq('tenant_id', tenantId);
+    if (error) throw new Error(error.message);
+    res.push({ inspecao: i.numero || i.id, ...(await liberarSeResolvida(supabase, tenantId, quemFez, { ...i, os_abertas: os })) });
+  }
+  return res;
 }
 async function liberacoes(supabase, tenantId, equipId) {
   return (await q(supabase.from('equipamento_liberacoes').select('*').eq('tenant_id', tenantId).eq('equipamento_id', equipId))).sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em)));
@@ -317,5 +403,59 @@ async function registrarOS(supabase, tenantId, inspId, { ponto_id, os_id, os_num
   return { ok: true, os_abertas: lista };
 }
 
-module.exports = { CATEGORIAS, FREQUENCIAS, CAMPOS, ESQUEMAS, validarModelo, validarVistas, bibliotecaConsole, criarModeloBib, editarModeloBib, modelosTenant, bibliotecaParaTenant, importar,
+// ─── 14b.1: link de inspeção de terceiros (sem login) ──────────────────────
+// O gestor gera um link para um modelo (+ equipamento da frota, ou "veículo do próprio terceiro") com validade.
+// O terceiro se identifica (nome, CPF, empresa; placa quando o veículo é dele) e faz a inspeção igual ao app.
+const linkVivo = (l) => l && l.ativo !== false && new Date(l.valido_ate).getTime() > Date.now();
+async function listarLinks(supabase, tenantId) {
+  const l = await q(supabase.from('inspecao_links').select('*').eq('tenant_id', tenantId));
+  return l.map((x) => ({ ...x, vivo: linkVivo(x) })).sort((a, b) => (b.vivo - a.vivo) || String(b.criado_em).localeCompare(String(a.criado_em)));
+}
+async function criarLink(supabase, tenantId, { usuarioId, usuarioNome }, body = {}) {
+  const m = /^\d+$/.test(String(body.modelo_id || '')) ? (await q(supabase.from('inspecao_modelos').select('*').eq('tenant_id', tenantId).eq('id', body.modelo_id)))[0] : null;
+  if (!m || m.ativo === false) return { status: 400, erro: 'Escolha o modelo de inspeção' };
+  let equipId = null;
+  if (body.equipamento_id) { const e = (await q(supabase.from('equipamentos').select('*').eq('tenant_id', tenantId).eq('id', body.equipamento_id)))[0]; if (!e) return { status: 400, erro: 'Equipamento não encontrado' }; equipId = e.id; }
+  const dias = Math.round(Number(body.dias || 7));
+  if (!Number.isFinite(dias) || dias < 1 || dias > 90) return { status: 400, erro: 'Validade de 1 a 90 dias' };
+  const reg = { tenant_id: tenantId, token: crypto.randomBytes(24).toString('hex'), titulo: texto(body.titulo, 120), modelo_id: m.id, equipamento_id: equipId,
+    valido_ate: new Date(Date.now() + dias * 86400000).toISOString(), criado_por: usuarioId || null, criado_por_nome: usuarioNome || null };
+  const { data, error } = await supabase.from('inspecao_links').insert([reg]).select();
+  if (error) throw new Error(error.message);
+  return { link: data[0] };
+}
+async function desativarLink(supabase, tenantId, id) {
+  const { data, error } = await supabase.from('inspecao_links').update({ ativo: false }).eq('tenant_id', tenantId).eq('id', id).select();
+  if (error) throw new Error(error.message);
+  return data?.length ? { ok: true } : { status: 404, erro: 'Link não encontrado' };
+}
+async function linkPorToken(supabase, token) {
+  if (!/^[a-f0-9]{48}$/.test(String(token || ''))) return null;
+  return (await q(supabase.from('inspecao_links').select('*').eq('token', token)))[0] || null;
+}
+/** dados para a tela pública: empresa, modelo e equipamento (ou pedir a placa) */
+async function prepararLink(supabase, link, { placa, descricao } = {}) {
+  if (!linkVivo(link)) return { status: 410, erro: 'Este link de inspeção expirou ou foi desativado — peça um novo à empresa.' };
+  const emp = (await q(supabase.from('tenants').select('*').eq('id', link.tenant_id)))[0] || {};
+  const empresa = { nome: emp.nome_fantasia || emp.nome || emp.razao_social || 'Empresa' };
+  const prep = link.equipamento_id ? await preparar(supabase, link.tenant_id, link.equipamento_id, link.modelo_id)
+    : (placa ? await prepararAvulso(supabase, link.tenant_id, { placa, descricao }, link.modelo_id) : null);
+  if (prep?.erro) return prep;
+  const m = prep ? null : (await q(supabase.from('inspecao_modelos').select('*').eq('tenant_id', link.tenant_id).eq('id', link.modelo_id)))[0];
+  return { empresa, titulo: link.titulo, pede_placa: !link.equipamento_id, valido_ate: link.valido_ate, modelo_nome: prep?.modelo.nome || m?.nome, prep };
+}
+async function enviarPorLink(supabase, link, body = {}) {
+  if (!linkVivo(link)) return { status: 410, erro: 'Este link de inspeção expirou ou foi desativado — peça um novo à empresa.' };
+  const t = body.terceiro || {};
+  const nome = texto(t.nome, 120); if (!nome || nome.length < 3) return { status: 400, erro: 'Informe seu nome completo' };
+  const cpf = String(t.cpf || '').replace(/\D/g, ''); if (!D.cpfValido(cpf)) return { status: 400, erro: 'CPF inválido' };
+  const terceiro = { nome, cpf, empresa: texto(t.empresa, 120), telefone: texto(t.telefone, 30), placa: texto(t.placa, 12) };
+  const opcoes = { origem: 'link', linkId: link.id };
+  if (!link.equipamento_id) { if (!terceiro.placa) return { status: 400, erro: 'Informe a placa do veículo' }; opcoes.avulso = { placa: terceiro.placa, descricao: texto(t.veiculo, 80) }; }
+  const r = await enviar(supabase, link.tenant_id, { tipo: 'terceiro', nome, terceiro }, { ...body, equipamento_id: link.equipamento_id, modelo_id: link.modelo_id }, opcoes);
+  if (!r.erro && !r.repetido) await supabase.from('inspecao_links').update({ usos: Number(link.usos || 0) + 1, ultimo_uso: new Date().toISOString() }).eq('id', link.id);
+  return r;
+}
+
+module.exports = { corrigida, osConcluida, liberarSeResolvida, resolverSemOS, listarLinks, criarLink, desativarLink, linkPorToken, prepararLink, enviarPorLink, TIPOS, prepararAvulso, proximoNumero, CATEGORIAS, FREQUENCIAS, CAMPOS, ESQUEMAS, validarModelo, validarVistas, bibliotecaConsole, criarModeloBib, editarModeloBib, modelosTenant, bibliotecaParaTenant, importar,
   atualizarDaBiblioteca, salvarModeloTenant, subirImagemModelo, linksImagens, equipamentos, definirModeloEquipamento, preparar, enviar, listar, detalhe, liberar, liberacoes, registrarOS };
