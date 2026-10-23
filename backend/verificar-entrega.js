@@ -171,15 +171,12 @@ const ESPERADO = {
   'front:TelaLocatario.jsx': '19c84709c870a48e6368fa93f8532592', // etapa 14b.3 (novo)
   'services/clientes.js': '9714283f0013553dc96a48b75b6734cf', // etapa 14b.3.1 (novo)
   'migrations/044_clientes.sql': '446d1a52049aea19938d36cc2b01653d', // etapa 14b.3.1 (novo)
-  'front:Clientes.jsx': '862a066ffbc0d6b695df82c3a43f69c6', // etapa 14b.3.1 (novo)
+  'front:Clientes.jsx': '7a1432c9a3fb99fd96dc8bd20ddcd75a', // etapa 14b.3.2
 };
 
-// Antes de copiar a etapa 14b.3.1 — base: 14b.3
+// Antes de copiar a etapa 14b.3.2 — base: 14b.3.1
 const ANTES = {
-  'services/contratosLocacao.js': '96b70333f1aa7fc6c2a43a57ca191d3f',
-  'routes/contratos.js': '27586a794b10a1eccc6ace5c488fceb6',
-  'front:TelaContratos.jsx': '0c950a90e72bbaf74984ef4e32d52df4',
-  'front:TelaInspecoes.jsx': '4e5ef96eb9dcec8bc102a7f335321efc',
+  'front:Clientes.jsx': '862a066ffbc0d6b695df82c3a43f69c6',
 };
 
 const RAIZ = process.cwd();
@@ -217,7 +214,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 12e.1?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 14b.3.1)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 14b.3.2)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
