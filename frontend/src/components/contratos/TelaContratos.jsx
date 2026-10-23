@@ -6,6 +6,8 @@
 import { useState, useEffect, useMemo } from "react";
 import apiService from "../../services/apiService";
 import { corEstado, txtEstado } from "../inspecoes/RotinasLocacao";
+import { FormNovoContrato, AbaClientes, mascaraDoc } from "./Clientes"; // 14b.3.1
+import CampoTelefone from "../shared/CampoTelefone";
 
 const FREQ = { diaria: "Diária", semanal: "Semanal", quinzenal: "Quinzenal", mensal: "Mensal" };
 const dataBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
@@ -19,6 +21,8 @@ export default function TelaContratos({ C, s, onAbrirInspecoes }) {
   const [semMigration, setSemMigration] = useState(false);
   const [aviso, setAviso] = useState(null);
   const [filtro, setFiltro] = useState("ativo");
+  const [aba, setAba] = useState("contratos"); // 14b.3.1: contratos | clientes
+  const [novo, setNovo] = useState(false);     // 14b.3.1: novo contrato (CNPJ primeiro)
   const [busca, setBusca] = useState("");
   const [abertoId, setAbertoId] = useState(null);
   const [form, setForm] = useState(null);       // novo / editar contrato
@@ -61,13 +65,17 @@ export default function TelaContratos({ C, s, onAbrirInspecoes }) {
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
         <div style={{ fontSize: 20, fontWeight: 700, flex: 1 }}>📑 Contratos de locação</div>
         <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="🔍 Cliente, nº, equipamento…" style={{ ...s.input, width: 240 }} />
-        {editar && <button type="button" onClick={() => setForm(vazio())} style={bt(C.accent)}>＋ Novo contrato</button>}
+        {editar && aba === "contratos" && <button type="button" onClick={() => setNovo(true)} style={bt(C.accent)}>＋ Novo contrato</button>}
       </div>
       {aviso && <div style={{ ...s.card, padding: "10px 14px", marginBottom: 12, fontSize: 13, borderColor: aviso.tipo === "erro" ? C.danger : C.success, color: aviso.tipo === "erro" ? C.danger : C.success }}>{aviso.texto}</div>}
-      <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-        {[["ativo", "Ativos"], ["encerrado", "Encerrados"], ["todos", "Todos"]].map(([k, l]) => <button key={k} type="button" onClick={() => setFiltro(k)} style={{ ...s.btn(filtro === k, C.accent), cursor: "pointer", padding: "5px 12px", fontSize: 12, color: filtro === k ? "#fff" : C.text }}>{l}</button>)}
+      <div style={{ display: "flex", gap: 6, marginBottom: 12, borderBottom: `1px solid ${C.border}` }}>
+        {[["contratos", "📑 Contratos"], ["clientes", "👥 Clientes"]].map(([k, l]) => <button key={k} type="button" onClick={() => setAba(k)} style={{ background: "transparent", border: "none", borderBottom: `2px solid ${aba === k ? C.accent : "transparent"}`, padding: "8px 12px", color: aba === k ? C.text : C.muted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>)}
       </div>
-      {!d ? <div style={{ color: C.muted }}>Carregando…</div> : (
+      {aba === "clientes" && <AbaClientes C={C} s={s} editar={editar} onErro={err} onOk={ok} />}
+      {aba === "contratos" && <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
+        {[["ativo", "Ativos"], ["encerrado", "Encerrados"], ["todos", "Todos"]].map(([k, l]) => <button key={k} type="button" onClick={() => setFiltro(k)} style={{ ...s.btn(filtro === k, C.accent), cursor: "pointer", padding: "5px 12px", fontSize: 12, color: filtro === k ? "#fff" : C.text }}>{l}</button>)}
+      </div>}
+      {aba !== "contratos" ? null : !d ? <div style={{ color: C.muted }}>Carregando…</div> : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 10 }}>
           {lista.map((c) => (
             <div key={c.id} onClick={() => setAbertoId(c.id)} style={{ ...s.card, padding: 14, cursor: "pointer", opacity: c.status === "ativo" ? 1 : 0.65, borderColor: c.atrasadas ? C.danger : C.border }}>
@@ -87,13 +95,13 @@ export default function TelaContratos({ C, s, onAbrirInspecoes }) {
         </div>
       )}
 
-      {aberto && !form && !addEq && !acesso && !confirmar && !pausar && modal(<>
+      {aberto && !form && !novo && !addEq && !acesso && !confirmar && !pausar && modal(<>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <div style={{ fontSize: 17, fontWeight: 700, flex: 1 }}>📑 {aberto.numero} — {aberto.cliente}</div>
           <span style={s.tag(aberto.status === "ativo" ? C.success : C.muted)}>{aberto.status === "ativo" ? "ATIVO" : "ENCERRADO"}</span>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "8px 14px", fontSize: 12, marginTop: 12 }}>
-          {[["CNPJ / CPF", aberto.cliente_doc], ["Local / obra", aberto.local], ["Contato", [aberto.contato_nome, aberto.contato_email, aberto.contato_telefone].filter(Boolean).join(" · ")], ["Início", dataBR(aberto.inicio)],
+          {[["CNPJ / CPF", aberto.cliente_doc ? mascaraDoc(aberto.cliente_doc) : null], ["Local / obra", aberto.local], ["Contato", [aberto.contato_nome, aberto.contato_email, aberto.contato_telefone].filter(Boolean).join(" · ")], ["Início", dataBR(aberto.inicio)],
             ["Fim previsto", dataBR(aberto.fim_previsto)], ...(aberto.status !== "ativo" ? [["Encerrado em", `${dataBR(aberto.fim_real)}${aberto.encerrado_por_nome ? ` por ${aberto.encerrado_por_nome}` : ""}`]] : []), ["Criado por", aberto.criado_por_nome]]
             .map(([l, v]) => <div key={l}><div style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>{l.toUpperCase()}</div>{v || "—"}</div>)}
         </div>
@@ -143,21 +151,23 @@ export default function TelaContratos({ C, s, onAbrirInspecoes }) {
 
       {form && modal(<>
         <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>{form.id ? `Editar ${form.numero}` : "Novo contrato de locação"}</div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{campo("CLIENTE (LOCATÁRIO)", inp(form, setForm, "cliente", { autoFocus: true }), "2 1 240px")}{campo("CNPJ / CPF", inp(form, setForm, "cliente_doc"))}</div>
-        <div style={{ marginTop: 8 }}>{campo("LOCAL / OBRA", inp(form, setForm, "local", { placeholder: "Obra BR-101, km 230 — Campos/RJ" }), "1 1 100%")}</div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>{campo("CONTATO", inp(form, setForm, "contato_nome"))}{campo("E-MAIL", inp(form, setForm, "contato_email", { type: "email" }))}{campo("TELEFONE", inp(form, setForm, "contato_telefone", { inputMode: "tel" }))}</div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>{!form.id && campo("INÍCIO", inp(form, setForm, "inicio", { type: "date" }))}{campo("FIM PREVISTO (OPCIONAL)", inp(form, setForm, "fim_previsto", { type: "date" }))}</div>
+        <div style={{ fontSize: 13, color: C.textSub, marginBottom: 8 }}>Cliente: <b>{form.cliente}</b>{form.cliente_doc ? ` · ${mascaraDoc(form.cliente_doc)}` : ""} <span style={{ color: C.muted }}>(dados do cliente: aba 👥 Clientes)</span></div>
+        <div>{campo("LOCAL / OBRA", inp(form, setForm, "local", { placeholder: "Obra BR-101, km 230 — Campos/RJ" }), "1 1 100%")}</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>{campo("CONTATO", inp(form, setForm, "contato_nome"))}{campo("E-MAIL", inp(form, setForm, "contato_email", { type: "email" }))}{campo("TELEFONE", <CampoTelefone value={form.contato_telefone || ""} onChange={(v) => setForm({ ...form, contato_telefone: v || "" })} C={C} />, "1 1 200px")}</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>{campo("FIM PREVISTO (OPCIONAL)", inp(form, setForm, "fim_previsto", { type: "date" }))}</div>
         <label style={{ display: "block", marginTop: 8 }}><span style={s.label}>OBSERVAÇÕES</span><textarea rows={2} value={form.obs || ""} onChange={(e) => setForm({ ...form, obs: e.target.value })} style={{ ...s.input, resize: "vertical" }} /></label>
-        {!form.id && <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>O número (CL-{hoje().slice(0, 4)}-…) é gerado ao salvar. Depois, adicione os equipamentos e os acessos do locatário.</div>}
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
           <button type="button" onClick={() => setForm(null)} style={{ ...s.btn(false), cursor: "pointer", flex: 1, color: C.text }}>Cancelar</button>
-          <button type="button" disabled={ocupado || !form.cliente.trim()} onClick={async () => {
-            const { id, numero, equipamentos, acessos, ativos, atrasadas, status, criado_em, tenant_id, criado_por_nome, encerrado_por_nome, fim_real, ...corpo } = form; // eslint-disable-line no-unused-vars
-            const r = await acao(() => (id ? apiService.put(`/contratos/${id}`, corpo) : apiService.post("/contratos", corpo)), id ? "Contrato salvo." : (x) => `Contrato ${x.contrato.numero} criado.`);
-            if (r) { setForm(null); if (!id) setAbertoId(r.contrato.id); }
-          }} style={{ ...s.btn(!ocupado && !!form.cliente.trim(), C.accent), flex: 1 }}>Salvar</button>
+          <button type="button" disabled={ocupado} onClick={async () => {
+            const { local, contato_nome, contato_email, contato_telefone, fim_previsto, obs } = form;
+            const r = await acao(() => apiService.put(`/contratos/${form.id}`, { local, contato_nome, contato_email, contato_telefone, fim_previsto: fim_previsto || null, obs }), "Contrato salvo.");
+            if (r) setForm(null);
+          }} style={{ ...s.btn(!ocupado, C.accent), flex: 1 }}>Salvar</button>
         </div>
       </>, () => setForm(null), 620, 320)}
+
+      {novo && modal(<FormNovoContrato C={C} s={s} ocupado={ocupado} onErro={err} onCancelar={() => setNovo(false)}
+        onSalvar={async (corpo) => { const r = await acao(() => apiService.post("/contratos", corpo), (x) => `Contrato ${x.contrato.numero} criado — agora adicione os equipamentos e os acessos.`); if (r) { setNovo(false); setAbertoId(r.contrato.id); } }} />, () => setNovo(false), 680, 320)}
 
       {addEq && aberto && modal(<>
         <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>＋ Equipamento no {aberto.numero}</div>
@@ -187,7 +197,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes }) {
       {acesso && aberto && modal(<>
         <div style={{ fontSize: 16, fontWeight: 700 }}>👤 Acesso do locatário — {aberto.cliente}</div>
         <div style={{ fontSize: 12, color: C.muted, margin: "4px 0 12px" }}>Cria o usuário com perfil <b>Locatário</b>. Se o e-mail já for de um locatário seu (outro contrato), só liga este contrato a ele.</div>
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{campo("NOME", inp(acesso, setAcesso, "nome", { autoFocus: true }), "2 1 220px")}{campo("TELEFONE", inp(acesso, setAcesso, "telefone", { inputMode: "tel" }))}</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{campo("NOME", inp(acesso, setAcesso, "nome", { autoFocus: true }), "2 1 220px")}{campo("TELEFONE", <CampoTelefone value={acesso.telefone || ""} onChange={(v) => setAcesso({ ...acesso, telefone: v || "" })} C={C} />, "1 1 200px")}</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>{campo("E-MAIL (LOGIN)", inp(acesso, setAcesso, "email", { type: "email" }), "2 1 220px")}{campo("SENHA TEMPORÁRIA", inp(acesso, setAcesso, "senha", { placeholder: "mín. 6 caracteres" }))}</div>
         <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>Passe o e-mail e a senha ao cliente. Ele pode trocar a senha em "Meu perfil".</div>
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>

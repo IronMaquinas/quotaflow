@@ -120,7 +120,6 @@ export default function TelaInspecoes({ C, s, onAbrirOS, onIrParaOS, embutida = 
       <div onClick={(e) => e.stopPropagation()} style={{ ...s.card, width: largura, maxWidth: "100%", padding: "18px 20px", margin: "auto 0", boxShadow: "0 24px 48px #00000060" }}>{conteudo}</div>
     </div>
   );
-  const mini = { padding: "6px 9px", fontSize: 11.5, whiteSpace: "nowrap" }; // 14b.3: botões do card numa linha só
   const bt = (cor, cheio = true) => ({ ...s.btn(true, cor), cursor: "pointer", padding: "7px 12px", fontSize: 12, ...(cheio ? {} : { background: "transparent", color: cor }) });
 
   if (exec) return <ExecutarInspecao tenant={tenant} C={C} s={s} {...exec} onFechar={() => { setExec(null); carregarLocais(); }}
@@ -194,13 +193,13 @@ export default function TelaInspecoes({ C, s, onAbrirOS, onIrParaOS, embutida = 
               {!colab && <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>Modelo: {editar ? (
                 <select value={e.inspecao_modelo_id || ""} onChange={(x) => definirModelo(e, x.target.value)} style={{ ...s.input, width: "auto", padding: "3px 6px", fontSize: 11, display: "inline-block" }}>
                   <option value="">— escolher na hora —</option>{modelos.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}</select>) : (nomeModelo(e.inspecao_modelo_id) || "escolher na hora")}</div>}
-              <div style={{ display: "flex", gap: 4, marginTop: 10, flexWrap: "wrap" }}>
-                <button type="button" onClick={() => inspecionar(e)} style={{ ...bt(C.accent), ...mini }}>🔍 Inspecionar</button>
-                {e.bloqueado && !colab && <button type="button" onClick={() => (e.bloqueio_inspecao_id ? abrir(e.bloqueio_inspecao_id) : abrirLiberar(e))} style={{ ...bt(C.success), ...mini }}>🔓 Resolver</button>}
-                {editar && <button type="button" onClick={() => setModalEq({ tipo: "rotinas", e })} title="Rotinas de inspeção" style={{ ...bt(C.accent, false), ...mini }}>⏰ Rotinas{(e.rotinas || []).length ? ` ${e.rotinas.length}` : ""}</button>}
-                {editar && (e.situacao === "locado" ? <button type="button" onClick={() => setModalEq({ tipo: "encerrar", e })} title="Encerrar a locação (volta para a base)" style={{ ...bt(C.success, false), ...mini }}>🏠 Devolver</button>
-                  : <button type="button" onClick={() => setModalEq({ tipo: "locar", e })} style={{ ...bt(C.warn, false), ...mini }}>📍 Locar</button>)}
-                {e.total > 0 && !colab && <button type="button" onClick={() => { setFiltroEq(String(e.id)); setAba("hist"); }} title="Histórico de inspeções" style={{ ...bt(C.textSub, false), ...mini }}>🕘 {e.total}</button>}
+              <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
+                <button type="button" onClick={() => inspecionar(e)} style={bt(C.accent)}>🔍 Inspecionar</button>
+                {e.bloqueado && !colab && <button type="button" onClick={() => (e.bloqueio_inspecao_id ? abrir(e.bloqueio_inspecao_id) : abrirLiberar(e))} style={bt(C.success)}>🔓 Resolver bloqueio</button>}
+                {editar && <button type="button" onClick={() => setModalEq({ tipo: "rotinas", e })} style={bt(C.accent, false)}>⏰ Rotinas{(e.rotinas || []).length ? ` (${e.rotinas.length})` : ""}</button>}
+                {editar && (e.situacao === "locado" ? <button type="button" onClick={() => setModalEq({ tipo: "encerrar", e })} style={bt(C.success, false)}>🏠 Encerrar locação</button>
+                  : <button type="button" onClick={() => setModalEq({ tipo: "locar", e })} style={bt(C.warn, false)}>📍 Locar</button>)}
+                {e.total > 0 && !colab && <button type="button" onClick={() => { setFiltroEq(String(e.id)); setAba("hist"); }} style={bt(C.textSub, false)}>Histórico ({e.total})</button>}
               </div>
             </div>); })}
           {eqsF.length === 0 && <div style={{ color: C.muted }}>{eqs.length ? "Nenhum equipamento neste filtro." : "Nenhum equipamento cadastrado."}</div>}

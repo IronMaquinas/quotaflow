@@ -14,6 +14,7 @@
 const bcrypt = require('bcryptjs');
 const R = require('./rotinasInspecao');
 const I = require('./inspecoes');
+const CL = require('./clientes'); // 14b.3.1: cliente cadastrado (um por CNPJ/CPF)
 
 async function q(p) { const { data, error } = await p; if (error) throw new Error(error.message); return data || []; }
 const texto = (v, max) => (v == null || String(v).trim() === '' ? null : String(v).trim().slice(0, max));
@@ -75,7 +76,13 @@ async function doTenant(supabase, tenantId, id) {
   return /^\d+$/.test(String(id)) ? (await q(supabase.from('locacao_contratos').select('*').eq('tenant_id', tenantId).eq('id', id)))[0] || null : null;
 }
 async function criar(supabase, tenantId, quem, body = {}) {
+  // 14b.3.1: o contrato aponta para o cadastro do cliente — existente (cliente_id) ou criado agora (reaproveita pelo CNPJ/CPF)
+  let cli = null;
+  try { const r = await CL.resolverParaContrato(supabase, tenantId, body); if (r.erro) return r; cli = r.cliente; }
+  catch (e) { if (!/clientes|does not exist|schema cache/.test(String(e.message))) throw e; } // sem a 044: segue só com o nome
+  if (cli) body = { ...body, cliente: cli.nome, cliente_doc: cli.documento || body.cliente_doc || null, contato_nome: body.contato_nome ?? cli.contato_nome, contato_email: body.contato_email ?? cli.contato_email, contato_telefone: body.contato_telefone ?? cli.contato_telefone };
   const v = validar(body); if (v.erro) return { status: 400, erro: v.erro };
+  if (cli) v.dados.cliente_id = cli.id;
   for (let t = 0; t < 5; t++) {
     const numero = await proximoNumero(supabase, tenantId);
     const { data, error } = await supabase.from('locacao_contratos').insert([{ ...v.dados, tenant_id: tenantId, numero, status: 'ativo', criado_por_nome: quem.usuarioNome || null }]).select();

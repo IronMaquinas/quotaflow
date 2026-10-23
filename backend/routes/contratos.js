@@ -10,12 +10,14 @@
 //   POST   /:id/encerrar                     { fim_real } → { sem_contrato: [usuários sem contrato ativo] }
 //   POST   /:id/acessos                      { nome, email, senha, telefone } — cria/liga o usuário Locatário
 //   DELETE /:id/acessos/:usuario             tira o acesso deste contrato
+//   GET    /clientes · GET /clientes/consulta/:doc (cadastro → Receita) · POST /clientes · PUT /clientes/:id — 14b.3.1
 //   POST   /usuarios/:usuario/pausar         { ativo: false|true } — só usuário que é SÓ locatário
 
 const express = require('express');
 const router = express.Router();
 const { supabase } = require('../db');
 const CT = require('../services/contratosLocacao');
+const CL = require('../services/clientes'); // 14b.3.1
 
 const perfisDe = (req) => (Array.isArray(req.perfis) && req.perfis.length ? req.perfis : [req.userPerfil].filter(Boolean));
 const VER = ['admin', 'gestor', 'operacao', 'comprador', 'qualidade']; // qualidade: a tela de inspeções lista os contratos ao locar (403 derruba a sessão no front)
@@ -26,12 +28,17 @@ const responder = (fn) => async (req, res) => {
   try { const r = await fn(req); if (r && r.erro) return res.status(r.status || 400).json({ erro: r.erro }); res.json(r); }
   catch (err) {
     const m = String(err?.message || '');
+    if (/clientes|cliente_id/.test(m) && /does not exist|schema cache|relation|column/.test(m)) return res.status(409).json({ erro: 'Rode a migration 044 antes (clientes)' });
     if (/locacao_contrato|contrato_id|does not exist|schema cache/.test(m)) return res.status(409).json({ erro: 'Rode a migration 043 antes (contratos de locação)' });
     console.error('❌ [contratos]', m); res.status(500).json({ erro: 'Erro interno — veja o log do servidor' });
   }
 };
 const quem = async (req) => { const { data } = await supabase.from('usuarios').select('*').eq('tenant_id', req.tenantId).eq('id', req.userId); return { usuarioId: req.userId, usuarioNome: data?.[0]?.nome || req.userEmail || null }; };
 
+router.get('/clientes', exigirVer, responder(async (req) => ({ clientes: await CL.listar(supabase, req.tenantId) })));
+router.get('/clientes/consulta/:doc', exigirVer, responder((req) => CL.consultar(supabase, req.tenantId, req.params.doc)));
+router.post('/clientes', exigirEditar, responder((req) => CL.criar(supabase, req.tenantId, req.body || {})));
+router.put('/clientes/:id', exigirEditar, responder((req) => CL.editar(supabase, req.tenantId, req.params.id, req.body || {})));
 router.get('/', exigirVer, responder(async (req) => ({ contratos: await CT.listar(supabase, req.tenantId), pode_editar: perfisDe(req).some((p) => EDITAR.includes(p)) })));
 router.post('/', exigirEditar, responder(async (req) => CT.criar(supabase, req.tenantId, await quem(req), req.body || {})));
 router.put('/:id', exigirEditar, responder((req) => CT.editar(supabase, req.tenantId, req.params.id, req.body || {})));
