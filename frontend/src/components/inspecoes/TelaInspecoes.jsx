@@ -120,6 +120,7 @@ export default function TelaInspecoes({ C, s, onAbrirOS, onIrParaOS, embutida = 
       <div onClick={(e) => e.stopPropagation()} style={{ ...s.card, width: largura, maxWidth: "100%", padding: "18px 20px", margin: "auto 0", boxShadow: "0 24px 48px #00000060" }}>{conteudo}</div>
     </div>
   );
+  const mini = { padding: "6px 9px", fontSize: 11.5, whiteSpace: "nowrap" }; // 14b.3: botões do card numa linha só
   const bt = (cor, cheio = true) => ({ ...s.btn(true, cor), cursor: "pointer", padding: "7px 12px", fontSize: 12, ...(cheio ? {} : { background: "transparent", color: cor }) });
 
   if (exec) return <ExecutarInspecao tenant={tenant} C={C} s={s} {...exec} onFechar={() => { setExec(null); carregarLocais(); }}
@@ -193,13 +194,13 @@ export default function TelaInspecoes({ C, s, onAbrirOS, onIrParaOS, embutida = 
               {!colab && <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>Modelo: {editar ? (
                 <select value={e.inspecao_modelo_id || ""} onChange={(x) => definirModelo(e, x.target.value)} style={{ ...s.input, width: "auto", padding: "3px 6px", fontSize: 11, display: "inline-block" }}>
                   <option value="">— escolher na hora —</option>{modelos.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}</select>) : (nomeModelo(e.inspecao_modelo_id) || "escolher na hora")}</div>}
-              <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
-                <button type="button" onClick={() => inspecionar(e)} style={bt(C.accent)}>🔍 Inspecionar</button>
-                {e.bloqueado && !colab && <button type="button" onClick={() => (e.bloqueio_inspecao_id ? abrir(e.bloqueio_inspecao_id) : abrirLiberar(e))} style={bt(C.success)}>🔓 Resolver bloqueio</button>}
-                {editar && <button type="button" onClick={() => setModalEq({ tipo: "rotinas", e })} style={bt(C.accent, false)}>⏰ Rotinas{(e.rotinas || []).length ? ` (${e.rotinas.length})` : ""}</button>}
-                {editar && (e.situacao === "locado" ? <button type="button" onClick={() => setModalEq({ tipo: "encerrar", e })} style={bt(C.success, false)}>🏠 Encerrar locação</button>
-                  : <button type="button" onClick={() => setModalEq({ tipo: "locar", e })} style={bt(C.warn, false)}>📍 Locar</button>)}
-                {e.total > 0 && !colab && <button type="button" onClick={() => { setFiltroEq(String(e.id)); setAba("hist"); }} style={bt(C.textSub, false)}>Histórico ({e.total})</button>}
+              <div style={{ display: "flex", gap: 4, marginTop: 10, flexWrap: "wrap" }}>
+                <button type="button" onClick={() => inspecionar(e)} style={{ ...bt(C.accent), ...mini }}>🔍 Inspecionar</button>
+                {e.bloqueado && !colab && <button type="button" onClick={() => (e.bloqueio_inspecao_id ? abrir(e.bloqueio_inspecao_id) : abrirLiberar(e))} style={{ ...bt(C.success), ...mini }}>🔓 Resolver</button>}
+                {editar && <button type="button" onClick={() => setModalEq({ tipo: "rotinas", e })} title="Rotinas de inspeção" style={{ ...bt(C.accent, false), ...mini }}>⏰ Rotinas{(e.rotinas || []).length ? ` ${e.rotinas.length}` : ""}</button>}
+                {editar && (e.situacao === "locado" ? <button type="button" onClick={() => setModalEq({ tipo: "encerrar", e })} title="Encerrar a locação (volta para a base)" style={{ ...bt(C.success, false), ...mini }}>🏠 Devolver</button>
+                  : <button type="button" onClick={() => setModalEq({ tipo: "locar", e })} style={{ ...bt(C.warn, false), ...mini }}>📍 Locar</button>)}
+                {e.total > 0 && !colab && <button type="button" onClick={() => { setFiltroEq(String(e.id)); setAba("hist"); }} title="Histórico de inspeções" style={{ ...bt(C.textSub, false), ...mini }}>🕘 {e.total}</button>}
               </div>
             </div>); })}
           {eqsF.length === 0 && <div style={{ color: C.muted }}>{eqs.length ? "Nenhum equipamento neste filtro." : "Nenhum equipamento cadastrado."}</div>}
@@ -370,7 +371,7 @@ export default function TelaInspecoes({ C, s, onAbrirOS, onIrParaOS, embutida = 
   );
 }
 
-function DetalheInspecao({ d, C, s, bt, onRelatorio, onAbrirOS, onIrParaOS, onFoto, onResolver, bloqueioAqui, onLiberar, onFechar }) {
+export function DetalheInspecao({ d, C, s, bt, onRelatorio, onAbrirOS, onIrParaOS, onFoto, onResolver, bloqueioAqui, onLiberar, onFechar }) {
   const i = d.inspecao; const r = RES[i.resultado] || ["—", C.muted];
   const resp = new Map((i.respostas || []).map((x) => [x.ponto_id, x]));
   const osDe = (pid) => (i.os_abertas || []).find((o) => o.ponto_id === pid);
@@ -390,7 +391,7 @@ function DetalheInspecao({ d, C, s, bt, onRelatorio, onAbrirOS, onIrParaOS, onFo
       {corrigida && <span style={{ ...s.tag(C.success), fontSize: 12 }}>✓ Corrigido</span>}
     </div>
     <div style={{ fontSize: 12, color: C.textSub, marginTop: 4 }}>
-      {i.numero || `Nº ${i.id}`} · {i.modelo_nome} · {dataHora(i.concluida_em)} · {i.executor_nome}{i.executor_tipo === "terceiro" ? ` (terceiro${i.terceiro?.empresa ? ` — ${i.terceiro.empresa}` : ""}${i.terceiro?.cpf ? ` · CPF ${String(i.terceiro.cpf).replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4")}` : ""})` : ""}
+      {i.numero || `Nº ${i.id}`} · {i.modelo_nome} · {dataHora(i.concluida_em)} · {i.executor_nome}{i.terceiro?.locatario ? ` (locatário — ${i.terceiro.empresa || ""}${i.terceiro.contrato ? ` · ${i.terceiro.contrato}` : ""})` : ""}{i.executor_tipo === "terceiro" ? ` (terceiro${i.terceiro?.empresa ? ` — ${i.terceiro.empresa}` : ""}${i.terceiro?.cpf ? ` · CPF ${String(i.terceiro.cpf).replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4")}` : ""})` : ""}
       {i.km != null ? ` · ${Number(i.km).toLocaleString("pt-BR")} km` : ""}{i.horimetro != null ? ` · ${Number(i.horimetro).toLocaleString("pt-BR")} h` : ""}{i.local ? ` · ${i.local}` : ""}{i.cliente ? ` · ${i.cliente}` : ""}
     </div>
     {d.entrega && <div style={{ ...s.card, padding: "8px 12px", marginTop: 10, fontSize: 12, borderColor: C.warn }}>📍 Devolução da locação de <b>{d.entrega.cliente}</b> — comparada com a entrega <b>{d.entrega.numero || `nº ${d.entrega.id}`}</b> ({dataHora(d.entrega.concluida_em)}, {d.entrega.executor_nome}). Em cada item: "entrega: … →" e o estado na devolução; em laranja o que mudou.</div>}

@@ -106,6 +106,12 @@ async function locar(supabase, tenantId, quem, equipId, body = {}) {
   const e = (await q(supabase.from('equipamentos').select('*').eq('tenant_id', tenantId).eq('id', equipId)))[0];
   if (!e) return { status: 404, erro: 'Equipamento não encontrado' };
   if (e.situacao === 'locado' && e.locacao_id) return { status: 400, erro: 'O equipamento já está locado — encerre a locação atual antes' };
+  if (body.contrato_id) { // 14b.3: locação dentro de um contrato (CL-…) — cliente, obra e contato vêm do contrato
+    const c = (await q(supabase.from('locacao_contratos').select('*').eq('tenant_id', tenantId).eq('id', body.contrato_id)))[0];
+    if (!c || c.status !== 'ativo') return { status: 400, erro: 'Contrato não encontrado ou encerrado' };
+    body = { ...body, cliente: c.cliente, contrato: c.numero, local: body.local || c.local, contato_nome: c.contato_nome, contato_email: c.contato_email, contato_telefone: c.contato_telefone,
+      inicio: body.inicio || c.inicio, fim_previsto: body.fim_previsto || c.fim_previsto || null };
+  }
   const cliente = texto(body.cliente, 160); if (!cliente) return { status: 400, erro: 'Informe o cliente' };
   const inicio = DATA.test(String(body.inicio || '')) ? body.inicio : null; if (!inicio) return { status: 400, erro: 'Informe a data de início' };
   const fim = body.fim_previsto ? (DATA.test(String(body.fim_previsto)) ? body.fim_previsto : 'x') : null;
@@ -114,7 +120,7 @@ async function locar(supabase, tenantId, quem, equipId, body = {}) {
   if (body.rotina && (!FREQ[body.rotina.frequencia] || !body.rotina.modelo_id)) return { status: 400, erro: 'Rotina do locatário: escolha o modelo e a frequência' };
   const { data, error } = await supabase.from('equipamento_locacoes').insert([{ tenant_id: tenantId, equipamento_id: e.id, cliente, contrato: texto(body.contrato, 80), local: texto(body.local, 200),
     contato_nome: texto(body.contato_nome, 120), contato_email: email, contato_telefone: texto(body.contato_telefone, 30), inicio, fim_previsto: fim, obs: texto(body.obs, 1000),
-    status: 'ativa', criado_por_nome: quem.usuarioNome || null }]).select();
+    status: 'ativa', criado_por_nome: quem.usuarioNome || null, ...(body.contrato_id ? { contrato_id: body.contrato_id } : {}) }]).select();
   if (error) throw new Error(error.message);
   const loc = data[0];
   const { error: eu } = await supabase.from('equipamentos').update({ situacao: 'locado', locacao_id: loc.id }).eq('id', e.id).eq('tenant_id', tenantId);

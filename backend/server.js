@@ -147,6 +147,8 @@ app.use('/api/prova', require('./routes/provaPublica')); // etapa 12e.2b — lin
 app.use('/api/autuacoes', tenantMiddleware, require('./routes/autuacoes')); // etapa 12i — autuações da empresa (requisito legal)
 app.use('/api/inspecoes', tenantMiddleware, require('./routes/inspecoes')); // etapa 14a — inspeções de equipamento
 app.use('/api/inspecao-link', require('./routes/inspecaoLink')); // etapa 14b.1 — inspeção de terceiros (link público)
+app.use('/api/contratos', tenantMiddleware, require('./routes/contratos')); // etapa 14b.3 — contratos de locação (empresa)
+app.use('/api/locatario', tenantMiddleware, require('./routes/locatario')); // etapa 14b.3 — área do locatário
 
 // Rota de saúde (Railway usa para verificar se o servidor está rodando)
 app.get("/health", (req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));

@@ -31,6 +31,8 @@ import TelaOrdemServico from './components/estoque/TelaOrdemServico';
 import TelaConfiguracoes from './components/configuracoes/TelaConfiguracoes';
 import TelaNaoConformidades from "./components/naoConformidades/TelaNaoConformidades";
 import TelaInspecoes from "./components/inspecoes/TelaInspecoes"; // etapa 14a
+import TelaContratos from "./components/contratos/TelaContratos"; // etapa 14b.3
+import TelaLocatario from "./components/contratos/TelaLocatario"; // etapa 14b.3
 import TelaCalendarioManutencao from './components/manutencao/TelaCalendarioManutencao'; // etapa 12a
 import TelaPessoas from './components/pessoas/TelaPessoas'; // etapa 12c
 import TelaMeusTreinamentos from './components/pessoas/TelaMeusTreinamentos'; // etapa 12e.2b
@@ -336,6 +338,20 @@ const perfil = PERFIS[usuario.perfil] || {
   // Etapa 12e.2b: perfil "colaborador" (sozinho) só vê "🎓 Meus treinamentos" — tela própria, sem o menu do sistema.
   // (o backend também barra o resto da API para esse perfil — middleware/tenantMiddleware.js)
   const perfisLogado = Array.isArray(usuario?.perfis) && usuario.perfis.length > 0 ? usuario.perfis : [usuario?.perfil].filter(Boolean);
+  // Etapa 14b.3: perfil "locatario" (cliente que aluga equipamento) só vê os contratos DELE — tela própria, sem o menu.
+  // (o backend barra o resto da API para esse perfil — middleware/tenantMiddleware.js — e filtra pelo usuário logado)
+  if (perfisLogado.length > 0 && perfisLogado.every((p) => p === "locatario")) return (
+    <div style={{ background: C.bg, height: "100vh", display: "flex", flexDirection: "column", color: C.text, fontFamily: "-apple-system, 'Segoe UI', Roboto, sans-serif" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 20px", borderBottom: `1px solid ${C.border}` }}>
+        <div style={{ fontWeight: 800, fontSize: 16, flex: 1 }}>QuotaFlow <span style={{ color: C.muted, fontWeight: 400, fontSize: 13 }}>· 📑 Meus contratos</span></div>
+        <button onClick={() => setMeuPerfilAberto(true)} title="Meu perfil e senha" style={{ background: "transparent", border: "none", fontSize: 12, color: C.textSub, cursor: "pointer", fontFamily: "inherit" }}>👤 {usuario.nome}</button>
+        <button onClick={logout} style={{ background: "transparent", border: `1px solid ${C.border}`, borderRadius: 6, padding: "6px 12px", color: C.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Sair</button>
+      </div>
+      <div style={{ flex: 1, overflowY: "auto" }}><TelaLocatario C={C} s={s} usuario={usuario} /></div>
+      {meuPerfilAberto && <ModalMeuPerfil usuario={usuario} onFechar={() => setMeuPerfilAberto(false)} onAtualizado={(u) => { const novo = { ...usuario, ...u }; setUsuario(novo); localStorage.setItem("usuario", JSON.stringify(novo)); }} />}
+    </div>
+  );
+
   if (perfisLogado.length > 0 && perfisLogado.every((p) => p === "colaborador")) return (
     <div style={{ background: C.bg, height: "100vh", display: "flex", flexDirection: "column", color: C.text, fontFamily: "-apple-system, 'Segoe UI', Roboto, sans-serif" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 12, padding: "12px 20px", borderBottom: `1px solid ${C.border}` }}>
@@ -375,6 +391,7 @@ const perfil = PERFIS[usuario.perfil] || {
     {id:"benchmark",     l:"📈 Benchmark",            perfis:["admin","gestor"]},
     {id:"equipamentos",  l:"⚙ Equipamentos",          perfis:["admin","gestor","comprador","operacao"]},
     {id:"inspecoes",     l:"🔍 Inspeções",             perfis:["admin","gestor","comprador","operacao","qualidade"]}, // etapa 14a
+    {id:"contratos",     l:"📑 Contratos",             perfis:["admin","gestor","comprador","operacao","qualidade"]}, // etapa 14b.3
     {id:"pessoas",       l:"👷 Pessoas",               perfis:["admin","gestor","qualidade","operacao"]},
     {id:"meus_treinamentos", l:"🎓 Meus treinamentos",  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro"]}, // etapa 12e.2b
     {id:"fornecedores",  l:"🏭 Fornecedores",         perfis:["admin","gestor","comprador"]},
@@ -738,6 +755,11 @@ const perfil = PERFIS[usuario.perfil] || {
         {temAcesso(tela) && tela === "configuracoes" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
             <TelaConfiguracoes C={C} s={s} />
+          </div>)}
+
+        {temAcesso(tela) && tela === "contratos" && (
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            <TelaContratos C={C} s={s} onAbrirInspecoes={temAcesso("inspecoes") ? () => setTela("inspecoes") : null} />
           </div>)}
 
         {temAcesso(tela) && tela === "inspecoes" && (
@@ -2356,6 +2378,7 @@ const PERMISSOES = {
   benchmark:          ["admin","gestor"],
   equipamentos:       ["admin","gestor","comprador","operacao"],
   inspecoes:          ["admin","gestor","comprador","operacao","qualidade"], // etapa 14a
+  contratos:          ["admin","gestor","comprador","operacao","qualidade"], // etapa 14b.3
   pessoas:            ["admin","gestor","qualidade","operacao"], // etapa 12c
   meus_treinamentos:  ["admin","gestor","comprador","operacao","qualidade","financeiro","colaborador"], // etapa 12e.2b
   fornecedores:       ["admin","gestor","comprador"],

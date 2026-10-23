@@ -49,6 +49,14 @@ function tenantMiddleware(req, res, next) {
       if (!livre) return res.status(403).json({ erro: "Seu acesso é só a Meus treinamentos e Minhas inspeções" });
     }
 
+    // Etapa 14b.3: perfil "locatario" (cliente que aluga equipamento) só acessa a área dele — o escopo (os contratos
+    // DELE) é aplicado em services/contratosLocacao.js pelo usuário logado.
+    if (req.perfis.length > 0 && req.perfis.every((p) => p === "locatario")) {
+      const url = String(req.originalUrl || "").split("?")[0];
+      const livre = /^\/api\/locatario(\/|$)/.test(url) || /^\/api\/usuarios\/me(\/|$)/.test(url) || /^\/api\/auth\//.test(url);
+      if (!livre) return res.status(403).json({ erro: "Seu acesso é só aos seus contratos" });
+    }
+
     next();
   } catch (err) {
     if (err.name === "TokenExpiredError") {

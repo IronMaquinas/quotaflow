@@ -258,7 +258,7 @@ async function pendentes() {
 async function listarTransportadoras() {
   const [tenants, usuarios] = await Promise.all([DB.select('tenants', {}), DB.select('usuarios', {})]);
   const qtd = {};
-  for (const u of usuarios || []) qtd[String(u.tenant_id)] = (qtd[String(u.tenant_id)] || 0) + 1;
+  for (const u of usuarios || []) if (!['colaborador', 'locatario'].includes(u.perfil)) qtd[String(u.tenant_id)] = (qtd[String(u.tenant_id)] || 0) + 1; // 12e.2b/14b.3: colaborador e locatário não contam
   return (tenants || [])
     .map((t) => ({ ...resumoTenant(t), receita: undefined, usuarios: qtd[String(t.id)] || 0 }))
     .sort((a, b) => String(a.nome).localeCompare(String(b.nome), 'pt-BR'));

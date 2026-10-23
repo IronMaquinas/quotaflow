@@ -75,31 +75,42 @@ export function ModalLocar({ e, modelos, C, s, onFechar, onMudou, onErro }) {
   const [f, setF] = useState({ cliente: "", contrato: "", local: "", contato_nome: "", contato_email: "", contato_telefone: "", inicio: hoje(), fim_previsto: "", obs: "", comRotina: true,
     modelo_id: modelos.find((m) => m.tipo === "equipamento" && m.frequencia !== "pre_uso")?.id || modelos[0]?.id || "", frequencia: "semanal" });
   const [ocupado, setOcupado] = useState(false);
-  const ok = f.cliente.trim() && f.inicio && (!f.comRotina || f.modelo_id);
+  // 14b.3: locar dentro de um contrato (📑 Contratos) — cliente, obra e contato vêm dele
+  const [contratos, setContratos] = useState([]);
+  const [contratoId, setContratoId] = useState("");
+  useEffect(() => { apiService.get("/contratos").then((r) => { const at = (r.contratos || []).filter((c) => c.status === "ativo"); setContratos(at); if (at.length) setContratoId(String(at[0].id)); }).catch(() => {}); }, []);
+  const contrato = contratos.find((c) => String(c.id) === contratoId);
+  const ok = (contrato || f.cliente.trim()) && f.inicio && (!f.comRotina || f.modelo_id);
   const salvar = async () => {
     setOcupado(true);
     try {
       const { comRotina, modelo_id, frequencia, ...corpo } = f;
-      await apiService.post(`/inspecoes/equipamentos/${e.id}/locar`, { ...corpo, fim_previsto: f.fim_previsto || null, rotina: comRotina ? { modelo_id, frequencia } : null });
-      await onMudou(`${e.tag} locado para ${f.cliente}. Faça a inspeção de entrega antes de sair.`);
+      const rotina = comRotina ? { modelo_id, frequencia } : null;
+      if (contrato) await apiService.post(`/contratos/${contrato.id}/equipamentos`, { equipamento_id: e.id, inicio: f.inicio, local: f.local || undefined, rotina });
+      else await apiService.post(`/inspecoes/equipamentos/${e.id}/locar`, { ...corpo, fim_previsto: f.fim_previsto || null, rotina });
+      await onMudou(`${e.tag} locado para ${contrato ? `${contrato.cliente} (${contrato.numero})` : f.cliente}. Faça a inspeção de entrega antes de sair.`);
     } catch (x) { onErro(x.message); } finally { setOcupado(false); }
   };
   const inp = (k, extra = {}) => <input value={f[k]} onChange={(x) => setF({ ...f, [k]: x.target.value })} style={s.input} {...extra} />;
   return casca(C, s, <>
     <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>📍 Locar {e.tag} — {e.nome}</div>
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-      {campo(s, "CLIENTE (LOCATÁRIO)", inp("cliente", { autoFocus: true }), "2 1 240px")}
-      {campo(s, "CONTRATO", inp("contrato", { placeholder: "CL-2026-0001" }))}
-    </div>
-    <div style={{ marginTop: 8 }}>{campo(s, "LOCAL / OBRA", inp("local", { placeholder: "Obra BR-101, km 230 — Campos/RJ" }), "1 1 100%")}</div>
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-      {campo(s, "CONTATO NO CLIENTE", inp("contato_nome"))}
-      {campo(s, "E-MAIL", inp("contato_email", { type: "email" }))}
-      {campo(s, "TELEFONE", inp("contato_telefone", { inputMode: "tel" }))}
-    </div>
+    {campo(s, "CONTRATO DE LOCAÇÃO", <select value={contratoId} onChange={(x) => setContratoId(x.target.value)} style={s.input}>
+      {contratos.map((c) => <option key={c.id} value={c.id}>{c.numero} — {c.cliente}{c.local ? ` · ${c.local}` : ""}</option>)}
+      <option value="">Sem contrato (locação avulsa)</option></select>, "1 1 100%")}
+    {contrato ? <div style={{ fontSize: 12, color: C.muted, margin: "6px 0 0" }}>Cliente, obra e contato vêm do contrato. Novo contrato: menu 📑 Contratos.</div> : <>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+        {campo(s, "CLIENTE (LOCATÁRIO)", inp("cliente", { autoFocus: true }), "2 1 240px")}
+        {campo(s, "Nº DO CONTRATO", inp("contrato"))}
+      </div>
+      <div style={{ marginTop: 8 }}>{campo(s, "LOCAL / OBRA", inp("local", { placeholder: "Obra BR-101, km 230 — Campos/RJ" }), "1 1 100%")}</div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
+        {campo(s, "CONTATO NO CLIENTE", inp("contato_nome"))}
+        {campo(s, "E-MAIL", inp("contato_email", { type: "email" }))}
+        {campo(s, "TELEFONE", inp("contato_telefone", { inputMode: "tel" }))}
+      </div></>}
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
       {campo(s, "INÍCIO", inp("inicio", { type: "date" }))}
-      {campo(s, "FIM PREVISTO (OPCIONAL)", inp("fim_previsto", { type: "date" }))}
+      {!contrato && campo(s, "FIM PREVISTO (OPCIONAL)", inp("fim_previsto", { type: "date" }))}
     </div>
     <div style={{ ...s.card, padding: 12, marginTop: 12 }}>
       <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, cursor: "pointer" }}><input type="checkbox" checked={f.comRotina} onChange={(x) => setF({ ...f, comRotina: x.target.checked })} /><b>Rotina de inspeção pelo locatário</b></label>
@@ -107,7 +118,7 @@ export function ModalLocar({ e, modelos, C, s, onFechar, onMudou, onErro }) {
         {campo(s, "MODELO", <select value={f.modelo_id} onChange={(x) => setF({ ...f, modelo_id: x.target.value })} style={s.input}>{modelos.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}</select>, "2 1 220px")}
         {campo(s, "FREQUÊNCIA", <select value={f.frequencia} onChange={(x) => setF({ ...f, frequencia: x.target.value })} style={s.input}>{Object.entries(FREQ).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>)}
       </div>}
-      {f.comRotina && <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>Primeira em {dataBR(somaDias(f.inicio || hoje(), { diaria: 1, semanal: 7, quinzenal: 15, mensal: 30 }[f.frequencia]))}. O acesso do locatário (link) chega na 14b.3 — até lá, a empresa pode gerar um 🔗 link de terceiros.</div>}
+      {f.comRotina && <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>Primeira em {dataBR(somaDias(f.inicio || hoje(), { diaria: 1, semanal: 7, quinzenal: 15, mensal: 30 }[f.frequencia]))}. O locatário inspeciona pelo acesso dele (📑 Contratos → 👤 Acessos).</div>}
     </div>
     <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
       <button type="button" onClick={onFechar} style={{ ...s.btn(false), cursor: "pointer", flex: 1, color: C.text }}>Cancelar</button>
