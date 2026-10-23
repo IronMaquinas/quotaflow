@@ -13,6 +13,7 @@ import EditorModeloInspecao, { modeloVazio } from "./EditorModeloInspecao";
 import { FundoVista } from "./Esquemas";
 import * as Fila from "../../utils/filaInspecoes";
 import { abrirRelatorioInspecao, prepararJanela } from "../../utils/gerarRelatorioInspecao";
+import { LinhaRotinas, ModalRotinas, ModalLocar, ModalEncerrar, AbaCumprimento } from "./RotinasLocacao"; // 14b.2
 
 const RES = { aprovado: ["✓ Aprovado", "#22c55e"], ressalvas: ["⚠ Ressalvas", "#f59e0b"], reprovado: ["⛔ Reprovado", "#ef4444"] };
 const COR = { ok: "#22c55e", nok: "#ef4444", na: "#64748b" };
@@ -38,7 +39,9 @@ export default function TelaInspecoes({ C, s, onAbrirOS, onIrParaOS, embutida = 
   const [biblioteca, setBiblioteca] = useState(null);
   const [confirmar, setConfirmar] = useState(null);
   const [ocupado, setOcupado] = useState(false);
-  const [links, setLinks] = useState(null); // 14b.1: { lista, form, criado }
+  const [links, setLinks] = useState(null);
+  const [filtroSit, setFiltroSit] = useState("todos"); // 14b.2: todos | base | locado | atrasadas
+  const [modalEq, setModalEq] = useState(null); // 14b.2: { tipo: 'rotinas'|'locar'|'encerrar', e } // 14b.1: { lista, form, criado }
   const ok = (t) => setAviso({ tipo: "ok", texto: t });
   const err = (t) => setAviso({ tipo: "erro", texto: t });
   useEffect(() => { if (!aviso) return; const t = setTimeout(() => setAviso(null), 6000); return () => clearTimeout(t); }, [aviso]);
@@ -128,7 +131,11 @@ export default function TelaInspecoes({ C, s, onAbrirOS, onIrParaOS, embutida = 
   const eqs = (painel?.equipamentos || []).filter((e) => !busca.trim() || semAcento(`${e.tag} ${e.nome} ${e.local || ""}`).includes(semAcento(busca.trim())));
   const listaF = lista.filter((i) => (!filtroEq || String(i.equipamento_id) === String(filtroEq)) && (aba !== "hist" || !busca.trim() || semAcento(`${i.equipamento_nome} ${i.executor_nome} ${i.modelo_nome}`).includes(semAcento(busca.trim()))));
   const bloqueados = (painel?.equipamentos || []).filter((e) => e.bloqueado).length;
-  const abas = colab ? [["equip", "🚚 Inspecionar"], ["hist", "📋 Minhas inspeções"]] : [["equip", `🚚 Equipamentos${bloqueados ? ` (⛔ ${bloqueados})` : ""}`], ["hist", "📋 Inspeções"], ["modelos", "🧩 Modelos"]];
+  const abas = colab ? [["equip", "🚚 Inspecionar"], ["hist", "📋 Minhas inspeções"]] : [["equip", `🚚 Equipamentos${bloqueados ? ` (⛔ ${bloqueados})` : ""}`], ["hist", "📋 Inspeções"], ["cumprimento", "📊 Cumprimento"], ["modelos", "🧩 Modelos"]];
+  const atrasada = (e) => (e.rotinas || []).some((r) => r.estado === "atrasada");
+  const contSit = { todos: eqs.length, base: eqs.filter((e) => e.situacao !== "locado").length, locado: eqs.filter((e) => e.situacao === "locado").length, atrasadas: eqs.filter(atrasada).length };
+  const eqsF = eqs.filter((e) => filtroSit === "todos" || (filtroSit === "base" ? e.situacao !== "locado" : filtroSit === "locado" ? e.situacao === "locado" : atrasada(e)));
+  const mudouEq = async (t) => { setModalEq(null); ok(t); await carregar(); };
   const linkUrl = (l) => `${window.location.origin}${window.location.pathname}#inspecao?t=${l.token}`;
   const abrirLinks = async () => { try { setLinks({ lista: (await apiService.get("/inspecoes/links")).links || [], form: null }); } catch (e) { err(e.message); } };
   const copiar = async (t) => { try { await navigator.clipboard.writeText(t); ok("Copiado — cole no WhatsApp / Telegram."); } catch { err("Não foi possível copiar — selecione o texto e copie."); } };
@@ -163,15 +170,25 @@ export default function TelaInspecoes({ C, s, onAbrirOS, onIrParaOS, embutida = 
 
       {!painel && <div style={{ color: C.muted }}>Carregando…</div>}
 
+      {painel && aba === "equip" && !colab && (
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+          {[["todos", "Todos"], ["base", "🏠 Na base"], ["locado", "📍 Locados"], ["atrasadas", "⚠ Inspeção atrasada"]].map(([k, l]) => (
+            <button key={k} type="button" onClick={() => setFiltroSit(k)} style={{ ...s.btn(filtroSit === k, k === "atrasadas" ? C.danger : C.accent), cursor: "pointer", padding: "5px 12px", fontSize: 12, color: filtroSit === k ? "#fff" : C.text }}>{l} ({contSit[k]})</button>
+          ))}
+        </div>
+      )}
       {painel && aba === "equip" && (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))", gap: 10 }}>
-          {eqs.map((e) => { const r = e.ultima && RES[e.ultima.resultado]; return (
+          {eqsF.map((e) => { const r = e.ultima && RES[e.ultima.resultado]; return (
             <div key={e.id} style={{ ...s.card, padding: 14, borderColor: e.bloqueado ? C.danger : C.border }}>
               <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
                 <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700 }}>{e.tag}</div><div style={{ fontSize: 12, color: C.textSub }}>{e.nome}{e.local ? ` · ${e.local}` : ""}</div></div>
                 {e.bloqueado ? <span style={s.tag(C.danger)}>⛔ BLOQUEADO</span> : r ? <span style={s.tag(e.ultima.resultado === "reprovado" ? C.success : r[1])}>{e.ultima.resultado === "reprovado" ? "🔓 Liberado" : r[0]}</span> : <span style={s.tag(C.muted)}>Sem inspeção</span>}
               </div>
               {e.bloqueado && <div style={{ fontSize: 12, color: C.danger, marginTop: 6 }}>{e.bloqueio_motivo} · {dataHora(e.bloqueado_em)}</div>}
+              <div style={{ fontSize: 12, marginTop: 6, color: e.situacao === "locado" ? C.warn : C.textSub }}>{e.situacao === "locado" && e.locacao
+                ? <>📍 <b>Locado</b> — {e.locacao.cliente}{e.locacao.contrato ? ` · ${e.locacao.contrato}` : ""}{e.locacao.local ? ` · ${e.locacao.local}` : ""}{e.locacao.fim_previsto ? ` · até ${String(e.locacao.fim_previsto).split("-").reverse().join("/")}` : ""}</> : "🏠 Na base"}</div>
+              <LinhaRotinas e={e} C={C} />
               {e.ultima && <div style={{ fontSize: 11, color: C.muted, marginTop: 6, cursor: "pointer" }} onClick={() => abrir(e.ultima.id)}>Última: {dataHora(e.ultima.em)} · {e.ultima.executor}{e.ultima.km != null ? ` · ${Number(e.ultima.km).toLocaleString("pt-BR")} km` : ""} ›</div>}
               {!colab && <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>Modelo: {editar ? (
                 <select value={e.inspecao_modelo_id || ""} onChange={(x) => definirModelo(e, x.target.value)} style={{ ...s.input, width: "auto", padding: "3px 6px", fontSize: 11, display: "inline-block" }}>
@@ -179,12 +196,20 @@ export default function TelaInspecoes({ C, s, onAbrirOS, onIrParaOS, embutida = 
               <div style={{ display: "flex", gap: 6, marginTop: 10, flexWrap: "wrap" }}>
                 <button type="button" onClick={() => inspecionar(e)} style={bt(C.accent)}>🔍 Inspecionar</button>
                 {e.bloqueado && !colab && <button type="button" onClick={() => (e.bloqueio_inspecao_id ? abrir(e.bloqueio_inspecao_id) : abrirLiberar(e))} style={bt(C.success)}>🔓 Resolver bloqueio</button>}
+                {editar && <button type="button" onClick={() => setModalEq({ tipo: "rotinas", e })} style={bt(C.accent, false)}>⏰ Rotinas{(e.rotinas || []).length ? ` (${e.rotinas.length})` : ""}</button>}
+                {editar && (e.situacao === "locado" ? <button type="button" onClick={() => setModalEq({ tipo: "encerrar", e })} style={bt(C.success, false)}>🏠 Encerrar locação</button>
+                  : <button type="button" onClick={() => setModalEq({ tipo: "locar", e })} style={bt(C.warn, false)}>📍 Locar</button>)}
                 {e.total > 0 && !colab && <button type="button" onClick={() => { setFiltroEq(String(e.id)); setAba("hist"); }} style={bt(C.textSub, false)}>Histórico ({e.total})</button>}
               </div>
             </div>); })}
-          {eqs.length === 0 && <div style={{ color: C.muted }}>Nenhum equipamento cadastrado.</div>}
+          {eqsF.length === 0 && <div style={{ color: C.muted }}>{eqs.length ? "Nenhum equipamento neste filtro." : "Nenhum equipamento cadastrado."}</div>}
         </div>
       )}
+
+      {painel && aba === "cumprimento" && <AbaCumprimento C={C} s={s} onErro={err} />}
+      {modalEq?.tipo === "rotinas" && <ModalRotinas e={(painel.equipamentos || []).find((x) => x.id === modalEq.e.id) || modalEq.e} modelos={modelos} C={C} s={s} onFechar={() => setModalEq(null)} onMudou={async (t) => { ok(t); await carregar(); }} onErro={err} />}
+      {modalEq?.tipo === "locar" && <ModalLocar e={modalEq.e} modelos={modelos} C={C} s={s} onFechar={() => setModalEq(null)} onMudou={mudouEq} onErro={err} />}
+      {modalEq?.tipo === "encerrar" && <ModalEncerrar e={modalEq.e} C={C} s={s} onFechar={() => setModalEq(null)} onMudou={mudouEq} onErro={err} />}
 
       {painel && aba === "hist" && (
         <div>
@@ -349,6 +374,9 @@ function DetalheInspecao({ d, C, s, bt, onRelatorio, onAbrirOS, onIrParaOS, onFo
   const i = d.inspecao; const r = RES[i.resultado] || ["—", C.muted];
   const resp = new Map((i.respostas || []).map((x) => [x.ponto_id, x]));
   const osDe = (pid) => (i.os_abertas || []).find((o) => o.ponto_id === pid);
+  // 14b.2: devolução de locação → o mesmo item na inspeção de entrega (mesmo ponto ou mesmo rótulo)
+  const naEntrega = (p) => (d.entrega?.respostas || []).find((x) => x.ponto_id === p.id) || (d.entrega?.respostas || []).find((x) => x.rotulo === p.rotulo);
+  const ST_TXT = { ok: "OK", nok: "NÃO OK", na: "N.A." };
   // 14b.1.5: nº da OS clicável — abre a OS (trilha do evento)
   const linkOS = (o) => { const n = o.os_numero || `OS ${o.os_id}`; return onIrParaOS ? <span role="link" onClick={() => onIrParaOS(o.os_id)} title="Abrir a OS" style={{ textDecoration: "underline", cursor: "pointer", fontWeight: 700 }}>{n}</span> : n; };
   // 14b.1.4: o "NÃO OK" e o resultado ficam como registrados (como no papel); a situação mostra que já foi corrigido
@@ -365,6 +393,7 @@ function DetalheInspecao({ d, C, s, bt, onRelatorio, onAbrirOS, onIrParaOS, onFo
       {i.numero || `Nº ${i.id}`} · {i.modelo_nome} · {dataHora(i.concluida_em)} · {i.executor_nome}{i.executor_tipo === "terceiro" ? ` (terceiro${i.terceiro?.empresa ? ` — ${i.terceiro.empresa}` : ""}${i.terceiro?.cpf ? ` · CPF ${String(i.terceiro.cpf).replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4")}` : ""})` : ""}
       {i.km != null ? ` · ${Number(i.km).toLocaleString("pt-BR")} km` : ""}{i.horimetro != null ? ` · ${Number(i.horimetro).toLocaleString("pt-BR")} h` : ""}{i.local ? ` · ${i.local}` : ""}{i.cliente ? ` · ${i.cliente}` : ""}
     </div>
+    {d.entrega && <div style={{ ...s.card, padding: "8px 12px", marginTop: 10, fontSize: 12, borderColor: C.warn }}>📍 Devolução da locação de <b>{d.entrega.cliente}</b> — comparada com a entrega <b>{d.entrega.numero || `nº ${d.entrega.id}`}</b> ({dataHora(d.entrega.concluida_em)}, {d.entrega.executor_nome}). Em cada item: "entrega: … →" e o estado na devolução; em laranja o que mudou.</div>}
     {bloqueioAqui && <div style={{ ...s.card, borderColor: C.danger, padding: "10px 12px", marginTop: 10, fontSize: 13 }}>
       <div style={{ color: C.danger, fontWeight: 700 }}>⛔ {bloqueioAqui.tag} está bloqueado por esta inspeção</div>
       <div style={{ color: C.textSub, marginTop: 4 }}>Em cada item que impede o uso, escolha <b>🛠 Abrir OS</b> ou <b>✅ Resolver sem OS</b>. O equipamento é liberado sozinho quando o último for resolvido (OS conta quando for <b>concluída</b>).</div>
@@ -384,6 +413,7 @@ function DetalheInspecao({ d, C, s, bt, onRelatorio, onAbrirOS, onIrParaOS, onFo
             {v.pontos.map((p, k) => { const x = resp.get(p.id) || {}; const os = osDe(p.id); return (
               <div key={p.id} style={{ padding: "4px 0", borderBottom: `1px solid ${C.border}` }}>
                 <div style={{ display: "flex", gap: 6 }}><span style={{ color: C.muted, width: 16 }}>{k + 1}</span><span style={{ flex: 1 }}>{p.rotulo}</span>
+                  {d.entrega && naEntrega(p) && <span title={naEntrega(p).obs || ""} style={{ fontSize: 10, color: naEntrega(p).status === x.status ? C.muted : C.warn, marginRight: 6 }}>entrega: {ST_TXT[naEntrega(p).status]}{naEntrega(p).valor != null ? ` ${naEntrega(p).valor}` : ""} →</span>}
                   {itemCorrigido(x) && <span style={{ ...s.tag(C.success), marginRight: 6 }}>✓ CORRIGIDO</span>}<b style={{ color: COR[x.status] }}>{x.status === "ok" ? "OK" : x.status === "nok" ? "NÃO OK" : "N.A."}{x.valor != null ? ` ${x.valor}${x.unidade ? ` ${x.unidade}` : ""}` : ""}</b></div>
                 {x.status === "nok" && <div style={{ paddingLeft: 22 }}>
                   <div style={{ color: C.textSub }}>{x.obs}{x.impede && <span style={{ color: C.danger }}> · impede o uso</span>}</div>

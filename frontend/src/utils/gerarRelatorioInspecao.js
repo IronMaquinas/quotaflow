@@ -12,7 +12,7 @@ const COR = { ok: "#16a34a", nok: "#dc2626", na: "#6b7280" };
 const ST = { ok: "OK", nok: "NÃO OK", na: "N.A." };
 const RES = { aprovado: ["APROVADO", "#16a34a"], ressalvas: ["APROVADO COM RESSALVAS", "#d97706"], reprovado: ["REPROVADO — USO BLOQUEADO", "#dc2626"] };
 
-export function gerarHtmlInspecao({ inspecao: i, fotos = {}, imagens = {}, empresa = {}, liberacao = null }) {
+export function gerarHtmlInspecao({ inspecao: i, fotos = {}, imagens = {}, empresa = {}, liberacao = null, entrega = null }) {
   const resp = new Map((i.respostas || []).map((r) => [r.ponto_id, r]));
   const vistas = i.modelo?.vistas || [];
   const [resTxt, resCor] = RES[i.resultado] || [i.resultado, "#111"];
@@ -24,6 +24,8 @@ export function gerarHtmlInspecao({ inspecao: i, fotos = {}, imagens = {}, empre
     return `<div class="desenho">${fundo}${pins}</div>`;
   };
   const osItem = (r) => { const o = (i.os_abertas || []).find((x) => x.ponto_id === r.ponto_id); if (!o || r.status !== "nok") return ""; const n = esc(o.os_numero || `OS ${o.os_id}`); return o.concluida_em ? `<div class="obs" style="color:#16a34a">✓ Corrigido na <b>${n}</b> (concluída em ${dataHora(o.concluida_em)})</div>` : `<div class="obs" style="color:#2563eb">🛠 <b>${n}</b> em andamento</div>`; }; // 14b.1.5
+  // 14b.2: devolução de locação → estado do mesmo item na entrega
+  const entregaItem = (p, r) => { if (!entrega) return ""; const e = (entrega.respostas || []).find((x) => x.ponto_id === p.id) || (entrega.respostas || []).find((x) => x.rotulo === p.rotulo); if (!e) return ""; const mudou = e.status !== r.status; return `<div class="obs" style="color:${mudou ? "#d97706" : "#666"}">na entrega: <b>${ST[e.status] || "—"}</b>${e.valor != null ? ` ${esc(e.valor)}` : ""}${e.obs ? ` — ${esc(e.obs)}` : ""}${mudou ? " (mudou)" : ""}</div>`; };
   const linhas = (v) => v.pontos.map((p, k) => {
     const r = resp.get(p.id) || {};
     const val = r.valor != null ? ` — ${esc(r.valor)}${r.unidade ? ` ${esc(r.unidade)}` : ""}` : "";
@@ -32,7 +34,8 @@ export function gerarHtmlInspecao({ inspecao: i, fotos = {}, imagens = {}, empre
     const desc = `${r.obs ? `<div class="obs">${esc(r.obs)}${r.impede ? ' · <span style="color:#dc2626">impede o uso</span>' : ""}</div>` : r.impede ? '<div class="obs" style="color:#dc2626">impede o uso</div>' : ""}`
       + (r.resolvido ? ok(`🔧 Resolvido na hora: ${esc(r.resolucao)}`) : "")
       + (r.resolucao_posterior ? ok(`✓ Resolvido sem OS: ${esc(r.resolucao_posterior.texto)} (${esc(r.resolucao_posterior.por)}, ${dataHora(r.resolucao_posterior.em)})`) : "")
-      + osItem(r);
+      + osItem(r)
+      + entregaItem(p, r);
     return `<tr><td class="n">${k + 1}</td><td>${esc(p.rotulo)}${p.critico ? ' <span class="crit">crítico</span>' : ""}${desc}</td><td class="st" style="color:${COR[r.status] || "#111"}">${fechado(r) ? '<span class="corr">✓ CORRIGIDO</span> ' : ""}${ST[r.status] || "—"}${val}</td></tr>`;
   }).join("");
   const fotosHtml = (i.respostas || []).filter((r) => (r.fotos || []).length).map((r) => `<figure><div class="fts">${r.fotos.map((p) => (fotos[p] ? `<img src="${esc(fotos[p])}"/>` : "")).join("")}</div><figcaption><b style="color:${COR[r.status]}">${ST[r.status]}</b> · ${esc(r.vista)} → ${esc(r.rotulo)}${r.obs ? ` — ${esc(r.obs)}` : ""}</figcaption></figure>`).join("");
@@ -67,6 +70,7 @@ export function gerarHtmlInspecao({ inspecao: i, fotos = {}, imagens = {}, empre
     <span class="res" style="color:${resCor};border-color:${resCor}">${resTxt}</span>${corr ? ' <span class="res" style="color:#16a34a;border-color:#16a34a">✓ CORRIGIDO</span>' : ""}
     <div class="grade">${info.map(([l, v]) => `<div><b>${esc(l)}</b>${esc(v)}</div>`).join("")}</div>
     ${i.obs ? `<div><b>Observações:</b> ${esc(i.obs)}</div>` : ""}
+    ${entrega ? `<div style="border:1px solid #d97706;padding:6px 8px;margin:6px 0;font-size:11px">Devolução da locação de <b>${esc(entrega.cliente)}</b> — comparada com a inspeção de entrega <b>${esc(entrega.numero || `nº ${entrega.id}`)}</b> (${dataHora(entrega.concluida_em)}, ${esc(entrega.executor_nome)}${entrega.horimetro != null ? `, horímetro ${Number(entrega.horimetro).toLocaleString("pt-BR")} h` : ""}${entrega.km != null ? `, ${Number(entrega.km).toLocaleString("pt-BR")} km` : ""}).</div>` : ""}
     ${vistas.map((v) => `<h2>${esc(v.nome)}</h2><div class="vista">${desenho(v)}<table>${linhas(v)}</table></div>`).join("")}
     ${fotosHtml ? `<h2>Fotos</h2>${fotosHtml}` : ""}
     ${os ? `<h2>Ordens de serviço</h2><ul>${os}</ul>` : ""}

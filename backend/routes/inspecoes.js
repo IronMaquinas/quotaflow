@@ -13,6 +13,8 @@
 //   PUT  /equipamentos/:id/modelo        { modelo_id } — modelo padrão do equipamento
 //   Modelos: GET /modelos · GET /modelos/biblioteca · POST /modelos/importar · POST /modelos (novo) · PUT /modelos/:id
 //            POST /modelos/:id/atualizar · DELETE /modelos/:id (desativa) · POST /modelos/imagem { base64, mime }
+//   14b.2: POST /rotinas · DELETE /rotinas/:id · POST /equipamentos/:id/locar · POST /equipamentos/:id/encerrar-locacao ·
+//          GET /equipamentos/:id/locacoes · GET /cumprimento?de&ate (relatório) — situação na base/locado e rotinas
 //   14b.1: GET/POST /links · DELETE /links/:id — link de inspeção de terceiros (admin, gestor, qualidade)
 // Ver e inspecionar: admin, gestor, operação, qualidade, comprador. Modelos, links e liberar: admin, gestor, qualidade.
 // 14b.1 — perfil "colaborador" (sozinho): só painel, preparar, enviar e as PRÓPRIAS inspeções ("Minhas inspeções").
@@ -21,6 +23,7 @@ const express = require('express');
 const router = express.Router();
 const { supabase } = require('../db');
 const I = require('../services/inspecoes');
+const R = require('../services/rotinasInspecao'); // 14b.2
 
 const perfisDe = (req) => (Array.isArray(req.perfis) && req.perfis.length ? req.perfis : [req.userPerfil].filter(Boolean));
 const VER = ['admin', 'gestor', 'operacao', 'qualidade', 'comprador'];
@@ -36,19 +39,32 @@ const responder = (fn) => async (req, res) => {
   try { const r = await fn(req); if (r && r.erro) return res.status(r.status || 400).json({ erro: r.erro }); res.json(r); }
   catch (err) {
     const m = String(err?.message || '');
-    if (/inspecao|inspecoes|bloqueado|equipamento_liberacoes|numero|tipo|link_id/.test(m) && /does not exist|não existe|schema cache|relation|column/.test(m)) return res.status(409).json({ erro: 'Rode as migrations 040 e 041 antes (inspeções)' });
+    if (/inspecao|inspecoes|bloqueado|equipamento_liberacoes|numero|tipo|link_id|locac|rotina|situacao/.test(m) && /does not exist|não existe|schema cache|relation|column/.test(m)) return res.status(409).json({ erro: 'Rode as migrations 040, 041 e 042 antes (inspeções)' });
     console.error('❌ [inspecoes]', m); res.status(500).json({ erro: 'Erro interno — veja o log do servidor' });
   }
 };
 const quem = async (req) => { const u = (await q(supabase.from('usuarios').select('*').eq('tenant_id', req.tenantId).eq('id', req.userId)).catch(() => []))[0]; return { usuarioId: req.userId, usuarioNome: u?.nome || req.userEmail || null }; };
 
-router.get('/painel', exigirVerOuColab, responder(async (req) => ({ equipamentos: await I.equipamentos(supabase, req.tenantId), modelos: await I.modelosTenant(supabase, req.tenantId),
+router.get('/painel', exigirVerOuColab, responder(async (req) => ({ equipamentos: await comRotinas(req, await I.equipamentos(supabase, req.tenantId)), frequencias_rotina: R.FREQ_NOME, modelos: await I.modelosTenant(supabase, req.tenantId),
   categorias: I.CATEGORIAS, frequencias: I.FREQUENCIAS, tipos: I.TIPOS, campos: I.CAMPOS, esquemas: I.ESQUEMAS, pode_editar: podeEditar(req), colaborador: soColaborador(req) })));
 
 // 14b.1 — links de inspeção de terceiros
 router.get('/links', exigirEditar, responder(async (req) => ({ links: await I.listarLinks(supabase, req.tenantId) })));
 router.post('/links', exigirEditar, responder(async (req) => I.criarLink(supabase, req.tenantId, await quem(req), req.body || {})));
 router.delete('/links/:id', exigirEditar, responder((req) => I.desativarLink(supabase, req.tenantId, req.params.id)));
+// 14b.2: situação (base/locado), locação ativa e rotinas de cada equipamento (sem a 042: segue sem isso)
+async function comRotinas(req, eqs) {
+  let extra = {};
+  try { extra = await R.painel(supabase, req.tenantId); }
+  catch (e) { if (!/locac|rotina|situacao|does not exist|schema cache|column/.test(String(e.message))) throw e; }
+  return eqs.map((e) => ({ ...e, situacao: 'base', locacao: null, rotinas: [], ...(extra[String(e.id)] || {}) }));
+}
+router.post('/rotinas', exigirEditar, responder((req) => R.criarRotina(supabase, req.tenantId, req.body || {})));
+router.delete('/rotinas/:id', exigirEditar, responder((req) => R.removerRotina(supabase, req.tenantId, req.params.id)));
+router.post('/equipamentos/:id/locar', exigirEditar, responder(async (req) => R.locar(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
+router.post('/equipamentos/:id/encerrar-locacao', exigirEditar, responder(async (req) => R.encerrarLocacao(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
+router.get('/equipamentos/:id/locacoes', exigirVer, responder(async (req) => ({ locacoes: await R.locacoes(supabase, req.tenantId, req.params.id) })));
+router.get('/cumprimento', exigirVer, responder((req) => R.relatorioCumprimento(supabase, req.tenantId, req.query.de, req.query.ate)));
 router.get('/modelos', exigirVer, responder(async (req) => ({ modelos: await I.modelosTenant(supabase, req.tenantId) })));
 router.get('/modelos/biblioteca', exigirVer, responder(async (req) => ({ modelos: await I.bibliotecaParaTenant(supabase, req.tenantId) })));
 router.post('/modelos/importar', exigirEditar, responder((req) => I.importar(supabase, req.tenantId, req.body?.biblioteca_id)));

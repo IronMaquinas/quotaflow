@@ -35,6 +35,7 @@ const CAMPOS = ['km', 'horimetro', 'local', 'cliente'];
 const TIPOS = [ // 14b.1 — os 3 últimos são os gatilhos da futura Autorização de Transporte (AT)
   { codigo: 'equipamento', nome: 'Equipamento (pré-uso / rotina)' }, { codigo: 'carregamento', nome: 'Carregamento (acomodação, amarração, sinalização)' },
   { codigo: 'transito', nome: 'Em trânsito (parada de verificação)' }, { codigo: 'descarregamento', nome: 'Descarregamento (entrega)' },
+  { codigo: 'entrega', nome: 'Entrega de locação (saída para o cliente)' }, { codigo: 'devolucao', nome: 'Devolução de locação (volta do cliente)' }, // 14b.2
 ];
 const ESQUEMAS = ['cavalo_frente', 'cavalo_lateral', 'cavalo_traseira', 'carreta_lateral', 'carreta_traseira', 'onibus_lateral', 'onibus_frente',
   'empilhadeira_lateral', 'retro_lateral', 'utilitario_lateral', 'painel', 'motor', 'eixos'];
@@ -299,6 +300,8 @@ async function enviar(supabase, tenantId, executor, body = {}, opcoes = {}) {
     if (!/inspecoes_numero_unico/.test(error.message)) throw new Error(error.message);
   }
   if (!ins) throw new Error('Não foi possível numerar a inspeção — tente de novo');
+  try { await require('./rotinasInspecao').aoGravarInspecao(supabase, tenantId, ins, reg.tipo); } // 14b.2: liga à locação ativa (entrega/devolução)
+  catch (err) { if (!/locac|does not exist|schema cache/.test(String(err.message))) console.error('⚠️ [inspeções] locação:', err.message); }
   if (resultado === 'reprovado' && e.id) {
     const motivo = saida.filter((x) => x.impede).map((x) => `${x.rotulo}${x.obs ? ` (${x.obs})` : ''}`).join('; ').slice(0, 500);
     await supabase.from('equipamentos').update({ bloqueado: true, bloqueio_motivo: motivo, bloqueio_inspecao_id: ins.id, bloqueado_em: agora }).eq('id', e.id).eq('tenant_id', tenantId);
@@ -326,7 +329,19 @@ async function detalhe(supabase, tenantId, id) {
   const fotos = {};
   for (const r of i.respostas || []) for (const p of r.fotos || []) { try { fotos[p] = await D.linkArquivo(supabase, p); } catch { /* ok */ } }
   const emp = (await q(supabase.from('tenants').select('*').eq('id', tenantId)))[0] || {};
-  return { inspecao: i, fotos, imagens: await linksImagens(supabase, i.modelo), empresa: { nome: emp.nome_fantasia || emp.nome || emp.razao_social || 'Empresa', razao_social: emp.razao_social || emp.nome || null, cnpj: emp.cnpj || null } };
+  // 14b.2: devolução de locação → traz a inspeção de entrega para comparar item a item (mesmo ponto_id ou mesmo rótulo)
+  let entrega = null;
+  if (i.tipo === 'devolucao' && i.locacao_id) {
+    try {
+      const loc = (await q(supabase.from('equipamento_locacoes').select('*').eq('tenant_id', tenantId).eq('id', i.locacao_id)))[0];
+      const ent = loc?.entrega_inspecao_id ? (await q(supabase.from('inspecoes').select('*').eq('tenant_id', tenantId).eq('id', loc.entrega_inspecao_id)))[0] : null;
+      if (ent) {
+        for (const r0 of ent.respostas || []) for (const p of r0.fotos || []) { try { fotos[p] = await D.linkArquivo(supabase, p); } catch { /* ok */ } }
+        entrega = { id: ent.id, numero: ent.numero, concluida_em: ent.concluida_em, executor_nome: ent.executor_nome, km: ent.km, horimetro: ent.horimetro, respostas: ent.respostas, cliente: loc.cliente };
+      }
+    } catch { /* sem a 042 */ }
+  }
+  return { inspecao: i, entrega, fotos, imagens: await linksImagens(supabase, i.modelo), empresa: { nome: emp.nome_fantasia || emp.nome || emp.razao_social || 'Empresa', razao_social: emp.razao_social || emp.nome || null, cnpj: emp.cnpj || null } };
 }
 
 /** Libera um equipamento bloqueado (evidência: quem, quando, por quê).

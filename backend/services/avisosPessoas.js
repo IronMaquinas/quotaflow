@@ -8,6 +8,7 @@
 //   • trein_falta — treinamento exigido pela função e nunca feito ('falta', uma vez por colaborador+treinamento+função)
 //   • multa_indicacao / multa_venc — 12g: prazo de indicação do condutor (5 dias, vencido) e vencimento (5 dias, vencido)
 //   • aut_defesa / aut_venc — 12i: autuação da empresa — prazo de defesa/recurso e vencimento (5 dias, vencido)
+//   • insp_atrasada — 14b.2: rotina de inspeção atrasada (empresa ou locatário), uma vez por vencimento
 //   • trein_faltou — turma encerrada com quem não fez/não assinou → reagendar (uma vez por turma; só para o GESTOR — 12e.2d)
 // Cada marco sai uma vez (tabela avisos_enviados). Se o servidor ficou dias fora, manda só o mais urgente.
 // Destinatários: admin e gestor (o responsável do documento continua só nos avisos de documento).
@@ -107,6 +108,10 @@ async function candidatos(supabase, tenantId, agora = new Date()) {
     }
   } catch (e) { if (!/autuacoes/.test(String(e.message))) throw e; }
 
+  // 14b.2: rotinas de inspeção atrasadas (só para o gestor)
+  try { out.push(...(await require('./rotinasInspecao').avisosAtrasadas(supabase, tenantId, agora))); }
+  catch (e) { if (!/rotina|locac|inspec|does not exist|schema cache/.test(String(e.message))) throw e; }
+
   // 12e.2d: turma encerrada nos últimos 7 dias com faltas → uma linha por turma (o colaborador NÃO recebe e-mail)
   try {
     await TR.fecharOnlineVencidas(supabase, tenantId); // aproveita a rotina das 7h para encerrar online com prazo vencido
@@ -141,7 +146,7 @@ async function registrar(supabase, tenantId, itens, destinatarios) {
   if (error) console.error('❌ [avisos-pessoas] registrar:', error.message);
 }
 
-const TITULO = { epi_troca: '🦺 Troca de EPI', epi_ca: '🦺 CA de EPI', doc_falta: '📋 Documento exigido não cadastrado', trein_venc: '🎓 Treinamento vencendo', trein_falta: '🎓 Treinamento exigido não realizado', trein_faltou: '🎓 Turma encerrada com faltas — reagendar', multa_indicacao: '🚦 Multa — indicar o condutor', multa_venc: '🚦 Multa vencendo', aut_defesa: '🏛 Autuação da empresa — defesa / recurso', aut_venc: '🏛 Autuação da empresa vencendo' };
+const TITULO = { epi_troca: '🦺 Troca de EPI', epi_ca: '🦺 CA de EPI', doc_falta: '📋 Documento exigido não cadastrado', trein_venc: '🎓 Treinamento vencendo', trein_falta: '🎓 Treinamento exigido não realizado', trein_faltou: '🎓 Turma encerrada com faltas — reagendar', multa_indicacao: '🚦 Multa — indicar o condutor', multa_venc: '🚦 Multa vencendo', aut_defesa: '🏛 Autuação da empresa — defesa / recurso', aut_venc: '🏛 Autuação da empresa vencendo', insp_atrasada: '🔍 Inspeção de rotina atrasada' };
 const esc = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const dataBR = (d) => (d ? String(d).slice(0, 10).split('-').reverse().join('/') : '—');
 function prazo(i) {
@@ -153,7 +158,7 @@ function prazo(i) {
 }
 /** Seções HTML para o e-mail diário */
 function secoesHtml(itens) {
-  const cats = ['aut_defesa', 'aut_venc', 'multa_indicacao', 'multa_venc', 'epi_troca', 'epi_ca', 'trein_venc', 'trein_faltou', 'doc_falta', 'trein_falta'].filter((c) => itens.some((i) => i.categoria === c));
+  const cats = ['insp_atrasada', 'aut_defesa', 'aut_venc', 'multa_indicacao', 'multa_venc', 'epi_troca', 'epi_ca', 'trein_venc', 'trein_faltou', 'doc_falta', 'trein_falta'].filter((c) => itens.some((i) => i.categoria === c));
   return cats.map((c) => `
     <h3 style="margin:18px 0 6px;font-size:15px">${TITULO[c]}</h3>
     <table style="border-collapse:collapse;width:100%;font-size:14px">
