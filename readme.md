@@ -1213,3 +1213,90 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
 **Última atualização deste documento:** 22/10/2026 (etapa 14b.3.2 + plano logo/contratos/monitor)
+
+--------------------------------------------------------------------------------
+
+#### 🌿 17. Módulo ESG (Maturidade & Relatórios de Sustentabilidade)
+
+O QuotaFlow converte dados operacionais brutos em indicadores de conformidade ESG (Environmental, Social, Governance) para atender a grandes contratantes e exigências internacionais (CSRD / EU Taxonomy):
+
+* **🌱 Environmental (Meio Ambiente):**
+  * Redução de emissões e prevenção de contaminação através do cumprimento rigoroso dos **Planos de Manutenção Preventiva**.
+  * Rastreabilidade de licenças ambientais (IBAMA, ANTT, licenças estaduais/municipais) e controle de transporte de carga perigosa (MOPP).
+  * Gestão consciente de resíduos e insumos com controle de vida útil de pneus e componentes.
+* **👥 Social (Saúde, Segurança & Pessoas):**
+  * Gestão de **EPIs (NR-6)** com controle de Certificado de Aprovação (CA) e assinatura digital na tela.
+  * Monitoramento diário de exames ocupacionais (ASO, toxicológico) e validade de CNH.
+  * Biblioteca de treinamentos regulatórios com listas de presença assinadas e emissão automática de certificados.
+* **🛡️ Governance (Governança & Ética):**
+  * Auditoria contínua de compliance em compras e fornecedores.
+  * Trilha inviolável de dados com **hashes de segurança (SHA-256)** em inspeções, entregas e termos disciplinares.
+  * Validação periódica de cadastros de fornecedores e clientes na Receita Federal (CNPJ).
+* **📊 Dashboard de Maturidade ESG & Relatório 1-Clique:**
+  * Indicador sintético do nível de prontidão ESG da empresa.
+  * Emissão automática de relatório formal em PDF para apresentação a bancos, seguradoras e auditores.
+
+--------------------------------------------------------------------------------
+
+#### 📜 18. Módulo ISO 9001 (Gestão da Qualidade & Análise Crítica)
+
+Estrutura nativa desenvolvida para simplificar e automatizar os requisitos da norma ISO 9001 sem burocracia ou pastas de papel:
+
+* **Mapeamento Direto de Requisitos:**
+  * **Cláusula 7 (Apoio & Competência):** Mapeado via Matriz de Competências, Treinamentos e Ficha de EPI.
+  * **Cláusula 8 (Operação & Compras):** Mapeado pelo fluxo completo de compras (*OS → RM → RC → OV*) e inspeções operacionais.
+  * **Cláusula 9 (Avaliação de Desempenho):** Mapeado por benchmarking de mercado, relatórios de manutenção e histórico de compras.
+  * **Cláusula 10 (Melhoria & Não Conformidade):** Mapeado pelo módulo de **NCs com Análise de Causa Raiz (5 Porquês)** e Planos de Ação (3W).
+* **📄 Análise Crítica pela Direção (Cláusula 9.3) em 1-Clique:**
+  * Compilação automática de indicadores de qualidade, satisfação, desempenho de fornecedores e riscos operacionais.
+  * Geração instantânea de apresentação em PDF/PPT e ata da reunião pronta para auditoria externa.
+
+--------------------------------------------------------------------------------
+
+#### 🤖 19. Agente de IA de Compliance & Anti-Fraude
+
+Auditoria contínua rodando em segundo plano para identificar anomalias operacionais, fraudes em compras e descumprimento de procedimentos:
+
+* **🚚 Operação & Campo:**
+  * **Checklist Carimbado (Vistoria Ultrarrápida):** Alerta para inspeções finalizadas em tempo incompatível com a vistoria física (ex: < 60s).
+  * **Divergência de GPS:** Vistorias realizadas fora do perímetro da base ou do local esperado do veículo.
+  * **Inconsistência de Reincidência:** Veículos antigos com 100% de apontamentos "OK" consecutivos sem nenhum item preventivo registrado.
+* **💰 Compras & Suprimentos (Procurement):**
+  * **Cotação Expressa sem Competição:** Janela de cotação encerrada em minutos com contratação imediata sem tempo de resposta para a rede.
+  * **Renegociação Seletiva:** Abertura de contraproposta para apenas um fornecedor específico, mantendo concorrentes sem opção de ajuste.
+  * **Fracionamento de Pedidos:** Múltiplas RMs/RCs de pequenos valores no mesmo dia para burlar alçadas de aprovação da diretoria.
+  * **Desvio de Preço Histórico (Overpricing):** Compras de insumos com valores acima da média histórica do tenant ou benchmark da rede.
+* **📦 Estoque & Almoxarifado:**
+  * **Saída de Material sem OS:** Retiradas avulsas frequentes de itens de alto valor sem vínculo com Ordem de Serviço.
+  * **Divergência Fiscal (NF-e × OV):** Incompatibilidade de quantidade, valores ou NCM no XML da Nota Fiscal em relação ao pedido original.
+* **🦺 Pessoas, SST & Disciplinar:**
+  * **Operação com Restrição Trabalhista (Selo Vermelho):** Escalamento de funcionários com CNH, ASO ou toxicológico vencido, ou sem treinamento obrigatório.
+  * **Ficha de EPI sem Conformidade de Risco:** Ausência de entrega de EPIs para funções mapeadas no PGR.
+  * **Padrão Gráfico Suspeito:** Assinaturas digitais em sequência com padrão idêntico para colaboradores distintos.
+
+--------------------------------------------------------------------------------
+
+#### 📷 20. Câmera de Inspeção Inteligente (Marca d'Água & Anti-Anacronismo)
+
+Módulo de captura de evidências visuais integrado ao App de Inspeções/Checklists:
+
+* **🏷️ Marca d'Água Inviolável cravada nos Pixels:**
+  * Aplicação direta na imagem dos metadados de execução: Data, Hora exata, Coordenadas GPS, Nome do Inspetor, Placa do Veículo e ID da Inspeção.
+* **🚫 Bloqueio Estrito de Galeria:**
+  * Desativação do acesso ao armazenamento interno do aparelho — fotos obrigatoriamente capturadas em tempo real pela câmera do app (`capture="environment"`).
+* **⏱️ Análise de Delta de Tempo (Anti-Anacronismo):**
+  * Registro do intervalo entre capturas de fotos e comparação com o horário do evento/viagem.
+  * Prevenção de "vistorias retroativas" (ex: vistoria realizada às 10h referente a uma saída que ocorreu às 08h).
+* **🛡️ Prova Técnica Inviolável:**
+  * Evidência documental pronta para instrução de defesas jurídicas, trabalhistas e sinistros de frotas.
+
+--------------------------------------------------------------------------------
+
+#### 📄 21. Dossiê do Colaborador & Relatório do "Analista Sênior" (IA)
+
+* **📋 Dossiê Trabalhista em 1-Clique:**
+  * Relatório unificado contendo histórico de funções, documentos, entregas de EPI (NR-6), treinamentos, advertências e multas.
+  * Registro de auditoria com IP, data, hora e responsável pela emissão (conformidade LGPD).
+* **🧠 Relatório Mensal do Analista Sênior (IA):**
+  * Consolidação mensal automatizada sobre a saúde financeira, operacional e de compliance da empresa.
+  * Insights práticos com alertas de custos atípicos, gargalos de manutenção e plano de ação estratégico para o empresário.
