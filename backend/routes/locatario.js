@@ -6,6 +6,7 @@
 //   GET  /painel                        contratos ativos dele → equipamentos, rotinas (em dia/atrasada) + inspeções feitas
 //   GET  /preparar/:equip?modelo_id=    modelo para inspecionar (só equipamento de locação ativa dele, modelo das rotinas)
 //   POST /enviar                        envia a inspeção (mesmo corpo do app; idempotente — fila offline)
+//   POST /contratos/:id/aceite          { assinatura_png, nome } — 14d: aceite do contrato emitido (só contrato dele)
 //   GET  /inspecoes/:id                 detalhe (só inspeção feita numa locação dos contratos dele)
 
 const express = require('express');
@@ -25,6 +26,7 @@ router.use(exigirLocatario);
 router.get('/painel', responder((req) => CT.painelLocatario(supabase, req.tenantId, req.userId)));
 router.get('/preparar/:equip', responder((req) => CT.prepararLocatario(supabase, req.tenantId, req.userId, req.params.equip, req.query.modelo_id || null)));
 router.post('/enviar', responder(async (req) => CT.enviarLocatario(supabase, req.tenantId, await eu(req), req.body || {})));
+router.post('/contratos/:id/aceite', responder(async (req) => CT.aceitarLocatario(supabase, req.tenantId, await eu(req), req.params.id, req.body || {}))); // 14d
 router.get('/inspecoes/:id', responder((req) => CT.detalheLocatario(supabase, req.tenantId, req.userId, req.params.id)));
 
 module.exports = router;

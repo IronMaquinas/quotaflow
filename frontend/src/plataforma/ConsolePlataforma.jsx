@@ -11,6 +11,7 @@ import BibliotecaFuncoes from "./BibliotecaFuncoes"; // etapa 12d.0
 import BibliotecaEpi from "./BibliotecaEpi"; // etapa 12d.1b
 import BibliotecaTreinamentos from "./BibliotecaTreinamentos"; // etapa 12e.2a
 import BibliotecaInspecoes from "./BibliotecaInspecoes"; // etapa 14a
+import BibliotecaContratos from "./BibliotecaContratos"; // etapa 14d
 
 const C = {
   bg: "#0a0e14", surface: "#111722", surface2: "#0d131d", border: "#1e2535", text: "#e2e8f0", sub: "#94a3b8",
@@ -399,6 +400,7 @@ export default function ConsolePlataforma() {
     { id: "epi", t: "🦺 Catálogo de EPI" },
     { id: "treinamentos", t: "🎓 Biblioteca de treinamentos" },
     { id: "inspecoes", t: "🔍 Biblioteca de inspeções" },
+    { id: "contratos", t: "📄 Biblioteca de contratos" },
   ];
 
   return (
@@ -440,6 +442,7 @@ export default function ConsolePlataforma() {
         {aba === "epi" && <BibliotecaEpi token={token} chamar={chamar} C={C} input={input} label={label} card={card} btn={btn} tag={tag} onAviso={setAviso} />}
         {aba === "treinamentos" && <BibliotecaTreinamentos token={token} chamar={chamar} C={C} input={input} label={label} card={card} btn={btn} tag={tag} onAviso={setAviso} />}
         {aba === "inspecoes" && <BibliotecaInspecoes token={token} chamar={chamar} C={C} input={input} label={label} card={card} btn={btn} tag={tag} onAviso={setAviso} />}
+        {aba === "contratos" && <BibliotecaContratos token={token} chamar={chamar} C={C} input={input} label={label} card={card} btn={btn} tag={tag} onAviso={setAviso} />}
       </div>
 
       {acao && (

@@ -15,6 +15,7 @@ const bcrypt = require('bcryptjs');
 const R = require('./rotinasInspecao');
 const I = require('./inspecoes');
 const CL = require('./clientes'); // 14b.3.1: cliente cadastrado (um por CNPJ/CPF)
+const CM = require('./contratoModelos'); // 14d: aceite do contrato emitido
 
 async function q(p) { const { data, error } = await p; if (error) throw new Error(error.message); return data || []; }
 const texto = (v, max) => (v == null || String(v).trim() === '' ? null : String(v).trim().slice(0, max));
@@ -60,12 +61,12 @@ async function montar(supabase, tenantId, contratos, { comAcessos = true } = {})
     const minhas = locs.filter((l) => String(l.contrato_id) === String(c.id));
     const equipamentos = minhas.map((l) => { const e = equips.get(String(l.equipamento_id)) || {}; const pe = painel[String(l.equipamento_id)] || {};
       return { locacao_id: l.id, equipamento_id: l.equipamento_id, tag: e.tag, nome: e.nome, ativa: l.status === 'ativa', inicio: l.inicio, fim_real: l.fim_real,
-        entrega_inspecao_id: l.entrega_inspecao_id, devolucao_inspecao_id: l.devolucao_inspecao_id, bloqueado: l.status === 'ativa' && !!e.bloqueado,
+        entrega_inspecao_id: l.entrega_inspecao_id, devolucao_inspecao_id: l.devolucao_inspecao_id, valor_mensal: l.valor_mensal ?? null, bloqueado: l.status === 'ativa' && !!e.bloqueado,
         rotinas: l.status === 'ativa' ? (pe.rotinas || []).filter((r) => !r.locacao_id || String(r.locacao_id) === String(l.id)) : [] }; })
       .sort((a, b) => (b.ativa - a.ativa) || String(a.tag).localeCompare(String(b.tag)));
     const acessos = vinc.filter((v) => String(v.contrato_id) === String(c.id)).map((v) => { const u = usuarios.find((x) => String(x.id) === String(v.usuario_id)); return u ? { usuario_id: u.id, nome: u.nome, email: u.email, ativo: !!u.ativo } : null; }).filter(Boolean);
     const rot = equipamentos.flatMap((e) => e.rotinas);
-    return { ...c, equipamentos, acessos, ativos: equipamentos.filter((e) => e.ativa).length, atrasadas: rot.filter((r) => r.estado === 'atrasada').length };
+    return { ...c, fase: CM.fase(c), equipamentos, acessos, ativos: equipamentos.filter((e) => e.ativa).length, atrasadas: rot.filter((r) => r.estado === 'atrasada').length };
   });
 }
 async function listar(supabase, tenantId) {
@@ -188,6 +189,9 @@ async function painelLocatario(supabase, tenantId, usuarioId) {
   const esc = await escopoLocatario(supabase, tenantId, usuarioId);
   const cs = (await montar(supabase, tenantId, esc.contratos, { comAcessos: false })).map((c) => ({
     id: c.id, numero: c.numero, cliente: c.cliente, local: c.local, inicio: c.inicio, fim_previsto: c.fim_previsto, ativos: c.ativos, atrasadas: c.atrasadas,
+    // 14d: contrato emitido para ler e aceitar
+    documento: c.emitido_hash ? { versao: c.emitido_versao, emitido_em: c.emitido_em, texto: c.emitido_texto, tabela: c.emitido_tabela || [], hash: c.emitido_hash,
+      aceite: c.aceite_em ? { nome: c.aceite_nome, em: c.aceite_em, hash: c.aceite_hash, png: c.aceite_png } : null } : null,
     equipamentos: c.equipamentos.filter((e) => e.ativa).map((e) => ({ equipamento_id: e.equipamento_id, tag: e.tag, nome: e.nome, bloqueado: e.bloqueado, inicio: e.inicio,
       rotinas: e.rotinas.map((r) => ({ id: r.id, modelo_id: r.modelo_id, modelo_nome: r.modelo_nome, frequencia_nome: r.frequencia_nome, responsavel: r.responsavel, estado: r.estado, dias: r.dias, proxima: r.proxima, ultima: r.ultima })) })),
   }));
@@ -214,6 +218,13 @@ async function enviarLocatario(supabase, tenantId, usuario, body = {}) {
   return I.enviar(supabase, tenantId, { tipo: 'usuario', usuario_id: usuario.id, nome: usuario.nome || usuario.email, terceiro: { locatario: true, empresa: p.contrato?.cliente || null, contrato: p.contrato?.numero || null } },
     { ...body, equipamento_id: p.locacao.equipamento_id, modelo_id: p.modeloId });
 }
+/** ✍ Aceite do contrato emitido — só contrato ATIVO ligado ao usuário logado */
+async function aceitarLocatario(supabase, tenantId, usuario, contratoId, body = {}) {
+  const esc = await escopoLocatario(supabase, tenantId, usuario.id);
+  const c = esc.contratos.find((x) => String(x.id) === String(contratoId));
+  if (!c) return { status: 404, erro: 'Contrato não encontrado' };
+  return CM.aceitar(supabase, tenantId, c, usuario, body);
+}
 async function detalheLocatario(supabase, tenantId, usuarioId, inspId) {
   const esc = await escopoLocatario(supabase, tenantId, usuarioId);
   const r = await I.detalhe(supabase, tenantId, inspId);
@@ -222,4 +233,4 @@ async function detalheLocatario(supabase, tenantId, usuarioId, inspId) {
 }
 
 module.exports = { soLocatario, perfisDe, validar, listar, criar, editar, adicionarEquipamento, devolverEquipamento, encerrar, criarAcesso, removerAcesso, pausarUsuario,
-  escopoLocatario, painelLocatario, permissaoInspecao, prepararLocatario, enviarLocatario, detalheLocatario };
+  escopoLocatario, painelLocatario, aceitarLocatario, permissaoInspecao, prepararLocatario, enviarLocatario, detalheLocatario };

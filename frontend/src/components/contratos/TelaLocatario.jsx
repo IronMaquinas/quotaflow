@@ -11,6 +11,9 @@ import { DetalheInspecao } from "../inspecoes/TelaInspecoes";
 import { corEstado, txtEstado } from "../inspecoes/RotinasLocacao";
 import * as Fila from "../../utils/filaInspecoes";
 import { abrirRelatorioInspecao, prepararJanela } from "../../utils/gerarRelatorioInspecao";
+import { gerarHtmlContrato, abrirContrato, prepararJanela as janelaContrato } from "../../utils/gerarContrato"; // 14d
+import { dadosEmpresa } from "../../utils/logoEmpresa";
+import AssinaturaTela from "../shared/AssinaturaTela";
 
 const RES = { aprovado: ["✓ Aprovado", "#22c55e"], ressalvas: ["⚠ Ressalvas", "#f59e0b"], reprovado: ["⛔ Reprovado", "#ef4444"] };
 const dataBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
@@ -24,6 +27,9 @@ export default function TelaLocatario({ C, s, usuario }) {
   const [ver, setVer] = useState(null);
   const [foto, setFoto] = useState(null);
   const [locais, setLocais] = useState([]);
+  const [doc, setDoc] = useState(null); // 14d: contrato para ler e aceitar
+  const [ass, setAss] = useState(null);
+  const [aceitando, setAceitando] = useState(false);
   const ok = (t) => setAviso({ tipo: "ok", texto: t });
   const err = (t) => setAviso({ tipo: "erro", texto: t });
   useEffect(() => { if (!aviso) return; const t = setTimeout(() => setAviso(null), 7000); return () => clearTimeout(t); }, [aviso]);
@@ -39,6 +45,14 @@ export default function TelaLocatario({ C, s, usuario }) {
 
   const inspecionar = (e, r) => setExec({ equipamento: { id: e.equipamento_id, tag: e.tag }, chavePrep: `${e.equipamento_id}-${r.modelo_id}`,
     carregarPrep: () => apiService.get(`/locatario/preparar/${e.equipamento_id}`, { modelo_id: r.modelo_id }) });
+  const dadosContrato = (c) => ({ numero: c.numero, texto: c.documento.texto, tabela: c.documento.tabela, empresa: dadosEmpresa(), cliente: c.cliente, versao: c.documento.versao, emitido_em: c.documento.emitido_em, hash: c.documento.hash,
+    aceite: c.documento.aceite ? { nome: c.documento.aceite.nome, em: c.documento.aceite.em, png: c.documento.aceite.png, hash: c.documento.aceite.hash } : null });
+  const imprimirContrato = (c) => { const w = janelaContrato(); try { abrirContrato(dadosContrato(c), w); } catch (e) { err(e.message); } };
+  const aceitar = async () => {
+    setAceitando(true);
+    try { await apiService.post(`/locatario/contratos/${doc.id}/aceite`, { assinatura_png: ass, nome: usuario?.nome }); setDoc(null); ok("✍ Contrato aceito. Uma cópia fica disponível aqui para imprimir."); await carregar(); }
+    catch (e) { err(e.message); } finally { setAceitando(false); }
+  };
   const abrir = async (id) => { try { setVer(await apiService.get(`/locatario/inspecoes/${id}`)); } catch (e) { err(e.message); } };
 
   if (exec) return <ExecutarInspecao tenant={tenant} C={C} s={s} enviarFn={enviar} {...exec} onFechar={() => { setExec(null); carregarLocais(); }}
@@ -67,6 +81,11 @@ export default function TelaLocatario({ C, s, usuario }) {
             <div style={{ flex: 1 }}><div style={{ fontWeight: 700, fontSize: 16 }}>📑 {c.numero}</div><div style={{ fontSize: 12, color: C.textSub }}>{c.cliente}{c.local ? ` · ${c.local}` : ""} · {dataBR(c.inicio)} → {c.fim_previsto ? dataBR(c.fim_previsto) : "sem prazo"}</div></div>
             {c.atrasadas > 0 && <span style={s.tag(C.danger)}>⚠ {c.atrasadas} atrasada(s)</span>}
           </div>
+          {c.documento && <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 8, padding: "8px 10px", borderRadius: 8, background: c.documento.aceite ? `${C.success}12` : `${C.warn}14`, border: `1px solid ${c.documento.aceite ? C.success : C.warn}55` }}>
+            <span style={{ flex: "1 1 200px", fontSize: 13 }}>📄 Contrato (versão {c.documento.versao}) — {c.documento.aceite ? <b style={{ color: C.success }}>✍ aceito em {dataHora(c.documento.aceite.em)}</b> : <b style={{ color: C.warn }}>aguardando o seu aceite</b>}</span>
+            {c.documento.aceite ? <button type="button" onClick={() => imprimirContrato(c)} className="qf-clicavel" style={{ ...s.btn(false), cursor: "pointer", color: C.text, background: "transparent", padding: "8px 12px" }}>🖨 Ver / imprimir</button>
+              : <button type="button" onClick={() => { setAss(null); setDoc(c); }} style={{ ...s.btn(true, C.warn), cursor: "pointer", padding: "8px 14px" }}>📄 Ler e aceitar</button>}
+          </div>}
           {c.equipamentos.map((e) => (
             <div key={e.equipamento_id} style={{ borderTop: `1px solid ${C.border}`, marginTop: 10, paddingTop: 10 }}>
               <div style={{ fontWeight: 600 }}>🚜 {e.tag} <span style={{ color: C.textSub, fontWeight: 400 }}>— {e.nome}</span>{e.bloqueado && <span style={{ ...s.tag(C.danger), marginLeft: 6 }}>⛔ NÃO USAR — aguardando a locadora</span>}</div>
@@ -96,6 +115,20 @@ export default function TelaLocatario({ C, s, usuario }) {
           <div onClick={(e) => e.stopPropagation()} style={{ ...s.card, width: 860, maxWidth: "100%", padding: "18px 20px", margin: "auto 0" }}>
             <DetalheInspecao d={ver} C={C} s={s} bt={(cor, cheio = true) => ({ ...s.btn(true, cor), cursor: "pointer", padding: "7px 12px", fontSize: 12, ...(cheio ? {} : { background: "transparent", color: cor }) })}
               onFoto={(url, legenda) => setFoto({ url, legenda })} onRelatorio={() => { const w = prepararJanela(); try { abrirRelatorioInspecao(ver, w); } catch (e) { err(e.message); } }} onFechar={() => setVer(null)} />
+          </div>
+        </div>
+      )}
+      {doc && (
+        <div style={{ position: "fixed", inset: 0, background: "#00000090", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 300, padding: 12, overflowY: "auto" }}>
+          <div style={{ ...s.card, width: 860, maxWidth: "100%", padding: "14px 14px", margin: "auto 0" }}>
+            <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>📄 Contrato {doc.numero} — versão {doc.documento.versao}</div>
+            <iframe title="contrato" srcDoc={gerarHtmlContrato(dadosContrato(doc))} style={{ width: "100%", height: "58vh", border: `1px solid ${C.border}`, borderRadius: 6, background: "#fff" }} />
+            <div style={{ fontSize: 13, margin: "10px 0 6px" }}>Li o contrato e aceito as condições. Assine abaixo:</div>
+            <AssinaturaTela C={C} s={s} onChange={setAss} altura={150} />
+            <div style={{ display: "flex", gap: 10, marginTop: 12 }}>
+              <button type="button" onClick={() => setDoc(null)} style={{ ...s.btn(false), cursor: "pointer", flex: 1, color: C.text }}>Agora não</button>
+              <button type="button" disabled={!ass || aceitando} onClick={aceitar} style={{ ...s.btn(!!ass && !aceitando, C.success), flex: 1 }}>{aceitando ? "Enviando…" : "✍ Aceito o contrato"}</button>
+            </div>
           </div>
         </div>
       )}

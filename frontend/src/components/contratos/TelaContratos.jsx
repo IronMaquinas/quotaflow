@@ -7,12 +7,16 @@ import { useState, useEffect, useMemo } from "react";
 import apiService from "../../services/apiService";
 import { corEstado, txtEstado } from "../inspecoes/RotinasLocacao";
 import { FormNovoContrato, AbaClientes, mascaraDoc } from "./Clientes"; // 14b.3.1
+import { AbaModelos, DocumentoContrato } from "./ModelosContrato"; // 14d
 import CampoTelefone from "../shared/CampoTelefone";
 
 const FREQ = { diaria: "Diária", semanal: "Semanal", quinzenal: "Quinzenal", mensal: "Mensal" };
 const dataBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
 const hoje = () => new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
 const semAcento = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+// 14d.2: fase do contrato (calculada no servidor)
+export const FASE = { elaboracao: ["📝 EM ELABORAÇÃO", "#64748b"], aguardando_aceite: ["⏳ AGUARDANDO ACEITE", "#f59e0b"], andamento: ["✅ EM ANDAMENTO", "#22c55e"], encerrado: ["🏁 ENCERRADO", "#64748b"] };
+const faseDe = (c) => c.fase || (c.status === "ativo" ? "elaboracao" : "encerrado");
 const vazio = () => ({ cliente: "", cliente_doc: "", local: "", contato_nome: "", contato_email: "", contato_telefone: "", inicio: hoje(), fim_previsto: "", obs: "" });
 
 export default function TelaContratos({ C, s, onAbrirInspecoes }) {
@@ -20,7 +24,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes }) {
   const [painel, setPainel] = useState(null); // equipamentos e modelos (para adicionar ao contrato)
   const [semMigration, setSemMigration] = useState(false);
   const [aviso, setAviso] = useState(null);
-  const [filtro, setFiltro] = useState("ativo");
+  const [filtro, setFiltro] = useState("abertos"); // 14d.2: abertos (não encerrados) | fase | todos
   const [aba, setAba] = useState("contratos"); // 14b.3.1: contratos | clientes
   const [novo, setNovo] = useState(false);     // 14b.3.1: novo contrato (CNPJ primeiro)
   const [busca, setBusca] = useState("");
@@ -43,7 +47,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes }) {
   useEffect(() => { carregar(); }, []); // eslint-disable-line
 
   const editar = !!d?.pode_editar;
-  const lista = useMemo(() => (d?.contratos || []).filter((c) => (filtro === "todos" || c.status === filtro) && (!busca.trim() || semAcento(`${c.numero} ${c.cliente} ${c.local || ""} ${c.equipamentos.map((e) => e.tag).join(" ")}`).includes(semAcento(busca.trim())))), [d, filtro, busca]);
+  const lista = useMemo(() => (d?.contratos || []).filter((c) => (filtro === "todos" || (filtro === "abertos" ? faseDe(c) !== "encerrado" : faseDe(c) === filtro)) && (!busca.trim() || semAcento(`${c.numero} ${c.cliente} ${c.local || ""} ${c.equipamentos.map((e) => e.tag).join(" ")}`).includes(semAcento(busca.trim())))), [d, filtro, busca]);
   const aberto = (d?.contratos || []).find((c) => c.id === abertoId) || null;
   const modelos = (painel?.modelos || []).filter((m) => m.ativo !== false);
   const naBase = (painel?.equipamentos || []).filter((e) => e.situacao !== "locado");
@@ -69,11 +73,12 @@ export default function TelaContratos({ C, s, onAbrirInspecoes }) {
       </div>
       {aviso && <div style={{ ...s.card, padding: "10px 14px", marginBottom: 12, fontSize: 13, borderColor: aviso.tipo === "erro" ? C.danger : C.success, color: aviso.tipo === "erro" ? C.danger : C.success }}>{aviso.texto}</div>}
       <div style={{ display: "flex", gap: 6, marginBottom: 12, borderBottom: `1px solid ${C.border}` }}>
-        {[["contratos", "📑 Contratos"], ["clientes", "👥 Clientes"]].map(([k, l]) => <button key={k} type="button" onClick={() => setAba(k)} style={{ background: "transparent", border: "none", borderBottom: `2px solid ${aba === k ? C.accent : "transparent"}`, padding: "8px 12px", color: aba === k ? C.text : C.muted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>)}
+        {[["contratos", "📑 Contratos"], ["clientes", "👥 Clientes"], ["modelos", "📄 Modelos de contrato"]].map(([k, l]) => <button key={k} type="button" onClick={() => setAba(k)} style={{ background: "transparent", border: "none", borderBottom: `2px solid ${aba === k ? C.accent : "transparent"}`, padding: "8px 12px", color: aba === k ? C.text : C.muted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>)}
       </div>
       {aba === "clientes" && <AbaClientes C={C} s={s} editar={editar} onErro={err} onOk={ok} />}
-      {aba === "contratos" && <div style={{ display: "flex", gap: 6, marginBottom: 12 }}>
-        {[["ativo", "Ativos"], ["encerrado", "Encerrados"], ["todos", "Todos"]].map(([k, l]) => <button key={k} type="button" onClick={() => setFiltro(k)} style={{ ...s.btn(filtro === k, C.accent), cursor: "pointer", padding: "5px 12px", fontSize: 12, color: filtro === k ? "#fff" : C.text }}>{l}</button>)}
+      {aba === "modelos" && <AbaModelos C={C} s={s} editar={editar} onErro={err} onOk={ok} />}
+      {aba === "contratos" && <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+        {[["abertos", "Abertos"], ["elaboracao", "📝 Em elaboração"], ["aguardando_aceite", "⏳ Aguardando aceite"], ["andamento", "✅ Em andamento"], ["encerrado", "🏁 Encerrados"], ["todos", "Todos"]].map(([k, l]) => <button key={k} type="button" onClick={() => setFiltro(k)} style={{ ...s.btn(filtro === k, C.accent), cursor: "pointer", padding: "5px 12px", fontSize: 12, color: filtro === k ? "#fff" : C.text }}>{l}</button>)}
       </div>}
       {aba !== "contratos" ? null : !d ? <div style={{ color: C.muted }}>Carregando…</div> : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 10 }}>
@@ -81,7 +86,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes }) {
             <div key={c.id} onClick={() => setAbertoId(c.id)} style={{ ...s.card, padding: 14, cursor: "pointer", opacity: c.status === "ativo" ? 1 : 0.65, borderColor: c.atrasadas ? C.danger : C.border }}>
               <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
                 <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700 }}>{c.cliente}</div><div style={{ fontSize: 12, color: C.textSub }}>{c.numero}{c.local ? ` · ${c.local}` : ""}</div></div>
-                <span style={s.tag(c.status === "ativo" ? C.success : C.muted)}>{c.status === "ativo" ? "ATIVO" : "ENCERRADO"}</span>
+                <span style={s.tag(FASE[faseDe(c)][1])}>{FASE[faseDe(c)][0]}</span>
               </div>
               <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>{dataBR(c.inicio)} → {c.status === "ativo" ? (c.fim_previsto ? dataBR(c.fim_previsto) : "sem prazo") : dataBR(c.fim_real)}</div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
@@ -98,7 +103,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes }) {
       {aberto && !form && !novo && !addEq && !acesso && !confirmar && !pausar && modal(<>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <div style={{ fontSize: 17, fontWeight: 700, flex: 1 }}>📑 {aberto.numero} — {aberto.cliente}</div>
-          <span style={s.tag(aberto.status === "ativo" ? C.success : C.muted)}>{aberto.status === "ativo" ? "ATIVO" : "ENCERRADO"}</span>
+          <span style={s.tag(FASE[faseDe(aberto)][1])}>{FASE[faseDe(aberto)][0]}</span>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "8px 14px", fontSize: 12, marginTop: 12 }}>
           {[["CNPJ / CPF", aberto.cliente_doc ? mascaraDoc(aberto.cliente_doc) : null], ["Local / obra", aberto.local], ["Contato", [aberto.contato_nome, aberto.contato_email, aberto.contato_telefone].filter(Boolean).join(" · ")], ["Início", dataBR(aberto.inicio)],
@@ -123,6 +128,8 @@ export default function TelaContratos({ C, s, onAbrirInspecoes }) {
           </div>
         ))}
         {aberto.equipamentos.length === 0 && <div style={{ fontSize: 13, color: C.muted, padding: "6px 0" }}>Nenhum equipamento neste contrato.</div>}
+
+        <DocumentoContrato C={C} s={s} contrato={aberto} editar={editar} onErro={err} onOk={ok} onMudou={carregar} />
 
         <div style={{ display: "flex", alignItems: "center", marginTop: 16, marginBottom: 6 }}>
           <div style={{ fontWeight: 700, flex: 1 }}>👤 Acessos do locatário</div>

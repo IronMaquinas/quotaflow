@@ -119,6 +119,11 @@ router.delete('/biblioteca/treinamentos/:id', responder(async (req) => { const r
 
 // ─── Biblioteca de modelos de inspeção (etapa 14a) ────────────────────────
 router.get('/biblioteca/inspecoes', responder(() => INSP.bibliotecaConsole(supabase)));
+// 14d — biblioteca de modelos de contrato
+const CMOD = require('../services/contratoModelos');
+router.get('/biblioteca/contratos', responder(() => CMOD.bibliotecaConsole(supabase)));
+router.post('/biblioteca/contratos', responder((req) => CMOD.criarBib(supabase, req.body || {})));
+router.put('/biblioteca/contratos/:id', responder((req) => CMOD.editarBib(supabase, req.params.id, req.body || {})));
 router.post('/biblioteca/inspecoes/imagem', responder((req) => INSP.subirImagemModelo(supabase, 'biblioteca', req.body || {})));
 router.post('/biblioteca/inspecoes', responder(async (req) => { const r = await INSP.criarModeloBib(supabase, req.body); if (!r.erro) await C.registrar(req.plataformaAdmin, 'inspecao_modelo_criar', 'inspecao_modelo', r.modelo.id, { nome: r.modelo.nome }).catch(() => {}); return r; }));
 router.put('/biblioteca/inspecoes/:id', responder(async (req) => { const r = await INSP.editarModeloBib(supabase, req.params.id, req.body); if (!r.erro) await C.registrar(req.plataformaAdmin, 'inspecao_modelo_editar', 'inspecao_modelo', req.params.id, { versao_subiu: r.versao_subiu }).catch(() => {}); return r; }));

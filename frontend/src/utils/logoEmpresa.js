@@ -5,13 +5,15 @@
 import apiService from "../services/apiService";
 
 let atual = null; // data URL | null
+let empresa = null; // 14d: { nome, razao_social, cnpj } — para o contrato
 
 export async function carregarLogoEmpresa() {
-  try { atual = (await apiService.get("/usuarios/me/logo"))?.logo || null; } catch { atual = null; }
+  try { const r = await apiService.get("/usuarios/me/logo"); atual = r?.logo || null; empresa = r?.empresa || null; } catch { atual = null; }
   return atual;
 }
 export const definirLogoEmpresa = (dataUrl) => { atual = dataUrl || null; };
 export const logoEmpresa = () => atual;
+export const dadosEmpresa = () => empresa || {};
 
 /** <img> pronto para o cabeçalho dos documentos (ou "" sem logo) */
 export function logoHtml({ altura = 44, largura = 180, margem = "0 0 4px" } = {}) {
