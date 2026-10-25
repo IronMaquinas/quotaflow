@@ -69,7 +69,7 @@ const ESPERADO = {
   'services/acessoSpot.js': '6ecce4d16d6b123c6ce93c1223b32f01', // etapa 10c (novo)
   'services/receitaCnpj.js': '7c382fbd2db545838e97cb294aa12ee2', // etapa 11a.2
   'services/cadastroPublico.js': 'eae020d28c2318b0f2f96766d9e308e2', // etapa 11a.3
-  'front:App.jsx': 'c6471eabea5cc2c1b734dc049947d1bd', // etapa 14c.1
+  'front:App.jsx': '3476eb7ff67767af7524719ee3b7b79b', // etapa 14c.2
   'front:TelaLogin.jsx': 'bfa1fccbdab99820be2ac14c0e91b2fe', // etapa 14b.1
   'front:TelaSignup.jsx': '345dceefb937b38e74cfef44cfc33ef3', // etapa 11a.3
   'front:AvisoPlanoTenant.jsx': '5795f00c1bc656d0525fd29b6793a96c', // etapa 11a.3
@@ -102,11 +102,11 @@ const ESPERADO = {
   'services/conformidade.js': '7194d1cb671096ee3fb63e2fd82364d8', // etapa 12e.3
   'front:GestaoEpi.jsx': '6c823820e98a6d78c736540aea8e67f8', // etapa 12d.3
   'front:AssinaturaTela.jsx': 'db713a14a03390f9072d06f1de697b90', // etapa 12d.2 (novo)
-  'front:gerarFichaEpi.js': '1a5de92e2896fc8095784b082269b1a3', // etapa 12d.3
+  'front:gerarFichaEpi.js': '1926fe16c45ad648ef986f6bbb97a824', // etapa 14c.2
   'services/historicoFuncoes.js': 'e8460900c6f40ee55328c3aac638dffe', // etapa 12d.3 (novo)
   'services/avisosPessoas.js': '0b4702081b9c1e8dfb96d8bb5140e9a1', // etapa 14b.2
   'services/treinamentos.js': '7ce6b7d886e7b2036d5820f2113ba71a', // etapa 12e.2d
-  'front:TelaTreinamentos.jsx': '89d7dda38c44fa49158e08c8826abf5d', // etapa 14c.1
+  'front:TelaTreinamentos.jsx': '255c8ddca330a11ec39653b4718c6b44', // etapa 14c.2
   'front:gerarListaPresenca.js': '35770dafbe33aca8992c169d93745e9e', // etapa 14c.1
   'migrations/031_treinamentos_conteudo_horas.sql': 'ec5ffd0cf4814b65add59c253be196fa', // etapa 12e.2a (novo)
   'front:BibliotecaTreinamentos.jsx': 'bc7bf51426be20050569f0beab486d19', // etapa 12e.2b
@@ -130,15 +130,15 @@ const ESPERADO = {
   'services/dossie.js': '2e55efdd528616a71e5f69ad194a61ed', // etapa 12h.2
   'migrations/035_dossie.sql': '77312ba3492730a513939e6503636372', // etapa 12f (novo)
   'front:PainelDossie.jsx': '9d22ddbe580292cbb5511850719529b6', // etapa 12h
-  'front:gerarDossie.js': '13459335332ae1f900c86c83447521fb', // etapa 12h.1
+  'front:gerarDossie.js': 'bfc589f3755b697c4e7f05525589f525', // etapa 14c.2
   'services/multas.js': '0865e57a9d15f1fb27b1c7b07365737a', // etapa 12g (novo)
   'migrations/036_multas.sql': 'b89f5e90964aa538404cccc85e2d4484', // etapa 12g (novo)
   'front:TelaMultas.jsx': 'f3e8b1c1925f2347f6a6987149485b60', // etapa 14c.1
-  'front:gerarTermoDesconto.js': '556e0547c4195aae0132ab55706fa88d', // etapa 12g (novo)
+  'front:gerarTermoDesconto.js': '5847f394eae27eef19c87b6371be1f2e', // etapa 14c.2
   'services/disciplinar.js': '07c6440a61f339446412ec7dc91c8e8b', // etapa 12h.2
   'migrations/037_disciplinar.sql': '57507e1c5a097a8dfec9a7084ad81445', // etapa 12h (novo)
   'front:TelaDisciplinar.jsx': '3baf053317820e315a81ac7fa73fa701', // etapa 14c.1
-  'front:gerarMedidaDisciplinar.js': '7051c3dd01e88542e6fa9a034b581a50', // etapa 12h.2
+  'front:gerarMedidaDisciplinar.js': 'eeb53a7e0b81696bcbf3bda8b22242a6', // etapa 14c.2
   'migrations/038_disciplinar_ciencia.sql': '78d9a3a72385e12d2fc0a36d9b50afe8', // etapa 12h.1 (novo)
   'services/autuacoes.js': '598cb474272ff0f30755b5b57444b149', // etapa 12i (novo)
   'routes/autuacoes.js': 'bf16699ee770476707473186a882b353', // etapa 12i (novo)
@@ -178,29 +178,18 @@ const ESPERADO = {
   'front:LogoEmpresa.jsx': 'cab8af3905485a4d3fb77d528b24760b', // etapa 14c.1
   'front:logoEmpresa.js': '04dd453060ce63385a6c8eb09e4b8291', // etapa 14c.1
   'front:comprimirImagem.js': 'b6d05cca4906e19250268c29f633f044', // etapa 14c.1 (novo)
+  'front:gerarPdfNC.js': 'fe4db00132dc6c626027e234e1f5f366', // etapa 14c.2
 };
 
-// Antes de copiar a etapa 14c.1 — base: 14b.3.2
+// Antes de copiar a etapa 14c.2 — base: 14c.1
 const ANTES = {
-  'routes/configuracoes.js': 'd2cc8b3caee66f84bedfc132e5218f0c',
-  'routes/usuarios.js': 'e4f68298d7219adce1e1e76b2333a0cb',
-  'services/logoEmpresa.js': '48b3a98d98cf855140345b864111f6c0',
-  'migrations/045_logo_empresa.sql': '87eeade651cc3f724b7228bf57bb3670',
   'front:App.jsx': 'c6471eabea5cc2c1b734dc049947d1bd',
-  'front:TelaConfiguracoes.jsx': '1b08d3ac64c78662131c692aba1b14ae',
-  'front:gerarCertificado.js': 'afd7fd6e2453bfab32f19fc6a9a7a7aa',
-  'front:gerarListaPresenca.js': '35770dafbe33aca8992c169d93745e9e',
-  'front:gerarRelatorioInspecao.js': '53a655d7f3fe94d2efa61abfc4e35385',
-  'front:gerarRelatorioCumprimento.js': 'd4b916c75f0a4290ccd9c96bf170ed90',
-  'front:LogoEmpresa.jsx': 'd922f3be04806ee198992f81ced7c8e0',
-  'front:logoEmpresa.js': '04dd453060ce63385a6c8eb09e4b8291',
-  'front:EditorModeloInspecao.jsx': 'e6c58003b457832fb8343ea773ab4c9b',
-  'front:TelaPessoas.jsx': 'a1de0d4bd2e027eb278add820bcfe546',
-  'front:FichaCompetencias.jsx': '0171395176a61ef358d7e72f9c193218',
-  'front:TelaDisciplinar.jsx': '1ff10c2cfe0f76dcf58f69d3a0608c86',
-  'front:TelaMultas.jsx': '38927f697c5842df491c034a5c7dca0c',
-  'front:TelaTreinamentos.jsx': 'dbea7b15f5a26ae9083082344158e948',
-  'front:TelaAutuacoes.jsx': '877a3049d076cad5c1b82a727e18e36e',
+  'front:TelaTreinamentos.jsx': '89d7dda38c44fa49158e08c8826abf5d',
+  'front:gerarDossie.js': '13459335332ae1f900c86c83447521fb',
+  'front:gerarMedidaDisciplinar.js': '7051c3dd01e88542e6fa9a034b581a50',
+  'front:gerarTermoDesconto.js': '556e0547c4195aae0132ab55706fa88d',
+  'front:gerarFichaEpi.js': '1a5de92e2896fc8095784b082269b1a3',
+  'front:gerarPdfNC.js': '1861b1ee09133cf07137717b93f603c2',
 };
 
 const RAIZ = process.cwd();
@@ -238,7 +227,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 12e.1?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 14c.1)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 14c.2)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
