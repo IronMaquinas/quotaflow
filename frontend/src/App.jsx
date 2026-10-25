@@ -169,6 +169,13 @@ export default function App() {
   const [osParaAbrir, setOsParaAbrir] = useState(null);
   const [abaColaborador, setAbaColaborador] = useState("treinos"); // 14b.1: tela do colaborador
   useEffect(() => { if (usuario?.id) carregarLogoEmpresa(); }, [usuario?.id]); // 14c: logo da empresa nos documentos
+  // 14c.2: "é clicável" — mãozinha + realce ao passar o mouse (className="qf-clicavel")
+  useEffect(() => {
+    if (document.getElementById("qf-estilos")) return;
+    const el = document.createElement("style"); el.id = "qf-estilos";
+    el.textContent = ".qf-clicavel{cursor:pointer!important;transition:filter .12s,transform .12s}.qf-clicavel:hover{filter:brightness(1.35);transform:translateY(-1px);text-decoration:underline}";
+    document.head.appendChild(el);
+  }, []);
   const [novaOSData, setNovaOSData] = useState(null); // etapa 12a: "Nova OS programada" a partir do calendário
   const [abaPessoas, setAbaPessoas] = useState(null); // etapa 12d.3: abrir Pessoas numa aba (ex.: "epi") a partir do calendário
   const [ncParaAbrir, setNcParaAbrir] = useState(null);

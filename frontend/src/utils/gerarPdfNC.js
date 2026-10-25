@@ -10,6 +10,7 @@
 // Decisão de produto: PDFs NUNCA têm links clicáveis pros anexos. Fotos
 // entram como miniatura. PDFs anexados aparecem SÓ por nome.
 
+import { logoHtml } from "./logoEmpresa"; // 14c (etapa 2): logo da empresa no cabeçalho
 const CSS = `
   * { box-sizing: border-box; }
   body {
@@ -230,6 +231,7 @@ export function gerarHtmlRelatorioNC({
   const cabecalho = `
     <header class="cabecalho">
       <div class="cabecalho-esquerda">
+        ${logoHtml()}
         <div class="tenant-nome">${esc(tenant?.nome || '—')}</div>
         ${tenant?.cnpj ? `<div class="tenant-cnpj">CNPJ: ${esc(tenant.cnpj)}</div>` : ''}
       </div>

@@ -4,6 +4,7 @@
 // abre numa aba nova e dispara window.print() (o usuário escolhe "Salvar como PDF").
 // Sem dependência nova. Uma linha por EPI entregue; a assinatura do colaborador aparece em cada entrega.
 
+import { logoHtml } from "./logoEmpresa"; // 14c (etapa 2): logo da empresa no cabeçalho
 const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const dataBR = (d) => (d ? new Date(d).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "—");
 const dataIsoBR = (s) => (s ? String(s).slice(0, 10).split("-").reverse().join("/") : "—");
@@ -52,7 +53,7 @@ export function gerarHtmlFichaEpi({ empresa = {}, colaborador = {}, entregas = [
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Ficha de EPI — ${esc(colaborador.nome)}</title><style>${CSS}</style></head><body>
   <div class="pagina">
     <div class="cab">
-      <div><div class="emp">${esc(empresa.razao_social || empresa.nome)}</div><div class="sub">${empresa.cnpj ? `CNPJ ${esc(fmtCNPJ(empresa.cnpj))}` : ""}</div></div>
+      <div>${logoHtml()}<div class="emp">${esc(empresa.razao_social || empresa.nome)}</div><div class="sub">${empresa.cnpj ? `CNPJ ${esc(fmtCNPJ(empresa.cnpj))}` : ""}</div></div>
       <div style="text-align:right"><div style="font-weight:700">FICHA DE EPI</div><div class="sub">NR-6 · gerada em ${dataBR(gerado_em || new Date())}</div></div>
     </div>
     <h1>Ficha de controle de entrega de Equipamento de Proteção Individual</h1>

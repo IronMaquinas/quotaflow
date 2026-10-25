@@ -5,6 +5,7 @@
 // 1 Dados e selo · 2 Função e histórico de funções · 3 Documentos · 4 EPIs (com assinatura) · 5 Treinamentos (horas,
 // notas, tentativas, certificados) · 6 Competências (situação atual e EVOLUÇÃO nota a nota) · 7 Multas (12g).
 
+import { logoHtml } from "./logoEmpresa"; // 14c (etapa 2): logo da empresa no cabeçalho
 const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const dBR = (s) => (s ? String(s).slice(0, 10).split("-").reverse().join("/") : "—");
 const dataHora = (d) => (d ? new Date(d).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" }) : "—");
@@ -160,7 +161,7 @@ export function gerarHtmlDossie(d) {
 
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Dossiê — ${esc(c.nome)}</title><style>${CSS}</style></head><body><div class="pagina">
     <div class="capa">
-      <div style="font-size:14px;font-weight:700">${esc(e.razao_social || e.nome)}</div><div class="linha">${e.cnpj ? `CNPJ ${esc(fmtCNPJ(e.cnpj))}` : ""}</div>
+      ${logoHtml({ altura: 70, largura: 260, margem: "0 auto 8px" })}<div style="font-size:14px;font-weight:700">${esc(e.razao_social || e.nome)}</div><div class="linha">${e.cnpj ? `CNPJ ${esc(fmtCNPJ(e.cnpj))}` : ""}</div>
       <h1>DOSSIÊ DO COLABORADOR</h1>
       <div class="linha">Período: <b>${esc(per)}</b></div>
       <div class="nome">${esc(c.nome)}</div>

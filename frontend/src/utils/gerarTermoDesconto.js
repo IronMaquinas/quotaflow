@@ -1,6 +1,7 @@
 // frontend/src/utils/gerarTermoDesconto.js — etapa 12g
 // Termo de autorização de desconto de multa, assinado na tela pelo colaborador — HTML "printável" (aba nova + print).
 
+import { logoHtml } from "./logoEmpresa"; // 14c (etapa 2): logo da empresa no cabeçalho
 const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const dBR = (s) => (s ? String(s).slice(0, 10).split("-").reverse().join("/") : "—");
 const dataHora = (d) => (d ? new Date(d).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" }) : "—");
@@ -22,7 +23,7 @@ export function gerarHtmlTermo({ empresa = {}, colaborador = {}, multa: m = {}, 
   @page { size: A4; margin: 12mm; }
   </style></head><body><div class="pagina">
     <div style="display:flex;justify-content:space-between;border-bottom:2px solid #111;padding-bottom:6px">
-      <div><b style="font-size:14px">${esc(empresa.razao_social || empresa.nome)}</b><div style="color:#555;font-size:10px">${empresa.cnpj ? `CNPJ ${esc(fmtCNPJ(empresa.cnpj))}` : ""}</div></div>
+      <div>${logoHtml()}<b style="font-size:14px">${esc(empresa.razao_social || empresa.nome)}</b><div style="color:#555;font-size:10px">${empresa.cnpj ? `CNPJ ${esc(fmtCNPJ(empresa.cnpj))}` : ""}</div></div>
       <div style="text-align:right;font-size:10px;color:#555">gerado em ${dataHora(gerado_em)}</div>
     </div>
     <h1>Termo de autorização de desconto — multa de trânsito</h1>

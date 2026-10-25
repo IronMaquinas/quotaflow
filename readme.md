@@ -771,6 +771,7 @@ npm run dev
 - **14b.3.2 (23/10):** o "＋ Cliente" (aba 👥 Clientes) mostra a mesma nota do novo contrato depois do 🔍 Buscar ("Dados da Receita · situação ATIVA — confira", em vermelho com aviso se não estiver ATIVA). Só frontend.
 - **🖼 Logomarca da empresa — 14c, etapa 1 (23/10):** ⚙️ Configurações → 🏢 Empresa → **Logomarca** (admin, gestor): enviar / trocar / remover (modal do app), PNG, JPG ou WEBP até 1 MB, com prévia do cabeçalho. O App carrega a logo uma vez depois do login (`utils/logoEmpresa.js` → `GET /api/usuarios/me/logo`, que funciona também para colaborador e locatário) e os geradores leem na hora com `logoHtml()` — a logo vai em **data URL** (não depende de link que expira na janela de impressão). Sem logo, os documentos seguem como antes. **Já com logo:** relatório de inspeção, relatório de cumprimento, certificado, comprovante da avaliação, lista de presença. **Etapa 2:** dossiê, ficha de EPI, termo de desconto, medida disciplinar, PDF da NC. **Etapa 3:** contrato e proposta. Páginas públicas por link (prova e inspeção de terceiros) ficam sem logo por enquanto (não têm login). Rotas: `GET/POST/DELETE /api/configuracoes/logo`, `GET /api/usuarios/me/logo`. Migration 045.
 - **🗜 Compressão de imagem no navegador — 14c.1 (24/10, pedido do Marcony):** ninguém precisa comprimir imagem antes de enviar. `utils/comprimirImagem.js` reduz no próprio navegador: **logo** → lado maior 600 px (PNG com transparência continua PNG; aceita imagem de até 25 MB); **imagem da vista do modelo de inspeção** → 1600 px, JPEG 0,8; **anexos "PDF ou foto"** (documento do colaborador, evidência de competência e de treinamento, multa, medida disciplinar — termo assinado e anexo —, auto de infração e defesa/recurso) → foto vira JPEG 1600 px, qualidade 0,75 (foto de celular de 4–12 MB vira ~150–550 KB); PDF passa direto. As **fotos da inspeção** já eram reduzidas no celular (1280 px, 0,72 — 14a) e as de NC/Spot também (1200 px, 0,75). Se o navegador não abrir o formato (ex.: HEIC em alguns aparelhos), envia o original.
+- **🖼 Logo — 14c.2, etapa 2 (24/10):** logo também no **dossiê do colaborador** (capa), **medida disciplinar** (advertência/suspensão), **ficha de EPI**, **termo de desconto de multa** e **PDF da NC**. Falta só contrato e proposta (14d / 15a). Botões de treinamento na aba Treinamentos → Por colaborador agora mostram que são clicáveis (mãozinha, realce e "›"; classe global `.qf-clicavel`). Só frontend. **Histórico de treinamento:** o selo mostra a situação **atual** (a última realização vale); todas as realizações ficam em Turmas e registros e no dossiê (histórico completo do período).
 - **🪪 CPF obrigatório (etapa 12e.0, 20/10, Marcony):** colaborador novo só salva com CPF válido (frontend bloqueia o Salvar; backend devolve 400). Quem já existia sem CPF aparece na lista com **"⚠ sem CPF"** e precisa preencher na próxima edição. Motivo: o CPF identifica a pessoa nos treinamentos (no link externo da prova, o CPF preenche o nome — evita nome digitado errado ou pela metade) e no dossiê. Continua único por empresa (`colaboradores_cpf_unico`) e mascarado para quem não edita (LGPD).
 - **👔 Histórico de funções (etapa 12d.3 — pergunta do Marcony, 20/10):** trocar a função no cadastro abre o quadro **"Mudança de função"**: *a partir de* (padrão hoje) e *motivo* (promoção, transferência, readaptação, correção de cadastro, outro). O período atual fecha no dia anterior e abre o novo; data antes do início da função atual é recusada (nada é gravado). **Correção de cadastro** (e ligar ao modelo de mesmo nome, a sugestão da 12d.0) corrige o período atual sem abrir outro. Tirar a função só fecha o período. Colaborador novo ganha o 1º período na admissão. A Ficha mostra o histórico; a ficha NR-6 ganhou a coluna **"Função na época"** em cada entrega (vem de `epi_entregas.funcao_nome`) e o histórico de funções no cabeçalho. **EPIs acompanham a função atual**: o painel e a entrega usam o kit da função nova; o que foi recebido antes e não faz parte do kit novo aparece como **"↩ … · fora do kit atual"** (clique abre o Histórico para devolver — não é obrigatório, decisão b); o que é comum aos dois kits continua valendo. Rota: `GET /api/pessoas/colaboradores/:id/funcoes`. Base para o dossiê (12f): "Motorista (2022–2024) → Motorista MOPP (2024–2026) → Encarregado".
 - **🦺 Avisos de EPI no calendário e no e-mail (etapa 12d.3):** **calendário** ganhou a camada **🦺 EPI** (laranja #f97316): troca de EPI em uso (dia da próxima troca) e validade de CA dos EPIs do estoque, com cartão "Ver em Pessoas → 🦺 EPI" (abre direto a aba — `App.jsx` guarda `abaPessoas`), legenda e rodapé "🦺 N troca(s)/CA de EPI · X vencido(s)". Rota `/api/manutencao/calendario` devolve `epi` (fora do filtro de equipamento). **E-mail diário** (o mesmo dos documentos, 7h): para **admin e gestor**, seções 🦺 Troca de EPI (15 dias e vencida), 🦺 CA de EPI (30 dias e vencido) e 📋 Documento exigido não cadastrado (uma vez por colaborador + tipo + função); um e-mail por pessoa por dia; cada marco uma vez (`avisos_enviados`); só o mais urgente se o servidor ficou dias fora. A resposta do disparo traz `pessoas` na contagem. **Atalho "＋ Cadastrar"** na ficha de entrega quando o tipo do kit não tem EPI no estoque: abre o Novo EPI com o tipo; ao salvar, a linha já pega o item novo.
@@ -1193,7 +1194,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 | **14b.1** ✅ / **14b.2** | inspeção de terceiros (link), "Minhas inspeções" do colaborador, "resolvi na rua", calendário e % de cumprimento, relatório por período, **numeração INSP-AAAA-NNNN** e **tipo de inspeção** (pré-uso / carregamento / em trânsito / descarregamento) + modelos de carregamento na biblioteca |
 | **14b.2** ✅ | situação do equipamento (🏠 na base / 📍 locado), frequência por equipamento, calendário de inspeções (camada 🔍), em dia / atrasada / % de cumprimento, relatório por período, tipos entrega/devolução |
 | **14b.3** ✅ | **Perfil Locatário** + seção **📑 Contratos** (gestor vê todos; locatário só os dele), locação ligada ao usuário, inspeções do locatário, pausar usuário ao encerrar |
-| **14c** | logomarca da empresa — etapa 1 ✅ (inspeção, cumprimento, certificado, avaliação, presença) · etapa 2 (dossiê, EPI, termos, disciplinar, NC) |
+| **14c** ✅ | logomarca da empresa — etapa 1 (inspeção, cumprimento, certificado, avaliação, presença) · etapa 2 (dossiê, EPI, termo de desconto, disciplinar, NC) |
 | **14d** | modelos de contrato (texto com campos automáticos + condições comerciais, biblioteca no Console, aceite do locatário) |
 | **14e** | 🛡 monitor de CNPJs (dia 01 e 15, tela, e-mail com relacionamentos em andamento) |
 | **15a** | Clientes (cadastro, contatos, CNPJ pela Receita, já existe o serviço) + **Proposta comercial** com itens de transporte (multi-trecho) e locação, versões, PDF da proposta |
@@ -1215,4 +1216,91 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 22/10/2026 (etapa 14c + 14c.1)
+**Última atualização deste documento:** 22/10/2026 (etapa 14c.2)
+
+--------------------------------------------------------------------------------
+
+#### 🌿 17. Módulo ESG (Maturidade & Relatórios de Sustentabilidade)
+
+O QuotaFlow converte dados operacionais brutos em indicadores de conformidade ESG (Environmental, Social, Governance) para atender a grandes contratantes e exigências internacionais (CSRD / EU Taxonomy):
+
+* **🌱 Environmental (Meio Ambiente):**
+  * Redução de emissões e prevenção de contaminação através do cumprimento rigoroso dos **Planos de Manutenção Preventiva**.
+  * Rastreabilidade de licenças ambientais (IBAMA, ANTT, licenças estaduais/municipais) e controle de transporte de carga perigosa (MOPP).
+  * Gestão consciente de resíduos e insumos com controle de vida útil de pneus e componentes.
+* **👥 Social (Saúde, Segurança & Pessoas):**
+  * Gestão de **EPIs (NR-6)** com controle de Certificado de Aprovação (CA) e assinatura digital na tela.
+  * Monitoramento diário de exames ocupacionais (ASO, toxicológico) e validade de CNH.
+  * Biblioteca de treinamentos regulatórios com listas de presença assinadas e emissão automática de certificados.
+* **🛡️ Governance (Governança & Ética):**
+  * Auditoria contínua de compliance em compras e fornecedores.
+  * Trilha inviolável de dados com **hashes de segurança (SHA-256)** em inspeções, entregas e termos disciplinares.
+  * Validação periódica de cadastros de fornecedores e clientes na Receita Federal (CNPJ).
+* **📊 Dashboard de Maturidade ESG & Relatório 1-Clique:**
+  * Indicador sintético do nível de prontidão ESG da empresa.
+  * Emissão automática de relatório formal em PDF para apresentação a bancos, seguradoras e auditores.
+
+--------------------------------------------------------------------------------
+
+#### 📜 18. Módulo ISO 9001 (Gestão da Qualidade & Análise Crítica)
+
+Estrutura nativa desenvolvida para simplificar e automatizar os requisitos da norma ISO 9001 sem burocracia ou pastas de papel:
+
+* **Mapeamento Direto de Requisitos:**
+  * **Cláusula 7 (Apoio & Competência):** Mapeado via Matriz de Competências, Treinamentos e Ficha de EPI.
+  * **Cláusula 8 (Operação & Compras):** Mapeado pelo fluxo completo de compras (*OS → RM → RC → OV*) e inspeções operacionais.
+  * **Cláusula 9 (Avaliação de Desempenho):** Mapeado por benchmarking de mercado, relatórios de manutenção e histórico de compras.
+  * **Cláusula 10 (Melhoria & Não Conformidade):** Mapeado pelo módulo de **NCs com Análise de Causa Raiz (5 Porquês)** e Planos de Ação (3W).
+* **📄 Análise Crítica pela Direção (Cláusula 9.3) em 1-Clique:**
+  * Compilação automática de indicadores de qualidade, satisfação, desempenho de fornecedores e riscos operacionais.
+  * Geração instantânea de apresentação em PDF/PPT e ata da reunião pronta para auditoria externa.
+
+--------------------------------------------------------------------------------
+
+#### 🤖 19. Agente de IA de Compliance & Anti-Fraude
+
+Auditoria contínua rodando em segundo plano para identificar anomalias operacionais, fraudes em compras e descumprimento de procedimentos:
+
+* **🚚 Operação & Campo:**
+  * **Checklist Carimbado (Vistoria Ultrarrápida):** Alerta para inspeções finalizadas em tempo incompatível com a vistoria física (ex: < 60s).
+  * **Divergência de GPS:** Vistorias realizadas fora do perímetro da base ou do local esperado do veículo.
+  * **Inconsistência de Reincidência:** Veículos antigos com 100% de apontamentos "OK" consecutivos sem nenhum item preventivo registrado.
+* **💰 Compras & Suprimentos (Procurement):**
+  * **Cotação Expressa sem Competição:** Janela de cotação encerrada em minutos com contratação imediata sem tempo de resposta para a rede.
+  * **Renegociação Seletiva:** Abertura de contraproposta para apenas um fornecedor específico, mantendo concorrentes sem opção de ajuste.
+  * **Fracionamento de Pedidos:** Múltiplas RMs/RCs de pequenos valores no mesmo dia para burlar alçadas de aprovação da diretoria.
+  * **Desvio de Preço Histórico (Overpricing):** Compras de insumos com valores acima da média histórica do tenant ou benchmark da rede.
+* **📦 Estoque & Almoxarifado:**
+  * **Saída de Material sem OS:** Retiradas avulsas frequentes de itens de alto valor sem vínculo com Ordem de Serviço.
+  * **Divergência Fiscal (NF-e × OV):** Incompatibilidade de quantidade, valores ou NCM no XML da Nota Fiscal em relação ao pedido original.
+* **🦺 Pessoas, SST & Disciplinar:**
+  * **Operação com Restrição Trabalhista (Selo Vermelho):** Escalamento de funcionários com CNH, ASO ou toxicológico vencido, ou sem treinamento obrigatório.
+  * **Ficha de EPI sem Conformidade de Risco:** Ausência de entrega de EPIs para funções mapeadas no PGR.
+  * **Padrão Gráfico Suspeito:** Assinaturas digitais em sequência com padrão idêntico para colaboradores distintos.
+
+--------------------------------------------------------------------------------
+
+#### 📷 20. Câmera de Inspeção Inteligente (Marca d'Água & Anti-Anacronismo)
+
+Módulo de captura de evidências visuais integrado ao App de Inspeções/Checklists:
+
+* **🏷️ Marca d'Água Inviolável cravada nos Pixels:**
+  * Aplicação direta na imagem dos metadados de execução: Data, Hora exata, Coordenadas GPS, Nome do Inspetor, Placa do Veículo e ID da Inspeção.
+* **🚫 Bloqueio Estrito de Galeria:**
+  * Desativação do acesso ao armazenamento interno do aparelho — fotos obrigatoriamente capturadas em tempo real pela câmera do app (`capture="environment"`).
+* **⏱️ Análise de Delta de Tempo (Anti-Anacronismo):**
+  * Registro do intervalo entre capturas de fotos e comparação com o horário do evento/viagem.
+  * Prevenção de "vistorias retroativas" (ex: vistoria realizada às 10h referente a uma saída que ocorreu às 08h).
+* **🛡️ Prova Técnica Inviolável:**
+  * Evidência documental pronta para instrução de defesas jurídicas, trabalhistas e sinistros de frotas.
+
+--------------------------------------------------------------------------------
+
+#### 📄 21. Dossiê do Colaborador & Relatório do "Analista Sênior" (IA)
+
+* **📋 Dossiê Trabalhista em 1-Clique:**
+  * Relatório unificado contendo histórico de funções, documentos, entregas de EPI (NR-6), treinamentos, advertências e multas.
+  * Registro de auditoria com IP, data, hora e responsável pela emissão (conformidade LGPD).
+* **🧠 Relatório Mensal do Analista Sênior (IA):**
+  * Consolidação mensal automatizada sobre a saúde financeira, operacional e de compliance da empresa.
+  * Insights práticos com alertas de custos atípicos, gargalos de manutenção e plano de ação estratégico para o empresário.

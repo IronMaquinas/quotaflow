@@ -188,7 +188,7 @@ export default function TelaTreinamentos({ C, s, modal, campo, colabs = [], onAv
                   return (
                     <button key={i.codigo} onClick={() => (["falta", "vencido", "vence"].includes(i.situacao) && i.existe ? (setVista("turmas"), novaTurma(false, i.codigo)) : i.agendado ? abrirTurma(i.agendado.turma_id) : i.ultimo ? abrirTurma(i.ultimo.turma_id) : null)}
                       title={["falta", "vencido", "vence"].includes(i.situacao) ? "Agendar turma com quem precisa deste treinamento" : i.ultimo || i.agendado ? "Abrir a turma (presença, nota, tentativas)" : ""}
-                      style={{ ...s.tag(sc.c), cursor: "pointer", fontFamily: "inherit", border: "none" }}>{sc.i} {i.nome} · {det}</button>
+                      className="qf-clicavel" style={{ ...s.tag(sc.c), cursor: "pointer", fontFamily: "inherit" }}>{sc.i} {i.nome} · {det} ›</button>
                   );
                 })}
               </div>
