@@ -16,6 +16,7 @@ import apiService from "../../services/apiService";
 import AssinaturaTela from "../shared/AssinaturaTela";
 import { abrirListaPresenca, prepararJanela } from "../../utils/gerarListaPresenca";
 import { abrirCertificado, abrirAvaliacao, prepararJanela as janelaCert } from "../../utils/gerarCertificado"; // 12e.2c
+import { prepararArquivo } from "../../utils/comprimirImagem"; // 14c.1: foto comprimida antes de enviar
 
 const SIT = {
   ok:       { l: "Em dia",   i: "✓",  c: "#22c55e" },
@@ -372,7 +373,7 @@ export default function TelaTreinamentos({ C, s, modal, campo, colabs = [], onAv
                 })}
               </div>
             </div>
-            {manual && campo("EVIDÊNCIA (PDF OU FOTO, ATÉ 10 MB)", <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={(e) => setFormTurma({ ...f, arquivo: e.target.files?.[0] || null })} style={{ ...s.input, padding: 7 }} />)}
+            {manual && campo("EVIDÊNCIA (PDF OU FOTO, ATÉ 10 MB)", <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={async (e) => { const arq = await prepararArquivo(e.target.files?.[0]); setFormTurma((v0) => ({ ...v0, arquivo: arq })); }} style={{ ...s.input, padding: 7 }} />)}
             {campo("OBSERVAÇÕES", <textarea rows={2} value={f.obs} onChange={(e) => setFormTurma({ ...f, obs: e.target.value })} style={{ ...s.input, resize: "vertical" }} />)}
           </div>
           <div style={{ display: "flex", gap: 10, marginTop: 18 }}>

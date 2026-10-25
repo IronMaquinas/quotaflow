@@ -10,6 +10,7 @@ import { useState, useEffect, useMemo } from "react";
 import apiService from "../../services/apiService";
 import AssinaturaTela from "../shared/AssinaturaTela";
 import { abrirMedida, prepararJanela } from "../../utils/gerarMedidaDisciplinar";
+import { prepararArquivo } from "../../utils/comprimirImagem"; // 14c.1: foto comprimida antes de enviar
 
 const COR = { orientacao: "#3b82f6", advertencia: "#f59e0b", suspensao: "#ef4444", justa_causa: "#7f1d1d" };
 const dataBR = (s) => (s ? String(s).slice(0, 10).split("-").reverse().join("/") : "—");
@@ -139,7 +140,7 @@ export default function TelaDisciplinar({ C, s, modal, campo, colabs = [], onAvi
               <AssinaturaTela C={C} s={s} onChange={(png) => setColher((c) => ({ ...c, testemunhas: c.testemunhas.map((x, k) => (k === i ? { ...x, png } : x)) }))} />
             </div>
           ))}
-          {colher.ciencia === "papel" && campo("DOCUMENTO ASSINADO (FOTO OU PDF, ATÉ 10 MB)", <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={(e) => setColher({ ...colher, arquivo: e.target.files?.[0] || null })} style={{ ...s.input, padding: 7 }} />)}
+          {colher.ciencia === "papel" && campo("DOCUMENTO ASSINADO (FOTO OU PDF, ATÉ 10 MB)", <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={async (e) => { const arq = await prepararArquivo(e.target.files?.[0]); setColher((v0) => ({ ...v0, arquivo: arq })); }} style={{ ...s.input, padding: 7 }} />)}
         </div>
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
           <button onClick={() => setColher(null)} style={{ ...s.btn(false), cursor: "pointer", flex: 1, color: C.text }}>Voltar</button>
@@ -234,7 +235,7 @@ export default function TelaDisciplinar({ C, s, modal, campo, colabs = [], onAvi
               <AssinaturaTela C={C} s={s} onChange={(png) => setForm((f) => ({ ...f, testemunhas: f.testemunhas.map((x, k) => (k === i ? { ...x, png } : x)) }))} />
             </div>
           ))}
-          {campo("ANEXO (OPCIONAL — FOTO, RELATÓRIO, PDF ATÉ 10 MB)", <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={(e) => setForm({ ...form, arquivo: e.target.files?.[0] || null })} style={{ ...s.input, padding: 7 }} />)}
+          {campo("ANEXO (OPCIONAL — FOTO, RELATÓRIO, PDF ATÉ 10 MB)", <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={async (e) => { const arq = await prepararArquivo(e.target.files?.[0]); setForm((v0) => ({ ...v0, arquivo: arq })); }} style={{ ...s.input, padding: 7 }} />)}
         </div>
         <div style={{ display: "flex", gap: 10, marginTop: 18 }}>
           <button onClick={() => setForm(null)} style={{ ...s.btn(false), cursor: "pointer", flex: 1, color: C.text }}>Cancelar</button>

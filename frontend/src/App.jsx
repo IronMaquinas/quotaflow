@@ -32,6 +32,7 @@ import TelaConfiguracoes from './components/configuracoes/TelaConfiguracoes';
 import TelaNaoConformidades from "./components/naoConformidades/TelaNaoConformidades";
 import TelaInspecoes from "./components/inspecoes/TelaInspecoes"; // etapa 14a
 import TelaContratos from "./components/contratos/TelaContratos"; // etapa 14b.3
+import { carregarLogoEmpresa } from "./utils/logoEmpresa"; // etapa 14c
 import TelaLocatario from "./components/contratos/TelaLocatario"; // etapa 14b.3
 import TelaCalendarioManutencao from './components/manutencao/TelaCalendarioManutencao'; // etapa 12a
 import TelaPessoas from './components/pessoas/TelaPessoas'; // etapa 12c
@@ -167,6 +168,7 @@ export default function App() {
   const [tela,setTela]=useState("home");
   const [osParaAbrir, setOsParaAbrir] = useState(null);
   const [abaColaborador, setAbaColaborador] = useState("treinos"); // 14b.1: tela do colaborador
+  useEffect(() => { if (usuario?.id) carregarLogoEmpresa(); }, [usuario?.id]); // 14c: logo da empresa nos documentos
   const [novaOSData, setNovaOSData] = useState(null); // etapa 12a: "Nova OS programada" a partir do calendário
   const [abaPessoas, setAbaPessoas] = useState(null); // etapa 12d.3: abrir Pessoas numa aba (ex.: "epi") a partir do calendário
   const [ncParaAbrir, setNcParaAbrir] = useState(null);

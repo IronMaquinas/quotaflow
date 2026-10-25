@@ -4,6 +4,7 @@
 // Clique no desenho para criar um ponto; clique no ponto para editar. "📍 Mover" e clique no desenho reposiciona.
 import { useState } from "react";
 import { FundoVista, NOMES_ESQUEMA } from "./Esquemas";
+import { comprimirImagem } from "../../utils/comprimirImagem"; // 14c.1
 
 const TIPOS = { ok_nok: "OK / Não OK", numero: "Número (medida)", texto: "Texto" };
 const FOTO = { nunca: "Sem foto", se_nok: "Pedir foto se não OK", sempre: "Pedir foto sempre" };
@@ -42,8 +43,10 @@ export default function EditorModeloInspecao({ inicial, listas, subirImagem, url
   const enviarImagem = async (file) => {
     if (!file) return; setErro(null); setEnviandoImg(true);
     try {
-      if (file.size > 3 * 1024 * 1024) throw new Error("Imagem de até 3 MB");
-      const dataUrl = await lerBase64(file); const [cab, b64] = dataUrl.split(",");
+      if (file.size > 25 * 1024 * 1024) throw new Error("Imagem muito grande (acima de 25 MB)");
+      let dataUrl; // 14c.1: reduz no navegador (lado maior 1600 px) — foto de celular sobe sem travar no limite
+      try { dataUrl = (await comprimirImagem(file, { lado: 1600, qualidade: 0.8 })).dataUrl; } catch { dataUrl = await lerBase64(file); }
+      const [cab, b64] = dataUrl.split(",");
       const path = await subirImagem(b64, cab.slice(5, cab.indexOf(";")));
       setPrevias((p) => ({ ...p, [path]: dataUrl })); setVista((v) => ({ ...v, imagem: path }));
     } catch (e) { setErro(e.message); } finally { setEnviandoImg(false); }

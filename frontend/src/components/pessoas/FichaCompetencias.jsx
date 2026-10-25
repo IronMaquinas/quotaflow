@@ -5,6 +5,7 @@
 // evidência automática na avaliação. Cada avaliação fica no histórico.
 import { useState } from "react";
 import apiService from "../../services/apiService";
+import { prepararArquivo } from "../../utils/comprimirImagem"; // 14c.1: foto comprimida antes de enviar
 
 const SIT = { ok: { i: "🟢", l: "Atende", c: "#22c55e" }, pendente: { i: "⚪", l: "Não avaliado", c: "#94a3b8" }, nao_atende: { i: "🟡", l: "Abaixo do esperado", c: "#f59e0b" }, reavaliar: { i: "🟡", l: "Reavaliar", c: "#f59e0b" } };
 const NIVEL = { 1: { l: "Não atende", d: "não faz, ou faz com risco", c: "#ef4444" }, 2: { l: "Em desenvolvimento", d: "faz com supervisão", c: "#f59e0b" }, 3: { l: "Atende", d: "faz sozinho, no padrão", c: "#22c55e" }, 4: { l: "Referência", d: "faz muito bem e pode ensinar", c: "#0ea5e9" } };
@@ -85,7 +86,7 @@ export default function FichaCompetencias({ C, s, colaboradorId, dados, podeEdit
             <input type="date" value={form.avaliado_em} max={hoje()} onChange={(e) => setForm({ ...form, avaliado_em: e.target.value })} style={{ ...s.input, width: 160, padding: "5px 8px", fontSize: 12 }} />
           </div>
           <input value={form.obs} onChange={(e) => setForm({ ...form, obs: e.target.value })} placeholder="Observação (como foi avaliado, o que falta…)" style={{ ...s.input, padding: "6px 10px", fontSize: 12, marginBottom: 8 }} />
-          <label style={{ display: "block", marginBottom: 8, color: C.textSub }}>Evidência (opcional — PDF ou foto, até 10 MB): <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={(e) => setForm({ ...form, arquivo: e.target.files?.[0] || null })} /></label>
+          <label style={{ display: "block", marginBottom: 8, color: C.textSub }}>Evidência (opcional — PDF ou foto, até 10 MB): <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={async (e) => { const arq = await prepararArquivo(e.target.files?.[0]); setForm((v0) => ({ ...v0, arquivo: arq })); }} /></label>
           <div style={{ display: "flex", gap: 8 }}>
             <button onClick={() => setForm(null)} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 12px", fontSize: 12, color: C.text }}>Cancelar</button>
             <button disabled={salvando || !form.avaliado_em} onClick={salvar} style={{ ...s.btn(!salvando), padding: "5px 12px", fontSize: 12 }}>{salvando ? "Salvando…" : "Registrar avaliação"}</button>

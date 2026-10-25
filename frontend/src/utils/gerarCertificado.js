@@ -5,6 +5,7 @@
 //     conclusão, nota, validade, instrutor e código de verificação. Rodapé "Emitido pelo QuotaFlow".
 //   • COMPROVANTE DA AVALIAÇÃO (A4 retrato) — cada tentativa: data/hora, meio, IP, nota, cada pergunta com a resposta
 //     marcada × a correta e o hash. Só para o gestor (mostra o gabarito). Serve de prova em auditoria e no dossiê (12f).
+import { logoHtml } from "./logoEmpresa"; // 14c
 
 const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const dataIsoBR = (s) => (s ? String(s).slice(0, 10).split("-").reverse().join("/") : "—");
@@ -37,7 +38,7 @@ export function gerarHtmlCertificado(d) {
   @page { size: A4 landscape; margin: 0; }
 </style></head><body>
   <div class="folha">
-    <div class="emp"><b>${esc(empresa.razao_social || empresa.nome)}</b>${empresa.cnpj ? `CNPJ ${esc(fmtCNPJ(empresa.cnpj))}` : ""}</div>
+    <div class="emp">${logoHtml({ altura: 56, largura: 220, margem: "0 auto 6px" })}<b>${esc(empresa.razao_social || empresa.nome)}</b>${empresa.cnpj ? `CNPJ ${esc(fmtCNPJ(empresa.cnpj))}` : ""}</div>
     <h1>CERTIFICADO</h1>
     <div class="sub">de conclusão de treinamento</div>
     <div class="texto">
@@ -90,7 +91,7 @@ export function gerarHtmlAvaliacao(d) {
   @page { size: A4; margin: 10mm; }
 </style></head><body><div class="pagina">
   <div class="cab">
-    <div><div class="emp">${esc(empresa.razao_social || empresa.nome)}</div><div class="sub">${empresa.cnpj ? `CNPJ ${esc(fmtCNPJ(empresa.cnpj))}` : ""}</div></div>
+    <div>${logoHtml()}<div class="emp">${esc(empresa.razao_social || empresa.nome)}</div><div class="sub">${empresa.cnpj ? `CNPJ ${esc(fmtCNPJ(empresa.cnpj))}` : ""}</div></div>
     <div style="text-align:right"><div style="font-weight:700">COMPROVANTE DE AVALIAÇÃO</div><div class="sub">gerado em ${dataHora(d.gerado_em)}</div></div>
   </div>
   <div class="dados">

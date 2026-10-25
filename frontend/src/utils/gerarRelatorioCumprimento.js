@@ -1,5 +1,6 @@
 // frontend/src/utils/gerarRelatorioCumprimento.js — etapa 14b.2
 // Relatório de cumprimento das rotinas de inspeção no período — HTML "printável" (aba nova + print → PDF).
+import { logoHtml } from "./logoEmpresa"; // 14c
 const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const dataBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
 const cor = (p) => (p == null ? "#6b7280" : p >= 90 ? "#16a34a" : p >= 70 ? "#d97706" : "#dc2626");
@@ -17,7 +18,7 @@ export function gerarHtmlCumprimento({ de, ate, linhas = [], total = {}, inspeco
   @media print { body { background: #fff; } .pagina { margin: 0; padding: 0; } .nao-imprimir { display: none; } } @page { size: A4; margin: 12mm; }
   </style></head><body><div class="pagina">
     <div style="display:flex;justify-content:space-between;border-bottom:2px solid #111;padding-bottom:6px">
-      <b style="font-size:14px">${esc(empresa.razao_social || empresa.nome || "")}</b>
+      <div>${logoHtml()}<b style="font-size:14px">${esc(empresa.razao_social || empresa.nome || "")}</b></div>
       <div style="text-align:right;font-size:10px;color:#555">emitido em ${new Date().toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}</div>
     </div>
     <h1>Cumprimento das inspeções de rotina — ${dataBR(de)} a ${dataBR(ate)}</h1>

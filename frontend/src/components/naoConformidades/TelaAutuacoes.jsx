@@ -4,6 +4,7 @@
 // e tarefa no ✅ Plano. Liga à licença/documento da empresa e abre uma NC de causa raiz (5 porquês e plano de ação lá).
 import { useState, useEffect, useMemo } from "react";
 import apiService from "../../services/apiService";
+import { prepararArquivo } from "../../utils/comprimirImagem"; // 14c.1: foto comprimida antes de enviar
 
 const ST_COR = { recebida: "#f59e0b", defesa_apresentada: "#3b82f6", em_recurso: "#a855f7", paga: "#22c55e", cancelada: "#64748b" };
 const dataBR = (s) => (s ? String(s).slice(0, 10).split("-").reverse().join("/") : "—");
@@ -182,7 +183,7 @@ export default function TelaAutuacoes({ C, s, onAbrirNC }) {
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           {(acao.status === "defesa_apresentada" || acao.status === "em_recurso") && (<>
             {campo("PRAZO DE RECURSO / RESPOSTA (SE HOUVER)", <input type="date" value={acao.prazo_recurso} onChange={(e) => setAcao({ ...acao, prazo_recurso: e.target.value })} style={{ ...s.input, maxWidth: 200 }} />)}
-            {campo(acao.status === "em_recurso" ? "RECURSO (PDF OU FOTO, OPCIONAL)" : "DEFESA PROTOCOLADA (PDF OU FOTO, OPCIONAL)", <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={(e) => setAcao({ ...acao, arquivo: e.target.files?.[0] || null })} style={{ ...s.input, padding: 7 }} />)}
+            {campo(acao.status === "em_recurso" ? "RECURSO (PDF OU FOTO, OPCIONAL)" : "DEFESA PROTOCOLADA (PDF OU FOTO, OPCIONAL)", <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={async (e) => { const arq = await prepararArquivo(e.target.files?.[0]); setAcao((v0) => ({ ...v0, arquivo: arq })); }} style={{ ...s.input, padding: 7 }} />)}
           </>)}
           {acao.status === "paga" && <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             {campo("VALOR PAGO (R$)", <input type="number" step="0.01" min={0} value={acao.valor_pago} onChange={(e) => setAcao({ ...acao, valor_pago: e.target.value })} style={s.input} />, "1 1 150px")}
@@ -226,7 +227,7 @@ export default function TelaAutuacoes({ C, s, onAbrirNC }) {
           </div>
           {campo("QUEM MONITORA (CRIA TAREFA NO ✅ PLANO)", <select value={form.responsavel_id} onChange={(e) => setForm({ ...form, responsavel_id: e.target.value })} style={s.input}>
             <option value="">Ninguém</option>{d.usuarios.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}</select>)}
-          {campo("AUTO DE INFRAÇÃO (PDF OU FOTO, ATÉ 10 MB)", <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={(e) => setForm({ ...form, arquivo: e.target.files?.[0] || null })} style={{ ...s.input, padding: 7 }} />)}
+          {campo("AUTO DE INFRAÇÃO (PDF OU FOTO, ATÉ 10 MB)", <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={async (e) => { const arq = await prepararArquivo(e.target.files?.[0]); setForm((v0) => ({ ...v0, arquivo: arq })); }} style={{ ...s.input, padding: 7 }} />)}
           {campo("OBSERVAÇÕES", <textarea rows={2} value={form.obs} onChange={(e) => setForm({ ...form, obs: e.target.value })} style={{ ...s.input, resize: "vertical" }} />)}
         </div>
         <div style={{ display: "flex", gap: 10, marginTop: 18 }}>

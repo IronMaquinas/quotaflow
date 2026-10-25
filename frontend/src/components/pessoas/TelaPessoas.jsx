@@ -14,6 +14,7 @@ import PainelDossie from "./PainelDossie"; // etapa 12f
 import TelaMultas from "./TelaMultas"; // etapa 12g
 import TelaDisciplinar from "./TelaDisciplinar"; // etapa 12h
 import EditorCompetencias, { limparCompetencias } from "../shared/EditorCompetencias"; // etapa 12e.3
+import { prepararArquivo } from "../../utils/comprimirImagem"; // 14c.1: foto comprimida antes de enviar
 
 const ALVO = { colaborador: "Pessoa", equipamento: "Equipamento", empresa: "Empresa" };
 const SITUACAO_DOC = {
@@ -901,7 +902,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
           {campo("RESPONSÁVEL POR RENOVAR (RECEBE O AVISO)", <select value={formDoc.responsavel_id} onChange={(e) => setFormDoc({ ...formDoc, responsavel_id: e.target.value })} style={s.input}>
             <option value="">Ninguém específico (avisa admin e gestor)</option>{(config.usuarios || []).map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}</select>)}
           {campo(formDoc.arquivo_atual ? `ARQUIVO (ATUAL: ${formDoc.arquivo_atual} — ESCOLHA OUTRO PARA TROCAR)` : "ARQUIVO (PDF OU FOTO, ATÉ 10 MB)",
-            <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={(e) => setFormDoc({ ...formDoc, arquivo: e.target.files?.[0] || null })} style={{ ...s.input, padding: 7 }} />)}
+            <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={async (e) => { const arq = await prepararArquivo(e.target.files?.[0]); setFormDoc((v0) => ({ ...v0, arquivo: arq })); }} style={{ ...s.input, padding: 7 }} />)}
           {campo("OBSERVAÇÕES", <textarea rows={2} value={formDoc.obs} onChange={(e) => setFormDoc({ ...formDoc, obs: e.target.value })} style={{ ...s.input, resize: "vertical" }} />)}
         </div>
         {(() => {

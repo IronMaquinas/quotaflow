@@ -4,6 +4,7 @@
 // abre numa aba nova e dispara window.print() → "Salvar como PDF". Sem dependência nova.
 // Empresa, treinamento (norma, carga, conteúdo programático), instrutor, e uma linha por participante
 // com CPF, função, data/hora e a assinatura colhida na tela + os códigos de integridade.
+import { logoHtml } from "./logoEmpresa"; // 14c
 
 const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const dataIsoBR = (s) => (s ? String(s).slice(0, 10).split("-").reverse().join("/") : "—");
@@ -41,7 +42,7 @@ export function gerarHtmlListaPresenca({ empresa = {}, turma = {}, conteudo, nor
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Lista de presença — ${esc(turma.treinamento_nome)}</title><style>${CSS}</style></head><body>
   <div class="pagina">
     <div class="cab">
-      <div><div class="emp">${esc(empresa.razao_social || empresa.nome)}</div><div class="sub">${empresa.cnpj ? `CNPJ ${esc(fmtCNPJ(empresa.cnpj))}` : ""}</div></div>
+      <div>${logoHtml()}<div class="emp">${esc(empresa.razao_social || empresa.nome)}</div><div class="sub">${empresa.cnpj ? `CNPJ ${esc(fmtCNPJ(empresa.cnpj))}` : ""}</div></div>
       <div style="text-align:right"><div style="font-weight:700">LISTA DE PRESENÇA</div><div class="sub">gerada em ${dataHora(gerado_em || new Date())}</div></div>
     </div>
     <h1>${esc(turma.treinamento_nome)}${norma ? ` — ${esc(norma)}` : ""}</h1>

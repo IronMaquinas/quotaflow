@@ -314,4 +314,22 @@ router.put('/empresa', tenantMiddleware, async (req, res) => {
   }
 });
 
+// ─────────────────────────────────────────────────────────────────────────
+// Etapa 14c: logomarca da empresa (documentos printáveis)
+//   GET    /api/configuracoes/logo   → { logo: dataUrl|null, empresa }
+//   POST   /api/configuracoes/logo   { base64, mime } (admin, gestor) — PNG/JPG/WEBP até 1 MB
+//   DELETE /api/configuracoes/logo   (admin, gestor)
+// Quem só lê (colaborador, locatário) pega a logo em GET /api/usuarios/me/logo.
+// ─────────────────────────────────────────────────────────────────────────
+const LOGO = require('../services/logoEmpresa');
+const { supabase } = require('../db');
+const podeLogo = (req) => (Array.isArray(req.perfis) && req.perfis.length ? req.perfis : [req.userPerfil]).some((p) => ['admin', 'gestor'].includes(p));
+const respLogo = (fn) => async (req, res) => {
+  try { const r = await fn(req); if (r && r.erro) return res.status(r.status || 400).json({ erro: r.erro }); res.json(r); }
+  catch (err) { console.error('❌ [logo]', err.message); res.status(500).json({ erro: 'Erro interno — veja o log do servidor' }); }
+};
+router.get('/logo', tenantMiddleware, respLogo((req) => LOGO.obter(supabase, req.tenantId)));
+router.post('/logo', tenantMiddleware, respLogo((req) => (podeLogo(req) ? LOGO.salvar(supabase, req.tenantId, req.body || {}) : { status: 403, erro: 'Só admin ou gestor' })));
+router.delete('/logo', tenantMiddleware, respLogo((req) => (podeLogo(req) ? LOGO.remover(supabase, req.tenantId) : { status: 403, erro: 'Só admin ou gestor' })));
+
 module.exports = router;

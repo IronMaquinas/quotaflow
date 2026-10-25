@@ -373,6 +373,7 @@ Ver seção 5 para o fluxo completo.
 - **042 (14b.2)** ⭐ — equipamentos `situacao (base | locado), locacao_id` · **equipamento_locacoes** (`cliente · contrato · local · contato_nome/_email/_telefone · inicio · fim_previsto · fim_real · status ativa|encerrada · entrega_inspecao_id · devolucao_inspecao_id · obs · criado_por_nome · encerrado_por_nome`) · **equipamento_rotinas** (`equipamento_id · modelo_id · frequencia diaria|semanal|quinzenal|mensal · responsavel empresa|locatario · locacao_id · inicio · ativo`) · `inspecao_modelos.tipo` + entrega/devolucao · `inspecoes.locacao_id`. Semente: "Locação — inspeção de entrega" e "… de devolução" (mesmos pontos).
 - **043 (14b.3)** ⭐ — **locacao_contratos** (`numero CL-AAAA-NNNN · cliente · cliente_doc · local · contato_* · inicio · fim_previsto · fim_real · status ativo|encerrado · obs · criado_por_nome · encerrado_por_nome`) · **locacao_contrato_usuarios** (`contrato_id · usuario_id` — quais locatários veem o contrato) · `equipamento_locacoes.contrato_id` · perfil **locatario** no catálogo e nos CHECKs de `usuarios.perfil` / `usuario_perfis.perfil_codigo`.
 - **044 (14b.3.1)** ⭐ — **clientes** (`nome · razao_social · documento (só dígitos: CNPJ 14 / CPF 11, único por empresa) · endereco · numero · complemento · bairro · cidade · uf · cep · contato_nome/_email/_telefone · obs · ativo`) · `locacao_contratos.cliente_id`. Os contratos já existentes ganham o cliente na migration (pelo documento; sem documento, pelo nome).
+- **045 (14c)** ⭐ — `tenants.logo_path, logo_atualizada_em` (logomarca da empresa no bucket privado "documentos": `tenant-{id}/logo/…`).
 - **treinamento_participacoes** ⭐ (migration 030) — `turma_id (CASCADE) | colaborador_id (RESTRICT) | presente | assinatura_png · assinatura_hash · assinado_em (lista de presença na tela) | aprovado · nota (prova — 12e.2) | valido_ate (data da turma, ou data_fim, + validade) | obs`. Único (turma, colaborador).
 - **colaborador_funcoes** ⭐ (12d.3, migration 029) — histórico de funções: `colaborador_id (CASCADE) | funcao_id (SET NULL) | funcao_nome (cópia) | inicio | fim (NULL = atual; só 1 atual por colaborador — índice único parcial) | motivo (admissao/promocao/transferencia/readaptacao/correcao/outro) | obs | criado_por`. A 029 criou o 1º período de quem já tinha função (início = admissão ou o dia da migration).
 - **avisos_enviados** ⭐ (12d.3, migration 029) — controle genérico de aviso já mandado: PK `(tenant_id, chave, marco)`. Chaves: `epi_troca:<entrega_item>` (marcos 15/vencido), `epi_ca:<epi_item>:<validade>` (30/vencido — CA renovado reinicia), `doc_falta:<colaborador>:<codigo>:<funcao>` (falta, uma vez).
@@ -768,6 +769,8 @@ npm run dev
 - **📑 Contratos e perfil Locatário (etapa 14b.3, 23/10):** menu **📑 Contratos** (ver: admin, gestor, operação, comprador, qualidade; alterar: admin, gestor). Contrato **CL-2026-0001** (cliente, CNPJ/CPF, obra, contato, início, fim previsto, obs) com: **🚜 equipamentos** (＋ Equipamento = loca um da base dentro do contrato, com a rotina do locatário; 🏠 Devolver; mostra rotinas em dia/atrasada e ✓ entrega / ✓ devolução) e **👤 acessos do locatário** (＋ Acesso: nome, e-mail, senha temporária → usuário com perfil **Locatário**; se o e-mail já é de um locatário da empresa, só liga mais um contrato a ele; e-mail de usuário da empresa ou de outra empresa é recusado; ⏸ Pausar / ▶ Reativar; 🗑 tirar o acesso do contrato). **Encerrar contrato** devolve os equipamentos que ainda estão locados e oferece **pausar** os acessos que ficaram sem contrato ativo. O 📍 Locar da tela de Inspeções agora escolhe o contrato (ou "locação avulsa", como na 14b.2). **Locatário** (perfil só "locatario"): entra no QuotaFlow e vê só **📑 Meus contratos** — contratos ATIVOS ligados a ele, equipamentos com a inspeção de rotina (em dia / atrasada) e **🔍 Inspecionar** (mesmo app, offline), lista das inspeções feitas nesses equipamentos durante a locação (detalhe, fotos e relatório), "👤 Meu perfil" para trocar a senha. Não conta na cobrança (Console). **Segurança:** o `tenantMiddleware` só deixa esse perfil chamar `/api/locatario`, `/api/usuarios/me` e `/api/auth`; em `/api/locatario` todo escopo vem de `escopoLocatario(req.userId)` — inspeciona só equipamento de locação ativa de contrato dele e só com modelo das rotinas desse equipamento; detalhe só de inspeção feita numa locação dele (testes cobrem locatário A tentando o equipamento/inspeção de B, equipamento na base, outra empresa e contrato encerrado). A inspeção do locatário grava `executor = usuário` com `terceiro = { locatario: true, empresa, contrato }` (aparece "locatário — cliente · CL-…" no detalhe). Troca de senha no primeiro acesso: **não obrigatória** (mesma decisão do colaborador). Botões do card de equipamento numa linha só (⏰ Rotinas · 📍 Locar / 🏠 Devolver · 🕘 histórico). Rotas: `/api/contratos` (GET, POST, PUT /:id, POST /:id/equipamentos, POST /:id/equipamentos/:equip/devolver, POST /:id/encerrar, POST /:id/acessos, DELETE /:id/acessos/:usuario, POST /usuarios/:usuario/pausar) · `/api/locatario` (GET /painel, GET /preparar/:equip, POST /enviar, GET /inspecoes/:id). Migration 043.
 - **👥 Clientes (etapa 14b.3.1, 23/10) — decidido com o Marcony:** cadastro de cliente **um por CNPJ/CPF** na empresa (tabela `clientes`), sem tela nova no menu: aba **👥 Clientes** dentro de 📑 Contratos (lista com nº de contratos ativos/total, ＋ Cliente, editar). **Novo contrato começa pelo CNPJ/CPF** (máscara) → **🔍 Buscar**: 1º procura no cadastro da empresa — se já é cliente, o contrato usa o mesmo cadastro (✓ "Já é seu cliente") e só pede obra, contato deste contrato e datas; 2º, se não é, busca na Receita (BrasilAPI → CNPJ.ws, mesmo serviço do cadastro de fornecedor) e preenche nome, razão social, endereço, cidade/UF, CEP, e-mail e telefone para conferir (CPF ou Receita fora do ar: preenche na mão; "cliente sem CNPJ/CPF" também). Telefone com o **seletor de país 🇧🇷 + máscara** (CampoTelefone) no contrato, no cliente e no acesso do locatário. O mesmo CNPJ nunca gera um segundo cadastro (o servidor reaproveita) e o acesso do locatário é por **e-mail** — o mesmo e-mail em outro contrato só liga mais um contrato ao mesmo usuário. Editar contrato não troca o cliente (dados do cliente na aba 👥 Clientes; o contrato guarda o nome de quando foi criado). A proposta comercial (15a) vai usar este cadastro. Card de equipamento voltou ao layout da 14b.2 (texto "Histórico (n)"). Rotas: `GET /api/contratos/clientes`, `GET /clientes/consulta/:doc`, `POST /clientes`, `PUT /clientes/:id`; `POST /api/contratos` aceita `cliente_id` ou os dados do cliente. Migration 044.
 - **14b.3.2 (23/10):** o "＋ Cliente" (aba 👥 Clientes) mostra a mesma nota do novo contrato depois do 🔍 Buscar ("Dados da Receita · situação ATIVA — confira", em vermelho com aviso se não estiver ATIVA). Só frontend.
+- **🖼 Logomarca da empresa — 14c, etapa 1 (23/10):** ⚙️ Configurações → 🏢 Empresa → **Logomarca** (admin, gestor): enviar / trocar / remover (modal do app), PNG, JPG ou WEBP até 1 MB, com prévia do cabeçalho. O App carrega a logo uma vez depois do login (`utils/logoEmpresa.js` → `GET /api/usuarios/me/logo`, que funciona também para colaborador e locatário) e os geradores leem na hora com `logoHtml()` — a logo vai em **data URL** (não depende de link que expira na janela de impressão). Sem logo, os documentos seguem como antes. **Já com logo:** relatório de inspeção, relatório de cumprimento, certificado, comprovante da avaliação, lista de presença. **Etapa 2:** dossiê, ficha de EPI, termo de desconto, medida disciplinar, PDF da NC. **Etapa 3:** contrato e proposta. Páginas públicas por link (prova e inspeção de terceiros) ficam sem logo por enquanto (não têm login). Rotas: `GET/POST/DELETE /api/configuracoes/logo`, `GET /api/usuarios/me/logo`. Migration 045.
+- **🗜 Compressão de imagem no navegador — 14c.1 (24/10, pedido do Marcony):** ninguém precisa comprimir imagem antes de enviar. `utils/comprimirImagem.js` reduz no próprio navegador: **logo** → lado maior 600 px (PNG com transparência continua PNG; aceita imagem de até 25 MB); **imagem da vista do modelo de inspeção** → 1600 px, JPEG 0,8; **anexos "PDF ou foto"** (documento do colaborador, evidência de competência e de treinamento, multa, medida disciplinar — termo assinado e anexo —, auto de infração e defesa/recurso) → foto vira JPEG 1600 px, qualidade 0,75 (foto de celular de 4–12 MB vira ~150–550 KB); PDF passa direto. As **fotos da inspeção** já eram reduzidas no celular (1280 px, 0,72 — 14a) e as de NC/Spot também (1200 px, 0,75). Se o navegador não abrir o formato (ex.: HEIC em alguns aparelhos), envia o original.
 - **🪪 CPF obrigatório (etapa 12e.0, 20/10, Marcony):** colaborador novo só salva com CPF válido (frontend bloqueia o Salvar; backend devolve 400). Quem já existia sem CPF aparece na lista com **"⚠ sem CPF"** e precisa preencher na próxima edição. Motivo: o CPF identifica a pessoa nos treinamentos (no link externo da prova, o CPF preenche o nome — evita nome digitado errado ou pela metade) e no dossiê. Continua único por empresa (`colaboradores_cpf_unico`) e mascarado para quem não edita (LGPD).
 - **👔 Histórico de funções (etapa 12d.3 — pergunta do Marcony, 20/10):** trocar a função no cadastro abre o quadro **"Mudança de função"**: *a partir de* (padrão hoje) e *motivo* (promoção, transferência, readaptação, correção de cadastro, outro). O período atual fecha no dia anterior e abre o novo; data antes do início da função atual é recusada (nada é gravado). **Correção de cadastro** (e ligar ao modelo de mesmo nome, a sugestão da 12d.0) corrige o período atual sem abrir outro. Tirar a função só fecha o período. Colaborador novo ganha o 1º período na admissão. A Ficha mostra o histórico; a ficha NR-6 ganhou a coluna **"Função na época"** em cada entrega (vem de `epi_entregas.funcao_nome`) e o histórico de funções no cabeçalho. **EPIs acompanham a função atual**: o painel e a entrega usam o kit da função nova; o que foi recebido antes e não faz parte do kit novo aparece como **"↩ … · fora do kit atual"** (clique abre o Histórico para devolver — não é obrigatório, decisão b); o que é comum aos dois kits continua valendo. Rota: `GET /api/pessoas/colaboradores/:id/funcoes`. Base para o dossiê (12f): "Motorista (2022–2024) → Motorista MOPP (2024–2026) → Encarregado".
 - **🦺 Avisos de EPI no calendário e no e-mail (etapa 12d.3):** **calendário** ganhou a camada **🦺 EPI** (laranja #f97316): troca de EPI em uso (dia da próxima troca) e validade de CA dos EPIs do estoque, com cartão "Ver em Pessoas → 🦺 EPI" (abre direto a aba — `App.jsx` guarda `abaPessoas`), legenda e rodapé "🦺 N troca(s)/CA de EPI · X vencido(s)". Rota `/api/manutencao/calendario` devolve `epi` (fora do filtro de equipamento). **E-mail diário** (o mesmo dos documentos, 7h): para **admin e gestor**, seções 🦺 Troca de EPI (15 dias e vencida), 🦺 CA de EPI (30 dias e vencido) e 📋 Documento exigido não cadastrado (uma vez por colaborador + tipo + função); um e-mail por pessoa por dia; cada marco uma vez (`avisos_enviados`); só o mais urgente se o servidor ficou dias fora. A resposta do disparo traz `pessoas` na contagem. **Atalho "＋ Cadastrar"** na ficha de entrega quando o tipo do kit não tem EPI no estoque: abre o Novo EPI com o tipo; ao salvar, a linha já pega o item novo.
@@ -1190,7 +1193,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 | **14b.1** ✅ / **14b.2** | inspeção de terceiros (link), "Minhas inspeções" do colaborador, "resolvi na rua", calendário e % de cumprimento, relatório por período, **numeração INSP-AAAA-NNNN** e **tipo de inspeção** (pré-uso / carregamento / em trânsito / descarregamento) + modelos de carregamento na biblioteca |
 | **14b.2** ✅ | situação do equipamento (🏠 na base / 📍 locado), frequência por equipamento, calendário de inspeções (camada 🔍), em dia / atrasada / % de cumprimento, relatório por período, tipos entrega/devolução |
 | **14b.3** ✅ | **Perfil Locatário** + seção **📑 Contratos** (gestor vê todos; locatário só os dele), locação ligada ao usuário, inspeções do locatário, pausar usuário ao encerrar |
-| **14c** | logomarca da empresa em ⚙️ Configurações + cabeçalho único dos documentos (por etapas) |
+| **14c** | logomarca da empresa — etapa 1 ✅ (inspeção, cumprimento, certificado, avaliação, presença) · etapa 2 (dossiê, EPI, termos, disciplinar, NC) |
 | **14d** | modelos de contrato (texto com campos automáticos + condições comerciais, biblioteca no Console, aceite do locatário) |
 | **14e** | 🛡 monitor de CNPJs (dia 01 e 15, tela, e-mail com relacionamentos em andamento) |
 | **15a** | Clientes (cadastro, contatos, CNPJ pela Receita, já existe o serviço) + **Proposta comercial** com itens de transporte (multi-trecho) e locação, versões, PDF da proposta |
@@ -1212,91 +1215,4 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 22/10/2026 (etapa 14b.3.2 + plano logo/contratos/monitor)
-
---------------------------------------------------------------------------------
-
-#### 🌿 17. Módulo ESG (Maturidade & Relatórios de Sustentabilidade)
-
-O QuotaFlow converte dados operacionais brutos em indicadores de conformidade ESG (Environmental, Social, Governance) para atender a grandes contratantes e exigências internacionais (CSRD / EU Taxonomy):
-
-* **🌱 Environmental (Meio Ambiente):**
-  * Redução de emissões e prevenção de contaminação através do cumprimento rigoroso dos **Planos de Manutenção Preventiva**.
-  * Rastreabilidade de licenças ambientais (IBAMA, ANTT, licenças estaduais/municipais) e controle de transporte de carga perigosa (MOPP).
-  * Gestão consciente de resíduos e insumos com controle de vida útil de pneus e componentes.
-* **👥 Social (Saúde, Segurança & Pessoas):**
-  * Gestão de **EPIs (NR-6)** com controle de Certificado de Aprovação (CA) e assinatura digital na tela.
-  * Monitoramento diário de exames ocupacionais (ASO, toxicológico) e validade de CNH.
-  * Biblioteca de treinamentos regulatórios com listas de presença assinadas e emissão automática de certificados.
-* **🛡️ Governance (Governança & Ética):**
-  * Auditoria contínua de compliance em compras e fornecedores.
-  * Trilha inviolável de dados com **hashes de segurança (SHA-256)** em inspeções, entregas e termos disciplinares.
-  * Validação periódica de cadastros de fornecedores e clientes na Receita Federal (CNPJ).
-* **📊 Dashboard de Maturidade ESG & Relatório 1-Clique:**
-  * Indicador sintético do nível de prontidão ESG da empresa.
-  * Emissão automática de relatório formal em PDF para apresentação a bancos, seguradoras e auditores.
-
---------------------------------------------------------------------------------
-
-#### 📜 18. Módulo ISO 9001 (Gestão da Qualidade & Análise Crítica)
-
-Estrutura nativa desenvolvida para simplificar e automatizar os requisitos da norma ISO 9001 sem burocracia ou pastas de papel:
-
-* **Mapeamento Direto de Requisitos:**
-  * **Cláusula 7 (Apoio & Competência):** Mapeado via Matriz de Competências, Treinamentos e Ficha de EPI.
-  * **Cláusula 8 (Operação & Compras):** Mapeado pelo fluxo completo de compras (*OS → RM → RC → OV*) e inspeções operacionais.
-  * **Cláusula 9 (Avaliação de Desempenho):** Mapeado por benchmarking de mercado, relatórios de manutenção e histórico de compras.
-  * **Cláusula 10 (Melhoria & Não Conformidade):** Mapeado pelo módulo de **NCs com Análise de Causa Raiz (5 Porquês)** e Planos de Ação (3W).
-* **📄 Análise Crítica pela Direção (Cláusula 9.3) em 1-Clique:**
-  * Compilação automática de indicadores de qualidade, satisfação, desempenho de fornecedores e riscos operacionais.
-  * Geração instantânea de apresentação em PDF/PPT e ata da reunião pronta para auditoria externa.
-
---------------------------------------------------------------------------------
-
-#### 🤖 19. Agente de IA de Compliance & Anti-Fraude
-
-Auditoria contínua rodando em segundo plano para identificar anomalias operacionais, fraudes em compras e descumprimento de procedimentos:
-
-* **🚚 Operação & Campo:**
-  * **Checklist Carimbado (Vistoria Ultrarrápida):** Alerta para inspeções finalizadas em tempo incompatível com a vistoria física (ex: < 60s).
-  * **Divergência de GPS:** Vistorias realizadas fora do perímetro da base ou do local esperado do veículo.
-  * **Inconsistência de Reincidência:** Veículos antigos com 100% de apontamentos "OK" consecutivos sem nenhum item preventivo registrado.
-* **💰 Compras & Suprimentos (Procurement):**
-  * **Cotação Expressa sem Competição:** Janela de cotação encerrada em minutos com contratação imediata sem tempo de resposta para a rede.
-  * **Renegociação Seletiva:** Abertura de contraproposta para apenas um fornecedor específico, mantendo concorrentes sem opção de ajuste.
-  * **Fracionamento de Pedidos:** Múltiplas RMs/RCs de pequenos valores no mesmo dia para burlar alçadas de aprovação da diretoria.
-  * **Desvio de Preço Histórico (Overpricing):** Compras de insumos com valores acima da média histórica do tenant ou benchmark da rede.
-* **📦 Estoque & Almoxarifado:**
-  * **Saída de Material sem OS:** Retiradas avulsas frequentes de itens de alto valor sem vínculo com Ordem de Serviço.
-  * **Divergência Fiscal (NF-e × OV):** Incompatibilidade de quantidade, valores ou NCM no XML da Nota Fiscal em relação ao pedido original.
-* **🦺 Pessoas, SST & Disciplinar:**
-  * **Operação com Restrição Trabalhista (Selo Vermelho):** Escalamento de funcionários com CNH, ASO ou toxicológico vencido, ou sem treinamento obrigatório.
-  * **Ficha de EPI sem Conformidade de Risco:** Ausência de entrega de EPIs para funções mapeadas no PGR.
-  * **Padrão Gráfico Suspeito:** Assinaturas digitais em sequência com padrão idêntico para colaboradores distintos.
-
---------------------------------------------------------------------------------
-
-#### 📷 20. Câmera de Inspeção Inteligente (Marca d'Água & Anti-Anacronismo)
-
-Módulo de captura de evidências visuais integrado ao App de Inspeções/Checklists:
-
-* **🏷️ Marca d'Água Inviolável cravada nos Pixels:**
-  * Aplicação direta na imagem dos metadados de execução: Data, Hora exata, Coordenadas GPS, Nome do Inspetor, Placa do Veículo e ID da Inspeção.
-* **🚫 Bloqueio Estrito de Galeria:**
-  * Desativação do acesso ao armazenamento interno do aparelho — fotos obrigatoriamente capturadas em tempo real pela câmera do app (`capture="environment"`).
-* **⏱️ Análise de Delta de Tempo (Anti-Anacronismo):**
-  * Registro do intervalo entre capturas de fotos e comparação com o horário do evento/viagem.
-  * Prevenção de "vistorias retroativas" (ex: vistoria realizada às 10h referente a uma saída que ocorreu às 08h).
-* **🛡️ Prova Técnica Inviolável:**
-  * Evidência documental pronta para instrução de defesas jurídicas, trabalhistas e sinistros de frotas.
-
---------------------------------------------------------------------------------
-
-#### 📄 21. Dossiê do Colaborador & Relatório do "Analista Sênior" (IA)
-
-* **📋 Dossiê Trabalhista em 1-Clique:**
-  * Relatório unificado contendo histórico de funções, documentos, entregas de EPI (NR-6), treinamentos, advertências e multas.
-  * Registro de auditoria com IP, data, hora e responsável pela emissão (conformidade LGPD).
-* **🧠 Relatório Mensal do Analista Sênior (IA):**
-  * Consolidação mensal automatizada sobre a saúde financeira, operacional e de compliance da empresa.
-  * Insights práticos com alertas de custos atípicos, gargalos de manutenção e plano de ação estratégico para o empresário.
+**Última atualização deste documento:** 22/10/2026 (etapa 14c + 14c.1)

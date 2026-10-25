@@ -208,6 +208,12 @@ router.post("/", tenantMiddleware, requerAdmin, async (req, res) => {
 // /me com /:id e tenta UUID "me" → 500). O id é `req.userId` do JWT.
 
 // PUT /api/usuarios/me — atualiza nome e telefone do próprio usuário
+// Etapa 14c: logo + dados da empresa para os documentos (qualquer usuário logado — colaborador e locatário também)
+router.get("/me/logo", tenantMiddleware, async (req, res) => {
+  try { res.json(await require("../services/logoEmpresa").obter(require("../db").supabase, req.tenantId)); }
+  catch (err) { console.error("❌ [logo]", err.message); res.json({ logo: null, empresa: null }); }
+});
+
 router.put("/me", tenantMiddleware, async (req, res) => {
   try {
     const { nome, telefone } = req.body || {};

@@ -11,6 +11,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import apiService from "../../services/apiService";
+import LogoEmpresa from "./LogoEmpresa"; // etapa 14c
 
 // ─────────────────────────────────────────────────────────────────────────
 // HELPERS de conversão minuto ↔ HH:MM
@@ -85,7 +86,7 @@ export default function TelaConfiguracoes({ C, s }) {
       {abaAtiva === "feriados" && <SecaoFeriados C={C} s={s} onErro={setErro} />}
       {abaAtiva === "custos" && <SecaoCustosOperacionais C={C} s={s} onErro={setErro} />}
       {abaAtiva === "comunicacoes" && <SecaoComunicacoes C={C} s={s} onErro={setErro} />}
-      {abaAtiva === "empresa" && <SecaoEmpresa C={C} s={s} onErro={setErro} />}
+      {abaAtiva === "empresa" && <><SecaoEmpresa C={C} s={s} onErro={setErro} /><LogoEmpresa C={C} s={s} onErro={setErro} /></>}
     </div>
   );
 }
