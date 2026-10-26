@@ -8,7 +8,7 @@
 // Aceita valor antigo/formatado ("(21) 99999-0000", "2133334444" da Receita):
 // converte para +55… ao exibir, para o componente não reclamar.
 
-import PhoneInput from "react-phone-number-input";
+import PhoneInput, { parsePhoneNumber } from "react-phone-number-input";
 import "react-phone-number-input/style.css";
 import "../usuarios/phone-input.css";
 
@@ -47,4 +47,12 @@ export default function CampoTelefone({ value, onChange, placeholder = "(11) 999
       }}
     />
   );
+}
+
+// 14d.4: telefone para EXIBIR (só leitura) — bandeira + formato internacional ("🇧🇷 +55 22 98107-9814")
+const bandeira = (pais) => (pais ? String.fromCodePoint(...[...pais.toUpperCase()].map((c) => 0x1f1e6 + c.charCodeAt(0) - 65)) : "");
+export function telefoneExibir(valor) {
+  const e = paraE164(valor); if (!e) return valor || "";
+  try { const p = parsePhoneNumber(e); if (p) return `${bandeira(p.country)} ${p.formatInternational()}`.trim(); } catch { /* ok */ }
+  return e;
 }

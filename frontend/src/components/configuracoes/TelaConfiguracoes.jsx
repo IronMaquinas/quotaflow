@@ -12,6 +12,7 @@
 import { useState, useEffect, useCallback } from "react";
 import apiService from "../../services/apiService";
 import LogoEmpresa from "./LogoEmpresa"; // etapa 14c
+import DadosEmpresa from "./DadosEmpresa"; // etapa 14d.4
 
 // ─────────────────────────────────────────────────────────────────────────
 // HELPERS de conversão minuto ↔ HH:MM
@@ -29,8 +30,8 @@ function horaParaMin(hhmm) {
   return h * 60 + m;
 }
 
-export default function TelaConfiguracoes({ C, s }) {
-  const [abaAtiva, setAbaAtiva] = useState("jornada");
+export default function TelaConfiguracoes({ C, s, abaInicial }) {
+  const [abaAtiva, setAbaAtiva] = useState(abaInicial || "jornada"); // 14d.5: o "Complete o perfil" abre direto na aba
   const [erro, setErro] = useState(null);
 
   return (
@@ -40,7 +41,7 @@ export default function TelaConfiguracoes({ C, s }) {
           CONFIGURAÇÕES
         </div>
         <div style={{ fontSize: 22, fontWeight: 700, color: C.text }}>
-          Jornada & Calendário
+          {{ jornada: "Jornada de trabalho", feriados: "Feriados", custos: "Custos operacionais", comunicacoes: "Comunicações", empresa: "Empresa" }[abaAtiva]}
         </div>
       </div>
 
@@ -86,7 +87,7 @@ export default function TelaConfiguracoes({ C, s }) {
       {abaAtiva === "feriados" && <SecaoFeriados C={C} s={s} onErro={setErro} />}
       {abaAtiva === "custos" && <SecaoCustosOperacionais C={C} s={s} onErro={setErro} />}
       {abaAtiva === "comunicacoes" && <SecaoComunicacoes C={C} s={s} onErro={setErro} />}
-      {abaAtiva === "empresa" && <><SecaoEmpresa C={C} s={s} onErro={setErro} /><LogoEmpresa C={C} s={s} onErro={setErro} /></>}
+      {abaAtiva === "empresa" && <><DadosEmpresa C={C} s={s} onErro={setErro} /><SecaoEmpresa C={C} s={s} onErro={setErro} /><LogoEmpresa C={C} s={s} onErro={setErro} /></>}
     </div>
   );
 }

@@ -81,7 +81,7 @@ router.post("/signup", async (req, res) => {
       ok: true,
       mensagem: "Conta criada! Seu teste grátis já começou.",
       tenant: { id: tenant.id, slug: tenant.slug, nome: tenant.nome, ...situacaoDoTenant(tenant) },
-      usuario: { id: usuario.id, email: usuario.email, nome: usuario.nome, perfil: usuario.perfil, perfis },
+      usuario: { id: usuario.id, email: usuario.email, nome: usuario.nome, telefone: usuario.telefone || null, perfil: usuario.perfil, perfis },
       tokens: { accessToken, refreshToken },
     });
   } catch (err) {
@@ -122,6 +122,7 @@ router.post("/signup-fornecedor", async (req, res) => {
       usuario: {
         id: usuario.id,
         nome: usuario.nome,
+        telefone: usuario.telefone || null, // 14d.4: o perfil reabria sem o telefone
         email: usuario.email,
         perfil: usuario.perfil || "vendedor",
         fornecedor_id: usuario.fornecedor_id,
@@ -266,6 +267,7 @@ router.post("/login", async (req, res) => {
         id: usuario.id,
         email: usuario.email,
         nome: usuario.nome,
+        telefone: usuario.telefone || null, // 14d.4: o perfil reabria sem o telefone
         perfil: usuario.perfil,
         perfis: perfisArr,   // M4.5: array pro frontend (multi-perfil)
       },
@@ -306,6 +308,7 @@ router.get("/me", tenantMiddleware, async (req, res) => {
         id: usuario.id,
         email: usuario.email,
         nome: usuario.nome,
+        telefone: usuario.telefone || null, // 14d.4: o perfil reabria sem o telefone
         perfil: usuario.perfil,
         ativo: usuario.ativo,
         // etapa 11a.3: coluna ausente (antes da migration 017) conta como confirmado
@@ -475,6 +478,7 @@ router.post('/login-fornecedor', async (req, res) => {
       usuario: {
         id: usuario.id,
         nome: usuario.nome,
+        telefone: usuario.telefone || null, // 14d.4: o perfil reabria sem o telefone
         email: usuario.email,
         perfil: usuario.perfil || 'vendedor',
         fornecedor_id: usuario.fornecedor_id,
@@ -684,6 +688,7 @@ router.post('/convite/aceitar', async (req, res) => {
       usuario: {
         id: usuario.id,
         nome: usuario.nome,
+        telefone: usuario.telefone || null, // 14d.4: o perfil reabria sem o telefone
         email: usuario.email,
         perfil: usuario.perfil || 'vendedor',
         fornecedor_id: usuario.fornecedor_id,

@@ -7,6 +7,8 @@
 //   PUT    /:id                              editar (cliente, obra, contato, fim previsto, obs)
 //   POST   /:id/equipamentos                 { equipamento_id, inicio?, rotina?: { modelo_id, frequencia } } — loca dentro do contrato
 //   POST   /:id/equipamentos/:equip/devolver { fim_real }
+//   DELETE /:id/equipamentos/:equip       tirar do contrato sem devolução (sem inspeção ainda) — 14d.3
+//   PUT    /:id/equipamentos/:equip       { inicio } — muda a data de saída — 14d.3
 //   POST   /:id/encerrar                     { fim_real } → { sem_contrato: [usuários sem contrato ativo] }
 //   POST   /:id/acessos                      { nome, email, senha, telefone } — cria/liga o usuário Locatário
 //   DELETE /:id/acessos/:usuario             tira o acesso deste contrato
@@ -60,6 +62,8 @@ router.post('/', exigirEditar, responder(async (req) => CT.criar(supabase, req.t
 router.put('/:id', exigirEditar, responder((req) => CT.editar(supabase, req.tenantId, req.params.id, req.body || {})));
 router.post('/:id/equipamentos', exigirEditar, responder(async (req) => CT.adicionarEquipamento(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
 router.post('/:id/equipamentos/:equip/devolver', exigirEditar, responder(async (req) => CT.devolverEquipamento(supabase, req.tenantId, await quem(req), req.params.id, req.params.equip, req.body || {})));
+router.delete('/:id/equipamentos/:equip', exigirEditar, responder((req) => CT.cancelarEquipamento(supabase, req.tenantId, req.params.id, req.params.equip))); // 14d.3
+router.put('/:id/equipamentos/:equip', exigirEditar, responder((req) => CT.alterarInicioEquipamento(supabase, req.tenantId, req.params.id, req.params.equip, req.body?.inicio))); // 14d.3
 router.post('/:id/encerrar', exigirEditar, responder(async (req) => CT.encerrar(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
 router.post('/:id/acessos', exigirEditar, responder((req) => CT.criarAcesso(supabase, req.tenantId, req.params.id, req.body || {})));
 router.delete('/:id/acessos/:usuario', exigirEditar, responder((req) => CT.removerAcesso(supabase, req.tenantId, req.params.id, req.params.usuario)));

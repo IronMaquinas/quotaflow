@@ -127,7 +127,13 @@ async function cadastrarTransportadora({ cnpj, empresaNome, nome, email, senhaHa
   if (conf.semReceita) alertas.unshift(ALERTA_SEM_RECEITA);
   const dias = await diasDeTeste();
 
-  const tenant = await DB.insert('tenants', {
+  // 14d.5: o que a Receita devolveu já entra no perfil da empresa (Configurações → Empresa); sem a 048, cai no cadastro antigo
+  const perfilReceita = {
+    razao_social: resumo.razao_social || null, nome_fantasia: resumo.nome_fantasia || texto(empresaNome, 120) || null,
+    endereco: resumo.endereco || null, numero: resumo.numero || null, complemento: resumo.complemento || null, bairro: resumo.bairro || null,
+    cidade: resumo.cidade || null, cep: resumo.cep || null, email: resumo.email || null,
+  };
+  const inserirTenant = async (extra) => DB.insert('tenants', { ...extra,
     slug: slugDe(nomeEmpresa),
     nome: nomeEmpresa,
     cnpj: cnpjLimpo,
@@ -143,6 +149,9 @@ async function cadastrarTransportadora({ cnpj, empresaNome, nome, email, senhaHa
     alertas_cadastro: alertas,
     dados_cnpj: conf.resumo,
   });
+  let tenant;
+  try { tenant = await inserirTenant(perfilReceita); }
+  catch (e) { if (!/column|schema cache|razao_social/i.test(e.message || '')) throw e; tenant = await inserirTenant({}); }
   if (!tenant) throw new Error('Erro ao criar a transportadora');
 
   let usuario;

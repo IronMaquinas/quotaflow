@@ -10,6 +10,7 @@ import { dadosEmpresa } from "../../utils/logoEmpresa";
 import { gerarHtmlContrato } from "../../utils/gerarContrato";
 import CampoMoeda from "../shared/CampoMoeda"; // 14d.1
 
+const mascaraCPF = (v) => String(v || "").replace(/\D/g, "").slice(0, 11).replace(/^(\d{3})(\d)/, "$1.$2").replace(/^(\d{3})\.(\d{3})(\d)/, "$1.$2.$3").replace(/\.(\d{3})(\d)/, ".$1-$2");
 const dataHora = (d) => (d ? new Date(d).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "—");
 const casca = (s, conteudo, fechar, largura = 640, z = 330) => (
   <div style={{ position: "fixed", inset: 0, background: "#00000090", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: z, padding: 16, overflowY: "auto" }} onClick={fechar}>
@@ -140,13 +141,17 @@ export function DocumentoContrato({ C, s, contrato: k, editar, onErro: onErroPai
     const c = k.condicoes || {};
     setF({ modelo_id: k.modelo_id || "", caucao: c.caucao ?? "", franquia_horas: c.franquia_horas ?? "", hora_excedente: c.hora_excedente ?? "", reajuste: c.reajuste ?? "IPCA", multa_rescisoria_pct: c.multa_rescisoria_pct ?? "",
       vencimento_dia: c.vencimento_dia ?? "", forma_pagamento: c.forma_pagamento ?? "boleto bancário", foro: c.foro ?? "", observacoes: c.observacoes ?? "", na: c.na || [],
-      valores: Object.fromEntries(k.equipamentos.filter((e) => e.ativa).map((e) => [e.locacao_id, e.valor_mensal ?? ""])) });
+      valores: Object.fromEntries(k.equipamentos.filter((e) => e.ativa).map((e) => [e.locacao_id, e.valor_mensal ?? ""])),
+      rep_nome: c.representante?.nome ?? "", rep_cpf: c.representante?.cpf ?? "", rep_cargo: c.representante?.cargo ?? "" });
   }, [k.id]); // eslint-disable-line
+  // 14d.3: equipamento que entrou depois de abrir o contrato ganha a linha do valor mensal (sem perder o que já foi digitado)
+  const idsEq = k.equipamentos.filter((e) => e.ativa).map((e) => e.locacao_id).join(",");
+  useEffect(() => { setF((x) => (x ? { ...x, valores: Object.fromEntries(k.equipamentos.filter((e) => e.ativa).map((e) => [e.locacao_id, x.valores[e.locacao_id] ?? e.valor_mensal ?? ""])) } : x)); }, [idsEq]); // eslint-disable-line
   if (!f || !modelos) return null;
   const set = (x, v) => setF({ ...f, [x]: v });
   const salvar = async () => {
-    const { modelo_id, valores, ...cond } = f;
-    await apiService.put(`/contratos/${k.id}/condicoes`, { modelo_id: modelo_id || null, condicoes: cond, valores });
+    const { modelo_id, valores, rep_nome, rep_cpf, rep_cargo, ...cond } = f;
+    await apiService.put(`/contratos/${k.id}/condicoes`, { modelo_id: modelo_id || null, condicoes: { ...cond, representante: { nome: rep_nome, cpf: rep_cpf, cargo: rep_cargo } }, valores });
   };
   const empresa = dadosEmpresa();
   const previa = async () => {
@@ -189,6 +194,12 @@ export function DocumentoContrato({ C, s, contrato: k, editar, onErro: onErroPai
           {campo(s, rotNA("REAJUSTE (ÍNDICE)", "reajuste"), inp("reajuste"))}{campo(s, rotNA("MULTA RESCISÓRIA (%)", "multa_rescisoria_pct"), inp("multa_rescisoria_pct", { inputMode: "decimal" }))}{campo(s, rotNA("VENCIMENTO (DIA)", "vencimento_dia"), inp("vencimento_dia", { inputMode: "numeric" }))}
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>{campo(s, rotNA("FORMA DE PAGAMENTO", "forma_pagamento"), inp("forma_pagamento"))}{campo(s, rotNA("FORO (COMARCA)", "foro"), inp("foro", { placeholder: "Rio de Janeiro/RJ" }))}</div>
+        <div style={{ ...s.label, marginTop: 12 }}>QUEM ASSINA PELO CLIENTE (SE NÃO FOR O CONTATO)</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {campo(s, "NOME", inp("rep_nome", { placeholder: k.contato_nome || "" }), "2 1 220px")}
+          {campo(s, "CPF", <input value={mascaraCPF(f.rep_cpf)} onChange={(e) => set("rep_cpf", e.target.value.replace(/\D/g, "").slice(0, 11))} disabled={bloq} inputMode="numeric" style={s.input} />)}
+          {campo(s, "CARGO", inp("rep_cargo", { placeholder: "Sócio-administrador" }))}
+        </div>
         <label style={{ display: "block", marginTop: 8 }}><span style={s.label}>CONDIÇÕES ESPECÍFICAS DESTE CONTRATO</span>
           <textarea rows={3} value={f.observacoes} onChange={(e) => set("observacoes", e.target.value)} disabled={!editar || k.status !== "ativo"} style={{ ...s.input, resize: "vertical" }} /></label>
         {msg && <div style={{ fontSize: 12.5, marginTop: 8, padding: "6px 10px", borderRadius: 6, color: msg.tipo === "erro" ? C.danger : C.success, background: `${msg.tipo === "erro" ? C.danger : C.success}14` }}>{msg.tipo === "erro" ? "⚠ " : "✓ "}{msg.texto}</div>}

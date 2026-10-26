@@ -89,6 +89,10 @@ router.get('/fornecedores', responder(() => C.listarFornecedores()));
 
 router.post('/transportadoras/:id/aprovar', responder((req) => C.aprovarTransportadora(req.params.id, req.plataformaAdmin)));
 router.post('/transportadoras/:id/recusar', responder((req) => C.recusarTransportadora(req.params.id, req.body?.motivo, req.plataformaAdmin)));
+// 14d.5: troca de CNPJ só pela plataforma, com motivo (o gatilho do banco grava em tenant_alteracoes) + histórico da empresa
+const PERFIL = require('../services/perfilEmpresa');
+router.post('/transportadoras/:id/cnpj', responder(async (req) => { const r = await PERFIL.alterarCnpjPlataforma(supabase, req.params.id, req.plataformaAdmin, req.body || {}); if (!r.erro) await C.registrar(req.plataformaAdmin, 'cnpj_alterar', 'tenant', req.params.id, { antes: r.antes, depois: r.depois, motivo: String(req.body?.motivo || '').slice(0, 500) }).catch(() => {}); return r; }));
+router.get('/transportadoras/:id/alteracoes', responder((req) => PERFIL.alteracoes(supabase, req.params.id)));
 router.delete('/transportadoras/:id', responder((req) => C.excluirTransportadora(req.params.id, req.plataformaAdmin)));
 
 router.post('/fornecedores/:id/aprovar', responder((req) => C.aprovarFornecedor(req.params.id, req.plataformaAdmin)));

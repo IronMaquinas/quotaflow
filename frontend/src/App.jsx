@@ -29,6 +29,7 @@ import TelaAprovacaoRetirada from './components/estoque/TelaAprovacaoRetirada';
 import TelaRecebimento from './components/estoque/TelaRecebimento';
 import TelaOrdemServico from './components/estoque/TelaOrdemServico';
 import TelaConfiguracoes from './components/configuracoes/TelaConfiguracoes';
+import CompletarPerfil from './components/configuracoes/CompletarPerfil'; // 14d.5
 import TelaNaoConformidades from "./components/naoConformidades/TelaNaoConformidades";
 import TelaInspecoes from "./components/inspecoes/TelaInspecoes"; // etapa 14a
 import TelaContratos from "./components/contratos/TelaContratos"; // etapa 14b.3
@@ -166,6 +167,8 @@ export default function App() {
   const benchmark = useBenchmark();
   const relatorio = useRelatorio();
   const [tela,setTela]=useState("home");
+  const [configAba,setConfigAba]=useState(null); // 14d.5: aba inicial das Configurações (vinda do "Complete o perfil")
+  useEffect(() => { if (tela !== "configuracoes") setConfigAba(null); }, [tela]); // 14d.5
   const [osParaAbrir, setOsParaAbrir] = useState(null);
   const [abaColaborador, setAbaColaborador] = useState("treinos"); // 14b.1: tela do colaborador
   useEffect(() => { if (usuario?.id) carregarLogoEmpresa(); }, [usuario?.id]); // 14c: logo da empresa nos documentos
@@ -536,6 +539,7 @@ const perfil = PERFIS[usuario.perfil] || {
         {tela==="home"&&(
           <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:40,overflowY:"auto"}}>
             <div style={{maxWidth:600,width:"100%",textAlign:"center"}}>
+              {temAcesso("configuracoes") && <CompletarPerfil C={C} s={s} onAbrir={(aba)=>{setConfigAba(aba);navegar("configuracoes");}} />}
               <div style={{fontSize:52,marginBottom:16}}>{perfil.icon}</div>
               <div style={{fontSize:26,fontWeight:700,color:C.text,marginBottom:8}}>Olá, {usuario.nome.split(" ")[0]}!</div>
               <div style={{fontSize:14,color:C.muted,marginBottom:32}}>Você está logado como <strong style={{color:perfil.c}}>{perfil.l}</strong></div>
@@ -763,7 +767,7 @@ const perfil = PERFIS[usuario.perfil] || {
 
         {temAcesso(tela) && tela === "configuracoes" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
-            <TelaConfiguracoes C={C} s={s} />
+            <TelaConfiguracoes key={configAba||"jornada"} C={C} s={s} abaInicial={configAba} />
           </div>)}
 
         {temAcesso(tela) && tela === "contratos" && (

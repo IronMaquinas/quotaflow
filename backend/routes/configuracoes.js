@@ -306,7 +306,11 @@ router.put('/empresa', tenantMiddleware, async (req, res) => {
       return res.status(400).json({ erro: "Estado inválido — use a sigla (ex.: SP, RJ)" });
     }
     // Tabela tenants é especial — o id É o tenant_id. Sem 4º arg.
+    const antes = (await DB.selectOne('tenants', { id: req.tenantId }))?.regiao || null;
     await DB.update('tenants', req.tenantId, { regiao });
+    if (String(antes || '') !== String(regiao || '')) { // 14d.5: histórico
+      try { const u = await DB.selectOne('usuarios', { id: req.userId }, req.tenantId); await supabase.from('tenant_alteracoes').insert([{ tenant_id: req.tenantId, campo: 'regiao', antes, depois: regiao, origem: 'empresa', usuario_id: String(req.userId), usuario_nome: u?.nome || null }]); } catch { /* sem a 049 */ }
+    }
     res.json({ ok: true, regiao });
   } catch (err) {
     console.error("❌ Erro ao salvar dados da empresa:", err.message);
@@ -331,5 +335,21 @@ const respLogo = (fn) => async (req, res) => {
 router.get('/logo', tenantMiddleware, respLogo((req) => LOGO.obter(supabase, req.tenantId)));
 router.post('/logo', tenantMiddleware, respLogo((req) => (podeLogo(req) ? LOGO.salvar(supabase, req.tenantId, req.body || {}) : { status: 403, erro: 'Só admin ou gestor' })));
 router.delete('/logo', tenantMiddleware, respLogo((req) => (podeLogo(req) ? LOGO.remover(supabase, req.tenantId) : { status: 403, erro: 'Só admin ou gestor' })));
+
+// Etapa 14d.4 / 14d.5: perfil da empresa (services/perfilEmpresa.js)
+//   GET /api/configuracoes/empresa/dados        → dados cadastrais + cnpj_travado
+//   PUT /api/configuracoes/empresa/dados        (admin, gestor) — CNPJ não muda depois de informado (só pela plataforma)
+//   GET /api/configuracoes/empresa/status       → checklist "Complete o perfil"
+//   GET /api/configuracoes/empresa/alteracoes   → histórico (campo, antes, depois, quem, quando)
+//   GET /api/configuracoes/empresa/receita      → dados da Receita pelo CNPJ da empresa (para conferir; não grava)
+//   GET /api/configuracoes/cep/:cep             → endereço do CEP (BrasilAPI)
+const PERFIL = require('../services/perfilEmpresa');
+const quemE = async (req) => { try { const u = await DB.selectOne('usuarios', { id: req.userId }, req.tenantId); return { id: req.userId, nome: u?.nome || null }; } catch { return { id: req.userId, nome: null }; } };
+router.get('/empresa/dados', tenantMiddleware, respLogo((req) => PERFIL.dados(supabase, req.tenantId)));
+router.put('/empresa/dados', tenantMiddleware, respLogo(async (req) => (podeLogo(req) ? PERFIL.salvar(supabase, req.tenantId, await quemE(req), req.body || {}) : { status: 403, erro: 'Só admin ou gestor' })));
+router.get('/empresa/status', tenantMiddleware, respLogo((req) => PERFIL.status(supabase, req.tenantId)));
+router.get('/empresa/alteracoes', tenantMiddleware, respLogo((req) => PERFIL.alteracoes(supabase, req.tenantId)));
+router.get('/empresa/receita', tenantMiddleware, respLogo((req) => PERFIL.receita(supabase, req.tenantId)));
+router.get('/cep/:cep', tenantMiddleware, respLogo((req) => PERFIL.cep(req.params.cep)));
 
 module.exports = router;

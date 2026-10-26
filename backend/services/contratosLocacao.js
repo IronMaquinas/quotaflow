@@ -103,6 +103,31 @@ async function adicionarEquipamento(supabase, tenantId, quem, id, body = {}) {
   const c = await doTenant(supabase, tenantId, id); if (!c || c.status !== 'ativo') return { status: 400, erro: 'Contrato não encontrado ou encerrado' };
   return R.locar(supabase, tenantId, quem, body.equipamento_id, { contrato_id: c.id, inicio: body.inicio || hojeBR(), local: body.local, rotina: body.rotina || null });
 }
+/** 14d.3: tirar o equipamento do contrato SEM devolução (lançado por engano / cliente desistiu antes de sair).
+ *  Só se a locação ainda não tem nenhuma inspeção — depois disso, o caminho é 🏠 Devolver (fica no histórico). */
+async function cancelarEquipamento(supabase, tenantId, id, equipId) {
+  const c = await doTenant(supabase, tenantId, id); if (!c) return { status: 404, erro: 'Contrato não encontrado' };
+  const l = (await q(supabase.from('equipamento_locacoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id).eq('equipamento_id', equipId))).find((x) => x.status === 'ativa');
+  if (!l) return { status: 400, erro: 'Este equipamento não está locado neste contrato' };
+  const ins = (await q(supabase.from('inspecoes').select('*').eq('tenant_id', tenantId).eq('equipamento_id', equipId))).filter((i) => String(i.locacao_id) === String(l.id));
+  if (ins.length || l.entrega_inspecao_id) return { status: 409, erro: 'O equipamento já tem inspeção nesta locação — use 🏠 Devolver (fica registrado no histórico)' };
+  await supabase.from('equipamento_rotinas').update({ ativo: false }).eq('tenant_id', tenantId).eq('locacao_id', l.id);
+  const { error } = await supabase.from('equipamento_locacoes').delete().eq('id', l.id).eq('tenant_id', tenantId);
+  if (error) throw new Error(error.message);
+  const e = (await q(supabase.from('equipamentos').select('*').eq('tenant_id', tenantId).eq('id', equipId)))[0];
+  if (e && String(e.locacao_id) === String(l.id)) { const { error: eu } = await supabase.from('equipamentos').update({ situacao: 'base', locacao_id: null }).eq('id', e.id).eq('tenant_id', tenantId); if (eu) throw new Error(eu.message); }
+  return { ok: true };
+}
+/** 14d.3: mudar a data de saída do equipamento (cliente adiou/antecipou) */
+async function alterarInicioEquipamento(supabase, tenantId, id, equipId, inicio) {
+  const c = await doTenant(supabase, tenantId, id); if (!c || c.status !== 'ativo') return { status: 404, erro: 'Contrato não encontrado ou encerrado' };
+  if (!DATA.test(String(inicio || ''))) return { status: 400, erro: 'Data inválida' };
+  const l = (await q(supabase.from('equipamento_locacoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id).eq('equipamento_id', equipId))).find((x) => x.status === 'ativa');
+  if (!l) return { status: 400, erro: 'Este equipamento não está locado neste contrato' };
+  const { error } = await supabase.from('equipamento_locacoes').update({ inicio }).eq('id', l.id).eq('tenant_id', tenantId);
+  if (error) throw new Error(error.message);
+  return { ok: true };
+}
 async function devolverEquipamento(supabase, tenantId, quem, id, equipId, body = {}) {
   const c = await doTenant(supabase, tenantId, id); if (!c) return { status: 404, erro: 'Contrato não encontrado' };
   const l = (await q(supabase.from('equipamento_locacoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id).eq('equipamento_id', equipId))).find((x) => x.status === 'ativa');
@@ -232,5 +257,5 @@ async function detalheLocatario(supabase, tenantId, usuarioId, inspId) {
   return r;
 }
 
-module.exports = { soLocatario, perfisDe, validar, listar, criar, editar, adicionarEquipamento, devolverEquipamento, encerrar, criarAcesso, removerAcesso, pausarUsuario,
+module.exports = { cancelarEquipamento, alterarInicioEquipamento, soLocatario, perfisDe, validar, listar, criar, editar, adicionarEquipamento, devolverEquipamento, encerrar, criarAcesso, removerAcesso, pausarUsuario,
   escopoLocatario, painelLocatario, aceitarLocatario, permissaoInspecao, prepararLocatario, enviarLocatario, detalheLocatario };

@@ -8,7 +8,7 @@ import apiService from "../../services/apiService";
 import { corEstado, txtEstado } from "../inspecoes/RotinasLocacao";
 import { FormNovoContrato, AbaClientes, mascaraDoc } from "./Clientes"; // 14b.3.1
 import { AbaModelos, DocumentoContrato } from "./ModelosContrato"; // 14d
-import CampoTelefone from "../shared/CampoTelefone";
+import CampoTelefone, { telefoneExibir } from "../shared/CampoTelefone";
 
 const FREQ = { diaria: "Diária", semanal: "Semanal", quinzenal: "Quinzenal", mensal: "Mensal" };
 const dataBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
@@ -27,6 +27,8 @@ export default function TelaContratos({ C, s, onAbrirInspecoes }) {
   const [filtro, setFiltro] = useState("abertos"); // 14d.2: abertos (não encerrados) | fase | todos
   const [aba, setAba] = useState("contratos"); // 14b.3.1: contratos | clientes
   const [novo, setNovo] = useState(false);     // 14b.3.1: novo contrato (CNPJ primeiro)
+  const [dataEq, setDataEq] = useState(null);  // 14d.3: { id (locação), inicio } — mudar a data de saída
+  const [clienteAbrir, setClienteAbrir] = useState(null); // 14d.3: abrir o cadastro do cliente a partir do contrato
   const [busca, setBusca] = useState("");
   const [abertoId, setAbertoId] = useState(null);
   const [form, setForm] = useState(null);       // novo / editar contrato
@@ -75,7 +77,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes }) {
       <div style={{ display: "flex", gap: 6, marginBottom: 12, borderBottom: `1px solid ${C.border}` }}>
         {[["contratos", "📑 Contratos"], ["clientes", "👥 Clientes"], ["modelos", "📄 Modelos de contrato"]].map(([k, l]) => <button key={k} type="button" onClick={() => setAba(k)} style={{ background: "transparent", border: "none", borderBottom: `2px solid ${aba === k ? C.accent : "transparent"}`, padding: "8px 12px", color: aba === k ? C.text : C.muted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>)}
       </div>
-      {aba === "clientes" && <AbaClientes C={C} s={s} editar={editar} onErro={err} onOk={ok} />}
+      {aba === "clientes" && <AbaClientes C={C} s={s} editar={editar} onErro={err} onOk={ok} abrirId={clienteAbrir} onAberto={() => setClienteAbrir(null)} />}
       {aba === "modelos" && <AbaModelos C={C} s={s} editar={editar} onErro={err} onOk={ok} />}
       {aba === "contratos" && <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
         {[["abertos", "Abertos"], ["elaboracao", "📝 Em elaboração"], ["aguardando_aceite", "⏳ Aguardando aceite"], ["andamento", "✅ Em andamento"], ["encerrado", "🏁 Encerrados"], ["todos", "Todos"]].map(([k, l]) => <button key={k} type="button" onClick={() => setFiltro(k)} style={{ ...s.btn(filtro === k, C.accent), cursor: "pointer", padding: "5px 12px", fontSize: 12, color: filtro === k ? "#fff" : C.text }}>{l}</button>)}
@@ -106,10 +108,19 @@ export default function TelaContratos({ C, s, onAbrirInspecoes }) {
           <span style={s.tag(FASE[faseDe(aberto)][1])}>{FASE[faseDe(aberto)][0]}</span>
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "8px 14px", fontSize: 12, marginTop: 12 }}>
-          {[["CNPJ / CPF", aberto.cliente_doc ? mascaraDoc(aberto.cliente_doc) : null], ["Local / obra", aberto.local], ["Contato", [aberto.contato_nome, aberto.contato_email, aberto.contato_telefone].filter(Boolean).join(" · ")], ["Início", dataBR(aberto.inicio)],
+          {[["CNPJ / CPF", aberto.cliente_doc ? mascaraDoc(aberto.cliente_doc) : null], ["Local / obra", aberto.local], ["Início", dataBR(aberto.inicio)],
             ["Fim previsto", dataBR(aberto.fim_previsto)], ...(aberto.status !== "ativo" ? [["Encerrado em", `${dataBR(aberto.fim_real)}${aberto.encerrado_por_nome ? ` por ${aberto.encerrado_por_nome}` : ""}`]] : []), ["Criado por", aberto.criado_por_nome]]
             .map(([l, v]) => <div key={l}><div style={{ fontSize: 10, color: C.muted, fontWeight: 700 }}>{l.toUpperCase()}</div>{v || "—"}</div>)}
         </div>
+        {/* 14d.4: contato separado — dados conforme o cadastro */}
+        <div style={{ marginTop: 12, padding: "8px 12px", border: `1px solid ${C.border}`, borderRadius: 6 }}>
+          <div style={{ fontSize: 10, color: C.muted, fontWeight: 700, marginBottom: 6 }}>CONTATO <span style={{ fontWeight: 400 }}>· dados conforme cadastro</span></div>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "6px 14px", fontSize: 12 }}>
+            {[["Nome", aberto.contato_nome], ["E-mail", aberto.contato_email], ["Telefone", aberto.contato_telefone ? telefoneExibir(aberto.contato_telefone) : null]]
+              .map(([l, v]) => <div key={l}><div style={{ fontSize: 10, color: C.muted }}>{l}</div><span style={{ wordBreak: "break-word" }}>{v || "—"}</span></div>)}
+          </div>
+        </div>
+        {aberto.cliente_id && editar && <div style={{ marginTop: 8 }}><button type="button" onClick={() => { setClienteAbrir(aberto.cliente_id); setAbertoId(null); setAba("clientes"); }} className="qf-clicavel" style={{ background: "none", border: "none", color: C.textSub, fontSize: 12, textDecoration: "underline", padding: 0 }}>✏ Editar o cadastro do cliente (nome, endereço, contato)</button></div>}
         {aberto.obs && <div style={{ fontSize: 13, marginTop: 8, whiteSpace: "pre-wrap" }}>{aberto.obs}</div>}
 
         <div style={{ display: "flex", alignItems: "center", marginTop: 16, marginBottom: 6 }}>
@@ -120,7 +131,14 @@ export default function TelaContratos({ C, s, onAbrirInspecoes }) {
           <div key={e.locacao_id} style={{ padding: "8px 0", borderBottom: `1px solid ${C.border}`, opacity: e.ativa ? 1 : 0.6 }}>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <div style={{ flex: "1 1 200px", fontSize: 13 }}><b>{e.tag}</b> — {e.nome}{e.bloqueado && <span style={{ ...s.tag(C.danger), marginLeft: 6 }}>⛔ BLOQUEADO</span>}
-                <div style={{ fontSize: 11, color: C.muted }}>{e.ativa ? `desde ${dataBR(e.inicio)}` : `devolvido em ${dataBR(e.fim_real)}`}{e.entrega_inspecao_id ? " · ✓ entrega" : e.ativa ? " · sem inspeção de entrega" : ""}{e.devolucao_inspecao_id ? " · ✓ devolução" : ""}</div></div>
+                <div style={{ fontSize: 11, color: C.muted }}>{e.ativa ? `sai em ${dataBR(e.inicio)}` : `devolvido em ${dataBR(e.fim_real)}`}{e.valor_mensal != null ? ` · ${Number(e.valor_mensal).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}/mês` : e.ativa ? " · sem valor mensal" : ""}{e.entrega_inspecao_id ? " · ✓ entrega" : e.ativa ? " · sem inspeção de entrega" : ""}{e.devolucao_inspecao_id ? " · ✓ devolução" : ""}</div></div>
+              {e.ativa && editar && (dataEq?.id === e.locacao_id
+                ? <span style={{ display: "flex", gap: 4 }}><input type="date" value={dataEq.inicio} onChange={(x) => setDataEq({ ...dataEq, inicio: x.target.value })} style={{ ...s.input, width: 150, padding: "5px 8px" }} />
+                    <button type="button" onClick={async () => { const r = await acao(() => apiService.put(`/contratos/${aberto.id}/equipamentos/${e.equipamento_id}`, { inicio: dataEq.inicio }), "Data de saída alterada."); if (r) setDataEq(null); }} style={bt(C.accent)}>OK</button>
+                    <button type="button" onClick={() => setDataEq(null)} style={bt(C.muted, false)}>✕</button></span>
+                : <button type="button" onClick={() => setDataEq({ id: e.locacao_id, inicio: String(e.inicio).slice(0, 10) })} title="Mudar a data de saída (cliente adiou/antecipou)" style={bt(C.accent, false)}>📅 Data</button>)}
+              {e.ativa && editar && !e.entrega_inspecao_id && <button type="button" onClick={() => setConfirmar({ titulo: `Tirar ${e.tag} do contrato?`, texto: "Para equipamento lançado por engano ou que o cliente desistiu antes de sair: a locação é apagada (sem devolução) e o equipamento volta para 🏠 Na base. Se já houve inspeção, use 🏠 Devolver.", cor: C.danger, rotulo: "Tirar do contrato",
+                acao: () => apiService.delete(`/contratos/${aberto.id}/equipamentos/${e.equipamento_id}`), msg: `${e.tag} saiu do contrato.` })} style={bt(C.danger, false)}>✖ Tirar</button>}
               {e.ativa && editar && <button type="button" onClick={() => setConfirmar({ titulo: `Devolver ${e.tag}?`, texto: "O equipamento volta para 🏠 Na base e a rotina do locatário para. Faça a inspeção de devolução antes (o relatório compara com a entrega).", cor: C.success, rotulo: "Devolver",
                 acao: () => apiService.post(`/contratos/${aberto.id}/equipamentos/${e.equipamento_id}/devolver`, { fim_real: hoje() }), msg: `${e.tag} devolvido — na base.` })} style={bt(C.success, false)}>🏠 Devolver</button>}
             </div>

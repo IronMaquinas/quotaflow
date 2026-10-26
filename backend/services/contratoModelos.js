@@ -30,7 +30,9 @@ const CAMPOS = [
   ['contrato.prazo', 'Prazo por extenso ("até 01/03/2027" / "indeterminado")'],
   ['empresa.razao_social', 'Sua razão social'], ['empresa.nome', 'Seu nome fantasia'], ['empresa.cnpj', 'Seu CNPJ'],
   ['cliente.razao_social', 'Razão social do cliente'], ['cliente.nome', 'Nome do cliente'], ['cliente.documento', 'CNPJ/CPF do cliente'], ['cliente.endereco_completo', 'Endereço do cliente'],
-  ['cliente.cidade', 'Cidade do cliente'], ['cliente.uf', 'UF do cliente'], ['contato.nome', 'Contato / representante do cliente'],
+  ['cliente.cidade', 'Cidade do cliente'], ['cliente.uf', 'UF do cliente'], ['contato.nome', 'Contato do cliente'],
+  ['empresa.endereco_completo', 'Endereço da sua empresa'], ['empresa.telefone', 'Telefone da sua empresa'], ['empresa.email', 'E-mail da sua empresa'], // 14d.4
+  ['representante.nome', 'Quem assina pelo cliente — nome'], ['representante.cpf', 'Quem assina pelo cliente — CPF'], ['representante.cargo', 'Quem assina pelo cliente — cargo'], // 14d.3
   ['tabela_equipamentos', 'Tabela dos equipamentos (tag, descrição, valor mensal)'], ['valor_mensal_total', 'Valor mensal total'], ['qtd_equipamentos', 'Quantidade de equipamentos'],
   ['condicoes.caucao', 'Caução'], ['condicoes.franquia_horas', 'Franquia (horas/mês)'], ['condicoes.hora_excedente', 'Valor da hora excedente'], ['condicoes.reajuste', 'Índice de reajuste'],
   ['condicoes.multa_rescisoria', 'Multa rescisória'], ['condicoes.vencimento_dia', 'Dia de vencimento'], ['condicoes.forma_pagamento', 'Forma de pagamento'], ['condicoes.foro', 'Foro (comarca)'],
@@ -50,6 +52,12 @@ function validarCondicoes(c = {}) {
   for (const [k, n] of [['reajuste', 60], ['forma_pagamento', 120], ['foro', 120], ['observacoes', 4000]]) if (c[k] !== undefined) out[k] = texto(c[k], n);
   // 14d.2: campos marcados como "não se aplica" (N/A) — saem assim no texto e não contam como faltando
   if (Array.isArray(c.na)) out.na = [...naSet];
+  // 14d.3: quem assina pelo cliente (pode não ser o contato do cadastro)
+  if (c.representante !== undefined) {
+    const r = c.representante || {}; const cpf = String(r.cpf || '').replace(/\D/g, '');
+    if (cpf && cpf.length !== 11) throw new Error('CPF de quem assina: 11 dígitos');
+    out.representante = { nome: texto(r.nome, 120), cpf: cpf || null, cargo: texto(r.cargo, 80) };
+  }
   for (const k of out.na || []) delete out[k];
   return out;
 }
@@ -144,12 +152,14 @@ function montar(corpo, { contrato, emp, cli, tabela }, hoje = hojeBR()) {
   const c = contrato.condicoes || {};
   const total = tabela.length && tabela.every((t) => t.valor_mensal != null) ? tabela.reduce((s, t) => s + t.valor_mensal, 0) : null;
   const end = cli ? [[cli.endereco, cli.numero].filter(Boolean).join(', '), cli.complemento, cli.bairro, [cli.cidade, cli.uf].filter(Boolean).join('/'), cli.cep && `CEP ${String(cli.cep).replace(/^(\d{5})(\d{3})$/, '$1-$2')}`].filter(Boolean).join(' — ') : null;
+  const endEmp = [[emp.endereco, emp.numero].filter(Boolean).join(', '), emp.complemento, emp.bairro, [emp.cidade, emp.regiao].filter(Boolean).join('/'), emp.cep && `CEP ${String(emp.cep).replace(/\D/g, '').replace(/^(\d{5})(\d{3})$/, '$1-$2')}`].filter(Boolean).join(' — ') || null;
   const v = {
     'contrato.numero': contrato.numero, 'contrato.local': contrato.local, 'contrato.inicio': dBR(contrato.inicio), 'contrato.fim_previsto': dBR(contrato.fim_previsto),
     'contrato.prazo': contrato.fim_previsto ? `até ${dBR(contrato.fim_previsto)}` : 'indeterminado',
-    'empresa.razao_social': emp.razao_social || emp.nome, 'empresa.nome': emp.nome_fantasia || emp.nome, 'empresa.cnpj': fmtDoc(emp.cnpj),
+    'empresa.razao_social': emp.razao_social || emp.nome, 'empresa.nome': emp.nome_fantasia || emp.nome, 'empresa.cnpj': fmtDoc(emp.cnpj), 'empresa.endereco_completo': endEmp, 'empresa.telefone': emp.telefone, 'empresa.email': emp.email,
     'cliente.razao_social': cli?.razao_social || cli?.nome || contrato.cliente, 'cliente.nome': cli?.nome || contrato.cliente, 'cliente.documento': fmtDoc(cli?.documento || contrato.cliente_doc),
     'cliente.endereco_completo': end, 'cliente.cidade': cli?.cidade, 'cliente.uf': cli?.uf, 'contato.nome': contrato.contato_nome || cli?.contato_nome,
+    'representante.nome': c.representante?.nome || contrato.contato_nome || cli?.contato_nome, 'representante.cpf': fmtDoc(c.representante?.cpf), 'representante.cargo': c.representante?.cargo,
     tabela_equipamentos: TABELA, valor_mensal_total: brl(total), qtd_equipamentos: String(tabela.length),
     'condicoes.caucao': brl(c.caucao), 'condicoes.franquia_horas': c.franquia_horas != null ? String(c.franquia_horas) : null, 'condicoes.hora_excedente': brl(c.hora_excedente),
     'condicoes.reajuste': c.reajuste, 'condicoes.multa_rescisoria': c.multa_rescisoria_pct != null ? `${String(c.multa_rescisoria_pct).replace('.', ',')}%` : null,
@@ -160,7 +170,16 @@ function montar(corpo, { contrato, emp, cli, tabela }, hoje = hojeBR()) {
     vencimento_dia: 'condicoes.vencimento_dia', forma_pagamento: 'condicoes.forma_pagamento', foro: 'condicoes.foro' };
   for (const k of c.na || []) if (naMap[k]) v[naMap[k]] = NA_TXT; // 14d.2
   const faltando = new Set();
-  const texto0 = String(corpo || '').replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, k) => { const x = v[k]; if (x == null || x === '') { faltando.add(k); return VAZIO; } return x; });
+  // 14d.4: modelo antigo (importado antes da 047) usa "representada por {{contato.nome}}" — se há quem assina, troca pela pessoa certa
+  let corpoUsado = String(corpo || '');
+  const r = c.representante || {};
+  if (r.nome) {
+    const frase = ['neste ato representada por ' + r.nome, r.cargo, r.cpf && `inscrito(a) no CPF sob o nº ${fmtDoc(r.cpf)}`].filter(Boolean).join(', ');
+    corpoUsado = corpoUsado.replace(/neste ato representada por \{\{\s*contato\.nome\s*\}\}/g, frase);
+  }
+  // 14d.4: modelo antigo sem a sede da LOCADORA — se a empresa tem endereço, acrescenta
+  if (endEmp) corpoUsado = corpoUsado.replace(/(inscrita no CNPJ sob o nº \{\{\s*empresa\.cnpj\s*\}\})\./, `$1, com sede em ${endEmp}.`);
+  const texto0 = corpoUsado.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, k) => { const x = v[k]; if (x == null || x === '') { faltando.add(k); return VAZIO; } return x; });
   if (tabela.some((t) => t.valor_mensal == null)) faltando.add('valor mensal de equipamento');
   if (!tabela.length) faltando.add('equipamentos no contrato');
   return { texto: texto0, tabela: tabela.map(({ tag, nome, valor_mensal }) => ({ tag, nome, valor_mensal })), total, faltando: [...faltando] };

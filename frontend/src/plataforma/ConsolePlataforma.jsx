@@ -287,7 +287,7 @@ function Tabela({ colunas, linhas, vazio }) {
 const STATUS_TENANT = { aprovado: ["APROVADA", C.success], pendente: ["AGUARDANDO", C.warn], recusado: ["RECUSADA", C.danger] };
 const TIPO_FORN = { global: ["🏅 VERIFICADO", C.success], local: ["LOCAL", C.muted], candidato: ["AGUARDANDO", C.warn] };
 
-function Lista({ tipo, dados }) {
+function Lista({ tipo, dados, onCnpj }) {
   const [busca, setBusca] = useState("");
   if (!dados) return <div style={{ color: C.muted }}>Carregando…</div>;
   const termo = semAcento(busca).trim();
@@ -301,6 +301,7 @@ function Lista({ tipo, dados }) {
         { k: "usuarios", t: "USUÁRIOS" },
         { k: "email_admin", t: "E-MAIL" },
         { k: "criado_em", t: "DESDE", r: (l) => fmtData(l.criado_em) },
+        ...(onCnpj ? [{ k: "acoes", t: "", r: (l) => <button type="button" onClick={() => onCnpj(l)} style={{ ...btn(C.muted, false), padding: "4px 10px", fontSize: 11 }}>🔒 CNPJ…</button> }] : []), // 14d.5
       ]
     : [
         { k: "nome", t: "FORNECEDOR", r: (l) => <><div style={{ fontWeight: 600 }}>{l.nome}</div><div style={{ color: C.muted }}>{fmtCNPJ(l.cnpj)}</div></> },
@@ -344,6 +345,7 @@ export default function ConsolePlataforma() {
   const [ocupadoId, setOcupadoId] = useState(null);
   const [acao, setAcao] = useState(null); // { acao, tipo, item }
   const [motivo, setMotivo] = useState("");
+  const [trocaCnpj, setTrocaCnpj] = useState(null); // 14d.5: { item, cnpj, motivo, hist }
 
   const sair = useCallback(() => { gravarToken(""); setToken(""); setAdmin(null); }, []);
 
@@ -436,7 +438,7 @@ export default function ConsolePlataforma() {
         )}
         {aba === "visao" && <VisaoGeral dados={visao} />}
         {aba === "aprovacoes" && <Aprovacoes dados={pend} ocupadoId={ocupadoId} onAcao={(a, tipo, item) => { setMotivo(""); setAcao({ acao: a, tipo, item }); }} />}
-        {aba === "transportadoras" && <Lista tipo="tenant" dados={tenants} />}
+        {aba === "transportadoras" && <Lista tipo="tenant" dados={tenants} onCnpj={(t) => setTrocaCnpj({ item: t, cnpj: "", motivo: "", hist: null })} />}
         {aba === "fornecedores" && <Lista tipo="fornecedor" dados={forns} />}
         {aba === "funcoes" && <BibliotecaFuncoes token={token} chamar={chamar} C={C} input={input} label={label} card={card} btn={btn} tag={tag} onAviso={setAviso} />}
         {aba === "epi" && <BibliotecaEpi token={token} chamar={chamar} C={C} input={input} label={label} card={card} btn={btn} tag={tag} onAviso={setAviso} />}
@@ -468,6 +470,31 @@ export default function ConsolePlataforma() {
               style={{ ...btn({ aprovar: C.success, recusar: C.warn, excluir: C.danger }[acao.acao]), opacity: acao.acao === "recusar" && !motivo.trim() ? 0.5 : 1 }}>
               {{ aprovar: "Aprovar e avisar", recusar: "Recusar e avisar", excluir: "Excluir definitivamente" }[acao.acao]}
             </button>
+          </div>
+        </Modal>
+      )}
+      {trocaCnpj && (
+        <Modal titulo="Alterar CNPJ da transportadora" onFechar={() => setTrocaCnpj(null)}>
+          <div style={{ fontSize: 13, color: C.sub, lineHeight: 1.6, marginBottom: 12 }}>
+            <b style={{ color: C.text }}>{trocaCnpj.item.nome}</b> · CNPJ atual <b style={{ color: C.text }}>{fmtCNPJ(trocaCnpj.item.cnpj)}</b><br />
+            A empresa não consegue trocar o CNPJ sozinha. A troca fica registrada no histórico da empresa (antes, depois, quem, motivo) e no log do console.
+          </div>
+          <label style={label}>NOVO CNPJ</label>
+          <input value={trocaCnpj.cnpj} onChange={(e) => setTrocaCnpj({ ...trocaCnpj, cnpj: e.target.value.replace(/\D/g, "").slice(0, 14) })} placeholder="só números" style={{ ...input, marginBottom: 10 }} />
+          <label style={label}>MOTIVO (OBRIGATÓRIO)</label>
+          <textarea value={trocaCnpj.motivo} onChange={(e) => setTrocaCnpj({ ...trocaCnpj, motivo: e.target.value })} rows={3} maxLength={500}
+            placeholder="Ex.: chamado #123 — incorporação pela matriz; documentação conferida." style={{ ...input, resize: "vertical", marginBottom: 10 }} />
+          <button type="button" onClick={async () => { try { const r = await chamar(token, "GET", `/transportadoras/${trocaCnpj.item.id}/alteracoes`); setTrocaCnpj((x) => ({ ...x, hist: r.alteracoes || [] })); } catch (e) { setAviso({ tipo: "erro", texto: e.message }); } }}
+            style={{ background: "none", border: "none", color: C.sub, textDecoration: "underline", cursor: "pointer", fontSize: 12, padding: 0, marginBottom: 10 }}>🕓 Ver histórico da empresa</button>
+          {trocaCnpj.hist && <div style={{ maxHeight: 180, overflowY: "auto", fontSize: 12, marginBottom: 12 }}>
+            {trocaCnpj.hist.length === 0 && <div style={{ color: C.muted }}>Sem alterações registradas.</div>}
+            {trocaCnpj.hist.map((a) => <div key={a.id} style={{ padding: "4px 0", borderBottom: `1px solid ${C.border}` }}><b>{a.rotulo}</b>: {a.antes || "(vazio)"} → {a.depois || "(vazio)"}<div style={{ color: C.muted }}>{fmtDataHora(a.criado_em)} · {a.usuario_nome || a.origem}{a.motivo ? ` · ${a.motivo}` : ""}</div></div>)}
+          </div>}
+          <div style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
+            <button type="button" onClick={() => setTrocaCnpj(null)} style={btn(C.muted, false)}>Cancelar</button>
+            <button type="button" disabled={trocaCnpj.cnpj.length !== 14 || trocaCnpj.motivo.trim().length < 10}
+              onClick={async () => { try { await chamar(token, "POST", `/transportadoras/${trocaCnpj.item.id}/cnpj`, { cnpj: trocaCnpj.cnpj, motivo: trocaCnpj.motivo }); setAviso({ tipo: "ok", texto: `CNPJ de ${trocaCnpj.item.nome} alterado e registrado.` }); setTrocaCnpj(null); carregar(); } catch (e) { setAviso({ tipo: "erro", texto: e.message }); } }}
+              style={{ ...btn(C.danger), opacity: trocaCnpj.cnpj.length !== 14 || trocaCnpj.motivo.trim().length < 10 ? 0.5 : 1 }}>Alterar CNPJ</button>
           </div>
         </Modal>
       )}

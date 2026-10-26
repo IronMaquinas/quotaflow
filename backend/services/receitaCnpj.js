@@ -238,6 +238,7 @@ function alertasCadastro(publico, resumo, email) {
 }
 
 module.exports = {
+  obterJson, // 14d.5: busca de CEP
   EMAIL_VALIDO,
   soDigitos,
   normEmail,

@@ -104,7 +104,7 @@ export function FormNovoContrato({ C, s, ocupado, onSalvar, onCancelar, onErro }
   </>);
 }
 
-export function AbaClientes({ C, s, editar, onErro, onOk, onAbrirContratos }) {
+export function AbaClientes({ C, s, editar, onErro, onOk, onAbrirContratos, abrirId, onAberto }) {
   const [lista, setLista] = useState(null);
   const [busca, setBusca] = useState("");
   const [form, setForm] = useState(null);
@@ -112,6 +112,8 @@ export function AbaClientes({ C, s, editar, onErro, onOk, onAbrirContratos }) {
   const [nota, setNota] = useState(null); // 14b.3.2: resultado da busca (mesma nota do novo contrato)
   const carregar = async () => { try { setLista((await apiService.get("/contratos/clientes")).clientes || []); } catch (e) { onErro(e.message); } };
   useEffect(() => { carregar(); }, []); // eslint-disable-line
+  // 14d.3: veio do contrato → abre o cadastro direto
+  useEffect(() => { if (!abrirId || !lista) return; const c = lista.find((x) => String(x.id) === String(abrirId)); if (c) setForm({ ...vazioCliente(), ...Object.fromEntries(Object.entries(c).map(([a, b]) => [a, b ?? ""])) }); onAberto?.(); }, [abrirId, lista]); // eslint-disable-line
   const vis = useMemo(() => (lista || []).filter((c) => !busca.trim() || semAcento(`${c.nome} ${c.razao_social || ""} ${c.documento || ""} ${c.cidade || ""}`).includes(semAcento(busca.trim()))), [lista, busca]);
   const salvar = async () => {
     setOcupado(true); setNota(null);
