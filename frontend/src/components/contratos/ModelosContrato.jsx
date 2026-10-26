@@ -23,7 +23,7 @@ const campo = (s, rot, el, flex = "1 1 160px") => <label style={{ flex, display:
 function htmlModelo(m, campos = []) {
   const nome = new Map(campos.map(([k, l]) => [k, l]));
   const texto = String(m.corpo || "").replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, k) => (k === "tabela_equipamentos" ? "[[TABELA_EQUIPAMENTOS]]" : `«${nome.get(k) || k}»`));
-  return gerarHtmlContrato({ numero: "«nº do contrato»", texto, tabela: [{ tag: "EQ-01", nome: "Equipamento de exemplo", valor_mensal: null }], empresa: dadosEmpresa(), previa: true });
+  return gerarHtmlContrato({ numero: "«nº do contrato»", texto, tabela: [{ tag: "EQ-01", nome: "Equipamento de exemplo", inicio: null, fim_previsto: null, valor_mensal: null }], empresa: dadosEmpresa(), previa: true });
 }
 
 export function EditorModeloContrato({ C, s, inicial, campos, salvando, onSalvar, onCancelar, titulo }) {

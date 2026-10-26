@@ -8,13 +8,17 @@ const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</
 const brl = (v) => (v == null ? "—" : Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
 const dataHora = (d) => (d ? new Date(d).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" }) : "—");
 const TABELA = "[[TABELA_EQUIPAMENTOS]]";
+const dBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
 
 function tabelaHtml(tabela = []) {
   const total = tabela.every((t) => t.valor_mensal != null) ? tabela.reduce((s, t) => s + Number(t.valor_mensal), 0) : null;
-  return `<table class="tab"><thead><tr><th>Tag</th><th>Equipamento</th><th style="text-align:right">Valor mensal</th></tr></thead><tbody>
-    ${tabela.map((t) => `<tr><td>${esc(t.tag)}</td><td>${esc(t.nome)}</td><td style="text-align:right">${t.valor_mensal == null ? "________" : brl(t.valor_mensal)}</td></tr>`).join("")}
-    ${tabela.length ? "" : '<tr><td colspan="3" style="text-align:center;color:#777">nenhum equipamento</td></tr>'}
-    </tbody>${total != null && tabela.length ? `<tfoot><tr><td colspan="2"><b>Total mensal</b></td><td style="text-align:right"><b>${brl(total)}</b></td></tr></tfoot>` : ""}</table>`;
+  // 14d.6: saída e término previsto de cada equipamento (contrato emitido antes da 14d.6 não tem as datas → sem as colunas)
+  const comDatas = tabela.some((t) => "inicio" in t);
+  const cols = comDatas ? 4 : 2;
+  return `<table class="tab"><thead><tr><th>Tag</th><th>Equipamento</th>${comDatas ? '<th class="dt">Início</th><th class="dt">Término</th>' : ""}<th style="text-align:right">Valor mensal</th></tr></thead><tbody>
+    ${tabela.map((t) => `<tr><td>${esc(t.tag)}</td><td>${esc(t.nome)}</td>${comDatas ? `<td class="dt">${dBR(t.inicio)}</td><td class="dt">${t.fim_previsto ? dBR(t.fim_previsto) : "indeterminado"}</td>` : ""}<td style="text-align:right">${t.valor_mensal == null ? "________" : brl(t.valor_mensal)}</td></tr>`).join("")}
+    ${tabela.length ? "" : `<tr><td colspan="${cols + 1}" style="text-align:center;color:#777">nenhum equipamento</td></tr>`}
+    </tbody>${total != null && tabela.length ? `<tfoot><tr><td colspan="${cols}"><b>Total mensal</b></td><td style="text-align:right"><b>${brl(total)}</b></td></tr></tfoot>` : ""}</table>`;
 }
 function corpoHtml(texto, tabela) {
   const ehTitulo = (l) => l.length > 3 && l === l.toUpperCase() && /[A-ZÁÉÍÓÚÂÊÔÃÕÇ]/.test(l);
@@ -37,6 +41,7 @@ export function gerarHtmlContrato(d) {
   p { margin: 0 0 6px; text-align: justify; } p.tit { font-weight: 700; margin-top: 12px; text-align: left; }
   .tab { width: 100%; border-collapse: collapse; margin: 8px 0 12px; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 11.5px; }
   .tab th { text-align: left; border-bottom: 1.5px solid #111; padding: 4px; font-size: 10px; text-transform: uppercase; color: #444; } .tab td { border-bottom: 1px solid #ddd; padding: 4px; color: #111; }
+  .tab th:first-child, .tab td:first-child, .tab .dt, .tab th:last-child, .tab td:last-child { width: 1%; white-space: nowrap; padding-left: 10px; padding-right: 10px; } /* 14d.7: o equipamento fica com a sobra */
   .ass { display: grid; grid-template-columns: 1fr 1fr; gap: 14mm; margin-top: 16mm; font-family: -apple-system, "Segoe UI", Roboto, sans-serif; font-size: 11px; text-align: center; }
   .ass .linha { border-top: 1px solid #111; padding-top: 4px; } .ass img { max-height: 60px; max-width: 220px; display: block; margin: 0 auto 2px; }
   .hash { font-family: "Courier New", monospace; font-size: 8.5px; color: #777; word-break: break-all; margin-top: 10mm; }

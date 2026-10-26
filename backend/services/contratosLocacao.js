@@ -60,7 +60,7 @@ async function montar(supabase, tenantId, contratos, { comAcessos = true } = {})
   return contratos.map((c) => {
     const minhas = locs.filter((l) => String(l.contrato_id) === String(c.id));
     const equipamentos = minhas.map((l) => { const e = equips.get(String(l.equipamento_id)) || {}; const pe = painel[String(l.equipamento_id)] || {};
-      return { locacao_id: l.id, equipamento_id: l.equipamento_id, tag: e.tag, nome: e.nome, ativa: l.status === 'ativa', inicio: l.inicio, fim_real: l.fim_real,
+      return { locacao_id: l.id, equipamento_id: l.equipamento_id, tag: e.tag, nome: e.nome, ativa: l.status === 'ativa', inicio: l.inicio, fim_previsto: l.fim_previsto || null, fim_real: l.fim_real,
         entrega_inspecao_id: l.entrega_inspecao_id, devolucao_inspecao_id: l.devolucao_inspecao_id, valor_mensal: l.valor_mensal ?? null, bloqueado: l.status === 'ativa' && !!e.bloqueado,
         rotinas: l.status === 'ativa' ? (pe.rotinas || []).filter((r) => !r.locacao_id || String(r.locacao_id) === String(l.id)) : [] }; })
       .sort((a, b) => (b.ativa - a.ativa) || String(a.tag).localeCompare(String(b.tag)));
@@ -97,11 +97,18 @@ async function editar(supabase, tenantId, id, body = {}) {
   const v = validar({ inicio: c.inicio, ...body }, true); if (v.erro) return { status: 400, erro: v.erro };
   const { data, error } = await supabase.from('locacao_contratos').update(v.dados).eq('id', c.id).eq('tenant_id', tenantId).select();
   if (error) throw new Error(error.message);
+  // 14d.6: equipamentos que seguiam o fim previsto do contrato acompanham a nova data (os que têm data própria ficam como estão)
+  if (v.dados.fim_previsto !== undefined && String(v.dados.fim_previsto || '') !== String(c.fim_previsto || '')) {
+    const locs = await q(supabase.from('equipamento_locacoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id));
+    for (const l of locs.filter((x) => x.status === 'ativa' && String(x.fim_previsto || '') === String(c.fim_previsto || ''))) {
+      await supabase.from('equipamento_locacoes').update({ fim_previsto: v.dados.fim_previsto || null }).eq('id', l.id).eq('tenant_id', tenantId);
+    }
+  }
   return { contrato: data[0] };
 }
 async function adicionarEquipamento(supabase, tenantId, quem, id, body = {}) {
   const c = await doTenant(supabase, tenantId, id); if (!c || c.status !== 'ativo') return { status: 400, erro: 'Contrato não encontrado ou encerrado' };
-  return R.locar(supabase, tenantId, quem, body.equipamento_id, { contrato_id: c.id, inicio: body.inicio || hojeBR(), local: body.local, rotina: body.rotina || null });
+  return R.locar(supabase, tenantId, quem, body.equipamento_id, { contrato_id: c.id, inicio: body.inicio || hojeBR(), fim_previsto: body.fim_previsto || null, local: body.local, rotina: body.rotina || null }); // 14d.6: término previsto por equipamento (vazio = o do contrato)
 }
 /** 14d.3: tirar o equipamento do contrato SEM devolução (lançado por engano / cliente desistiu antes de sair).
  *  Só se a locação ainda não tem nenhuma inspeção — depois disso, o caminho é 🏠 Devolver (fica no histórico). */
@@ -118,13 +125,16 @@ async function cancelarEquipamento(supabase, tenantId, id, equipId) {
   if (e && String(e.locacao_id) === String(l.id)) { const { error: eu } = await supabase.from('equipamentos').update({ situacao: 'base', locacao_id: null }).eq('id', e.id).eq('tenant_id', tenantId); if (eu) throw new Error(eu.message); }
   return { ok: true };
 }
-/** 14d.3: mudar a data de saída do equipamento (cliente adiou/antecipou) */
-async function alterarInicioEquipamento(supabase, tenantId, id, equipId, inicio) {
+/** 14d.3: mudar a data de saída do equipamento (cliente adiou/antecipou) · 14d.6: e o término previsto ({ inicio, fim_previsto }) */
+async function alterarInicioEquipamento(supabase, tenantId, id, equipId, body = {}) {
   const c = await doTenant(supabase, tenantId, id); if (!c || c.status !== 'ativo') return { status: 404, erro: 'Contrato não encontrado ou encerrado' };
+  const { inicio } = body; const temFim = body.fim_previsto !== undefined; const fim = body.fim_previsto || null;
   if (!DATA.test(String(inicio || ''))) return { status: 400, erro: 'Data inválida' };
+  if (fim && !DATA.test(String(fim))) return { status: 400, erro: 'Término previsto inválido' };
+  if (fim && fim < inicio) return { status: 400, erro: 'O término previsto é antes da saída' };
   const l = (await q(supabase.from('equipamento_locacoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id).eq('equipamento_id', equipId))).find((x) => x.status === 'ativa');
   if (!l) return { status: 400, erro: 'Este equipamento não está locado neste contrato' };
-  const { error } = await supabase.from('equipamento_locacoes').update({ inicio }).eq('id', l.id).eq('tenant_id', tenantId);
+  const { error } = await supabase.from('equipamento_locacoes').update(temFim ? { inicio, fim_previsto: fim } : { inicio }).eq('id', l.id).eq('tenant_id', tenantId);
   if (error) throw new Error(error.message);
   return { ok: true };
 }
@@ -217,7 +227,7 @@ async function painelLocatario(supabase, tenantId, usuarioId) {
     // 14d: contrato emitido para ler e aceitar
     documento: c.emitido_hash ? { versao: c.emitido_versao, emitido_em: c.emitido_em, texto: c.emitido_texto, tabela: c.emitido_tabela || [], hash: c.emitido_hash,
       aceite: c.aceite_em ? { nome: c.aceite_nome, em: c.aceite_em, hash: c.aceite_hash, png: c.aceite_png } : null } : null,
-    equipamentos: c.equipamentos.filter((e) => e.ativa).map((e) => ({ equipamento_id: e.equipamento_id, tag: e.tag, nome: e.nome, bloqueado: e.bloqueado, inicio: e.inicio,
+    equipamentos: c.equipamentos.filter((e) => e.ativa).map((e) => ({ equipamento_id: e.equipamento_id, tag: e.tag, nome: e.nome, bloqueado: e.bloqueado, inicio: e.inicio, fim_previsto: e.fim_previsto,
       rotinas: e.rotinas.map((r) => ({ id: r.id, modelo_id: r.modelo_id, modelo_nome: r.modelo_nome, frequencia_nome: r.frequencia_nome, responsavel: r.responsavel, estado: r.estado, dias: r.dias, proxima: r.proxima, ultima: r.ultima })) })),
   }));
   const lids = new Set(esc.locacoes.map((l) => String(l.id)));

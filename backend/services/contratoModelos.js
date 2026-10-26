@@ -26,7 +26,7 @@ const TABELA = '[[TABELA_EQUIPAMENTOS]]';
 
 /** Campos que o texto pode usar (a tela mostra esta lista para inserir com um clique) */
 const CAMPOS = [
-  ['contrato.numero', 'Nº do contrato (CL-…)'], ['contrato.local', 'Local / obra'], ['contrato.inicio', 'Data de início'], ['contrato.fim_previsto', 'Fim previsto'],
+  ['contrato.numero', 'Nº do contrato (CL-…)'], ['contrato.local', 'Local / obra'], ['contrato.inicio', 'Data de início'], ['contrato.fim_previsto', 'Data de término'],
   ['contrato.prazo', 'Prazo por extenso ("até 01/03/2027" / "indeterminado")'],
   ['empresa.razao_social', 'Sua razão social'], ['empresa.nome', 'Seu nome fantasia'], ['empresa.cnpj', 'Seu CNPJ'],
   ['cliente.razao_social', 'Razão social do cliente'], ['cliente.nome', 'Nome do cliente'], ['cliente.documento', 'CNPJ/CPF do cliente'], ['cliente.endereco_completo', 'Endereço do cliente'],
@@ -143,7 +143,7 @@ async function dadosDoContrato(supabase, tenantId, contrato) {
     q(supabase.from('equipamentos').select('*').eq('tenant_id', tenantId)),
   ]);
   const eq = new Map(equips.map((e) => [String(e.id), e]));
-  const tabela = locs.filter((l) => l.status === 'ativa').map((l) => { const e = eq.get(String(l.equipamento_id)) || {}; return { locacao_id: l.id, tag: e.tag || '', nome: e.nome || '', valor_mensal: l.valor_mensal != null ? Number(l.valor_mensal) : null }; })
+  const tabela = locs.filter((l) => l.status === 'ativa').map((l) => { const e = eq.get(String(l.equipamento_id)) || {}; return { locacao_id: l.id, tag: e.tag || '', nome: e.nome || '', inicio: l.inicio || null, fim_previsto: l.fim_previsto || contrato.fim_previsto || null, valor_mensal: l.valor_mensal != null ? Number(l.valor_mensal) : null }; })
     .sort((a, b) => String(a.tag).localeCompare(String(b.tag)));
   return { emp, cli, tabela };
 }
@@ -182,7 +182,7 @@ function montar(corpo, { contrato, emp, cli, tabela }, hoje = hojeBR()) {
   const texto0 = corpoUsado.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, k) => { const x = v[k]; if (x == null || x === '') { faltando.add(k); return VAZIO; } return x; });
   if (tabela.some((t) => t.valor_mensal == null)) faltando.add('valor mensal de equipamento');
   if (!tabela.length) faltando.add('equipamentos no contrato');
-  return { texto: texto0, tabela: tabela.map(({ tag, nome, valor_mensal }) => ({ tag, nome, valor_mensal })), total, faltando: [...faltando] };
+  return { texto: texto0, tabela: tabela.map(({ tag, nome, inicio, fim_previsto, valor_mensal }) => ({ tag, nome, inicio, fim_previsto, valor_mensal })), total, faltando: [...faltando] };
 }
 
 async function contratoDoTenant(supabase, tenantId, id) {

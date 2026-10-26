@@ -161,13 +161,13 @@ const ESPERADO = {
   'routes/equipamentos.js': '2e379d0637f0c8501cbfbad41898ef30', // etapa 14b.1.1
   'services/rotinasInspecao.js': 'dd1eb4b6cbab339d7b41f85f831601d9', // etapa 14b.3
   'migrations/042_inspecoes_rotinas_locacao.sql': 'bf32500014ddf3f779f1fa29ead5feb9', // etapa 14b.2 (novo)
-  'front:RotinasLocacao.jsx': '6373bfbf99adfa8d7f681f0a0875f8da', // etapa 14b.3
+  'front:RotinasLocacao.jsx': '333c70f5e477c4d998443062f335e477', // etapa 14d.7
   'front:gerarRelatorioCumprimento.js': 'd4b916c75f0a4290ccd9c96bf170ed90', // etapa 14c.1
-  'services/contratosLocacao.js': '44cc027debaafa022e8d5bceb05f8ed8', // etapa 14d.3
-  'routes/contratos.js': 'ac7000898b7764d21abab06bd9438f06', // etapa 14d.3
+  'services/contratosLocacao.js': '4e1f82194974bda0d16368be17f6672f', // etapa 14d.6
+  'routes/contratos.js': '2bb8bfd56d90ca8f610c8205f0cff251', // etapa 14d.6
   'routes/locatario.js': '53e5281ebe17af15c383451f452c61ca', // etapa 14d.2
   'migrations/043_contratos_locatario.sql': 'f25735b281aa176b4c31c3cc2bf283ed', // etapa 14b.3 (novo)
-  'front:TelaContratos.jsx': '74ca6b11f50617af27c851850bfcac9c', // etapa 14d.4
+  'front:TelaContratos.jsx': 'e2680a91a14d7c9eb30099241cd8afc6', // etapa 14d.7
   'front:TelaLocatario.jsx': 'bb111fbd38bfaa663465b54f8ee24c42', // etapa 14d.2
   'services/clientes.js': '9714283f0013553dc96a48b75b6734cf', // etapa 14b.3.1 (novo)
   'migrations/044_clientes.sql': '446d1a52049aea19938d36cc2b01653d', // etapa 14b.3.1 (novo)
@@ -179,10 +179,10 @@ const ESPERADO = {
   'front:logoEmpresa.js': 'd4a9118674d42a897c58aaea954dc6d2', // etapa 14d.2
   'front:comprimirImagem.js': 'b6d05cca4906e19250268c29f633f044', // etapa 14c.1 (novo)
   'front:gerarPdfNC.js': 'fe4db00132dc6c626027e234e1f5f366', // etapa 14c.2
-  'services/contratoModelos.js': '48ad3b6def668fe6d19c64b5181db872', // etapa 14d.4
+  'services/contratoModelos.js': '966e8b4fd2714a10868a173ca5b84e9b', // etapa 14d.7
   'migrations/046_modelos_contrato.sql': '0b06982d731ce6038a679a7cc7e21785', // etapa 14d.2
-  'front:ModelosContrato.jsx': '1948043de65f152f646f45e4370c6293', // etapa 14d.3
-  'front:gerarContrato.js': 'd814dcc0b70d05a2a21a544a1ae2d9c4', // etapa 14d.2
+  'front:ModelosContrato.jsx': '7420fdd0821fdc18e8743d46430726c5', // etapa 14d.6
+  'front:gerarContrato.js': '61918b643427ea861a255ca249fcb68d', // etapa 14d.7
   'front:BibliotecaContratos.jsx': 'ea69d4f5771b64870eabd53c83f18a8a', // etapa 14d.2
   'front:CampoMoeda.jsx': 'e67cbfc98693ab1ea2df84d091974ca9', // etapa 14d.2
   'migrations/047_contrato_representante.sql': '4769ba9b69f785a61c1f4e940e0cf9c2', // etapa 14d.3 (novo)
@@ -193,16 +193,12 @@ const ESPERADO = {
   'front:CompletarPerfil.jsx': '4d8ac0f25d36ba667d6f4fddf71118f8', // etapa 14d.5 (novo)
 };
 
-// Antes de copiar a etapa 14d.5 — base: 14d.4
+// Antes de copiar a etapa 14d.7 — base: 14d.6
 const ANTES = {
-  'services/receitaCnpj.js': '7c382fbd2db545838e97cb294aa12ee2',
-  'services/cadastroPublico.js': 'eae020d28c2318b0f2f96766d9e308e2',
-  'routes/configuracoes.js': '2b9c961fea0cff3450864ca8cf386314',
-  'routes/plataforma.js': '68e035801ae79f8d2a8f631a52c30588',
-  'front:DadosEmpresa.jsx': '3d1e0771d050f9be5d71a40a6c8d2864',
-  'front:TelaConfiguracoes.jsx': 'eb24bba6b0f6d2dc511bde8d29a71bb4',
-  'front:App.jsx': '3476eb7ff67767af7524719ee3b7b79b',
-  'front:ConsolePlataforma.jsx': '53469f434ffcb322ccf2af211e5d1eab',
+  'services/contratoModelos.js': '726c482ca1540a80358c2e0f646badd4',
+  'front:TelaContratos.jsx': '3a5bd5823ffa8074851aa8482d82a025',
+  'front:gerarContrato.js': '140893acb9aa2a580626fa3332d5e799',
+  'front:RotinasLocacao.jsx': '6373bfbf99adfa8d7f681f0a0875f8da',
 };
 
 const RAIZ = process.cwd();
@@ -240,7 +236,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 12e.1?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 14d.5)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 14d.7)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

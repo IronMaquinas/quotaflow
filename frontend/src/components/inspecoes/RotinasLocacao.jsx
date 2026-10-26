@@ -110,7 +110,7 @@ export function ModalLocar({ e, modelos, C, s, onFechar, onMudou, onErro }) {
       </div></>}
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
       {campo(s, "INÍCIO", inp("inicio", { type: "date" }))}
-      {!contrato && campo(s, "FIM PREVISTO (OPCIONAL)", inp("fim_previsto", { type: "date" }))}
+      {!contrato && campo(s, "TÉRMINO (OPCIONAL)", inp("fim_previsto", { type: "date" }))}
     </div>
     <div style={{ ...s.card, padding: 12, marginTop: 12 }}>
       <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, cursor: "pointer" }}><input type="checkbox" checked={f.comRotina} onChange={(x) => setF({ ...f, comRotina: x.target.checked })} /><b>Rotina de inspeção pelo locatário</b></label>
