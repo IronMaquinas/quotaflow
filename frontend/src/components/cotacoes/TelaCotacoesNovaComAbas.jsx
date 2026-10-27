@@ -20,6 +20,12 @@ export default function TelaCotacoesNovaComAbas({ fmtBRL, fmtD, C, s, cotacaoIni
 
   const cotacoesSeguro = cotacoes || [];
   const fornecedoresSeguro = fornecedores || [];
+  // 14e.3: na LISTA DE SELEÇÃO não aparecem fornecedores com CNPJ irregular na Receita (espelhado pelo 🛡 Monitor em
+  // fornecedores.situacao_cnpj). Só o filtro da tela — o envio continua com a trava do servidor como segunda proteção.
+  const cnpjIrregular = (f) => !!f?.situacao_cnpj && String(f.situacao_cnpj).trim().toUpperCase() !== "ATIVA";
+  const fornecedoresSelecao = fornecedoresSeguro.filter((f) => !cnpjIrregular(f));
+  const ocultosCnpj = fornecedoresSeguro.filter((f) => f.ativo && cnpjIrregular(f)).length;
+  const avisoOcultos = ocultosCnpj > 0 && <div style={{ fontSize: 11, color: C.warn, margin: "4px 0" }}>🛡 {ocultosCnpj} fornecedor(es) oculto(s) por CNPJ irregular na Receita — veja em 🛡 Monitor de CNPJs.</div>;
   const chamadosSeguro = chamados || [];
 
   // ─── ESTADO EXISTENTE (mantém tudo como antes) ─────────────
@@ -638,6 +644,7 @@ const handleAbrirCotacao = async (cotacao) => {
                 </div>
                   <div style={{ marginBottom: 18 }}>
                     <label style={s.label}>FORNECEDORES *</label>
+                    {avisoOcultos}
                     <div
                       style={{
                         display: "flex",
@@ -647,7 +654,7 @@ const handleAbrirCotacao = async (cotacao) => {
                         overflowY: "auto",
                       }}
                     >
-                      {fornecedoresSeguro
+                      {fornecedoresSelecao
                         .filter((f) => f.ativo)
                         .map((forn) => (
                           <label
@@ -1015,7 +1022,7 @@ const handleAbrirCotacao = async (cotacao) => {
                                             padding: 4,
                                           }}
                                         >
-                                          {fornecedoresSeguro
+                                          {fornecedoresSelecao
                                             .filter((f) => f.ativo)
                                             .filter((f) => !selecionesFornecedor[item.id]?.includes(f.id))
                                             .filter((f) =>
@@ -1066,7 +1073,7 @@ const handleAbrirCotacao = async (cotacao) => {
                                                 )}
                                               </button>
                                             ))}
-                                          {fornecedoresSeguro.filter(
+                                          {fornecedoresSelecao.filter(
                                             (f) =>
                                               f.ativo &&
                                               !selecionesFornecedor[item.id]?.includes(f.id) &&
@@ -1085,6 +1092,7 @@ const handleAbrirCotacao = async (cotacao) => {
                                               Nenhum fornecedor disponível
                                             </div>
                                           )}
+                                          {avisoOcultos}
                                         </div>
                                       )}
                                   </div>

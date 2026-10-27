@@ -103,6 +103,7 @@ export default function TelaUsuariosNova({ useUsuarios, C, s }) {
     { codigo: 'operacao',    label: 'Operação',      desc: 'OS, recebimento, estoque, NC' },
     { codigo: 'qualidade',   label: 'Qualidade',     desc: 'NC, curadoria, causa raiz' },
     { codigo: 'financeiro',  label: 'Financeiro',    desc: 'Contas a pagar, custo, fiscal' },
+    { codigo: 'comercial',   label: 'Comercial',     desc: 'Funil, BIDs e clientes (📈 Comercial)' }, // 15a
   ];
   const perfilLabels = Object.fromEntries(PERFIS_SISTEMA.map(p => [p.codigo, p.label]));
 

@@ -34,6 +34,7 @@ import TelaMonitorCnpj from './components/compliance/TelaMonitorCnpj'; // 14e
 import TelaNaoConformidades from "./components/naoConformidades/TelaNaoConformidades";
 import TelaInspecoes from "./components/inspecoes/TelaInspecoes"; // etapa 14a
 import TelaContratos from "./components/contratos/TelaContratos"; // etapa 14b.3
+import TelaComercial from "./components/comercial/TelaComercial"; // etapa 15a — 📈 Comercial (mini-CRM + BID)
 import { carregarLogoEmpresa } from "./utils/logoEmpresa"; // etapa 14c
 import TelaLocatario from "./components/contratos/TelaLocatario"; // etapa 14b.3
 import TelaCalendarioManutencao from './components/manutencao/TelaCalendarioManutencao'; // etapa 12a
@@ -386,7 +387,8 @@ const perfil = PERFIS[usuario.perfil] || {
 
   // Nav items filtrados por perfil
   const navItems = [
-    {id:"home",          l:"Início",                  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro"]},
+    {id:"home",          l:"Início",                  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro","comercial"]},
+    {id:"comercial",     l:"📈 Comercial",            perfis:["admin","gestor","comercial"]}, // etapa 15a
     {id:"ordem_servico", l:"🛠️ Ordem de Serviço",    perfis:["admin","gestor","operacao","qualidade"]},
     {id:"calendario",    l:"📅 Calendário",           perfis:["admin","gestor","comprador","operacao"]},
     {id:"recebimento",   l:"📥 Recebimento",         perfis:["admin","gestor","comprador","operacao"]},
@@ -408,7 +410,7 @@ const perfil = PERFIS[usuario.perfil] || {
     {id:"inspecoes",     l:"🔍 Inspeções",             perfis:["admin","gestor","comprador","operacao","qualidade"]}, // etapa 14a
     {id:"contratos",     l:"📑 Contratos",             perfis:["admin","gestor","comprador","operacao","qualidade"]}, // etapa 14b.3
     {id:"pessoas",       l:"👷 Pessoas",               perfis:["admin","gestor","qualidade","operacao"]},
-    {id:"meus_treinamentos", l:"🎓 Meus treinamentos",  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro"]}, // etapa 12e.2b
+    {id:"meus_treinamentos", l:"🎓 Meus treinamentos",  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro","comercial"]}, // etapa 12e.2b
     {id:"fornecedores",  l:"🏭 Fornecedores",         perfis:["admin","gestor","comprador"]},
     {id:"monitor_cnpj",  l:"🛡 Monitor de CNPJs",     perfis:["admin","gestor","comprador"]}, // etapa 14e
     {id:"portalfornecedor", l:"🏢 Portal Fornecedor", perfis:["admin","fornecedor"]},
@@ -777,6 +779,8 @@ const perfil = PERFIS[usuario.perfil] || {
           <div style={{ flex: 1, overflowY: "auto" }}>
             <TelaConfiguracoes key={configAba||"jornada"} C={C} s={s} abaInicial={configAba} />
           </div>)}
+
+        {temAcesso(tela) && tela === "comercial" && (<div style={{ flex: 1, overflowY: "auto" }}><TelaComercial C={C} s={s} /></div>)}
 
         {temAcesso(tela) && tela === "contratos" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
@@ -2369,6 +2373,7 @@ const PERFIS = {
   operacao:    { l:"Operação",      c:"#f59e0b", icon:"🔧" },
   qualidade:   { l:"Qualidade",     c:"#10b981", icon:"✅" },
   financeiro:  { l:"Financeiro",    c:"#06b6d4", icon:"💰" },
+  comercial:   { l:"Comercial",     c:"#ec4899", icon:"📈" }, // etapa 15a
   // legado (mantidos pra não quebrar dado antigo em teste)
   tecnico:     { l:"Técnico",       c:"#f59e0b", icon:"🔧" },
   fornecedor:  { l:"Fornecedor",    c:"#22c55e", icon:"🏢" },
@@ -2379,7 +2384,8 @@ const PERFIS = {
 // tela) e com os 6 perfis canônicos do banco. `tecnico` e `fornecedor`
 // são legado (mantidos pra compat com dados antigos em teste).
 const PERMISSOES = {
-  home:               ["admin","gestor","comprador","operacao","qualidade","financeiro"],
+  home:               ["admin","gestor","comprador","operacao","qualidade","financeiro","comercial"],
+  comercial:          ["admin","gestor","comercial"], // etapa 15a
   ordem_servico:      ["admin","gestor","operacao","qualidade"],
   calendario:         ["admin","gestor","comprador","operacao"], // etapa 12a
   recebimento:        ["admin","gestor","comprador","operacao"],
@@ -2401,7 +2407,7 @@ const PERMISSOES = {
   inspecoes:          ["admin","gestor","comprador","operacao","qualidade"], // etapa 14a
   contratos:          ["admin","gestor","comprador","operacao","qualidade"], // etapa 14b.3
   pessoas:            ["admin","gestor","qualidade","operacao"], // etapa 12c
-  meus_treinamentos:  ["admin","gestor","comprador","operacao","qualidade","financeiro","colaborador"], // etapa 12e.2b
+  meus_treinamentos:  ["admin","gestor","comprador","operacao","qualidade","financeiro","comercial","colaborador"], // etapa 12e.2b
   fornecedores:       ["admin","gestor","comprador"],
   monitor_cnpj:       ["admin","gestor","comprador"], // etapa 14e
   portalfornecedor:   ["admin","fornecedor"],

@@ -1,0 +1,495 @@
+// backend/services/bids.js — etapa 15a
+//
+// 📈 Comercial (mini-CRM) + BID (decidido com o Marcony, 27/10/2026):
+//   • MODELO de BID (biblioteca do QuotaFlow: tenant_id NULL → a empresa importa uma cópia e adapta):
+//       seções de texto (antes/depois da precificação), COLUNAS do item, CONDIÇÕES comerciais (com N/A).
+//       O 1º modelo é "Transporte de equipamentos"; modelos futuros (locação, serviços) mudam só colunas e textos.
+//   • BID-AAAA-NNNN: cliente (cadastro Clientes 14b.3.1), itens agrupados por grupo/trecho — valor por item,
+//     subtotal por grupo (digitado ou soma dos itens) e total (digitado ou soma dos grupos) —, condições, validade.
+//   • VERSÕES v1, v2… congeladas com "o que mudou" e hash. Marcar como Enviado fecha a versão se houve mudança.
+//   • FUNIL (kanban): elaboração → enviado → em negociação → proposta final → aceito | perdido (motivo obrigatório).
+//     Na 15b, enviado/aceito passam a mudar sozinhos (link do cliente); até lá a mudança é manual.
+//   • ATIVIDADES (linha do tempo do CRM): ligação, e-mail, reunião, nota, tarefa com data; eventos automáticos.
+// Regras do backend: sem DB.raw; ids com String(); filtros sem null; o mock não aplica default do banco.
+
+const crypto = require('crypto');
+
+async function q(p) { const { data, error } = await p; if (error) throw new Error(error.message); return data || []; }
+const texto = (v, max) => (v == null || String(v).trim() === '' ? null : String(v).trim().slice(0, max));
+const idOk = (v) => /^\d+$/.test(String(v ?? ''));
+const hojeBR = () => new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+const somaDias = (d, n) => { const x = new Date(`${d}T12:00:00Z`); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
+const num = (v) => {
+  if (v === undefined || v === null || String(v).trim() === '') return null;
+  const t = String(v).trim().replace(/^R\$\s*/, ''); // "73.500" (milhar) = 73500; "25,5" = 25.5; "2.000,00" = 2000
+  const n = Number(t.includes(',') || /^\d{1,3}(\.\d{3})+$/.test(t) ? t.replace(/\./g, '').replace(',', '.') : t);
+  return Number.isFinite(n) ? n : NaN;
+};
+const brl = (v) => (v == null ? null : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }).replace(/ /g, ' '));
+const novoId = () => crypto.randomBytes(5).toString('hex');
+
+const FASES = ['elaboracao', 'enviado', 'negociacao', 'proposta_final', 'aceito', 'perdido'];
+const FASE_NOME = { elaboracao: 'Elaboração', enviado: 'Enviado', negociacao: 'Em negociação', proposta_final: 'Proposta final', aceito: 'Aceito', perdido: 'Perdido' };
+const ABERTAS = ['elaboracao', 'enviado', 'negociacao', 'proposta_final'];
+const MOTIVOS_PERDA = { preco: 'Preço', prazo: 'Prazo', veiculo: 'Tipo de veículo / disponibilidade', concorrente: 'Fechou com concorrente', desistiu: 'Cliente desistiu do serviço', outro: 'Outro motivo' };
+const TIPOS_ATIV = { ligacao: '📞 Ligação', email: '✉ E-mail', reuniao: '🤝 Reunião', nota: '📝 Nota', tarefa: '⏰ Tarefa', evento: '•' };
+const TIPOS_COLUNA = ['texto', 'numero', 'sim_nao', 'data'];
+const TIPOS_CONDICAO = ['texto', 'moeda', 'numero'];
+const OPCOES_FISCAIS = ['Simples Nacional', 'Lucro Presumido', 'Lucro Real', 'MEI'];
+/** Campos automáticos que os textos das seções podem usar */
+const CAMPOS = [['empresa.razao_social', 'Sua razão social'], ['empresa.nome', 'Seu nome fantasia'], ['cliente.nome', 'Nome do cliente'], ['cliente.razao_social', 'Razão social do cliente'],
+  ['bid.numero', 'Nº do BID'], ['bid.referencia', 'Referência do cliente'], ['bid.validade', 'Validade (dias)']];
+const NOMES_CAMPOS = new Set(CAMPOS.map((c) => c[0]));
+
+// ─── modelos ────────────────────────────────────────────────────────────────
+function chaveDe(v) { return String(v || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 40); }
+function validarModelo(body = {}, parcial = false) {
+  const out = {}; const tem = (k) => body[k] !== undefined;
+  if (!parcial || tem('nome')) { const n = texto(body.nome, 120); if (!n) return { erro: 'Informe o nome do modelo' }; out.nome = n; }
+  if (tem('descricao')) out.descricao = texto(body.descricao, 500);
+  if (tem('titulo_documento')) out.titulo_documento = texto(body.titulo_documento, 160);
+  if (tem('rotulo_grupo')) out.rotulo_grupo = texto(body.rotulo_grupo, 40) || 'Grupo';
+  if (tem('validade_dias')) { const n = num(body.validade_dias); if (!Number.isInteger(n) || n < 1 || n > 365) return { erro: 'Validade: de 1 a 365 dias' }; out.validade_dias = n; }
+  if (!parcial || tem('secoes')) { const r = validarSecoes(body.secoes); if (r.erro) return r; out.secoes = r.secoes; }
+  if (!parcial || tem('colunas')) {
+    const l = Array.isArray(body.colunas) ? body.colunas : [];
+    if (l.length > 16) return { erro: 'No máximo 16 colunas' };
+    const vistas = new Set(); const cols = [];
+    for (const c of l) {
+      const rotulo = texto(c?.rotulo, 40); if (!rotulo) continue;
+      let chave = chaveDe(c.chave || rotulo) || `c${cols.length + 1}`; while (vistas.has(chave)) chave += '_2';
+      vistas.add(chave);
+      cols.push({ chave, rotulo, tipo: TIPOS_COLUNA.includes(c.tipo) ? c.tipo : 'texto', ...(texto(c.unidade, 12) ? { unidade: texto(c.unidade, 12) } : {}) });
+    }
+    out.colunas = cols;
+  }
+  if (!parcial || tem('condicoes')) {
+    const l = Array.isArray(body.condicoes) ? body.condicoes : [];
+    if (l.length > 30) return { erro: 'No máximo 30 condições' };
+    const vistas = new Set(); const conds = [];
+    for (const c of l) {
+      const rotulo = texto(c?.rotulo, 60); if (!rotulo) continue;
+      let chave = chaveDe(c.chave || rotulo) || `k${conds.length + 1}`; while (vistas.has(chave)) chave += '_2';
+      vistas.add(chave);
+      conds.push({ chave, rotulo, tipo: TIPOS_CONDICAO.includes(c.tipo) ? c.tipo : 'texto', grupo: c.grupo === 'pagamento' ? 'pagamento' : 'comercial',
+        ...(texto(c.unidade, 12) ? { unidade: texto(c.unidade, 12) } : {}), ...(texto(c.padrao, 300) ? { padrao: texto(c.padrao, 300) } : {}) });
+    }
+    out.condicoes = conds;
+  }
+  return { dados: out };
+}
+function validarSecoes(lista) {
+  const l = Array.isArray(lista) ? lista : [];
+  if (l.length > 20) return { erro: 'No máximo 20 seções' };
+  const secoes = [];
+  for (const s of l) {
+    const titulo = texto(s?.titulo, 120); const t = String(s?.texto || '').replace(/\r\n/g, '\n').trim().slice(0, 8000);
+    if (!titulo && !t) continue;
+    if (!titulo) return { erro: 'Toda seção precisa de título' };
+    const desconhecido = [...t.matchAll(/\{\{\s*([\w.]+)\s*\}\}/g)].map((m) => m[1]).find((n) => !NOMES_CAMPOS.has(n));
+    if (desconhecido) return { erro: `Campo desconhecido no texto: {{${desconhecido}}}` };
+    secoes.push({ titulo, texto: t, posicao: s.posicao === 'depois' ? 'depois' : 'antes' });
+  }
+  return { secoes };
+}
+async function bibliotecaTodos(supabase) { return (await q(supabase.from('bid_modelos').select('*').is('tenant_id', null))).sort((a, b) => String(a.nome).localeCompare(String(b.nome))); }
+async function modelosTenant(supabase, tenantId) {
+  const l = (await q(supabase.from('bid_modelos').select('*').eq('tenant_id', tenantId))).filter((m) => m.ativo !== false);
+  const bib = l.some((m) => m.origem_id != null) ? new Map((await bibliotecaTodos(supabase)).map((m) => [String(m.id), Number(m.versao || 1)])) : new Map();
+  return l.map((m) => ({ ...m, versao_nova: m.origem_id != null && (bib.get(String(m.origem_id)) || 0) > Number(m.origem_versao || 0) })).sort((a, b) => String(a.nome).localeCompare(String(b.nome)));
+}
+async function bibliotecaParaTenant(supabase, tenantId) {
+  const meus = await q(supabase.from('bid_modelos').select('*').eq('tenant_id', tenantId));
+  const ja = new Set(meus.filter((m) => m.origem_id != null && m.ativo !== false).map((m) => String(m.origem_id)));
+  return (await bibliotecaTodos(supabase)).filter((m) => m.ativo !== false).map((m) => ({ ...m, ja_importado: ja.has(String(m.id)) }));
+}
+const COPIAVEIS = ['nome', 'descricao', 'titulo_documento', 'secoes', 'colunas', 'condicoes', 'rotulo_grupo', 'validade_dias'];
+const copiar = (m) => Object.fromEntries(COPIAVEIS.map((k) => [k, m[k] ?? null]));
+async function importar(supabase, tenantId, bibId) {
+  const m = idOk(bibId) ? (await q(supabase.from('bid_modelos').select('*').is('tenant_id', null).eq('id', bibId)))[0] : null;
+  if (!m || m.ativo === false) return { status: 404, erro: 'Modelo não encontrado' };
+  const { data, error } = await supabase.from('bid_modelos').insert([{ ...copiar(m), tenant_id: tenantId, origem_id: m.id, origem_versao: m.versao || 1, versao: 1, ativo: true }]).select();
+  if (error) throw new Error(error.message);
+  return { modelo: data[0] };
+}
+async function atualizarDaBiblioteca(supabase, tenantId, id) {
+  const t = idOk(id) ? (await q(supabase.from('bid_modelos').select('*').eq('tenant_id', tenantId).eq('id', id)))[0] : null;
+  if (!t || t.origem_id == null) return { status: 404, erro: 'Modelo não veio da biblioteca' };
+  const m = (await q(supabase.from('bid_modelos').select('*').is('tenant_id', null).eq('id', t.origem_id)))[0];
+  if (!m) return { status: 404, erro: 'O modelo saiu da biblioteca' };
+  const { data, error } = await supabase.from('bid_modelos').update({ ...copiar(m), origem_versao: m.versao || 1, atualizado_em: new Date().toISOString() }).eq('id', t.id).eq('tenant_id', tenantId).select();
+  if (error) throw new Error(error.message);
+  return { modelo: data[0] };
+}
+async function salvarModelo(supabase, tenantId, id, body = {}) {
+  if (id && body.ativo === false && Object.keys(body).length === 1) {
+    const { data, error } = await supabase.from('bid_modelos').update({ ativo: false, atualizado_em: new Date().toISOString() }).eq('id', id).eq('tenant_id', tenantId).select();
+    if (error) throw new Error(error.message);
+    return data?.length ? { ok: true } : { status: 404, erro: 'Modelo não encontrado' };
+  }
+  const v = validarModelo(body, !!id); if (v.erro) return { status: 400, erro: v.erro };
+  if (id) {
+    const { data, error } = await supabase.from('bid_modelos').update({ ...v.dados, atualizado_em: new Date().toISOString() }).eq('id', id).eq('tenant_id', tenantId).select();
+    if (error) throw new Error(error.message);
+    return data?.length ? { modelo: data[0] } : { status: 404, erro: 'Modelo não encontrado' };
+  }
+  const { data, error } = await supabase.from('bid_modelos').insert([{ titulo_documento: null, rotulo_grupo: 'Grupo', validade_dias: 10, ...v.dados, tenant_id: tenantId, versao: 1, ativo: true }]).select();
+  if (error) throw new Error(error.message);
+  return { modelo: data[0] };
+}
+
+// ─── itens, condições e totais ─────────────────────────────────────────────
+/** grupos (do corpo) → grupos limpos, só com as colunas do BID */
+function validarGrupos(grupos, colunas = []) {
+  const l = Array.isArray(grupos) ? grupos : [];
+  if (l.length > 60) throw new Error('No máximo 60 grupos');
+  const chaves = new Map(colunas.map((c) => [c.chave, c]));
+  return l.map((g, gi) => {
+    const itens = Array.isArray(g?.itens) ? g.itens : [];
+    if (itens.length > 200) throw new Error('No máximo 200 itens por grupo');
+    const valorG = num(g?.valor); if (Number.isNaN(valorG) || (valorG != null && valorG < 0)) throw new Error(`Valor inválido no grupo ${gi + 1}`);
+    return {
+      id: texto(g?.id, 20) || novoId(), titulo: texto(g?.titulo, 160) || '', valor: valorG,
+      itens: itens.map((it, ii) => {
+        const valores = {};
+        for (const [k, v] of Object.entries(it?.valores || {})) {
+          const c = chaves.get(k); if (!c) continue;
+          if (c.tipo === 'numero') { const n = num(v); if (Number.isNaN(n)) throw new Error(`${c.rotulo}: número inválido (grupo ${gi + 1}, item ${ii + 1})`); if (n != null) valores[k] = n; }
+          else if (c.tipo === 'sim_nao') { if (['sim', 'nao', 'na'].includes(v)) valores[k] = v; }
+          else if (c.tipo === 'data') { if (/^\d{4}-\d{2}-\d{2}$/.test(String(v || ''))) valores[k] = v; }
+          else { const t = texto(v, 200); if (t) valores[k] = t; }
+        }
+        const valor = num(it?.valor); if (Number.isNaN(valor) || (valor != null && valor < 0)) throw new Error(`Valor inválido (grupo ${gi + 1}, item ${ii + 1})`);
+        const qtd = num(it?.quantidade); if (Number.isNaN(qtd) || (qtd != null && qtd <= 0)) throw new Error(`Quantidade inválida (grupo ${gi + 1}, item ${ii + 1})`);
+        return { id: texto(it?.id, 20) || novoId(), valores, quantidade: qtd ?? 1, valor };
+      }),
+    };
+  });
+}
+/** total do item = valor × quantidade; subtotal do grupo = digitado ou soma dos itens; total = digitado ou soma dos grupos */
+function totais(grupos = [], valorTotalManual = null) {
+  const gs = grupos.map((g) => {
+    const comValor = g.itens.filter((i) => i.valor != null); // 15a.1: item sem valor não zera o subtotal
+    const somaItens = comValor.length ? comValor.reduce((s, i) => s + Number(i.valor) * Number(i.quantidade || 1), 0) : null;
+    return { ...g, subtotal: g.valor != null ? Number(g.valor) : somaItens };
+  });
+  const soma = gs.length && gs.every((g) => g.subtotal != null) ? gs.reduce((s, g) => s + g.subtotal, 0) : null;
+  return { grupos: gs, total: valorTotalManual != null ? Number(valorTotalManual) : soma, soma_grupos: soma };
+}
+function validarCondicoes(c = {}, defs = []) {
+  const out = {}; const chaves = new Map(defs.map((d) => [d.chave, d]));
+  const na = Array.isArray(c.na) ? c.na.filter((k) => chaves.has(k)) : [];
+  for (const [k, d] of chaves) {
+    if (na.includes(k) || c[k] === undefined) continue;
+    if (d.tipo === 'texto') { out[k] = texto(c[k], 600); continue; }
+    const n = num(c[k]); if (Number.isNaN(n) || (n != null && n < 0)) throw new Error(`Valor inválido: ${d.rotulo}`);
+    out[k] = n;
+  }
+  out.na = na;
+  return out;
+}
+
+// ─── BID ────────────────────────────────────────────────────────────────────
+async function bidDoTenant(supabase, tenantId, id) { return idOk(id) ? (await q(supabase.from('bids').select('*').eq('tenant_id', tenantId).eq('id', id)))[0] || null : null; }
+async function proximoNumero(supabase, tenantId) {
+  const ano = hojeBR().slice(0, 4); const pre = `BID-${ano}-`;
+  const nums = (await q(supabase.from('bids').select('numero').eq('tenant_id', tenantId))).map((b) => String(b.numero || '')).filter((n) => n.startsWith(pre)).map((n) => Number(n.slice(pre.length)) || 0);
+  return `${pre}${String((nums.length ? Math.max(...nums) : 0) + 1).padStart(4, '0')}`;
+}
+async function atividade(supabase, tenantId, quem, dados) {
+  const { error } = await supabase.from('bid_atividades').insert([{ tenant_id: tenantId, bid_id: dados.bid_id ?? null, cliente_id: dados.cliente_id ?? null, tipo: dados.tipo, texto: dados.texto,
+    prevista_para: dados.prevista_para || null, concluida_em: null, usuario_id: quem?.usuarioId ?? null, usuario_nome: quem?.usuarioNome || null, criado_em: new Date().toISOString() }]);
+  if (error) console.error('⚠️ [bids] atividade não gravada:', error.message);
+}
+async function responsaveis(supabase, tenantId) {
+  const us = (await q(supabase.from('usuarios').select('*').eq('tenant_id', tenantId))).filter((u) => u.ativo !== false);
+  const ups = us.length ? await q(supabase.from('usuario_perfis').select('*').in('usuario_id', us.map((u) => u.id))).catch(() => []) : [];
+  const perfis = (u) => new Set([u.perfil, ...ups.filter((p) => String(p.usuario_id) === String(u.id)).map((p) => p.perfil_codigo)]);
+  return us.filter((u) => [...perfis(u)].some((p) => ['admin', 'gestor', 'comercial'].includes(p))).map((u) => ({ id: u.id, nome: u.nome || u.email })).sort((a, b) => String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
+}
+
+async function criar(supabase, tenantId, quem, body = {}) {
+  if (!idOk(body.cliente_id)) return { status: 400, erro: 'Escolha o cliente' };
+  const cli = (await q(supabase.from('clientes').select('*').eq('tenant_id', tenantId).eq('id', body.cliente_id)))[0];
+  if (!cli) return { status: 400, erro: 'Cliente não encontrado' };
+  if (!idOk(body.modelo_id)) return { status: 400, erro: 'Escolha o modelo de BID' };
+  const m = (await q(supabase.from('bid_modelos').select('*').eq('tenant_id', tenantId).eq('id', body.modelo_id)))[0];
+  if (!m || m.ativo === false) return { status: 400, erro: 'Modelo não encontrado — importe um da biblioteca em 🧩 Modelos' };
+  let resp = { id: quem.usuarioId ?? null, nome: quem.usuarioNome || null };
+  if (body.responsavel_id && String(body.responsavel_id) !== String(quem.usuarioId)) {
+    const r = (await responsaveis(supabase, tenantId)).find((u) => String(u.id) === String(body.responsavel_id));
+    if (!r) return { status: 400, erro: 'Responsável precisa ser admin, gestor ou comercial ativo' };
+    resp = r;
+  }
+  const condicoes = { na: [] }; for (const d of m.condicoes || []) if (d.padrao) condicoes[d.chave] = d.padrao;
+  // assinatura: a da última proposta deste responsável (cargo, registro, telefones) — senão só o nome
+  const anteriores = (await q(supabase.from('bids').select('*').eq('tenant_id', tenantId))).filter((b) => resp.id != null && String(b.responsavel_id) === String(resp.id)).sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em)));
+  const assinante = anteriores[0]?.assinante?.nome ? anteriores[0].assinante : { nome: resp.nome || '', cargo: '', registro: '', telefones: '' };
+  const agora = new Date().toISOString();
+  const reg = {
+    tenant_id: tenantId, numero: await proximoNumero(supabase, tenantId), titulo: texto(body.titulo, 160), referencia: texto(body.referencia, 60),
+    cliente_id: cli.id, cliente_nome: cli.nome, contato_nome: texto(body.contato_nome, 120) ?? cli.contato_nome ?? null, contato_email: texto(body.contato_email, 160) ?? cli.contato_email ?? null,
+    contato_telefone: texto(body.contato_telefone, 30) ?? cli.contato_telefone ?? null,
+    modelo_id: m.id, modelo_nome: m.nome,
+    conteudo: { titulo_documento: m.titulo_documento || null, rotulo_grupo: m.rotulo_grupo || 'Grupo', secoes: m.secoes || [], colunas: m.colunas || [], condicoes: m.condicoes || [] },
+    grupos: [{ id: novoId(), titulo: '', valor: null, itens: [{ id: novoId(), valores: {}, quantidade: 1, valor: null }] }], condicoes,
+    valor_total_manual: null, valor_total: null, validade_dias: m.validade_dias || 10, valido_ate: null,
+    previsao_fechamento: /^\d{4}-\d{2}-\d{2}$/.test(String(body.previsao_fechamento || '')) ? body.previsao_fechamento : null,
+    assinante, responsavel_id: resp.id, responsavel_nome: resp.nome, fase: 'elaboracao', fase_desde: agora, versao_atual: 0, alterado_desde_versao: true,
+    criado_por_nome: quem.usuarioNome || null, criado_em: agora, atualizado_em: agora,
+  };
+  const { data, error } = await supabase.from('bids').insert([reg]).select();
+  if (error) throw new Error(error.message);
+  await atividade(supabase, tenantId, quem, { bid_id: data[0].id, cliente_id: cli.id, tipo: 'evento', texto: `BID ${reg.numero} criado (modelo ${m.nome})` });
+  return { bid: data[0] };
+}
+
+const FECHADAS = ['aceito', 'perdido'];
+async function editar(supabase, tenantId, quem, id, body = {}) {
+  const b = await bidDoTenant(supabase, tenantId, id); if (!b) return { status: 404, erro: 'BID não encontrado' };
+  if (FECHADAS.includes(b.fase)) return { status: 409, erro: `BID ${FASE_NOME[b.fase].toLowerCase()} — reabra para editar` };
+  const upd = {}; const tem = (k) => body[k] !== undefined;
+  for (const [k, n] of [['titulo', 160], ['referencia', 60], ['contato_nome', 120], ['contato_email', 160], ['contato_telefone', 30]]) if (tem(k)) upd[k] = texto(body[k], n);
+  if (upd.contato_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(upd.contato_email)) return { status: 400, erro: 'E-mail do contato inválido' };
+  const conteudo = { ...(b.conteudo || {}) };
+  if (tem('secoes')) { const r = validarSecoes(body.secoes); if (r.erro) return { status: 400, erro: r.erro }; conteudo.secoes = r.secoes; upd.conteudo = conteudo; }
+  try {
+    if (tem('grupos')) upd.grupos = validarGrupos(body.grupos, conteudo.colunas || []);
+    if (tem('condicoes')) upd.condicoes = validarCondicoes(body.condicoes, conteudo.condicoes || []);
+  } catch (e) { return { status: 400, erro: e.message }; }
+  if (tem('valor_total_manual')) { const n = num(body.valor_total_manual); if (Number.isNaN(n) || (n != null && n < 0)) return { status: 400, erro: 'Valor total inválido' }; upd.valor_total_manual = n; }
+  if (tem('validade_dias')) { const n = num(body.validade_dias); if (!Number.isInteger(n) || n < 1 || n > 365) return { status: 400, erro: 'Validade: de 1 a 365 dias' }; upd.validade_dias = n; }
+  if (tem('previsao_fechamento')) upd.previsao_fechamento = /^\d{4}-\d{2}-\d{2}$/.test(String(body.previsao_fechamento || '')) ? body.previsao_fechamento : null;
+  if (tem('assinante')) { const a = body.assinante || {}; upd.assinante = { nome: texto(a.nome, 120) || '', cargo: texto(a.cargo, 120) || '', registro: texto(a.registro, 80) || '', telefones: texto(a.telefones, 120) || '' }; }
+  if (tem('responsavel_id')) {
+    const r = (await responsaveis(supabase, tenantId)).find((u) => String(u.id) === String(body.responsavel_id));
+    if (!r) return { status: 400, erro: 'Responsável precisa ser admin, gestor ou comercial ativo' };
+    if (String(r.id) !== String(b.responsavel_id)) { upd.responsavel_id = r.id; upd.responsavel_nome = r.nome; }
+  }
+  if (!Object.keys(upd).length) return { bid: b };
+  const t = totais(upd.grupos || b.grupos || [], upd.valor_total_manual !== undefined ? upd.valor_total_manual : b.valor_total_manual);
+  upd.valor_total = t.total;
+  // mudar só o responsável não "suja" a versão (não muda o documento)
+  if (Object.keys(upd).some((k) => !['responsavel_id', 'responsavel_nome', 'previsao_fechamento', 'valor_total'].includes(k))) upd.alterado_desde_versao = true;
+  upd.atualizado_em = new Date().toISOString();
+  const { data, error } = await supabase.from('bids').update(upd).eq('id', b.id).eq('tenant_id', tenantId).select();
+  if (error) throw new Error(error.message);
+  if (upd.responsavel_nome) await atividade(supabase, tenantId, quem, { bid_id: b.id, cliente_id: b.cliente_id, tipo: 'evento', texto: `Responsável: ${b.responsavel_nome || '—'} → ${upd.responsavel_nome}` });
+  return { bid: data[0] };
+}
+
+/** retrato do documento (o que vai no PDF) */
+const retrato = (b) => ({ titulo: b.titulo || null, referencia: b.referencia || null, cliente_nome: b.cliente_nome, contato_nome: b.contato_nome || null, conteudo: b.conteudo || {},
+  grupos: b.grupos || [], condicoes: b.condicoes || {}, valor_total_manual: b.valor_total_manual ?? null, valor_total: b.valor_total ?? null, validade_dias: b.validade_dias, assinante: b.assinante || {} });
+/** "o que mudou" entre dois retratos — frases curtas para a linha do tempo da versão */
+function diferencas(a, b) {
+  if (!a) return ['Primeira versão'];
+  const out = []; const rot = b.conteudo?.rotulo_grupo || 'Grupo';
+  const colNome = new Map((b.conteudo?.colunas || []).map((c) => [c.chave, c.rotulo]));
+  const ga = new Map((a.grupos || []).map((g) => [g.id, g])); const gb = new Map((b.grupos || []).map((g) => [g.id, g]));
+  const nomeG = (g, i) => g.titulo || `${rot} ${i + 1}`;
+  (b.grupos || []).forEach((g, i) => {
+    const o = ga.get(g.id);
+    if (!o) { out.push(`${rot} incluído: ${nomeG(g, i)} (${g.itens.length} item(ns))`); return; }
+    if ((o.titulo || '') !== (g.titulo || '')) out.push(`${rot} renomeado: ${o.titulo || '—'} → ${g.titulo || '—'}`);
+    if (o.valor !== g.valor) out.push(`${nomeG(g, i)} — subtotal ${brl(o.valor) || 'pela soma'} → ${brl(g.valor) || 'pela soma'}`);
+    const ia = new Map(o.itens.map((x) => [x.id, x]));
+    g.itens.forEach((it, k) => {
+      const ant = ia.get(it.id); const nomeI = it.valores?.modelo || it.valores?.veiculo || `item ${k + 1}`;
+      if (!ant) { out.push(`${nomeG(g, i)} — item incluído: ${nomeI}`); return; }
+      if (ant.valor !== it.valor) out.push(`${nomeG(g, i)} — ${nomeI}: valor ${brl(ant.valor) || '—'} → ${brl(it.valor) || '—'}`);
+      if (Number(ant.quantidade || 1) !== Number(it.quantidade || 1)) out.push(`${nomeG(g, i)} — ${nomeI}: quantidade ${ant.quantidade || 1} → ${it.quantidade || 1}`);
+      for (const k2 of new Set([...Object.keys(ant.valores || {}), ...Object.keys(it.valores || {})])) {
+        if (String(ant.valores?.[k2] ?? '') !== String(it.valores?.[k2] ?? '')) out.push(`${nomeG(g, i)} — ${nomeI}: ${colNome.get(k2) || k2} ${ant.valores?.[k2] ?? '—'} → ${it.valores?.[k2] ?? '—'}`);
+      }
+    });
+    for (const x of o.itens) if (!g.itens.some((y) => y.id === x.id)) out.push(`${nomeG(g, i)} — item retirado: ${x.valores?.modelo || x.valores?.veiculo || 'item'}`);
+  });
+  (a.grupos || []).forEach((g, i) => { if (!gb.has(g.id)) out.push(`${rot} retirado: ${nomeG(g, i)}`); });
+  if (a.valor_total !== b.valor_total) out.push(`Valor total: ${brl(a.valor_total) || '—'} → ${brl(b.valor_total) || '—'}`);
+  const condNome = new Map((b.conteudo?.condicoes || []).map((c) => [c.chave, c.rotulo]));
+  for (const k of new Set([...Object.keys(a.condicoes || {}), ...Object.keys(b.condicoes || {})])) {
+    if (k === 'na') continue;
+    if (String(a.condicoes?.[k] ?? '') !== String(b.condicoes?.[k] ?? '')) out.push(`${condNome.get(k) || k}: ${a.condicoes?.[k] ?? '—'} → ${b.condicoes?.[k] ?? '—'}`);
+  }
+  const naA = new Set(a.condicoes?.na || []); const naB = new Set(b.condicoes?.na || []);
+  for (const k of naB) if (!naA.has(k)) out.push(`${condNome.get(k) || k}: não se aplica`);
+  if (a.validade_dias !== b.validade_dias) out.push(`Validade: ${a.validade_dias} → ${b.validade_dias} dias`);
+  if (JSON.stringify(a.conteudo?.secoes || []) !== JSON.stringify(b.conteudo?.secoes || [])) out.push('Textos das seções alterados');
+  if (!out.length) out.push('Sem mudanças no documento');
+  return out.slice(0, 60);
+}
+async function fecharVersao(supabase, tenantId, quem, id, { nota } = {}, b0 = null) {
+  const b = b0 || await bidDoTenant(supabase, tenantId, id); if (!b) return { status: 404, erro: 'BID não encontrado' };
+  if (b.versao_atual > 0 && !b.alterado_desde_versao) return { status: 409, erro: `Nada mudou desde a v${b.versao_atual}` };
+  const vers = await q(supabase.from('bid_versoes').select('*').eq('tenant_id', tenantId).eq('bid_id', b.id));
+  const ult = vers.sort((x, y) => y.versao - x.versao)[0];
+  const snap = retrato(b); const v = (b.versao_atual || 0) + 1; const agora = new Date().toISOString();
+  const mudancas = diferencas(ult?.snapshot || null, snap);
+  const hash = crypto.createHash('sha256').update(JSON.stringify({ t: String(tenantId), n: b.numero, v, snap, em: agora })).digest('hex');
+  const { error } = await supabase.from('bid_versoes').insert([{ tenant_id: tenantId, bid_id: b.id, versao: v, snapshot: snap, valor_total: snap.valor_total, mudancas, nota: texto(nota, 500), hash, criado_por_nome: quem.usuarioNome || null, criado_em: agora }]);
+  if (error) throw new Error(error.message);
+  const { error: e2 } = await supabase.from('bids').update({ versao_atual: v, alterado_desde_versao: false, atualizado_em: agora }).eq('id', b.id).eq('tenant_id', tenantId);
+  if (e2) throw new Error(e2.message);
+  await atividade(supabase, tenantId, quem, { bid_id: b.id, cliente_id: b.cliente_id, tipo: 'evento', texto: `Versão v${v} fechada${nota ? ` — ${texto(nota, 200)}` : ''}${v > 1 ? ` · ${mudancas.length} mudança(s)` : ''}` });
+  return { ok: true, versao: v, mudancas, hash };
+}
+
+/** Funil: muda a fase. Perdido exige motivo. Enviado fecha a versão (se mudou) e conta a validade a partir de hoje. */
+async function mudarFase(supabase, tenantId, quem, id, { fase, motivo, obs } = {}) {
+  const b = await bidDoTenant(supabase, tenantId, id); if (!b) return { status: 404, erro: 'BID não encontrado' };
+  if (!FASES.includes(fase)) return { status: 400, erro: 'Fase inválida' };
+  if (fase === b.fase) return { bid: b };
+  const agora = new Date().toISOString(); const upd = { fase, fase_desde: agora, atualizado_em: agora };
+  if (fase === 'perdido') {
+    if (!MOTIVOS_PERDA[motivo]) return { status: 400, erro: 'Escolha o motivo da perda' };
+    if (motivo === 'outro' && !texto(obs, 300)) return { status: 400, erro: 'Descreva o motivo' };
+    Object.assign(upd, { motivo_perda: motivo, perda_obs: texto(obs, 300), perdido_em: agora, ganho_em: null });
+  } else if (fase === 'aceito') {
+    if (b.valor_total == null) return { status: 400, erro: 'Informe o valor antes de marcar como aceito' };
+    Object.assign(upd, { ganho_em: agora, perdido_em: null, motivo_perda: null, perda_obs: null });
+  } else Object.assign(upd, { ganho_em: null, perdido_em: null, motivo_perda: null, perda_obs: null });
+  if (fase !== 'elaboracao' && (b.versao_atual === 0 || b.alterado_desde_versao) && !FECHADAS.includes(b.fase)) {
+    const r = await fecharVersao(supabase, tenantId, quem, b.id, { nota: `ao marcar como ${FASE_NOME[fase].toLowerCase()}` }, b);
+    if (r.erro) return r;
+  }
+  if (fase === 'enviado') { upd.enviado_em = agora; upd.valido_ate = somaDias(hojeBR(), Number(b.validade_dias || 10)); }
+  const { data, error } = await supabase.from('bids').update(upd).eq('id', b.id).eq('tenant_id', tenantId).select();
+  if (error) throw new Error(error.message);
+  await atividade(supabase, tenantId, quem, { bid_id: b.id, cliente_id: b.cliente_id, tipo: 'evento',
+    texto: `${FASE_NOME[b.fase]} → ${FASE_NOME[fase]}${fase === 'perdido' ? ` (${MOTIVOS_PERDA[motivo]}${texto(obs, 300) ? `: ${texto(obs, 300)}` : ''})` : ''}${fase === 'enviado' ? ` · válido até ${upd.valido_ate.split('-').reverse().join('/')}` : ''}` });
+  return { bid: data[0] };
+}
+
+const diasEntre = (a, b = new Date()) => Math.max(0, Math.floor((new Date(b) - new Date(a)) / 86400000));
+function enfeitar(b, pendentes = []) {
+  const hoje = hojeBR();
+  const t = totais(b.grupos || [], b.valor_total_manual);
+  const minhas = pendentes.filter((a) => String(a.bid_id) === String(b.id));
+  return { ...b, fase_nome: FASE_NOME[b.fase], dias_na_fase: diasEntre(b.fase_desde || b.criado_em), expirado: ABERTAS.includes(b.fase) && b.fase !== 'elaboracao' && !!b.valido_ate && b.valido_ate < hoje,
+    qtd_itens: (b.grupos || []).reduce((s, g) => s + (g.itens || []).length, 0), qtd_grupos: (b.grupos || []).length, soma_grupos: t.soma_grupos,
+    proxima_tarefa: minhas.sort((x, y) => String(x.prevista_para || '9').localeCompare(String(y.prevista_para || '9')))[0] || null };
+}
+async function listar(supabase, tenantId) {
+  const [bs, pend] = await Promise.all([q(supabase.from('bids').select('*').eq('tenant_id', tenantId)), q(supabase.from('bid_atividades').select('*').eq('tenant_id', tenantId).eq('tipo', 'tarefa').is('concluida_em', null))]);
+  return bs.map((b) => enfeitar(b, pend)).sort((a, b) => String(b.atualizado_em || b.criado_em).localeCompare(String(a.atualizado_em || a.criado_em)));
+}
+async function detalhe(supabase, tenantId, id) {
+  const b = await bidDoTenant(supabase, tenantId, id); if (!b) return { status: 404, erro: 'BID não encontrado' };
+  const [vers, ativs] = await Promise.all([q(supabase.from('bid_versoes').select('*').eq('tenant_id', tenantId).eq('bid_id', b.id)), q(supabase.from('bid_atividades').select('*').eq('tenant_id', tenantId).eq('bid_id', b.id))]);
+  const t = totais(b.grupos || [], b.valor_total_manual);
+  return { bid: { ...enfeitar(b, ativs.filter((a) => a.tipo === 'tarefa' && !a.concluida_em)), grupos: t.grupos },
+    versoes: vers.map(({ snapshot, ...v }) => v).sort((x, y) => y.versao - x.versao),
+    atividades: ativs.sort((x, y) => String(y.criado_em).localeCompare(String(x.criado_em))) };
+}
+
+// ─── atividades ─────────────────────────────────────────────────────────────
+async function criarAtividade(supabase, tenantId, quem, body = {}) {
+  const tipo = body.tipo; if (!TIPOS_ATIV[tipo] || tipo === 'evento') return { status: 400, erro: 'Tipo de atividade inválido' };
+  const t = texto(body.texto, 2000); if (!t) return { status: 400, erro: 'Escreva a atividade' };
+  let bidId = null; let clienteId = null;
+  if (body.bid_id != null) { const b = await bidDoTenant(supabase, tenantId, body.bid_id); if (!b) return { status: 404, erro: 'BID não encontrado' }; bidId = b.id; clienteId = b.cliente_id; }
+  else if (idOk(body.cliente_id)) { const c = (await q(supabase.from('clientes').select('*').eq('tenant_id', tenantId).eq('id', body.cliente_id)))[0]; if (!c) return { status: 404, erro: 'Cliente não encontrado' }; clienteId = c.id; }
+  else return { status: 400, erro: 'Atividade sem BID nem cliente' };
+  let prevista = null;
+  if (tipo === 'tarefa') {
+    const p = String(body.prevista_para || ''); if (!/^\d{4}-\d{2}-\d{2}/.test(p)) return { status: 400, erro: 'Informe a data da tarefa' };
+    prevista = p.length === 10 ? new Date(`${p}T09:00:00-03:00`).toISOString() : new Date(p).toISOString();
+  }
+  const { data, error } = await supabase.from('bid_atividades').insert([{ tenant_id: tenantId, bid_id: bidId, cliente_id: clienteId, tipo, texto: t, prevista_para: prevista, concluida_em: null,
+    usuario_id: quem.usuarioId ?? null, usuario_nome: quem.usuarioNome || null, criado_em: new Date().toISOString() }]).select();
+  if (error) throw new Error(error.message);
+  if (bidId) await supabase.from('bids').update({ atualizado_em: new Date().toISOString() }).eq('id', bidId).eq('tenant_id', tenantId);
+  return { atividade: data[0] };
+}
+async function concluirAtividade(supabase, tenantId, id, feita = true) {
+  const a = idOk(id) ? (await q(supabase.from('bid_atividades').select('*').eq('tenant_id', tenantId).eq('id', id)))[0] : null;
+  if (!a || a.tipo !== 'tarefa') return { status: 404, erro: 'Tarefa não encontrada' };
+  const { error } = await supabase.from('bid_atividades').update({ concluida_em: feita ? new Date().toISOString() : null }).eq('id', a.id).eq('tenant_id', tenantId);
+  if (error) throw new Error(error.message);
+  return { ok: true };
+}
+/** tarefas abertas (todas ou de um usuário), atrasadas primeiro */
+async function tarefas(supabase, tenantId, usuarioId = null) {
+  const [l, bs] = await Promise.all([q(supabase.from('bid_atividades').select('*').eq('tenant_id', tenantId).eq('tipo', 'tarefa').is('concluida_em', null)), q(supabase.from('bids').select('*').eq('tenant_id', tenantId))]);
+  const porId = new Map(bs.map((b) => [String(b.id), b]));
+  const agora = new Date().toISOString();
+  return l.filter((a) => !usuarioId || String(a.usuario_id) === String(usuarioId) || String(porId.get(String(a.bid_id))?.responsavel_id) === String(usuarioId))
+    .map((a) => { const b = porId.get(String(a.bid_id)); return { ...a, atrasada: !!a.prevista_para && a.prevista_para < agora, bid_numero: b?.numero || null, cliente_nome: b?.cliente_nome || null }; })
+    .sort((x, y) => String(x.prevista_para || '9').localeCompare(String(y.prevista_para || '9')));
+}
+
+// ─── funil e cliente 360° ───────────────────────────────────────────────────
+async function funil(supabase, tenantId, { de, ate } = {}) {
+  const ateD = /^\d{4}-\d{2}-\d{2}$/.test(String(ate || '')) ? ate : hojeBR();
+  const deD = /^\d{4}-\d{2}-\d{2}$/.test(String(de || '')) ? de : somaDias(ateD, -89);
+  const bs = (await q(supabase.from('bids').select('*').eq('tenant_id', tenantId))).map((b) => enfeitar(b));
+  const noPeriodo = (iso) => !!iso && String(iso).slice(0, 10) >= deD && String(iso).slice(0, 10) <= ateD;
+  const colunas = FASES.map((f) => { const l = bs.filter((b) => b.fase === f); return { fase: f, nome: FASE_NOME[f], qtd: l.length, valor: l.reduce((s, b) => s + Number(b.valor_total || 0), 0) }; });
+  const abertos = bs.filter((b) => ABERTAS.includes(b.fase));
+  const ganhos = bs.filter((b) => b.fase === 'aceito' && noPeriodo(b.ganho_em));
+  const perdidos = bs.filter((b) => b.fase === 'perdido' && noPeriodo(b.perdido_em));
+  const decididos = ganhos.length + perdidos.length;
+  const motivos = Object.entries(MOTIVOS_PERDA).map(([k, nome]) => ({ motivo: k, nome, qtd: perdidos.filter((b) => b.motivo_perda === k).length, valor: perdidos.filter((b) => b.motivo_perda === k).reduce((s, b) => s + Number(b.valor_total || 0), 0) })).filter((m) => m.qtd);
+  const valorGanho = ganhos.reduce((s, b) => s + Number(b.valor_total || 0), 0);
+  return {
+    periodo: { de: deD, ate: ateD }, colunas,
+    kpis: {
+      em_aberto: abertos.reduce((s, b) => s + Number(b.valor_total || 0), 0), qtd_aberto: abertos.length,
+      ganhos: ganhos.length, valor_ganho: valorGanho, perdidos: perdidos.length,
+      conversao_pct: decididos ? Math.round((ganhos.length / decididos) * 1000) / 10 : null,
+      ticket_medio: ganhos.length ? valorGanho / ganhos.length : null,
+      dias_ate_aceite: ganhos.length ? Math.round(ganhos.reduce((s, b) => s + diasEntre(b.criado_em, b.ganho_em), 0) / ganhos.length) : null,
+      expirados: abertos.filter((b) => b.expirado).length, parados: abertos.filter((b) => b.dias_na_fase > 7).length,
+    },
+    motivos,
+  };
+}
+async function cliente360(supabase, tenantId, clienteId) {
+  const c = idOk(clienteId) ? (await q(supabase.from('clientes').select('*').eq('tenant_id', tenantId).eq('id', clienteId)))[0] : null;
+  if (!c) return { status: 404, erro: 'Cliente não encontrado' };
+  const [bs, ativs, contratos] = await Promise.all([
+    q(supabase.from('bids').select('*').eq('tenant_id', tenantId).eq('cliente_id', c.id)),
+    q(supabase.from('bid_atividades').select('*').eq('tenant_id', tenantId).eq('cliente_id', c.id)),
+    q(supabase.from('locacao_contratos').select('*').eq('tenant_id', tenantId).eq('cliente_id', c.id)).catch(() => []),
+  ]);
+  const l = bs.map((b) => enfeitar(b));
+  const ganhos = l.filter((b) => b.fase === 'aceito'); const perdidos = l.filter((b) => b.fase === 'perdido');
+  return {
+    cliente: c,
+    resumo: { abertos: l.filter((b) => ABERTAS.includes(b.fase)).length, ganhos: ganhos.length, perdidos: perdidos.length, valor_ganho: ganhos.reduce((s, b) => s + Number(b.valor_total || 0), 0),
+      em_aberto: l.filter((b) => ABERTAS.includes(b.fase)).reduce((s, b) => s + Number(b.valor_total || 0), 0), contratos_ativos: contratos.filter((k) => k.status === 'ativo').length },
+    bids: l.sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em))),
+    contratos: contratos.map((k) => ({ id: k.id, numero: k.numero, status: k.status, local: k.local, inicio: k.inicio, fim_previsto: k.fim_previsto })).sort((a, b) => String(b.inicio || '').localeCompare(String(a.inicio || ''))),
+    atividades: ativs.sort((x, y) => String(y.criado_em).localeCompare(String(x.criado_em))).slice(0, 100),
+  };
+}
+
+// ─── documento (PDF) ────────────────────────────────────────────────────────
+/** Dados para o PDF: o atual (rascunho) ou uma versão congelada. Textos com os campos automáticos preenchidos. */
+async function documento(supabase, tenantId, id, versao = null) {
+  const b = await bidDoTenant(supabase, tenantId, id); if (!b) return { status: 404, erro: 'BID não encontrado' };
+  let snap = retrato(b); let v = null;
+  if (versao != null && versao !== '') {
+    const linha = (await q(supabase.from('bid_versoes').select('*').eq('tenant_id', tenantId).eq('bid_id', b.id))).find((x) => String(x.versao) === String(versao));
+    if (!linha) return { status: 404, erro: 'Versão não encontrada' };
+    snap = linha.snapshot; v = { versao: linha.versao, hash: linha.hash, em: linha.criado_em, por: linha.criado_por_nome };
+  }
+  const [emp, cli] = await Promise.all([q(supabase.from('tenants').select('*').eq('id', tenantId)).then((r) => r[0] || {}), b.cliente_id ? q(supabase.from('clientes').select('*').eq('tenant_id', tenantId).eq('id', b.cliente_id)).then((r) => r[0] || null) : null]);
+  const vals = { 'empresa.razao_social': emp.razao_social || emp.nome, 'empresa.nome': emp.nome_fantasia || emp.nome, 'cliente.nome': cli?.nome || snap.cliente_nome, 'cliente.razao_social': cli?.razao_social || cli?.nome || snap.cliente_nome,
+    'bid.numero': b.numero, 'bid.referencia': snap.referencia || '', 'bid.validade': String(snap.validade_dias || '') };
+  const preencher = (t) => String(t || '').replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, k) => vals[k] ?? '');
+  const t = totais(snap.grupos || [], snap.valor_total_manual);
+  return {
+    numero: b.numero, versao: v, rascunho: !v, fase: b.fase, valido_ate: b.valido_ate,
+    empresa: { razao_social: emp.razao_social || emp.nome || '', nome_fantasia: emp.nome_fantasia || '', cnpj: emp.cnpj || '', inscricao_estadual: emp.inscricao_estadual || '', opcao_fiscal: emp.opcao_fiscal || '',
+      endereco: emp.endereco || '', numero: emp.numero || '', complemento: emp.complemento || '', bairro: emp.bairro || '', cidade: emp.cidade || '', uf: emp.regiao || '', cep: emp.cep || '', telefone: emp.telefone || '', email: emp.email || '' },
+    cliente: { nome: cli?.nome || snap.cliente_nome, razao_social: cli?.razao_social || null, documento: cli?.documento || null, contato: snap.contato_nome || null },
+    ...snap, conteudo: { ...(snap.conteudo || {}), secoes: (snap.conteudo?.secoes || []).map((s) => ({ ...s, texto: preencher(s.texto) })) },
+    grupos: t.grupos, total: t.total,
+  };
+}
+
+module.exports = { FASES, FASE_NOME, MOTIVOS_PERDA, TIPOS_ATIV, CAMPOS, OPCOES_FISCAIS, validarModelo, validarGrupos, validarCondicoes, totais, diferencas,
+  modelosTenant, bibliotecaParaTenant, importar, atualizarDaBiblioteca, salvarModelo, responsaveis,
+  criar, editar, fecharVersao, mudarFase, listar, detalhe, criarAtividade, concluirAtividade, tarefas, funil, cliente360, documento, proximoNumero };

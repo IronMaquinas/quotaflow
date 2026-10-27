@@ -145,7 +145,7 @@ router.post("/", tenantMiddleware, requerAdmin, async (req, res) => {
     }
 
     // M4.5: valida cada perfil do array contra a lista canônica
-    const PERFIS_VALIDOS = ['admin', 'gestor', 'comprador', 'operacao', 'qualidade', 'financeiro'];
+    const PERFIS_VALIDOS = ['admin', 'gestor', 'comprador', 'operacao', 'qualidade', 'financeiro', 'comercial']; // 15a: comercial
     const invalidos = perfisFinal.filter(p => !PERFIS_VALIDOS.includes(p));
     if (invalidos.length > 0) {
       return res.status(400).json({

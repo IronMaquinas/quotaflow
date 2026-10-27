@@ -5,6 +5,7 @@
 //   • CNPJ travado depois de informado — só a administração do QuotaFlow troca (Console, com motivo, fica no histórico).
 //   • 🕓 Histórico de alterações: campo, antes → depois, quem e quando.
 // Vão no contrato ({{empresa.endereco_completo}}, {{empresa.telefone}}, {{empresa.email}}). Editar: admin ou gestor.
+// 15a: Inscrição estadual (números ou ISENTO) e Opção fiscal — vão na "Identificação" do BID (📈 Comercial).
 import { useState, useEffect, useRef } from "react";
 import apiService from "../../services/apiService";
 import CampoTelefone, { telefoneExibir } from "../shared/CampoTelefone";
@@ -63,7 +64,8 @@ export default function DadosEmpresa({ C, s, onErro, onSalvo }) {
   async function salvar() {
     onErro?.(null); setMsg(null); setSalvando(true);
     try {
-      const { migrada, cnpj_travado, regiao, ...dados } = f;
+      const { migrada, cnpj_travado, regiao, migrada_fiscal, opcoes_fiscais, ...dados } = f; // eslint-disable-line no-unused-vars
+      if (!migrada_fiscal) { delete dados.inscricao_estadual; delete dados.opcao_fiscal; }
       if (cnpj_travado) delete dados.cnpj;
       const r = await apiService.put("/configuracoes/empresa/dados", dados);
       setMsg({ tipo: "ok", texto: r?.alterados ? "✅ Dados salvos" : "Nada mudou" });
@@ -86,7 +88,7 @@ export default function DadosEmpresa({ C, s, onErro, onSalvo }) {
           {f.cnpj_travado && <button type="button" onClick={buscarReceita} disabled={buscandoRf} style={{ ...bt(C.accent, false), opacity: buscandoRf ? 0.5 : 1 }}>{buscandoRf ? "Consultando…" : "🔍 Buscar na Receita"}</button>}
         </div>
         <div style={{ fontSize: 11, color: C.muted, marginBottom: 14, lineHeight: 1.6 }}>
-          Vão no contrato de locação (qualificação da LOCADORA) e nos documentos. Comece pelo <strong>CEP</strong>: o endereço se completa sozinho.
+          Vão no contrato de locação (qualificação da LOCADORA), na Identificação do BID e nos documentos. Comece pelo <strong>CEP</strong>: o endereço se completa sozinho.
         </div>
         {f.migrada === false && <div style={{ fontSize: 12, color: C.warning || "#d97706", marginBottom: 10 }}>⚠ Rode as migrations 048 e 049 no Supabase para salvar estes dados.</div>}
 
@@ -114,6 +116,10 @@ export default function DadosEmpresa({ C, s, onErro, onSalvo }) {
           campo("TELEFONE", <CampoTelefone value={f.telefone || ""} onChange={(v) => setF({ ...f, telefone: v || "" })} C={C} />, "1 1 220px", "tel"),
           campo("E-MAIL", inp("email"), "1 1 220px", "mail"),
         )}
+        {f.migrada_fiscal ? linha(
+          campo("INSCRIÇÃO ESTADUAL", inp("inscricao_estadual", { ph: "Números ou ISENTO" }), "1 1 220px", "ie"),
+          campo("OPÇÃO FISCAL", <select value={f.opcao_fiscal || ""} onChange={(e) => setF({ ...f, opcao_fiscal: e.target.value })} style={s.input}><option value="">—</option>{(f.opcoes_fiscais || []).map((o) => <option key={o} value={o}>{o}</option>)}</select>, "1 1 220px", "of"),
+        ) : <div style={{ fontSize: 11, color: C.muted, marginBottom: 10 }}>Inscrição estadual e opção fiscal (cabeçalho do BID): rode a migration 051.</div>}
         {msg && <div style={{ fontSize: 12, color: msg.tipo === "ok" ? C.success : (C.warning || "#d97706"), marginBottom: 10 }}>{msg.texto}</div>}
         <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
           <button onClick={salvar} disabled={salvando} style={{ ...s.btn(true), padding: "10px 24px", fontSize: 13, opacity: salvando ? 0.5 : 1 }}>{salvando ? "Salvando..." : "Salvar dados"}</button>

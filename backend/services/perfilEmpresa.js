@@ -9,9 +9,10 @@
 
 const R = require('./receitaCnpj');
 
-const CAMPOS = ['razao_social', 'nome_fantasia', 'cnpj', 'endereco', 'numero', 'complemento', 'bairro', 'cidade', 'cep', 'telefone', 'email'];
+const CAMPOS = ['razao_social', 'nome_fantasia', 'cnpj', 'endereco', 'numero', 'complemento', 'bairro', 'cidade', 'cep', 'telefone', 'email', 'inscricao_estadual', 'opcao_fiscal']; // 15a: IE e opção fiscal (cabeçalho do BID)
+const OPCOES_FISCAIS = ['Simples Nacional', 'Lucro Presumido', 'Lucro Real', 'MEI'];
 const ROTULO = { razao_social: 'Razão social', nome_fantasia: 'Nome fantasia', cnpj: 'CNPJ', endereco: 'Endereço', numero: 'Número', complemento: 'Complemento',
-  bairro: 'Bairro', cidade: 'Cidade', cep: 'CEP', telefone: 'Telefone', email: 'E-mail', regiao: 'Estado (região)' };
+  bairro: 'Bairro', cidade: 'Cidade', cep: 'CEP', telefone: 'Telefone', email: 'E-mail', regiao: 'Estado (região)', inscricao_estadual: 'Inscrição estadual', opcao_fiscal: 'Opção fiscal' };
 const so = (v) => String(v || '').replace(/\D/g, '');
 async function q(p) { const { data, error } = await p; if (error) throw new Error(error.message); return data || []; }
 const tenantDe = async (supabase, id) => (await q(supabase.from('tenants').select('*').eq('id', id)))[0] || null;
@@ -20,7 +21,7 @@ async function dados(supabase, tenantId) {
   const t = await tenantDe(supabase, tenantId) || {};
   const out = {}; for (const k of CAMPOS) out[k] = t[k] ?? null;
   if (!out.razao_social && !out.nome_fantasia) out.nome_fantasia = t.nome || null;
-  return { ...out, regiao: t.regiao || null, migrada: 'razao_social' in t, cnpj_travado: !!so(t.cnpj) };
+  return { ...out, regiao: t.regiao || null, migrada: 'razao_social' in t, cnpj_travado: !!so(t.cnpj), migrada_fiscal: 'inscricao_estadual' in t, opcoes_fiscais: OPCOES_FISCAIS }; // 15a
 }
 
 async function registrarAlteracoes(supabase, tenantId, linhas) {
@@ -49,12 +50,15 @@ async function salvar(supabase, tenantId, quem, body = {}) {
   }
   if (upd.cep) { upd.cep = so(upd.cep); if (upd.cep.length !== 8) return { status: 400, erro: 'CEP deve ter 8 dígitos' }; }
   if (upd.email && !R.EMAIL_VALIDO.test(upd.email)) return { status: 400, erro: 'E-mail inválido' };
+  // 15a: IE = números (ou "ISENTO"); opção fiscal = lista fechada
+  if (upd.inscricao_estadual) { const ie = upd.inscricao_estadual.toUpperCase(); upd.inscricao_estadual = /^ISENT[OA]$/.test(ie) ? 'ISENTO' : ie.replace(/[^\d.\-/]/g, ''); if (upd.inscricao_estadual !== 'ISENTO' && upd.inscricao_estadual.replace(/\D/g, '').length < 2) return { status: 400, erro: 'Inscrição estadual inválida (números ou ISENTO)' }; }
+  if (upd.opcao_fiscal && !OPCOES_FISCAIS.includes(upd.opcao_fiscal)) return { status: 400, erro: 'Opção fiscal inválida' };
   if (!upd.razao_social && body.razao_social !== undefined) return { status: 400, erro: 'Informe a razão social' };
   const mud = Object.keys(upd).filter((k) => String(t[k] ?? '') !== String(upd[k] ?? ''));
   if (!mud.length) return { ok: true, alterados: 0 };
   const patch = {}; for (const k of mud) patch[k] = upd[k];
   const { error } = await supabase.from('tenants').update(patch).eq('id', tenantId);
-  if (error) { if (/column|schema cache/i.test(error.message)) return { status: 409, erro: 'Rode as migrations 048 e 049 antes (dados da empresa)' }; throw new Error(error.message); }
+  if (error) { if (/column|schema cache/i.test(error.message)) return { status: 409, erro: /inscricao_estadual|opcao_fiscal/.test(error.message) ? 'Rode a migration 051 antes (inscrição estadual e opção fiscal)' : 'Rode as migrations 048 e 049 antes (dados da empresa)' }; throw new Error(error.message); }
   // o CNPJ (1ª vez) é registrado pelo gatilho do banco; os demais aqui
   await registrarAlteracoes(supabase, tenantId, mud.filter((k) => k !== 'cnpj').map((k) => ({ campo: k, antes: t[k] ?? null, depois: patch[k], origem: 'empresa', usuario_id: quem?.id != null ? String(quem.id) : null, usuario_nome: quem?.nome || null })));
   return { ok: true, alterados: mud.length };
@@ -116,4 +120,4 @@ async function alterarCnpjPlataforma(supabase, tenantId, admin, { cnpj, motivo }
   return { ok: true, antes: t.cnpj, depois: novo };
 }
 
-module.exports = { CAMPOS, dados, salvar, alteracoes, receita, cep, status, alterarCnpjPlataforma };
+module.exports = { CAMPOS, OPCOES_FISCAIS, dados, salvar, alteracoes, receita, cep, status, alterarCnpjPlataforma };

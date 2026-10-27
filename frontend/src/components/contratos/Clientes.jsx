@@ -3,6 +3,7 @@
 //   CampoDocumento — CNPJ/CPF com máscara + 🔍 Buscar: 1º "já é cliente?", 2º Receita (BrasilAPI → CNPJ.ws)
 //   FormNovoContrato — CNPJ primeiro → cliente existente (só escolhe datas/obra) ou dados da Receita para conferir
 //   AbaClientes / ModalCliente — lista e edição dos clientes
+// 15a: `base` (padrão "/contratos") deixa o 📈 Comercial usar o mesmo cadastro por /comercial/clientes; `onAbrir` abre a ficha 360°.
 import { useState, useEffect, useMemo } from "react";
 import apiService from "../../services/apiService";
 import CampoTelefone from "../shared/CampoTelefone";
@@ -20,12 +21,12 @@ const campo = (s, rot, el, flex = "1 1 160px") => <label style={{ flex, display:
 const inp = (s, obj, set, k, extra = {}) => <input value={obj[k] ?? ""} onChange={(e) => set({ ...obj, [k]: e.target.value })} style={s.input} {...extra} />;
 
 /** CNPJ/CPF + Buscar. onResultado({ existente, cliente, situacao, sem_receita }) */
-function CampoDocumento({ C, s, valor, onValor, onResultado, onErro, autoFocus }) {
+export function CampoDocumento({ C, s, valor, onValor, onResultado, onErro, autoFocus, base = "/contratos" }) {
   const [buscando, setBuscando] = useState(false);
   const d = soDig(valor);
   const buscar = async () => {
     setBuscando(true);
-    try { onResultado(await apiService.get(`/contratos/clientes/consulta/${d}`)); }
+    try { onResultado(await apiService.get(`${base}/clientes/consulta/${d}`)); }
     catch (e) { onErro(e.message); } finally { setBuscando(false); }
   };
   return (
@@ -38,16 +39,16 @@ function CampoDocumento({ C, s, valor, onValor, onResultado, onErro, autoFocus }
 }
 
 /** Nota do resultado da busca: dados da Receita / situação (em vermelho se não estiver ATIVA) / CPF / Receita fora do ar */
-function NotaReceita({ C, r, doc }) {
+export function NotaReceita({ C, r, doc }) {
   const inativa = r.situacao && r.situacao.toUpperCase() !== "ATIVA";
   return <div style={{ fontSize: 12, marginTop: 8, color: r.sem_receita ? C.warn : inativa ? C.danger : C.success }}>
     {r.sem_receita ? "Receita fora do ar agora — preencha os dados." : soDig(doc).length === 11 ? "CPF — preencha os dados do cliente." : `Dados da Receita${r.situacao ? ` · situação ${r.situacao}` : ""} — confira.`}{inativa ? " ⚠ Atenção: o CNPJ não está ATIVO." : ""}</div>;
 }
 
-const vazioCliente = () => ({ nome: "", razao_social: "", documento: "", endereco: "", numero: "", complemento: "", bairro: "", cidade: "", uf: "", cep: "", contato_nome: "", contato_email: "", contato_telefone: "", obs: "" });
+export const vazioCliente = () => ({ nome: "", razao_social: "", documento: "", endereco: "", numero: "", complemento: "", bairro: "", cidade: "", uf: "", cep: "", contato_nome: "", contato_email: "", contato_telefone: "", obs: "" });
 
 /** Campos do cliente (novo ou edição) */
-function CamposCliente({ C, s, c, setC, comDocumento = false }) {
+export function CamposCliente({ C, s, c, setC, comDocumento = false }) {
   return (<>
     {comDocumento && <div style={{ marginBottom: 8 }}>{campo(s, "CNPJ / CPF", <input value={mascaraDoc(c.documento)} onChange={(e) => setC({ ...c, documento: soDig(e.target.value) })} inputMode="numeric" style={s.input} />, "1 1 100%")}</div>}
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{campo(s, "NOME / FANTASIA", inp(s, c, setC, "nome"), "2 1 220px")}{campo(s, "RAZÃO SOCIAL", inp(s, c, setC, "razao_social"), "2 1 220px")}</div>
@@ -104,13 +105,13 @@ export function FormNovoContrato({ C, s, ocupado, onSalvar, onCancelar, onErro }
   </>);
 }
 
-export function AbaClientes({ C, s, editar, onErro, onOk, onAbrirContratos, abrirId, onAberto }) {
+export function AbaClientes({ C, s, editar, onErro, onOk, onAbrirContratos, abrirId, onAberto, base = "/contratos", onAbrir }) {
   const [lista, setLista] = useState(null);
   const [busca, setBusca] = useState("");
   const [form, setForm] = useState(null);
   const [ocupado, setOcupado] = useState(false);
   const [nota, setNota] = useState(null); // 14b.3.2: resultado da busca (mesma nota do novo contrato)
-  const carregar = async () => { try { setLista((await apiService.get("/contratos/clientes")).clientes || []); } catch (e) { onErro(e.message); } };
+  const carregar = async () => { try { setLista((await apiService.get(`${base}/clientes`)).clientes || []); } catch (e) { onErro(e.message); } };
   useEffect(() => { carregar(); }, []); // eslint-disable-line
   // 14d.3: veio do contrato → abre o cadastro direto
   useEffect(() => { if (!abrirId || !lista) return; const c = lista.find((x) => String(x.id) === String(abrirId)); if (c) setForm({ ...vazioCliente(), ...Object.fromEntries(Object.entries(c).map(([a, b]) => [a, b ?? ""])) }); onAberto?.(); }, [abrirId, lista]); // eslint-disable-line
@@ -119,7 +120,7 @@ export function AbaClientes({ C, s, editar, onErro, onOk, onAbrirContratos, abri
     setOcupado(true); setNota(null);
     try {
       const { id, contratos, contratos_ativos, criado_em, atualizado_em, tenant_id, ativo, ...corpo } = form; // eslint-disable-line no-unused-vars
-      if (id) await apiService.put(`/contratos/clientes/${id}`, corpo); else { const r = await apiService.post("/contratos/clientes", corpo); if (r.existente) onOk(`Esse CNPJ/CPF já era do cliente ${r.cliente.nome}.`); }
+      if (id) await apiService.put(`${base}/clientes/${id}`, corpo); else { const r = await apiService.post(`${base}/clientes`, corpo); if (r.existente) onOk(`Esse CNPJ/CPF já era do cliente ${r.cliente.nome}.`); }
       setForm(null); onOk("Cliente salvo."); await carregar();
     } catch (e) { onErro(e.message); } finally { setOcupado(false); }
   };
@@ -132,7 +133,7 @@ export function AbaClientes({ C, s, editar, onErro, onOk, onAbrirContratos, abri
       {!lista ? <div style={{ color: C.muted }}>Carregando…</div> : (
         <div style={{ ...s.card, overflow: "hidden" }}>
           {vis.map((c, k) => (
-            <div key={c.id} onClick={() => editar && setForm({ ...vazioCliente(), ...Object.fromEntries(Object.entries(c).map(([a, b]) => [a, b ?? ""])) })} style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 14px", borderBottom: k < vis.length - 1 ? `1px solid ${C.border}` : "none", cursor: editar ? "pointer" : "default", flexWrap: "wrap" }}>
+            <div key={c.id} onClick={() => (onAbrir ? onAbrir(c) : editar && setForm({ ...vazioCliente(), ...Object.fromEntries(Object.entries(c).map(([a, b]) => [a, b ?? ""])) }))} style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 14px", borderBottom: k < vis.length - 1 ? `1px solid ${C.border}` : "none", cursor: editar || onAbrir ? "pointer" : "default", flexWrap: "wrap" }}>
               <div style={{ flex: "2 1 240px" }}><div style={{ fontWeight: 600, fontSize: 13 }}>{c.nome}</div><div style={{ fontSize: 11, color: C.muted }}>{c.documento ? mascaraDoc(c.documento) : "sem CNPJ/CPF"}{c.cidade ? ` · ${c.cidade}/${c.uf || ""}` : ""}{c.contato_nome ? ` · ${c.contato_nome}` : ""}</div></div>
               <span style={s.tag(c.contratos_ativos ? C.success : C.muted)}>📑 {c.contratos_ativos} ativo(s) · {c.contratos} no total</span>
             </div>
@@ -144,7 +145,7 @@ export function AbaClientes({ C, s, editar, onErro, onOk, onAbrirContratos, abri
         <div style={{ position: "fixed", inset: 0, background: "#00000090", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 320, padding: 16, overflowY: "auto" }} onClick={() => setForm(null)}>
           <div onClick={(e) => e.stopPropagation()} style={{ ...s.card, width: 680, maxWidth: "100%", padding: "18px 20px", margin: "auto 0" }}>
             <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>{form.id ? `Cliente — ${form.nome}` : "Novo cliente"}</div>
-            {!form.id && <div style={{ marginBottom: 10 }}><CampoDocumento C={C} s={s} valor={form.documento} onValor={(v) => setForm({ ...form, documento: v })} onErro={onErro}
+            {!form.id && <div style={{ marginBottom: 10 }}><CampoDocumento C={C} s={s} base={base} valor={form.documento} onValor={(v) => setForm({ ...form, documento: v })} onErro={onErro}
               onResultado={(r) => { if (r.existente) { setNota(null); return onErro(`Já é seu cliente: ${r.cliente.nome}`); } setNota(r); setForm({ ...form, ...Object.fromEntries(Object.entries(r.cliente || {}).map(([a, b]) => [a, b ?? ""])) }); }} />
               {nota && <NotaReceita C={C} r={nota} doc={form.documento} />}</div>}
             <CamposCliente C={C} s={s} c={form} setC={setForm} comDocumento={!!form.id} />

@@ -149,6 +149,7 @@ app.use('/api/inspecoes', tenantMiddleware, require('./routes/inspecoes')); // e
 app.use('/api/inspecao-link', require('./routes/inspecaoLink')); // etapa 14b.1 — inspeção de terceiros (link público)
 app.use('/api/contratos', tenantMiddleware, require('./routes/contratos')); // etapa 14b.3 — contratos de locação (empresa)
 app.use('/api/monitor-cnpj', tenantMiddleware, require('./routes/monitorCnpj')); // etapa 14e — 🛡 Monitor de CNPJs
+app.use('/api/comercial', tenantMiddleware, require('./routes/comercial')); // etapa 15a — 📈 Comercial (mini-CRM + BID)
 app.use('/api/locatario', tenantMiddleware, require('./routes/locatario')); // etapa 14b.3 — área do locatário
 
 // Rota de saúde (Railway usa para verificar se o servidor está rodando)
