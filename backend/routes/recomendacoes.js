@@ -44,6 +44,9 @@ router.post('/resumo-diario', async (req, res) => {
     let avisos_vencimento;
     try { avisos_vencimento = await enviarAvisosVencimento(); }
     catch (e) { console.error('❌ avisos de vencimento:', e.message); avisos_vencimento = { erro: e.message }; }
+    // etapa 14e: Monitor de CNPJs — roda em segundo plano (um lote por dia; pode levar alguns minutos)
+    require('../services/monitorCnpj').rodarCiclo(require('../db').supabase)
+      .then((r) => console.log('[monitor cnpj]', JSON.stringify(r))).catch((e) => console.error('❌ monitor cnpj:', e.message));
     res.json({ ok: true, ...(await enviarResumoDiario()), avisos_vencimento });
   } catch (err) {
     console.error('❌ POST /recomendacoes/resumo-diario:', err.message);

@@ -474,6 +474,19 @@ class CotacaoService {
       throw new Error(`Nenhum fornecedor para enviar a cotação ${cotacaoId}`);
     }
 
+    // 14e: fornecedor com CNPJ irregular na Receita NÃO recebe a cotação (Monitor de CNPJs)
+    const filtroCnpj = await require('./monitorCnpj').filtrarEnvioCotacao(supabase, tenantId, cotacaoId, fornecedores.map(f => f.fornecedor_id));
+    const bloqueadosCnpj = filtroCnpj.bloqueados;
+    if (bloqueadosCnpj.length) {
+      const bloq = new Set(bloqueadosCnpj.map(b => String(b.fornecedor_id)));
+      fornecedores = fornecedores.filter(f => !bloq.has(String(f.fornecedor_id)));
+      if (fornecedores.length === 0) {
+        const e = new Error(`Cotação não enviada: ${bloqueadosCnpj.map(b => `${b.nome} (CNPJ ${b.situacao})`).join(', ')} com situação irregular na Receita. Troque o fornecedor.`);
+        e.status = 409; e.codigo = 'cnpj_irregular'; e.bloqueados_cnpj = bloqueadosCnpj;
+        throw e;
+      }
+    }
+
     const fornecedorIdsArray = fornecedores.map(f => f.fornecedor_id);
     // FIX (2026-09): db.raw ignorava o ANY($2), devolvia todos os fornecedores.
     // 2026-10: inclui globais (antes só achava fornecedor com o tenant_id do comprador,
@@ -602,6 +615,7 @@ class CotacaoService {
     return {
       cotacao_id: cotacaoId,
       fornecedores_contatados: fornecedores.length,
+      bloqueados_cnpj: bloqueadosCnpj, // 14e
       status: 'enviada'
     };
   }

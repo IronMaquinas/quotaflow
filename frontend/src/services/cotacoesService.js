@@ -157,7 +157,8 @@ export const cotacoesService = {
     });
     if (!response.ok) {
       const erro = await response.json();
-      throw new Error(erro.erro || "Erro ao enviar cotação");
+      const e = new Error(erro.erro || "Erro ao enviar cotação"); e.body = erro; // 14e
+      throw e;
     }
     return response.json();
   },
@@ -229,18 +230,19 @@ export const cotacoesService = {
     return response.json();
   },
 
-  async emitirOCs(accessToken, cotacaoId, selecoes) {
+  async emitirOCs(accessToken, cotacaoId, selecoes, liberacoes_cnpj = null) {
     const response = await fetch(`${API_URL}/cotacoes/${cotacaoId}/emitir-ocs`, {
       method: "POST",
       headers: {
         "Authorization": `Bearer ${accessToken}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({ selecoes }),
+      body: JSON.stringify({ selecoes, ...(liberacoes_cnpj ? { liberacoes_cnpj } : {}) }), // 14e
     });
     if (!response.ok) {
       const erro = await response.json();
-      throw new Error(erro.erro || "Erro ao emitir OCs");
+      const e = new Error(erro.erro || "Erro ao emitir OCs"); e.body = erro; // 14e: codigo cnpj_irregular + fornecedores
+      throw e;
     }
     return response.json();
   },

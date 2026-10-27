@@ -3,6 +3,7 @@
 // quantos tenants têm processo em andamento com cada um, e a revisão: ✓ Revisado (nota) · ⛔ Suspender (some para
 // todos os tenants) · Reativar. Tudo vai para o log do console (admin_acoes).
 import { useState, useEffect, useCallback } from "react";
+import { telefoneExibir } from "../components/shared/CampoTelefone";
 
 const fmt = (d) => (String(d || "").length === 14 ? String(d).replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5") : d || "—");
 const dt = (d) => (d ? new Date(d).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "—");
@@ -46,6 +47,15 @@ export default function CnpjsPlataforma({ token, chamar, C, input, label, card, 
               <div style={{ fontWeight: 600 }}>{f.nome} <span style={{ color: C.muted, fontWeight: 400, fontSize: 12 }}>· {f.tipo}{!f.ativo ? " · inativo" : ""}</span></div>
               <div style={{ fontSize: 12, color: C.muted }}>CNPJ {fmt(f.documento)} · <b style={{ color: C.danger }}>{f.situacao}</b>{f.situacao_anterior ? ` (era ${f.situacao_anterior})` : ""} · mudou {dt(f.mudou_em)} · verificado {dt(f.verificado_em)}</div>
               <div style={{ fontSize: 12, marginTop: 2 }}>{f.tenants_com_processo ? <b style={{ color: C.warn }}>{f.tenants_com_processo} transportadora(s) com processo em andamento ({f.processos})</b> : <span style={{ color: C.muted }}>sem processos em andamento</span>}</div>
+              {/* 14e.1: quem é impactado — para a plataforma entrar em contato */}
+              {(f.tenants || []).map((t) => (
+                <div key={t.id} style={{ fontSize: 12, marginTop: 6, padding: "6px 10px", borderLeft: `3px solid ${C.warn}`, background: `${C.warn}10`, borderRadius: 4 }}>
+                  <b>{t.nome}</b>
+                  {t.email && <> · <a href={`mailto:${t.email}`} style={{ color: C.accent }}>{t.email}</a></>}
+                  {t.telefone && <> · <a href={`https://wa.me/${String(t.telefone).replace(/\D/g, "")}`} target="_blank" rel="noreferrer" style={{ color: C.accent }}>{telefoneExibir(t.telefone)}</a></>}
+                  <div style={{ color: C.muted }}>{t.processos.map((p) => `${p.tipo === "oc" ? "OC" : "Cotação"} ${p.numero}`).join(" · ")}</div>
+                </div>
+              ))}
               {f.revisao_status && <div style={{ fontSize: 12, marginTop: 2 }}><span style={tag(f.revisao_status === "suspenso" ? C.danger : C.success)}>{REV[f.revisao_status] || f.revisao_status}</span> <span style={{ color: C.muted }}>{f.revisao_nota} · {f.revisao_por} · {dt(f.revisao_em)}</span></div>}
             </div>
             <button type="button" disabled={ocupado} onClick={() => verificar(f)} style={{ ...btn(C.muted, false), padding: "5px 10px", fontSize: 11 }}>↻ Verificar</button>

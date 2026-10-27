@@ -289,22 +289,25 @@ const handleEnviarAutomatico = async () => {
       fornecedor_ids: fornecedorIds
     }));
 
+    let envio = null; // 14e
     // 🔥 Se estiver editando, apenas atualizar
     if (editandoId) {
       await atualizarCotacao(editandoId, itensPayload, "", origem || null);
       const cotacaoId = editandoId;
       
       // 🔥 ENVIAR A COTAÇÃO
-      await cotacoesService.enviarCotacao(token, cotacaoId, origem || null);
+      envio = await cotacoesService.enviarCotacao(token, cotacaoId, origem || null);
       console.log("✅ Cotação enviada!");
     } else {
       // 🔥 Criar nova cotação e enviar
       const salva = await salvarCotacao(chamadoAutomatico.id, itensPayload, "", origem || null);
       const cotacaoId = salva.cotacao_id;
       
-      await cotacoesService.enviarCotacao(token, cotacaoId, origem || null);
+      envio = await cotacoesService.enviarCotacao(token, cotacaoId, origem || null);
       console.log("✅ Cotação enviada!");
     }
+    // 14e: fornecedores com CNPJ irregular na Receita não receberam a cotação
+    if (envio?.bloqueados_cnpj?.length) alert(`🛡 Cotação enviada, mas NÃO para: ${envio.bloqueados_cnpj.map(b => `${b.nome} (CNPJ ${b.situacao})`).join(', ')} — situação irregular na Receita (veja 🛡 Monitor de CNPJs).`);
 
     // Limpar estados
     await listarCotacoes();

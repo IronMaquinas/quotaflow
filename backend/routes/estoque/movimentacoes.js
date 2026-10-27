@@ -792,6 +792,11 @@ router.put('/item/:itemId/fiscal', tenantMiddleware, async (req, res) => {
       return res.status(404).json({ erro: 'OV não encontrada' });
     }
 
+    // 14e: nota (pagamento) de fornecedor com CNPJ irregular → só com justificativa registrada, uma vez por OC
+    const travaCnpj = await require('../../services/monitorCnpj').exigirLiberacao(require('../../db').supabase, tenantId, { id: req.userId, nome: (await DB.selectOne('usuarios', { id: req.userId }, tenantId).catch(() => null))?.nome || null }, {
+      contexto: 'nota', referencia: `oc:${ov.id}`, fornecedorIds: [ov.fornecedor_id].filter(Boolean), liberacoes: ov.fornecedor_id ? { [ov.fornecedor_id]: req.body.justificativa_cnpj } : {} });
+    if (travaCnpj) return res.status(travaCnpj.status).json(travaCnpj);
+
     // 🔥 3. BUSCAR SE JÁ EXISTE UM NÚMERO DE RECEBIMENTO PARA A OV
     const ovItems = await DB.select('ordem_venda_itens', { ordem_venda_id: ov.id }, tenantId);
     const numeroExistente = ovItems.find(i => i.numero_recebimento_ov)?.numero_recebimento_ov;

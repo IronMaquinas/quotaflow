@@ -32,12 +32,12 @@ const { execFileSync } = require('child_process');
 const ESPERADO = {
   // etapa 1
   'routes/buscaFornecedores.js': '39dea794495d3da0b9dc916a1ea0faf0',
-  'services/CotacaoService.js': '7e16fed50eefffa689e2f6f69c0d7cfe',
+  'services/CotacaoService.js': '96c32c9c13d4082dd80861780a33f9d3', // etapa 14e
   'services/fornecedoresVisiveis.js': '8c1fa18647fa44b05b4865491067a0c0',
-  'routes/cotacoes.js': '31d65d927fd99e4595d5072ff6715ed8', // etapa 14b.1.2
+  'routes/cotacoes.js': '51eb4fc398221c2caf21a2ac1c144ada', // etapa 14e
   'routes/naoConformidades.js': '4f27a368d0e2d4ff921a173c98347cea',
   'routes/ordensVenda.js': 'ba32842c49096f072788b51d10248ca4',
-  'routes/estoque/movimentacoes.js': '7df44d7b2bfac732846bd98fee2cada9', // etapa 12d.2
+  'routes/estoque/movimentacoes.js': '636ba22ab821d3fc0565cc03ff821a64', // etapa 14e
   'routes/estoque/itensConsumo.js': '47011b41ff3d33ac8ad31954084c2321',
   'services/NCService.js': 'a9432a05c6bfb78719497119235bbe44',
   'services/PortalRespostaService.js': 'aff8546f40f10b238354651e8b17aefb',
@@ -49,15 +49,15 @@ const ESPERADO = {
   'routes/spot.js': 'ee346546f49efb3552b0d4048513f26b', // etapa 11a
   'services/matchSpot.js': 'fe4275090b82bd1efd52498d2176a90c', // etapa 7
   'routes/configuracoes.js': '15db7301efaf467ea431962fd1aa6ba2', // etapa 14d.5
-  'routes/fornecedor.js': '531ae3790a252060c15f14f82af0a8ee', // etapa 11b.1
-  'routes/recomendacoes.js': '68c234136ab14413eb2b758332ceb19d', // etapa 9
+  'routes/fornecedor.js': '9e06852242b8bf79c6384c46b8ee7bb5', // etapa 14e
+  'routes/recomendacoes.js': '8500494a042a04d4bf97ad6b42b14fe0', // etapa 14e
   'services/recomendacoesEmail.js': '7bc5475ccffb4fd2fcec53be78e64123', // etapa 10c
   'services/emailService.js': '2daf0e597ff370e006585f919c63b525', // etapa 9
-  'server.js': 'aa0f1d15ee167299abe0081f70ad8922', // etapa 14b.3
+  'server.js': '223ca43b3c1860d8ea50c99497c684a0', // etapa 14e
   'routes/atuacao.js': 'cc196661189e2714bcfad96e5c1e8ad9',
   'services/atuacao.js': '8509ac0206906a7f93384350e77132bf',
   'front:SeletorAtuacao.jsx': '17afaaf69d6e4cf0c105490267d188a7',
-  'front:TelaMeusDadosFornecedor.jsx': 'd1495962ea063dd647bc350a9c6c8cd9', // etapa 11a.3
+  'front:TelaMeusDadosFornecedor.jsx': '1e8cc8a63de4debf1530042e511732f9', // etapa 14e
   'front:TelaFornecedoresNova.jsx': '28396f3bc910190ecc80873b54edc47d', // etapa 10c
   'front:TelaCanalSpot.jsx': 'd701f0a4ac0cff3a5803de6809471d08', // etapa 11a
   'front:TelaFornecedorSpot.jsx': '449dd00ab481e0596a932aaa985f4bad', // etapa 9
@@ -69,18 +69,18 @@ const ESPERADO = {
   'services/acessoSpot.js': '6ecce4d16d6b123c6ce93c1223b32f01', // etapa 10c (novo)
   'services/receitaCnpj.js': 'b0e2a678127403d5608723c21ec61b78', // etapa 14d.5
   'services/cadastroPublico.js': '1359e67ff1f2438a964eee7223cf2ed1', // etapa 14d.5
-  'front:App.jsx': '81203f1870b0186974531aa3044a6474', // etapa 14d.5
+  'front:App.jsx': '9f38a8c76b900b265d694e2a148822fd', // etapa 14e
   'front:TelaLogin.jsx': 'bfa1fccbdab99820be2ac14c0e91b2fe', // etapa 14b.1
   'front:TelaSignup.jsx': '345dceefb937b38e74cfef44cfc33ef3', // etapa 11a.3
   'front:AvisoPlanoTenant.jsx': '5795f00c1bc656d0525fd29b6793a96c', // etapa 11a.3
   'services/emailConfirmacao.js': 'e36296d648d6f76f6412d7de0e10c4d8', // etapa 11a.3 (novo)
   'front:CampoTelefone.jsx': 'c0699f00b06c84098af121acd5d8682f', // etapa 14d.4
   'front:TelaConfirmarEmail.jsx': 'dbf759fd98f257a436cfe47874c72d9f', // etapa 11a.3 (novo)
-  'routes/plataforma.js': '0ef018f531a35d923cb4b5d2639af6ef', // etapa 14d.5
+  'routes/plataforma.js': '2e3387fd5be33389e5f55d0eba2d0914', // etapa 14e
   'services/plataformaConsole.js': '47e9e1ebcd51b79c0c50c9a17ba35f1a', // etapa 14b.3
   'middleware/plataformaMiddleware.js': 'bf2424eab233bdf7e0cb6fca9cb953b9', // etapa 11b (novo)
   'scripts/criarAdmin.js': 'd4d85894f6381dc7b31f83466f316024', // etapa 11b (novo)
-  'front:ConsolePlataforma.jsx': '4124455e7d09fde4e6d163b9b3a71778', // etapa 14d.5
+  'front:ConsolePlataforma.jsx': '7a76f67f9377f9e2ae2b4cec9e41d4fa', // etapa 14e.1
   'routes/manutencao.js': '615fa12637ae7b454c52b99c054e617b', // etapa 14b.2
   'services/calendarioManutencao.js': 'bbcf04d1bb3b18b8776579d3180274e6', // etapa 12b.2
   'front:TelaCalendarioManutencao.jsx': '8d9921e2e15255472f0c62687c5f37b0', // etapa 14b.2
@@ -92,7 +92,7 @@ const ESPERADO = {
   'services/documentos.js': 'e4e3f50ffd6ade91d5c2a51a0b115900', // etapa 12e.3
   'front:TelaPessoas.jsx': '7380e3b38768781c2fef02c624c9e201', // etapa 14c.1
   // etapa 12c.1
-  'services/avisosVencimento.js': 'e43d0373f61a7e12eccdcc5861cd0e6b', // etapa 12d.3
+  'services/avisosVencimento.js': 'fec2b28a7081f59510ef21b728a6c341', // etapa 14e
   'services/funcoes.js': '9873a5e1a74e7604ab6b624d1d7cc901', // etapa 12e.3.1
   'front:BibliotecaFuncoes.jsx': '9f5e1d8aba9b2e729cc4d546b4678712', // etapa 12e.3.1
   'services/epi.js': '9b0dccea86e23c7d5f3af1132159f0ee', // etapa 12d.1b
@@ -191,14 +191,23 @@ const ESPERADO = {
   'services/perfilEmpresa.js': 'a3407ab10dbcf33e27230fa2c92920ad', // etapa 14d.5 (novo)
   'migrations/049_perfil_empresa_cnpj.sql': 'ccaebbe974c2ea5d1089712bccd13263', // etapa 14d.5 (novo)
   'front:CompletarPerfil.jsx': '4d8ac0f25d36ba667d6f4fddf71118f8', // etapa 14d.5 (novo)
+  'migrations/050_monitor_cnpj.sql': 'f4c0e70224ff25ef87376a7782ccde8a', // etapa 14e (novo)
+  'services/monitorCnpj.js': 'ab130da71f1eae5ec0959cd2fd079d59', // etapa 14e.1
+  'routes/monitorCnpj.js': '44a9c0605a68a8873468496ac652cd02', // etapa 14e (novo)
+  'front:cotacoesService.js': 'fd42c81ed12dbb4e7d9fa20b03c22767', // etapa 14e
+  'front:TelaMonitorarRespostas.jsx': '2e29288fda23cfcb8acd4584c7dfb8dd', // etapa 14e
+  'front:TelaCotacoesNovaComAbas.jsx': 'f4e33a56444c00c3cb0f8b024d741685', // etapa 14e
+  'front:TelaRecebimento.jsx': 'b441323654332068311aba5ce9188d78', // etapa 14e
+  'front:CnpjsPlataforma.jsx': '0663f0bd670edb45ff9ae8d2c2ef6a09', // etapa 14e.1
+  'front:ModalJustificativaCnpj.jsx': '13d5e39c961c4e775fde24c77e4fb7ff', // etapa 14e (novo)
+  'front:TelaMonitorCnpj.jsx': '68772e2465cda992c3af790b08b079cf', // etapa 14e (novo)
 };
 
-// Antes de copiar a etapa 14d.7 — base: 14d.6
+// Antes de copiar a etapa 14e.1 — base: 14e
 const ANTES = {
-  'services/contratoModelos.js': '726c482ca1540a80358c2e0f646badd4',
-  'front:TelaContratos.jsx': '3a5bd5823ffa8074851aa8482d82a025',
-  'front:gerarContrato.js': '140893acb9aa2a580626fa3332d5e799',
-  'front:RotinasLocacao.jsx': '6373bfbf99adfa8d7f681f0a0875f8da',
+  'services/monitorCnpj.js': '5a4f2ba66a3bffe6fd881c7028320ac2',
+  'front:ConsolePlataforma.jsx': '19a75ccb129b2bc143266d8bf67e500a',
+  'front:CnpjsPlataforma.jsx': '4748e31a18905cddad1e6b089a2a3fa4',
 };
 
 const RAIZ = process.cwd();
@@ -236,7 +245,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 12e.1?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 14d.7)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 14e.1)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
@@ -284,13 +293,13 @@ for (const [chave, esperado] of Object.entries(LISTA)) {
 
 if (!modoAntes) {
   // Arquivos novos precisam entrar no commit
-  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js', 'services/matchSpot.js', 'services/recomendacoesEmail.js', 'routes/recomendacoes.js', 'services/convitesFornecedor.js', 'services/acessoSpot.js', 'services/receitaCnpj.js', 'services/cadastroPublico.js', 'services/emailConfirmacao.js', 'routes/plataforma.js', 'services/plataformaConsole.js', 'middleware/plataformaMiddleware.js', 'scripts/criarAdmin.js', 'routes/manutencao.js', 'services/calendarioManutencao.js', 'services/planosManutencao.js', 'migrations/019_planos_manutencao.sql', 'migrations/020_plano_termino.sql', 'migrations/021_plano_responsavel_dia_util.sql', 'routes/pessoas.js', 'services/documentos.js', 'migrations/022_colaboradores_documentos.sql', 'services/avisosVencimento.js', 'migrations/023_documento_avisos.sql', 'services/funcoes.js', 'migrations/024_funcoes.sql', 'migrations/025_funcoes_detalhes.sql', 'services/epi.js', 'migrations/026_epi_itens.sql', 'migrations/027_epi_catalogo_tamanhos.sql', 'services/epiEntregas.js', 'services/conformidade.js', 'migrations/028_epi_entregas.sql', 'services/historicoFuncoes.js', 'services/avisosPessoas.js', 'migrations/029_historico_funcoes_avisos.sql', 'services/treinamentos.js', 'migrations/030_treinamentos.sql', 'migrations/031_treinamentos_conteudo_horas.sql', 'services/provaOnline.js', 'routes/meusTreinamentos.js', 'routes/provaPublica.js', 'migrations/032_prova_online_colaborador.sql', 'services/competencias.js', 'migrations/033_competencias.sql', 'migrations/034_competencias_nivel.sql', 'services/dossie.js', 'migrations/035_dossie.sql', 'services/multas.js', 'migrations/036_multas.sql', 'services/disciplinar.js', 'migrations/037_disciplinar.sql', 'migrations/038_disciplinar_ciencia.sql', 'services/autuacoes.js', 'routes/autuacoes.js', 'migrations/039_autuacoes.sql', 'services/inspecoes.js', 'routes/inspecoes.js', 'migrations/040_inspecoes.sql', 'routes/inspecaoLink.js', 'migrations/041_inspecoes_tipos_links.sql', 'services/rotinasInspecao.js', 'migrations/042_inspecoes_rotinas_locacao.sql', 'services/contratosLocacao.js', 'routes/contratos.js', 'routes/locatario.js', 'migrations/043_contratos_locatario.sql', 'services/clientes.js', 'migrations/044_clientes.sql', 'services/logoEmpresa.js', 'migrations/045_logo_empresa.sql', 'services/contratoModelos.js', 'migrations/046_modelos_contrato.sql', 'migrations/047_contrato_representante.sql', 'migrations/048_dados_empresa.sql', 'services/perfilEmpresa.js', 'migrations/049_perfil_empresa_cnpj.sql'];
+  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js', 'services/matchSpot.js', 'services/recomendacoesEmail.js', 'routes/recomendacoes.js', 'services/convitesFornecedor.js', 'services/acessoSpot.js', 'services/receitaCnpj.js', 'services/cadastroPublico.js', 'services/emailConfirmacao.js', 'routes/plataforma.js', 'services/plataformaConsole.js', 'middleware/plataformaMiddleware.js', 'scripts/criarAdmin.js', 'routes/manutencao.js', 'services/calendarioManutencao.js', 'services/planosManutencao.js', 'migrations/019_planos_manutencao.sql', 'migrations/020_plano_termino.sql', 'migrations/021_plano_responsavel_dia_util.sql', 'routes/pessoas.js', 'services/documentos.js', 'migrations/022_colaboradores_documentos.sql', 'services/avisosVencimento.js', 'migrations/023_documento_avisos.sql', 'services/funcoes.js', 'migrations/024_funcoes.sql', 'migrations/025_funcoes_detalhes.sql', 'services/epi.js', 'migrations/026_epi_itens.sql', 'migrations/027_epi_catalogo_tamanhos.sql', 'services/epiEntregas.js', 'services/conformidade.js', 'migrations/028_epi_entregas.sql', 'services/historicoFuncoes.js', 'services/avisosPessoas.js', 'migrations/029_historico_funcoes_avisos.sql', 'services/treinamentos.js', 'migrations/030_treinamentos.sql', 'migrations/031_treinamentos_conteudo_horas.sql', 'services/provaOnline.js', 'routes/meusTreinamentos.js', 'routes/provaPublica.js', 'migrations/032_prova_online_colaborador.sql', 'services/competencias.js', 'migrations/033_competencias.sql', 'migrations/034_competencias_nivel.sql', 'services/dossie.js', 'migrations/035_dossie.sql', 'services/multas.js', 'migrations/036_multas.sql', 'services/disciplinar.js', 'migrations/037_disciplinar.sql', 'migrations/038_disciplinar_ciencia.sql', 'services/autuacoes.js', 'routes/autuacoes.js', 'migrations/039_autuacoes.sql', 'services/inspecoes.js', 'routes/inspecoes.js', 'migrations/040_inspecoes.sql', 'routes/inspecaoLink.js', 'migrations/041_inspecoes_tipos_links.sql', 'services/rotinasInspecao.js', 'migrations/042_inspecoes_rotinas_locacao.sql', 'services/contratosLocacao.js', 'routes/contratos.js', 'routes/locatario.js', 'migrations/043_contratos_locatario.sql', 'services/clientes.js', 'migrations/044_clientes.sql', 'services/logoEmpresa.js', 'migrations/045_logo_empresa.sql', 'services/contratoModelos.js', 'migrations/046_modelos_contrato.sql', 'migrations/047_contrato_representante.sql', 'migrations/048_dados_empresa.sql', 'services/perfilEmpresa.js', 'migrations/049_perfil_empresa_cnpj.sql', 'migrations/050_monitor_cnpj.sql', 'services/monitorCnpj.js', 'routes/monitorCnpj.js'];
   try {
     for (const n of novos) {
       const rastreado = execFileSync('git', ['ls-files', n], { cwd: RAIZ, stdio: 'pipe' }).toString().trim();
       if (!rastreado) console.log(`\n⚠️  ${n} ainda não está no git (git add ${n})`);
     }
-    for (const nome of ['SeletorAtuacao.jsx', 'TelaAceitarConvite.jsx', 'TelaPainelFornecedor.jsx', 'AvisoPlanoTenant.jsx', 'CampoTelefone.jsx', 'TelaConfirmarEmail.jsx', 'ConsolePlataforma.jsx', 'TelaCalendarioManutencao.jsx', 'TelaPlanosManutencao.jsx', 'ModalTransferirOS.jsx', 'TelaPessoas.jsx', 'BibliotecaTreinamentos.jsx', 'EditorConteudoTreinamento.jsx', 'AreaTreinamentoColaborador.jsx', 'TelaMeusTreinamentos.jsx', 'AcessoColaborador.jsx', 'TextoAula.jsx', 'TelaProvaPublica.jsx', 'gerarCertificado.js', 'FichaCompetencias.jsx', 'EditorCompetencias.jsx', 'PainelDossie.jsx', 'gerarDossie.js', 'TelaMultas.jsx', 'gerarTermoDesconto.js', 'TelaDisciplinar.jsx', 'gerarMedidaDisciplinar.js', 'TelaAutuacoes.jsx', 'TelaInspecoes.jsx', 'ExecutarInspecao.jsx', 'EditorModeloInspecao.jsx', 'Esquemas.jsx', 'BibliotecaInspecoes.jsx', 'filaInspecoes.js', 'gerarRelatorioInspecao.js', 'TelaInspecaoPublica.jsx', 'RotinasLocacao.jsx', 'gerarRelatorioCumprimento.js', 'TelaContratos.jsx', 'TelaLocatario.jsx', 'Clientes.jsx', 'LogoEmpresa.jsx', 'logoEmpresa.js', 'comprimirImagem.js', 'ModelosContrato.jsx', 'gerarContrato.js', 'BibliotecaContratos.jsx', 'CampoMoeda.jsx', 'DadosEmpresa.jsx', 'CompletarPerfil.jsx']) {
+    for (const nome of ['SeletorAtuacao.jsx', 'TelaAceitarConvite.jsx', 'TelaPainelFornecedor.jsx', 'AvisoPlanoTenant.jsx', 'CampoTelefone.jsx', 'TelaConfirmarEmail.jsx', 'ConsolePlataforma.jsx', 'TelaCalendarioManutencao.jsx', 'TelaPlanosManutencao.jsx', 'ModalTransferirOS.jsx', 'TelaPessoas.jsx', 'BibliotecaTreinamentos.jsx', 'EditorConteudoTreinamento.jsx', 'AreaTreinamentoColaborador.jsx', 'TelaMeusTreinamentos.jsx', 'AcessoColaborador.jsx', 'TextoAula.jsx', 'TelaProvaPublica.jsx', 'gerarCertificado.js', 'FichaCompetencias.jsx', 'EditorCompetencias.jsx', 'PainelDossie.jsx', 'gerarDossie.js', 'TelaMultas.jsx', 'gerarTermoDesconto.js', 'TelaDisciplinar.jsx', 'gerarMedidaDisciplinar.js', 'TelaAutuacoes.jsx', 'TelaInspecoes.jsx', 'ExecutarInspecao.jsx', 'EditorModeloInspecao.jsx', 'Esquemas.jsx', 'BibliotecaInspecoes.jsx', 'filaInspecoes.js', 'gerarRelatorioInspecao.js', 'TelaInspecaoPublica.jsx', 'RotinasLocacao.jsx', 'gerarRelatorioCumprimento.js', 'TelaContratos.jsx', 'TelaLocatario.jsx', 'Clientes.jsx', 'LogoEmpresa.jsx', 'logoEmpresa.js', 'comprimirImagem.js', 'ModelosContrato.jsx', 'gerarContrato.js', 'BibliotecaContratos.jsx', 'CampoMoeda.jsx', 'DadosEmpresa.jsx', 'CompletarPerfil.jsx', 'CnpjsPlataforma.jsx', 'ModalJustificativaCnpj.jsx', 'TelaMonitorCnpj.jsx']) {
       const arq = acharNoFrontend(nome)[0];
       if (!arq) continue;
       const rastreado = execFileSync('git', ['ls-files', arq], { cwd: RAIZ, stdio: 'pipe' }).toString().trim();

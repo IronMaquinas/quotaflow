@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from 'react';
 import apiService from '../../services/apiService';
 import { LeitorCodigoBarras } from "../../components/LeitorCodigoBarras";
 import ModalNaoConformidade from "./ModalNaoConformidade";
+import ModalJustificativaCnpj from "../compliance/ModalJustificativaCnpj"; // 14e
 
 // Função para formatar valores em Reais
 const fmtBRL = (v) => {
@@ -12,6 +13,7 @@ const fmtBRL = (v) => {
 export default function TelaRecebimento({ C, s, fmtD, onIrParaNC }) {
   // ─── ESTADOS PARA FLUXO PRINCIPAL (OVs) ────────────────────
   const [ordensVendaAbertas, setOrdensVendaAbertas] = useState([]);
+  const [travaCnpj, setTravaCnpj] = useState(null); // 14e: nota de fornecedor com CNPJ irregular → justificativa
   const [ordemVendaSel, setOrdemVendaSel] = useState(null);
   const [itensOV, setItensOV] = useState([]);
   // FIX M4: flag de operação assíncrona usada pelos botões
@@ -524,9 +526,10 @@ export default function TelaRecebimento({ C, s, fmtD, onIrParaNC }) {
     });
   };
 
-  const handleSalvarConferenciaFiscal = async (status = 'aprovado', motivo = '') => {
+  const handleSalvarConferenciaFiscal = async (status = 'aprovado', motivo = '', justificativaCnpj = null) => {
     try {
       await apiService.put(`/estoque/movimentacoes/item/${itemConferenciaFiscal.id}/fiscal`, {
+        ...(justificativaCnpj ? { justificativa_cnpj: justificativaCnpj } : {}), // 14e
         numero_nota_fiscal: itemConferenciaFiscal.numero_nota_fiscal,
         valor_nf: itemConferenciaFiscal.valor_nf,
         quantidade_nf: itemConferenciaFiscal.quantidade_nf || null,
@@ -540,6 +543,7 @@ export default function TelaRecebimento({ C, s, fmtD, onIrParaNC }) {
       setItemConferenciaFiscal(null);
       await carregarItensOV(ordemVendaSel.id);
     } catch (err) {
+      if (err.body?.codigo === 'cnpj_irregular') { setTravaCnpj({ ...err.body, status, motivo }); return; } // 14e
       alert('Erro ao salvar conferência fiscal: ' + err.message);
     }
   };
@@ -887,6 +891,8 @@ const handleValidarXML = async () => {
 
 return (
   <div style={{ padding: '22px 24px', overflowY: 'auto', height: '100%' }}>
+    {travaCnpj && <ModalJustificativaCnpj trava={travaCnpj} C={C} onCancelar={() => setTravaCnpj(null)}
+      onConfirmar={(m) => { const t = travaCnpj; setTravaCnpj(null); handleSalvarConferenciaFiscal(t.status, t.motivo, Object.values(m)[0]); }} />}
     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 22 }}>
       <div>
         <div style={{ fontSize: 11, color: C.muted, letterSpacing: '0.1em' }}>ESTOQUE</div>

@@ -42,6 +42,7 @@ export default function TelaMeusDadosFornecedor({ C, s }) {
   const [formEmpresa, setFormEmpresa] = useState(null);
   const [formUsuario, setFormUsuario] = useState(null);
   const [formAtuacao, setFormAtuacao] = useState(atuacaoDe(null)); // perfil de atuação (etapa 4)
+  const [razaoTravada, setRazaoTravada] = useState(false); // 14e: razão social preenchida = travada (segue o CNPJ)
   // Plano do fornecedor (etapa 8): só leitura aqui; o fornecedor Pro liga/desliga os e-mails
   const [plano, setPlano] = useState({ plano: "gratuito", valido_ate: null });
   const [recomendacoesEmail, setRecomendacoesEmail] = useState(true);
@@ -57,6 +58,7 @@ export default function TelaMeusDadosFornecedor({ C, s }) {
     setErroCarregar(null);
     try {
       const dados = await apiService.get("/fornecedor/me");
+      setRazaoTravada(!!String(dados.fornecedor?.razao_social || "").trim()); // 14e
       setFormEmpresa({
         nome_fantasia: dados.fornecedor?.nome_fantasia || "",
         razao_social: dados.fornecedor?.razao_social || "",
@@ -229,10 +231,12 @@ export default function TelaMeusDadosFornecedor({ C, s }) {
               style={s.input} />
           </div>
           <div>
-            <label style={s.label}>RAZÃO SOCIAL</label>
-            <input value={formEmpresa.razao_social}
+            <label style={s.label}>RAZÃO SOCIAL {razaoTravada && "🔒"}</label>
+            <input value={formEmpresa.razao_social} readOnly={razaoTravada}
               onChange={e => setFormEmpresa(f => ({ ...f, razao_social: e.target.value }))}
-              placeholder="Razão social" style={s.input} />
+              title={razaoTravada ? "A razão social segue o CNPJ na Receita. Para corrigir, fale com o suporte do QuotaFlow." : undefined}
+              placeholder="Razão social" style={{ ...s.input, ...(razaoTravada ? { opacity: 0.75, cursor: "not-allowed" } : {}) }} />
+            {razaoTravada && <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>🔒 CNPJ e razão social seguem a Receita — para corrigir, fale com o suporte do QuotaFlow.</div>}
           </div>
         </div>
 

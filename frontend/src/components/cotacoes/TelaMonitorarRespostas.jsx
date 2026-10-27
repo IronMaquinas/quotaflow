@@ -1,6 +1,7 @@
 import { useState, useEffect } from "react";
 import { cotacoesService } from "../../services/cotacoesService";
 import apiService from "../../services/apiService";
+import ModalJustificativaCnpj from "../compliance/ModalJustificativaCnpj"; // 14e
 
 // ─────────────────────────────────────────────────────────────────────────
 // calcularMinimoFornecedores — set cover mínimo via DP com bitmask.
@@ -97,6 +98,7 @@ export default function TelaMonitorarRespostas({
   const [loading, setLoading] = useState(true);
   const [editandoFornecedor, setEditandoFornecedor] = useState(null);
   const [atualizando, setAtualizando] = useState(false);
+  const [travaCnpj, setTravaCnpj] = useState(null); // 14e: { ...resposta 409, selecoes }
   // ── Seleção de fornecedor por item ──
   // Mapa: cotacao_item_id → fornecedor_id escolhido
   const [selecoesPorItem, setSelecoesPorItem] = useState({});
@@ -422,12 +424,12 @@ export default function TelaMonitorarRespostas({
     }
     setAdicionando(true);
     try {
-      await cotacoesService.adicionarFornecedores(
+      const resAdd = await cotacoesService.adicionarFornecedores( // 14e: devolve bloqueados_cnpj
         token, cotacaoId, selecionadosAdd, itensSelecionados
       );
       setModalAddForn(false);
       await carregarDados();
-      alert(`✅ ${selecionadosAdd.length} fornecedor(es) adicionado(s) para ${itensSelecionados.length} item(ns).`);
+      alert(`✅ ${selecionadosAdd.length - (resAdd?.bloqueados_cnpj?.length || 0)} fornecedor(es) adicionado(s) para ${itensSelecionados.length} item(ns).${resAdd?.bloqueados_cnpj?.length ? `\n🛡 Não adicionado(s) — CNPJ irregular na Receita: ${resAdd.bloqueados_cnpj.map(b => `${b.nome} (${b.situacao})`).join(', ')}` : ''}`);
     } catch (e) {
       alert("Erro ao adicionar: " + e.message);
     } finally {
@@ -467,6 +469,8 @@ export default function TelaMonitorarRespostas({
       alert(`✅ ${resultado.total} OC(s) emitida(s): ${resultado.ocs.map(o => o.numero).join(', ')}`);
       onVoltar();
     } catch (err) {
+      // 14e: fornecedor com CNPJ irregular → pede a justificativa (modal) e tenta de novo
+      if (err.body?.codigo === 'cnpj_irregular') { setTravaCnpj({ ...err.body, selecoes: dados.itens.map(item => ({ cotacao_item_id: item.id, fornecedor_id: selecoesPorItem[item.id], justificativa: justificativas[item.id]?.trim() || null, sugerido_fornecedor_id: sugeridosPorItem[item.id]?.fornecedor_id || null, valor_sugerido: sugeridosPorItem[item.id]?.total != null ? parseFloat(sugeridosPorItem[item.id].total) : null })) }); return; }
       alert('Erro ao emitir OCs: ' + err.message);
     } finally {
       setAtualizando(false);
@@ -1327,6 +1331,19 @@ export default function TelaMonitorarRespostas({
 
   return (
     <div style={{ padding: "22px 24px", overflowY: "auto", height: "100%" }}>
+      {travaCnpj && <ModalJustificativaCnpj trava={travaCnpj} C={C} ocupado={atualizando} onCancelar={() => setTravaCnpj(null)}
+        onConfirmar={async (liberacoes) => {
+          setAtualizando(true);
+          try {
+            const resultado = await cotacoesService.emitirOCs(token, cotacaoId, travaCnpj.selecoes, liberacoes);
+            setTravaCnpj(null);
+            alert(`✅ ${resultado.total} OC(s) emitida(s): ${resultado.ocs.map(o => o.numero).join(', ')} — justificativa registrada.`);
+            onVoltar();
+          } catch (err) {
+            if (err.body?.codigo === 'cnpj_irregular') setTravaCnpj({ ...err.body, selecoes: travaCnpj.selecoes });
+            else { setTravaCnpj(null); alert('Erro ao emitir OCs: ' + err.message); }
+          } finally { setAtualizando(false); }
+        }} />}
       {/* HEADER */}
       <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 22 }}>
         <div>

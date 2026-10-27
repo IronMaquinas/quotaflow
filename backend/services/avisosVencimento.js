@@ -196,4 +196,4 @@ async function enviarAvisosVencimento({ agora = new Date(), enviar = enviarEmail
   return r;
 }
 
-module.exports = { enviarAvisosVencimento, marcoPara, pendentes, montarEmail };
+module.exports = { enviarAvisosVencimento, marcoPara, pendentes, montarEmail, destinatariosDoTenant }; // 14e: destinatários reaproveitados pelo Monitor de CNPJs

@@ -1985,6 +1985,7 @@ router.post('/enviar', tenantMiddleware, async (req, res) => {
     });
   } catch (err) {
     console.error('❌ Erro em enviar:', err);
+    if (err.codigo === 'cnpj_irregular') return res.status(409).json({ erro: err.message, codigo: err.codigo, bloqueados_cnpj: err.bloqueados_cnpj }); // 14e
     res.status(500).json({ erro: err.message });
   }
 });
@@ -5135,6 +5136,11 @@ router.post('/:cotacaoId/emitir-ocs', tenantMiddleware, async (req, res) => {
       usuarioNome = u?.nome || null;
     } catch (_) {}
 
+    // 14e: fornecedor com CNPJ irregular → só com justificativa registrada (cnpj_liberacoes)
+    const travaCnpj = await require('../services/monitorCnpj').exigirLiberacao(require('../db').supabase, req.tenantId, { id: req.userId, nome: usuarioNome }, {
+      contexto: 'oc', referencia: `cotacao:${cotacaoId}`, fornecedorIds: [...new Set(selecoes.map(s => s.fornecedor_id).filter(Boolean))], liberacoes: req.body.liberacoes_cnpj || {} });
+    if (travaCnpj) return res.status(travaCnpj.status).json(travaCnpj);
+
     const resultado = await cotacaoService.emitirOCs(
       req.tenantId,
       parseInt(cotacaoId),
@@ -5178,6 +5184,14 @@ router.post('/:cotacaoId/adicionar-fornecedores', tenantMiddleware, async (req, 
       });
     }
 
+    // 14e: CNPJ irregular na Receita não entra na cotação
+    const filtroCnpj = await require('../services/monitorCnpj').filtrarEnvioCotacao(require('../db').supabase, tenantId, null, fornecedor_ids);
+    if (filtroCnpj.bloqueados.length && !filtroCnpj.liberados.length) {
+      return res.status(409).json({ codigo: 'cnpj_irregular', bloqueados_cnpj: filtroCnpj.bloqueados,
+        erro: `Não adicionado: ${filtroCnpj.bloqueados.map(b => `${b.nome} (CNPJ ${b.situacao})`).join(', ')} com situação irregular na Receita.` });
+    }
+    req.body.fornecedor_ids = filtroCnpj.liberados;
+
     // 2. Filtra fornecedores já vinculados
     const jaVinculados = await DB.select('cotacao_fornecedores', { cotacao_id: cotacaoId }, tenantId);
     const idsJaVinculados = new Set(jaVinculados.map(f => String(f.fornecedor_id)));
@@ -5187,7 +5201,8 @@ router.post('/:cotacaoId/adicionar-fornecedores', tenantMiddleware, async (req, 
     const adicionados = [];
     const ignorados = [];
 
-    for (const fornId of fornecedor_ids) {
+    for (const b of filtroCnpj.bloqueados) ignorados.push({ id: b.fornecedor_id, motivo: `CNPJ ${b.situacao} na Receita (bloqueado)` }); // 14e
+    for (const fornId of filtroCnpj.liberados) {
       if (idsJaVinculados.has(String(fornId))) {
         ignorados.push({ id: fornId, motivo: 'já está na cotação' });
         continue;
@@ -5227,7 +5242,7 @@ router.post('/:cotacaoId/adicionar-fornecedores', tenantMiddleware, async (req, 
     // selecionados nesta request — não só os "novos no cabeçalho". Sem
     // isso, tentar vincular um fornecedor já cadastrado a itens que ele
     // ainda não cotava não fazia nada (idsAdicionados ficava vazio).
-    const idsAdicionados = fornecedor_ids;
+    const idsAdicionados = filtroCnpj.liberados; // 14e: sem os bloqueados por CNPJ
 
     // FIX (2026-09): ordenar por id — DB.select não garante ordem, e cada
     // chamada devolvia os itens embaralhados, fazendo o frontend mudar a
@@ -5297,6 +5312,7 @@ router.post('/:cotacaoId/adicionar-fornecedores', tenantMiddleware, async (req, 
       ignorados,
       itensAtualizados: itensAlvo.length,
       emailsEnviados,
+      bloqueados_cnpj: filtroCnpj.bloqueados, // 14e
       falhasEmail,
       mensagem: `${adicionados.length} fornecedor(es) adicionado(s)${ignorados.length > 0 ? ` · ${ignorados.length} ignorado(s)` : ''} · aplicados em ${itensAlvo.length} item(ns) · ${emailsEnviados} email(ns) enviado(s)`,
     });
@@ -5328,6 +5344,9 @@ router.post('/:cotacaoId/fornecedores/:fornecedorId/reenviar-email', tenantMiddl
     if (!fornecedorCot) {
       return res.status(404).json({ erro: 'Fornecedor não está nesta cotação' });
     }
+    // 14e: CNPJ irregular não recebe a cotação
+    const fcR = await require('../services/monitorCnpj').filtrarEnvioCotacao(require('../db').supabase, tenantId, cotacaoId, [fornecedorId]);
+    if (fcR.bloqueados.length) return res.status(409).json({ codigo: 'cnpj_irregular', bloqueados_cnpj: fcR.bloqueados, erro: `E-mail não reenviado: CNPJ ${fcR.bloqueados[0].situacao} na Receita.` });
     if (!fornecedorCot.token) {
       return res.status(400).json({ erro: 'Fornecedor sem token de acesso — recrie a cotação' });
     }

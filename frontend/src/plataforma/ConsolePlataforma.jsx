@@ -12,6 +12,15 @@ import BibliotecaEpi from "./BibliotecaEpi"; // etapa 12d.1b
 import BibliotecaTreinamentos from "./BibliotecaTreinamentos"; // etapa 12e.2a
 import BibliotecaInspecoes from "./BibliotecaInspecoes"; // etapa 14a
 import BibliotecaContratos from "./BibliotecaContratos"; // etapa 14d
+import CnpjsPlataforma from "./CnpjsPlataforma"; // 14e
+
+const GRUPOS = [ // 14e.1
+  ["GERAL", ["visao"]],
+  ["CADASTROS", ["aprovacoes", "transportadoras", "fornecedores"]],
+  ["COMPLIANCE", ["cnpjs"]],
+  ["BIBLIOTECAS", ["funcoes", "epi", "treinamentos", "inspecoes", "contratos"]],
+];
+
 
 const C = {
   bg: "#0a0e14", surface: "#111722", surface2: "#0d131d", border: "#1e2535", text: "#e2e8f0", sub: "#94a3b8",
@@ -394,15 +403,16 @@ export default function ConsolePlataforma() {
     ? pend.transportadoras.filter((t) => t.aprovacao_status === "pendente").length + pend.fornecedores.filter((f) => !f.recusado_em).length
     : 0;
   const abas = [
-    { id: "visao", t: "Visão geral" },
-    { id: "aprovacoes", t: `Aprovações${qtdPendentes ? ` (${qtdPendentes})` : ""}` },
-    { id: "transportadoras", t: "Transportadoras" },
-    { id: "fornecedores", t: "Fornecedores" },
-    { id: "funcoes", t: "📚 Biblioteca de funções" },
+    { id: "visao", t: "📊 Visão geral" },
+    { id: "aprovacoes", t: `✅ Aprovações${qtdPendentes ? ` (${qtdPendentes})` : ""}` },
+    { id: "transportadoras", t: "🚚 Transportadoras" },
+    { id: "fornecedores", t: "🔧 Fornecedores" },
+    { id: "funcoes", t: "📚 Funções" },
     { id: "epi", t: "🦺 Catálogo de EPI" },
-    { id: "treinamentos", t: "🎓 Biblioteca de treinamentos" },
-    { id: "inspecoes", t: "🔍 Biblioteca de inspeções" },
-    { id: "contratos", t: "📄 Biblioteca de contratos" },
+    { id: "treinamentos", t: "🎓 Treinamentos" },
+    { id: "inspecoes", t: "🔍 Inspeções" },
+    { id: "contratos", t: "📄 Contratos" },
+    { id: "cnpjs", t: "🛡 CNPJs" }, // 14e
   ];
 
   return (
@@ -419,16 +429,24 @@ export default function ConsolePlataforma() {
         </div>
       </div>
 
-      <div style={{ display: "flex", gap: 4, padding: "0 24px", borderBottom: `1px solid ${C.border}`, overflowX: "auto" }}>
-        {abas.map((a) => (
-          <button key={a.id} type="button" onClick={() => setAba(a.id)}
-            style={{ background: "transparent", border: "none", borderBottom: `2px solid ${aba === a.id ? C.accent : "transparent"}`, padding: "12px 14px", color: aba === a.id ? C.text : C.muted, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit", whiteSpace: "nowrap" }}>
-            {a.t}
-          </button>
+      {/* 14e.1: menu lateral (como no painel da transportadora e do fornecedor) — agrupado */}
+      <div style={{ display: "flex", alignItems: "stretch", minHeight: "calc(100vh - 57px)" }}>
+      <nav style={{ width: 230, flexShrink: 0, borderRight: `1px solid ${C.border}`, background: C.surface, padding: "12px 8px", minHeight: "calc(100vh - 57px)" }}>
+        {GRUPOS.map(([titulo, ids]) => (
+          <div key={titulo} style={{ marginBottom: 10 }}>
+            <div style={{ fontSize: 10, color: C.muted, letterSpacing: "0.08em", fontWeight: 700, padding: "6px 10px" }}>{titulo}</div>
+            {abas.filter((a) => ids.includes(a.id)).map((a) => (
+              <button key={a.id} type="button" onClick={() => setAba(a.id)}
+                style={{ display: "block", width: "100%", textAlign: "left", background: aba === a.id ? `${C.accent}22` : "transparent", border: "none", borderLeft: `3px solid ${aba === a.id ? C.accent : "transparent"}`, borderRadius: 4,
+                  padding: "8px 10px", color: aba === a.id ? C.text : C.sub, fontSize: 13, fontWeight: aba === a.id ? 600 : 500, cursor: "pointer", fontFamily: "inherit", marginBottom: 2 }}>
+                {a.t}
+              </button>
+            ))}
+          </div>
         ))}
-      </div>
+      </nav>
 
-      <div style={{ padding: "20px 24px 60px", maxWidth: 1100 }}>
+      <div style={{ padding: "20px 24px 60px", maxWidth: 1100, flex: 1, minWidth: 0 }}>
         {aviso && (
           <div style={{ display: "flex", justifyContent: "space-between", gap: 10, padding: "10px 14px", borderRadius: 7, marginBottom: 16, fontSize: 13,
             background: aviso.tipo === "ok" ? `${C.success}18` : `${C.danger}18`, border: `1px solid ${aviso.tipo === "ok" ? C.success : C.danger}55`, color: aviso.tipo === "ok" ? C.success : C.danger }}>
@@ -444,7 +462,9 @@ export default function ConsolePlataforma() {
         {aba === "epi" && <BibliotecaEpi token={token} chamar={chamar} C={C} input={input} label={label} card={card} btn={btn} tag={tag} onAviso={setAviso} />}
         {aba === "treinamentos" && <BibliotecaTreinamentos token={token} chamar={chamar} C={C} input={input} label={label} card={card} btn={btn} tag={tag} onAviso={setAviso} />}
         {aba === "inspecoes" && <BibliotecaInspecoes token={token} chamar={chamar} C={C} input={input} label={label} card={card} btn={btn} tag={tag} onAviso={setAviso} />}
+        {aba === "cnpjs" && <CnpjsPlataforma token={token} chamar={chamar} C={C} input={input} label={label} card={card} btn={btn} tag={tag} onAviso={setAviso} />}
         {aba === "contratos" && <BibliotecaContratos token={token} chamar={chamar} C={C} input={input} label={label} card={card} btn={btn} tag={tag} onAviso={setAviso} />}
+      </div>
       </div>
 
       {acao && (

@@ -30,6 +30,7 @@ import TelaRecebimento from './components/estoque/TelaRecebimento';
 import TelaOrdemServico from './components/estoque/TelaOrdemServico';
 import TelaConfiguracoes from './components/configuracoes/TelaConfiguracoes';
 import CompletarPerfil from './components/configuracoes/CompletarPerfil'; // 14d.5
+import TelaMonitorCnpj from './components/compliance/TelaMonitorCnpj'; // 14e
 import TelaNaoConformidades from "./components/naoConformidades/TelaNaoConformidades";
 import TelaInspecoes from "./components/inspecoes/TelaInspecoes"; // etapa 14a
 import TelaContratos from "./components/contratos/TelaContratos"; // etapa 14b.3
@@ -407,6 +408,7 @@ const perfil = PERFIS[usuario.perfil] || {
     {id:"pessoas",       l:"👷 Pessoas",               perfis:["admin","gestor","qualidade","operacao"]},
     {id:"meus_treinamentos", l:"🎓 Meus treinamentos",  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro"]}, // etapa 12e.2b
     {id:"fornecedores",  l:"🏭 Fornecedores",         perfis:["admin","gestor","comprador"]},
+    {id:"monitor_cnpj",  l:"🛡 Monitor de CNPJs",     perfis:["admin","gestor","comprador"]}, // etapa 14e
     {id:"portalfornecedor", l:"🏢 Portal Fornecedor", perfis:["admin","fornecedor"]},
     {id:"catalogo",      l:"📦 Catálogo",             perfis:["admin","gestor","comprador","qualidade"]},
     {id:"usuarios",      l:"👥 Usuários",             perfis:["admin"]},
@@ -764,6 +766,8 @@ const perfil = PERFIS[usuario.perfil] || {
           <div style={{ flex: 1, overflowY: "auto" }}>
             <TelaUsuariosNova useUsuarios={useUsuarios} C={C} s={s} />
           </div>)}
+
+        {temAcesso(tela) && tela === "monitor_cnpj" && (<div style={{ flex: 1, overflowY: "auto" }}><TelaMonitorCnpj C={C} s={s} /></div>)}
 
         {temAcesso(tela) && tela === "configuracoes" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
@@ -2395,6 +2399,7 @@ const PERMISSOES = {
   pessoas:            ["admin","gestor","qualidade","operacao"], // etapa 12c
   meus_treinamentos:  ["admin","gestor","comprador","operacao","qualidade","financeiro","colaborador"], // etapa 12e.2b
   fornecedores:       ["admin","gestor","comprador"],
+  monitor_cnpj:       ["admin","gestor","comprador"], // etapa 14e
   portalfornecedor:   ["admin","fornecedor"],
   catalogo:           ["admin","gestor","comprador","qualidade"],
   usuarios:           ["admin"],

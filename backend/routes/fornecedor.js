@@ -1408,7 +1408,12 @@ router.put('/me', fornecedorMiddleware, async (req, res) => {
     // ── 1) Dados da empresa ──
     const dadosEmpresa = {};
     if (nome_fantasia !== undefined) dadosEmpresa.nome_fantasia = nome_fantasia;
-    if (razao_social !== undefined) dadosEmpresa.razao_social = razao_social;
+    // 14e: razão social segue o CNPJ (Receita) — depois de preenchida, só a plataforma altera. O CNPJ nunca muda por aqui.
+    if (razao_social !== undefined) {
+      const atualRS = String(fornecedorAtual.razao_social || '').trim();
+      if (!atualRS) dadosEmpresa.razao_social = razao_social;
+      else if (String(razao_social || '').trim() !== atualRS) return res.status(409).json({ erro: 'A razão social segue o CNPJ na Receita e não é alterada por aqui. Para corrigir, fale com o suporte do QuotaFlow.' });
+    }
     if (endereco !== undefined) dadosEmpresa.endereco = endereco;
     if (cidade !== undefined) dadosEmpresa.cidade = cidade;
     if (estado !== undefined) dadosEmpresa.estado = estado;
@@ -1434,6 +1439,15 @@ router.put('/me', fornecedorMiddleware, async (req, res) => {
         return res.status(400).json({ erro: 'E-mail da empresa inválido' });
       }
       await DB.update('fornecedores', fornecedorId, dadosEmpresa, tenantId);
+      // 14e: histórico das alterações cadastrais (fornecedor_alteracoes)
+      try {
+        const CAMPOS_HIST = ['nome_fantasia', 'razao_social', 'endereco', 'cidade', 'estado', 'cep', 'nome_contato', 'email_contato', 'telefone', 'whatsapp'];
+        const mud = CAMPOS_HIST.filter((k) => dadosEmpresa[k] !== undefined && String(fornecedorAtual[k] ?? '') !== String(dadosEmpresa[k] ?? ''));
+        if (mud.length) {
+          const quemF = await DB.selectOne('fornecedor_usuarios', { id: userId }).catch(() => null);
+          await require('../db').supabase.from('fornecedor_alteracoes').insert(mud.map((k) => ({ fornecedor_id: fornecedorId, campo: k, antes: fornecedorAtual[k] ?? null, depois: dadosEmpresa[k] ?? null, origem: 'fornecedor', usuario_nome: quemF?.nome || quemF?.email || null })));
+        }
+      } catch (e) { console.warn('⚠️ fornecedor_alteracoes (rode a 050):', e.message); }
     }
 
     // ── 2) Dados do usuário logado ──

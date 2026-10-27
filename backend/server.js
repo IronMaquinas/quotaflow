@@ -148,6 +148,7 @@ app.use('/api/autuacoes', tenantMiddleware, require('./routes/autuacoes')); // e
 app.use('/api/inspecoes', tenantMiddleware, require('./routes/inspecoes')); // etapa 14a — inspeções de equipamento
 app.use('/api/inspecao-link', require('./routes/inspecaoLink')); // etapa 14b.1 — inspeção de terceiros (link público)
 app.use('/api/contratos', tenantMiddleware, require('./routes/contratos')); // etapa 14b.3 — contratos de locação (empresa)
+app.use('/api/monitor-cnpj', tenantMiddleware, require('./routes/monitorCnpj')); // etapa 14e — 🛡 Monitor de CNPJs
 app.use('/api/locatario', tenantMiddleware, require('./routes/locatario')); // etapa 14b.3 — área do locatário
 
 // Rota de saúde (Railway usa para verificar se o servidor está rodando)
@@ -252,6 +253,8 @@ if (process.env.CRON_INTERNO === '1') {
     enviarResumoDiario().catch(console.error);
     // etapa 12c.1: avisos de vencimento de documentos (30/15/5 dias e vencido)
     require('./services/avisosVencimento').enviarAvisosVencimento().catch(console.error);
+    // etapa 14e: Monitor de CNPJs — ciclo quinzenal (01 e 15), um lote por dia até 100%
+    require('./services/monitorCnpj').rodarCiclo(require('./db').supabase).then((r) => console.log('[CRON] Monitor de CNPJs:', JSON.stringify(r))).catch(console.error);
   }, { timezone: 'America/Sao_Paulo' });
 }
 

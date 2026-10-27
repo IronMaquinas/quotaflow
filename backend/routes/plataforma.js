@@ -93,6 +93,12 @@ router.post('/transportadoras/:id/recusar', responder((req) => C.recusarTranspor
 const PERFIL = require('../services/perfilEmpresa');
 router.post('/transportadoras/:id/cnpj', responder(async (req) => { const r = await PERFIL.alterarCnpjPlataforma(supabase, req.params.id, req.plataformaAdmin, req.body || {}); if (!r.erro) await C.registrar(req.plataformaAdmin, 'cnpj_alterar', 'tenant', req.params.id, { antes: r.antes, depois: r.depois, motivo: String(req.body?.motivo || '').slice(0, 500) }).catch(() => {}); return r; }));
 router.get('/transportadoras/:id/alteracoes', responder((req) => PERFIL.alteracoes(supabase, req.params.id)));
+// 14e: 🛡 CNPJs — fornecedores da plataforma irregulares, tenants com processo, revisão (revisar / suspender / reativar)
+const MCNPJ = require('../services/monitorCnpj');
+router.get('/cnpjs', responder(() => MCNPJ.painelPlataforma(supabase)));
+router.post('/cnpjs/:fornecedorId/revisar', responder(async (req) => { const r = await MCNPJ.revisarPlataforma(supabase, req.params.fornecedorId, req.plataformaAdmin, req.body || {}); if (!r.erro) await C.registrar(req.plataformaAdmin, `cnpj_${req.body?.acao}`, 'fornecedor', req.params.fornecedorId, { nota: String(req.body?.nota || '').slice(0, 500) }).catch(() => {}); return r; }));
+router.post('/cnpjs/verificar/:documento', responder((req) => MCNPJ.verificar(supabase, req.params.documento, { forcar: true })));
+router.post('/cnpjs/rodar', responder((req) => MCNPJ.rodarCiclo(supabase, { lote: Math.min(Number(req.body?.lote) || 50, 300) })));
 router.delete('/transportadoras/:id', responder((req) => C.excluirTransportadora(req.params.id, req.plataformaAdmin)));
 
 router.post('/fornecedores/:id/aprovar', responder((req) => C.aprovarFornecedor(req.params.id, req.plataformaAdmin)));

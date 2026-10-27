@@ -115,6 +115,13 @@ async function notificarMudanca(supabase, doc, sit, antes) {
       <p><b>Novas cotações para ele ficam bloqueadas.</b> Para emitir OC ou lançar a nota (pagamento), o sistema pede uma justificativa registrada.</p>`);
     for (const g of await gestoresDe(tid)) if (await enviar(g.email, `⚠ CNPJ irregular: ${nome} (${sit})`, html)) n++;
   }
+  // 14e.1: fornecedor da plataforma → avisa também a administração, com as transportadoras impactadas
+  if (process.env.ADMIN_EMAIL && fs.some((f) => ['global', 'candidato'].includes(f.tipo))) {
+    const tens = porTenant.size ? await q(supabase.from('tenants').select('*').in('id', [...porTenant.keys()])).catch(() => []) : [];
+    const linhas = tens.map((t) => [`<b>${esc(t.nome_fantasia || t.nome)}</b>`, esc(t.email || t.email_admin || '—'), esc(t.telefone || '—'), porTenant.get(String(t.id)).map((p) => `${p.tipo === 'oc' ? 'OC' : 'Cotação'} ${esc(p.numero)}`).join(', ')]);
+    const html = caixa('⚠ Fornecedor da plataforma ficou irregular', `<p><b>${esc(nome)}</b> (CNPJ ${fmtCnpj(doc)}): <b>${esc(antes || '—')}</b> → <b style="color:#dc2626">${esc(sit)}</b>.</p>${linhas.length ? `<p>Transportadoras com processo em andamento:</p>${tabela(linhas, ['Transportadora', 'E-mail', 'Telefone', 'Processos'])}` : '<p>Nenhuma transportadora com processo em andamento.</p>'}<p>Revise no Console → 🛡 CNPJs.</p>`);
+    if (await enviar(process.env.ADMIN_EMAIL, `⚠ Fornecedor da plataforma irregular: ${nome} (${sit})`, html)) n++;
+  }
   return n;
 }
 
@@ -233,7 +240,8 @@ async function emailsDoCiclo(supabase, inicio) {
   if (process.env.ADMIN_EMAIL) {
     const pl = await painelPlataforma(supabase);
     const titulo = pl.irregulares.length ? `⚠ Monitor de CNPJs (plataforma): ${pl.irregulares.length} fornecedor(es) irregular(es)` : '✓ Monitor de CNPJs (plataforma): nenhum fornecedor irregular';
-    const corpo = pl.irregulares.length ? tabela(pl.irregulares.map((f) => [esc(f.nome), fmtCnpj(f.documento), `<b style="color:#dc2626">${esc(f.situacao)}</b>`, String(f.tenants_com_processo), esc(f.revisao_status || '—')]), ['Fornecedor', 'CNPJ', 'Situação', 'Tenants c/ processo', 'Revisão']) + '<p>Revise no Console → 🛡 CNPJs.</p>' : '<p>Todos os fornecedores da plataforma estão ATIVOS na Receita.</p>';
+    const quem = (f) => f.tenants.length ? f.tenants.map((t) => `<b>${esc(t.nome)}</b>${t.email ? `<br><a href="mailto:${esc(t.email)}">${esc(t.email)}</a>` : ''}${t.telefone ? ` · ${esc(t.telefone)}` : ''}<br><span style="color:#666">${t.processos.map((p) => `${p.tipo === 'oc' ? 'OC' : 'Cotação'} ${esc(p.numero)}`).join(', ')}</span>`).join('<br><br>') : '<span style="color:#666">nenhuma</span>';
+    const corpo = pl.irregulares.length ? tabela(pl.irregulares.map((f) => [`${esc(f.nome)}<br><span style="color:#666">${fmtCnpj(f.documento)}</span>`, `<b style="color:#dc2626">${esc(f.situacao)}</b>`, quem(f), esc(f.revisao_status || '—')]), ['Fornecedor', 'Situação', 'Transportadoras impactadas (processos em andamento)', 'Revisão']) + '<p>Revise no Console → 🛡 CNPJs.</p>' : '<p>Todos os fornecedores da plataforma estão ATIVOS na Receita.</p>';
     if (await enviar(process.env.ADMIN_EMAIL, titulo, caixa(titulo, corpo))) n++;
   }
   return n;
@@ -247,13 +255,20 @@ async function painelPlataforma(supabase) {
   const irr = fs.filter((f) => irregular(mon.get(so(f.cnpj))?.situacao));
   const procs = irr.length ? await processosAbertos(supabase, irr.map((f) => f.id)) : [];
   const verificados = docs.filter((d) => mon.get(d)?.verificado_em).length;
+  // 14e.1: QUEM é impactado — transportadoras com processo em andamento (nome, contato do responsável, processos)
+  const tids = [...new Set(procs.map((p) => String(p.tenant_id)))];
+  const tens = tids.length ? await q(supabase.from('tenants').select('*').in('id', tids)).catch(() => []) : [];
+  const tMap = new Map(tens.map((t) => [String(t.id), t]));
+  const impactados = (ps) => [...new Set(ps.map((p) => String(p.tenant_id)))].map((tid) => { const t = tMap.get(tid) || {};
+    return { id: tid, nome: t.nome_fantasia || t.nome || `#${tid}`, email: t.email || t.email_admin || null, telefone: t.telefone || null,
+      processos: ps.filter((p) => String(p.tenant_id) === tid).map((p) => ({ tipo: p.tipo, numero: p.numero })) }; });
   return {
     ciclo: inicioCiclo(), total: docs.length, verificados,
     ultimo_ciclo: (await q(supabase.from('cnpj_monitor_ciclos').select('*').order('inicio', { ascending: false }).limit(3)).catch(() => [])),
     irregulares: irr.map((f) => { const m = mon.get(so(f.cnpj)) || {}; const ps = procs.filter((p) => String(p.fornecedor_id) === String(f.id));
       return { id: f.id, nome: f.nome_fantasia || f.nome, documento: so(f.cnpj), tipo: f.tipo, ativo: f.ativo !== false && f.ativo !== 0, situacao: m.situacao, situacao_anterior: m.situacao_anterior, mudou_em: m.mudou_em, verificado_em: m.verificado_em,
         revisao_status: m.revisao_status || null, revisao_nota: m.revisao_nota || null, revisao_por: m.revisao_por || null, revisao_em: m.revisao_em || null,
-        tenants_com_processo: new Set(ps.map((p) => String(p.tenant_id))).size, processos: ps.length }; })
+        tenants_com_processo: new Set(ps.map((p) => String(p.tenant_id))).size, processos: ps.length, tenants: impactados(ps) }; })
       .sort((a, b) => b.tenants_com_processo - a.tenants_com_processo || String(a.nome).localeCompare(String(b.nome))),
   };
 }
