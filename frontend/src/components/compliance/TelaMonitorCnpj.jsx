@@ -10,7 +10,7 @@ const fmt = (d) => (String(d || "").length === 14 ? String(d).replace(/^(\d{2})(
 const dt = (d, h) => (d ? new Date(d).toLocaleString("pt-BR", h ? { dateStyle: "short", timeStyle: "short" } : { dateStyle: "short" }) : "—");
 const diaBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
 
-export default function TelaMonitorCnpj({ C, s }) {
+export default function TelaMonitorCnpj({ C, s, onAbrir }) {
   const [d, setD] = useState(null);
   const [erro, setErro] = useState(null);
   const [aba, setAba] = useState("base");
@@ -83,7 +83,9 @@ export default function TelaMonitorCnpj({ C, s }) {
             <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
               <div style={{ flex: 1, fontWeight: 600, fontSize: 13 }}>{g.nome} <span style={{ fontSize: 11, color: C.muted, fontWeight: 400 }}>· CNPJ {fmt(g.documento)}</span></div>{tag(g)}
             </div>
-            <div style={{ fontSize: 12, marginTop: 6 }}>{g.processos.map((p) => `${p.tipo === "oc" ? "OC" : "Cotação"} ${p.numero}`).join(" · ")}</div>
+            <div style={{ fontSize: 12, marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap" }}>{g.processos.map((p) => ( /* 14e.2: abre a cotação / OC */
+              <button key={`${p.tipo}${p.id}`} type="button" onClick={() => onAbrir?.(p)} className="qf-clicavel" title={`Abrir ${p.tipo === "oc" ? "a OC" : "a cotação"}`}
+                style={{ background: "none", border: `1px solid ${C.border}`, borderRadius: 4, color: C.accent, fontSize: 12, padding: "2px 8px", fontFamily: "inherit", textDecoration: "underline" }}>{p.tipo === "oc" ? "OC" : "Cotação"} {p.numero} ↗</button>))}</div>
             <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Novas cotações para ele estão bloqueadas. OC e nota pedem justificativa. Antes de pagar, confira a certidão.</div>
           </div>
         ))}
@@ -93,7 +95,7 @@ export default function TelaMonitorCnpj({ C, s }) {
         {d.liberacoes.length === 0 && <div style={{ ...s.card, padding: 18, color: C.muted, fontSize: 13 }}>Nenhuma OC ou nota liberada com CNPJ irregular.</div>}
         {d.liberacoes.map((l) => (
           <div key={l.id} style={{ ...s.card, padding: "10px 14px", marginBottom: 6, fontSize: 12 }}>
-            <div><b>{l.fornecedor_nome || fmt(l.documento)}</b> · {l.contexto === "nota" ? "lançamento da nota" : "emissão de OC"} ({l.referencia}) · situação <b style={{ color: C.danger }}>{l.situacao}</b></div>
+            <div><b>{l.fornecedor_nome || fmt(l.documento)}</b> · {l.contexto === "nota" ? "lançamento da nota" : "emissão de OC"} {(() => { const [t, id] = String(l.referencia || "").split(":"); return id ? <button type="button" onClick={() => onAbrir?.({ tipo: t === "oc" ? "oc" : "cotacao", id })} className="qf-clicavel" style={{ background: "none", border: "none", color: C.accent, textDecoration: "underline", padding: 0, fontSize: 12, fontFamily: "inherit" }}>({t === "oc" ? "OC" : "cotação"} #{id} ↗)</button> : `(${l.referencia})`; })()} · situação <b style={{ color: C.danger }}>{l.situacao}</b></div>
             <div style={{ margin: "4px 0", whiteSpace: "pre-wrap" }}>“{l.justificativa}”</div>
             <div style={{ fontSize: 11, color: C.muted }}>{dt(l.criado_em, true)} · {l.usuario_nome || "—"}</div>
           </div>

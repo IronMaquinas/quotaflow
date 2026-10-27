@@ -171,6 +171,8 @@ export default function App() {
   const [configAba,setConfigAba]=useState(null); // 14d.5: aba inicial das Configurações (vinda do "Complete o perfil")
   useEffect(() => { if (tela !== "configuracoes") setConfigAba(null); }, [tela]); // 14d.5
   const [osParaAbrir, setOsParaAbrir] = useState(null);
+  const [cotacaoParaAbrir, setCotacaoParaAbrir] = useState(null); // 14e.2
+  const [ocParaAbrir, setOcParaAbrir] = useState(null); // 14e.2
   const [abaColaborador, setAbaColaborador] = useState("treinos"); // 14b.1: tela do colaborador
   useEffect(() => { if (usuario?.id) carregarLogoEmpresa(); }, [usuario?.id]); // 14c: logo da empresa nos documentos
   // 14c.2: "é clicável" — mãozinha + realce ao passar o mouse (className="qf-clicavel")
@@ -632,6 +634,8 @@ const perfil = PERFIS[usuario.perfil] || {
             <TelaCotacoesNovaComAbas 
               C={C} 
               s={s} 
+              cotacaoInicialId={cotacaoParaAbrir}
+              onCotacaoAberta={() => setCotacaoParaAbrir(null)}
               fmtBRL={fmtBRL} 
               fmtD={fmtD} 
             />
@@ -645,7 +649,7 @@ const perfil = PERFIS[usuario.perfil] || {
 
         {temAcesso(tela) && tela === "ordensvenda" && (
           <div style={{flex:1, overflowY:"auto"}}>
-            <TelaOrdensVenda C={C} s={s} fmtBRL={fmtBRL} fmtD={fmtD} />
+            <TelaOrdensVenda C={C} s={s} fmtBRL={fmtBRL} fmtD={fmtD} ocInicialId={ocParaAbrir} onOcAberta={() => setOcParaAbrir(null)} />
           </div>
         )}
 
@@ -767,7 +771,7 @@ const perfil = PERFIS[usuario.perfil] || {
             <TelaUsuariosNova useUsuarios={useUsuarios} C={C} s={s} />
           </div>)}
 
-        {temAcesso(tela) && tela === "monitor_cnpj" && (<div style={{ flex: 1, overflowY: "auto" }}><TelaMonitorCnpj C={C} s={s} /></div>)}
+        {temAcesso(tela) && tela === "monitor_cnpj" && (<div style={{ flex: 1, overflowY: "auto" }}><TelaMonitorCnpj C={C} s={s} onAbrir={(p) => { if (p.tipo === "oc") { if (temAcesso("ordensvenda")) { setOcParaAbrir(p.id); setTela("ordensvenda"); } } else if (temAcesso("compradora")) { setCotacaoParaAbrir(p.id); setTela("compradora"); } }} /></div>)}
 
         {temAcesso(tela) && tela === "configuracoes" && (
           <div style={{ flex: 1, overflowY: "auto" }}>

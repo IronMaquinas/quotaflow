@@ -9,7 +9,7 @@ import { useEmail } from "../../hooks/useEmail";
 import { cotacoesService } from "../../services/cotacoesService";
 import TelaMonitorarRespostas from "./TelaMonitorarRespostas";
 
-export default function TelaCotacoesNovaComAbas({ fmtBRL, fmtD, C, s }) {
+export default function TelaCotacoesNovaComAbas({ fmtBRL, fmtD, C, s, cotacaoInicialId = null, onCotacaoAberta }) {
   // ─── HOOKS EXISTENTES (mantém tudo como antes) ─────────────
   const token = localStorage.getItem("accessToken") || localStorage.getItem("access_token");
   const { cotacoes, loading, erro, carregar: listarCotacoes, criar: criarCotacao, aprovar: aprovarFornecedor, 
@@ -54,6 +54,8 @@ export default function TelaCotacoesNovaComAbas({ fmtBRL, fmtD, C, s }) {
   const [enviadoAutomatico, setEnviadoAutomatico] = useState(false);
   // ─── NOVO: ESTADO PARA VISUALIZAR RESPOSTAS ────────────────
   const [statusCotacao, setStatusCotacao] = useState(null);
+  // 14e.2: aberta direto de outra tela (ex.: 🛡 Monitor de CNPJs) — vai para o monitoramento da cotação
+  useEffect(() => { if (cotacaoInicialId) { handleVisualizarRespostas(cotacaoInicialId); onCotacaoAberta?.(); } }, [cotacaoInicialId]); // eslint-disable-line react-hooks/exhaustive-deps
   const [carregandoStatus, setCarregandoStatus] = useState(false);
 
   const [adicionandoFornecedorPara, setAdicionandoFornecedorPara] = useState(null);

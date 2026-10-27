@@ -69,7 +69,7 @@ const ESPERADO = {
   'services/acessoSpot.js': '6ecce4d16d6b123c6ce93c1223b32f01', // etapa 10c (novo)
   'services/receitaCnpj.js': 'b0e2a678127403d5608723c21ec61b78', // etapa 14d.5
   'services/cadastroPublico.js': '1359e67ff1f2438a964eee7223cf2ed1', // etapa 14d.5
-  'front:App.jsx': '9f38a8c76b900b265d694e2a148822fd', // etapa 14e
+  'front:App.jsx': '3076eb311a841991a95c0bc0479ea3d7', // etapa 14e.2
   'front:TelaLogin.jsx': 'bfa1fccbdab99820be2ac14c0e91b2fe', // etapa 14b.1
   'front:TelaSignup.jsx': '345dceefb937b38e74cfef44cfc33ef3', // etapa 11a.3
   'front:AvisoPlanoTenant.jsx': '5795f00c1bc656d0525fd29b6793a96c', // etapa 11a.3
@@ -196,18 +196,20 @@ const ESPERADO = {
   'routes/monitorCnpj.js': '44a9c0605a68a8873468496ac652cd02', // etapa 14e (novo)
   'front:cotacoesService.js': 'fd42c81ed12dbb4e7d9fa20b03c22767', // etapa 14e
   'front:TelaMonitorarRespostas.jsx': '2e29288fda23cfcb8acd4584c7dfb8dd', // etapa 14e
-  'front:TelaCotacoesNovaComAbas.jsx': 'f4e33a56444c00c3cb0f8b024d741685', // etapa 14e
+  'front:TelaCotacoesNovaComAbas.jsx': '17039dfd30b9465830e7a69551aba62a', // etapa 14e.2
   'front:TelaRecebimento.jsx': 'b441323654332068311aba5ce9188d78', // etapa 14e
   'front:CnpjsPlataforma.jsx': '0663f0bd670edb45ff9ae8d2c2ef6a09', // etapa 14e.1
   'front:ModalJustificativaCnpj.jsx': '13d5e39c961c4e775fde24c77e4fb7ff', // etapa 14e (novo)
-  'front:TelaMonitorCnpj.jsx': '68772e2465cda992c3af790b08b079cf', // etapa 14e (novo)
+  'front:TelaMonitorCnpj.jsx': '7d9525d956277c38774adf199a1cf76e', // etapa 14e.2
+  'front:TelaOrdensVenda.jsx': 'e3fadc9d3c6ae4be1a2f14c693523f13', // etapa 14e.2
 };
 
-// Antes de copiar a etapa 14e.1 — base: 14e
+// Antes de copiar a etapa 14e.2 — base: 14e.1
 const ANTES = {
-  'services/monitorCnpj.js': '5a4f2ba66a3bffe6fd881c7028320ac2',
-  'front:ConsolePlataforma.jsx': '19a75ccb129b2bc143266d8bf67e500a',
-  'front:CnpjsPlataforma.jsx': '4748e31a18905cddad1e6b089a2a3fa4',
+  'front:App.jsx': '9f38a8c76b900b265d694e2a148822fd',
+  'front:TelaMonitorCnpj.jsx': '68772e2465cda992c3af790b08b079cf',
+  'front:TelaCotacoesNovaComAbas.jsx': 'f4e33a56444c00c3cb0f8b024d741685',
+  'front:TelaOrdensVenda.jsx': '828ac8a53af403fec5f0003f89d2156a',
 };
 
 const RAIZ = process.cwd();
@@ -245,7 +247,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada na etapa 12e.1?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 14e.1)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 14e.2)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

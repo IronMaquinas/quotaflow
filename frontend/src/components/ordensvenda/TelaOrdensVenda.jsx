@@ -1,10 +1,12 @@
 import { useState, useEffect } from 'react';
 import { useOrdensVenda } from '../../hooks/useOrdensVenda';
 
-export default function TelaOrdensVenda({ fmtBRL, fmtD, C, s }) {
+export default function TelaOrdensVenda({ fmtBRL, fmtD, C, s, ocInicialId = null, onOcAberta }) {
   const { ordens, loading, erro, listar, buscarPorId, atualizarStatus } = useOrdensVenda();
   const [selected, setSelected] = useState(null);
   const [detalhes, setDetalhes] = useState(null);
+  // 14e.2: aberta direto de outra tela (ex.: 🛡 Monitor de CNPJs) — abre o detalhe da OC
+  useEffect(() => { if (ocInicialId) { handleAbrirDetalhes(ocInicialId).catch(() => {}); onOcAberta?.(); } }, [ocInicialId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
   const token = localStorage.getItem('access_token');
