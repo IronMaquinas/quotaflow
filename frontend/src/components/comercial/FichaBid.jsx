@@ -1,18 +1,24 @@
-// components/comercial/FichaBid.jsx — etapa 15a
+// components/comercial/FichaBid.jsx — etapa 15a · 15b
 // Ficha do BID (abre por cima da tela): à esquerda o DOCUMENTO (itens por grupo/trecho, condições, textos, dados e assinatura,
 // versões), à direita a LINHA DO TEMPO do CRM (ligação, e-mail, reunião, nota, tarefa com data + eventos automáticos).
-//   • 💾 Salvar grava o rascunho. 📌 Fechar versão congela v1, v2… com o que mudou. 📄 PDF: rascunho ou uma versão fechada.
-//   • Funil: mover de fase aqui ou arrastando no kanban. Perdido pede o motivo. Aceito/perdido travam a edição (↺ Reabrir).
-import { useState, useEffect, useMemo } from "react";
+//   15b — QUEM FAZ O BID ANDAR É O CLIENTE. No topo, uma ação principal por fase + ✕ Perdido, e uma faixa dizendo onde o BID está:
+//     elaboração / revisão solicitada → 💾 Salvar · 👁 rascunho · 📨 Revisar e enviar (EnviarBid: documento final + checklist)
+//     com o cliente → 📄 PDF · 🔗 Copiar link · ↻ Reenviar e-mail · ✏ Criar revisão (o cliente segue vendo a enviada) · ⋯ aceite fora do sistema
+//     ✓✓ visualizado, alertas (sem abrir, aberto sem resposta, validade) com "＋ tarefa"; a resposta do cliente aparece em cada item.
+import { Fragment, useState, useEffect, useMemo } from "react";
 import apiService from "../../services/apiService";
 import CampoMoeda from "../shared/CampoMoeda";
 import CampoTelefone from "../shared/CampoTelefone";
 import { abrirBid, prepararJanela } from "../../utils/gerarBid";
+import EnviarBid from "./EnviarBid"; // 15b
 
-export const FASES = [["elaboracao", "Elaboração", "#64748b"], ["enviado", "Enviado", "#3b82f6"], ["negociacao", "Em negociação", "#f59e0b"], ["proposta_final", "Proposta final", "#a78bfa"], ["aceito", "Aceito", "#22c55e"], ["perdido", "Perdido", "#ef4444"]];
+export const FASES = [["elaboracao", "Elaboração", "#64748b"], ["aguardando_cliente", "Aguardando o cliente", "#3b82f6"], ["revisao_solicitada", "Revisão solicitada", "#f59e0b"], ["aguardando_aceite", "Aguardando aceite", "#a78bfa"], ["aceito", "Aceito", "#22c55e"], ["perdido", "Perdido", "#ef4444"]];
 export const COR_FASE = Object.fromEntries(FASES.map(([k, , c]) => [k, c]));
 export const NOME_FASE = Object.fromEntries(FASES.map(([k, l]) => [k, l]));
-export const MOTIVOS = { preco: "Preço", prazo: "Prazo", veiculo: "Tipo de veículo / disponibilidade", concorrente: "Fechou com concorrente", desistiu: "Cliente desistiu do serviço", outro: "Outro motivo" };
+export const MOTIVOS = { preco: "Preço", prazo: "Prazo", veiculo: "Tipo de veículo / disponibilidade", concorrente: "Fechou com concorrente", desistiu: "Cliente desistiu do serviço", recusado_cliente: "Recusado pelo cliente (no link)", outro: "Outro motivo" };
+export const MOTIVOS_MANUAIS = Object.fromEntries(Object.entries(MOTIVOS).filter(([k]) => k !== "recusado_cliente"));
+const MOTIVO_REV = { valor: "Valor", veiculo: "Tipo de veículo / conjunto", data: "Data / prazo", escopo: "Escopo / condições", outro: "Outro" };
+const DECISAO = { aprovado: ["✅ Aprovado", "#22c55e"], revisar: ["✏ Revisão pedida", "#f59e0b"], recusado: ["❌ Recusado", "#ef4444"] };
 export const brl = (v) => (v == null || v === "" ? "—" : Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
 const dataHora = (d) => (d ? new Date(d).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "");
 const dBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "");
@@ -35,7 +41,7 @@ function Celula({ C, s, col, valor, onValor, travado }) {
   return <input disabled={travado} value={valor ?? ""} inputMode={col.tipo === "numero" ? "decimal" : undefined} onChange={(e) => onValor(e.target.value)} placeholder={col.unidade || ""} style={st} />;
 }
 
-function Grupos({ C, s, conteudo, grupos, setGrupos, travado }) {
+function Grupos({ C, s, conteudo, grupos, setGrupos, travado, resposta }) {
   const cols = conteudo.colunas || []; const rot = conteudo.rotulo_grupo || "Grupo";
   const calc = calcular(grupos).grupos;
   const setG = (gi, g) => setGrupos(grupos.map((x, k) => (k === gi ? g : x)));
@@ -60,14 +66,19 @@ function Grupos({ C, s, conteudo, grupos, setGrupos, travado }) {
               <th style={{ textAlign: "left", color: C.muted, fontSize: 10, padding: 4 }}>QTD</th><th style={{ textAlign: "left", color: C.muted, fontSize: 10, padding: 4 }}>VALOR UNIT.</th><th /></tr></thead>
             <tbody>{g.itens.map((it, ii) => {
               const setI = (x) => setG(gi, { ...g, itens: g.itens.map((y, k) => (k === ii ? x : y)) });
-              return (<tr key={it.id}>
+              const rsp = resposta?.itens?.[it.id];
+              return (<Fragment key={it.id}><tr>
                 {cols.map((c) => <td key={c.chave} style={{ padding: 3 }}><Celula C={C} s={s} col={c} travado={travado} valor={it.valores?.[c.chave]} onValor={(v) => { const valores = { ...it.valores }; if (v === undefined || v === "") delete valores[c.chave]; else valores[c.chave] = v; setI({ ...it, valores }); }} /></td>)}
                 <td style={{ padding: 3 }}><input disabled={travado} value={it.quantidade ?? 1} inputMode="decimal" onChange={(e) => setI({ ...it, quantidade: e.target.value })} style={{ ...s.input, padding: "6px 7px", fontSize: 12, width: 56 }} /></td>
                 <td style={{ padding: 3, minWidth: 120 }}><CampoMoeda disabled={travado} value={it.valor ?? ""} onChange={(v) => setI({ ...it, valor: v === "" ? null : v })} style={{ ...s.input, padding: "6px 7px", fontSize: 12 }} /></td>
                 <td style={{ padding: 3, whiteSpace: "nowrap" }}>{!travado && <>
                   <button type="button" title="Duplicar item" onClick={() => setG(gi, { ...g, itens: [...g.itens.slice(0, ii + 1), { ...it, id: nid() }, ...g.itens.slice(ii + 1)] })} style={mini()}>⧉</button>{" "}
                   {g.itens.length > 1 && <button type="button" title="Tirar item" onClick={() => setG(gi, { ...g, itens: g.itens.filter((_, k) => k !== ii) })} style={mini(C.danger)}>✕</button>}</>}</td>
-              </tr>);
+              </tr>
+              {rsp && <tr><td colSpan={cols.length + 3} style={{ padding: "0 3px 8px" }}>
+                <div style={{ fontSize: 11.5, padding: "5px 9px", borderRadius: 6, background: `${DECISAO[rsp.decisao]?.[1]}18`, color: DECISAO[rsp.decisao]?.[1], borderLeft: `3px solid ${DECISAO[rsp.decisao]?.[1]}` }}>
+                  <b>{DECISAO[rsp.decisao]?.[0]}</b>{rsp.motivo ? ` · ${MOTIVO_REV[rsp.motivo] || rsp.motivo}` : ""}{rsp.comentario ? <span style={{ color: C.text }}> — “{rsp.comentario}”</span> : ""}</div></td></tr>}
+              </Fragment>);
             })}</tbody>
           </table>
         </div>
@@ -88,7 +99,8 @@ export default function FichaBid({ C, s, id, onFechar, onMudou, onErro, onOk, on
   const [aba, setAba] = useState("itens");
   const [resp, setResp] = useState([]);
   const [ocupado, setOcupado] = useState(false);
-  const [modal, setModal] = useState(null); // { tipo: perdido|aceito|versao|reabrir|fechar }
+  const [modal, setModal] = useState(null); // { tipo: perdido|externo|descartar|reabrir|fechar }
+  const [enviar, setEnviar] = useState(false); // 15b: 👁 Revisar e enviar
   const [ativ, setAtiv] = useState({ tipo: "nota", texto: "", prevista_para: "" });
 
   const carregar = async () => {
@@ -104,7 +116,7 @@ export default function FichaBid({ C, s, id, onFechar, onMudou, onErro, onOk, on
   useEffect(() => { carregar(); apiService.get("/comercial/responsaveis").then((r) => setResp(r.responsaveis || [])).catch(() => {}); }, [id]); // eslint-disable-line
   const calc = useMemo(() => (f ? calcular(f.grupos, f.valor_total_manual) : null), [f]);
   if (!d || !f) return null;
-  const b = d.bid; const ct = b.conteudo || {}; const travado = ["aceito", "perdido"].includes(b.fase);
+  const b = d.bid; const ct = b.conteudo || {}; const travado = !b.pode_editar; // 15b: com o cliente, só depois de ✏ Criar revisão
   const set = (k, v) => { setF((x) => ({ ...x, [k]: v })); setSujo(true); };
 
   const salvar = async (silencioso = false) => {
@@ -117,14 +129,19 @@ export default function FichaBid({ C, s, id, onFechar, onMudou, onErro, onOk, on
   const fase = async (fase, extra = {}) => {
     if (sujo && !travado && !(await salvar(true))) return;
     setOcupado(true);
-    try { await apiService.post(`/comercial/bids/${b.id}/fase`, { fase, ...extra }); onOk(`Movido para ${NOME_FASE[fase]}.`); setModal(null); await carregar(); onMudou?.(); }
+    try { await apiService.post(`/comercial/bids/${b.id}/fase`, { fase, ...extra }); onOk(fase === "reabrir" ? "BID reaberto." : `Movido para ${NOME_FASE[fase]}.`); setModal(null); await carregar(); onMudou?.(); }
     catch (e) { onErro(e.message); } finally { setOcupado(false); }
   };
-  const fecharVersao = async (nota) => {
-    if (sujo && !(await salvar(true))) return;
+  const acao = async (url, corpo, msg) => {
     setOcupado(true);
-    try { const r = await apiService.post(`/comercial/bids/${b.id}/versao`, { nota }); onOk(`Versão v${r.versao} fechada.`); setModal(null); await carregar(); onMudou?.(); }
-    catch (e) { onErro(e.message); } finally { setOcupado(false); }
+    try { const x = await apiService.post(`/comercial/bids/${b.id}/${url}`, corpo || {}); if (x?.aviso) onErro(x.aviso); else if (msg) onOk(msg); setModal(null); await carregar(); onMudou?.(); return x; }
+    catch (e) { onErro(e.message); return null; } finally { setOcupado(false); }
+  };
+  const abrirEnvio = async () => { if (sujo && !(await salvar(true))) return; setEnviar(true); };
+  const copiarLink = async () => { try { await navigator.clipboard.writeText(d.link); onOk("Link copiado — cole no WhatsApp ou no e-mail."); } catch { onErro(`Copie o link: ${d.link}`); } };
+  const criarTarefa = async (texto) => {
+    const amanha = new Date(Date.now() - 3 * 3600000 + 86400000).toISOString().slice(0, 10);
+    try { await apiService.post("/comercial/atividades", { tipo: "tarefa", texto, prevista_para: amanha, bid_id: b.id }); onOk("Tarefa criada para amanhã."); await carregar(); onMudou?.(); } catch (e) { onErro(e.message); }
   };
   const pdf = async (versao = null) => {
     if (versao == null && sujo && !(await salvar(true))) return;
@@ -145,7 +162,8 @@ export default function FichaBid({ C, s, id, onFechar, onMudou, onErro, onOk, on
   const abaBt = (k, l) => <button key={k} type="button" onClick={() => setAba(k)} style={{ background: "transparent", border: "none", borderBottom: `2px solid ${aba === k ? C.accent : "transparent"}`, padding: "7px 10px", color: aba === k ? C.text : C.muted, fontSize: 13, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>;
   const lbl = (rot, el, flex = "1 1 180px", key) => <label key={key} style={{ flex, display: "block" }}><span style={s.label}>{rot}</span>{el}</label>;
   const inp = (k, extra = {}) => <input disabled={travado} value={f[k] ?? ""} onChange={(e) => set(k, e.target.value)} style={s.input} {...extra} />;
-  const proxima = FASES.findIndex(([k]) => k === b.fase) + 1;
+  const comCliente = ["aguardando_cliente", "aguardando_aceite"].includes(b.fase);
+  const aberto = !["aceito", "perdido"].includes(b.fase);
   const condsDe = (grupo) => (ct.condicoes || []).filter((c) => (c.grupo || "comercial") === grupo);
   const tarefasAbertas = d.atividades.filter((a) => a.tipo === "tarefa" && !a.concluida_em);
 
@@ -173,16 +191,31 @@ export default function FichaBid({ C, s, id, onFechar, onMudou, onErro, onOk, on
         {/* ações */}
         <div style={{ padding: "10px 18px", borderBottom: `1px solid ${C.border}`, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           {!travado && <button type="button" disabled={ocupado || !sujo} onClick={() => salvar()} style={{ ...s.btn(!ocupado && sujo, C.accent), padding: "7px 14px", fontSize: 12 }}>💾 Salvar</button>}
-          {!travado && <button type="button" disabled={ocupado} onClick={() => setModal({ tipo: "versao" })} style={bt(C.accent, false)}>📌 Fechar versão</button>}
-          <button type="button" onClick={() => pdf(null)} style={bt(C.textSub, false)}>{b.alterado_desde_versao || !b.versao_atual || sujo ? "👁 rascunho" : `📄 PDF v${b.versao_atual}`}</button>
+          {!travado && <button type="button" onClick={() => pdf(null)} style={bt(C.textSub, false)}>👁 rascunho</button>}
+          {travado && b.versao_enviada > 0 && <button type="button" onClick={() => pdf(b.versao_enviada)} style={bt(C.textSub, false)}>📄 PDF v{b.versao_enviada}</button>}
+          {d.link && b.versao_enviada > 0 && aberto && <button type="button" onClick={copiarLink} style={bt(C.textSub, false)}>🔗 Copiar link</button>}
+          {comCliente && !b.em_revisao && <button type="button" disabled={ocupado} onClick={() => acao("reenviar", {}, "E-mail reenviado ao cliente.")} style={bt(C.textSub, false)}>↻ Reenviar e-mail</button>}
+          {!travado && b.versao_enviada > 0 && (b.em_revisao || b.alterado_desde_versao) && <button type="button" disabled={ocupado} onClick={() => setModal({ tipo: "descartar" })} style={bt(C.warn, false)}>✕ Descartar alterações</button>}
           <div style={{ flex: 1 }} />
-          {!travado && proxima > 0 && proxima < 5 && <button type="button" disabled={ocupado} onClick={() => fase(FASES[proxima][0])} style={bt(FASES[proxima][2])}>→ {FASES[proxima][1]}</button>}
-          {!travado && <button type="button" disabled={ocupado} onClick={() => setModal({ tipo: "aceito" })} style={bt(C.success)}>✓ Aceito</button>}
-          {!travado && <button type="button" disabled={ocupado} onClick={() => setModal({ tipo: "perdido", motivo: "", obs: "" })} style={bt(C.danger, false)}>✕ Perdido</button>}
-          {travado && <button type="button" disabled={ocupado} onClick={() => setModal({ tipo: "reabrir" })} style={bt(C.warn, false)}>↺ Reabrir</button>}
+          {!travado && aberto && <button type="button" disabled={ocupado} onClick={abrirEnvio} style={bt(C.accent)}>{b.versao_enviada > 0 ? `📨 Revisar e enviar a v${(b.versao_atual || 0) + 1}` : "📨 Revisar e enviar"}</button>}
+          {comCliente && !b.em_revisao && <button type="button" disabled={ocupado} onClick={() => acao("revisao/iniciar", {}, "Revisão iniciada — o cliente segue vendo a versão enviada até você enviar a nova.")} style={bt(C.accent, false)}>✏ Criar revisão</button>}
+          {b.versao_enviada > 0 && aberto && !b.em_revisao && !b.alterado_desde_versao && <button type="button" title="O cliente aceitou por e-mail, telefone ou papel" disabled={ocupado} onClick={() => setModal({ tipo: "externo", justificativa: "", data: hoje() })} style={{ ...bt(C.muted, false), border: "none", textDecoration: "underline", padding: "7px 4px" }}>⋯ aceite fora do sistema</button>}
+          {aberto && <button type="button" disabled={ocupado} onClick={() => setModal({ tipo: "perdido", motivo: "", obs: "" })} style={bt(C.danger, false)}>✕ Perdido</button>}
+          {b.fase === "perdido" && <button type="button" disabled={ocupado} onClick={() => setModal({ tipo: "reabrir" })} style={bt(C.warn, false)}>↺ Reabrir</button>}
         </div>
-        {b.fase === "perdido" && <div style={{ padding: "8px 18px", background: `${C.danger}18`, fontSize: 12, color: C.danger }}>Perdido em {dataHora(b.perdido_em)} — {MOTIVOS[b.motivo_perda] || b.motivo_perda}{b.perda_obs ? `: ${b.perda_obs}` : ""}</div>}
-        {b.fase === "aceito" && <div style={{ padding: "8px 18px", background: `${C.success}18`, fontSize: 12, color: C.success }}>Aceito em {dataHora(b.ganho_em)}. O Pedido de Venda (PV) nasce daqui na etapa 15c.</div>}
+        {/* 15b: onde o BID está — sempre visível */}
+        {(() => {
+          const faixa = (cor, conteudo) => <div style={{ padding: "9px 18px", background: `${cor}16`, borderBottom: `1px solid ${C.border}`, fontSize: 12.5, color: C.text, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}><div style={{ flex: "1 1 400px" }}>{conteudo}</div>
+            {aberto && (b.alertas || []).map((a) => <span key={a.tipo} style={{ display: "inline-flex", gap: 6, alignItems: "center", ...s.tag(a.tipo === "vencido" ? C.danger : C.warn), fontSize: 11 }}>⚠ {a.texto}<button type="button" onClick={() => criarTarefa(a.tarefa)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", textDecoration: "underline", fontSize: 11, padding: 0 }}>＋ tarefa</button></span>)}</div>;
+          const visto = b.visto_primeiro_em ? <span style={{ color: C.accent }}>✓✓ visualizada {b.visto_qtd}× (última {dataHora(b.visto_ultimo_em)})</span> : <span style={{ color: C.muted }}>✓ ainda não aberta</span>;
+          if (b.fase === "elaboracao") return faixa(C.muted, <>✏ <b>Em elaboração.</b> Nada vai ao cliente até você clicar em <b>📨 Revisar e enviar</b>.</>);
+          if (b.em_revisao) return faixa(C.warn, <>✏ <b>Preparando a nova versão.</b> O cliente continua vendo a v{b.versao_enviada}. Ao enviar, ele recebe um e-mail com o que mudou.</>);
+          if (b.fase === "aguardando_cliente") return faixa(C.accent, <>⏳ <b>Aguardando o cliente</b> desde {dataHora(b.enviado_em)} · v{b.versao_enviada} enviada para {b.envio_para} · {visto} · válida até {dBR(b.valido_ate)}</>);
+          if (b.fase === "revisao_solicitada") return faixa(C.warn, <>💬 <b>O cliente pediu revisão</b> em {dataHora(b.respondido_em)}{d.resposta?.nome ? ` (${d.resposta.nome})` : ""} — os comentários estão em cada item. Ajuste e envie a v{(b.versao_atual || 0) + 1}.</>);
+          if (b.fase === "aguardando_aceite") return faixa("#a78bfa", <>✅ <b>O cliente aprovou tudo</b> em {dataHora(b.respondido_em)} — falta assinar o aceite pelo link (código por e-mail + assinatura) · {visto}</>);
+          if (b.fase === "aceito") return faixa(C.success, b.aceite_canal === "fora_sistema" ? <>✓ <b>Aceite registrado fora do sistema</b> em {dBR(b.aceite_em)} — {b.aceite_obs} ({b.aceite_nome})</> : <>✍ <b>Aceito por {b.aceite_nome}</b>{b.aceite_cargo ? `, ${b.aceite_cargo}` : ""} em {dataHora(b.aceite_em)} (v{b.aceite_versao}, código confirmado em {b.aceite_email}). O PV nasce daqui na 15c.</>);
+          return faixa(C.danger, <>Perdido em {dataHora(b.perdido_em)} — {MOTIVOS[b.motivo_perda] || b.motivo_perda}{b.perda_obs ? `: ${b.perda_obs}` : ""}</>);
+        })()}
 
         <div style={{ display: "flex", flexWrap: "wrap" }}>
           {/* documento */}
@@ -191,7 +224,8 @@ export default function FichaBid({ C, s, id, onFechar, onMudou, onErro, onOk, on
               {abaBt("itens", "💲 Itens e valores")}{abaBt("condicoes", "📋 Condições")}{abaBt("textos", "📝 Textos")}{abaBt("dados", "✍ Dados e assinatura")}{abaBt("versoes", `🕘 Versões (${d.versoes.length})`)}
             </div>
             {aba === "itens" && <>
-              <Grupos C={C} s={s} conteudo={ct} grupos={f.grupos} setGrupos={(g) => set("grupos", g)} travado={travado} />
+              {d.resposta?.geral && <div style={{ ...s.card, padding: "8px 12px", marginBottom: 10, fontSize: 12.5, borderColor: C.warn }}>💬 <b>{d.resposta.nome}</b>{d.resposta.cargo ? ` (${d.resposta.cargo})` : ""}: “{d.resposta.geral}”</div>}
+              <Grupos C={C} s={s} conteudo={ct} grupos={f.grupos} setGrupos={(g) => set("grupos", g)} travado={travado} resposta={d.resposta} />
               <div style={{ ...s.card, padding: 12, marginTop: 14, display: "flex", gap: 12, alignItems: "flex-end", flexWrap: "wrap" }}>
                 <div style={{ flex: "1 1 200px", fontSize: 12, color: C.textSub }}>Soma dos {(ct.rotulo_grupo || "grupo").toLowerCase()}s: <b style={{ color: C.text }}>{brl(calc.soma)}</b>
                   <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Como no BID da cliente, pode informar só o valor total (sem preço por item).</div></div>
@@ -223,7 +257,7 @@ export default function FichaBid({ C, s, id, onFechar, onMudou, onErro, onOk, on
               </div>))}
             </>}
             {aba === "dados" && <>
-              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{lbl("TÍTULO INTERNO (OPCIONAL)", inp("titulo", { placeholder: "Ex.: Retroescavadeiras para MT" }), "2 1 260px")}{lbl("REFERÊNCIA DO CLIENTE", inp("referencia", { placeholder: "PC 551" }), "1 1 140px")}</div>
+              <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{lbl("TÍTULO DA PROPOSTA (VAI NO ASSUNTO DO E-MAIL)", inp("titulo", { placeholder: "Ex.: Transporte de 2 retroescavadeiras ES → MT" }), "2 1 260px")}{lbl("REFERÊNCIA DO CLIENTE", inp("referencia", { placeholder: "PC 551" }), "1 1 140px")}</div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>{lbl("CONTATO NO CLIENTE", inp("contato_nome"))}{lbl("E-MAIL", inp("contato_email", { type: "email" }))}
                 {lbl("TELEFONE", <CampoTelefone value={f.contato_telefone || ""} onChange={(v) => set("contato_telefone", v || "")} C={C} />)}</div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
@@ -236,11 +270,12 @@ export default function FichaBid({ C, s, id, onFechar, onMudou, onErro, onOk, on
               <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>O próximo BID deste responsável já vem com esta assinatura.</div>
             </>}
             {aba === "versoes" && <>
-              {!d.versoes.length && <div style={{ fontSize: 12, color: C.muted }}>Nenhuma versão fechada. A v1 é fechada sozinha ao marcar como Enviado (ou em 📌 Fechar versão).</div>}
+              {!d.versoes.length && <div style={{ fontSize: 12, color: C.muted }}>Nenhuma versão ainda. A v1 nasce ao enviar ao cliente (📨 Revisar e enviar).</div>}
               {d.versoes.map((v) => (<div key={v.id} style={{ ...s.card, padding: 12, marginBottom: 8, background: C.bg }}>
                 <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}><b>v{v.versao}</b><span style={{ fontSize: 12, color: C.textSub }}>{dataHora(v.criado_em)}{v.criado_por_nome ? ` · ${v.criado_por_nome}` : ""}</span>
                   <span style={{ fontSize: 12 }}>{brl(v.valor_total)}</span><div style={{ flex: 1 }} /><button type="button" onClick={() => pdf(v.versao)} style={bt(C.textSub, false)}>📄 PDF v{v.versao}</button></div>
                 {v.nota && <div style={{ fontSize: 12, color: C.textSub, marginTop: 4 }}>“{v.nota}”</div>}
+                {v.enviada_em && <div style={{ fontSize: 11.5, color: C.textSub, marginTop: 4 }}>📨 enviada {dataHora(v.enviada_em)} para {v.enviada_para}{v.vista_em ? ` · ✓✓ vista ${dataHora(v.vista_em)} (${v.vista_qtd}×)` : " · ✓ não aberta"}{v.respondida_em ? ` · 💬 respondida ${dataHora(v.respondida_em)}` : ""}{v.substituida_em ? " · substituída" : ""}</div>}
                 <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 12, color: C.textSub }}>{(v.mudancas || []).map((m, i) => <li key={i}>{m}</li>)}</ul>
                 <div style={{ fontSize: 9.5, color: C.muted, fontFamily: "monospace", marginTop: 4, wordBreak: "break-all" }}>SHA-256 {v.hash}</div>
               </div>))}
@@ -275,28 +310,30 @@ export default function FichaBid({ C, s, id, onFechar, onMudou, onErro, onOk, on
         </div>
       </div>
 
+      {enviar && <EnviarBid C={C} s={s} bidId={b.id} numero={b.numero} onErro={onErro} onFechar={() => setEnviar(false)}
+        onEnviado={async (x) => { setEnviar(false); if (x?.aviso) onErro(x.aviso); else onOk(`📨 v${x.versao} enviada para ${x.para}. Você será avisado quando o cliente abrir.`); await carregar(); onMudou?.(); }} />}
       {modal && <div style={{ position: "fixed", inset: 0, background: "#00000090", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 340, padding: 16 }} onClick={(e) => { e.stopPropagation(); setModal(null); }}>
         <div onClick={(e) => e.stopPropagation()} style={{ ...s.card, width: 480, maxWidth: "100%", padding: "18px 20px" }}>
           {modal.tipo === "perdido" && <>
             <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>Por que o BID foi perdido?</div>
-            {Object.entries(MOTIVOS).map(([k, l]) => <label key={k} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, padding: "4px 0", cursor: "pointer" }}><input type="radio" checked={modal.motivo === k} onChange={() => setModal({ ...modal, motivo: k })} /> {l}</label>)}
+            {Object.entries(MOTIVOS_MANUAIS).map(([k, l]) => <label key={k} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, padding: "4px 0", cursor: "pointer" }}><input type="radio" checked={modal.motivo === k} onChange={() => setModal({ ...modal, motivo: k })} /> {l}</label>)}
             <textarea value={modal.obs} onChange={(e) => setModal({ ...modal, obs: e.target.value })} rows={2} placeholder={modal.motivo === "outro" ? "Descreva o motivo (obrigatório)" : "Detalhe (opcional) — ex.: concorrente 10% abaixo"} style={{ ...s.input, marginTop: 8, resize: "vertical" }} />
             <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>O motivo alimenta o gráfico de perdas do funil.</div>
           </>}
-          {modal.tipo === "aceito" && <><div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>Marcar {b.numero} como aceito?</div>
-            <div style={{ fontSize: 13, color: C.textSub }}>Valor: <b>{brl(calc.total)}</b>. O documento fica travado (dá para reabrir). Na etapa 15b o aceite passa a vir do próprio cliente, pelo link, com assinatura na tela.</div></>}
-          {modal.tipo === "reabrir" && <><div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>Reabrir {b.numero}?</div><div style={{ fontSize: 13, color: C.textSub }}>Volta para “Em negociação” e a edição é liberada. Fica registrado na linha do tempo.</div></>}
+          {modal.tipo === "externo" && <><div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>Registrar aceite fora do sistema</div>
+            <div style={{ fontSize: 13, color: C.textSub, marginBottom: 8 }}>Use só quando o cliente aceitou a <b>v{b.versao_enviada}</b> ({brl(b.valor_total)}) sem usar o link — por e-mail, telefone ou no papel. Fica registrado quem marcou e a justificativa.</div>
+            <input type="date" max={hoje()} value={modal.data} onChange={(e) => setModal({ ...modal, data: e.target.value })} style={{ ...s.input, marginBottom: 8 }} />
+            <textarea rows={2} value={modal.justificativa} onChange={(e) => setModal({ ...modal, justificativa: e.target.value })} placeholder="Ex.: aceite por e-mail da Joana em 27/10, anexado no Drive" style={{ ...s.input, resize: "vertical" }} /></>}
+          {modal.tipo === "descartar" && <><div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>Descartar as alterações?</div><div style={{ fontSize: 13, color: C.textSub }}>O documento volta a ser a v{b.versao_enviada}, como o cliente recebeu.</div></>}
+          {modal.tipo === "reabrir" && <><div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>Reabrir {b.numero}?</div><div style={{ fontSize: 13, color: C.textSub }}>{b.versao_enviada ? "Volta para “Revisão solicitada”: ajuste e envie uma nova versão ao cliente." : "Volta para “Elaboração”."} Fica registrado na linha do tempo.</div></>}
           {modal.tipo === "fechar" && <><div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>Sair sem salvar?</div><div style={{ fontSize: 13, color: C.textSub }}>As mudanças deste BID ainda não foram salvas.</div></>}
-          {modal.tipo === "versao" && <><div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>Fechar a versão v{(b.versao_atual || 0) + 1}?</div>
-            <div style={{ fontSize: 13, color: C.textSub, marginBottom: 8 }}>A versão congela o documento como está (com hash). O que mudou desde a anterior é registrado.</div>
-            <input value={modal.nota || ""} onChange={(e) => setModal({ ...modal, nota: e.target.value })} placeholder="Nota (opcional) — ex.: cliente pediu prancha 3 eixos" style={s.input} /></>}
           <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
             <button type="button" onClick={() => setModal(null)} style={{ ...s.btn(false), cursor: "pointer", flex: 1, color: C.text }}>{modal.tipo === "fechar" ? "Continuar editando" : "Cancelar"}</button>
             {modal.tipo === "perdido" && <button type="button" disabled={ocupado || !modal.motivo || (modal.motivo === "outro" && !modal.obs.trim())} onClick={() => fase("perdido", { motivo: modal.motivo, obs: modal.obs })} style={{ ...s.btn(!!modal.motivo && !(modal.motivo === "outro" && !modal.obs.trim()), C.danger), flex: 1 }}>Marcar como perdido</button>}
-            {modal.tipo === "aceito" && <button type="button" disabled={ocupado} onClick={() => fase("aceito")} style={{ ...s.btn(true, C.success), flex: 1 }}>✓ Aceito</button>}
-            {modal.tipo === "reabrir" && <button type="button" disabled={ocupado} onClick={() => fase("negociacao")} style={{ ...s.btn(true, C.warn), flex: 1 }}>↺ Reabrir</button>}
+            {modal.tipo === "externo" && <button type="button" disabled={ocupado || String(modal.justificativa).trim().length < 10} onClick={() => acao("aceite-externo", { justificativa: modal.justificativa, data: modal.data }, "Aceite registrado.")} style={{ ...s.btn(String(modal.justificativa).trim().length >= 10, C.success), flex: 1 }}>✓ Registrar aceite</button>}
+            {modal.tipo === "descartar" && <button type="button" disabled={ocupado} onClick={() => acao("revisao/descartar", {}, "Alterações descartadas.")} style={{ ...s.btn(true, C.warn), flex: 1 }}>Descartar</button>}
+            {modal.tipo === "reabrir" && <button type="button" disabled={ocupado} onClick={() => fase("reabrir")} style={{ ...s.btn(true, C.warn), flex: 1 }}>↺ Reabrir</button>}
             {modal.tipo === "fechar" && <button type="button" onClick={() => { setModal(null); onFechar(); }} style={{ ...s.btn(true, C.danger), flex: 1 }}>Sair sem salvar</button>}
-            {modal.tipo === "versao" && <button type="button" disabled={ocupado} onClick={() => fecharVersao(modal.nota)} style={{ ...s.btn(true, C.accent), flex: 1 }}>📌 Fechar versão</button>}
           </div>
         </div>
       </div>}

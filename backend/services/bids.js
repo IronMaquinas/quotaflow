@@ -7,8 +7,9 @@
 //   • BID-AAAA-NNNN: cliente (cadastro Clientes 14b.3.1), itens agrupados por grupo/trecho — valor por item,
 //     subtotal por grupo (digitado ou soma dos itens) e total (digitado ou soma dos grupos) —, condições, validade.
 //   • VERSÕES v1, v2… congeladas com "o que mudou" e hash. Marcar como Enviado fecha a versão se houve mudança.
-//   • FUNIL (kanban): elaboração → enviado → em negociação → proposta final → aceito | perdido (motivo obrigatório).
-//     Na 15b, enviado/aceito passam a mudar sozinhos (link do cliente); até lá a mudança é manual.
+//   • FUNIL (kanban) — 15b: QUEM FAZ O BID ANDAR É O CLIENTE (services/bidsCliente.js). O comercial só marca Perdido.
+//       elaboração → aguardando o cliente → revisão solicitada (vez do comercial) → aguardando aceite → aceito | perdido
+//     Depois do envio, nada muda em silêncio: só "Criar revisão" (em_revisao) → nova versão → o cliente é avisado.
 //   • ATIVIDADES (linha do tempo do CRM): ligação, e-mail, reunião, nota, tarefa com data; eventos automáticos.
 // Regras do backend: sem DB.raw; ids com String(); filtros sem null; o mock não aplica default do banco.
 
@@ -28,10 +29,13 @@ const num = (v) => {
 const brl = (v) => (v == null ? null : Number(v).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' }).replace(/ /g, ' '));
 const novoId = () => crypto.randomBytes(5).toString('hex');
 
-const FASES = ['elaboracao', 'enviado', 'negociacao', 'proposta_final', 'aceito', 'perdido'];
-const FASE_NOME = { elaboracao: 'Elaboração', enviado: 'Enviado', negociacao: 'Em negociação', proposta_final: 'Proposta final', aceito: 'Aceito', perdido: 'Perdido' };
-const ABERTAS = ['elaboracao', 'enviado', 'negociacao', 'proposta_final'];
-const MOTIVOS_PERDA = { preco: 'Preço', prazo: 'Prazo', veiculo: 'Tipo de veículo / disponibilidade', concorrente: 'Fechou com concorrente', desistiu: 'Cliente desistiu do serviço', outro: 'Outro motivo' };
+const FASES = ['elaboracao', 'aguardando_cliente', 'revisao_solicitada', 'aguardando_aceite', 'aceito', 'perdido'];
+const FASE_NOME = { elaboracao: 'Elaboração', aguardando_cliente: 'Aguardando o cliente', revisao_solicitada: 'Revisão solicitada', aguardando_aceite: 'Aguardando aceite', aceito: 'Aceito', perdido: 'Perdido' };
+const ABERTAS = ['elaboracao', 'aguardando_cliente', 'revisao_solicitada', 'aguardando_aceite'];
+const COM_CLIENTE = ['aguardando_cliente', 'aguardando_aceite']; // a bola está com o cliente
+const MOTIVOS_PERDA = { preco: 'Preço', prazo: 'Prazo', veiculo: 'Tipo de veículo / disponibilidade', concorrente: 'Fechou com concorrente', desistiu: 'Cliente desistiu do serviço', recusado_cliente: 'Recusado pelo cliente (no link)', outro: 'Outro motivo' };
+/** 15b: dá para editar o documento? elaboração e revisão solicitada; com o cliente, só depois de "Criar revisão" */
+const podeEditar = (b) => ['elaboracao', 'revisao_solicitada'].includes(b.fase) || (b.em_revisao === true && COM_CLIENTE.includes(b.fase));
 const TIPOS_ATIV = { ligacao: '📞 Ligação', email: '✉ E-mail', reuniao: '🤝 Reunião', nota: '📝 Nota', tarefa: '⏰ Tarefa', evento: '•' };
 const TIPOS_COLUNA = ['texto', 'numero', 'sim_nao', 'data'];
 const TIPOS_CONDICAO = ['texto', 'moeda', 'numero'];
@@ -247,8 +251,12 @@ async function criar(supabase, tenantId, quem, body = {}) {
 const FECHADAS = ['aceito', 'perdido'];
 async function editar(supabase, tenantId, quem, id, body = {}) {
   const b = await bidDoTenant(supabase, tenantId, id); if (!b) return { status: 404, erro: 'BID não encontrado' };
-  if (FECHADAS.includes(b.fase)) return { status: 409, erro: `BID ${FASE_NOME[b.fase].toLowerCase()} — reabra para editar` };
-  const upd = {}; const tem = (k) => body[k] !== undefined;
+  const tem = (k) => body[k] !== undefined;
+  // só o responsável e a previsão mudam a qualquer momento (não mexem no documento)
+  const soInterno = Object.keys(body).every((k) => ['responsavel_id', 'previsao_fechamento'].includes(k));
+  if (FECHADAS.includes(b.fase) && !soInterno) return { status: 409, erro: `BID ${FASE_NOME[b.fase].toLowerCase()} — reabra para editar` };
+  if (!podeEditar(b) && !soInterno) return { status: 409, erro: 'O BID está com o cliente — use ✏ Criar revisão para preparar uma nova versão' };
+  const upd = {};
   for (const [k, n] of [['titulo', 160], ['referencia', 60], ['contato_nome', 120], ['contato_email', 160], ['contato_telefone', 30]]) if (tem(k)) upd[k] = texto(body[k], n);
   if (upd.contato_email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(upd.contato_email)) return { status: 400, erro: 'E-mail do contato inválido' };
   const conteudo = { ...(b.conteudo || {}) };
@@ -335,38 +343,53 @@ async function fecharVersao(supabase, tenantId, quem, id, { nota } = {}, b0 = nu
   return { ok: true, versao: v, mudancas, hash };
 }
 
-/** Funil: muda a fase. Perdido exige motivo. Enviado fecha a versão (se mudou) e conta a validade a partir de hoje. */
+/** 15b: a fase muda sozinha pelo cliente. À mão, só: ✕ Perdido (com motivo, de qualquer fase aberta) e ↺ Reabrir um perdido. */
 async function mudarFase(supabase, tenantId, quem, id, { fase, motivo, obs } = {}) {
   const b = await bidDoTenant(supabase, tenantId, id); if (!b) return { status: 404, erro: 'BID não encontrado' };
-  if (!FASES.includes(fase)) return { status: 400, erro: 'Fase inválida' };
-  if (fase === b.fase) return { bid: b };
-  const agora = new Date().toISOString(); const upd = { fase, fase_desde: agora, atualizado_em: agora };
-  if (fase === 'perdido') {
-    if (!MOTIVOS_PERDA[motivo]) return { status: 400, erro: 'Escolha o motivo da perda' };
-    if (motivo === 'outro' && !texto(obs, 300)) return { status: 400, erro: 'Descreva o motivo' };
-    Object.assign(upd, { motivo_perda: motivo, perda_obs: texto(obs, 300), perdido_em: agora, ganho_em: null });
-  } else if (fase === 'aceito') {
-    if (b.valor_total == null) return { status: 400, erro: 'Informe o valor antes de marcar como aceito' };
-    Object.assign(upd, { ganho_em: agora, perdido_em: null, motivo_perda: null, perda_obs: null });
-  } else Object.assign(upd, { ganho_em: null, perdido_em: null, motivo_perda: null, perda_obs: null });
-  if (fase !== 'elaboracao' && (b.versao_atual === 0 || b.alterado_desde_versao) && !FECHADAS.includes(b.fase)) {
-    const r = await fecharVersao(supabase, tenantId, quem, b.id, { nota: `ao marcar como ${FASE_NOME[fase].toLowerCase()}` }, b);
-    if (r.erro) return r;
+  const agora = new Date().toISOString();
+  if (fase === 'reabrir') {
+    if (b.fase !== 'perdido') return { status: 409, erro: 'Só um BID perdido pode ser reaberto' };
+    const volta = b.versao_enviada > 0 ? 'revisao_solicitada' : 'elaboracao';
+    const { data, error } = await supabase.from('bids').update({ fase: volta, fase_desde: agora, perdido_em: null, motivo_perda: null, perda_obs: null, em_revisao: false, atualizado_em: agora }).eq('id', b.id).eq('tenant_id', tenantId).select();
+    if (error) throw new Error(error.message);
+    await atividade(supabase, tenantId, quem, { bid_id: b.id, cliente_id: b.cliente_id, tipo: 'evento', texto: `↺ Reaberto → ${FASE_NOME[volta]}` });
+    return { bid: data[0] };
   }
-  if (fase === 'enviado') { upd.enviado_em = agora; upd.valido_ate = somaDias(hojeBR(), Number(b.validade_dias || 10)); }
-  const { data, error } = await supabase.from('bids').update(upd).eq('id', b.id).eq('tenant_id', tenantId).select();
+  if (fase !== 'perdido') return { status: 409, erro: 'A fase muda sozinha, pelo que o cliente faz no link. À mão, só ✕ Perdido.' };
+  if (!ABERTAS.includes(b.fase)) return { status: 409, erro: `BID já ${FASE_NOME[b.fase].toLowerCase()}` };
+  if (!MOTIVOS_PERDA[motivo] || motivo === 'recusado_cliente') return { status: 400, erro: 'Escolha o motivo da perda' };
+  if (motivo === 'outro' && !texto(obs, 300)) return { status: 400, erro: 'Descreva o motivo' };
+  const { data, error } = await supabase.from('bids').update({ fase: 'perdido', fase_desde: agora, motivo_perda: motivo, perda_obs: texto(obs, 300), perdido_em: agora, ganho_em: null, em_revisao: false, codigo_hash: null, atualizado_em: agora }).eq('id', b.id).eq('tenant_id', tenantId).select();
   if (error) throw new Error(error.message);
-  await atividade(supabase, tenantId, quem, { bid_id: b.id, cliente_id: b.cliente_id, tipo: 'evento',
-    texto: `${FASE_NOME[b.fase]} → ${FASE_NOME[fase]}${fase === 'perdido' ? ` (${MOTIVOS_PERDA[motivo]}${texto(obs, 300) ? `: ${texto(obs, 300)}` : ''})` : ''}${fase === 'enviado' ? ` · válido até ${upd.valido_ate.split('-').reverse().join('/')}` : ''}` });
+  await atividade(supabase, tenantId, quem, { bid_id: b.id, cliente_id: b.cliente_id, tipo: 'evento', texto: `${FASE_NOME[b.fase]} → Perdido (${MOTIVOS_PERDA[motivo]}${texto(obs, 300) ? `: ${texto(obs, 300)}` : ''})` });
   return { bid: data[0] };
 }
 
 const diasEntre = (a, b = new Date()) => Math.max(0, Math.floor((new Date(b) - new Date(a)) / 86400000));
+const linkCliente = (token) => `${String(process.env.FRONTEND_URL || 'http://localhost:5173').replace(/^FRONTEND_URL=/, '').replace(/\/+$/, '')}/#bid?t=${token}`;
+const horas = (a, b) => (a && b ? (new Date(b) - new Date(a)) / 3600000 : null);
+/** 15b: alertas do comercial (calculados na hora — sem rotina): sem abrir, aberto sem resposta, aceite pendente, validade */
+function alertas(b, hoje = hojeBR()) {
+  const l = []; if (!COM_CLIENTE.includes(b.fase) && b.fase !== 'revisao_solicitada') return l;
+  const dEnv = b.enviado_em ? diasEntre(b.enviado_em) : 0;
+  if (b.fase === 'aguardando_cliente' && !b.em_revisao) {
+    if (!b.visto_primeiro_em && dEnv >= 2) l.push({ tipo: 'sem_abrir', texto: `Enviado há ${dEnv} dias e ainda não aberto`, tarefa: 'Ligar: o cliente ainda não viu a proposta' });
+    else if (b.visto_primeiro_em && (Number(b.visto_qtd || 0) >= 3 || diasEntre(b.visto_primeiro_em) >= 2)) l.push({ tipo: 'sem_resposta', texto: `Aberto ${b.visto_qtd}× e sem resposta`, tarefa: 'Ligar: ficou alguma dúvida na proposta?' });
+  }
+  if (b.fase === 'aguardando_aceite' && diasEntre(b.fase_desde) >= 2) l.push({ tipo: 'aceite_pendente', texto: `Aprovado há ${diasEntre(b.fase_desde)} dias — falta assinar o aceite`, tarefa: 'Ligar: lembrar o cliente de assinar o aceite' });
+  if (COM_CLIENTE.includes(b.fase) && b.valido_ate) {
+    if (b.valido_ate < hoje) l.push({ tipo: 'vencido', texto: `Validade vencida em ${b.valido_ate.split('-').reverse().join('/')}`, tarefa: 'Ligar: renovar a proposta (validade vencida)' });
+    else if (b.valido_ate <= somaDias(hoje, 2)) l.push({ tipo: 'vence', texto: `Validade vence em ${b.valido_ate.split('-').reverse().join('/')}`, tarefa: 'Ligar: a proposta vence em breve' });
+  }
+  return l;
+}
 function enfeitar(b, pendentes = []) {
   const hoje = hojeBR();
   const t = totais(b.grupos || [], b.valor_total_manual);
   const minhas = pendentes.filter((a) => String(a.bid_id) === String(b.id));
-  return { ...b, fase_nome: FASE_NOME[b.fase], dias_na_fase: diasEntre(b.fase_desde || b.criado_em), expirado: ABERTAS.includes(b.fase) && b.fase !== 'elaboracao' && !!b.valido_ate && b.valido_ate < hoje,
+  return { ...b, token: undefined, codigo_hash: undefined, fase_nome: FASE_NOME[b.fase], dias_na_fase: diasEntre(b.fase_desde || b.criado_em),
+    expirado: COM_CLIENTE.includes(b.fase) && !!b.valido_ate && b.valido_ate < hoje,
+    bola: COM_CLIENTE.includes(b.fase) && !b.em_revisao ? 'cliente' : ABERTAS.includes(b.fase) ? 'voce' : null, pode_editar: podeEditar(b), alertas: alertas(b, hoje),
     qtd_itens: (b.grupos || []).reduce((s, g) => s + (g.itens || []).length, 0), qtd_grupos: (b.grupos || []).length, soma_grupos: t.soma_grupos,
     proxima_tarefa: minhas.sort((x, y) => String(x.prevista_para || '9').localeCompare(String(y.prevista_para || '9')))[0] || null };
 }
@@ -380,6 +403,9 @@ async function detalhe(supabase, tenantId, id) {
   const t = totais(b.grupos || [], b.valor_total_manual);
   return { bid: { ...enfeitar(b, ativs.filter((a) => a.tipo === 'tarefa' && !a.concluida_em)), grupos: t.grupos },
     versoes: vers.map(({ snapshot, ...v }) => v).sort((x, y) => y.versao - x.versao),
+    // 15b: o que o cliente respondeu na última versão enviada (comentários por linha) e o link
+    resposta: vers.find((v) => v.versao === b.versao_enviada)?.resposta || null,
+    link: b.token ? linkCliente(b.token) : null,
     atividades: ativs.sort((x, y) => String(y.criado_em).localeCompare(String(x.criado_em))) };
 }
 
@@ -423,8 +449,10 @@ async function tarefas(supabase, tenantId, usuarioId = null) {
 async function funil(supabase, tenantId, { de, ate } = {}) {
   const ateD = /^\d{4}-\d{2}-\d{2}$/.test(String(ate || '')) ? ate : hojeBR();
   const deD = /^\d{4}-\d{2}-\d{2}$/.test(String(de || '')) ? de : somaDias(ateD, -89);
-  const bs = (await q(supabase.from('bids').select('*').eq('tenant_id', tenantId))).map((b) => enfeitar(b));
-  const noPeriodo = (iso) => !!iso && String(iso).slice(0, 10) >= deD && String(iso).slice(0, 10) <= ateD;
+  const [bs0, vers] = await Promise.all([q(supabase.from('bids').select('*').eq('tenant_id', tenantId)), q(supabase.from('bid_versoes').select('*').eq('tenant_id', tenantId))]);
+  const bs = bs0.map((b) => enfeitar(b));
+  const diaBR = (iso) => new Date(new Date(iso).getTime() - 3 * 3600000).toISOString().slice(0, 10); // 15b.1: dia no horário de Brasília (depois das 21h já é amanhã em UTC)
+  const noPeriodo = (iso) => !!iso && diaBR(iso) >= deD && diaBR(iso) <= ateD;
   const colunas = FASES.map((f) => { const l = bs.filter((b) => b.fase === f); return { fase: f, nome: FASE_NOME[f], qtd: l.length, valor: l.reduce((s, b) => s + Number(b.valor_total || 0), 0) }; });
   const abertos = bs.filter((b) => ABERTAS.includes(b.fase));
   const ganhos = bs.filter((b) => b.fase === 'aceito' && noPeriodo(b.ganho_em));
@@ -440,9 +468,22 @@ async function funil(supabase, tenantId, { de, ate } = {}) {
       conversao_pct: decididos ? Math.round((ganhos.length / decididos) * 1000) / 10 : null,
       ticket_medio: ganhos.length ? valorGanho / ganhos.length : null,
       dias_ate_aceite: ganhos.length ? Math.round(ganhos.reduce((s, b) => s + diasEntre(b.criado_em, b.ganho_em), 0) / ganhos.length) : null,
-      expirados: abertos.filter((b) => b.expirado).length, parados: abertos.filter((b) => b.dias_na_fase > 7).length,
+      expirados: abertos.filter((b) => b.expirado).length, parados: abertos.filter((b) => COM_CLIENTE.includes(b.fase) && b.dias_na_fase > 7).length,
+      ...visualizacao(vers.filter((v) => noPeriodo(v.enviada_em)), bs),
     },
     motivos,
+  };
+}
+/** 15b: envio → visualização → resposta (versões enviadas no período) */
+function visualizacao(enviadas, bs) {
+  const media = (l) => (l.length ? Math.round((l.reduce((s, x) => s + x, 0) / l.length) * 10) / 10 : null);
+  const vistas = enviadas.filter((v) => v.vista_em);
+  return {
+    enviadas: enviadas.length, abertas: vistas.length, taxa_abertura_pct: enviadas.length ? Math.round((vistas.length / enviadas.length) * 1000) / 10 : null,
+    horas_ate_ver: media(vistas.map((v) => horas(v.enviada_em, v.vista_em))),
+    horas_ate_responder: media(vistas.filter((v) => v.respondida_em).map((v) => horas(v.vista_em, v.respondida_em))),
+    abertos_sem_resposta: bs.filter((b) => b.fase === 'aguardando_cliente' && !b.em_revisao && b.visto_primeiro_em).length,
+    sem_abrir: bs.filter((b) => b.fase === 'aguardando_cliente' && !b.em_revisao && !b.visto_primeiro_em).length,
   };
 }
 async function cliente360(supabase, tenantId, clienteId) {
@@ -490,6 +531,6 @@ async function documento(supabase, tenantId, id, versao = null) {
   };
 }
 
-module.exports = { FASES, FASE_NOME, MOTIVOS_PERDA, TIPOS_ATIV, CAMPOS, OPCOES_FISCAIS, validarModelo, validarGrupos, validarCondicoes, totais, diferencas,
+module.exports = { brl, FASES, FASE_NOME, COM_CLIENTE, ABERTAS, podeEditar, bidDoTenant, atividade, retrato, linkCliente, hojeBR, somaDias, diasEntre, enfeitar, q, texto, FASES_ABERTAS: ABERTAS, MOTIVOS_PERDA, TIPOS_ATIV, CAMPOS, OPCOES_FISCAIS, validarModelo, validarGrupos, validarCondicoes, totais, diferencas,
   modelosTenant, bibliotecaParaTenant, importar, atualizarDaBiblioteca, salvarModelo, responsaveis,
   criar, editar, fecharVersao, mudarFase, listar, detalhe, criarAtividade, concluirAtividade, tarefas, funil, cliente360, documento, proximoNumero };

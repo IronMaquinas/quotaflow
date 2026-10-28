@@ -1,13 +1,14 @@
 // components/comercial/TelaComercial.jsx — etapa 15a
 // 📈 Comercial — mini-CRM dentro do QuotaFlow (inspirado em RD Station CRM / Pipedrive / HubSpot), ver: admin, gestor, comercial.
-//   📊 Funil     — indicadores (em aberto, ganhos, conversão, ticket médio, tempo até o aceite), KANBAN arrastável por fase,
-//                  ⏰ tarefas (atrasadas primeiro, "só as minhas") e motivos de perda do período.
+//   📊 Funil     — indicadores (em aberto, ganhos, conversão, ticket médio, tempo até o aceite) + 15b: envio → visualização →
+//                  resposta, taxa de abertura, abertos sem resposta. KANBAN por fase — 15b: a fase muda pelo CLIENTE; o cartão só
+//                  é arrastado para Perdido (pede o motivo). Cartão com ✓ / ✓✓ e alertas. ⏰ tarefas e motivos de perda do período.
 //   📝 BIDs      — lista com busca e filtro por fase. ＋ Novo BID: cliente (CNPJ primeiro — mesmo cadastro dos contratos) + modelo.
 //   👥 Clientes  — mesmo cadastro de 📑 Contratos (por /comercial/clientes); clicar abre a ficha 360° (BIDs, contratos, atividades).
 //   🧩 Modelos   — modelos de BID (biblioteca do QuotaFlow → cópia da empresa).
 import { useState, useEffect, useMemo } from "react";
 import apiService from "../../services/apiService";
-import FichaBid, { FASES, COR_FASE, NOME_FASE, MOTIVOS, brl } from "./FichaBid";
+import FichaBid, { FASES, COR_FASE, NOME_FASE, MOTIVOS, MOTIVOS_MANUAIS, brl } from "./FichaBid";
 import ModelosBid from "./ModelosBid";
 import { AbaClientes, CampoDocumento, NotaReceita, CamposCliente, vazioCliente, mascaraDoc } from "../contratos/Clientes";
 
@@ -16,6 +17,7 @@ const dBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : 
 const dataHora = (d) => (d ? new Date(d).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "");
 const compacto = (v) => (v == null ? "—" : v >= 1e6 ? `R$ ${(v / 1e6).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mi` : v >= 1e4 ? `R$ ${(v / 1e3).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} mil` : brl(v));
 const hoje = () => new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+const tempo = (h) => (h == null ? "—" : h < 1 ? `${Math.max(1, Math.round(h * 60))} min` : h < 48 ? `${String(Math.round(h * 10) / 10).replace(".", ",")} h` : `${String(Math.round((h / 24) * 10) / 10).replace(".", ",")} dias`);
 const menosDias = (n) => new Date(Date.now() - 3 * 3600000 - n * 86400000).toISOString().slice(0, 10);
 const casca = (s, conteudo, fechar, largura = 640, z = 320) => (
   <div style={{ position: "fixed", inset: 0, background: "#00000090", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: z, padding: 16, overflowY: "auto" }} onClick={fechar}>
@@ -32,7 +34,8 @@ function Kpi({ C, s, rotulo, valor, sub, cor }) {
 }
 
 function CartaoBid({ C, s, b, onAbrir, arrastavel }) {
-  const cor = COR_FASE[b.fase]; const parado = ["enviado", "negociacao", "proposta_final"].includes(b.fase) && b.dias_na_fase > 7;
+  const cor = COR_FASE[b.fase]; const parado = ["aguardando_cliente", "aguardando_aceite"].includes(b.fase) && b.dias_na_fase > 7;
+  const comCliente = ["aguardando_cliente", "aguardando_aceite"].includes(b.fase); const alerta = (b.alertas || [])[0];
   const t = b.proxima_tarefa; const atrasada = t?.prevista_para && t.prevista_para < new Date().toISOString();
   return (
     <div draggable={arrastavel} onDragStart={(e) => { e.dataTransfer.setData("text/plain", String(b.id)); e.dataTransfer.effectAllowed = "move"; }} onClick={() => onAbrir(b.id)} className="qf-clicavel"
@@ -43,6 +46,8 @@ function CartaoBid({ C, s, b, onAbrir, arrastavel }) {
       {b.titulo && <div style={{ fontSize: 11, color: C.textSub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.titulo}</div>}
       <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 4 }}><b style={{ fontSize: 12.5, flex: 1 }}>{brl(b.valor_total)}</b>
         {b.expirado && <span title="validade vencida" style={{ fontSize: 11 }}>⌛</span>}<span style={{ fontSize: 10.5, color: C.muted }}>{(b.responsavel_nome || "").split(" ")[0]}</span></div>
+      {comCliente && <div style={{ fontSize: 10.5, marginTop: 3, color: b.em_revisao ? C.warn : b.visto_primeiro_em ? C.accent : C.muted }}>{b.em_revisao ? "✏ preparando nova versão" : b.visto_primeiro_em ? `✓✓ visto ${b.visto_qtd}× · v${b.versao_enviada}` : `✓ enviado · v${b.versao_enviada} · não aberto`}</div>}
+      {alerta && <div style={{ fontSize: 10.5, color: alerta.tipo === "vencido" ? C.danger : C.warn, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>⚠ {alerta.texto}</div>}
       {t && <div style={{ fontSize: 10.5, color: atrasada ? C.danger : C.textSub, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>⏰ {dBR(t.prevista_para?.slice(0, 10))} {t.texto}</div>}
       {b.fase === "perdido" && b.motivo_perda && <div style={{ fontSize: 10.5, color: C.danger, marginTop: 3 }}>{MOTIVOS[b.motivo_perda]}</div>}
     </div>
@@ -89,7 +94,7 @@ function NovoBid({ C, s, clienteInicial, onCriado, onCancelar, onErro }) {
       <label style={{ flex: "1 1 140px" }}><span style={s.label}>REFERÊNCIA DO CLIENTE</span><input value={f.referencia} onChange={(e) => setF({ ...f, referencia: e.target.value })} placeholder="PC 551" style={s.input} /></label>
     </div>
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-      <label style={{ flex: "2 1 220px" }}><span style={s.label}>TÍTULO INTERNO (OPCIONAL)</span><input value={f.titulo} onChange={(e) => setF({ ...f, titulo: e.target.value })} placeholder="Ex.: 2 retroescavadeiras ES → MT" style={s.input} /></label>
+      <label style={{ flex: "2 1 220px" }}><span style={s.label}>TÍTULO DA PROPOSTA</span><input value={f.titulo} onChange={(e) => setF({ ...f, titulo: e.target.value })} placeholder="Ex.: Transporte de 2 retroescavadeiras ES → MT" style={s.input} /></label>
       <label style={{ flex: "1 1 160px" }}><span style={s.label}>RESPONSÁVEL</span><select value={f.responsavel_id} onChange={(e) => setF({ ...f, responsavel_id: e.target.value })} style={s.input}><option value="">eu</option>{resp.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}</select></label>
       <label style={{ flex: "1 1 150px" }}><span style={s.label}>PREVISÃO DE FECHAMENTO</span><input type="date" value={f.previsao_fechamento} onChange={(e) => setF({ ...f, previsao_fechamento: e.target.value })} style={s.input} /></label>
     </div>
@@ -166,8 +171,10 @@ export default function TelaComercial({ C, s }) {
 
   const mover = async (id, fase, extra = {}) => {
     const b = (bids || []).find((x) => String(x.id) === String(id)); if (!b || b.fase === fase) return;
-    if ((fase === "perdido" || fase === "aceito") && !extra.confirmado) return setArrasto({ id, fase, motivo: "", obs: "", b });
+    // 15b: a fase muda sozinha pelo que o cliente faz no link — arrastar, só para Perdido
+    if (fase !== "perdido") return erro("A fase muda sozinha, pelo que o cliente faz no link. Para enviar, abra o BID → 📨 Revisar e enviar. Arrastar, só para Perdido.");
     if (["aceito", "perdido"].includes(b.fase)) return erro("BID fechado — abra a ficha e use ↺ Reabrir.");
+    if (!extra.confirmado) return setArrasto({ id, fase, motivo: "", obs: "", b });
     setOcupado(true);
     try { await apiService.post(`/comercial/bids/${id}/fase`, { fase, motivo: extra.motivo, obs: extra.obs }); setArrasto(null); ok(`${b.numero} → ${NOME_FASE[fase]}`); await carregar(); }
     catch (e) { erro(e.message); } finally { setOcupado(false); }
@@ -181,7 +188,8 @@ export default function TelaComercial({ C, s }) {
   const abaBt = (id, l) => <button key={id} type="button" onClick={() => setAba(id)} style={{ background: "transparent", border: "none", borderBottom: `2px solid ${aba === id ? C.accent : "transparent"}`, padding: "8px 12px", color: aba === id ? C.text : C.muted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>;
   const maxMotivo = Math.max(1, ...(funil?.motivos || []).map((m) => m.qtd));
   // kanban: perdidos e aceitos só do período (o resto sempre)
-  const noPeriodo = (iso) => !!iso && String(iso).slice(0, 10) >= periodo.de && String(iso).slice(0, 10) <= periodo.ate;
+  const diaBR = (iso) => new Date(new Date(iso).getTime() - 3 * 3600000).toISOString().slice(0, 10); // 15b.1: dia em Brasília
+  const noPeriodo = (iso) => !!iso && diaBR(iso) >= periodo.de && diaBR(iso) <= periodo.ate;
   const daColuna = (fase) => (bids || []).filter((b) => b.fase === fase && (fase === "aceito" ? noPeriodo(b.ganho_em) : fase === "perdido" ? noPeriodo(b.perdido_em) : true));
 
   return (
@@ -209,6 +217,12 @@ export default function TelaComercial({ C, s }) {
           <Kpi C={C} s={s} rotulo="TICKET MÉDIO" valor={compacto(k.ticket_medio)} sub="dos aceitos no período" />
           <Kpi C={C} s={s} rotulo="TEMPO ATÉ O ACEITE" valor={k.dias_ate_aceite == null ? "—" : `${k.dias_ate_aceite} dias`} sub="da criação ao aceite" />
         </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+          <Kpi C={C} s={s} rotulo="TAXA DE ABERTURA" valor={k.taxa_abertura_pct == null ? "—" : `${String(k.taxa_abertura_pct).replace(".", ",")}%`} sub={`${k.abertas || 0} de ${k.enviadas || 0} versão(ões) enviada(s)`} />
+          <Kpi C={C} s={s} rotulo="ENVIO → VISUALIZAÇÃO" valor={tempo(k.horas_ate_ver)} sub="tempo médio até o cliente abrir" />
+          <Kpi C={C} s={s} rotulo="VISUALIZAÇÃO → RESPOSTA" valor={tempo(k.horas_ate_responder)} sub="tempo médio até responder" />
+          <Kpi C={C} s={s} rotulo="COM O CLIENTE, SEM RESPOSTA" valor={`${k.abertos_sem_resposta || 0} ✓✓ · ${k.sem_abrir || 0} ✓`} sub="abertos sem resposta · não abertos" cor={(k.abertos_sem_resposta || k.sem_abrir) ? C.warn : undefined} />
+        </div>
 
         <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 8, alignItems: "flex-start" }}>
           {FASES.map(([fase, nome, cor]) => { const l = daColuna(fase); const col = funil.colunas.find((c) => c.fase === fase) || {};
@@ -219,7 +233,7 @@ export default function TelaComercial({ C, s }) {
                 <div style={{ display: "flex", alignItems: "baseline", marginBottom: 6, padding: "0 2px" }}><b style={{ fontSize: 12.5, flex: 1 }}>{nome}</b><span style={{ fontSize: 11, color: C.muted }}>{l.length}</span></div>
                 <div style={{ fontSize: 11, color: C.textSub, marginBottom: 8, padding: "0 2px" }}>{compacto(valor)}{["aceito", "perdido"].includes(fase) ? " · no período" : ""}{col.qtd !== l.length ? ` (${col.qtd} no total)` : ""}</div>
                 {l.map((b) => <CartaoBid key={b.id} C={C} s={s} b={b} onAbrir={setAberto} arrastavel={!["aceito", "perdido"].includes(b.fase)} />)}
-                {!l.length && <div style={{ fontSize: 11, color: C.muted, textAlign: "center", padding: "16px 0" }}>{fase === "elaboracao" ? "＋ Novo BID começa aqui" : "arraste para cá"}</div>}
+                {!l.length && <div style={{ fontSize: 11, color: C.muted, textAlign: "center", padding: "16px 0" }}>{{ elaboracao: "＋ Novo BID começa aqui", aguardando_cliente: "BIDs enviados, esperando o cliente", revisao_solicitada: "o cliente pediu ajuste — sua vez", aguardando_aceite: "aprovado, falta o cliente assinar", aceito: "aceitos no período", perdido: "arraste para cá para marcar perdido" }[fase]}</div>}
               </div>); })}
         </div>
 
@@ -276,7 +290,7 @@ export default function TelaComercial({ C, s }) {
       {arrasto && casca(s, <>
         {arrasto.fase === "perdido" ? <>
           <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>{arrasto.b.numero} — por que foi perdido?</div>
-          {Object.entries(MOTIVOS).map(([k2, l]) => <label key={k2} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, padding: "4px 0", cursor: "pointer" }}><input type="radio" checked={arrasto.motivo === k2} onChange={() => setArrasto({ ...arrasto, motivo: k2 })} /> {l}</label>)}
+          {Object.entries(MOTIVOS_MANUAIS).map(([k2, l]) => <label key={k2} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, padding: "4px 0", cursor: "pointer" }}><input type="radio" checked={arrasto.motivo === k2} onChange={() => setArrasto({ ...arrasto, motivo: k2 })} /> {l}</label>)}
           <textarea value={arrasto.obs} onChange={(e) => setArrasto({ ...arrasto, obs: e.target.value })} rows={2} placeholder={arrasto.motivo === "outro" ? "Descreva o motivo (obrigatório)" : "Detalhe (opcional)"} style={{ ...s.input, marginTop: 8, resize: "vertical" }} />
         </> : <><div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>Marcar {arrasto.b.numero} como aceito?</div>
           <div style={{ fontSize: 13, color: C.textSub }}>{arrasto.b.cliente_nome} · <b>{brl(arrasto.b.valor_total)}</b>. O documento fica travado (dá para reabrir na ficha).</div></>}

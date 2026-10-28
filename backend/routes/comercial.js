@@ -8,6 +8,9 @@
 //   POST /bids/:id/versao { nota }     fecha a versão (v1, v2… com o que mudou)
 //   POST /bids/:id/fase { fase, motivo, obs }   move no funil (perdido exige motivo)
 //   GET  /bids/:id/documento?versao    dados para o PDF (rascunho ou versão congelada)
+//   15b: GET /bids/:id/revisao (documento final + checklist) · POST /bids/:id/enviar { mensagem, nota } · POST /bids/:id/reenviar
+//        POST /bids/:id/revisao/iniciar · POST /bids/:id/revisao/descartar · POST /bids/:id/aceite-externo { justificativa, data }
+//        POST /bids/:id/fase só aceita { fase: 'perdido', motivo, obs } e { fase: 'reabrir' } — o resto muda pelo cliente
 //   POST /atividades · POST /atividades/:id/concluir { feita } · GET /tarefas?minhas=1
 //   GET  /modelos · GET /modelos/biblioteca · POST /modelos/importar · POST /modelos · PUT /modelos/:id · POST /modelos/:id/atualizar · DELETE /modelos/:id
 //   GET  /clientes · GET /clientes/consulta/:doc · POST /clientes · PUT /clientes/:id · GET /clientes/:id/360
@@ -19,6 +22,7 @@ const router = express.Router();
 const { supabase } = require('../db');
 const B = require('../services/bids');
 const CL = require('../services/clientes');
+const BC = require('../services/bidsCliente'); // 15b
 
 const perfisDe = (req) => (Array.isArray(req.perfis) && req.perfis.length ? req.perfis : [req.userPerfil].filter(Boolean));
 const PERFIS = ['admin', 'gestor', 'comercial'];
@@ -27,6 +31,7 @@ const responder = (fn) => async (req, res) => {
   try { const r = await fn(req); if (r && r.erro) return res.status(r.status || 400).json({ erro: r.erro }); res.json(r); }
   catch (err) {
     const m = String(err?.message || '');
+    if (/token|versao_enviada|em_revisao|visto_|aceite_|codigo_|enviada_|bid_visualizacoes|bids_fase_check/.test(m) && /does not exist|schema cache|relation|column|check constraint/.test(m)) return res.status(409).json({ erro: 'Rode a migration 052 antes (BID com o cliente)' });
     if (/bid_|bids|inscricao_estadual|opcao_fiscal/.test(m) && /does not exist|schema cache|relation|column/.test(m)) return res.status(409).json({ erro: 'Rode a migration 051 antes (Comercial / BID)' });
     if (/clientes/.test(m) && /does not exist|schema cache|relation/.test(m)) return res.status(409).json({ erro: 'Rode a migration 044 antes (clientes)' });
     console.error('❌ [comercial]', m); res.status(500).json({ erro: 'Erro interno — veja o log do servidor' });
@@ -60,6 +65,12 @@ router.get('/bids/:id', responder((req) => B.detalhe(supabase, req.tenantId, req
 router.put('/bids/:id', responder(async (req) => B.editar(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
 router.post('/bids/:id/versao', responder(async (req) => B.fecharVersao(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
 router.post('/bids/:id/fase', responder(async (req) => B.mudarFase(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
+router.get('/bids/:id/revisao', responder((req) => BC.revisao(supabase, req.tenantId, req.params.id)));
+router.post('/bids/:id/enviar', responder(async (req) => BC.enviar(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
+router.post('/bids/:id/reenviar', responder(async (req) => BC.reenviarEmail(supabase, req.tenantId, await quem(req), req.params.id)));
+router.post('/bids/:id/revisao/iniciar', responder(async (req) => BC.iniciarRevisao(supabase, req.tenantId, await quem(req), req.params.id)));
+router.post('/bids/:id/revisao/descartar', responder(async (req) => BC.descartarRevisao(supabase, req.tenantId, await quem(req), req.params.id)));
+router.post('/bids/:id/aceite-externo', responder(async (req) => BC.aceiteExterno(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
 router.get('/bids/:id/documento', responder((req) => B.documento(supabase, req.tenantId, req.params.id, req.query.versao ?? null)));
 
 module.exports = router;
