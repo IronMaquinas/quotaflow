@@ -311,7 +311,7 @@ export default function FichaBid({ C, s, id, onFechar, onMudou, onErro, onOk, on
       </div>
 
       {enviar && <EnviarBid C={C} s={s} bidId={b.id} numero={b.numero} onErro={onErro} onFechar={() => setEnviar(false)}
-        onEnviado={async (x) => { setEnviar(false); if (x?.aviso) onErro(x.aviso); else onOk(`📨 v${x.versao} enviada para ${x.para}. Você será avisado quando o cliente abrir.`); await carregar(); onMudou?.(); }} />}
+        onEnviado={async (x) => { setEnviar(false); if (x?.aviso) onErro(x.aviso); else if (x?.sem_email) onOk(x.copiado ? `🔗 Link da v${x.versao} copiado — cole no WhatsApp. Você será avisado quando o cliente abrir.` : `🔗 v${x.versao} pronta. Copie o link: ${x.link}`); else onOk(`📨 v${x.versao} enviada para ${x.para}. Você será avisado quando o cliente abrir.`); await carregar(); onMudou?.(); }} />}
       {modal && <div style={{ position: "fixed", inset: 0, background: "#00000090", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 340, padding: 16 }} onClick={(e) => { e.stopPropagation(); setModal(null); }}>
         <div onClick={(e) => e.stopPropagation()} style={{ ...s.card, width: 480, maxWidth: "100%", padding: "18px 20px" }}>
           {modal.tipo === "perdido" && <>

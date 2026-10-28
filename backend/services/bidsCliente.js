@@ -90,28 +90,29 @@ async function revisao(supabase, tenantId, id) {
 // 15b.1: o e-mail é PADRONIZADO e aparece pré-carregado (editável) no 👁 Revisar e enviar:
 //   assunto  "BID-2026-0002 — <título da proposta>" (sem título: a referência do cliente; v2+: "atualizada — versão N")
 //   texto    saudação + parágrafo padrão (editável) → [o que mudou] → botão do link → validade → assinatura (fixos)
-const assuntoPadrao = (b, v) => `${b.numero}${b.titulo ? ` — ${b.titulo}` : b.referencia ? ` — ${b.referencia}` : ''}${v > 1 ? ` (atualizada — versão ${v})` : ''}`;
-function textoPadrao(b, v) {
+// 15b.2: "atualizada" só quando o cliente JÁ recebeu uma versão antes (o nº da versão pode ser > 1 sem envio anterior)
+const jaEnviado = (b, v) => Number(b.versao_enviada || 0) > 0 && Number(v) > Number(b.versao_enviada || 0);
+const assuntoPadrao = (b, v, nova = jaEnviado(b, v)) => `${b.numero}${b.titulo ? ` — ${b.titulo}` : b.referencia ? ` — ${b.referencia}` : ''}${nova ? ` (atualizada — versão ${v})` : ''}`;
+function textoPadrao(b, v, nova = jaEnviado(b, v)) {
   const ola = `Olá${b.contato_nome ? `, ${b.contato_nome.split(' ')[0]}` : ''}!`;
   const ref = b.referencia ? ` (${b.referencia})` : '';
-  return v > 1
+  return nova
     ? `${ola}\n\nAtualizamos a nossa proposta ${b.numero}${ref} para a versão ${v}, conforme conversamos. Pelo link abaixo você vê o documento completo e responde item por item: aprovar, pedir revisão ou recusar.`
     : `${ola}\n\nSegue a nossa proposta ${b.numero}${b.titulo ? ` — ${b.titulo}` : ''}${ref}. Pelo link abaixo você vê o documento completo e responde item por item: aprovar, pedir revisão ou recusar. Se tudo estiver certo, o aceite é assinado ali mesmo.\n\nQualquer dúvida, estou à disposição.`;
 }
 const assinaturaEmail = (b, respNome) => [b.assinante?.nome || respNome, b.assinante?.cargo, b.assinante?.registro, b.assinante?.telefones].filter(Boolean);
-function emailEnvio(emp, b, v, url, { assunto, texto: corpoTexto, mudancas, nota, respNome } = {}) {
-  const nova = v > 1;
-  const paragrafos = String(corpoTexto || textoPadrao(b, v)).split(/\n{2,}/).map((x) => x.trim()).filter(Boolean)
+function emailEnvio(emp, b, v, url, { assunto, texto: corpoTexto, mudancas, nota, respNome, nova = jaEnviado(b, v) } = {}) {
+  const paragrafos = String(corpoTexto || textoPadrao(b, v, nova)).split(/\n{2,}/).map((x) => x.trim()).filter(Boolean)
     .map((x) => `<p style="white-space:pre-wrap">${esc(x)}</p>`).join('');
   const corpo = `${paragrafos}
     ${nova && (nota || (mudancas || []).length) ? `<p><b>O que mudou:</b>${nota ? ` ${esc(nota)}` : ''}</p>${(mudancas || []).length ? `<ul>${mudancas.slice(0, 12).map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : ''}` : ''}
     ${botao(url, nova ? 'Ver a proposta atualizada' : 'Ver a proposta')}
     <p>Validade: ${b.validade_dias} dias (até ${dBR(somaDias(hojeBR(), Number(b.validade_dias || 10)))}).</p>
     <p>Atenciosamente,<br/>${assinaturaEmail(b, respNome).map(esc).join('<br/>')}<br/><b>${esc(emp.nome_fantasia || emp.razao_social || emp.nome || '')}</b></p>`;
-  return { assunto: String(assunto || '').trim() || assuntoPadrao(b, v), html: casca(emp, corpo) };
+  return { assunto: String(assunto || '').trim() || assuntoPadrao(b, v, nova), html: casca(emp, corpo) };
 }
-/** 📨 Enviar ao cliente: { assunto, texto (do e-mail — vazio = o padrão), nota (obrigatória a partir da v2) } */
-async function enviar(supabase, tenantId, quem, id, { assunto, texto: corpoTexto, mensagem, nota } = {}) {
+/** 📨 Enviar ao cliente: { assunto, texto (do e-mail — vazio = o padrão), nota (obrigatória a partir da v2), sem_email (15b.3: só gera o link — WhatsApp) } */
+async function enviar(supabase, tenantId, quem, id, { assunto, texto: corpoTexto, mensagem, nota, sem_email: semEmail = false } = {}) {
   corpoTexto = corpoTexto ?? mensagem; // compatível com a 15b
   let b = await bidDoTenant(supabase, tenantId, id); if (!b) return { status: 404, erro: 'BID não encontrado' };
   if (!podeEnviar(b)) return { status: 409, erro: b.fase === 'aceito' || b.fase === 'perdido' ? `BID ${B.FASE_NOME[b.fase].toLowerCase()}` : 'O BID já está com o cliente — use ✏ Criar revisão' };
@@ -129,13 +130,16 @@ async function enviar(supabase, tenantId, quem, id, { assunto, texto: corpoTexto
   b = await upd(supabase, tenantId, b, { token, fase: 'aguardando_cliente', fase_desde: agora, enviado_em: agora, versao_enviada: v, em_revisao: false, envio_para: para,
     valido_ate: somaDias(hojeBR(), Number(b.validade_dias || 10)), visto_primeiro_em: null, visto_ultimo_em: null, visto_qtd: 0, respondido_em: null, codigo_hash: null, codigo_expira: null, codigo_tentativas: 0 });
   const url = B.linkCliente(token);
-  const e = emailEnvio(emp, b, v, url, { assunto: texto(assunto, 200), texto: texto(corpoTexto, 4000), mudancas, nota: texto(nota, 500), respNome: quem.usuarioNome });
-  const falhas = [await mandar(para, e.assunto, e.html)];
-  const resp = await emailResponsavel(supabase, tenantId, b);
-  if (resp && resp.toLowerCase() !== para.toLowerCase()) falhas.push(await mandar(resp, `[cópia] ${e.assunto} — para ${para}`, e.html));
-  await atividade(supabase, tenantId, quem, { bid_id: b.id, cliente_id: b.cliente_id, tipo: 'evento', texto: `📨 v${v} enviada para ${para}${reenvio ? ` — ${texto(nota, 200)}` : ''} · válida até ${dBR(b.valido_ate)}` });
+  const e = emailEnvio(emp, b, v, url, { assunto: texto(assunto, 200), texto: texto(corpoTexto, 4000), mudancas, nota: texto(nota, 500), respNome: quem.usuarioNome, nova: reenvio });
+  const falhas = [];
+  if (!semEmail) {
+    falhas.push(await mandar(para, e.assunto, e.html));
+    const resp = await emailResponsavel(supabase, tenantId, b);
+    if (resp && resp.toLowerCase() !== para.toLowerCase()) falhas.push(await mandar(resp, `[cópia] ${e.assunto} — para ${para}`, e.html));
+  }
+  await atividade(supabase, tenantId, quem, { bid_id: b.id, cliente_id: b.cliente_id, tipo: 'evento', texto: `${semEmail ? `🔗 v${v} enviada só pelo link (sem e-mail — ex.: WhatsApp)` : `📨 v${v} enviada para ${para}`}${reenvio ? ` — ${texto(nota, 200)}` : ''} · válida até ${dBR(b.valido_ate)}` });
   const aviso = falhas.filter(Boolean)[0] || null;
-  return { ok: true, versao: v, link: url, para, aviso };
+  return { ok: true, versao: v, link: url, para, aviso, sem_email: !!semEmail };
 }
 /** ↻ Reenviar o e-mail da versão que está com o cliente (mesmo link) */
 async function reenviarEmail(supabase, tenantId, quem, id) {
@@ -143,7 +147,7 @@ async function reenviarEmail(supabase, tenantId, quem, id) {
   if (!B.COM_CLIENTE.includes(b.fase) || !b.token) return { status: 409, erro: 'O BID não está com o cliente' };
   const emp = await empresaDe(supabase, tenantId); const url = B.linkCliente(b.token);
   const v = (await versoesDe(supabase, tenantId, b.id)).find((x) => x.versao === b.versao_enviada);
-  const e = emailEnvio(emp, b, b.versao_enviada, url, { texto: v?.mensagem, respNome: quem.usuarioNome });
+  const e = emailEnvio(emp, b, b.versao_enviada, url, { texto: v?.mensagem, respNome: quem.usuarioNome, nova: !!v?.mudancas && b.versao_enviada > 1 && !!v?.substituida_em });
   const aviso = await mandar(b.envio_para || b.contato_email, `Lembrete: ${e.assunto}`, e.html);
   if (!aviso) await atividade(supabase, tenantId, quem, { bid_id: b.id, cliente_id: b.cliente_id, tipo: 'evento', texto: `↻ E-mail reenviado para ${b.envio_para || b.contato_email}` });
   return { ok: !aviso, aviso, link: url };

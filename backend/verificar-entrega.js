@@ -206,25 +206,22 @@ const ESPERADO = {
   'migrations/051_comercial_bid.sql': '65c3c268119eadac6a0ecda34b72197c', // etapa 15a (novo)
   'routes/comercial.js': 'cef0520a1488e03594312c3c36bce8aa', // etapa 15b
   'services/bids.js': '69c80cc8fa052a18f6cd30ecc3b89942', // etapa 15b.1
-  'front:FichaBid.jsx': '969d001f8ccb877848f85ebe3583019d', // etapa 15b.1
+  'front:FichaBid.jsx': '055c3b15072740f51191b79eba0f0006', // etapa 15b.3
   'front:ModelosBid.jsx': 'fce825c9584b3ff4a2a1040d575de24c', // etapa 15a (novo)
-  'front:TelaComercial.jsx': 'e52411bbeb4923c09133340efec6aa5e', // etapa 15b.1
+  'front:TelaComercial.jsx': '7beab739aa8a727bd0182e5c16c9217d', // etapa 15b.2
   'front:gerarBid.js': '9868a930e8e18c1cba642070c3bb0e15', // etapa 15a (novo)
   'migrations/052_bid_cliente.sql': 'a8b6f934576474b54a7246fda86d3eda', // etapa 15b (novo)
   'routes/bidLink.js': 'e566a5246b48e24430a997fda8d32e27', // etapa 15b (novo)
-  'services/bidsCliente.js': '3c48672439afcb9432235b758a49dca5', // etapa 15b.1
+  'services/bidsCliente.js': '747a769446a9b55440810d8451bbaa87', // etapa 15b.3
   'front:TelaBidPublica.jsx': '6ddc70398e23936c79db280e71c233e5', // etapa 15b.1
-  'front:EnviarBid.jsx': '36e9b91d0ebd76536e9f2778f546f4eb', // etapa 15b.1
+  'front:EnviarBid.jsx': '4d97c008534b17bcf66a71f186b4f31a', // etapa 15b.3
 };
 
-// Antes de copiar a etapa 15b.1 — base: 15b
+// Antes de copiar a etapa 15b.3 — base: 15b.2
 const ANTES = {
-  'services/bidsCliente.js': 'e4df846c0773f7c4f94c8dca360d623f',
-  'services/bids.js': 'dca77f42e38ea4f1e33a0b5d5366a171',
-  'front:EnviarBid.jsx': 'a3544e540419c9acfdcadcb9e70b7b82',
-  'front:FichaBid.jsx': 'e74909f9c954e643389d280ae97ea80f',
-  'front:TelaComercial.jsx': '4e9b7d9ff7568c7ecf8fd3b77af63a35',
-  'front:TelaBidPublica.jsx': 'ddf2ff837a182aa02abfbb4996e38ede',
+  'services/bidsCliente.js': '451b75469a9734d6c13b3283ba859198',
+  'front:EnviarBid.jsx': '36e9b91d0ebd76536e9f2778f546f4eb',
+  'front:FichaBid.jsx': '969d001f8ccb877848f85ebe3583019d',
 };
 
 const RAIZ = process.cwd();
@@ -262,7 +259,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 15b.1)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 15b.3)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

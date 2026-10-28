@@ -12,7 +12,7 @@ export default function EnviarBid({ C, s, bidId, numero, onFechar, onEnviado, on
   const [assunto, setAssunto] = useState("");
   const [texto, setTexto] = useState("");
   const [nota, setNota] = useState("");
-  const [confirmar, setConfirmar] = useState(false);
+  const [confirmar, setConfirmar] = useState(false); // false | "email" | "link"
   const [ocupado, setOcupado] = useState(false);
   useEffect(() => { apiService.get(`/comercial/bids/${bidId}/revisao`).then((x) => { setR(x); setAssunto(x.email?.assunto || ""); setTexto(x.email?.texto || ""); }).catch((e) => { onErro(e.message); onFechar(); }); }, [bidId]); // eslint-disable-line
   if (!r) return null;
@@ -21,7 +21,11 @@ export default function EnviarBid({ C, s, bidId, numero, onFechar, onEnviado, on
   const bloqueado = ck.erros.length > 0 || r.nada_mudou || (reenvio && !nota.trim());
   const enviar = async () => {
     setOcupado(true);
-    try { const x = await apiService.post(`/comercial/bids/${bidId}/enviar`, { assunto, texto, nota }); onEnviado(x); }
+    try {
+      const x = await apiService.post(`/comercial/bids/${bidId}/enviar`, { assunto, texto, nota, sem_email: confirmar === "link" });
+      if (confirmar === "link") { try { await navigator.clipboard.writeText(x.link); x.copiado = true; } catch { x.copiado = false; } }
+      onEnviado(x);
+    }
     catch (e) { onErro(e.message); setConfirmar(false); } finally { setOcupado(false); }
   };
   return (
@@ -51,7 +55,7 @@ export default function EnviarBid({ C, s, bidId, numero, onFechar, onEnviado, on
             <label style={{ display: "block", marginTop: 8 }}><span style={{ ...s.label, fontSize: 10 }}>TEXTO (PODE AJUSTAR)</span><textarea rows={6} value={texto} onChange={(e) => setTexto(e.target.value)} style={{ ...s.input, resize: "vertical", fontSize: 12.5, lineHeight: 1.5 }} /></label>
             <div style={{ fontSize: 12, color: C.textSub, marginTop: 8, lineHeight: 1.6, borderTop: `1px dashed ${C.border}`, paddingTop: 8 }}>
               {reenvio && <div>• O que mudou (a sua nota + a lista acima)</div>}
-              <div><span style={{ display: "inline-block", background: C.accent, color: "#fff", borderRadius: 5, padding: "3px 10px", fontSize: 11.5, fontWeight: 700 }}>{reenvio ? "Ver a proposta atualizada" : "Ver a proposta"}</span> <span style={{ color: C.muted, fontSize: 11 }}>← o link da proposta</span></div>
+              <div>🔗 <i>link da proposta</i> <span style={{ color: C.muted, fontSize: 11 }}>(gerado no envio)</span></div>
               <div>Validade: {r.email?.validade}</div>
               <div style={{ marginTop: 4 }}>Atenciosamente,<br />{(r.email?.assinatura || []).map((l, i) => <span key={i}>{l}<br /></span>)}</div>
               <div style={{ fontSize: 10.5, color: C.muted, marginTop: 4 }}>O link, a validade e a assinatura (✍ Dados e assinatura) entram sempre.</div>
@@ -61,17 +65,19 @@ export default function EnviarBid({ C, s, bidId, numero, onFechar, onEnviado, on
           <div style={{ flex: 1 }} />
           <div style={{ display: "flex", gap: 10 }}>
             <button type="button" onClick={onFechar} style={{ ...s.btn(false), cursor: "pointer", flex: 1, color: C.text }}>✏ Voltar e editar</button>
-            <button type="button" disabled={bloqueado || ocupado} onClick={() => setConfirmar(true)} style={{ ...s.btn(!bloqueado && !ocupado, C.accent), flex: 1 }}>📨 Enviar ao cliente</button>
+            <button type="button" disabled={bloqueado || ocupado} onClick={() => setConfirmar("email")} style={{ ...s.btn(!bloqueado && !ocupado, C.accent), flex: 1 }}>📨 Enviar ao cliente</button>
           </div>
+          <button type="button" disabled={bloqueado || ocupado} onClick={() => setConfirmar("link")} title="O cliente pediu pelo telefone? Gera o link para colar no WhatsApp — sem e-mail" style={{ background: "none", border: "none", color: bloqueado ? C.muted : C.textSub, textDecoration: "underline", fontSize: 12, cursor: bloqueado ? "not-allowed" : "pointer", padding: 0, fontFamily: "inherit" }}>🔗 Enviar só pelo link (WhatsApp), sem e-mail</button>
         </div>
       </div>
       {confirmar && <div style={{ position: "fixed", inset: 0, background: "#00000090", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 360, padding: 16 }} onClick={(e) => { e.stopPropagation(); setConfirmar(false); }}>
         <div onClick={(e) => e.stopPropagation()} style={{ ...s.card, width: 460, maxWidth: "100%", padding: "18px 20px" }}>
-          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>Enviar a v{r.proxima_versao} para {r.para}?</div>
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>{confirmar === "link" ? `Gerar o link da v${r.proxima_versao}?` : `Enviar a v${r.proxima_versao} para ${r.para}?`}</div>
+          {confirmar === "link" && <div style={{ fontSize: 13, color: C.textSub, lineHeight: 1.6, marginBottom: 8 }}>Nenhum e-mail é enviado. O link é copiado para você colar no WhatsApp. O "👁 visualizado" e a resposta funcionam do mesmo jeito.</div>}
           <div style={{ fontSize: 13, color: C.textSub, lineHeight: 1.6 }}>Depois do envio, o BID fica <b>travado</b>: qualquer mudança vira uma <b>nova versão</b>, e o cliente é avisado por e-mail. A validade ({r.documento?.validade_dias} dias) começa a contar hoje.</div>
           <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
             <button type="button" onClick={() => setConfirmar(false)} style={{ ...s.btn(false), cursor: "pointer", flex: 1, color: C.text }}>Cancelar</button>
-            <button type="button" disabled={ocupado} onClick={enviar} style={{ ...s.btn(!ocupado, C.accent), flex: 1 }}>{ocupado ? "Enviando…" : "📨 Enviar"}</button>
+            <button type="button" disabled={ocupado} onClick={enviar} style={{ ...s.btn(!ocupado, C.accent), flex: 1 }}>{ocupado ? "Enviando…" : confirmar === "link" ? "🔗 Gerar e copiar o link" : "📨 Enviar"}</button>
           </div>
         </div>
       </div>}

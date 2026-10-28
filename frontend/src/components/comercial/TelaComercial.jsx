@@ -17,6 +17,7 @@ const dBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : 
 const dataHora = (d) => (d ? new Date(d).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "");
 const compacto = (v) => (v == null ? "—" : v >= 1e6 ? `R$ ${(v / 1e6).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mi` : v >= 1e4 ? `R$ ${(v / 1e3).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} mil` : brl(v));
 const hoje = () => new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+const haQuanto = (iso) => { if (!iso) return ""; const m = Math.max(0, Math.round((Date.now() - new Date(iso)) / 60000)); return m < 60 ? `há ${Math.max(1, m)} min` : m < 1440 ? `há ${Math.round(m / 60)} h` : `há ${Math.round(m / 1440)} d`; };
 const tempo = (h) => (h == null ? "—" : h < 1 ? `${Math.max(1, Math.round(h * 60))} min` : h < 48 ? `${String(Math.round(h * 10) / 10).replace(".", ",")} h` : `${String(Math.round((h / 24) * 10) / 10).replace(".", ",")} dias`);
 const menosDias = (n) => new Date(Date.now() - 3 * 3600000 - n * 86400000).toISOString().slice(0, 10);
 const casca = (s, conteudo, fechar, largura = 640, z = 320) => (
@@ -46,7 +47,17 @@ function CartaoBid({ C, s, b, onAbrir, arrastavel }) {
       {b.titulo && <div style={{ fontSize: 11, color: C.textSub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.titulo}</div>}
       <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 4 }}><b style={{ fontSize: 12.5, flex: 1 }}>{brl(b.valor_total)}</b>
         {b.expirado && <span title="validade vencida" style={{ fontSize: 11 }}>⌛</span>}<span style={{ fontSize: 10.5, color: C.muted }}>{(b.responsavel_nome || "").split(" ")[0]}</span></div>
-      {comCliente && <div style={{ fontSize: 10.5, marginTop: 3, color: b.em_revisao ? C.warn : b.visto_primeiro_em ? C.accent : C.muted }}>{b.em_revisao ? "✏ preparando nova versão" : b.visto_primeiro_em ? `✓✓ visto ${b.visto_qtd}× · v${b.versao_enviada}` : `✓ enviado · v${b.versao_enviada} · não aberto`}</div>}
+      {/* 15b.2: status do cliente no próprio cartão, como na Não Conformidade (📤 enviada / 👁 visualizada) */}
+      {(() => {
+        const chip = (cor, txt, title) => <div style={{ marginTop: 5 }}><span title={title} style={{ ...s.tag(cor), fontSize: 10, letterSpacing: 0 }}>{txt}</span></div>;
+        if (b.em_revisao) return chip(C.warn, `✏ Preparando a v${(b.versao_atual || 0) + 1}`, `O cliente continua vendo a v${b.versao_enviada}`);
+        if (b.fase === "aguardando_cliente") return b.visto_primeiro_em
+          ? chip(C.accent, `👁 Visualizado pelo cliente${b.visto_qtd > 1 ? ` · ${b.visto_qtd}×` : ""} · ${haQuanto(b.visto_ultimo_em)}`, `Aberto ${b.visto_qtd}× — 1ª vez ${dataHora(b.visto_primeiro_em)}, última ${dataHora(b.visto_ultimo_em)}`)
+          : chip(C.warn, `📤 Enviado · ainda não aberto · ${haQuanto(b.enviado_em)}`, `v${b.versao_enviada} enviada em ${dataHora(b.enviado_em)} para ${b.envio_para || ""}`);
+        if (b.fase === "revisao_solicitada") return chip(C.warn, `💬 Cliente pediu revisão · ${haQuanto(b.respondido_em)}`);
+        if (b.fase === "aguardando_aceite") return chip("#a78bfa", "✅ Aprovado · falta assinar o aceite");
+        return null;
+      })()}
       {alerta && <div style={{ fontSize: 10.5, color: alerta.tipo === "vencido" ? C.danger : C.warn, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>⚠ {alerta.texto}</div>}
       {t && <div style={{ fontSize: 10.5, color: atrasada ? C.danger : C.textSub, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>⏰ {dBR(t.prevista_para?.slice(0, 10))} {t.texto}</div>}
       {b.fase === "perdido" && b.motivo_perda && <div style={{ fontSize: 10.5, color: C.danger, marginTop: 3 }}>{MOTIVOS[b.motivo_perda]}</div>}
@@ -221,7 +232,6 @@ export default function TelaComercial({ C, s }) {
           <Kpi C={C} s={s} rotulo="TAXA DE ABERTURA" valor={k.taxa_abertura_pct == null ? "—" : `${String(k.taxa_abertura_pct).replace(".", ",")}%`} sub={`${k.abertas || 0} de ${k.enviadas || 0} versão(ões) enviada(s)`} />
           <Kpi C={C} s={s} rotulo="ENVIO → VISUALIZAÇÃO" valor={tempo(k.horas_ate_ver)} sub="tempo médio até o cliente abrir" />
           <Kpi C={C} s={s} rotulo="VISUALIZAÇÃO → RESPOSTA" valor={tempo(k.horas_ate_responder)} sub="tempo médio até responder" />
-          <Kpi C={C} s={s} rotulo="COM O CLIENTE, SEM RESPOSTA" valor={`${k.abertos_sem_resposta || 0} ✓✓ · ${k.sem_abrir || 0} ✓`} sub="abertos sem resposta · não abertos" cor={(k.abertos_sem_resposta || k.sem_abrir) ? C.warn : undefined} />
         </div>
 
         <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 8, alignItems: "flex-start" }}>
