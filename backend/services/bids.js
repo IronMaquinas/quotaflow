@@ -370,7 +370,10 @@ const linkCliente = (token) => `${String(process.env.FRONTEND_URL || 'http://loc
 const horas = (a, b) => (a && b ? (new Date(b) - new Date(a)) / 3600000 : null);
 /** 15b: alertas do comercial (calculados na hora — sem rotina): sem abrir, aberto sem resposta, aceite pendente, validade */
 function alertas(b, hoje = hojeBR()) {
-  const l = []; if (!COM_CLIENTE.includes(b.fase) && b.fase !== 'revisao_solicitada') return l;
+  const l = []; if (!ABERTAS.includes(b.fase)) return l;
+  // 15b.4: decisão esperada (previsao_fechamento) já passou e o BID segue aberto
+  if (b.previsao_fechamento && b.previsao_fechamento < hoje) l.push({ tipo: 'decisao_passou', texto: `Decisão esperada em ${b.previsao_fechamento.split('-').reverse().join('/')} — já passou`, tarefa: 'Ligar: o cliente já decidiu? Atualizar a data esperada' });
+  if (!COM_CLIENTE.includes(b.fase) && b.fase !== 'revisao_solicitada') return l;
   const dEnv = b.enviado_em ? diasEntre(b.enviado_em) : 0;
   if (b.fase === 'aguardando_cliente' && !b.em_revisao) {
     if (!b.visto_primeiro_em && dEnv >= 2) l.push({ tipo: 'sem_abrir', texto: `Enviado há ${dEnv} dias e ainda não aberto`, tarefa: 'Ligar: o cliente ainda não viu a proposta' });
@@ -471,8 +474,18 @@ async function funil(supabase, tenantId, { de, ate } = {}) {
       expirados: abertos.filter((b) => b.expirado).length, parados: abertos.filter((b) => COM_CLIENTE.includes(b.fase) && b.dias_na_fase > 7).length,
       ...visualizacao(vers.filter((v) => noPeriodo(v.enviada_em)), bs),
     },
+    previsao: previsaoReceita(abertos),
     motivos,
   };
+}
+/** 15b.4: previsão de receita — BIDs abertos pela "decisão esperada" (este mês, próximo, atrasados, sem data) */
+function previsaoReceita(abertos, hoje = hojeBR()) {
+  const mes = hoje.slice(0, 7); const d = new Date(`${mes}-15T12:00:00Z`); d.setUTCMonth(d.getUTCMonth() + 1); const prox = d.toISOString().slice(0, 7);
+  const soma = (l) => ({ qtd: l.length, valor: l.reduce((s, b) => s + Number(b.valor_total || 0), 0) });
+  const p = (b) => b.previsao_fechamento || '';
+  return { mes, proximo_mes: prox,
+    este_mes: soma(abertos.filter((b) => p(b).startsWith(mes) && p(b) >= hoje)), proximo: soma(abertos.filter((b) => p(b).startsWith(prox))),
+    atrasados: soma(abertos.filter((b) => p(b) && p(b) < hoje)), sem_data: soma(abertos.filter((b) => !p(b))) };
 }
 /** 15b: envio → visualização → resposta (versões enviadas no período) */
 function visualizacao(enviadas, bs) {

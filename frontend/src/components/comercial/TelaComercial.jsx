@@ -17,6 +17,7 @@ const dBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : 
 const dataHora = (d) => (d ? new Date(d).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "");
 const compacto = (v) => (v == null ? "—" : v >= 1e6 ? `R$ ${(v / 1e6).toLocaleString("pt-BR", { maximumFractionDigits: 1 })} mi` : v >= 1e4 ? `R$ ${(v / 1e3).toLocaleString("pt-BR", { maximumFractionDigits: 0 })} mil` : brl(v));
 const hoje = () => new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+const mesNome = (ym) => { const [a, m] = String(ym || "").split("-"); return `${["JAN", "FEV", "MAR", "ABR", "MAI", "JUN", "JUL", "AGO", "SET", "OUT", "NOV", "DEZ"][Number(m) - 1] || ""}/${a || ""}`; };
 const haQuanto = (iso) => { if (!iso) return ""; const m = Math.max(0, Math.round((Date.now() - new Date(iso)) / 60000)); return m < 60 ? `há ${Math.max(1, m)} min` : m < 1440 ? `há ${Math.round(m / 60)} h` : `há ${Math.round(m / 1440)} d`; };
 const tempo = (h) => (h == null ? "—" : h < 1 ? `${Math.max(1, Math.round(h * 60))} min` : h < 48 ? `${String(Math.round(h * 10) / 10).replace(".", ",")} h` : `${String(Math.round((h / 24) * 10) / 10).replace(".", ",")} dias`);
 const menosDias = (n) => new Date(Date.now() - 3 * 3600000 - n * 86400000).toISOString().slice(0, 10);
@@ -47,6 +48,8 @@ function CartaoBid({ C, s, b, onAbrir, arrastavel }) {
       {b.titulo && <div style={{ fontSize: 11, color: C.textSub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{b.titulo}</div>}
       <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 4 }}><b style={{ fontSize: 12.5, flex: 1 }}>{brl(b.valor_total)}</b>
         {b.expirado && <span title="validade vencida" style={{ fontSize: 11 }}>⌛</span>}<span style={{ fontSize: 10.5, color: C.muted }}>{(b.responsavel_nome || "").split(" ")[0]}</span></div>
+      {/* 15b.4: decisão esperada */}
+      {b.previsao_fechamento && !["aceito", "perdido"].includes(b.fase) && <div style={{ fontSize: 10.5, marginTop: 3, color: b.previsao_fechamento < hoje() ? C.danger : C.textSub }} title="Decisão esperada do cliente">📅 decisão {b.previsao_fechamento < hoje() ? "esperada em" : ""} {dBR(b.previsao_fechamento)}{b.previsao_fechamento < hoje() ? " — passou" : ""}</div>}
       {/* 15b.2: status do cliente no próprio cartão, como na Não Conformidade (📤 enviada / 👁 visualizada) */}
       {(() => {
         const chip = (cor, txt, title) => <div style={{ marginTop: 5 }}><span title={title} style={{ ...s.tag(cor), fontSize: 10, letterSpacing: 0 }}>{txt}</span></div>;
@@ -107,7 +110,7 @@ function NovoBid({ C, s, clienteInicial, onCriado, onCancelar, onErro }) {
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
       <label style={{ flex: "2 1 220px" }}><span style={s.label}>TÍTULO DA PROPOSTA</span><input value={f.titulo} onChange={(e) => setF({ ...f, titulo: e.target.value })} placeholder="Ex.: Transporte de 2 retroescavadeiras ES → MT" style={s.input} /></label>
       <label style={{ flex: "1 1 160px" }}><span style={s.label}>RESPONSÁVEL</span><select value={f.responsavel_id} onChange={(e) => setF({ ...f, responsavel_id: e.target.value })} style={s.input}><option value="">eu</option>{resp.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}</select></label>
-      <label style={{ flex: "1 1 150px" }}><span style={s.label}>PREVISÃO DE FECHAMENTO</span><input type="date" value={f.previsao_fechamento} onChange={(e) => setF({ ...f, previsao_fechamento: e.target.value })} style={s.input} /></label>
+      <label style={{ flex: "1 1 150px" }} title="Quando você espera que o cliente decida (aceite ou recuse) — entra na previsão de receita do Funil"><span style={s.label}>DECISÃO ESPERADA EM</span><input type="date" value={f.previsao_fechamento} onChange={(e) => setF({ ...f, previsao_fechamento: e.target.value })} style={s.input} /></label>
     </div>
     <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
       <button type="button" onClick={onCancelar} style={{ ...s.btn(false), cursor: "pointer", flex: 1, color: C.text }}>Cancelar</button>
@@ -228,6 +231,12 @@ export default function TelaComercial({ C, s }) {
           <Kpi C={C} s={s} rotulo="TICKET MÉDIO" valor={compacto(k.ticket_medio)} sub="dos aceitos no período" />
           <Kpi C={C} s={s} rotulo="TEMPO ATÉ O ACEITE" valor={k.dias_ate_aceite == null ? "—" : `${k.dias_ate_aceite} dias`} sub="da criação ao aceite" />
         </div>
+        {funil.previsao && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
+          <Kpi C={C} s={s} rotulo={`PREVISTO PARA FECHAR EM ${mesNome(funil.previsao.mes)}`} valor={compacto(funil.previsao.este_mes.valor)} sub={`${funil.previsao.este_mes.qtd} BID(s) com decisão esperada no mês`} cor={C.accent} />
+          <Kpi C={C} s={s} rotulo={`PREVISTO PARA ${mesNome(funil.previsao.proximo_mes)}`} valor={compacto(funil.previsao.proximo.valor)} sub={`${funil.previsao.proximo.qtd} BID(s)`} />
+          <Kpi C={C} s={s} rotulo="DECISÃO ESPERADA JÁ PASSOU" valor={compacto(funil.previsao.atrasados.valor)} sub={`${funil.previsao.atrasados.qtd} BID(s) — atualizar a data ou ligar`} cor={funil.previsao.atrasados.qtd ? C.danger : undefined} />
+          <Kpi C={C} s={s} rotulo="SEM DATA DE DECISÃO" valor={compacto(funil.previsao.sem_data.valor)} sub={`${funil.previsao.sem_data.qtd} BID(s) em aberto sem previsão`} cor={funil.previsao.sem_data.qtd ? C.warn : undefined} />
+        </div>}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
           <Kpi C={C} s={s} rotulo="TAXA DE ABERTURA" valor={k.taxa_abertura_pct == null ? "—" : `${String(k.taxa_abertura_pct).replace(".", ",")}%`} sub={`${k.abertas || 0} de ${k.enviadas || 0} versão(ões) enviada(s)`} />
           <Kpi C={C} s={s} rotulo="ENVIO → VISUALIZAÇÃO" valor={tempo(k.horas_ate_ver)} sub="tempo médio até o cliente abrir" />

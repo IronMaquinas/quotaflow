@@ -118,6 +118,12 @@ export default function FichaBid({ C, s, id, onFechar, onMudou, onErro, onOk, on
   if (!d || !f) return null;
   const b = d.bid; const ct = b.conteudo || {}; const travado = !b.pode_editar; // 15b: com o cliente, só depois de ✏ Criar revisão
   const set = (k, v) => { setF((x) => ({ ...x, [k]: v })); setSujo(true); };
+  // 15b.4: responsável e decisão esperada são internos — mudam a qualquer momento (com o BID travado, salvam na hora)
+  const interno = async (k, v) => {
+    if (!travado) return set(k, v);
+    setF((x) => ({ ...x, [k]: v }));
+    try { await apiService.put(`/comercial/bids/${b.id}`, { [k]: v || null }); onOk(k === "previsao_fechamento" ? "Decisão esperada atualizada." : "Responsável atualizado."); await carregar(); onMudou?.(); } catch (e) { onErro(e.message); }
+  };
 
   const salvar = async (silencioso = false) => {
     setOcupado(true);
@@ -261,8 +267,8 @@ export default function FichaBid({ C, s, id, onFechar, onMudou, onErro, onOk, on
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>{lbl("CONTATO NO CLIENTE", inp("contato_nome"))}{lbl("E-MAIL", inp("contato_email", { type: "email" }))}
                 {lbl("TELEFONE", <CampoTelefone value={f.contato_telefone || ""} onChange={(v) => set("contato_telefone", v || "")} C={C} />)}</div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-                {lbl("RESPONSÁVEL", <select value={f.responsavel_id || ""} onChange={(e) => set("responsavel_id", e.target.value)} style={s.input}>{!f.responsavel_id && <option value="">—</option>}{resp.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}</select>)}
-                {lbl("PREVISÃO DE FECHAMENTO", <input type="date" value={f.previsao_fechamento || ""} onChange={(e) => set("previsao_fechamento", e.target.value)} style={s.input} />)}</div>
+                {lbl("RESPONSÁVEL", <select value={f.responsavel_id || ""} onChange={(e) => interno("responsavel_id", e.target.value)} style={s.input}>{!f.responsavel_id && <option value="">—</option>}{resp.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}</select>)}
+                {lbl("DECISÃO ESPERADA EM (USO INTERNO — PREVISÃO DE RECEITA)", <input type="date" value={f.previsao_fechamento || ""} onChange={(e) => interno("previsao_fechamento", e.target.value)} style={s.input} />)}</div>
               <div style={{ ...s.label, marginTop: 16 }}>ASSINATURA DO DOCUMENTO</div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
                 {["nome", "cargo", "registro", "telefones"].map((k) => lbl({ nome: "NOME", cargo: "CARGO", registro: "REGISTRO PROFISSIONAL (EX.: CREA/ES 052637/D)", telefones: "TELEFONES" }[k],

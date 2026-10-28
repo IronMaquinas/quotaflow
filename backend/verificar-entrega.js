@@ -205,10 +205,10 @@ const ESPERADO = {
   'front:TelaUsuariosNova.jsx': 'd7d98c07839cc133077532dd7022c751', // etapa 15a
   'migrations/051_comercial_bid.sql': '65c3c268119eadac6a0ecda34b72197c', // etapa 15a (novo)
   'routes/comercial.js': 'cef0520a1488e03594312c3c36bce8aa', // etapa 15b
-  'services/bids.js': '69c80cc8fa052a18f6cd30ecc3b89942', // etapa 15b.1
-  'front:FichaBid.jsx': '055c3b15072740f51191b79eba0f0006', // etapa 15b.3
+  'services/bids.js': 'bef548d4682f054cb240dad4a8363dce', // etapa 15b.4
+  'front:FichaBid.jsx': '041ce3b2f97fda6d1361921445da9653', // etapa 15b.4
   'front:ModelosBid.jsx': 'fce825c9584b3ff4a2a1040d575de24c', // etapa 15a (novo)
-  'front:TelaComercial.jsx': '7beab739aa8a727bd0182e5c16c9217d', // etapa 15b.2
+  'front:TelaComercial.jsx': 'b5b75b2de3d80ef4df14d54c823a2dab', // etapa 15b.4
   'front:gerarBid.js': '9868a930e8e18c1cba642070c3bb0e15', // etapa 15a (novo)
   'migrations/052_bid_cliente.sql': 'a8b6f934576474b54a7246fda86d3eda', // etapa 15b (novo)
   'routes/bidLink.js': 'e566a5246b48e24430a997fda8d32e27', // etapa 15b (novo)
@@ -217,11 +217,11 @@ const ESPERADO = {
   'front:EnviarBid.jsx': '4d97c008534b17bcf66a71f186b4f31a', // etapa 15b.3
 };
 
-// Antes de copiar a etapa 15b.3 — base: 15b.2
+// Antes de copiar a etapa 15b.4 — base: 15b.3
 const ANTES = {
-  'services/bidsCliente.js': '451b75469a9734d6c13b3283ba859198',
-  'front:EnviarBid.jsx': '36e9b91d0ebd76536e9f2778f546f4eb',
-  'front:FichaBid.jsx': '969d001f8ccb877848f85ebe3583019d',
+  'services/bids.js': '69c80cc8fa052a18f6cd30ecc3b89942',
+  'front:TelaComercial.jsx': '7beab739aa8a727bd0182e5c16c9217d',
+  'front:FichaBid.jsx': '055c3b15072740f51191b79eba0f0006',
 };
 
 const RAIZ = process.cwd();
@@ -259,7 +259,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 15b.3)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 15b.4)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
