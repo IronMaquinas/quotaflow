@@ -84,6 +84,17 @@ function conflitos(nova, outras) {
   });
 }
 
+/** 16b: mesa de programação — confere conflitos das linhas ANTES de salvar (contra as ATs existentes e entre as próprias linhas)
+ *  linhas: [{ chave, inicio, fim, motorista_id, motorista_nome, cavalo_id, implementos }] → { chave: [conflitos] } */
+async function checar(supabase, tenantId, linhas = []) {
+  const l = (Array.isArray(linhas) ? linhas : []).slice(0, 200).map((x) => ({ id: `linha:${x.chave}`, numero: x.rotulo || 'outra linha desta mesa', status: 'programada',
+    inicio_previsto: quando(x.inicio) || null, fim_previsto: quando(x.fim) || null, motorista_id: x.motorista_id || null, motorista_nome: x.motorista_nome || null,
+    conjunto: [x.cavalo_id, ...(x.implementos || [])].filter((y) => y != null && y !== '').map((id) => ({ id, tag: x.tags?.[id] || null })), chave: x.chave }));
+  const outras = await q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId));
+  const r = {};
+  for (const n of l) if (n.inicio_previsto) r[n.chave] = conflitos(n, [...outras, ...l.filter((o) => o !== n && o.inicio_previsto)]);
+  return { conflitos: r };
+}
 /** monta e valida os dados da AT. body: { inicio, fim, origem, destino, motorista_id, cavalo_id, implementos: [ids], observacoes, liberacao_justificativa, ignorar_conflito } */
 async function montar(supabase, tenantId, quem, body, atual = {}) {
   const inicio = quando(body.inicio ?? atual.inicio_previsto); const fim = quando(body.fim ?? atual.fim_previsto);
@@ -120,7 +131,7 @@ async function montar(supabase, tenantId, quem, body, atual = {}) {
     if (nivel === 'em_andamento') avisos.push(`🟡 ${mot.nome}: ${mot.selo?.faltam ?? ''} item(ns) sem registro no selo de conformidade (nada vencido)`);
     if (nivel === 'sem_funcao') avisos.push(`⚪ ${mot.nome} não tem função cadastrada — o selo de conformidade não pôde ser conferido`);
   }
-  const dados = { inicio_previsto: inicio, fim_previsto: fim || null, origem: texto(body.origem ?? atual.origem, 200), destino: texto(body.destino ?? atual.destino, 200),
+  const dados = { inicio_previsto: inicio, fim_previsto: fim || null, origem: texto(body.origem ?? atual.origem, 300), destino: texto(body.destino ?? atual.destino, 300),
     motorista_id: mot ? mot.id : null, motorista_nome: mot ? mot.nome : null, motorista_selo: mot ? (mot.selo || null) : null, liberacao, cavalo_id: conjunto[0].id, conjunto,
     observacoes: texto(body.observacoes ?? atual.observacoes, 2000) };
   const outras = await q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId));
@@ -165,6 +176,10 @@ async function criar(supabase, tenantId, quem, pvId, body = {}) {
   if (!pedidos.length) return { status: 409, erro: 'Todos os itens deste trecho já estão programados' };
   const itens = ativos.filter((i) => pedidos.includes(String(i.id))).map((i) => ({ id: i.id, valores: i.valores || {}, quantidade: i.quantidade ?? 1 })); // SEM valores
   if (!itens.length) return { status: 409, erro: 'O trecho não tem itens ativos' };
+  // 16b: rota padrão = a do trecho (BID/pedido) → senão a última AT do trecho; a programação pode editar
+  const ultima = doPedido.filter((e) => String(e.grupo_id) === String(g.id)).sort((a, b) => String(b.criado_em || '').localeCompare(String(a.criado_em || '')))[0];
+  if (!texto(body.origem, 300)) body = { ...body, origem: g.coleta || ultima?.origem || '' };
+  if (!texto(body.destino, 300)) body = { ...body, destino: g.entrega || ultima?.destino || '' };
   const m = await montar(supabase, tenantId, quem, body); if (m.erro) return m;
   const agora = new Date().toISOString();
   const reg = { tenant_id: tenantId, numero: await proximoNumero(supabase, tenantId), tipo, pv_id: pv.id, pv_numero: pv.numero, grupo_id: g.id, grupo_titulo: g.titulo || null, itens, colunas: pv.conteudo?.colunas || [],
@@ -275,7 +290,9 @@ function trechosComATs(pv, ex) {
   const emAT = new Map(); ativas.forEach((e) => (e.itens || []).forEach((i) => emAT.set(String(i.id), e.numero)));
   return (pv.grupos || []).map((g) => {
     const itens = (g.itens || []).filter((i) => i.status !== 'cancelado').map((i) => ({ id: i.id, valores: i.valores || {}, quantidade: i.quantidade ?? 1, at: emAT.get(String(i.id)) || null }));
+    const doTrecho = ativas.filter((e) => String(e.grupo_id) === String(g.id)).sort((a, b) => String(b.criado_em || '').localeCompare(String(a.criado_em || '')));
     return { id: g.id, titulo: g.titulo, qtd: itens.length, itens, livres: itens.filter((i) => !i.at).length,
+      coleta: g.coleta || doTrecho[0]?.origem || '', entrega: g.entrega || doTrecho[0]?.destino || '', rota_do_bid: !!(g.coleta || g.entrega), // 16b
       datas: [...new Set(itens.map((i) => i.valores?.data_prevista).filter(Boolean))].sort(),
       ats: ativas.filter((e) => String(e.grupo_id) === String(g.id)).sort((a, b) => String(a.inicio_previsto || '').localeCompare(String(b.inicio_previsto || ''))) };
   });
@@ -305,4 +322,4 @@ async function documento(supabase, tenantId, id) {
     contato_cliente: pv.contato_nome || null, referencia: pv.referencia || null, motorista: col ? { nome: col.nome, cpf: col.cpf || null, cnh: col.cnh_categoria || null, telefone: col.telefone || null } : null };
 }
 
-module.exports = { trechosComATs, TIPOS, STATUS, ANEXOS, base, criar, editar, mudarStatus, anexar, linkAnexo, removerAnexo, listar, detalhe, doPV, agenda, documento, conflitos, _definirSelos };
+module.exports = { checar, trechosComATs, TIPOS, STATUS, ANEXOS, base, criar, editar, mudarStatus, anexar, linkAnexo, removerAnexo, listar, detalhe, doPV, agenda, documento, conflitos, _definirSelos };

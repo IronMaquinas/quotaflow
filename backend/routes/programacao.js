@@ -10,6 +10,7 @@
 //   GET  /execucoes/:id · PUT /execucoes/:id · POST /execucoes/:id/status { acao: iniciar|concluir|cancelar|reabrir, motivo }
 //   POST /execucoes/:id/anexos { tipo, nome, mime, base64 } · GET /execucoes/:id/anexos/:anexo · DELETE /execucoes/:id/anexos/:anexo
 //   GET  /execucoes/:id/documento      dados do PDF da AT
+//   POST /checar { linhas }            16b: conflitos das linhas da mesa antes de salvar
 // (403 desloga no front — trava de regra responde 409)
 
 const express = require('express');
@@ -39,6 +40,7 @@ router.get('/pedidos', responder(async (req) => {
   return { pedidos: (data || []).filter((p) => ['aberto', 'em_execucao'].includes(p.status)).map((p) => ({ id: p.id, numero: p.numero, cliente_nome: p.cliente_nome, titulo: p.titulo, referencia: p.referencia, status: p.status, tipo_execucao: p.tipo_execucao || 'transporte',
     colunas: (p.conteudo?.colunas || []).filter((c) => c.chave !== 'data_prevista'), trechos: E.trechosComATs(p, ex.filter((e) => String(e.pv_id) === String(p.id))) })).sort((a, b) => String(a.numero).localeCompare(String(b.numero))) };
 }));
+router.post('/checar', responder((req) => E.checar(supabase, req.tenantId, req.body?.linhas))); // 16b: mesa
 router.get('/pvs/:id', responder((req) => E.doPV(supabase, req.tenantId, req.params.id)));
 router.post('/pvs/:id/at', responder(async (req) => E.criar(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
 router.get('/execucoes/:id', responder((req) => E.detalhe(supabase, req.tenantId, req.params.id)));

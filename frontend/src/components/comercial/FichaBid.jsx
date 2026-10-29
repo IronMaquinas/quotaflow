@@ -56,9 +56,15 @@ function Grupos({ C, s, conteudo, grupos, setGrupos, travado, resposta }) {
           <label style={{ flex: "1 1 160px" }}><span style={s.label}>SUBTOTAL (OPCIONAL)</span>
             <CampoMoeda disabled={travado} value={g.valor ?? ""} onChange={(v) => setG(gi, { ...g, valor: v === "" ? null : v })} placeholder={calc[gi].soma != null ? `soma: ${brl(calc[gi].soma)}` : "pela soma dos itens"} style={s.input} /></label>
           {!travado && <>
-            <button type="button" title="Duplicar (ex.: o retorno)" onClick={() => setGrupos([...grupos.slice(0, gi + 1), { ...g, id: nid(), titulo: g.titulo ? `${g.titulo} (cópia)` : "", itens: g.itens.map((i) => ({ ...i, id: nid() })) }, ...grupos.slice(gi + 1)])} style={mini()}>⧉ Duplicar</button>
+            <button type="button" title="Duplicar (ex.: o retorno — coleta e entrega já vêm invertidas)" onClick={() => setGrupos([...grupos.slice(0, gi + 1), { ...g, id: nid(), titulo: g.titulo ? `${g.titulo} (cópia)` : "", coleta: g.entrega || "", entrega: g.coleta || "", itens: g.itens.map((i) => ({ ...i, id: nid() })) }, ...grupos.slice(gi + 1)])} style={mini()}>⧉ Duplicar</button>
             {grupos.length > 1 && <button type="button" onClick={() => setGrupos(grupos.filter((_, k) => k !== gi))} style={mini(C.danger)}>✕ Tirar</button>}
           </>}
+        </div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>{/* 16b: rota do trecho — vai para o PDF, o link, o pedido e a AT */}
+          <label style={{ flex: "1 1 260px" }}><span style={s.label}>📍 COLETA (ENDEREÇO)</span>
+            <input disabled={travado} value={g.coleta || ""} onChange={(e) => setG(gi, { ...g, coleta: e.target.value })} placeholder="Ex.: Estrada de Capuaba, s/nº, Aribiri, Vila Velha - ES, 29119-060" style={s.input} /></label>
+          <label style={{ flex: "1 1 260px" }}><span style={s.label}>🏁 ENTREGA (ENDEREÇO)</span>
+            <input disabled={travado} value={g.entrega || ""} onChange={(e) => setG(gi, { ...g, entrega: e.target.value })} placeholder="Ex.: Av. Amazonas, 6020 - Gameleira, Belo Horizonte - MG, 30510-000" style={s.input} /></label>
         </div>
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>

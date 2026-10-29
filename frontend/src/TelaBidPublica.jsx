@@ -98,6 +98,7 @@ export default function TelaBidPublica() {
       <div style={{ fontSize: 12.5, color: C.textSub, marginBottom: 12 }}>Aprove o que estiver certo, peça revisão do que precisa mudar (diga o quê) ou recuse. Se tudo for aprovado, você assina o aceite em seguida.</div>
       {(doc.grupos || []).map((g, gi) => <div key={g.id} style={{ marginBottom: 12 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: "#f87171", textTransform: "uppercase", margin: "6px 0" }}>{g.titulo || `${rot} ${gi + 1}`}{g.subtotal != null ? <span style={{ color: C.textSub, fontWeight: 400, textTransform: "none" }}> · {brl(g.subtotal)}</span> : ""}</div>
+        {(g.coleta || g.entrega) && <div style={{ fontSize: 12, color: C.textSub, margin: "-2px 0 6px" }}>📍 {g.coleta || "—"} <b style={{ color: C.text }}>➜</b> 🏁 {g.entrega || "—"}</div>}
         {(g.itens || []).map((i) => { const r = resp[i.id] || {}; return (
           <div key={i.id} style={{ border: `1px solid ${r.decisao ? DEC[r.decisao][1] : C.border}`, borderRadius: 8, padding: "9px 10px", marginBottom: 7, background: C.bg }}>
             <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}><div style={{ flex: 1, fontSize: 13 }}>{resumoItem(i)}</div>{i.valor != null && <b style={{ fontSize: 13 }}>{brl(Number(i.valor) * Number(i.quantidade || 1))}</b>}</div>

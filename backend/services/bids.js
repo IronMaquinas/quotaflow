@@ -157,6 +157,7 @@ function validarGrupos(grupos, colunas = []) {
     const valorG = num(g?.valor); if (Number.isNaN(valorG) || (valorG != null && valorG < 0)) throw new Error(`Valor inválido no grupo ${gi + 1}`);
     return {
       id: texto(g?.id, 20) || novoId(), titulo: texto(g?.titulo, 160) || '', valor: valorG,
+      coleta: texto(g?.coleta, 300) || '', entrega: texto(g?.entrega, 300) || '', // 16b: rota do trecho (vai para o pedido e a AT)
       itens: itens.map((it, ii) => {
         const valores = {};
         for (const [k, v] of Object.entries(it?.valores || {})) {
@@ -303,6 +304,8 @@ function diferencas(a, b) {
     const o = ga.get(g.id);
     if (!o) { out.push(`${rot} incluído: ${nomeG(g, i)} (${g.itens.length} item(ns))`); return; }
     if ((o.titulo || '') !== (g.titulo || '')) out.push(`${rot} renomeado: ${o.titulo || '—'} → ${g.titulo || '—'}`);
+    if ((o.coleta || '') !== (g.coleta || '')) out.push(`${nomeG(g, i)} — coleta: ${o.coleta || '—'} → ${g.coleta || '—'}`);
+    if ((o.entrega || '') !== (g.entrega || '')) out.push(`${nomeG(g, i)} — entrega: ${o.entrega || '—'} → ${g.entrega || '—'}`);
     if (o.valor !== g.valor) out.push(`${nomeG(g, i)} — subtotal ${brl(o.valor) || 'pela soma'} → ${brl(g.valor) || 'pela soma'}`);
     const ia = new Map(o.itens.map((x) => [x.id, x]));
     g.itens.forEach((it, k) => {

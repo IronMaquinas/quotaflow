@@ -4,7 +4,8 @@
 //   🗓 Agenda     — frota (equipamentos e motoristas) × 14 dias; conflito em vermelho
 import { useState, useEffect, useMemo } from "react";
 import apiService from "../../services/apiService";
-import FichaAT, { FormAT, COR_STATUS, NOME_STATUS, dataHora } from "./FichaAT";
+import FichaAT, { COR_STATUS, NOME_STATUS, dataHora } from "./FichaAT";
+import MesaProgramacao from "./MesaProgramacao";
 
 const hoje = () => new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
 const somaDias = (d, n) => new Date(new Date(`${d}T12:00:00Z`).getTime() + n * 86400000).toISOString().slice(0, 10);
@@ -20,7 +21,6 @@ export default function TelaProgramacao({ C, s, perfis = [] }) {
   const [busca, setBusca] = useState("");
   const [ag, setAg] = useState(null);
   const [de, setDe] = useState(hoje());
-  const [form, setForm] = useState(null); // { pv, trecho }
   const [ficha, setFicha] = useState(null);
   const [msg, setMsg] = useState(null);
   const podeLiberar = perfis.some((p) => ["admin", "gestor"].includes(p));
@@ -36,7 +36,7 @@ export default function TelaProgramacao({ C, s, perfis = [] }) {
   };
   useEffect(() => { carregar(); }, [filtro, de]); // eslint-disable-line
 
-  const aProgramar = useMemo(() => (pedidos || []).map((p) => ({ ...p, faltam: p.trechos.filter((t) => t.livres > 0).length })), [pedidos]);
+  const aProgramar = useMemo(() => (pedidos || []).map((p) => ({ ...p, faltam: p.trechos.reduce((n, t) => n + t.livres, 0) })), [pedidos]);
   const totalFaltam = aProgramar.reduce((a, p) => a + p.faltam, 0);
   const atsFiltradas = (ats || []).filter((e) => !busca.trim() || `${e.numero} ${e.cliente_nome} ${e.pv_numero} ${e.motorista_nome} ${e.grupo_titulo} ${e.origem} ${e.destino} ${(e.conjunto || []).map((c) => c.tag).join(" ")}`.toLowerCase().includes(busca.trim().toLowerCase()));
 
@@ -63,26 +63,10 @@ export default function TelaProgramacao({ C, s, perfis = [] }) {
         <button type="button" onClick={carregar} style={{ ...s.btn(false), cursor: "pointer", color: C.text, padding: "6px 12px", fontSize: 12 }}>↻ Atualizar</button>
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
-        {abaBt("programar", "📋 A programar", totalFaltam)}{abaBt("ats", "🚛 ATs", (ats || []).filter((e) => e.conflitos?.length || e.atrasada).length ? "⚠" : null)}{abaBt("agenda", "🗓 Agenda da frota", ag?.com_conflito ? `${ag.com_conflito} ⚠` : null)}
+        {abaBt("programar", "🧩 Mesa de programação", totalFaltam)}{abaBt("ats", "🚛 ATs", (ats || []).filter((e) => e.conflitos?.length || e.atrasada).length ? "⚠" : null)}{abaBt("agenda", "🗓 Agenda da frota", ag?.com_conflito ? `${ag.com_conflito} ⚠` : null)}
       </div>
 
-      {aba === "programar" && (!pedidos ? <div style={{ color: C.muted }}>Carregando…</div> : !aProgramar.length ? <div style={{ ...s.card, padding: 24, textAlign: "center", color: C.muted }}>Nenhum pedido aberto. Os pedidos nascem do aceite do BID no 📈 Comercial.</div> :
-        aProgramar.map((p) => <div key={p.id} style={{ ...s.card, padding: 0, marginBottom: 10, overflow: "hidden" }}>
-          <div style={{ padding: "10px 14px", borderBottom: `1px solid ${C.border}`, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <b>{p.numero}</b><span style={{ color: C.textSub, fontSize: 13 }}>{p.cliente_nome}{p.titulo ? ` · ${p.titulo}` : ""}{p.referencia ? ` · ref. ${p.referencia}` : ""}</span><div style={{ flex: 1 }} />
-            {p.tipo_execucao !== "transporte" ? <span style={s.tag(C.muted)}>{p.tipo_execucao} — ainda não programável aqui</span> : p.faltam ? <span style={s.tag(C.warn)}>{p.faltam} trecho(s) a programar</span> : <span style={s.tag(C.success)}>tudo programado</span>}
-          </div>
-          {p.trechos.map((t) => <div key={t.id} style={{ padding: "8px 14px", borderTop: `1px solid ${C.border}`, fontSize: 13 }}>
-            <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-              <div style={{ flex: 1, minWidth: 200 }}><b>{t.titulo}</b> <span style={{ color: C.muted }}>· {t.qtd} item(ns){t.ats.length ? ` · ${t.qtd - t.livres} programado(s)` : ""}{t.datas?.length ? ` · previsto ${t.datas.map((d) => d.split("-").reverse().join("/")).join(", ")}` : ""}</span></div>
-              {t.qtd === 0 ? <span style={{ color: C.muted, fontSize: 12 }}>sem itens ativos</span>
-                : t.livres === 0 ? <span style={s.tag(C.success)}>✓ todos programados</span>
-                : p.tipo_execucao === "transporte" && <button type="button" onClick={() => setForm({ pv: p, trecho: t })} style={{ ...s.btn(true), cursor: "pointer", padding: "6px 12px", fontSize: 12 }}>🚛 Programar{t.qtd > 1 ? ` (${t.livres} livre${t.livres > 1 ? "s" : ""})` : ""}</button>}
-            </div>
-            {t.ats.map((a) => <button key={a.id} type="button" className="qf-clicavel" onClick={() => setFicha(a.id)} style={{ background: "none", border: "none", color: C.text, cursor: "pointer", display: "flex", gap: 8, alignItems: "center", fontSize: 12.5, padding: "4px 0 0 14px", flexWrap: "wrap", textAlign: "left" }}>
-              <b>{a.numero}</b>{chip(a)}<span style={{ color: C.muted }}>{dataHora(a.inicio_previsto)} · {(a.conjunto || []).map((c) => c.tag || c.nome).join(" + ")}{a.motorista_nome ? ` · ${a.motorista_nome}` : ""} · {(a.itens || []).length} item(ns)</span></button>)}
-          </div>)}
-        </div>))}
+      {aba === "programar" && <MesaProgramacao C={C} s={s} pedidos={pedidos} podeLiberar={podeLiberar} onAbrirAT={setFicha} onSalvou={carregar} onErro={erro} onOk={ok} />}
 
       {aba === "ats" && <>
         <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
@@ -126,8 +110,6 @@ export default function TelaProgramacao({ C, s, perfis = [] }) {
             </tr>)}</tbody></table></div>}
       </>}
 
-      {form && <FormAT C={C} s={s} pv={form.pv} trecho={form.trecho} colunas={form.pv.colunas} podeLiberar={podeLiberar} onErro={erro} onFechar={() => setForm(null)}
-        onSalvo={(r) => { setForm(null); ok(`${r.execucao.numero} programada.${r.avisos?.length ? ` ${r.avisos.join(" ")}` : ""}`); carregar(); setFicha(r.execucao.id); }} />}
       {ficha && <FichaAT C={C} s={s} id={ficha} podeLiberar={podeLiberar} onFechar={() => setFicha(null)} onMudou={carregar} onErro={erro} onOk={ok} />}
       {msg && <div style={{ position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", zIndex: 400, background: msg.erro ? C.danger : C.success, color: "#fff", padding: "10px 18px", borderRadius: 10, fontSize: 13, maxWidth: "90vw", boxShadow: "0 8px 24px #0006" }}>{msg.t}</div>}
     </div>

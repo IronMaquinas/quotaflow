@@ -57,7 +57,7 @@ export function gerarHtmlBid(d) {
   const tabelaGrupo = (g, gi) => {
     const temValorItem = (g.itens || []).some((i) => i.valor != null);
     const temQtd = (g.itens || []).some((i) => Number(i.quantidade || 1) !== 1);
-    return `<div class="grupo">${esc(g.titulo || `${rot} ${gi + 1}`)}</div>
+    return `<div class="grupo">${esc(g.titulo || `${rot} ${gi + 1}`)}</div>${g.coleta || g.entrega ? `<div class="rota"><b>Coleta:</b> ${esc(g.coleta || "—")} &nbsp;➜&nbsp; <b>Entrega:</b> ${esc(g.entrega || "—")}</div>` : ""}
       <table class="tab"><thead><tr>${cols.map((c) => `<th>${esc(c.rotulo)}</th>`).join("")}${temQtd ? "<th>Qtd</th>" : ""}${temValorItem ? '<th class="v">Valor</th>' : ""}</tr></thead><tbody>
       ${(g.itens || []).map((i) => `<tr>${cols.map((c) => `<td>${esc(valorCelula(c, i.valores?.[c.chave]))}</td>`).join("")}${temQtd ? `<td>${esc(i.quantidade || 1)}</td>` : ""}${temValorItem ? `<td class="v">${i.valor == null ? "—" : brl(Number(i.valor) * Number(i.quantidade || 1))}</td>` : ""}</tr>`).join("")}
       </tbody>${g.subtotal != null && (d.grupos || []).length > 1 ? `<tfoot><tr><td colspan="${cols.length + (temQtd ? 1 : 0)}">Subtotal — ${esc(g.titulo || `${rot} ${gi + 1}`)}</td><td class="v">${brl(g.subtotal)}</td></tr></tfoot>` : ""}</table>`;
@@ -73,6 +73,7 @@ export function gerarHtmlBid(d) {
   .para { text-align: center; font-size: 11px; color: #444; margin: -4mm 0 6mm; }
   h2 { font-size: 13px; margin: 18px 0 8px; } p { margin: 0 0 6px; text-align: justify; } ul { margin: 0 0 8px 18px; padding-left: 14px; } li { margin-bottom: 3px; text-align: justify; }
   .ident { display: grid; grid-template-columns: 1.4fr 1fr; gap: 0 24px; } .ident div > div { margin-bottom: 2px; }
+  .rota { font-size: 11px; color: #333; margin: -2px 0 6px; } /* 16b */
   .grupo { color: #c00; font-weight: 700; font-size: 13px; margin: 12px 0 6px; text-transform: uppercase; }
   .tab { width: 100%; border-collapse: collapse; margin-bottom: 8px; font-size: 11.5px; }
   .tab th { border: 1px solid #111; padding: 4px 5px; font-size: 11px; text-align: center; } .tab td { border: 1px solid #111; padding: 4px 5px; text-align: center; }
