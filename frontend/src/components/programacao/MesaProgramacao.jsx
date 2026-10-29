@@ -155,7 +155,7 @@ function Trecho({ C, s, pv, t, base, podeLiberar, onAbrirAT, onSalvou, onErro, o
                     <td style={td}>{sel(l.cavalo_id, (v) => setL(i, "cavalo_id", v), optEq([l.impl1, l.impl2].map(String)), 110)}</td>
                     <td style={td}><div style={{ display: "flex", gap: 4 }}>{sel(l.impl1, (v) => setL(i, "impl1", v), optEq([l.cavalo_id, l.impl2].map(String)), 95)}{sel(l.impl2, (v) => setL(i, "impl2", v), optEq([l.cavalo_id, l.impl1].map(String)), 95)}</div></td>
                   </> : <td colSpan={4} style={{ ...td, color: C.textSub, fontSize: 12 }}>⛓ mesmo conjunto, motorista e horário da linha de cima</td>}
-                  <td style={td}>{DOCS.map(([k, r]) => docChip(false, r))}<div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>anexa depois de programar</div></td>
+                  <td style={{ ...td, color: C.muted }}>—</td>{/* 16b.2: sem ícones mortos — os documentos aparecem (clicáveis) quando a linha vira AT */}
                   <td style={td}>{lider ? <>
                     {sit.pronto ? <span style={s.tag(C.success)}>✓ pronto</span> : null}
                     {sit.lst.map(([k, cor, txt]) => <div key={k} style={{ fontSize: 11, color: cor }}>{txt}</div>)}
@@ -169,7 +169,7 @@ function Trecho({ C, s, pv, t, base, podeLiberar, onAbrirAT, onSalvou, onErro, o
           </table>
         </div>
         {linhas.length > 0 && <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 11.5, color: C.muted, flex: 1 }}>Linhas incompletas ficam salvas como rascunho neste navegador. Documentos fiscais: depois de programar, clique em ＋ NF-e / CT-e / MDF-e na linha da AT para anexar (ou na ficha). São pendência — não impedem programar nem iniciar.</span>
+          <span style={{ fontSize: 11.5, color: C.muted, flex: 1 }}>Linhas incompletas ficam salvas como rascunho neste navegador. Depois de programar, a linha da AT mostra ＋ NF-e / CT-e / MDF-e para anexar (não impedem iniciar).</span>
           <button type="button" disabled={ocupado || !prontos.length} onClick={programar} style={{ ...s.btn(!ocupado && prontos.length > 0), padding: "8px 16px", fontSize: 13 }}>{ocupado ? "Programando…" : `🚛 Programar ${prontos.length} AT${prontos.length === 1 ? "" : "s"} pronta${prontos.length === 1 ? "" : "s"}`}</button>
         </div>}
       </div>}

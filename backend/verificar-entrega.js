@@ -226,12 +226,12 @@ const ESPERADO = {
   'front:gerarAT.js': 'a8f0c302e3646b42e080ed5132f2c7fb', // etapa 16a (novo)
   'front:TelaProgramacao.jsx': '117acc6ccdd0a7c1a69bf5c380f5a60c', // etapa 16b
   'front:FichaAT.jsx': 'b0d65525b8684a706421f41bf8af5ede', // etapa 16a.1
-  'front:MesaProgramacao.jsx': '8f19da177bdbc8156d1135d354289476', // etapa 16b.1
+  'front:MesaProgramacao.jsx': '0c3a713fb0553848589c5189ecde8c86', // etapa 16b.2
 };
 
-// Antes de copiar a etapa 16b.1 — base: 16b
+// Antes de copiar a etapa 16b.2 — base: 16b.1
 const ANTES = {
-  'front:MesaProgramacao.jsx': '4e5a25736185c863af4ebaccb220f0f6',
+  'front:MesaProgramacao.jsx': '8f19da177bdbc8156d1135d354289476',
 };
 
 const RAIZ = process.cwd();
@@ -269,7 +269,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 16b.1)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 16b.2)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
