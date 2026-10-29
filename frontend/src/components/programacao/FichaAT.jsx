@@ -22,7 +22,7 @@ const casca = (s, conteudo, fechar, largura = 720, z = 330) => (
 const seloTxt = (m) => { const x = SELO[m?.selo?.nivel] || SELO.sem_funcao; return `${x[0]} ${x[2]}${m?.selo?.geral != null ? ` · ${m.selo.geral}%` : ""}`; };
 
 /** pv: { id, numero }, trecho: { id, titulo, datas }, atual: AT para editar (ou null) */
-export function FormAT({ C, s, pv, trecho, atual, podeLiberar, onFechar, onSalvo, onErro }) {
+export function FormAT({ C, s, pv, trecho, colunas = [], atual, podeLiberar, onFechar, onSalvo, onErro }) {
   const [b, setB] = useState(null);
   const [f, setF] = useState(() => ({ inicio: local(atual?.inicio_previsto) || (trecho?.datas?.[0] ? `${trecho.datas[0]}T08:00` : ""), fim: local(atual?.fim_previsto), origem: atual?.origem || "", destino: atual?.destino || "",
     motorista_id: atual?.motorista_id ?? "", cavalo_id: atual?.cavalo_id ?? "", impl1: (atual?.conjunto || []).filter((c) => c.papel === "implemento")[0]?.id ?? "", impl2: (atual?.conjunto || []).filter((c) => c.papel === "implemento")[1]?.id ?? "", observacoes: atual?.observacoes || "" }));
@@ -30,13 +30,16 @@ export function FormAT({ C, s, pv, trecho, atual, podeLiberar, onFechar, onSalvo
   const [just, setJust] = useState("");
   const [conf, setConf] = useState(null); // lista de conflitos
   const [avisos, setAvisos] = useState([]);
+  const livres = !atual ? (trecho?.itens || []).filter((i) => !i.at) : [];
+  const [selItens, setSelItens] = useState(() => (livres[0] ? [String(livres[0].id)] : [])); // 16a.1: itens desta AT (padrão: 1 item = 1 conjunto)
+  const resumoItem = (i) => colunas.slice(0, 4).map((c) => { const v = valorCelula(c, i.valores?.[c.chave]); return v ? `${c.rotulo}: ${v}` : null; }).filter(Boolean).join(" · ") || `Item ${i.id}`;
   const [ocupado, setOcupado] = useState(false);
   useEffect(() => { apiService.get("/programacao/base").then(setB).catch((e) => { onErro(e.message); onFechar(); }); }, []); // eslint-disable-line
   if (!b) return casca(s, <div style={{ color: C.muted }}>Carregando motoristas e equipamentos…</div>, onFechar);
   const mot = b.motoristas.find((m) => String(m.id) === String(f.motorista_id));
   const salvar = async (extra = {}) => {
     setOcupado(true);
-    const corpo = { grupo_id: trecho?.id, inicio: f.inicio, fim: f.fim || null, origem: f.origem, destino: f.destino, motorista_id: f.motorista_id || null, cavalo_id: f.cavalo_id || null,
+    const corpo = { grupo_id: trecho?.id, ...(atual ? {} : { itens: selItens }), inicio: f.inicio, fim: f.fim || null, origem: f.origem, destino: f.destino, motorista_id: f.motorista_id || null, cavalo_id: f.cavalo_id || null,
       implementos: [f.impl1, f.impl2].filter((x) => x !== "" && x != null), observacoes: f.observacoes, ...(lib && just.trim() ? { liberacao_justificativa: just } : {}), ...extra };
     try {
       const r = atual ? await apiService.put(`/programacao/execucoes/${atual.id}`, corpo) : await apiService.post(`/programacao/pvs/${pv.id}/at`, corpo);
@@ -55,6 +58,15 @@ export function FormAT({ C, s, pv, trecho, atual, podeLiberar, onFechar, onSalvo
   return casca(s, <>
     <div style={{ fontSize: 16, fontWeight: 700 }}>{atual ? `✏ Editar ${atual.numero}` : "🚛 Programar o trecho"}</div>
     <div style={{ fontSize: 12.5, color: C.textSub, marginBottom: 12 }}>{pv?.numero} · <b style={{ color: C.text }}>{trecho?.titulo || atual?.grupo_titulo}</b>{trecho?.datas?.length ? ` · data prevista no pedido: ${trecho.datas.map((d) => d.split("-").reverse().join("/")).join(", ")}` : ""}</div>
+    {!atual && (trecho?.itens || []).length > 1 && <div style={{ ...s.card, padding: "8px 12px", marginBottom: 12, background: C.bg }}>
+      <div style={{ ...s.label, marginBottom: 4 }}>ITENS DESTA AT — UM CONJUNTO (CAVALO + IMPLEMENTOS)</div>
+      {(trecho.itens || []).map((i) => { const ja = !!i.at; const marc = selItens.includes(String(i.id)); return (
+        <label key={i.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12.5, padding: "3px 0", opacity: ja ? 0.5 : 1, cursor: ja ? "default" : "pointer" }}>
+          <input type="checkbox" disabled={ja} checked={ja || marc} onChange={() => setSelItens((x) => (marc ? x.filter((y) => y !== String(i.id)) : [...x, String(i.id)]))} />
+          <span style={{ flex: 1 }}>{resumoItem(i)}{Number(i.quantidade || 1) !== 1 ? ` · qtd ${i.quantidade}` : ""}</span>{ja && <span style={{ fontSize: 11, color: C.muted }}>já na {i.at}</span>}
+        </label>); })}
+      <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Marque o que vai neste conjunto. Os outros itens continuam “a programar” — programe cada conjunto em seguida.</div>
+    </div>}
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{lbl("COLETA — LOCAL", <input value={f.origem} onChange={(e) => sel("origem", e.target.value)} placeholder="Ex.: Pátio Serra/ES" style={s.input} />)}{lbl("COLETA — DATA E HORA *", <input type="datetime-local" value={f.inicio} onChange={(e) => sel("inicio", e.target.value)} style={s.input} />, "0 1 210px")}</div>
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>{lbl("ENTREGA — LOCAL", <input value={f.destino} onChange={(e) => sel("destino", e.target.value)} placeholder="Ex.: Obra BR-040, BH/MG" style={s.input} />)}{lbl("ENTREGA — DATA E HORA", <input type="datetime-local" value={f.fim} onChange={(e) => sel("fim", e.target.value)} style={s.input} />, "0 1 210px")}</div>
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
@@ -85,8 +97,8 @@ export function FormAT({ C, s, pv, trecho, atual, podeLiberar, onFechar, onSalvo
     {avisos.length > 0 && avisos.map((a, i) => <div key={i} style={{ fontSize: 12, color: C.warn, marginTop: 6 }}>{a}</div>)}
     <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
       <button type="button" onClick={onFechar} style={{ ...s.btn(false), cursor: "pointer", flex: 1, color: C.text }}>Cancelar</button>
-      <button type="button" disabled={ocupado || !f.inicio || !f.cavalo_id || (lib && podeLiberar && just.trim().length < 15) || (lib && !podeLiberar)} onClick={() => { setAvisos([]); salvar(); }}
-        style={{ ...s.btn(!ocupado && !!f.inicio && !!f.cavalo_id && !(lib && (!podeLiberar || just.trim().length < 15)), lib ? C.danger : C.accent), flex: 1 }}>{ocupado ? "Salvando…" : lib ? "🔓 Liberar e programar" : atual ? "Salvar" : "🚛 Programar"}</button>
+      <button type="button" disabled={ocupado || !f.inicio || !f.cavalo_id || (!atual && !selItens.length) || (lib && podeLiberar && just.trim().length < 15) || (lib && !podeLiberar)} onClick={() => { setAvisos([]); salvar(); }}
+        style={{ ...s.btn(!ocupado && !!f.inicio && !!f.cavalo_id && (!!atual || selItens.length > 0) && !(lib && (!podeLiberar || just.trim().length < 15)), lib ? C.danger : C.accent), flex: 1 }}>{ocupado ? "Salvando…" : lib ? "🔓 Liberar e programar" : atual ? "Salvar" : "🚛 Programar"}</button>
     </div>
   </>, onFechar, 760);
 }

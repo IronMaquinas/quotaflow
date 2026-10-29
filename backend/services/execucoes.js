@@ -152,9 +152,18 @@ async function criar(supabase, tenantId, quem, pvId, body = {}) {
   const tipo = pv.tipo_execucao || 'transporte';
   if (tipo !== 'transporte') return { status: 409, erro: `Pedidos do tipo "${TIPOS[tipo] || tipo}" ainda não geram execução por aqui (só transporte nesta etapa)` };
   const g = (pv.grupos || []).find((x) => String(x.id) === String(body.grupo_id)); if (!g) return { status: 400, erro: 'Escolha o trecho do pedido' };
-  const ja = (await q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId).eq('pv_id', pv.id))).find((e) => String(e.grupo_id) === String(g.id) && e.status !== 'cancelada');
-  if (ja) return { status: 409, erro: `Este trecho já tem a ${ja.numero} (${STATUS[ja.status].toLowerCase()})`, existente: ja.id };
-  const itens = (g.itens || []).filter((i) => i.status !== 'cancelado').map((i) => ({ id: i.id, valores: i.valores || {}, quantidade: i.quantidade ?? 1 })); // SEM valores
+  // 16a.1: um trecho pode ter VÁRIAS ATs (uma por conjunto) — cada item entra em no máximo uma AT ativa
+  const doPedido = (await q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId).eq('pv_id', pv.id))).filter((e) => e.status !== 'cancelada');
+  const emAT = new Map(); doPedido.forEach((e) => (e.itens || []).forEach((i) => emAT.set(String(i.id), e)));
+  const ativos = (g.itens || []).filter((i) => i.status !== 'cancelado');
+  const pedidos = Array.isArray(body.itens) && body.itens.length ? body.itens.map(String) : ativos.filter((i) => !emAT.has(String(i.id))).map((i) => String(i.id));
+  for (const id of pedidos) {
+    if (!ativos.some((i) => String(i.id) === id)) return { status: 400, erro: 'Item não encontrado no trecho (ou cancelado)' };
+    if (emAT.has(id)) return { status: 409, erro: `Um dos itens já está na ${emAT.get(id).numero} (${STATUS[emAT.get(id).status].toLowerCase()})`, existente: emAT.get(id).id };
+  }
+  if (!ativos.length) return { status: 409, erro: 'O trecho não tem itens ativos' };
+  if (!pedidos.length) return { status: 409, erro: 'Todos os itens deste trecho já estão programados' };
+  const itens = ativos.filter((i) => pedidos.includes(String(i.id))).map((i) => ({ id: i.id, valores: i.valores || {}, quantidade: i.quantidade ?? 1 })); // SEM valores
   if (!itens.length) return { status: 409, erro: 'O trecho não tem itens ativos' };
   const m = await montar(supabase, tenantId, quem, body); if (m.erro) return m;
   const agora = new Date().toISOString();
@@ -196,8 +205,9 @@ async function mudarStatus(supabase, tenantId, quem, id, { acao, motivo } = {}) 
     upd = { status: 'cancelada', cancelada_em: agora, cancelada_motivo: m }; txt = `✕ ${ex.numero} cancelada: ${m} — o trecho volta para "a programar"`;
   } else if (acao === 'reabrir') {
     if (ex.status === 'cancelada') {
-      const outra = (await q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId).eq('pv_id', ex.pv_id))).find((e) => String(e.grupo_id) === String(ex.grupo_id) && e.status !== 'cancelada' && String(e.id) !== String(ex.id));
-      if (outra) return { status: 409, erro: `O trecho já foi reprogramado na ${outra.numero}` };
+      const meus = new Set((ex.itens || []).map((i) => String(i.id)));
+      const outra = (await q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId).eq('pv_id', ex.pv_id))).find((e) => e.status !== 'cancelada' && String(e.id) !== String(ex.id) && (e.itens || []).some((i) => meus.has(String(i.id))));
+      if (outra) return { status: 409, erro: `Os itens já foram reprogramados na ${outra.numero}` };
     } else if (ex.status !== 'concluida') return { status: 409, erro: 'Só uma AT concluída ou cancelada pode ser reaberta' };
     upd = { status: 'programada', concluida_em: null, cancelada_em: null, cancelada_motivo: null, iniciada_em: ex.status === 'concluida' ? ex.iniciada_em : null }; txt = `↺ ${ex.numero} reaberta (programada)`;
   } else return { status: 400, erro: 'Ação inválida' };
@@ -259,13 +269,24 @@ async function detalhe(supabase, tenantId, id) {
   const bloqueados = (ex.conjunto || []).map((c) => eqs.find((e) => String(e.id) === String(c.id))).filter((e) => e?.bloqueado).map((e) => ({ tag: e.tag, nome: e.nome, motivo: e.bloqueio_motivo }));
   return { execucao: { ...enfeitar(ex), conflitos: ATIVAS.includes(ex.status) ? conflitos(ex, outras) : [], bloqueados }, status: STATUS, anexos_tipos: ANEXOS };
 }
+/** trechos do pedido com as ATs ativas e os itens ainda livres (sem valores) */
+function trechosComATs(pv, ex) {
+  const ativas = ex.filter((e) => e.status !== 'cancelada');
+  const emAT = new Map(); ativas.forEach((e) => (e.itens || []).forEach((i) => emAT.set(String(i.id), e.numero)));
+  return (pv.grupos || []).map((g) => {
+    const itens = (g.itens || []).filter((i) => i.status !== 'cancelado').map((i) => ({ id: i.id, valores: i.valores || {}, quantidade: i.quantidade ?? 1, at: emAT.get(String(i.id)) || null }));
+    return { id: g.id, titulo: g.titulo, qtd: itens.length, itens, livres: itens.filter((i) => !i.at).length,
+      datas: [...new Set(itens.map((i) => i.valores?.data_prevista).filter(Boolean))].sort(),
+      ats: ativas.filter((e) => String(e.grupo_id) === String(g.id)).sort((a, b) => String(a.inicio_previsto || '').localeCompare(String(b.inicio_previsto || ''))) };
+  });
+}
 /** ATs do pedido (o comercial vê por aqui) + quais trechos faltam programar */
 async function doPV(supabase, tenantId, pvId) {
   const pv = /^\d+$/.test(String(pvId)) ? (await q(supabase.from('pedidos_venda').select('*').eq('tenant_id', tenantId).eq('id', pvId)))[0] : null;
   if (!pv) return { status: 404, erro: 'Pedido não encontrado' };
   const ex = (await q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId).eq('pv_id', pv.id))).map(enfeitar);
   return { execucoes: ex.sort((a, b) => String(a.inicio_previsto || '').localeCompare(String(b.inicio_previsto || ''))), tipo_execucao: pv.tipo_execucao || 'transporte',
-    trechos: (pv.grupos || []).map((g) => ({ id: g.id, titulo: g.titulo, qtd: (g.itens || []).filter((i) => i.status !== 'cancelado').length, at: ex.find((e) => String(e.grupo_id) === String(g.id) && e.status !== 'cancelada') || null })) };
+    trechos: trechosComATs(pv, ex) };
 }
 /** 🗓 agenda da frota: ATs no período, por dia, com conflitos */
 async function agenda(supabase, tenantId, { de, ate } = {}) {
@@ -284,4 +305,4 @@ async function documento(supabase, tenantId, id) {
     contato_cliente: pv.contato_nome || null, referencia: pv.referencia || null, motorista: col ? { nome: col.nome, cpf: col.cpf || null, cnh: col.cnh_categoria || null, telefone: col.telefone || null } : null };
 }
 
-module.exports = { TIPOS, STATUS, ANEXOS, base, criar, editar, mudarStatus, anexar, linkAnexo, removerAnexo, listar, detalhe, doPV, agenda, documento, conflitos, _definirSelos };
+module.exports = { trechosComATs, TIPOS, STATUS, ANEXOS, base, criar, editar, mudarStatus, anexar, linkAnexo, removerAnexo, listar, detalhe, doPV, agenda, documento, conflitos, _definirSelos };

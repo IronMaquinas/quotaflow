@@ -136,7 +136,7 @@ async function mudarStatusItem(supabase, tenantId, quem, id, itemId, { status } 
   if (!achou) return { status: 404, erro: 'Item não encontrado' };
   if (status !== 'cancelado') { // 16a: trecho com AT ativa → o status segue a AT
     const { data: ats } = await supabase.from('execucoes').select('*').eq('tenant_id', tenantId).eq('pv_id', pv.id);
-    const at = (ats || []).find((e) => String(e.grupo_id) === String(achou.grupo_id) && ['programada', 'em_execucao', 'concluida'].includes(e.status));
+    const at = (ats || []).find((e) => e.status !== 'cancelada' && (e.itens || []).some((x) => String(x.id) === String(itemId)));
     if (at) return { status: 409, erro: `O status deste item é controlado pela ${at.numero} (🚛 Programação)` };
   }
   if ((achou.status || 'a_programar') === status) return { pv };

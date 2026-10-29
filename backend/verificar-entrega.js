@@ -216,26 +216,26 @@ const ESPERADO = {
   'front:TelaBidPublica.jsx': 'd1d20f711067219200b30c62a7d19d99', // etapa 15c.1
   'front:EnviarBid.jsx': '4d97c008534b17bcf66a71f186b4f31a', // etapa 15b.3
   'migrations/053_pedidos_venda.sql': '4036d7fd11c94032774e96372e098942', // etapa 15c (novo)
-  'services/pedidosVenda.js': 'd4acb8f37b9d53e887eabf3a765f5a0f', // etapa 16a
-  'front:FichaPedido.jsx': '95542f5bde33387616f4a75ede361b9a', // etapa 16a
+  'services/pedidosVenda.js': 'a167664d5834826bfbb868eadab8517e', // etapa 16a.1
+  'front:FichaPedido.jsx': '168e49edcfcaf676bf6df8693d221b56', // etapa 16a.1
   'migrations/054_tarefa_atribuida.sql': '586bd43f09653a76e8d6a299e55905e3', // etapa 15c.1 (novo)
   'scripts/previaEmailsBid.js': '45b4dbeb2d2d8d84a24e7a31f6826049', // etapa 15c.3 (novo)
   'migrations/055_execucoes_at.sql': 'fc0a780d147f0b3d7e4c92ec71c4554f', // etapa 16a (novo)
-  'services/execucoes.js': '37084e24ce124c703f8b2e14f32b5c2e', // etapa 16a (novo)
-  'routes/programacao.js': 'ac62ea5a0d1243d27570ff094b6f66c8', // etapa 16a (novo)
+  'services/execucoes.js': '7c70e1c2eeff241e33231f2a6814996b', // etapa 16a.1
+  'routes/programacao.js': 'c882ca117d74805b4b0fb20fb750293c', // etapa 16a.1
   'front:gerarAT.js': 'a8f0c302e3646b42e080ed5132f2c7fb', // etapa 16a (novo)
-  'front:TelaProgramacao.jsx': 'f1831b11d7cd355e4ac8df66b05ccb5e', // etapa 16a (novo)
-  'front:FichaAT.jsx': 'a41a1c21dad11a45aea25610fac85fa7', // etapa 16a (novo)
+  'front:TelaProgramacao.jsx': 'c42eed052656ec92b297c321b7fa1e7c', // etapa 16a.1
+  'front:FichaAT.jsx': 'b0d65525b8684a706421f41bf8af5ede', // etapa 16a.1
 };
 
-// Antes de copiar a etapa 16a — base: 15c.3
+// Antes de copiar a etapa 16a.1 — base: 16a
 const ANTES = {
-  'server.js': '9e24c5de27a8373a06d6b50d731d93bb',
-  'routes/comercial.js': 'd2e4b95a662ec6e16e16940b1fcc103f',
-  'services/bids.js': '15652e7e496bb7df25d033c7a8ca0b90',
-  'services/pedidosVenda.js': '9487358c5afa6158fc71f4e8d40e4806',
-  'front:App.jsx': 'da7aa6bd80a44041835fd2435fd85cf6',
-  'front:FichaPedido.jsx': 'faaffcbbb48b6703704345bc1b3d7146',
+  'services/execucoes.js': '37084e24ce124c703f8b2e14f32b5c2e',
+  'routes/programacao.js': 'ac62ea5a0d1243d27570ff094b6f66c8',
+  'services/pedidosVenda.js': 'd4acb8f37b9d53e887eabf3a765f5a0f',
+  'front:TelaProgramacao.jsx': 'f1831b11d7cd355e4ac8df66b05ccb5e',
+  'front:FichaAT.jsx': 'a41a1c21dad11a45aea25610fac85fa7',
+  'front:FichaPedido.jsx': '95542f5bde33387616f4a75ede361b9a',
 };
 
 const RAIZ = process.cwd();
@@ -273,7 +273,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 16a)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 16a.1)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

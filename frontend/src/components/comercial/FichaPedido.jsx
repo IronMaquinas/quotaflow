@@ -72,11 +72,11 @@ export default function FichaPedido({ C, s, id, onFechar, onMudou, onErro, onOk,
             {(pv.grupos || []).map((g, gi) => (
               <div key={g.id} style={{ ...s.card, padding: 12, marginBottom: 12, background: C.bg }}>
                 <div style={{ display: "flex", alignItems: "baseline", marginBottom: 8 }}><b style={{ flex: 1, fontSize: 13 }}>{g.titulo || `${rot} ${gi + 1}`}</b><span style={{ fontSize: 12, color: C.textSub }}>Subtotal: <b style={{ color: C.text }}>{brl(g.subtotal)}</b></span></div>
-                {(() => { const atG = (exe?.execucoes || []).find((x) => String(x.grupo_id) === String(g.id) && x.status !== "cancelada"); return <>
-                {atG && <div style={{ fontSize: 11.5, color: C.textSub, marginBottom: 4 }}>🚛 <b style={{ color: C.text }}>{atG.numero}</b> · {atG.status_nome} · coleta {dataHora(atG.inicio_previsto)}{atG.motorista_nome ? ` · ${atG.motorista_nome}` : ""}</div>}
-                {(g.itens || []).map((i) => { const st = i.status || "a_programar"; return (
+                {(() => { const atsG = (exe?.execucoes || []).filter((x) => String(x.grupo_id) === String(g.id) && x.status !== "cancelada"); return <>
+                {atsG.map((a) => <div key={a.id} style={{ fontSize: 11.5, color: C.textSub, marginBottom: 4 }}>🚛 <b style={{ color: C.text }}>{a.numero}</b> · {a.status_nome} · coleta {dataHora(a.inicio_previsto)} · {(a.conjunto || []).map((c) => c.tag || c.nome).join(" + ")}{a.motorista_nome ? ` · ${a.motorista_nome}` : ""}</div>)}
+                {(g.itens || []).map((i) => { const st = i.status || "a_programar"; const atG = atsG.find((a) => (a.itens || []).some((x) => String(x.id) === String(i.id))); return (
                   <div key={i.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "7px 0", borderTop: `1px solid ${C.border}`, flexWrap: "wrap", opacity: st === "cancelado" ? 0.5 : 1 }}>
-                    <div style={{ flex: "3 1 260px", fontSize: 12.5 }}>{resumo(i)}{Number(i.quantidade || 1) !== 1 ? ` · qtd ${i.quantidade}` : ""}
+                    <div style={{ flex: "3 1 260px", fontSize: 12.5 }}>{resumo(i)}{atG ? <span style={{ fontSize: 11, color: C.accent }}> · 🚛 {atG.numero}</span> : null}{Number(i.quantidade || 1) !== 1 ? ` · qtd ${i.quantidade}` : ""}
                       {i.valores?.data_prevista && <div style={{ fontSize: 11, color: C.textSub }}>📅 previsto {dBR(i.valores.data_prevista)}</div>}</div>
                     <div style={{ fontSize: 12.5, minWidth: 100, textAlign: "right" }}>{i.valor != null ? brl(Number(i.valor) * Number(i.quantidade || 1)) : "—"}</div>
                     <select title={atG && st !== "cancelado" ? `Controlado pela ${atG.numero} (🚛 Programação)` : undefined} disabled={ocupado || pv.status === "cancelado" || (!!atG && st !== "cancelado")} value={st} onChange={(e) => status(i.id, e.target.value)} style={{ ...s.input, width: 150, padding: "6px 8px", fontSize: 12, color: STATUS_ITEM[st][1], fontWeight: 600 }}>

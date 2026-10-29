@@ -37,8 +37,7 @@ router.get('/pedidos', responder(async (req) => {
   const { data, error } = await supabase.from('pedidos_venda').select('*').eq('tenant_id', req.tenantId); if (error) throw new Error(error.message);
   const ex = await E.listar(supabase, req.tenantId, {});
   return { pedidos: (data || []).filter((p) => ['aberto', 'em_execucao'].includes(p.status)).map((p) => ({ id: p.id, numero: p.numero, cliente_nome: p.cliente_nome, titulo: p.titulo, referencia: p.referencia, status: p.status, tipo_execucao: p.tipo_execucao || 'transporte',
-    trechos: (p.grupos || []).map((g) => ({ id: g.id, titulo: g.titulo, qtd: (g.itens || []).filter((i) => i.status !== 'cancelado').length, datas: [...new Set((g.itens || []).map((i) => i.valores?.data_prevista).filter(Boolean))].sort(),
-      at: ex.find((e) => String(e.pv_id) === String(p.id) && String(e.grupo_id) === String(g.id) && e.status !== 'cancelada') || null })) })).sort((a, b) => String(a.numero).localeCompare(String(b.numero))) };
+    colunas: (p.conteudo?.colunas || []).filter((c) => c.chave !== 'data_prevista'), trechos: E.trechosComATs(p, ex.filter((e) => String(e.pv_id) === String(p.id))) })).sort((a, b) => String(a.numero).localeCompare(String(b.numero))) };
 }));
 router.get('/pvs/:id', responder((req) => E.doPV(supabase, req.tenantId, req.params.id)));
 router.post('/pvs/:id/at', responder(async (req) => E.criar(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));

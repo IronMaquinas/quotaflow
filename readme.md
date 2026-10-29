@@ -840,6 +840,7 @@ npm run dev
   - **🚛 ATs**: lista com filtro e busca (AT, cliente, motorista, tag, cidade), ⏰ coleta passou, ⚠ conflito. **Ficha da AT**: rota, carga, motorista, conjunto, anexos **NF-e / CT-e / MDF-e** (PDF/XML/JPG/PNG até 10 MB), ▶ Iniciar · ✓ Concluir · ✕ Cancelar (motivo) · ↺ Reabrir · ✏ Editar (só programada) · 📄 **PDF da AT** para o motorista (sem valores, com assinaturas).
   - **🗓 Agenda da frota**: equipamentos e motoristas × 14 dias, navegação por semana.
   - **Status do pedido automático**: programar → itens "programado"; iniciar → "em execução"; concluir → "concluído"; cancelar → voltam a "a programar". No 📈 Comercial a ficha do pedido mostra a AT de cada trecho (só leitura) e o status desses itens fica travado ("controlado pela AT").
+  - **16a.1 (29/10):** um trecho pode ter **várias ATs — uma por conjunto** (ex.: 3 máquinas de ida = 3 cavalos + pranchas). No formulário, marque os itens que vão naquele conjunto (padrão: o primeiro item livre); os demais continuam “a programar”. Cada item fica em no máximo uma AT ativa; a trava no Comercial passa a ser por item. Tela com o mesmo espaçamento das outras. Script avulso `corrigir-titulo-trecho.sql` para renomear um trecho no pedido, no BID e nas ATs (as versões assinadas ficam como estão).
   - **SaaS genérico:** `tipo_execucao` no modelo de BID/PV (transporte → AT; locação → contrato de locação existente; serviço → AS; venda → entrega). Nesta etapa só transporte gera execução.
   - Rotas `/api/programacao` (`GET /base`, `/execucoes`, `/agenda`, `/pedidos`, `/pvs/:id`; `POST /pvs/:id/at`; `GET|PUT /execucoes/:id`; `POST /execucoes/:id/status`; anexos `POST|GET|DELETE /execucoes/:id/anexos[/:anexo]`; `GET /execucoes/:id/documento`) e `GET /api/comercial/pvs/:id/execucoes` (leitura). Travas respondem 409. Migration 055.
   - Rotas: `/api/comercial/bids/:id/revisao` (GET), `/enviar`, `/reenviar`, `/revisao/iniciar`, `/revisao/descartar`, `/aceite-externo`; `POST /bids/:id/fase` só aceita `perdido` e `reabrir`. Público: `/api/bid-link/:token` (GET, `/responder`, `/codigo`, `/aceitar`) — 40 chamadas por link + IP por hora. Migration 052. **Próxima: 15c** — Pedido de Venda (PV) a partir do BID aceito. **Futuro:** perfil **cliente** com login (mesmo padrão do locatário) — ver `claude/desenho-bid-15b.md`.
@@ -1291,7 +1292,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 29/10/2026 (etapa 16a)
+**Última atualização deste documento:** 29/10/2026 (etapa 16a.1)
 
 --------------------------------------------------------------------------------
 
