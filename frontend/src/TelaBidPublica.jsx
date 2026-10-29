@@ -104,7 +104,7 @@ export default function TelaBidPublica() {
             <div style={{ display: "flex", gap: 6, marginTop: 7, flexWrap: "wrap" }}>{Object.entries(DEC).map(([k, [l, cor]]) => <button key={k} type="button" onClick={() => setR(i.id, { decisao: k })}
               style={{ background: r.decisao === k ? cor : "transparent", color: r.decisao === k ? "#fff" : cor, border: `1px solid ${cor}`, borderRadius: 6, padding: "6px 10px", fontSize: 12, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>)}</div>
             {r.decisao === "revisar" && <div style={{ display: "flex", gap: 6, marginTop: 7, flexWrap: "wrap" }}>
-              <select value={r.motivo || ""} onChange={(e) => setR(i.id, { motivo: e.target.value })} style={{ ...s.input, flex: "1 1 160px" }}><option value="">O que revisar?</option>{Object.entries(p.motivos_revisao || {}).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+              <select value={r.motivo || ""} onChange={(e) => setR(i.id, { motivo: e.target.value })} style={{ ...s.input, flex: "1 1 160px", ...(r.motivo ? {} : { borderColor: C.danger, boxShadow: `0 0 0 1px ${C.danger}` }) }}><option value="">O que revisar?</option>{Object.entries(p.motivos_revisao || {}).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
               <input value={r.comentario || ""} onChange={(e) => setR(i.id, { comentario: e.target.value })} placeholder="Comentário (ex.: preciso de prancha 3 eixos)" style={{ ...s.input, flex: "3 1 240px" }} /></div>}
             {r.decisao === "recusado" && <input value={r.comentario || ""} onChange={(e) => setR(i.id, { comentario: e.target.value })} placeholder="Motivo da recusa (obrigatório)" style={{ ...s.input, marginTop: 7 }} />}
           </div>); })}
@@ -114,7 +114,7 @@ export default function TelaBidPublica() {
         <label style={{ flex: "1 1 160px" }}><span style={s.label}>CARGO</span><input value={quem.cargo} onChange={(e) => setQuem({ ...quem, cargo: e.target.value })} style={s.input} /></label></div>
       <label style={{ display: "block", marginTop: 8 }}><span style={s.label}>COMENTÁRIO GERAL (OPCIONAL)</span><textarea rows={2} value={quem.geral} onChange={(e) => setQuem({ ...quem, geral: e.target.value })} style={{ ...s.input, resize: "vertical" }} /></label>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginTop: 12, flexWrap: "wrap" }}>
-        <div style={{ flex: 1, fontSize: 12, color: faltando ? C.warn : C.textSub }}>{faltando ? `Falta responder ${faltando} item(ns)` : `${cont.aprovado || 0} aprovado(s) · ${cont.revisar || 0} revisão(ões) · ${cont.recusado || 0} recusado(s)`}</div>
+        <div style={{ flex: 1, fontSize: 12, color: faltando ? C.warn : C.textSub }}>{faltando ? `Falta completar ${faltando} item(ns) — escolha a decisão${itens.some((i) => resp[i.id]?.decisao === "revisar" && !resp[i.id]?.motivo) ? " e, na revisão, o que revisar (campo em vermelho)" : ""}${itens.some((i) => resp[i.id]?.decisao === "recusado" && !String(resp[i.id]?.comentario || "").trim()) ? " e o motivo da recusa" : ""}` : `${cont.aprovado || 0} aprovado(s) · ${cont.revisar || 0} revisão(ões) · ${cont.recusado || 0} recusado(s)`}</div>
         <button type="button" disabled={!!faltando || !quem.nome.trim() || ocupado} onClick={() => setConfirmar(true)} style={{ ...s.btn(!faltando && !!quem.nome.trim() && !ocupado, C.accent), padding: "10px 20px" }}>Enviar resposta</button>
       </div>
     </div>}
@@ -134,7 +134,8 @@ export default function TelaBidPublica() {
       </>}
     </div>}
 
-    <div style={{ fontSize: 11.5, color: C.muted, textAlign: "center" }}>Dúvidas: {p.contato.responsavel || p.contato.empresa}{p.contato.telefones ? ` · ${p.contato.telefones}` : ""} · enviado pelo QuotaFlow</div>
+    <div style={{ ...s.card, padding: "10px 14px", fontSize: 12.5, color: C.textSub, textAlign: "center", lineHeight: 1.6 }}>Dúvidas? Fale com <b style={{ color: C.text }}>{p.contato.responsavel || p.contato.empresa}</b>{p.contato.telefones ? <> · 📞 <a href={`tel:${String(p.contato.telefones).replace(/[^\d+]/g, "")}`} style={{ color: C.accent }}>{p.contato.telefones}</a></> : ""}{p.contato.email ? <> · ✉ <a href={`mailto:${p.contato.email}`} style={{ color: C.accent }}>{p.contato.email}</a></> : ""}
+      <div style={{ fontSize: 11.5, color: C.muted }}>{p.contato.empresa}{p.contato.empresa_contato ? ` · ${p.contato.empresa_contato}` : ""}</div></div>
 
     {confirmar && <div style={{ position: "fixed", inset: 0, background: "#00000090", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 300, padding: 16 }} onClick={() => setConfirmar(false)}>
       <div onClick={(e) => e.stopPropagation()} style={{ ...s.card, width: 440, maxWidth: "100%", padding: "18px 20px" }}>

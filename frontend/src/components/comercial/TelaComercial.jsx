@@ -273,7 +273,7 @@ export default function TelaComercial({ C, s }) {
               <label style={{ fontSize: 12, color: C.textSub, display: "flex", gap: 4, alignItems: "center", cursor: "pointer" }}><input type="checkbox" checked={soMinhas} onChange={(e) => setSoMinhas(e.target.checked)} /> só as minhas</label></div>
             {tarefas.map((t) => <div key={t.id} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5, padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
               <input type="checkbox" onChange={() => concluir(t)} title="Concluir" style={{ marginTop: 3 }} />
-              <div style={{ flex: 1, minWidth: 0 }}>{t.texto}<div style={{ fontSize: 11, color: t.atrasada ? C.danger : C.muted }}>{t.atrasada ? "atrasada · " : ""}{dBR(t.prevista_para?.slice(0, 10))}
+              <div style={{ flex: 1, minWidth: 0 }}>{t.texto}<div style={{ fontSize: 11, color: t.atrasada ? C.danger : C.muted }}>{t.atrasada ? "atrasada · " : ""}{dBR(t.prevista_para?.slice(0, 10))}{t.atribuido_nome ? ` · → ${t.atribuido_nome}` : ""}
                 {t.bid_numero && <> · <button type="button" className="qf-clicavel" onClick={() => setAberto(t.bid_id)} style={{ background: "none", border: "none", color: C.textSub, padding: 0, fontSize: 11 }}>{t.bid_numero} {t.cliente_nome}</button></>}</div></div>
             </div>)}
             {!tarefas.length && <div style={{ fontSize: 12, color: C.muted }}>Nenhuma tarefa aberta{soMinhas ? " sua" : ""}. Crie na ficha do BID (⏰ Tarefa com data).</div>}

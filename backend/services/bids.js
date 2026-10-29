@@ -427,11 +427,36 @@ async function criarAtividade(supabase, tenantId, quem, body = {}) {
     const p = String(body.prevista_para || ''); if (!/^\d{4}-\d{2}-\d{2}/.test(p)) return { status: 400, erro: 'Informe a data da tarefa' };
     prevista = p.length === 10 ? new Date(`${p}T09:00:00-03:00`).toISOString() : new Date(p).toISOString();
   }
-  const { data, error } = await supabase.from('bid_atividades').insert([{ tenant_id: tenantId, bid_id: bidId, cliente_id: clienteId, tipo, texto: t, prevista_para: prevista, concluida_em: null,
-    usuario_id: quem.usuarioId ?? null, usuario_nome: quem.usuarioNome || null, criado_em: new Date().toISOString() }]).select();
-  if (error) throw new Error(error.message);
+  // 15c.1: tarefa atribuída a um usuário (admin, gestor ou comercial ativo) — sem escolha, fica para quem criou
+  let atrib = null;
+  if (tipo === 'tarefa') {
+    if (body.atribuido_id != null && body.atribuido_id !== '') {
+      atrib = (await responsaveis(supabase, tenantId)).find((u) => String(u.id) === String(body.atribuido_id));
+      if (!atrib) return { status: 400, erro: 'A tarefa só pode ir para um usuário comercial, gestor ou admin ativo' };
+    } else if (quem.usuarioId != null) atrib = { id: quem.usuarioId, nome: quem.usuarioNome };
+  }
+  const reg = { tenant_id: tenantId, bid_id: bidId, cliente_id: clienteId, tipo, texto: t, prevista_para: prevista, concluida_em: null,
+    usuario_id: quem.usuarioId ?? null, usuario_nome: quem.usuarioNome || null, criado_em: new Date().toISOString() };
+  if (atrib) Object.assign(reg, { atribuido_id: atrib.id, atribuido_nome: atrib.nome || null });
+  const { data, error } = await supabase.from('bid_atividades').insert([reg]).select();
+  if (error) { if (/atribuido/.test(error.message)) return { status: 409, erro: 'Rode a migration 054 antes (tarefa atribuída)' }; throw new Error(error.message); }
+  if (atrib && String(atrib.id) !== String(quem.usuarioId)) await avisarTarefa(supabase, tenantId, quem, atrib, reg, bidId);
   if (bidId) await supabase.from('bids').update({ atualizado_em: new Date().toISOString() }).eq('id', bidId).eq('tenant_id', tenantId);
   return { atividade: data[0] };
+}
+/** e-mail para quem recebeu a tarefa (não falha a criação) */
+let enviarEmail = async (para, assunto, html) => require('./emailService').enviarEmailFornecedor(para, assunto, html);
+function _definirEnvio(fn) { enviarEmail = fn; }
+async function avisarTarefa(supabase, tenantId, quem, atrib, a, bidId) {
+  try {
+    const u = (await q(supabase.from('usuarios').select('*').eq('tenant_id', tenantId).eq('id', atrib.id)))[0];
+    if (!u?.email) return;
+    const b = bidId ? await bidDoTenant(supabase, tenantId, bidId) : null;
+    const esc = (x) => String(x == null ? '' : x).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const data = a.prevista_para ? new Date(a.prevista_para).toLocaleDateString('pt-BR', { timeZone: 'America/Sao_Paulo' }) : '';
+    await enviarEmail(u.email, `⏰ Nova tarefa para você${data ? ` até ${data}` : ''}: ${a.texto.slice(0, 80)}`,
+      `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.55;color:#111"><p><b>${esc(quem.usuarioNome || 'Um colega')}</b> criou uma tarefa para você${data ? `, para <b>${data}</b>` : ''}:</p><p style="background:#f4f4f5;padding:10px 12px;border-radius:6px">${esc(a.texto)}</p>${b ? `<p>BID: <b>${esc(b.numero)}</b> — ${esc(b.cliente_nome)}</p>` : ''}<p>Veja em 📈 Comercial → 📊 Funil → ⏰ Tarefas.</p></div>`);
+  } catch (e) { console.error('⚠️ [tarefa] e-mail não enviado:', e?.message || e); }
 }
 async function concluirAtividade(supabase, tenantId, id, feita = true) {
   const a = idOk(id) ? (await q(supabase.from('bid_atividades').select('*').eq('tenant_id', tenantId).eq('id', id)))[0] : null;
@@ -445,7 +470,8 @@ async function tarefas(supabase, tenantId, usuarioId = null) {
   const [l, bs] = await Promise.all([q(supabase.from('bid_atividades').select('*').eq('tenant_id', tenantId).eq('tipo', 'tarefa').is('concluida_em', null)), q(supabase.from('bids').select('*').eq('tenant_id', tenantId))]);
   const porId = new Map(bs.map((b) => [String(b.id), b]));
   const agora = new Date().toISOString();
-  return l.filter((a) => !usuarioId || String(a.usuario_id) === String(usuarioId) || String(porId.get(String(a.bid_id))?.responsavel_id) === String(usuarioId))
+  // 15c.1: "minhas" = atribuídas a mim; tarefa antiga (sem atribuição) segue a regra de antes (criei ou sou o responsável do BID)
+  return l.filter((a) => !usuarioId || (a.atribuido_id != null ? String(a.atribuido_id) === String(usuarioId) : String(a.usuario_id) === String(usuarioId) || String(porId.get(String(a.bid_id))?.responsavel_id) === String(usuarioId)))
     .map((a) => { const b = porId.get(String(a.bid_id)); return { ...a, atrasada: !!a.prevista_para && a.prevista_para < agora, bid_numero: b?.numero || null, cliente_nome: b?.cliente_nome || null }; })
     .sort((x, y) => String(x.prevista_para || '9').localeCompare(String(y.prevista_para || '9')));
 }
@@ -547,6 +573,6 @@ async function documento(supabase, tenantId, id, versao = null) {
   };
 }
 
-module.exports = { brl, FASES, FASE_NOME, COM_CLIENTE, ABERTAS, podeEditar, bidDoTenant, atividade, retrato, linkCliente, hojeBR, somaDias, diasEntre, enfeitar, q, texto, FASES_ABERTAS: ABERTAS, MOTIVOS_PERDA, TIPOS_ATIV, CAMPOS, OPCOES_FISCAIS, validarModelo, validarGrupos, validarCondicoes, totais, diferencas,
+module.exports = { _definirEnvio, brl, FASES, FASE_NOME, COM_CLIENTE, ABERTAS, podeEditar, bidDoTenant, atividade, retrato, linkCliente, hojeBR, somaDias, diasEntre, enfeitar, q, texto, FASES_ABERTAS: ABERTAS, MOTIVOS_PERDA, TIPOS_ATIV, CAMPOS, OPCOES_FISCAIS, validarModelo, validarGrupos, validarCondicoes, totais, diferencas,
   modelosTenant, bibliotecaParaTenant, importar, atualizarDaBiblioteca, salvarModelo, responsaveis,
   criar, editar, fecharVersao, mudarFase, listar, detalhe, criarAtividade, concluirAtividade, tarefas, funil, cliente360, documento, proximoNumero };

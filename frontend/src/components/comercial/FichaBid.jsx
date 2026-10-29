@@ -101,7 +101,7 @@ export default function FichaBid({ C, s, id, onFechar, onMudou, onErro, onOk, on
   const [ocupado, setOcupado] = useState(false);
   const [modal, setModal] = useState(null); // { tipo: perdido|externo|descartar|reabrir|fechar }
   const [enviar, setEnviar] = useState(false); // 15b: 👁 Revisar e enviar
-  const [ativ, setAtiv] = useState({ tipo: "nota", texto: "", prevista_para: "" });
+  const [ativ, setAtiv] = useState({ tipo: "nota", texto: "", prevista_para: "", para: "" }); // 15c.1: para = nome de quem recebe a tarefa
 
   const carregar = async () => {
     try {
@@ -157,7 +157,9 @@ export default function FichaBid({ C, s, id, onFechar, onMudou, onErro, onOk, on
   };
   const registrar = async () => {
     setOcupado(true);
-    try { await apiService.post("/comercial/atividades", { ...ativ, bid_id: b.id }); setAtiv({ tipo: ativ.tipo === "tarefa" ? "nota" : ativ.tipo, texto: "", prevista_para: "" }); await carregar(); onMudou?.(); }
+    const alvo = ativ.tipo === "tarefa" && ativ.para.trim() ? resp.find((u) => u.nome.toLowerCase() === ativ.para.trim().toLowerCase()) : null;
+    if (ativ.tipo === "tarefa" && ativ.para.trim() && !alvo) { setOcupado(false); return onErro("Escolha na lista quem vai fazer a tarefa (comercial, gestor ou admin)."); }
+    try { const { para, ...corpo } = ativ; await apiService.post("/comercial/atividades", { ...corpo, bid_id: b.id, atribuido_id: alvo?.id }); if (alvo) onOk(`Tarefa enviada para ${alvo.nome} (avisado por e-mail).`); setAtiv({ tipo: ativ.tipo === "tarefa" ? "nota" : ativ.tipo, texto: "", prevista_para: "", para: "" }); await carregar(); onMudou?.(); }
     catch (e) { onErro(e.message); } finally { setOcupado(false); }
   };
   const concluir = async (a, feita = true) => { try { await apiService.post(`/comercial/atividades/${a.id}/concluir`, { feita }); await carregar(); onMudou?.(); } catch (e) { onErro(e.message); } };
@@ -301,13 +303,14 @@ export default function FichaBid({ C, s, id, onFechar, onMudou, onErro, onOk, on
             <textarea value={ativ.texto} onChange={(e) => setAtiv({ ...ativ, texto: e.target.value })} rows={2} placeholder={ativ.tipo === "tarefa" ? "O que fazer (ex.: ligar para confirmar o prazo)" : "O que aconteceu"} style={{ ...s.input, resize: "vertical", fontSize: 12 }} />
             <div style={{ display: "flex", gap: 6, marginTop: 6 }}>
               {ativ.tipo === "tarefa" && <input type="date" min={hoje()} value={ativ.prevista_para} onChange={(e) => setAtiv({ ...ativ, prevista_para: e.target.value })} style={{ ...s.input, flex: 1 }} />}
+              {ativ.tipo === "tarefa" && <><input list="qf-resp-tarefa" value={ativ.para} onChange={(e) => setAtiv({ ...ativ, para: e.target.value })} placeholder="Para quem? (vazio = eu)" title="Digite o nome — a lista mostra comercial, gestor e admin" style={{ ...s.input, flex: 1.3 }} /><datalist id="qf-resp-tarefa">{resp.map((u) => <option key={u.id} value={u.nome} />)}</datalist></>}
               <button type="button" disabled={ocupado || !ativ.texto.trim() || (ativ.tipo === "tarefa" && !ativ.prevista_para)} onClick={registrar} style={{ ...s.btn(!ocupado && !!ativ.texto.trim() && (ativ.tipo !== "tarefa" || !!ativ.prevista_para), C.accent), flex: 1, padding: "7px 10px", fontSize: 12 }}>Registrar</button>
             </div>
             {tarefasAbertas.length > 0 && <div style={{ marginTop: 14 }}><div style={{ ...s.label, marginBottom: 6 }}>⏰ TAREFAS ABERTAS</div>
               {tarefasAbertas.map((a) => { const atrasada = a.prevista_para && a.prevista_para < new Date().toISOString();
                 return (<div key={a.id} style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
                   <input type="checkbox" onChange={() => concluir(a)} title="Concluir" style={{ marginTop: 2 }} />
-                  <div style={{ flex: 1 }}>{a.texto}<div style={{ fontSize: 11, color: atrasada ? C.danger : C.muted }}>{atrasada ? "atrasada · " : ""}{dBR(a.prevista_para?.slice(0, 10))}{a.usuario_nome ? ` · ${a.usuario_nome}` : ""}</div></div>
+                  <div style={{ flex: 1 }}>{a.texto}<div style={{ fontSize: 11, color: atrasada ? C.danger : C.muted }}>{atrasada ? "atrasada · " : ""}{dBR(a.prevista_para?.slice(0, 10))}{a.atribuido_nome ? ` · → ${a.atribuido_nome}` : ""}{a.usuario_nome && a.usuario_nome !== a.atribuido_nome ? ` · criada por ${a.usuario_nome}` : ""}</div></div>
                 </div>); })}</div>}
             <div style={{ marginTop: 14 }}>
               {d.atividades.filter((a) => !(a.tipo === "tarefa" && !a.concluida_em)).map((a) => (

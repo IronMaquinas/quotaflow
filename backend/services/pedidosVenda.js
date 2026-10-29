@@ -45,12 +45,12 @@ const comStatus = (grupos = [], anteriores = new Map()) => grupos.map((g) => ({ 
 const retratoPV = (pv) => ({ titulo: pv.titulo, referencia: pv.referencia, cliente_nome: pv.cliente_nome, contato_nome: pv.contato_nome, conteudo: pv.conteudo || {}, grupos: (pv.grupos || []).map((g) => ({ ...g, itens: (g.itens || []).map(({ status, ...i }) => i) })),
   condicoes: pv.condicoes || {}, valor_total_manual: pv.valor_total_manual ?? null, valor_total: pv.valor_total ?? null, validade_dias: null, assinante: {} });
 
-/** e-mails: responsável + gestores e admins ativos do tenant */
+/** e-mails: responsável + gestores ativos do tenant (15c.1: admin não recebe — pode ser alguém de TI) */
 async function destinatarios(supabase, tenantId, responsavelId) {
   const us = (await q(supabase.from('usuarios').select('*').eq('tenant_id', tenantId))).filter((u) => u.ativo !== false);
   const ups = us.length ? await q(supabase.from('usuario_perfis').select('*').in('usuario_id', us.map((u) => u.id))).catch(() => []) : [];
   const perfis = (u) => new Set([u.perfil, ...ups.filter((p) => String(p.usuario_id) === String(u.id)).map((p) => p.perfil_codigo)]);
-  const l = us.filter((u) => String(u.id) === String(responsavelId) || [...perfis(u)].some((p) => ['admin', 'gestor'].includes(p))).map((u) => u.email).filter((e) => e && EMAIL.test(e));
+  const l = us.filter((u) => String(u.id) === String(responsavelId) || [...perfis(u)].includes('gestor')).map((u) => u.email).filter((e) => e && EMAIL.test(e));
   return [...new Set(l.map((e) => e.toLowerCase()))];
 }
 async function avisar(supabase, tenantId, responsavelId, assunto, corpo) {

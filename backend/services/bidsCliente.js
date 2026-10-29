@@ -53,7 +53,7 @@ async function mandar(para, assunto, html) {
 const casca = (emp, corpo) => `<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;color:#111;font-size:14px;line-height:1.55">
   <div style="font-weight:700;font-size:15px;border-bottom:2px solid #111;padding-bottom:6px;margin-bottom:14px">${esc(emp.nome_fantasia || emp.razao_social || emp.nome || '')}</div>${corpo}
   <div style="color:#888;font-size:11px;margin-top:24px">Enviado pelo QuotaFlow em nome de ${esc(emp.nome_fantasia || emp.razao_social || emp.nome || '')}.</div></div>`;
-const botao = (url, txt) => `<p style="margin:20px 0"><a href="${url}" style="background:#2563eb;color:#fff;text-decoration:none;padding:11px 20px;border-radius:6px;font-weight:700">${esc(txt)}</a></p><p style="font-size:12px;color:#666">Ou copie o endereço: ${esc(url)}</p>`;
+const botao = (url, txt) => `<p style="margin:20px 0"><a href="${url}" style="background:#2563eb;color:#fff;text-decoration:none;padding:11px 20px;border-radius:6px;font-weight:700">${esc(txt)}</a></p><p style="font-size:12px;color:#666">Se o botão não abrir, use este endereço: <a href="${url}" style="color:#2563eb;word-break:break-all">${esc(url)}</a></p>`; // 15c.1: o endereço também é link (o # não corta)
 
 // ─── checklist e revisão antes de enviar ────────────────────────────────────
 function checklist(b, emp) {
@@ -84,7 +84,7 @@ async function revisao(supabase, tenantId, id) {
   if (b.tipo === 'aditivo') ck.erros.push(...(await require('./pedidosVenda').validarAditivo(supabase, b))); // 15c
   return { documento: await B.documento(supabase, tenantId, b.id), checklist: ck, para: b.contato_email || null, proxima_versao: prox,
     versao_enviada: b.versao_enviada || 0, mudancas, nada_mudou: !!enviada && !b.alterado_desde_versao, resposta: enviada?.resposta || null,
-    email: { assunto: assuntoPadrao(b, prox), texto: textoPadrao(b, prox), assinatura: [...assinaturaEmail(b, b.responsavel_nome), emp.nome_fantasia || emp.razao_social || emp.nome || ''].filter(Boolean),
+    email: { assunto: assuntoPadrao(b, prox), texto: textoPadrao(b, prox), assinatura: await (async () => { const c = await contatosEmissor(supabase, tenantId, b, emp); return [...c.linhas, c.empresa, c.empContato].filter(Boolean); })(),
       validade: `${b.validade_dias} dias (até ${dBR(somaDias(hojeBR(), Number(b.validade_dias || 10)))})` } };
 }
 
@@ -104,14 +104,25 @@ function textoPadrao(b, v, nova = jaEnviado(b, v)) {
     : `${ola}\n\nSegue a nossa proposta ${b.numero}${b.titulo ? ` — ${b.titulo}` : ''}${ref}. Pelo link abaixo você vê o documento completo e responde item por item: aprovar, pedir revisão ou recusar. Se tudo estiver certo, o aceite é assinado ali mesmo.\n\nQualquer dúvida, estou à disposição.`;
 }
 const assinaturaEmail = (b, respNome) => [b.assinante?.nome || respNome, b.assinante?.cargo, b.assinante?.registro, b.assinante?.telefones].filter(Boolean);
-function emailEnvio(emp, b, v, url, { assunto, texto: corpoTexto, mudancas, nota, respNome, nova = jaEnviado(b, v) } = {}) {
+const fone = (t) => { const d = String(t || '').replace(/\D/g, ''); return d.length === 11 ? d.replace(/^(\d{2})(\d{5})(\d{4})$/, '($1) $2-$3') : d.length === 10 ? d.replace(/^(\d{2})(\d{4})(\d{4})$/, '($1) $2-$3') : d.length === 13 && d.startsWith('55') ? fone(d.slice(2)) : t || ''; };
+/** 15c.1: assinatura com os CONTATOS — o e-mail sai do sistema, então o cliente precisa ver a quem responder:
+ *  nome · cargo · registro · 📞 telefone de quem emitiu (assinatura → cadastro do usuário) · ✉ e-mail de quem emitiu · empresa · telefone e e-mail da empresa */
+async function contatosEmissor(supabase, tenantId, b, emp) {
+  const u = b.responsavel_id != null ? (await q(supabase.from('usuarios').select('*').eq('tenant_id', tenantId).eq('id', b.responsavel_id)))[0] : null;
+  const telEmissor = b.assinante?.telefones || fone(u?.telefone);
+  const linhas = [b.assinante?.nome || u?.nome || b.responsavel_nome, b.assinante?.cargo, b.assinante?.registro, telEmissor && `📞 ${telEmissor}`, u?.email && `✉ ${u.email}`].filter(Boolean);
+  const empresa = emp.nome_fantasia || emp.razao_social || emp.nome || '';
+  const empContato = [emp.telefone && `📞 ${fone(emp.telefone)}`, emp.email && `✉ ${emp.email}`].filter(Boolean).join(' · ');
+  return { linhas, empresa, empContato };
+}
+function emailEnvio(emp, b, v, url, { assunto, texto: corpoTexto, mudancas, nota, respNome, nova = jaEnviado(b, v), contatos } = {}) {
   const paragrafos = String(corpoTexto || textoPadrao(b, v, nova)).split(/\n{2,}/).map((x) => x.trim()).filter(Boolean)
     .map((x) => `<p style="white-space:pre-wrap">${esc(x)}</p>`).join('');
   const corpo = `${paragrafos}
     ${nova && (nota || (mudancas || []).length) ? `<p><b>O que mudou:</b>${nota ? ` ${esc(nota)}` : ''}</p>${(mudancas || []).length ? `<ul>${mudancas.slice(0, 12).map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : ''}` : ''}
     ${botao(url, nova ? 'Ver a proposta atualizada' : 'Ver a proposta')}
     <p>Validade: ${b.validade_dias} dias (até ${dBR(somaDias(hojeBR(), Number(b.validade_dias || 10)))}).</p>
-    <p>Atenciosamente,<br/>${assinaturaEmail(b, respNome).map(esc).join('<br/>')}<br/><b>${esc(emp.nome_fantasia || emp.razao_social || emp.nome || '')}</b></p>`;
+    <p>Atenciosamente,<br/>${(contatos?.linhas || assinaturaEmail(b, respNome)).map(esc).join('<br/>')}<br/><b>${esc(contatos?.empresa || emp.nome_fantasia || emp.razao_social || emp.nome || '')}</b>${contatos?.empContato ? `<br/><span style="color:#555">${esc(contatos.empContato)}</span>` : ''}</p>`;
   return { assunto: String(assunto || '').trim() || assuntoPadrao(b, v, nova), html: casca(emp, corpo) };
 }
 /** 📨 Enviar ao cliente: { assunto, texto (do e-mail — vazio = o padrão), nota (obrigatória a partir da v2), sem_email (15b.3: só gera o link — WhatsApp) } */
@@ -134,7 +145,7 @@ async function enviar(supabase, tenantId, quem, id, { assunto, texto: corpoTexto
   b = await upd(supabase, tenantId, b, { token, fase: 'aguardando_cliente', fase_desde: agora, enviado_em: agora, versao_enviada: v, em_revisao: false, envio_para: para,
     valido_ate: somaDias(hojeBR(), Number(b.validade_dias || 10)), visto_primeiro_em: null, visto_ultimo_em: null, visto_qtd: 0, respondido_em: null, codigo_hash: null, codigo_expira: null, codigo_tentativas: 0 });
   const url = B.linkCliente(token);
-  const e = emailEnvio(emp, b, v, url, { assunto: texto(assunto, 200), texto: texto(corpoTexto, 4000), mudancas, nota: texto(nota, 500), respNome: quem.usuarioNome, nova: reenvio });
+  const e = emailEnvio(emp, b, v, url, { assunto: texto(assunto, 200), texto: texto(corpoTexto, 4000), mudancas, nota: texto(nota, 500), respNome: quem.usuarioNome, nova: reenvio, contatos: await contatosEmissor(supabase, tenantId, b, emp) });
   const falhas = [];
   if (!semEmail) {
     falhas.push(await mandar(para, e.assunto, e.html));
@@ -151,7 +162,7 @@ async function reenviarEmail(supabase, tenantId, quem, id) {
   if (!B.COM_CLIENTE.includes(b.fase) || !b.token) return { status: 409, erro: 'O BID não está com o cliente' };
   const emp = await empresaDe(supabase, tenantId); const url = B.linkCliente(b.token);
   const v = (await versoesDe(supabase, tenantId, b.id)).find((x) => x.versao === b.versao_enviada);
-  const e = emailEnvio(emp, b, b.versao_enviada, url, { texto: v?.mensagem, respNome: quem.usuarioNome, nova: !!v?.mudancas && b.versao_enviada > 1 && !!v?.substituida_em });
+  const e = emailEnvio(emp, b, b.versao_enviada, url, { texto: v?.mensagem, respNome: quem.usuarioNome, nova: !!v?.mudancas && b.versao_enviada > 1 && !!v?.substituida_em, contatos: await contatosEmissor(supabase, tenantId, b, emp) });
   const aviso = await mandar(b.envio_para || b.contato_email, `Lembrete: ${e.assunto}`, e.html);
   if (!aviso) await atividade(supabase, tenantId, quem, { bid_id: b.id, cliente_id: b.cliente_id, tipo: 'evento', texto: `↻ E-mail reenviado para ${b.envio_para || b.contato_email}` });
   return { ok: !aviso, aviso, link: url };
@@ -247,7 +258,8 @@ async function paginaCliente(supabase, b, meta = {}) {
     resposta: v.resposta || null, sugestao, mensagem: v.mensagem || null, email_mascarado: mascarar(b.envio_para || b.contato_email),
     codigo_enviado: !!b.codigo_hash && !!b.codigo_expira && new Date(b.codigo_expira) > new Date(),
     aceite: b.aceite_em ? { nome: b.aceite_nome, cargo: b.aceite_cargo, em: b.aceite_em, hash: b.aceite_hash, versao: b.aceite_versao, png: b.aceite_png, canal: b.aceite_canal } : null,
-    contato: { responsavel: b.assinante?.nome || b.responsavel_nome || null, telefones: b.assinante?.telefones || null, empresa: doc.empresa?.nome_fantasia || doc.empresa?.razao_social },
+    contato: await (async () => { const c = await contatosEmissor(supabase, b.tenant_id, b, await empresaDe(supabase, b.tenant_id)); const u = c.linhas.find((l) => l.startsWith('✉')); const t = c.linhas.find((l) => l.startsWith('📞'));
+      return { responsavel: b.assinante?.nome || b.responsavel_nome || null, telefones: t ? t.replace('📞 ', '') : null, email: u ? u.replace('✉ ', '') : null, empresa: doc.empresa?.nome_fantasia || doc.empresa?.razao_social, empresa_contato: c.empContato || null }; })(),
     motivos_revisao: MOTIVOS_REVISAO,
   };
 }
