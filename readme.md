@@ -841,6 +841,10 @@ npm run dev
   - **🗓 Agenda da frota**: equipamentos e motoristas × 14 dias, navegação por semana.
   - **Status do pedido automático**: programar → itens "programado"; iniciar → "em execução"; concluir → "concluído"; cancelar → voltam a "a programar". No 📈 Comercial a ficha do pedido mostra a AT de cada trecho (só leitura) e o status desses itens fica travado ("controlado pela AT").
   - **16a.1 (29/10):** um trecho pode ter **várias ATs — uma por conjunto** (ex.: 3 máquinas de ida = 3 cavalos + pranchas). No formulário, marque os itens que vão naquele conjunto (padrão: o primeiro item livre); os demais continuam “a programar”. Cada item fica em no máximo uma AT ativa; a trava no Comercial passa a ser por item. Tela com o mesmo espaçamento das outras. Script avulso `corrigir-titulo-trecho.sql` para renomear um trecho no pedido, no BID e nas ATs (as versões assinadas ficam como estão).
+  - **16b (29/10) — rota no BID + 🧩 Mesa de programação:**
+    - Cada trecho do BID tem **📍 Coleta** e **🏁 Entrega** (endereço). Saem no PDF e no link do cliente (o que está sendo precificado), entram no diff das versões, vão para o pedido e chegam **pré-preenchidos** na programação (editáveis). "⧉ Duplicar" um trecho já inverte coleta/entrega (o retorno). Sem rota no BID, a mesa usa a da última AT do trecho. Sem migration (fica no jsonb `grupos`).
+    - A aba "A programar" virou a **Mesa de programação**: por trecho, uma grade em que **cada linha é um item → a sua AT** (item × data × motorista × cavalo × implementos × documentos × situação). Selo do motorista, 🔒 e ⚠ conflito (entre ATs existentes **e entre as linhas da própria mesa**, `POST /api/programacao/checar`) aparecem enquanto escolhe; 🔴 pede justificativa na própria linha (gestor/admin); "🚛 Programar N ATs prontas" grava tudo de uma vez; o incompleto fica como rascunho no navegador. As ATs já criadas aparecem na grade (clique → ficha). NF-e/CT-e/MDF-e são só pendência.
+    - **16b.1 (29/10):** sem a opção de juntar itens (cada item = um conjunto = uma AT; o mesmo conjunto em dois itens são duas viagens). Documentos anexados **direto na grade**: na linha da AT, clique em ＋ NF-e / ＋ CT-e / ＋ MDF-e (verde = anexado, clique abre). Rascunho vazio não apaga mais a rota que veio do BID.
   - **SaaS genérico:** `tipo_execucao` no modelo de BID/PV (transporte → AT; locação → contrato de locação existente; serviço → AS; venda → entrega). Nesta etapa só transporte gera execução.
   - Rotas `/api/programacao` (`GET /base`, `/execucoes`, `/agenda`, `/pedidos`, `/pvs/:id`; `POST /pvs/:id/at`; `GET|PUT /execucoes/:id`; `POST /execucoes/:id/status`; anexos `POST|GET|DELETE /execucoes/:id/anexos[/:anexo]`; `GET /execucoes/:id/documento`) e `GET /api/comercial/pvs/:id/execucoes` (leitura). Travas respondem 409. Migration 055.
   - Rotas: `/api/comercial/bids/:id/revisao` (GET), `/enviar`, `/reenviar`, `/revisao/iniciar`, `/revisao/descartar`, `/aceite-externo`; `POST /bids/:id/fase` só aceita `perdido` e `reabrir`. Público: `/api/bid-link/:token` (GET, `/responder`, `/codigo`, `/aceitar`) — 40 chamadas por link + IP por hora. Migration 052. **Próxima: 15c** — Pedido de Venda (PV) a partir do BID aceito. **Futuro:** perfil **cliente** com login (mesmo padrão do locatário) — ver `claude/desenho-bid-15b.md`.
@@ -1292,7 +1296,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 29/10/2026 (etapa 16a.1)
+**Última atualização deste documento:** 29/10/2026 (etapa 16b.1)
 
 --------------------------------------------------------------------------------
 

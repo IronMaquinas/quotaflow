@@ -226,19 +226,12 @@ const ESPERADO = {
   'front:gerarAT.js': 'a8f0c302e3646b42e080ed5132f2c7fb', // etapa 16a (novo)
   'front:TelaProgramacao.jsx': '117acc6ccdd0a7c1a69bf5c380f5a60c', // etapa 16b
   'front:FichaAT.jsx': 'b0d65525b8684a706421f41bf8af5ede', // etapa 16a.1
-  'front:MesaProgramacao.jsx': '4e5a25736185c863af4ebaccb220f0f6', // etapa 16b (novo)
+  'front:MesaProgramacao.jsx': '8f19da177bdbc8156d1135d354289476', // etapa 16b.1
 };
 
-// Antes de copiar a etapa 16b — base: 16a.1
+// Antes de copiar a etapa 16b.1 — base: 16b
 const ANTES = {
-  'services/bids.js': 'bd58f6d3eb5c0a01a33532152d7cc00d',
-  'services/execucoes.js': '7c70e1c2eeff241e33231f2a6814996b',
-  'routes/programacao.js': 'c882ca117d74805b4b0fb20fb750293c',
-  'front:FichaBid.jsx': '392e2e3659b8748ff468706f7f6326ab',
-  'front:gerarBid.js': '0058afb616647031171d78d138935133',
-  'front:TelaBidPublica.jsx': 'd1d20f711067219200b30c62a7d19d99',
-  'front:FichaPedido.jsx': '168e49edcfcaf676bf6df8693d221b56',
-  'front:TelaProgramacao.jsx': 'c42eed052656ec92b297c321b7fa1e7c',
+  'front:MesaProgramacao.jsx': '4e5a25736185c863af4ebaccb220f0f6',
 };
 
 const RAIZ = process.cwd();
@@ -276,7 +269,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 16b)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 16b.1)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
