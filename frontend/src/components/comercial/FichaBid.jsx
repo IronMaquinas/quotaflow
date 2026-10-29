@@ -92,7 +92,7 @@ function Grupos({ C, s, conteudo, grupos, setGrupos, travado, resposta }) {
   </div>);
 }
 
-export default function FichaBid({ C, s, id, onFechar, onMudou, onErro, onOk, onAbrirCliente }) {
+export default function FichaBid({ C, s, id, onFechar, onMudou, onErro, onOk, onAbrirCliente, onAbrirPV }) {
   const [d, setD] = useState(null);
   const [f, setF] = useState(null); // rascunho em edição
   const [sujo, setSujo] = useState(false);
@@ -181,6 +181,7 @@ export default function FichaBid({ C, s, id, onFechar, onMudou, onErro, onOk, on
           <div style={{ flex: "1 1 320px", minWidth: 0 }}>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <span style={{ fontWeight: 800, fontSize: 17 }}>{b.numero}</span>
+              {b.tipo === "aditivo" && <span style={s.tag("#a78bfa")} title="Alteração de um pedido já aceito — o cliente aprova pelo link">📎 Aditivo {b.aditivo_numero}{d.pv ? ` ao ${d.pv.numero}` : ""}</span>}
               <span style={s.tag(cor)}>{NOME_FASE[b.fase]}{b.dias_na_fase ? ` · ${b.dias_na_fase} d` : ""}</span>
               {b.expirado && <span style={s.tag(C.danger)}>⌛ validade vencida</span>}
               <span style={s.tag(C.muted)}>{b.versao_atual ? `v${b.versao_atual}${b.alterado_desde_versao ? " + alterações" : ""}` : "sem versão"}</span>
@@ -214,12 +215,17 @@ export default function FichaBid({ C, s, id, onFechar, onMudou, onErro, onOk, on
           const faixa = (cor, conteudo) => <div style={{ padding: "9px 18px", background: `${cor}16`, borderBottom: `1px solid ${C.border}`, fontSize: 12.5, color: C.text, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}><div style={{ flex: "1 1 400px" }}>{conteudo}</div>
             {aberto && (b.alertas || []).map((a) => <span key={a.tipo} style={{ display: "inline-flex", gap: 6, alignItems: "center", ...s.tag(a.tipo === "vencido" ? C.danger : C.warn), fontSize: 11 }}>⚠ {a.texto}<button type="button" onClick={() => criarTarefa(a.tarefa)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", textDecoration: "underline", fontSize: 11, padding: 0 }}>＋ tarefa</button></span>)}</div>;
           const visto = b.visto_primeiro_em ? <span style={{ color: C.accent }}>✓✓ visualizada {b.visto_qtd}× (última {dataHora(b.visto_ultimo_em)})</span> : <span style={{ color: C.muted }}>✓ ainda não aberta</span>;
+          if (b.fase === "elaboracao" && b.tipo === "aditivo") return faixa("#a78bfa", <>📎 <b>Aditivo {b.aditivo_numero}{d.pv ? ` ao pedido ${d.pv.numero}` : ""} em elaboração.</b> Os itens são os do pedido hoje: inclua, retire ou ajuste e clique em <b>📨 Revisar e enviar</b>. Quando o cliente aceitar pelo link, o pedido é atualizado sozinho.</>);
           if (b.fase === "elaboracao") return faixa(C.muted, <>✏ <b>Em elaboração.</b> Nada vai ao cliente até você clicar em <b>📨 Revisar e enviar</b>.</>);
           if (b.em_revisao) return faixa(C.warn, <>✏ <b>Preparando a nova versão.</b> O cliente continua vendo a v{b.versao_enviada}. Ao enviar, ele recebe um e-mail com o que mudou.</>);
           if (b.fase === "aguardando_cliente") return faixa(C.accent, <>⏳ <b>Aguardando o cliente</b> desde {dataHora(b.enviado_em)} · v{b.versao_enviada} enviada para {b.envio_para} · {visto} · válida até {dBR(b.valido_ate)}</>);
           if (b.fase === "revisao_solicitada") return faixa(C.warn, <>💬 <b>O cliente pediu revisão</b> em {dataHora(b.respondido_em)}{d.resposta?.nome ? ` (${d.resposta.nome})` : ""} — os comentários estão em cada item. Ajuste e envie a v{(b.versao_atual || 0) + 1}.</>);
           if (b.fase === "aguardando_aceite") return faixa("#a78bfa", <>✅ <b>O cliente aprovou tudo</b> em {dataHora(b.respondido_em)} — falta assinar o aceite pelo link (código por e-mail + assinatura) · {visto}</>);
-          if (b.fase === "aceito") return faixa(C.success, b.aceite_canal === "fora_sistema" ? <>✓ <b>Aceite registrado fora do sistema</b> em {dBR(b.aceite_em)} — {b.aceite_obs} ({b.aceite_nome})</> : <>✍ <b>Aceito por {b.aceite_nome}</b>{b.aceite_cargo ? `, ${b.aceite_cargo}` : ""} em {dataHora(b.aceite_em)} (v{b.aceite_versao}, código confirmado em {b.aceite_email}). O PV nasce daqui na 15c.</>);
+          // 15c: o pedido que nasceu deste aceite (ou, BID aceito antes da 15c, gerar agora)
+          const pvLink = b.tipo === "aditivo" ? <> {d.pv && <button type="button" onClick={() => onAbrirPV?.(d.pv.id)} style={{ ...bt(C.success), padding: "3px 10px", marginLeft: 6 }}>🧾 Aditivo aplicado ao {d.pv.numero} →</button>}</>
+            : d.pv ? <> <button type="button" onClick={() => onAbrirPV?.(d.pv.id)} style={{ ...bt(C.success), padding: "3px 10px", marginLeft: 6 }}>🧾 Abrir o pedido {d.pv.numero} →</button></>
+            : <> <button type="button" disabled={ocupado} onClick={async () => { const x = await acao("gerar-pv", {}, null); if (x?.pv) { onOk(`Pedido ${x.pv.numero} gerado.`); onAbrirPV?.(x.pv.id); } }} style={{ ...bt(C.success), padding: "3px 10px", marginLeft: 6 }}>🧾 Gerar o pedido de venda</button></>;
+          if (b.fase === "aceito") return faixa(C.success, b.aceite_canal === "fora_sistema" ? <>✓ <b>Aceite registrado fora do sistema</b> em {dBR(b.aceite_em)} — {b.aceite_obs} ({b.aceite_nome}).{pvLink}</> : <>✍ <b>Aceito por {b.aceite_nome}</b>{b.aceite_cargo ? `, ${b.aceite_cargo}` : ""} em {dataHora(b.aceite_em)} (v{b.aceite_versao}, código confirmado em {b.aceite_email}).{pvLink}</>);
           return faixa(C.danger, <>Perdido em {dataHora(b.perdido_em)} — {MOTIVOS[b.motivo_perda] || b.motivo_perda}{b.perda_obs ? `: ${b.perda_obs}` : ""}</>);
         })()}
 

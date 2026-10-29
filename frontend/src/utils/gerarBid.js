@@ -85,7 +85,7 @@ export function gerarHtmlBid(d) {
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   @media print { body { background: #fff; } .pagina { margin: 0; padding: 0; } .nao-imprimir { display: none; } } @page { size: A4; margin: 14mm; }
   </style></head><body>${d.rascunho ? '<div class="rasc">RASCUNHO</div>' : ""}<div class="pagina">
-    <div class="topo"><div>${logoHtml() || `<b>${esc(e.nome_fantasia || e.razao_social)}</b>`}</div><div style="text-align:right;font-size:10px;color:#555">${esc(d.numero)}${d.versao ? ` · versão ${d.versao.versao}` : " · rascunho"}<br/>${d.versao ? dataHora(d.versao.em) : ""}</div></div>
+    <div class="topo"><div>${logoHtml() || `<b>${esc(e.nome_fantasia || e.razao_social)}</b>`}</div><div style="text-align:right;font-size:10px;color:#555">${esc(d.numero)}${d.versao ? ` · versão ${d.versao.versao}` : d.pedido ? "" : " · rascunho"}<br/>${d.versao ? dataHora(d.versao.em) : ""}</div></div>
     <h1>${titulo}</h1>
     <div class="para">Para: ${esc(d.cliente?.razao_social || d.cliente?.nome || d.cliente_nome)}${d.cliente?.documento ? ` · ${cnpj(d.cliente.documento)}` : ""}${d.contato_nome ? ` · A/C ${esc(d.contato_nome)}` : ""}</div>
     ${sec("Identificação")}${ident}
@@ -95,11 +95,12 @@ export function gerarHtmlBid(d) {
     <div class="total"><b>Valor total:</b> ${d.total == null ? "________" : brl(d.total)}</div>
     <div class="cond">${condLinhas("comercial")}</div>
     ${sec("Critérios de medição e pagamento")}
-    <div class="cond">${condLinhas("pagamento")}<div><b>Validade da proposta:</b> ${esc(d.validade_dias)} dias${d.valido_ate && !d.rascunho ? ` (até ${dBR(d.valido_ate)})` : ""}.</div></div>
+    <div class="cond">${condLinhas("pagamento")}${d.pedido ? "" : `<div><b>Validade da proposta:</b> ${esc(d.validade_dias)} dias${d.valido_ate && !d.rascunho ? ` (até ${dBR(d.valido_ate)})` : ""}.</div>`}</div>
     ${depois.map((x) => `${sec(x.titulo)}${textoHtml(x.texto)}`).join("")}
-    <div class="ass"><p>Permanecemos à disposição para eventuais ajustes e alinhamentos técnicos.</p><p>Atenciosamente,</p>
+    <div class="ass"><p>${d.pedido ? "Pedido confirmado conforme a proposta aceita pelo cliente." : "Permanecemos à disposição para eventuais ajustes e alinhamentos técnicos."}</p><p>Atenciosamente,</p>
       <div class="nome">${esc(a.nome || "")}</div>${a.cargo ? `<div>${esc(a.cargo)}</div>` : ""}${a.registro ? `<div>${esc(a.registro)}</div>` : ""}
       <div style="margin-top:8px"><b>${esc(e.nome_fantasia || e.razao_social || "")}</b></div>${a.telefones ? `<div>${esc(a.telefones)}</div>` : ""}</div>
+    ${d.pedido && d.origem ? `<div class="hash">Pedido gerado no QuotaFlow a partir do ${esc(d.origem.bid || "")}${d.origem.versao ? ` (versão ${d.origem.versao})` : ""}, aceito${d.origem.aceite_nome ? ` por ${esc(d.origem.aceite_nome)}` : ""}${d.origem.aceite_em ? ` em ${dataHora(d.origem.aceite_em)}` : ""}${d.origem.aditivo ? ` · com ${d.origem.aditivo} aditivo(s) aceito(s)` : ""}.${d.origem.aceite_hash ? ` Aceite (SHA-256): ${esc(d.origem.aceite_hash)}` : ""}</div>` : ""}
     ${d.versao?.hash ? `<div class="hash">${esc(d.numero)} versão ${d.versao.versao}, fechada no QuotaFlow em ${dataHora(d.versao.em)}${d.versao.por ? ` por ${esc(d.versao.por)}` : ""}. Integridade (SHA-256): ${esc(d.versao.hash)}</div>` : ""}
     <div class="nao-imprimir" style="margin-top:14px;text-align:center"><button onclick="window.print()" style="padding:8px 18px;font-size:13px">🖨 Imprimir / Salvar em PDF</button></div>
   </div></body></html>`;

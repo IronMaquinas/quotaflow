@@ -10,6 +10,8 @@
 //   GET  /bids/:id/documento?versao    dados para o PDF (rascunho ou versão congelada)
 //   15b: GET /bids/:id/revisao (documento final + checklist) · POST /bids/:id/enviar { mensagem, nota } · POST /bids/:id/reenviar
 //        POST /bids/:id/revisao/iniciar · POST /bids/:id/revisao/descartar · POST /bids/:id/aceite-externo { justificativa, data }
+//   15c: GET /pvs · GET /pvs/:id · GET /pvs/:id/documento · POST /pvs/:id/itens/:item/status { status } · POST /pvs/:id/cancelar { motivo }
+//        POST /pvs/:id/aditivo (cria o BID do aditivo) · POST /bids/:id/gerar-pv (BID aceito antes da 15c)
 //        POST /bids/:id/fase só aceita { fase: 'perdido', motivo, obs } e { fase: 'reabrir' } — o resto muda pelo cliente
 //   POST /atividades · POST /atividades/:id/concluir { feita } · GET /tarefas?minhas=1
 //   GET  /modelos · GET /modelos/biblioteca · POST /modelos/importar · POST /modelos · PUT /modelos/:id · POST /modelos/:id/atualizar · DELETE /modelos/:id
@@ -23,6 +25,7 @@ const { supabase } = require('../db');
 const B = require('../services/bids');
 const CL = require('../services/clientes');
 const BC = require('../services/bidsCliente'); // 15b
+const PV = require('../services/pedidosVenda'); // 15c
 
 const perfisDe = (req) => (Array.isArray(req.perfis) && req.perfis.length ? req.perfis : [req.userPerfil].filter(Boolean));
 const PERFIS = ['admin', 'gestor', 'comercial'];
@@ -31,6 +34,7 @@ const responder = (fn) => async (req, res) => {
   try { const r = await fn(req); if (r && r.erro) return res.status(r.status || 400).json({ erro: r.erro }); res.json(r); }
   catch (err) {
     const m = String(err?.message || '');
+    if (/pedidos_venda|pv_aditivos|pv_id|aditivo_numero|tipo/.test(m) && /does not exist|schema cache|relation|column/.test(m)) return res.status(409).json({ erro: 'Rode a migration 053 antes (pedidos de venda)' });
     if (/token|versao_enviada|em_revisao|visto_|aceite_|codigo_|enviada_|bid_visualizacoes|bids_fase_check/.test(m) && /does not exist|schema cache|relation|column|check constraint/.test(m)) return res.status(409).json({ erro: 'Rode a migration 052 antes (BID com o cliente)' });
     if (/bid_|bids|inscricao_estadual|opcao_fiscal/.test(m) && /does not exist|schema cache|relation|column/.test(m)) return res.status(409).json({ erro: 'Rode a migration 051 antes (Comercial / BID)' });
     if (/clientes/.test(m) && /does not exist|schema cache|relation/.test(m)) return res.status(409).json({ erro: 'Rode a migration 044 antes (clientes)' });
@@ -71,6 +75,14 @@ router.post('/bids/:id/reenviar', responder(async (req) => BC.reenviarEmail(supa
 router.post('/bids/:id/revisao/iniciar', responder(async (req) => BC.iniciarRevisao(supabase, req.tenantId, await quem(req), req.params.id)));
 router.post('/bids/:id/revisao/descartar', responder(async (req) => BC.descartarRevisao(supabase, req.tenantId, await quem(req), req.params.id)));
 router.post('/bids/:id/aceite-externo', responder(async (req) => BC.aceiteExterno(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
+// 15c — 🧾 Pedidos de venda (nascem no aceite) + aditivo pelo link
+router.get('/pvs', responder(async (req) => ({ pedidos: await PV.listar(supabase, req.tenantId), status_item: PV.STATUS_ITEM, status_pv: PV.STATUS_PV })));
+router.get('/pvs/:id', responder((req) => PV.detalhe(supabase, req.tenantId, req.params.id)));
+router.get('/pvs/:id/documento', responder((req) => PV.documento(supabase, req.tenantId, req.params.id)));
+router.post('/pvs/:id/itens/:item/status', responder(async (req) => PV.mudarStatusItem(supabase, req.tenantId, await quem(req), req.params.id, req.params.item, req.body || {})));
+router.post('/pvs/:id/cancelar', responder(async (req) => PV.cancelar(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
+router.post('/pvs/:id/aditivo', responder(async (req) => PV.criarAditivo(supabase, req.tenantId, await quem(req), req.params.id)));
+router.post('/bids/:id/gerar-pv', responder(async (req) => PV.gerarManual(supabase, req.tenantId, await quem(req), req.params.id)));
 router.get('/bids/:id/documento', responder((req) => B.documento(supabase, req.tenantId, req.params.id, req.query.versao ?? null)));
 
 module.exports = router;

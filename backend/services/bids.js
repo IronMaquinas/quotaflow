@@ -397,8 +397,9 @@ function enfeitar(b, pendentes = []) {
     proxima_tarefa: minhas.sort((x, y) => String(x.prevista_para || '9').localeCompare(String(y.prevista_para || '9')))[0] || null };
 }
 async function listar(supabase, tenantId) {
+  // 15c: aditivos (PV-…-A1) ficam no pedido, fora do kanban/lista de BIDs
   const [bs, pend] = await Promise.all([q(supabase.from('bids').select('*').eq('tenant_id', tenantId)), q(supabase.from('bid_atividades').select('*').eq('tenant_id', tenantId).eq('tipo', 'tarefa').is('concluida_em', null))]);
-  return bs.map((b) => enfeitar(b, pend)).sort((a, b) => String(b.atualizado_em || b.criado_em).localeCompare(String(a.atualizado_em || a.criado_em)));
+  return bs.filter((b) => b.tipo !== 'aditivo').map((b) => enfeitar(b, pend)).sort((a, b) => String(b.atualizado_em || b.criado_em).localeCompare(String(a.atualizado_em || a.criado_em)));
 }
 async function detalhe(supabase, tenantId, id) {
   const b = await bidDoTenant(supabase, tenantId, id); if (!b) return { status: 404, erro: 'BID não encontrado' };
@@ -409,6 +410,7 @@ async function detalhe(supabase, tenantId, id) {
     // 15b: o que o cliente respondeu na última versão enviada (comentários por linha) e o link
     resposta: vers.find((v) => v.versao === b.versao_enviada)?.resposta || null,
     link: b.token ? linkCliente(b.token) : null,
+    pv: b.pv_id ? (await q(supabase.from('pedidos_venda').select('*').eq('tenant_id', tenantId).eq('id', b.pv_id)).catch(() => []))[0] || null : null, // 15c
     atividades: ativs.sort((x, y) => String(y.criado_em).localeCompare(String(x.criado_em))) };
 }
 
@@ -453,7 +455,7 @@ async function funil(supabase, tenantId, { de, ate } = {}) {
   const ateD = /^\d{4}-\d{2}-\d{2}$/.test(String(ate || '')) ? ate : hojeBR();
   const deD = /^\d{4}-\d{2}-\d{2}$/.test(String(de || '')) ? de : somaDias(ateD, -89);
   const [bs0, vers] = await Promise.all([q(supabase.from('bids').select('*').eq('tenant_id', tenantId)), q(supabase.from('bid_versoes').select('*').eq('tenant_id', tenantId))]);
-  const bs = bs0.map((b) => enfeitar(b));
+  const bs = bs0.filter((b) => b.tipo !== 'aditivo').map((b) => enfeitar(b)); // 15c: aditivo não conta no funil
   const diaBR = (iso) => new Date(new Date(iso).getTime() - 3 * 3600000).toISOString().slice(0, 10); // 15b.1: dia no horário de Brasília (depois das 21h já é amanhã em UTC)
   const noPeriodo = (iso) => !!iso && diaBR(iso) >= deD && diaBR(iso) <= ateD;
   const colunas = FASES.map((f) => { const l = bs.filter((b) => b.fase === f); return { fase: f, nome: FASE_NOME[f], qtd: l.length, valor: l.reduce((s, b) => s + Number(b.valor_total || 0), 0) }; });
@@ -507,13 +509,14 @@ async function cliente360(supabase, tenantId, clienteId) {
     q(supabase.from('bid_atividades').select('*').eq('tenant_id', tenantId).eq('cliente_id', c.id)),
     q(supabase.from('locacao_contratos').select('*').eq('tenant_id', tenantId).eq('cliente_id', c.id)).catch(() => []),
   ]);
-  const l = bs.map((b) => enfeitar(b));
+  const l = bs.filter((b) => b.tipo !== 'aditivo').map((b) => enfeitar(b));
   const ganhos = l.filter((b) => b.fase === 'aceito'); const perdidos = l.filter((b) => b.fase === 'perdido');
   return {
     cliente: c,
     resumo: { abertos: l.filter((b) => ABERTAS.includes(b.fase)).length, ganhos: ganhos.length, perdidos: perdidos.length, valor_ganho: ganhos.reduce((s, b) => s + Number(b.valor_total || 0), 0),
       em_aberto: l.filter((b) => ABERTAS.includes(b.fase)).reduce((s, b) => s + Number(b.valor_total || 0), 0), contratos_ativos: contratos.filter((k) => k.status === 'ativo').length },
     bids: l.sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em))),
+    pedidos: await require('./pedidosVenda').doCliente(supabase, tenantId, c.id), // 15c
     contratos: contratos.map((k) => ({ id: k.id, numero: k.numero, status: k.status, local: k.local, inicio: k.inicio, fim_previsto: k.fim_previsto })).sort((a, b) => String(b.inicio || '').localeCompare(String(a.inicio || ''))),
     atividades: ativs.sort((x, y) => String(y.criado_em).localeCompare(String(x.criado_em))).slice(0, 100),
   };

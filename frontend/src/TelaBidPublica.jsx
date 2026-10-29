@@ -68,17 +68,19 @@ export default function TelaBidPublica() {
     <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 12, flexWrap: "wrap" }}>
       {p.logo && <img src={p.logo} alt="" style={{ maxHeight: 40, maxWidth: 160, background: "#fff", borderRadius: 6, padding: 4 }} />}
       <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 800, fontSize: 17 }}>{p.contato.empresa}</div>
-        <div style={{ fontSize: 12.5, color: C.textSub }}>Proposta {p.numero} · versão {p.versao}{p.valido_ate ? ` · válida até ${dBR(p.valido_ate)}` : ""}</div></div>
+        <div style={{ fontSize: 12.5, color: C.textSub }}>{p.aditivo ? "Aditivo" : "Proposta"} {p.numero} · versão {p.versao}{p.valido_ate ? ` · válida até ${dBR(p.valido_ate)}` : ""}</div></div>
       <div style={{ textAlign: "right" }}><div style={{ fontSize: 10, color: C.muted }}>VALOR TOTAL</div><div style={{ fontSize: 20, fontWeight: 800 }}>{brl(total)}</div></div>
     </div>
     {msg && faixa(C.success, msg)}
     {erro && faixa(C.danger, erro)}
+    {p.aditivo && p.fase !== "aceito" && faixa("#a78bfa", <>📎 <b>Aditivo {p.aditivo.numero} ao pedido {p.aditivo.pv_numero}</b> — o que muda em relação ao pedido atual{p.aditivo.valor_antes != null ? ` (hoje ${brl(p.aditivo.valor_antes)})` : ""}:
+      {(p.aditivo.mudancas || []).length ? <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 12.5 }}>{p.aditivo.mudancas.slice(0, 15).map((m, i) => <li key={i}>{m}</li>)}</ul> : " —"}</>)}
     {p.atualizacao && p.fase === "responder" && faixa(C.accent, <>🔄 <b>Proposta atualizada para a versão {p.versao}</b> em {dataHora(p.atualizacao.em)}.{p.atualizacao.nota ? ` ${p.atualizacao.nota}.` : ""}
       {(p.atualizacao.mudancas || []).length > 0 && <ul style={{ margin: "6px 0 0", paddingLeft: 18, fontSize: 12.5 }}>{p.atualizacao.mudancas.slice(0, 10).map((m, i) => <li key={i}>{m}</li>)}</ul>}</>)}
     {p.vencido && faixa(C.danger, <>⌛ <b>A validade desta proposta venceu</b> em {dBR(p.valido_ate)}. Para renovar, fale com {p.contato.responsavel || "a empresa"}{p.contato.telefones ? ` (${p.contato.telefones})` : ""}.</>)}
     {p.fase === "em_revisao" && faixa(C.warn, <>💬 <b>Recebemos a sua resposta{p.resposta?.em ? ` em ${dataHora(p.resposta.em)}` : ""}.</b> A empresa está revisando a proposta — a nova versão chega por e-mail.</>)}
     {p.fase === "encerrado" && faixa(C.muted, <>Esta proposta foi encerrada. Dúvidas: {p.contato.responsavel || "fale com a empresa"}{p.contato.telefones ? ` · ${p.contato.telefones}` : ""}.</>)}
-    {p.fase === "aceito" && p.aceite && faixa(C.success, <>✍ <b>Proposta aceita</b> por {p.aceite.nome}{p.aceite.cargo ? `, ${p.aceite.cargo}` : ""} em {dataHora(p.aceite.em)} (versão {p.aceite.versao}).
+    {p.fase === "aceito" && p.aceite && faixa(C.success, <>✍ <b>{p.aditivo ? `Aditivo aceito — o pedido ${p.aditivo.pv_numero} foi atualizado` : "Proposta aceita"}</b> por {p.aceite.nome}{p.aceite.cargo ? `, ${p.aceite.cargo}` : ""} em {dataHora(p.aceite.em)} (versão {p.aceite.versao}).
       {p.aceite.png && <div style={{ marginTop: 8 }}><img src={p.aceite.png} alt="assinatura" style={{ maxHeight: 70, background: "#fff", borderRadius: 4 }} /></div>}
       {p.aceite.hash && <div style={{ fontSize: 10, color: C.muted, fontFamily: "monospace", wordBreak: "break-all", marginTop: 6 }}>SHA-256 {p.aceite.hash}</div>}</>)}
 

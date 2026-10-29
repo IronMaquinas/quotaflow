@@ -6,9 +6,11 @@
 //   📝 BIDs      — lista com busca e filtro por fase. ＋ Novo BID: cliente (CNPJ primeiro — mesmo cadastro dos contratos) + modelo.
 //   👥 Clientes  — mesmo cadastro de 📑 Contratos (por /comercial/clientes); clicar abre a ficha 360° (BIDs, contratos, atividades).
 //   🧩 Modelos   — modelos de BID (biblioteca do QuotaFlow → cópia da empresa).
+//   🧾 Pedidos   — 15c: PV-AAAA-NNNN, nasce sozinho no aceite (aviso "🎉 Novos pedidos" no Funil); status por item; ➕ aditivo pelo link.
 import { useState, useEffect, useMemo } from "react";
 import apiService from "../../services/apiService";
 import FichaBid, { FASES, COR_FASE, NOME_FASE, MOTIVOS, MOTIVOS_MANUAIS, brl } from "./FichaBid";
+import FichaPedido, { STATUS_PV, STATUS_ITEM } from "./FichaPedido"; // 15c
 import ModelosBid from "./ModelosBid";
 import { AbaClientes, CampoDocumento, NotaReceita, CamposCliente, vazioCliente, mascaraDoc } from "../contratos/Clientes";
 
@@ -119,7 +121,7 @@ function NovoBid({ C, s, clienteInicial, onCriado, onCancelar, onErro }) {
   </>);
 }
 
-function Cliente360({ C, s, id, onFechar, onAbrirBid, onNovoBid, onEditar, onErro }) {
+function Cliente360({ C, s, id, onFechar, onAbrirBid, onNovoBid, onEditar, onErro, onAbrirPV }) {
   const [d, setD] = useState(null); const [a, setA] = useState({ tipo: "nota", texto: "" }); const [ocupado, setOcupado] = useState(false);
   const carregar = () => apiService.get(`/comercial/clientes/${id}/360`).then(setD).catch((e) => { onErro(e.message); onFechar(); });
   useEffect(() => { carregar(); }, [id]); // eslint-disable-line
@@ -145,6 +147,9 @@ function Cliente360({ C, s, id, onFechar, onAbrirBid, onNovoBid, onEditar, onErr
         {d.bids.map((b) => <div key={b.id} onClick={() => onAbrirBid(b.id)} className="qf-clicavel" style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12.5, padding: "7px 0", borderBottom: `1px solid ${C.border}`, textDecoration: "none" }}>
           <span style={{ ...s.tag(COR_FASE[b.fase]) }}>{NOME_FASE[b.fase]}</span><span style={{ flex: 1 }}>{b.numero}{b.referencia ? ` · ${b.referencia}` : ""}{b.titulo ? ` — ${b.titulo}` : ""}</span><b>{brl(b.valor_total)}</b></div>)}
         {!d.bids.length && <div style={{ fontSize: 12, color: C.muted }}>Nenhum BID ainda.</div>}
+        {(d.pedidos || []).length > 0 && <><div style={{ ...s.label, marginTop: 14 }}>PEDIDOS DE VENDA</div>
+          {d.pedidos.map((p) => <div key={p.id} onClick={() => onAbrirPV?.(p.id)} className="qf-clicavel" style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12.5, padding: "7px 0", borderBottom: `1px solid ${C.border}`, textDecoration: "none" }}>
+            <span style={s.tag(STATUS_PV[p.status]?.[1])}>{STATUS_PV[p.status]?.[0]}</span><span style={{ flex: 1 }}>🧾 {p.numero}{p.titulo ? ` — ${p.titulo}` : ""}</span><b>{brl(p.valor_total)}</b></div>)}</>}
         {d.contratos.length > 0 && <><div style={{ ...s.label, marginTop: 14 }}>CONTRATOS DE LOCAÇÃO</div>
           {d.contratos.map((k) => <div key={k.id} style={{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px solid ${C.border}` }}><span style={s.tag(k.status === "ativo" ? C.success : C.muted)}>{k.status}</span> {k.numero}{k.local ? ` · ${k.local}` : ""} · {dBR(k.inicio)}{k.fim_previsto ? ` → ${dBR(k.fim_previsto)}` : ""}</div>)}</>}
       </div>
@@ -169,6 +174,7 @@ export default function TelaComercial({ C, s }) {
   const [soMinhas, setSoMinhas] = useState(true);
   const [periodo, setPeriodo] = useState({ de: menosDias(89), ate: hoje() });
   const [busca, setBusca] = useState(""); const [filtroFase, setFiltroFase] = useState("abertos");
+  const [pedidos, setPedidos] = useState(null); const [pvAberto, setPvAberto] = useState(null); // 15c
   const [aberto, setAberto] = useState(null); const [novo, setNovo] = useState(null); const [c360, setC360] = useState(null); const [editarCli, setEditarCli] = useState(null);
   const [arrasto, setArrasto] = useState(null); // { id, fase } para perdido/aceito
   const [msg, setMsg] = useState(null); const [ocupado, setOcupado] = useState(false);
@@ -176,8 +182,8 @@ export default function TelaComercial({ C, s }) {
 
   const carregar = async () => {
     try {
-      const [b, fu, ts] = await Promise.all([apiService.get("/comercial/bids"), apiService.get("/comercial/funil", periodo), apiService.get("/comercial/tarefas", soMinhas ? { minhas: "1" } : {})]);
-      setBids(b.bids || []); setFunil(fu); setTarefas(ts.tarefas || []);
+      const [b, fu, ts, pv] = await Promise.all([apiService.get("/comercial/bids"), apiService.get("/comercial/funil", periodo), apiService.get("/comercial/tarefas", soMinhas ? { minhas: "1" } : {}), apiService.get("/comercial/pvs").catch(() => ({ pedidos: [] }))]);
+      setBids(b.bids || []); setFunil(fu); setTarefas(ts.tarefas || []); setPedidos(pv.pedidos || []);
     } catch (e) { erro(e.message); }
   };
   useEffect(() => { carregar(); }, [periodo.de, periodo.ate, soMinhas]); // eslint-disable-line
@@ -213,11 +219,16 @@ export default function TelaComercial({ C, s }) {
         <button type="button" onClick={() => setNovo({})} style={{ ...s.btn(true, C.accent), cursor: "pointer" }}>＋ Novo BID</button>
       </div>
       <div style={{ display: "flex", gap: 4, borderBottom: `1px solid ${C.border}`, marginBottom: 14, flexWrap: "wrap" }}>
-        {abaBt("funil", "📊 Funil")}{abaBt("bids", "📝 BIDs")}{abaBt("clientes", "👥 Clientes")}{abaBt("modelos", "🧩 Modelos de BID")}
+        {abaBt("funil", "📊 Funil")}{abaBt("bids", "📝 BIDs")}{abaBt("clientes", "👥 Clientes")}{abaBt("pedidos", `🧾 Pedidos${(pedidos || []).filter((p) => ["aberto", "em_execucao"].includes(p.status)).length ? ` (${pedidos.filter((p) => ["aberto", "em_execucao"].includes(p.status)).length})` : ""}`)}{abaBt("modelos", "🧩 Modelos de BID")}
       </div>
       {msg && <div style={{ ...s.card, padding: "9px 12px", marginBottom: 12, fontSize: 13, borderColor: msg.tipo === "erro" ? C.danger : C.success, color: msg.tipo === "erro" ? C.danger : C.success, display: "flex" }}>
         <span style={{ flex: 1 }}>{msg.t}</span><button type="button" onClick={() => setMsg(null)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer" }}>×</button></div>}
 
+      {aba === "funil" && (pedidos || []).filter((p) => Date.now() - new Date(p.criado_em) < 3 * 86400000).map((p) => (
+        <div key={p.id} style={{ ...s.card, padding: "10px 14px", marginBottom: 10, borderColor: C.success, background: `${C.success}12`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+          <div style={{ flex: 1, fontSize: 13 }}>🎉 <b>{p.bid_numero} aceito!</b> O pedido <b>{p.numero}</b> foi gerado: {p.cliente_nome} · <b>{brl(p.valor_total)}</b> · {p.qtd_itens} item(ns). Próximo passo: programar a execução.</div>
+          <button type="button" onClick={() => setPvAberto(p.id)} style={{ ...s.btn(true, C.success), padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>Abrir o pedido</button>
+        </div>))}
       {aba === "funil" && (!funil ? <div style={{ color: C.muted }}>Carregando…</div> : <>
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap", fontSize: 12, color: C.textSub }}>
           Período <input type="date" value={periodo.de} onChange={(e) => e.target.value && setPeriodo({ ...periodo, de: e.target.value })} style={{ ...s.input, width: 150, padding: "6px 8px" }} />
@@ -299,12 +310,23 @@ export default function TelaComercial({ C, s }) {
 
       {aba === "clientes" && <AbaClientes C={C} s={s} editar base="/comercial" onErro={erro} onOk={ok} onAbrir={(c) => setC360(c.id)} abrirId={editarCli} onAberto={() => setEditarCli(null)} />}
       {aba === "modelos" && <ModelosBid C={C} s={s} onErro={erro} onOk={ok} />}
+      {aba === "pedidos" && (!pedidos ? <div style={{ color: C.muted }}>Carregando…</div> : <div style={{ ...s.card, overflow: "hidden" }}>
+        {pedidos.map((p, i) => <div key={p.id} onClick={() => setPvAberto(p.id)} className="qf-clicavel" style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 14px", borderBottom: i < pedidos.length - 1 ? `1px solid ${C.border}` : "none", flexWrap: "wrap", textDecoration: "none" }}>
+          <span style={{ ...s.tag(STATUS_PV[p.status]?.[1]), minWidth: 84, textAlign: "center" }}>{STATUS_PV[p.status]?.[0]}</span>
+          <div style={{ flex: "2 1 240px", minWidth: 0 }}><div style={{ fontWeight: 600, fontSize: 13 }}>🧾 {p.numero} · {p.cliente_nome}</div>
+            <div style={{ fontSize: 11, color: C.muted }}>{p.titulo || p.bid_numero}{p.aditivo_atual ? ` · 📎 ${p.aditivo_atual} aditivo(s)` : ""} · {Object.entries(p.itens_por_status || {}).filter(([, n]) => n).map(([k, n]) => `${n} ${STATUS_ITEM[k]?.[0].toLowerCase()}`).join(" · ")}</div></div>
+          <div style={{ fontSize: 11.5, color: C.textSub, flex: "1 1 180px" }}>{p.proximas?.[0] ? `📅 próxima: ${dBR(p.proximas[0].data)} · ${p.proximas[0].item}` : ""}</div>
+          <b style={{ fontSize: 13, minWidth: 110, textAlign: "right" }}>{brl(p.valor_total)}</b>
+        </div>)}
+        {!pedidos.length && <div style={{ padding: 20, color: C.muted, textAlign: "center" }}>Nenhum pedido ainda — eles nascem sozinhos quando o cliente aceita um BID.</div>}
+      </div>)}
+      {pvAberto && <FichaPedido C={C} s={s} id={pvAberto} onFechar={() => { setPvAberto(null); carregar(); }} onMudou={carregar} onErro={erro} onOk={ok} onAbrirBid={(id) => { setPvAberto(null); setAberto(id); }} />}
 
       {novo && casca(s, <NovoBid C={C} s={s} clienteInicial={novo.cliente || null} onErro={erro} onCancelar={() => setNovo(null)}
         onCriado={async (b) => { setNovo(null); setC360(null); ok(`${b.numero} criado — preencha os itens e as condições.`); await carregar(); setAberto(b.id); }} />, () => setNovo(null), 720, 330)}
-      {aberto && <FichaBid C={C} s={s} id={aberto} onFechar={() => { setAberto(null); carregar(); }} onMudou={carregar} onErro={erro} onOk={ok} onAbrirCliente={(cid) => { if (cid) { setAberto(null); setC360(cid); } }} />}
+      {aberto && <FichaBid C={C} s={s} id={aberto} onFechar={() => { setAberto(null); carregar(); }} onMudou={carregar} onErro={erro} onOk={ok} onAbrirCliente={(cid) => { if (cid) { setAberto(null); setC360(cid); } }} onAbrirPV={(id) => { setAberto(null); setPvAberto(id); }} />}
       {c360 && <Cliente360 C={C} s={s} id={c360} onFechar={() => setC360(null)} onErro={erro} onAbrirBid={(id) => { setC360(null); setAberto(id); }}
-        onNovoBid={(c) => setNovo({ cliente: c })} onEditar={(id) => { setC360(null); setAba("clientes"); setEditarCli(id); }} />}
+        onNovoBid={(c) => setNovo({ cliente: c })} onAbrirPV={(id) => { setC360(null); setPvAberto(id); }} onEditar={(id) => { setC360(null); setAba("clientes"); setEditarCli(id); }} />}
 
       {arrasto && casca(s, <>
         {arrasto.fase === "perdido" ? <>

@@ -80,7 +80,9 @@ async function revisao(supabase, tenantId, id) {
   const enviada = vers.find((v) => v.versao === b.versao_enviada);
   const mudancas = enviada ? B.diferencas(enviada.snapshot, B.retrato(b)) : null;
   const prox = (b.versao_atual || 0) + (b.alterado_desde_versao || !b.versao_atual ? 1 : 0);
-  return { documento: await B.documento(supabase, tenantId, b.id), checklist: checklist(b, emp), para: b.contato_email || null, proxima_versao: prox,
+  const ck = checklist(b, emp);
+  if (b.tipo === 'aditivo') ck.erros.push(...(await require('./pedidosVenda').validarAditivo(supabase, b))); // 15c
+  return { documento: await B.documento(supabase, tenantId, b.id), checklist: ck, para: b.contato_email || null, proxima_versao: prox,
     versao_enviada: b.versao_enviada || 0, mudancas, nada_mudou: !!enviada && !b.alterado_desde_versao, resposta: enviada?.resposta || null,
     email: { assunto: assuntoPadrao(b, prox), texto: textoPadrao(b, prox), assinatura: [...assinaturaEmail(b, b.responsavel_nome), emp.nome_fantasia || emp.razao_social || emp.nome || ''].filter(Boolean),
       validade: `${b.validade_dias} dias (até ${dBR(somaDias(hojeBR(), Number(b.validade_dias || 10)))})` } };
@@ -96,6 +98,7 @@ const assuntoPadrao = (b, v, nova = jaEnviado(b, v)) => `${b.numero}${b.titulo ?
 function textoPadrao(b, v, nova = jaEnviado(b, v)) {
   const ola = `Olá${b.contato_nome ? `, ${b.contato_nome.split(' ')[0]}` : ''}!`;
   const ref = b.referencia ? ` (${b.referencia})` : '';
+  if (b.tipo === 'aditivo' && !nova) return `${ola}\n\nSegue o aditivo ${b.aditivo_numero || ''} ao nosso pedido, com as mudanças que combinamos. Pelo link abaixo você vê o que muda em relação ao pedido e responde item por item: aprovar, pedir revisão ou recusar. Se tudo estiver certo, o aceite é assinado ali mesmo — e o pedido é atualizado.\n\nQualquer dúvida, estou à disposição.`; // 15c
   return nova
     ? `${ola}\n\nAtualizamos a nossa proposta ${b.numero}${ref} para a versão ${v}, conforme conversamos. Pelo link abaixo você vê o documento completo e responde item por item: aprovar, pedir revisão ou recusar.`
     : `${ola}\n\nSegue a nossa proposta ${b.numero}${b.titulo ? ` — ${b.titulo}` : ''}${ref}. Pelo link abaixo você vê o documento completo e responde item por item: aprovar, pedir revisão ou recusar. Se tudo estiver certo, o aceite é assinado ali mesmo.\n\nQualquer dúvida, estou à disposição.`;
@@ -118,6 +121,7 @@ async function enviar(supabase, tenantId, quem, id, { assunto, texto: corpoTexto
   if (!podeEnviar(b)) return { status: 409, erro: b.fase === 'aceito' || b.fase === 'perdido' ? `BID ${B.FASE_NOME[b.fase].toLowerCase()}` : 'O BID já está com o cliente — use ✏ Criar revisão' };
   const emp = await empresaDe(supabase, tenantId);
   const ck = checklist(b, emp); if (ck.erros.length) return { status: 409, erro: `Falta: ${ck.erros.join(' · ')}` };
+  if (b.tipo === 'aditivo') { const ea = await require('./pedidosVenda').validarAditivo(supabase, b); if (ea.length) return { status: 409, erro: ea.join(' · ') }; } // 15c
   const reenvio = b.versao_enviada > 0;
   if (reenvio && !b.alterado_desde_versao) return { status: 409, erro: `Nada mudou desde a v${b.versao_enviada} — ajuste o documento antes de enviar de novo` };
   if (reenvio && !texto(nota, 500)) return { status: 400, erro: 'Diga ao cliente o que mudou nesta versão' };
@@ -187,7 +191,8 @@ async function aceiteExterno(supabase, tenantId, quem, id, { justificativa, data
   const hash = crypto.createHash('sha256').update(`${v?.hash}|fora_sistema|${j}|${em}|${quem.usuarioNome}`).digest('hex');
   const r = await upd(supabase, tenantId, b, { fase: 'aceito', fase_desde: new Date().toISOString(), ganho_em: em, aceite_canal: 'fora_sistema', aceite_obs: j, aceite_nome: `Registrado por ${quem.usuarioNome || 'usuário'}`, aceite_em: em, aceite_versao: b.versao_enviada, aceite_hash: hash, aceite_png: null, codigo_hash: null });
   await atividade(supabase, tenantId, quem, { bid_id: b.id, cliente_id: b.cliente_id, tipo: 'evento', texto: `✓ Aceite fora do sistema (v${b.versao_enviada}, ${dBR(d)}): ${j}` });
-  return { bid: r };
+  const pv = await require('./pedidosVenda').aoAceitar(supabase, tenantId, b.id, quem); // 15c: PV (ou aplica o aditivo)
+  return { bid: r, pv: pv?.pv || null, aditivo: pv?.aditivo || null };
 }
 
 // ─── link do cliente (público) ──────────────────────────────────────────────
@@ -236,7 +241,9 @@ async function paginaCliente(supabase, b, meta = {}) {
   const vencido = B.COM_CLIENTE.includes(b.fase) && !!b.valido_ate && b.valido_ate < hojeBR();
   return {
     numero: b.numero, versao: v.versao, fase: faseCliente(b), vencido, valido_ate: b.valido_ate, logo, documento: doc,
-    atualizacao: v.versao > 1 ? { em: v.enviada_em, nota: v.nota, mudancas: v.mudancas || [] } : null,
+    // 15c: "atualizada" só se o cliente já tinha recebido uma versão anterior (antes: v > 1)
+    atualizacao: vers.some((x) => x.versao < v.versao && x.enviada_em) ? { em: v.enviada_em, nota: v.nota, mudancas: v.mudancas || [] } : null,
+    aditivo: b.tipo === 'aditivo' ? await require('./pedidosVenda').mudancasAditivo(supabase, b, v.snapshot) : null,
     resposta: v.resposta || null, sugestao, mensagem: v.mensagem || null, email_mascarado: mascarar(b.envio_para || b.contato_email),
     codigo_enviado: !!b.codigo_hash && !!b.codigo_expira && new Date(b.codigo_expira) > new Date(),
     aceite: b.aceite_em ? { nome: b.aceite_nome, cargo: b.aceite_cargo, em: b.aceite_em, hash: b.aceite_hash, versao: b.aceite_versao, png: b.aceite_png, canal: b.aceite_canal } : null,
@@ -313,6 +320,7 @@ async function aceitar(supabase, b, body = {}, { ip } = {}) {
   await mandar(email, `Aceite registrado — proposta ${b.numero}`, casca(emp, `<p>Registramos o seu aceite da proposta <b>${esc(b.numero)}</b> (versão ${b.versao_enviada}) em ${new Date(em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}.</p>${botao(url, 'Ver / imprimir a proposta aceita')}<p style="font-size:11px;color:#777">Código de integridade (SHA-256): ${hash}</p>`));
   const para = await emailResponsavel(supabase, b.tenant_id, b);
   if (para) await mandar(para, `✍ ${b.cliente_nome} aceitou a proposta ${b.numero}`, casca(emp, `<p><b>${esc(nome)}</b> (${esc(b.cliente_nome)}) assinou o aceite da proposta <b>${esc(b.numero)}</b> (v${b.versao_enviada}, ${esc(B.brl(v?.valor_total) || '')}).</p>`));
+  await require('./pedidosVenda').aoAceitar(supabase, b.tenant_id, b.id, { usuarioNome: `${nome} (cliente)` }); // 15c: PV (ou aplica o aditivo)
   return { ok: true, aceite_em: em, aceite_hash: hash };
 }
 
