@@ -372,5 +372,6 @@ async function avisosDiarios(supabase, { hoje = hojeBR() } = {}) {
   return { avisos: n };
 }
 
-module.exports = { assuntoPadrao, textoPadrao, MOTIVOS_REVISAO, checklist, revisao, enviar, reenviarEmail, iniciarRevisao, descartarRevisao, aceiteExterno,
+module.exports = { emailEnvio, emailAceite, contatosEmissor, empresaDe, versoesDe, // 15c.3: usados por scripts/previaEmailsBid.js
+  assuntoPadrao, textoPadrao, MOTIVOS_REVISAO, checklist, revisao, enviar, reenviarEmail, iniciarRevisao, descartarRevisao, aceiteExterno,
   bidPorToken, paginaCliente, registrarVisualizacao, responder, enviarCodigo, aceitar, avisosDiarios, _definirEnvio, mascarar };
