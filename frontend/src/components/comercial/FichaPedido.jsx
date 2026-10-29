@@ -19,6 +19,7 @@ export default function FichaPedido({ C, s, id, onFechar, onMudou, onErro, onOk,
   const [d, setD] = useState(null);
   const [ocupado, setOcupado] = useState(false);
   const [cancelar, setCancelar] = useState(null);
+  const [confirmarAditivo, setConfirmarAditivo] = useState(false); // 15c.2: pergunta antes de criar
   const carregar = async () => { try { setD(await apiService.get(`/comercial/pvs/${id}`)); } catch (e) { onErro(e.message); onFechar(); } };
   useEffect(() => { carregar(); }, [id]); // eslint-disable-line
   if (!d) return null;
@@ -27,7 +28,8 @@ export default function FichaPedido({ C, s, id, onFechar, onMudou, onErro, onOk,
   const status = async (item, st) => { setOcupado(true); try { await apiService.post(`/comercial/pvs/${pv.id}/itens/${item}/status`, { status: st }); await carregar(); onMudou?.(); } catch (e) { onErro(e.message); } finally { setOcupado(false); } };
   const aditivo = async () => {
     if (d.aditivo_aberto) return onAbrirBid(d.aditivo_aberto.id);
-    setOcupado(true);
+    if (!confirmarAditivo) return setConfirmarAditivo(true);
+    setConfirmarAditivo(false); setOcupado(true);
     try { const r = await apiService.post(`/comercial/pvs/${pv.id}/aditivo`, {}); onOk(`Aditivo ${r.bid.numero} criado — ajuste os itens e envie ao cliente pelo link.`); onMudou?.(); onAbrirBid(r.bid.id); }
     catch (e) { onErro(e.message); } finally { setOcupado(false); }
   };
@@ -96,6 +98,16 @@ export default function FichaPedido({ C, s, id, onFechar, onMudou, onErro, onOk,
           </div>
         </div>
       </div>
+      {confirmarAditivo && <div style={{ position: "fixed", inset: 0, background: "#00000090", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 340, padding: 16 }} onClick={(e) => { e.stopPropagation(); setConfirmarAditivo(false); }}>
+        <div onClick={(e) => e.stopPropagation()} style={{ ...s.card, width: 480, maxWidth: "100%", padding: "18px 20px" }}>
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Criar um aditivo ao {pv.numero}?</div>
+          <div style={{ fontSize: 13, color: C.textSub, lineHeight: 1.6 }}>O aditivo começa com os itens atuais do pedido. Você pode <b>incluir, retirar</b> (menos os já programados ou em execução) ou <b>ajustar valores e datas</b>, e depois enviar ao cliente pelo link para ele aprovar e assinar. O pedido só muda quando o cliente aceitar.<br />Enquanto não for enviado, o aditivo pode ser descartado.</div>
+          <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+            <button type="button" onClick={() => setConfirmarAditivo(false)} style={{ ...s.btn(false), cursor: "pointer", flex: 1, color: C.text }}>Voltar</button>
+            <button type="button" disabled={ocupado} onClick={aditivo} style={{ ...s.btn(true, C.accent), flex: 1 }}>➕ Criar aditivo</button>
+          </div>
+        </div>
+      </div>}
       {cancelar !== null && <div style={{ position: "fixed", inset: 0, background: "#00000090", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 340, padding: 16 }} onClick={(e) => { e.stopPropagation(); setCancelar(null); }}>
         <div onClick={(e) => e.stopPropagation()} style={{ ...s.card, width: 460, maxWidth: "100%", padding: "18px 20px" }}>
           <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Cancelar o pedido {pv.numero}?</div>

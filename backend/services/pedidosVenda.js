@@ -176,6 +176,18 @@ async function criarAditivo(supabase, tenantId, quem, id) {
   if (pv.bid_id) await atividade(supabase, tenantId, quem, { bid_id: pv.bid_id, cliente_id: pv.cliente_id, tipo: 'evento', texto: `➕ Aditivo ${n} em elaboração (${reg.numero})` });
   return { bid: data[0] };
 }
+/** 🗑 15c.2: descartar um aditivo que NUNCA foi enviado ao cliente (criado sem querer) — some sem deixar rastro no pedido */
+async function descartarAditivo(supabase, tenantId, quem, bidId) {
+  const b = idOk(bidId) ? (await q(supabase.from('bids').select('*').eq('tenant_id', tenantId).eq('id', bidId)))[0] : null;
+  if (!b || b.tipo !== 'aditivo') return { status: 404, erro: 'Aditivo não encontrado' };
+  if (Number(b.versao_enviada || 0) > 0 || b.fase !== 'elaboracao') return { status: 409, erro: 'Este aditivo já foi enviado ao cliente — use ✕ Encerrar aditivo (fica registrado)' };
+  for (const t of ['bid_atividades', 'bid_versoes', 'bid_visualizacoes']) { const { error } = await supabase.from(t).delete().eq('tenant_id', tenantId).eq('bid_id', b.id); if (error && !/does not exist|schema cache/.test(error.message)) throw new Error(error.message); }
+  const { error } = await supabase.from('bids').delete().eq('id', b.id).eq('tenant_id', tenantId);
+  if (error) throw new Error(error.message);
+  const pv = (await q(supabase.from('pedidos_venda').select('*').eq('tenant_id', tenantId).eq('id', b.pv_id)))[0];
+  if (pv?.bid_id) await atividade(supabase, tenantId, quem, { bid_id: pv.bid_id, cliente_id: pv.cliente_id, tipo: 'evento', texto: `🗑 Aditivo ${b.aditivo_numero} descartado antes do envio (${b.numero})` });
+  return { ok: true, pv_id: b.pv_id };
+}
 /** antes de enviar um aditivo: item já programado/em execução/concluído não pode sair nem mudar de valor */
 async function validarAditivo(supabase, b) {
   if (b.tipo !== 'aditivo') return [];
@@ -223,7 +235,7 @@ async function aplicarAditivo(supabase, tenantId, b, quem = {}) {
   if (pv.bid_id) await atividade(supabase, tenantId, quem, { bid_id: pv.bid_id, cliente_id: pv.cliente_id, tipo: 'evento', texto: txt });
   await avisar(supabase, tenantId, b.responsavel_id, `📎 Aditivo ${n} ao pedido ${pv.numero} aceito — ${pv.cliente_nome}`,
     `<p><b>${esc(b.aceite_nome || pv.cliente_nome)}</b> aceitou o <b>aditivo ${n}</b> ao pedido <b>${esc(pv.numero)}</b>.</p><p>Valor: ${esc(B.brl(pv.valor_total) || '—')} → <b>${esc(B.brl(t.total) || '—')}</b></p>${mudancas.length ? `<ul>${mudancas.slice(0, 15).map((m) => `<li>${esc(m)}</li>`).join('')}</ul>` : ''}<p>O pedido já foi atualizado.</p>`);
-  return { aditivo: ad[0] };
+  return { aditivo: ad[0], pv: { id: pv.id, numero: pv.numero } };
 }
 
 // ─── documento (PDF do pedido) ──────────────────────────────────────────────
@@ -247,4 +259,4 @@ async function doCliente(supabase, tenantId, clienteId) {
   try { return (await q(supabase.from('pedidos_venda').select('*').eq('tenant_id', tenantId).eq('cliente_id', clienteId))).map(enfeitar).sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em))); } catch { return []; }
 }
 
-module.exports = { STATUS_ITEM, STATUS_PV, statusPV, aoAceitar, criarPV, gerarManual, listar, detalhe, mudarStatusItem, cancelar, criarAditivo, validarAditivo, mudancasAditivo, aplicarAditivo, documento, doCliente, _definirEnvio };
+module.exports = { descartarAditivo, STATUS_ITEM, STATUS_PV, statusPV, aoAceitar, criarPV, gerarManual, listar, detalhe, mudarStatusItem, cancelar, criarAditivo, validarAditivo, mudancasAditivo, aplicarAditivo, documento, doCliente, _definirEnvio };

@@ -65,6 +65,7 @@ function CartaoBid({ C, s, b, onAbrir, arrastavel }) {
       })()}
       {alerta && <div style={{ fontSize: 10.5, color: alerta.tipo === "vencido" ? C.danger : C.warn, marginTop: 2, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>⚠ {alerta.texto}</div>}
       {t && <div style={{ fontSize: 10.5, color: atrasada ? C.danger : C.textSub, marginTop: 3, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>⏰ {dBR(t.prevista_para?.slice(0, 10))} {t.texto}</div>}
+      {b.fase === "aceito" && b.pv_id && <div style={{ marginTop: 5 }}><span style={{ ...s.tag(C.success), fontSize: 10, letterSpacing: 0 }}>🧾 Pedido gerado</span></div>}
       {b.fase === "perdido" && b.motivo_perda && <div style={{ fontSize: 10.5, color: C.danger, marginTop: 3 }}>{MOTIVOS[b.motivo_perda]}</div>}
     </div>
   );
@@ -175,6 +176,9 @@ export default function TelaComercial({ C, s }) {
   const [periodo, setPeriodo] = useState({ de: menosDias(89), ate: hoje() });
   const [busca, setBusca] = useState(""); const [filtroFase, setFiltroFase] = useState("abertos");
   const [pedidos, setPedidos] = useState(null); const [pvAberto, setPvAberto] = useState(null); // 15c
+  // 15c.2: sem banner no Funil (empurrava o kanban) — pedido novo (até 3 dias) = selo "N novo(s)" na aba e 🆕 na lista
+  const ehNovo = (p) => Date.now() - new Date(p.criado_em) < 3 * 86400000;
+  const novos = (pedidos || []).filter(ehNovo).length;
   const [aberto, setAberto] = useState(null); const [novo, setNovo] = useState(null); const [c360, setC360] = useState(null); const [editarCli, setEditarCli] = useState(null);
   const [arrasto, setArrasto] = useState(null); // { id, fase } para perdido/aceito
   const [msg, setMsg] = useState(null); const [ocupado, setOcupado] = useState(false);
@@ -219,16 +223,11 @@ export default function TelaComercial({ C, s }) {
         <button type="button" onClick={() => setNovo({})} style={{ ...s.btn(true, C.accent), cursor: "pointer" }}>＋ Novo BID</button>
       </div>
       <div style={{ display: "flex", gap: 4, borderBottom: `1px solid ${C.border}`, marginBottom: 14, flexWrap: "wrap" }}>
-        {abaBt("funil", "📊 Funil")}{abaBt("bids", "📝 BIDs")}{abaBt("clientes", "👥 Clientes")}{abaBt("pedidos", `🧾 Pedidos${(pedidos || []).filter((p) => ["aberto", "em_execucao"].includes(p.status)).length ? ` (${pedidos.filter((p) => ["aberto", "em_execucao"].includes(p.status)).length})` : ""}`)}{abaBt("modelos", "🧩 Modelos de BID")}
+        {abaBt("funil", "📊 Funil")}{abaBt("bids", "📝 BIDs")}{abaBt("clientes", "👥 Clientes")}{abaBt("pedidos", <>🧾 Pedidos{(pedidos || []).filter((p) => ["aberto", "em_execucao"].includes(p.status)).length ? ` (${pedidos.filter((p) => ["aberto", "em_execucao"].includes(p.status)).length})` : ""}{novos ? <span style={{ ...s.tag(C.success), marginLeft: 6, fontSize: 9.5 }}>{novos} novo{novos > 1 ? "s" : ""}</span> : null}</>)}{abaBt("modelos", "🧩 Modelos de BID")}
       </div>
       {msg && <div style={{ ...s.card, padding: "9px 12px", marginBottom: 12, fontSize: 13, borderColor: msg.tipo === "erro" ? C.danger : C.success, color: msg.tipo === "erro" ? C.danger : C.success, display: "flex" }}>
         <span style={{ flex: 1 }}>{msg.t}</span><button type="button" onClick={() => setMsg(null)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer" }}>×</button></div>}
 
-      {aba === "funil" && (pedidos || []).filter((p) => Date.now() - new Date(p.criado_em) < 3 * 86400000).map((p) => (
-        <div key={p.id} style={{ ...s.card, padding: "10px 14px", marginBottom: 10, borderColor: C.success, background: `${C.success}12`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
-          <div style={{ flex: 1, fontSize: 13 }}>🎉 <b>{p.bid_numero} aceito!</b> O pedido <b>{p.numero}</b> foi gerado: {p.cliente_nome} · <b>{brl(p.valor_total)}</b> · {p.qtd_itens} item(ns). Próximo passo: programar a execução.</div>
-          <button type="button" onClick={() => setPvAberto(p.id)} style={{ ...s.btn(true, C.success), padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>Abrir o pedido</button>
-        </div>))}
       {aba === "funil" && (!funil ? <div style={{ color: C.muted }}>Carregando…</div> : <>
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap", fontSize: 12, color: C.textSub }}>
           Período <input type="date" value={periodo.de} onChange={(e) => e.target.value && setPeriodo({ ...periodo, de: e.target.value })} style={{ ...s.input, width: 150, padding: "6px 8px" }} />
@@ -313,7 +312,7 @@ export default function TelaComercial({ C, s }) {
       {aba === "pedidos" && (!pedidos ? <div style={{ color: C.muted }}>Carregando…</div> : <div style={{ ...s.card, overflow: "hidden" }}>
         {pedidos.map((p, i) => <div key={p.id} onClick={() => setPvAberto(p.id)} className="qf-clicavel" style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 14px", borderBottom: i < pedidos.length - 1 ? `1px solid ${C.border}` : "none", flexWrap: "wrap", textDecoration: "none" }}>
           <span style={{ ...s.tag(STATUS_PV[p.status]?.[1]), minWidth: 84, textAlign: "center" }}>{STATUS_PV[p.status]?.[0]}</span>
-          <div style={{ flex: "2 1 240px", minWidth: 0 }}><div style={{ fontWeight: 600, fontSize: 13 }}>🧾 {p.numero} · {p.cliente_nome}</div>
+          <div style={{ flex: "2 1 240px", minWidth: 0 }}><div style={{ fontWeight: 600, fontSize: 13 }}>🧾 {p.numero} · {p.cliente_nome}{ehNovo(p) && <span style={{ ...s.tag(C.success), marginLeft: 6, fontSize: 9.5 }}>🆕 novo</span>}</div>
             <div style={{ fontSize: 11, color: C.muted }}>{p.titulo || p.bid_numero}{p.aditivo_atual ? ` · 📎 ${p.aditivo_atual} aditivo(s)` : ""} · {Object.entries(p.itens_por_status || {}).filter(([, n]) => n).map(([k, n]) => `${n} ${STATUS_ITEM[k]?.[0].toLowerCase()}`).join(" · ")}</div></div>
           <div style={{ fontSize: 11.5, color: C.textSub, flex: "1 1 180px" }}>{p.proximas?.[0] ? `📅 próxima: ${dBR(p.proximas[0].data)} · ${p.proximas[0].item}` : ""}</div>
           <b style={{ fontSize: 13, minWidth: 110, textAlign: "right" }}>{brl(p.valor_total)}</b>

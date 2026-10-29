@@ -311,6 +311,29 @@ async function enviarCodigo(supabase, b) {
   if (aviso) return { status: 503, erro: 'Não conseguimos enviar o código agora. Tente de novo em instantes.' };
   return { ok: true, email: mascarar(para) };
 }
+/** 15c.2: confirmação do aceite ao cliente — com o título, o resumo do que foi aceito, o pedido gerado e os próximos passos */
+function emailAceite(emp, b, v, { nome, cargo, em, hash, url, pv, aditivo, contatos }) {
+  const snap = v?.snapshot || {}; const t = B.totais(snap.grupos || [], snap.valor_total_manual);
+  const rot = snap.conteudo?.rotulo_grupo || 'Trecho'; const ehAditivo = b.tipo === 'aditivo';
+  const quando = new Date(em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'long', timeStyle: 'short' });
+  const titulo = `${b.numero}${b.titulo ? ` — ${b.titulo}` : b.referencia ? ` — ${b.referencia}` : ''}`;
+  const linhas = (t.grupos || []).map((g, i) => `<tr><td style="padding:5px 8px;border-bottom:1px solid #eee">${esc(g.titulo || `${rot} ${i + 1}`)}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:center">${(g.itens || []).length}</td><td style="padding:5px 8px;border-bottom:1px solid #eee;text-align:right;white-space:nowrap">${esc(B.brl(g.subtotal) || '—')}</td></tr>`).join('');
+  const corpo = `<p>Olá, ${esc(String(nome).split(' ')[0])}!</p>
+    <p>${ehAditivo ? `Confirmamos o seu aceite do <b>${esc(titulo)}</b>. O pedido <b>${esc(pv?.numero || aditivo?.pv_numero || '')}</b> já foi atualizado com as mudanças.` : `Obrigado pela confiança! Confirmamos o seu aceite da proposta <b>${esc(titulo)}</b>.`}</p>
+    <table style="border-collapse:collapse;font-size:13px;margin:8px 0 4px;width:100%;max-width:520px">
+      <tr><td style="padding:3px 0;color:#666;width:150px">Aceito por</td><td style="padding:3px 0"><b>${esc(nome)}</b>${cargo ? ` — ${esc(cargo)}` : ''}</td></tr>
+      <tr><td style="padding:3px 0;color:#666">Data e hora</td><td style="padding:3px 0">${esc(quando)}</td></tr>
+      <tr><td style="padding:3px 0;color:#666">Versão aceita</td><td style="padding:3px 0">v${b.aceite_versao || b.versao_enviada}${b.referencia ? ` · sua referência: ${esc(b.referencia)}` : ''}</td></tr>
+      ${!ehAditivo && pv ? `<tr><td style="padding:3px 0;color:#666">Nosso pedido</td><td style="padding:3px 0"><b>${esc(pv.numero)}</b></td></tr>` : ''}
+      <tr><td style="padding:3px 0;color:#666">Valor total</td><td style="padding:3px 0"><b>${esc(B.brl(t.total) || '—')}</b></td></tr>
+    </table>
+    ${linhas ? `<table style="border-collapse:collapse;font-size:12.5px;margin:10px 0;width:100%;max-width:520px"><tr style="background:#f4f4f5"><th style="padding:5px 8px;text-align:left">${esc(rot)}</th><th style="padding:5px 8px">Itens</th><th style="padding:5px 8px;text-align:right">Valor</th></tr>${linhas}</table>` : ''}
+    <p><b>Próximos passos:</b> nossa equipe vai programar a execução${ehAditivo ? ' das mudanças' : ''} e entra em contato para confirmar datas, local e a documentação.</p>
+    ${botao(url, 'Ver / imprimir a proposta aceita')}
+    <p>Atenciosamente,<br/>${(contatos?.linhas || []).map(esc).join('<br/>')}<br/><b>${esc(contatos?.empresa || emp.nome_fantasia || emp.razao_social || '')}</b>${contatos?.empContato ? `<br/><span style="color:#555">${esc(contatos.empContato)}</span>` : ''}</p>
+    <p style="font-size:11px;color:#777">Registro do aceite: assinatura na tela + código de confirmação enviado a este e-mail. Código de integridade (SHA-256): ${esc(hash)}</p>`;
+  return { assunto: `✅ Aceite confirmado — ${titulo}${!ehAditivo && pv ? ` · pedido ${pv.numero}` : ''}`, html: casca(emp, corpo) };
+}
 /** ✍ aceite: { codigo, nome, cargo, assinatura_png } */
 async function aceitar(supabase, b, body = {}, { ip } = {}) {
   if (b.fase !== 'aguardando_aceite') return { status: 409, erro: b.fase === 'aceito' ? 'Esta proposta já foi aceita' : 'Esta proposta não está aguardando o aceite' };
@@ -328,11 +351,12 @@ async function aceitar(supabase, b, body = {}, { ip } = {}) {
   await upd(supabase, b.tenant_id, b, { fase: 'aceito', fase_desde: em, ganho_em: em, aceite_canal: 'link', aceite_nome: nome, aceite_cargo: texto(body.cargo, 80), aceite_email: email, aceite_em: em, aceite_png: png,
     aceite_hash: hash, aceite_versao: b.versao_enviada, aceite_ip: texto(ip, 60), codigo_hash: null, codigo_expira: null, codigo_tentativas: 0 });
   await atividade(supabase, b.tenant_id, { usuarioNome: `${nome} (cliente)` }, { bid_id: b.id, cliente_id: b.cliente_id, tipo: 'evento', texto: `✍ Aceito pelo cliente — ${nome}${texto(body.cargo, 80) ? `, ${texto(body.cargo, 80)}` : ''} (v${b.versao_enviada}, código confirmado em ${email})` });
+  // 15c: PV (ou aplica o aditivo) ANTES do e-mail — o nº do pedido vai na confirmação.
+  // 15c.2: o responsável não recebe mais um e-mail "aceitou" aqui — o "🎉 Parabéns! … pedido gerado" (ou "aditivo aceito") já avisa.
+  const r = await require('./pedidosVenda').aoAceitar(supabase, b.tenant_id, b.id, { usuarioNome: `${nome} (cliente)` });
   const emp = await empresaDe(supabase, b.tenant_id); const url = B.linkCliente(b.token);
-  await mandar(email, `Aceite registrado — proposta ${b.numero}`, casca(emp, `<p>Registramos o seu aceite da proposta <b>${esc(b.numero)}</b> (versão ${b.versao_enviada}) em ${new Date(em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo' })}.</p>${botao(url, 'Ver / imprimir a proposta aceita')}<p style="font-size:11px;color:#777">Código de integridade (SHA-256): ${hash}</p>`));
-  const para = await emailResponsavel(supabase, b.tenant_id, b);
-  if (para) await mandar(para, `✍ ${b.cliente_nome} aceitou a proposta ${b.numero}`, casca(emp, `<p><b>${esc(nome)}</b> (${esc(b.cliente_nome)}) assinou o aceite da proposta <b>${esc(b.numero)}</b> (v${b.versao_enviada}, ${esc(B.brl(v?.valor_total) || '')}).</p>`));
-  await require('./pedidosVenda').aoAceitar(supabase, b.tenant_id, b.id, { usuarioNome: `${nome} (cliente)` }); // 15c: PV (ou aplica o aditivo)
+  const e = emailAceite(emp, { ...b, aceite_versao: b.versao_enviada }, v, { nome, cargo: texto(body.cargo, 80), em, hash, url, pv: r?.pv || null, aditivo: r?.aditivo || null, contatos: await contatosEmissor(supabase, b.tenant_id, b, emp) });
+  await mandar(email, e.assunto, e.html);
   return { ok: true, aceite_em: em, aceite_hash: hash };
 }
 

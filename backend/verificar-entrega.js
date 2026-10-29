@@ -204,31 +204,31 @@ const ESPERADO = {
   'front:TelaOrdensVenda.jsx': 'e3fadc9d3c6ae4be1a2f14c693523f13', // etapa 14e.2
   'front:TelaUsuariosNova.jsx': 'd7d98c07839cc133077532dd7022c751', // etapa 15a
   'migrations/051_comercial_bid.sql': '65c3c268119eadac6a0ecda34b72197c', // etapa 15a (novo)
-  'routes/comercial.js': '4617ced5f86da226c3ceeb7087945c2a', // etapa 15c
+  'routes/comercial.js': 'd2e4b95a662ec6e16e16940b1fcc103f', // etapa 15c.2
   'services/bids.js': '15652e7e496bb7df25d033c7a8ca0b90', // etapa 15c.1
-  'front:FichaBid.jsx': '5aebe45c37dfa82dadc11df34d9f7771', // etapa 15c.1
+  'front:FichaBid.jsx': '392e2e3659b8748ff468706f7f6326ab', // etapa 15c.2
   'front:ModelosBid.jsx': 'fce825c9584b3ff4a2a1040d575de24c', // etapa 15a (novo)
-  'front:TelaComercial.jsx': 'e129da57d376f30c4141249dc9f07f87', // etapa 15c.1
+  'front:TelaComercial.jsx': '34b82e458ef12c73c85b85e5da66dfa0', // etapa 15c.2
   'front:gerarBid.js': '0058afb616647031171d78d138935133', // etapa 15c
   'migrations/052_bid_cliente.sql': 'a8b6f934576474b54a7246fda86d3eda', // etapa 15b (novo)
   'routes/bidLink.js': 'e566a5246b48e24430a997fda8d32e27', // etapa 15b (novo)
-  'services/bidsCliente.js': '2f6adae19871147eb57b2067acf23611', // etapa 15c.1
+  'services/bidsCliente.js': 'ba43bdd221ceb1eb2783ef1d470b9626', // etapa 15c.2
   'front:TelaBidPublica.jsx': 'd1d20f711067219200b30c62a7d19d99', // etapa 15c.1
   'front:EnviarBid.jsx': '4d97c008534b17bcf66a71f186b4f31a', // etapa 15b.3
   'migrations/053_pedidos_venda.sql': '4036d7fd11c94032774e96372e098942', // etapa 15c (novo)
-  'services/pedidosVenda.js': '4c37bef0c3144326caef49d1cf90a309', // etapa 15c.1
-  'front:FichaPedido.jsx': '72d95b9c8d0992952f0f733987de1bd6', // etapa 15c (novo)
+  'services/pedidosVenda.js': '9487358c5afa6158fc71f4e8d40e4806', // etapa 15c.2
+  'front:FichaPedido.jsx': 'faaffcbbb48b6703704345bc1b3d7146', // etapa 15c.2
   'migrations/054_tarefa_atribuida.sql': '586bd43f09653a76e8d6a299e55905e3', // etapa 15c.1 (novo)
 };
 
-// Antes de copiar a etapa 15c.1 — base: 15c
+// Antes de copiar a etapa 15c.2 — base: 15c.1
 const ANTES = {
-  'services/bids.js': 'f71ba1808ebf0a0a1e9f8ff677b6afa7',
-  'services/bidsCliente.js': '8fc16cab343656059405a6f51d269178',
-  'services/pedidosVenda.js': '67e7c7faf35e9620263af233c1dd87f0',
-  'front:FichaBid.jsx': '74c2ef190a71e377bfb618b4e1e412a9',
-  'front:TelaComercial.jsx': '6e8dc32c69fd26dcc0c2110fb707b807',
-  'front:TelaBidPublica.jsx': '4c2da65b5cfb4d8090ee339d104dbdb4',
+  'services/bidsCliente.js': '2f6adae19871147eb57b2067acf23611',
+  'services/pedidosVenda.js': '4c37bef0c3144326caef49d1cf90a309',
+  'routes/comercial.js': '4617ced5f86da226c3ceeb7087945c2a',
+  'front:FichaBid.jsx': '5aebe45c37dfa82dadc11df34d9f7771',
+  'front:FichaPedido.jsx': '72d95b9c8d0992952f0f733987de1bd6',
+  'front:TelaComercial.jsx': 'e129da57d376f30c4141249dc9f07f87',
 };
 
 const RAIZ = process.cwd();
@@ -266,7 +266,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 15c.1)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 15c.2)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
