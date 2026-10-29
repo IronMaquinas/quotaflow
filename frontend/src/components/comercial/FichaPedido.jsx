@@ -20,7 +20,8 @@ export default function FichaPedido({ C, s, id, onFechar, onMudou, onErro, onOk,
   const [ocupado, setOcupado] = useState(false);
   const [cancelar, setCancelar] = useState(null);
   const [confirmarAditivo, setConfirmarAditivo] = useState(false); // 15c.2: pergunta antes de criar
-  const carregar = async () => { try { setD(await apiService.get(`/comercial/pvs/${id}`)); } catch (e) { onErro(e.message); onFechar(); } };
+  const [exe, setExe] = useState(null); // 16a: ATs do pedido (só leitura)
+  const carregar = async () => { try { setD(await apiService.get(`/comercial/pvs/${id}`)); apiService.get(`/comercial/pvs/${id}/execucoes`).then(setExe).catch(() => setExe(null)); } catch (e) { onErro(e.message); onFechar(); } };
   useEffect(() => { carregar(); }, [id]); // eslint-disable-line
   if (!d) return null;
   const pv = d.pv; const ct = pv.conteudo || {}; const cols = ct.colunas || []; const rot = ct.rotulo_grupo || "Grupo";
@@ -71,16 +72,18 @@ export default function FichaPedido({ C, s, id, onFechar, onMudou, onErro, onOk,
             {(pv.grupos || []).map((g, gi) => (
               <div key={g.id} style={{ ...s.card, padding: 12, marginBottom: 12, background: C.bg }}>
                 <div style={{ display: "flex", alignItems: "baseline", marginBottom: 8 }}><b style={{ flex: 1, fontSize: 13 }}>{g.titulo || `${rot} ${gi + 1}`}</b><span style={{ fontSize: 12, color: C.textSub }}>Subtotal: <b style={{ color: C.text }}>{brl(g.subtotal)}</b></span></div>
+                {(() => { const atG = (exe?.execucoes || []).find((x) => String(x.grupo_id) === String(g.id) && x.status !== "cancelada"); return <>
+                {atG && <div style={{ fontSize: 11.5, color: C.textSub, marginBottom: 4 }}>🚛 <b style={{ color: C.text }}>{atG.numero}</b> · {atG.status_nome} · coleta {dataHora(atG.inicio_previsto)}{atG.motorista_nome ? ` · ${atG.motorista_nome}` : ""}</div>}
                 {(g.itens || []).map((i) => { const st = i.status || "a_programar"; return (
                   <div key={i.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "7px 0", borderTop: `1px solid ${C.border}`, flexWrap: "wrap", opacity: st === "cancelado" ? 0.5 : 1 }}>
                     <div style={{ flex: "3 1 260px", fontSize: 12.5 }}>{resumo(i)}{Number(i.quantidade || 1) !== 1 ? ` · qtd ${i.quantidade}` : ""}
                       {i.valores?.data_prevista && <div style={{ fontSize: 11, color: C.textSub }}>📅 previsto {dBR(i.valores.data_prevista)}</div>}</div>
                     <div style={{ fontSize: 12.5, minWidth: 100, textAlign: "right" }}>{i.valor != null ? brl(Number(i.valor) * Number(i.quantidade || 1)) : "—"}</div>
-                    <select disabled={ocupado || pv.status === "cancelado"} value={st} onChange={(e) => status(i.id, e.target.value)} style={{ ...s.input, width: 150, padding: "6px 8px", fontSize: 12, color: STATUS_ITEM[st][1], fontWeight: 600 }}>
+                    <select title={atG && st !== "cancelado" ? `Controlado pela ${atG.numero} (🚛 Programação)` : undefined} disabled={ocupado || pv.status === "cancelado" || (!!atG && st !== "cancelado")} value={st} onChange={(e) => status(i.id, e.target.value)} style={{ ...s.input, width: 150, padding: "6px 8px", fontSize: 12, color: STATUS_ITEM[st][1], fontWeight: 600 }}>
                       {Object.entries(STATUS_ITEM).map(([k, [l]]) => <option key={k} value={k}>{l}</option>)}</select>
-                  </div>); })}
+                  </div>); })}</>; })()}
               </div>))}
-            <div style={{ fontSize: 11, color: C.muted }}>O status de cada item é manual por enquanto. Na etapa 16a, a AT de cada trecho passa a atualizar sozinha (programado → em execução → concluído).</div>
+            <div style={{ fontSize: 11, color: C.muted }}>Trecho com AT: o status dos itens segue a AT sozinho (programado → em execução → concluído). Sem AT, o status é manual.</div>
           </div>
           <div style={{ flex: "1 1 300px", minWidth: 0, padding: "14px 16px", background: C.bg }}>
             <div style={s.label}>PRÓXIMAS EXECUÇÕES</div>

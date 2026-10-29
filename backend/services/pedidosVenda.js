@@ -77,7 +77,9 @@ async function criarPV(supabase, tenantId, b, quem = {}) {
   const s = v?.snapshot || B.retrato(b);
   const grupos = comStatus(s.grupos || []); const t = B.totais(grupos, s.valor_total_manual);
   const agora = new Date().toISOString();
-  const reg = { tenant_id: tenantId, numero: await proximoNumero(supabase, tenantId), bid_id: b.id, bid_numero: b.numero, bid_versao: v?.versao || b.aceite_versao || null,
+  // 16a: o modelo do BID diz o que o aceite gera (transporte → AT; locação, serviço, venda → etapas futuras)
+  const tipoExec = b.modelo_id ? ((await q(supabase.from('bid_modelos').select('*').eq('id', b.modelo_id)).catch(() => []))[0]?.tipo_execucao || 'transporte') : 'transporte';
+  const reg = { tenant_id: tenantId, numero: await proximoNumero(supabase, tenantId), tipo_execucao: tipoExec, bid_id: b.id, bid_numero: b.numero, bid_versao: v?.versao || b.aceite_versao || null,
     cliente_id: b.cliente_id, cliente_nome: b.cliente_nome, contato_nome: s.contato_nome || b.contato_nome || null, contato_email: b.envio_para || b.contato_email || null,
     titulo: s.titulo || b.titulo || null, referencia: s.referencia || b.referencia || null, conteudo: s.conteudo || {}, grupos, condicoes: s.condicoes || {},
     valor_total_manual: s.valor_total_manual ?? null, valor_total: t.total, aditivo_atual: 0, status: 'aberto', cancelado_motivo: null,
@@ -130,8 +132,13 @@ async function mudarStatusItem(supabase, tenantId, quem, id, itemId, { status } 
   if (pv.status === 'cancelado') return { status: 409, erro: 'Pedido cancelado' };
   if (!STATUS_ITEM[status]) return { status: 400, erro: 'Status inválido' };
   let achou = null;
-  const grupos = (pv.grupos || []).map((g) => ({ ...g, itens: (g.itens || []).map((i) => { if (String(i.id) !== String(itemId)) return i; achou = { ...i, grupo: g.titulo }; return { ...i, status }; }) }));
+  const grupos = (pv.grupos || []).map((g) => ({ ...g, itens: (g.itens || []).map((i) => { if (String(i.id) !== String(itemId)) return i; achou = { ...i, grupo: g.titulo, grupo_id: g.id }; return { ...i, status }; }) }));
   if (!achou) return { status: 404, erro: 'Item não encontrado' };
+  if (status !== 'cancelado') { // 16a: trecho com AT ativa → o status segue a AT
+    const { data: ats } = await supabase.from('execucoes').select('*').eq('tenant_id', tenantId).eq('pv_id', pv.id);
+    const at = (ats || []).find((e) => String(e.grupo_id) === String(achou.grupo_id) && ['programada', 'em_execucao', 'concluida'].includes(e.status));
+    if (at) return { status: 409, erro: `O status deste item é controlado pela ${at.numero} (🚛 Programação)` };
+  }
   if ((achou.status || 'a_programar') === status) return { pv };
   const novo = statusPV(grupos, pv.status);
   const { data, error } = await supabase.from('pedidos_venda').update({ grupos, status: novo, atualizado_em: new Date().toISOString() }).eq('id', pv.id).eq('tenant_id', tenantId).select();

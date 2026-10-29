@@ -150,6 +150,7 @@ app.use('/api/inspecao-link', require('./routes/inspecaoLink')); // etapa 14b.1 
 app.use('/api/contratos', tenantMiddleware, require('./routes/contratos')); // etapa 14b.3 — contratos de locação (empresa)
 app.use('/api/monitor-cnpj', tenantMiddleware, require('./routes/monitorCnpj')); // etapa 14e — 🛡 Monitor de CNPJs
 app.use('/api/comercial', tenantMiddleware, require('./routes/comercial')); // etapa 15a — 📈 Comercial (mini-CRM + BID)
+app.use('/api/programacao', tenantMiddleware, require('./routes/programacao')); // etapa 16a — 🚛 Programação (execuções / AT)
 app.use('/api/bid-link', require('./routes/bidLink')); // etapa 15b — link do cliente para o BID (público, token)
 app.use('/api/locatario', tenantMiddleware, require('./routes/locatario')); // etapa 14b.3 — área do locatário
 

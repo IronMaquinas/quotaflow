@@ -40,6 +40,8 @@ const TIPOS_ATIV = { ligacao: '📞 Ligação', email: '✉ E-mail', reuniao: '�
 const TIPOS_COLUNA = ['texto', 'numero', 'sim_nao', 'data'];
 const TIPOS_CONDICAO = ['texto', 'moeda', 'numero'];
 const OPCOES_FISCAIS = ['Simples Nacional', 'Lucro Presumido', 'Lucro Real', 'MEI'];
+/** 16a: o que o aceite gera — só transporte nesta etapa; os outros já ficam marcados no modelo */
+const TIPOS_EXECUCAO = { transporte: 'Transporte → AT por trecho', locacao: 'Locação → contrato de locação (em breve)', servico: 'Serviço / manutenção → AS (em breve)', venda: 'Venda de peça/produto → entrega (em breve)' };
 /** Campos automáticos que os textos das seções podem usar */
 const CAMPOS = [['empresa.razao_social', 'Sua razão social'], ['empresa.nome', 'Seu nome fantasia'], ['cliente.nome', 'Nome do cliente'], ['cliente.razao_social', 'Razão social do cliente'],
   ['bid.numero', 'Nº do BID'], ['bid.referencia', 'Referência do cliente'], ['bid.validade', 'Validade (dias)']];
@@ -53,6 +55,7 @@ function validarModelo(body = {}, parcial = false) {
   if (tem('descricao')) out.descricao = texto(body.descricao, 500);
   if (tem('titulo_documento')) out.titulo_documento = texto(body.titulo_documento, 160);
   if (tem('rotulo_grupo')) out.rotulo_grupo = texto(body.rotulo_grupo, 40) || 'Grupo';
+  if (tem('tipo_execucao')) { if (!TIPOS_EXECUCAO[body.tipo_execucao]) return { erro: 'Tipo de execução inválido' }; out.tipo_execucao = body.tipo_execucao; } // 16a
   if (tem('validade_dias')) { const n = num(body.validade_dias); if (!Number.isInteger(n) || n < 1 || n > 365) return { erro: 'Validade: de 1 a 365 dias' }; out.validade_dias = n; }
   if (!parcial || tem('secoes')) { const r = validarSecoes(body.secoes); if (r.erro) return r; out.secoes = r.secoes; }
   if (!parcial || tem('colunas')) {
@@ -107,7 +110,7 @@ async function bibliotecaParaTenant(supabase, tenantId) {
   const ja = new Set(meus.filter((m) => m.origem_id != null && m.ativo !== false).map((m) => String(m.origem_id)));
   return (await bibliotecaTodos(supabase)).filter((m) => m.ativo !== false).map((m) => ({ ...m, ja_importado: ja.has(String(m.id)) }));
 }
-const COPIAVEIS = ['nome', 'descricao', 'titulo_documento', 'secoes', 'colunas', 'condicoes', 'rotulo_grupo', 'validade_dias'];
+const COPIAVEIS = ['nome', 'descricao', 'titulo_documento', 'secoes', 'colunas', 'condicoes', 'rotulo_grupo', 'validade_dias', 'tipo_execucao'];
 const copiar = (m) => Object.fromEntries(COPIAVEIS.map((k) => [k, m[k] ?? null]));
 async function importar(supabase, tenantId, bibId) {
   const m = idOk(bibId) ? (await q(supabase.from('bid_modelos').select('*').is('tenant_id', null).eq('id', bibId)))[0] : null;
@@ -573,6 +576,6 @@ async function documento(supabase, tenantId, id, versao = null) {
   };
 }
 
-module.exports = { _definirEnvio, brl, FASES, FASE_NOME, COM_CLIENTE, ABERTAS, podeEditar, bidDoTenant, atividade, retrato, linkCliente, hojeBR, somaDias, diasEntre, enfeitar, q, texto, FASES_ABERTAS: ABERTAS, MOTIVOS_PERDA, TIPOS_ATIV, CAMPOS, OPCOES_FISCAIS, validarModelo, validarGrupos, validarCondicoes, totais, diferencas,
+module.exports = { TIPOS_EXECUCAO, _definirEnvio, brl, FASES, FASE_NOME, COM_CLIENTE, ABERTAS, podeEditar, bidDoTenant, atividade, retrato, linkCliente, hojeBR, somaDias, diasEntre, enfeitar, q, texto, FASES_ABERTAS: ABERTAS, MOTIVOS_PERDA, TIPOS_ATIV, CAMPOS, OPCOES_FISCAIS, validarModelo, validarGrupos, validarCondicoes, totais, diferencas,
   modelosTenant, bibliotecaParaTenant, importar, atualizarDaBiblioteca, salvarModelo, responsaveis,
   criar, editar, fecharVersao, mudarFase, listar, detalhe, criarAtividade, concluirAtividade, tarefas, funil, cliente360, documento, proximoNumero };

@@ -1,0 +1,287 @@
+// backend/services/execucoes.js — etapa 16a
+//
+// 🚛 PROGRAMAÇÃO — EXECUÇÕES (decidido com o Marcony, 29/10/2026):
+//   • GENÉRICO: o modelo de BID diz o que o aceite gera (tipo_execucao). O PV é igual para todos; a EXECUÇÃO muda:
+//       transporte → AT (esta etapa) · locacao → contrato de locação que já existe (depois) · servico → AS (futuro) · venda (futuro).
+//   • AT-AAAA-NNNN — UMA POR TRECHO do pedido: itens do trecho SEM valores, coleta/entrega (local, data e hora),
+//     MOTORISTA (selo de conformidade: 🔴 algo vencido BLOQUEIA — gestor/admin libera com justificativa registrada; 🟡 só avisa),
+//     CONJUNTO = cavalo + até 2 implementos (algum BLOQUEADO por inspeção → bloqueia), anexos NF-e / CT-e / MDF-e.
+//   • CONFLITO: o mesmo motorista ou equipamento em outra AT no mesmo período → pede confirmação (agenda da frota).
+//   • STATUS programada → em execução → concluída | cancelada e atualiza SOZINHO os itens do pedido
+//     (programado → em execução → concluído; cancelada volta para "a programar").
+//   • Ver: admin, gestor, operação (comercial vê pelo pedido). Alterar: admin, gestor, operação. Liberar 🔴: admin, gestor.
+// Regras do backend: sem DB.raw; ids com String(); filtros sem null; o mock não aplica default do banco.
+
+const crypto = require('crypto');
+
+async function q(p) { const { data, error } = await p; if (error) throw new Error(error.message); return data || []; }
+const texto = (v, max) => (v == null || String(v).trim() === '' ? null : String(v).trim().slice(0, max));
+const idOk = (v) => /^\d+$/.test(String(v ?? '')) || /^[0-9a-f-]{36}$/i.test(String(v ?? ''));
+const hojeBR = () => new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+const quando = (v) => { const t = String(v || '').trim(); if (!t) return null; const d = new Date(/^\d{4}-\d{2}-\d{2}$/.test(t) ? `${t}T08:00:00-03:00` : /T\d{2}:\d{2}$/.test(t) ? `${t}:00-03:00` : t); return Number.isNaN(d.getTime()) ? undefined : d.toISOString(); };
+const dataHora = (d) => (d ? new Date(d).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }) : '');
+
+const TIPOS = { transporte: 'Transporte (AT)', locacao: 'Locação', servico: 'Serviço (AS)', venda: 'Venda / entrega' };
+const STATUS = { programada: 'Programada', em_execucao: 'Em execução', concluida: 'Concluída', cancelada: 'Cancelada' };
+const ATIVAS = ['programada', 'em_execucao'];
+const ANEXOS = { nfe: 'NF-e', cte: 'CT-e', mdfe: 'MDF-e', outro: 'Outro' };
+const MIME = { 'application/pdf': 'pdf', 'application/xml': 'xml', 'text/xml': 'xml', 'image/jpeg': 'jpg', 'image/png': 'png' };
+const LIMITE = 10 * 1024 * 1024;
+const BUCKET = 'documentos';
+const STATUS_ITEM_PV = { programada: 'programado', em_execucao: 'em_execucao', concluida: 'concluido', cancelada: 'a_programar' };
+
+/** selo de conformidade de cada colaborador (mesmo cálculo de 👷 Pessoas). Trocável nos testes. */
+let calcularSelos = async (supabase, tenantId, colabs) => {
+  const F = require('./funcoes'); const EE = require('./epiEntregas'); const TR = require('./treinamentos'); const K = require('./competencias'); const CF = require('./conformidade');
+  const tenta = async (fn, padrao) => { try { return await fn(); } catch { return padrao; } };
+  const fichas = await tenta(() => F.fichasDoTenant(supabase, tenantId, colabs), new Map());
+  const [bE, bT, bK] = await Promise.all([tenta(() => EE.carregarBase(supabase, tenantId), null), tenta(() => TR.carregarBase(supabase, tenantId), null), tenta(() => K.carregarBase(supabase, tenantId), null)]);
+  const out = new Map();
+  for (const c of colabs) {
+    const f = fichas.get(String(c.id));
+    try {
+      out.set(String(c.id), CF.selo({ funcaoLigada: !!f?.funcao, docs: f?.resumo, epi: bE ? EE.statusColaborador(c, bE).resumo : null, trein: bT ? TR.statusColaborador(c, bT).resumo : null,
+        comp: bK ? K.statusColaborador(c, bK, F.ESCOLARIDADES).resumo : null }));
+    } catch { out.set(String(c.id), { nivel: 'sem_funcao', geral: null, vencidos: 0, pilares: [] }); }
+  }
+  return out;
+};
+function _definirSelos(fn) { calcularSelos = fn; }
+
+const podeLiberar = (perfis = []) => perfis.some((p) => ['admin', 'gestor'].includes(p));
+
+/** motoristas (colaboradores ativos, com selo) e equipamentos (com bloqueio) para escolher na AT */
+async function base(supabase, tenantId) {
+  const [colabs, equips] = await Promise.all([q(supabase.from('colaboradores').select('*').eq('tenant_id', tenantId)).catch(() => []), q(supabase.from('equipamentos').select('*').eq('tenant_id', tenantId))]);
+  const ativos = colabs.filter((c) => c.situacao !== 'desligado');
+  const selos = await calcularSelos(supabase, tenantId, ativos);
+  const ehMotorista = (c) => /motorista|condutor/i.test(String(c.funcao?.nome || c.funcao || ''));
+  return {
+    motoristas: ativos.map((c) => ({ id: c.id, nome: c.nome, funcao: c.funcao?.nome || c.funcao || null, cnh: c.cnh_categoria || null, motorista: ehMotorista(c), selo: selos.get(String(c.id)) || null }))
+      .sort((a, b) => (b.motorista - a.motorista) || String(a.nome).localeCompare(String(b.nome), 'pt-BR')),
+    equipamentos: equips.filter((e) => e.ativo !== false).map((e) => ({ id: e.id, tag: e.tag || '', nome: e.nome || '', bloqueado: !!e.bloqueado, bloqueio_motivo: e.bloqueio_motivo || null }))
+      .sort((a, b) => String(a.tag || a.nome).localeCompare(String(b.tag || b.nome))),
+    tipos: TIPOS, status: STATUS, anexos: ANEXOS,
+  };
+}
+
+async function exDoTenant(supabase, tenantId, id) { return /^\d+$/.test(String(id)) ? (await q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId).eq('id', id)))[0] || null : null; }
+async function proximoNumero(supabase, tenantId, prefixo = 'AT') {
+  const pre = `${prefixo}-${hojeBR().slice(0, 4)}-`;
+  const nums = (await q(supabase.from('execucoes').select('numero').eq('tenant_id', tenantId))).map((x) => String(x.numero || '')).filter((n) => n.startsWith(pre)).map((n) => Number(n.slice(pre.length)) || 0);
+  return `${pre}${String((nums.length ? Math.max(...nums) : 0) + 1).padStart(4, '0')}`;
+}
+const fimEfetivo = (e) => e.fim_previsto || (e.inicio_previsto ? new Date(new Date(e.inicio_previsto).getTime() + 24 * 3600000).toISOString() : null);
+const sobrepoe = (a, b) => !!a.inicio_previsto && !!b.inicio_previsto && a.inicio_previsto < fimEfetivo(b) && b.inicio_previsto < fimEfetivo(a);
+/** outras ATs ativas no mesmo período com o mesmo motorista ou equipamento */
+function conflitos(nova, outras) {
+  const eqs = new Set((nova.conjunto || []).map((c) => String(c.id)));
+  return outras.filter((o) => String(o.id) !== String(nova.id || '') && ATIVAS.includes(o.status) && sobrepoe(nova, o)).flatMap((o) => {
+    const l = [];
+    if (nova.motorista_id != null && String(o.motorista_id) === String(nova.motorista_id)) l.push({ at: o.numero, id: o.id, tipo: 'motorista', texto: `${nova.motorista_nome || 'O motorista'} já está na ${o.numero} (${dataHora(o.inicio_previsto)} → ${dataHora(fimEfetivo(o))})` });
+    for (const c of o.conjunto || []) if (eqs.has(String(c.id))) l.push({ at: o.numero, id: o.id, tipo: 'equipamento', texto: `${c.tag || c.nome} já está na ${o.numero} (${dataHora(o.inicio_previsto)} → ${dataHora(fimEfetivo(o))})` });
+    return l;
+  });
+}
+
+/** monta e valida os dados da AT. body: { inicio, fim, origem, destino, motorista_id, cavalo_id, implementos: [ids], observacoes, liberacao_justificativa, ignorar_conflito } */
+async function montar(supabase, tenantId, quem, body, atual = {}) {
+  const inicio = quando(body.inicio ?? atual.inicio_previsto); const fim = quando(body.fim ?? atual.fim_previsto);
+  if (!inicio) return { status: 400, erro: 'Informe a data e hora da coleta (início)' };
+  if (fim === undefined || inicio === undefined) return { status: 400, erro: 'Data/hora inválida' };
+  if (fim && fim <= inicio) return { status: 400, erro: 'A entrega (fim) precisa ser depois da coleta (início)' };
+  const b = await base(supabase, tenantId);
+  const motId = body.motorista_id !== undefined ? body.motorista_id : atual.motorista_id;
+  const mot = motId != null && motId !== '' ? b.motoristas.find((m) => String(m.id) === String(motId)) : null;
+  if (motId != null && motId !== '' && !mot) return { status: 400, erro: 'Motorista não encontrado (ou desligado)' };
+  const cavId = body.cavalo_id !== undefined ? body.cavalo_id : atual.cavalo_id;
+  if (cavId == null || cavId === '') return { status: 400, erro: 'Escolha o cavalo (veículo trator)' };
+  const implIds = Array.isArray(body.implementos) ? body.implementos.filter((x) => x != null && x !== '') : (atual.conjunto || []).filter((c) => c.papel === 'implemento').map((c) => c.id);
+  if (implIds.length > 2) return { status: 400, erro: 'No máximo 2 implementos (ex.: prancha + dolly)' };
+  const ids = [cavId, ...implIds].map(String);
+  if (new Set(ids).size !== ids.length) return { status: 400, erro: 'O mesmo equipamento foi escolhido duas vezes' };
+  const conjunto = [];
+  for (const [i, idEq] of ids.entries()) {
+    const e = b.equipamentos.find((x) => String(x.id) === idEq); if (!e) return { status: 400, erro: 'Equipamento não encontrado' };
+    if (e.bloqueado) return { status: 409, erro: `🔒 ${e.tag || e.nome} está BLOQUEADO por inspeção${e.bloqueio_motivo ? ` (${e.bloqueio_motivo})` : ''} — libere em 🔍 Inspeções antes de programar` };
+    conjunto.push({ id: e.id, tag: e.tag, nome: e.nome, papel: i === 0 ? 'cavalo' : 'implemento' });
+  }
+  const avisos = []; let liberacao = atual.liberacao || null;
+  if (mot) {
+    const nivel = mot.selo?.nivel;
+    const mudouMotorista = String(motId) !== String(atual.motorista_id ?? '');
+    if (nivel === 'atencao' && (mudouMotorista || !liberacao)) {
+      const j = texto(body.liberacao_justificativa, 500);
+      if (!j) return { status: 409, erro: `🔴 ${mot.nome} tem ${mot.selo?.vencidos || ''} item(ns) VENCIDO(s) no selo de conformidade (CNH, ASO, treinamento…). Só gestor/admin libera, com justificativa.`, codigo: 'motorista_bloqueado', selo: mot.selo };
+      if (!podeLiberar(quem.perfis)) return { status: 409, erro: 'Só gestor ou admin pode liberar motorista com item vencido', codigo: 'motorista_bloqueado', selo: mot.selo };
+      if (j.length < 15) return { status: 400, erro: 'Justificativa da liberação: mínimo 15 caracteres (fica registrada)' };
+      liberacao = { por: quem.usuarioNome || null, em: new Date().toISOString(), justificativa: j, vencidos: mot.selo?.vencidos || null };
+    } else if (mudouMotorista) liberacao = null;
+    if (nivel === 'em_andamento') avisos.push(`🟡 ${mot.nome}: ${mot.selo?.faltam ?? ''} item(ns) sem registro no selo de conformidade (nada vencido)`);
+    if (nivel === 'sem_funcao') avisos.push(`⚪ ${mot.nome} não tem função cadastrada — o selo de conformidade não pôde ser conferido`);
+  }
+  const dados = { inicio_previsto: inicio, fim_previsto: fim || null, origem: texto(body.origem ?? atual.origem, 200), destino: texto(body.destino ?? atual.destino, 200),
+    motorista_id: mot ? mot.id : null, motorista_nome: mot ? mot.nome : null, motorista_selo: mot ? (mot.selo || null) : null, liberacao, cavalo_id: conjunto[0].id, conjunto,
+    observacoes: texto(body.observacoes ?? atual.observacoes, 2000) };
+  const outras = await q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId));
+  const cf = conflitos({ ...dados, id: atual.id }, outras);
+  if (cf.length && body.ignorar_conflito !== true) return { status: 409, erro: `Conflito de agenda: ${cf.map((c) => c.texto).join(' · ')}`, codigo: 'conflito', conflitos: cf };
+  return { dados, avisos, conflitos: cf };
+}
+
+/** itens do pedido acompanham o status da AT */
+async function sincronizarPV(supabase, tenantId, ex, status) {
+  const PV = require('./pedidosVenda');
+  const pv = (await q(supabase.from('pedidos_venda').select('*').eq('tenant_id', tenantId).eq('id', ex.pv_id)))[0]; if (!pv) return;
+  const ids = new Set((ex.itens || []).map((i) => String(i.id)));
+  const novo = STATUS_ITEM_PV[status];
+  const grupos = (pv.grupos || []).map((g) => ({ ...g, itens: (g.itens || []).map((i) => (ids.has(String(i.id)) && i.status !== 'cancelado' ? { ...i, status: novo } : i)) }));
+  await supabase.from('pedidos_venda').update({ grupos, status: PV.statusPV(grupos, pv.status), atualizado_em: new Date().toISOString() }).eq('id', pv.id).eq('tenant_id', tenantId);
+}
+async function registrar(supabase, tenantId, quem, ex, txt) {
+  const pv = (await q(supabase.from('pedidos_venda').select('*').eq('tenant_id', tenantId).eq('id', ex.pv_id)))[0];
+  if (pv?.bid_id) await require('./bids').atividade(supabase, tenantId, quem, { bid_id: pv.bid_id, cliente_id: pv.cliente_id, tipo: 'evento', texto: txt });
+}
+
+// ─── criar / editar / status ────────────────────────────────────────────────
+/** 🚛 Programar um trecho do pedido */
+async function criar(supabase, tenantId, quem, pvId, body = {}) {
+  const pv = /^\d+$/.test(String(pvId)) ? (await q(supabase.from('pedidos_venda').select('*').eq('tenant_id', tenantId).eq('id', pvId)))[0] : null;
+  if (!pv) return { status: 404, erro: 'Pedido não encontrado' };
+  if (['cancelado', 'concluido'].includes(pv.status)) return { status: 409, erro: `Pedido ${pv.status} — não dá para programar` };
+  const tipo = pv.tipo_execucao || 'transporte';
+  if (tipo !== 'transporte') return { status: 409, erro: `Pedidos do tipo "${TIPOS[tipo] || tipo}" ainda não geram execução por aqui (só transporte nesta etapa)` };
+  const g = (pv.grupos || []).find((x) => String(x.id) === String(body.grupo_id)); if (!g) return { status: 400, erro: 'Escolha o trecho do pedido' };
+  const ja = (await q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId).eq('pv_id', pv.id))).find((e) => String(e.grupo_id) === String(g.id) && e.status !== 'cancelada');
+  if (ja) return { status: 409, erro: `Este trecho já tem a ${ja.numero} (${STATUS[ja.status].toLowerCase()})`, existente: ja.id };
+  const itens = (g.itens || []).filter((i) => i.status !== 'cancelado').map((i) => ({ id: i.id, valores: i.valores || {}, quantidade: i.quantidade ?? 1 })); // SEM valores
+  if (!itens.length) return { status: 409, erro: 'O trecho não tem itens ativos' };
+  const m = await montar(supabase, tenantId, quem, body); if (m.erro) return m;
+  const agora = new Date().toISOString();
+  const reg = { tenant_id: tenantId, numero: await proximoNumero(supabase, tenantId), tipo, pv_id: pv.id, pv_numero: pv.numero, grupo_id: g.id, grupo_titulo: g.titulo || null, itens, colunas: pv.conteudo?.colunas || [],
+    cliente_id: pv.cliente_id, cliente_nome: pv.cliente_nome, status: 'programada', ...m.dados, anexos: [], iniciada_em: null, concluida_em: null, cancelada_em: null, cancelada_motivo: null,
+    criado_por_nome: quem.usuarioNome || null, criado_em: agora, atualizado_em: agora };
+  const { data, error } = await supabase.from('execucoes').insert([reg]).select();
+  if (error) throw new Error(error.message);
+  const ex = data[0];
+  await sincronizarPV(supabase, tenantId, ex, 'programada');
+  await registrar(supabase, tenantId, quem, ex, `🚛 ${ex.numero} programada — ${ex.grupo_titulo || 'trecho'} · ${dataHora(ex.inicio_previsto)}${ex.motorista_nome ? ` · ${ex.motorista_nome}` : ''} · ${ex.conjunto.map((c) => c.tag || c.nome).join(' + ')}${ex.liberacao ? ' · ⚠ motorista liberado pelo gestor' : ''}`);
+  return { execucao: ex, avisos: m.avisos, conflitos: m.conflitos };
+}
+async function editar(supabase, tenantId, quem, id, body = {}) {
+  const ex = await exDoTenant(supabase, tenantId, id); if (!ex) return { status: 404, erro: 'AT não encontrada' };
+  if (ex.status !== 'programada') return { status: 409, erro: `AT ${STATUS[ex.status].toLowerCase()} — só dá para editar enquanto está programada` };
+  const m = await montar(supabase, tenantId, quem, body, ex); if (m.erro) return m;
+  const { data, error } = await supabase.from('execucoes').update({ ...m.dados, atualizado_em: new Date().toISOString() }).eq('id', ex.id).eq('tenant_id', tenantId).select();
+  if (error) throw new Error(error.message);
+  return { execucao: data[0], avisos: m.avisos, conflitos: m.conflitos };
+}
+/** ▶ iniciar · ✓ concluir · ✕ cancelar (motivo) · ↺ reabrir (concluída/cancelada → programada) */
+async function mudarStatus(supabase, tenantId, quem, id, { acao, motivo } = {}) {
+  const ex = await exDoTenant(supabase, tenantId, id); if (!ex) return { status: 404, erro: 'AT não encontrada' };
+  const agora = new Date().toISOString(); let upd; let txt;
+  if (acao === 'iniciar') {
+    if (ex.status !== 'programada') return { status: 409, erro: 'Só uma AT programada pode ser iniciada' };
+    if (!ex.motorista_id) return { status: 409, erro: 'Defina o motorista antes de iniciar' };
+    const eqs = await q(supabase.from('equipamentos').select('*').eq('tenant_id', tenantId));
+    const bloq = (ex.conjunto || []).map((c) => eqs.find((e) => String(e.id) === String(c.id))).find((e) => e?.bloqueado);
+    if (bloq) return { status: 409, erro: `🔒 ${bloq.tag || bloq.nome} foi BLOQUEADO por inspeção depois da programação — troque o equipamento ou libere em 🔍 Inspeções` };
+    upd = { status: 'em_execucao', iniciada_em: agora }; txt = `▶ ${ex.numero} em execução`;
+  } else if (acao === 'concluir') {
+    if (ex.status !== 'em_execucao') return { status: 409, erro: 'Só uma AT em execução pode ser concluída' };
+    upd = { status: 'concluida', concluida_em: agora }; txt = `✓ ${ex.numero} concluída`;
+  } else if (acao === 'cancelar') {
+    if (!ATIVAS.includes(ex.status)) return { status: 409, erro: 'AT já encerrada' };
+    const m = texto(motivo, 500); if (!m || m.length < 10) return { status: 400, erro: 'Descreva o motivo do cancelamento (mínimo 10 caracteres)' };
+    upd = { status: 'cancelada', cancelada_em: agora, cancelada_motivo: m }; txt = `✕ ${ex.numero} cancelada: ${m} — o trecho volta para "a programar"`;
+  } else if (acao === 'reabrir') {
+    if (ex.status === 'cancelada') {
+      const outra = (await q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId).eq('pv_id', ex.pv_id))).find((e) => String(e.grupo_id) === String(ex.grupo_id) && e.status !== 'cancelada' && String(e.id) !== String(ex.id));
+      if (outra) return { status: 409, erro: `O trecho já foi reprogramado na ${outra.numero}` };
+    } else if (ex.status !== 'concluida') return { status: 409, erro: 'Só uma AT concluída ou cancelada pode ser reaberta' };
+    upd = { status: 'programada', concluida_em: null, cancelada_em: null, cancelada_motivo: null, iniciada_em: ex.status === 'concluida' ? ex.iniciada_em : null }; txt = `↺ ${ex.numero} reaberta (programada)`;
+  } else return { status: 400, erro: 'Ação inválida' };
+  const { data, error } = await supabase.from('execucoes').update({ ...upd, atualizado_em: agora }).eq('id', ex.id).eq('tenant_id', tenantId).select();
+  if (error) throw new Error(error.message);
+  await sincronizarPV(supabase, tenantId, ex, upd.status);
+  await registrar(supabase, tenantId, quem, ex, txt);
+  return { execucao: data[0] };
+}
+
+// ─── anexos (NF-e, CT-e, MDF-e) ─────────────────────────────────────────────
+async function anexar(supabase, tenantId, quem, id, { tipo, nome, mime, base64 } = {}) {
+  const ex = await exDoTenant(supabase, tenantId, id); if (!ex) return { status: 404, erro: 'AT não encontrada' };
+  if (!ANEXOS[tipo]) return { status: 400, erro: 'Tipo de anexo inválido (NF-e, CT-e, MDF-e ou outro)' };
+  if (!MIME[mime]) return { status: 400, erro: 'Arquivo: PDF, XML, JPG ou PNG' };
+  const buf = Buffer.from(String(base64 || ''), 'base64'); if (!buf.length) return { status: 400, erro: 'Arquivo vazio' };
+  if (buf.length > LIMITE) return { status: 400, erro: 'Arquivo maior que 10 MB' };
+  const aid = crypto.randomBytes(6).toString('hex');
+  const path = `tenant-${tenantId}/execucoes/${ex.id}/${Date.now()}-${aid}.${MIME[mime]}`;
+  const { error: eu } = await supabase.storage.from(BUCKET).upload(path, buf, { contentType: mime, upsert: false });
+  if (eu) throw new Error(`Falha ao subir o arquivo: ${eu.message}`);
+  const anexo = { id: aid, tipo, nome: texto(nome, 160) || `${ANEXOS[tipo]}.${MIME[mime]}`, path, mime, tamanho: buf.length, em: new Date().toISOString(), por: quem.usuarioNome || null };
+  const { data, error } = await supabase.from('execucoes').update({ anexos: [...(ex.anexos || []), anexo], atualizado_em: new Date().toISOString() }).eq('id', ex.id).eq('tenant_id', tenantId).select();
+  if (error) throw new Error(error.message);
+  return { execucao: data[0], anexo };
+}
+async function linkAnexo(supabase, tenantId, id, anexoId) {
+  const ex = await exDoTenant(supabase, tenantId, id); const a = (ex?.anexos || []).find((x) => x.id === anexoId);
+  if (!a) return { status: 404, erro: 'Anexo não encontrado' };
+  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(a.path, 3600, { download: false });
+  if (error) throw new Error(error.message);
+  return { url: data?.signedUrl || null, nome: a.nome };
+}
+async function removerAnexo(supabase, tenantId, quem, id, anexoId) {
+  const ex = await exDoTenant(supabase, tenantId, id); const a = (ex?.anexos || []).find((x) => x.id === anexoId);
+  if (!a) return { status: 404, erro: 'Anexo não encontrado' };
+  if (ex.status === 'concluida') return { status: 409, erro: 'AT concluída — reabra para mexer nos anexos' };
+  try { await supabase.storage.from(BUCKET).remove([a.path]); } catch { /* não bloqueia */ }
+  const { data, error } = await supabase.from('execucoes').update({ anexos: (ex.anexos || []).filter((x) => x.id !== anexoId), atualizado_em: new Date().toISOString() }).eq('id', ex.id).eq('tenant_id', tenantId).select();
+  if (error) throw new Error(error.message);
+  return { execucao: data[0] };
+}
+
+// ─── leitura ────────────────────────────────────────────────────────────────
+const enfeitar = (e) => ({ ...e, status_nome: STATUS[e.status] || e.status, tipo_nome: TIPOS[e.tipo] || e.tipo, fim_efetivo: fimEfetivo(e), qtd_itens: (e.itens || []).length,
+  anexos_tipos: [...new Set((e.anexos || []).map((a) => a.tipo))], atrasada: e.status === 'programada' && !!e.inicio_previsto && e.inicio_previsto < new Date().toISOString() });
+async function listar(supabase, tenantId, { status, de, ate } = {}) {
+  let l = (await q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId))).map(enfeitar);
+  if (status === 'ativas') l = l.filter((e) => ATIVAS.includes(e.status)); else if (STATUS[status]) l = l.filter((e) => e.status === status);
+  if (de) l = l.filter((e) => !e.inicio_previsto || String(fimEfetivo(e)).slice(0, 10) >= de);
+  if (ate) l = l.filter((e) => !e.inicio_previsto || String(e.inicio_previsto).slice(0, 10) <= ate);
+  const todas = l;
+  return todas.map((e) => ({ ...e, conflitos: ATIVAS.includes(e.status) ? conflitos(e, todas) : [] })).sort((a, b) => String(a.inicio_previsto || '9').localeCompare(String(b.inicio_previsto || '9')));
+}
+async function detalhe(supabase, tenantId, id) {
+  const ex = await exDoTenant(supabase, tenantId, id); if (!ex) return { status: 404, erro: 'AT não encontrada' };
+  const outras = await q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId));
+  const eqs = await q(supabase.from('equipamentos').select('*').eq('tenant_id', tenantId));
+  const bloqueados = (ex.conjunto || []).map((c) => eqs.find((e) => String(e.id) === String(c.id))).filter((e) => e?.bloqueado).map((e) => ({ tag: e.tag, nome: e.nome, motivo: e.bloqueio_motivo }));
+  return { execucao: { ...enfeitar(ex), conflitos: ATIVAS.includes(ex.status) ? conflitos(ex, outras) : [], bloqueados }, status: STATUS, anexos_tipos: ANEXOS };
+}
+/** ATs do pedido (o comercial vê por aqui) + quais trechos faltam programar */
+async function doPV(supabase, tenantId, pvId) {
+  const pv = /^\d+$/.test(String(pvId)) ? (await q(supabase.from('pedidos_venda').select('*').eq('tenant_id', tenantId).eq('id', pvId)))[0] : null;
+  if (!pv) return { status: 404, erro: 'Pedido não encontrado' };
+  const ex = (await q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId).eq('pv_id', pv.id))).map(enfeitar);
+  return { execucoes: ex.sort((a, b) => String(a.inicio_previsto || '').localeCompare(String(b.inicio_previsto || ''))), tipo_execucao: pv.tipo_execucao || 'transporte',
+    trechos: (pv.grupos || []).map((g) => ({ id: g.id, titulo: g.titulo, qtd: (g.itens || []).filter((i) => i.status !== 'cancelado').length, at: ex.find((e) => String(e.grupo_id) === String(g.id) && e.status !== 'cancelada') || null })) };
+}
+/** 🗓 agenda da frota: ATs no período, por dia, com conflitos */
+async function agenda(supabase, tenantId, { de, ate } = {}) {
+  const d0 = /^\d{4}-\d{2}-\d{2}$/.test(String(de || '')) ? de : hojeBR();
+  const d1 = /^\d{4}-\d{2}-\d{2}$/.test(String(ate || '')) ? ate : new Date(new Date(`${d0}T12:00:00Z`).getTime() + 13 * 86400000).toISOString().slice(0, 10);
+  const l = (await listar(supabase, tenantId, { de: d0, ate: d1 })).filter((e) => e.status !== 'cancelada' && e.inicio_previsto);
+  return { de: d0, ate: d1, execucoes: l, com_conflito: l.filter((e) => e.conflitos.length).length };
+}
+/** PDF da AT para o motorista (SEM valores) */
+async function documento(supabase, tenantId, id) {
+  const ex = await exDoTenant(supabase, tenantId, id); if (!ex) return { status: 404, erro: 'AT não encontrada' };
+  const emp = (await q(supabase.from('tenants').select('*').eq('id', tenantId)))[0] || {};
+  const pv = (await q(supabase.from('pedidos_venda').select('*').eq('tenant_id', tenantId).eq('id', ex.pv_id)))[0] || {};
+  const col = ex.motorista_id != null ? (await q(supabase.from('colaboradores').select('*').eq('tenant_id', tenantId).eq('id', ex.motorista_id)).catch(() => []))[0] : null;
+  return { ...enfeitar(ex), empresa: { nome: emp.nome_fantasia || emp.razao_social || emp.nome || '', razao_social: emp.razao_social || '', cnpj: emp.cnpj || '', telefone: emp.telefone || '' },
+    contato_cliente: pv.contato_nome || null, referencia: pv.referencia || null, motorista: col ? { nome: col.nome, cpf: col.cpf || null, cnh: col.cnh_categoria || null, telefone: col.telefone || null } : null };
+}
+
+module.exports = { TIPOS, STATUS, ANEXOS, base, criar, editar, mudarStatus, anexar, linkAnexo, removerAnexo, listar, detalhe, doPV, agenda, documento, conflitos, _definirSelos };

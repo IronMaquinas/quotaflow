@@ -35,6 +35,7 @@ import TelaNaoConformidades from "./components/naoConformidades/TelaNaoConformid
 import TelaInspecoes from "./components/inspecoes/TelaInspecoes"; // etapa 14a
 import TelaContratos from "./components/contratos/TelaContratos"; // etapa 14b.3
 import TelaComercial from "./components/comercial/TelaComercial"; // etapa 15a — 📈 Comercial (mini-CRM + BID)
+import TelaProgramacao from "./components/programacao/TelaProgramacao"; // etapa 16a — 🚛 Programação (AT por trecho)
 import { carregarLogoEmpresa } from "./utils/logoEmpresa"; // etapa 14c
 import TelaLocatario from "./components/contratos/TelaLocatario"; // etapa 14b.3
 import TelaCalendarioManutencao from './components/manutencao/TelaCalendarioManutencao'; // etapa 12a
@@ -389,6 +390,7 @@ const perfil = PERFIS[usuario.perfil] || {
   const navItems = [
     {id:"home",          l:"Início",                  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro","comercial"]},
     {id:"comercial",     l:"📈 Comercial",            perfis:["admin","gestor","comercial"]}, // etapa 15a
+    {id:"programacao",   l:"🚛 Programação",          perfis:["admin","gestor","operacao"]}, // etapa 16a
     {id:"ordem_servico", l:"🛠️ Ordem de Serviço",    perfis:["admin","gestor","operacao","qualidade"]},
     {id:"calendario",    l:"📅 Calendário",           perfis:["admin","gestor","comprador","operacao"]},
     {id:"recebimento",   l:"📥 Recebimento",         perfis:["admin","gestor","comprador","operacao"]},
@@ -781,6 +783,7 @@ const perfil = PERFIS[usuario.perfil] || {
           </div>)}
 
         {temAcesso(tela) && tela === "comercial" && (<div style={{ flex: 1, overflowY: "auto" }}><TelaComercial C={C} s={s} /></div>)}
+        {temAcesso(tela) && tela === "programacao" && (<div style={{ flex: 1, overflowY: "auto" }}><TelaProgramacao C={C} s={s} perfis={usuario?.perfis || [usuario?.perfil].filter(Boolean)} /></div>)}
 
         {temAcesso(tela) && tela === "contratos" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
@@ -2386,6 +2389,7 @@ const PERFIS = {
 const PERMISSOES = {
   home:               ["admin","gestor","comprador","operacao","qualidade","financeiro","comercial"],
   comercial:          ["admin","gestor","comercial"], // etapa 15a
+  programacao:        ["admin","gestor","operacao"], // etapa 16a
   ordem_servico:      ["admin","gestor","operacao","qualidade"],
   calendario:         ["admin","gestor","comprador","operacao"], // etapa 12a
   recebimento:        ["admin","gestor","comprador","operacao"],

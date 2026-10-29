@@ -49,7 +49,7 @@ router.get('/tarefas', responder(async (req) => ({ tarefas: await B.tarefas(supa
 router.post('/atividades', responder(async (req) => B.criarAtividade(supabase, req.tenantId, await quem(req), req.body || {})));
 router.post('/atividades/:id/concluir', responder((req) => B.concluirAtividade(supabase, req.tenantId, req.params.id, req.body?.feita !== false)));
 
-router.get('/modelos', responder(async (req) => ({ modelos: await B.modelosTenant(supabase, req.tenantId), campos: B.CAMPOS })));
+router.get('/modelos', responder(async (req) => ({ modelos: await B.modelosTenant(supabase, req.tenantId), campos: B.CAMPOS, tipos_execucao: B.TIPOS_EXECUCAO })));
 router.get('/modelos/biblioteca', responder(async (req) => ({ modelos: await B.bibliotecaParaTenant(supabase, req.tenantId) })));
 router.post('/modelos/importar', responder((req) => B.importar(supabase, req.tenantId, req.body?.biblioteca_id)));
 router.post('/modelos', responder((req) => B.salvarModelo(supabase, req.tenantId, null, req.body || {})));
@@ -82,6 +82,7 @@ router.get('/pvs/:id/documento', responder((req) => PV.documento(supabase, req.t
 router.post('/pvs/:id/itens/:item/status', responder(async (req) => PV.mudarStatusItem(supabase, req.tenantId, await quem(req), req.params.id, req.params.item, req.body || {})));
 router.post('/pvs/:id/cancelar', responder(async (req) => PV.cancelar(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
 router.post('/pvs/:id/aditivo', responder(async (req) => PV.criarAditivo(supabase, req.tenantId, await quem(req), req.params.id)));
+router.get('/pvs/:id/execucoes', responder((req) => require('../services/execucoes').doPV(supabase, req.tenantId, req.params.id))); // 16a: o comercial vê as ATs do pedido (só leitura)
 router.post('/bids/:id/descartar-aditivo', responder(async (req) => PV.descartarAditivo(supabase, req.tenantId, await quem(req), req.params.id))); // 15c.2
 router.post('/bids/:id/gerar-pv', responder(async (req) => PV.gerarManual(supabase, req.tenantId, await quem(req), req.params.id)));
 router.get('/bids/:id/documento', responder((req) => B.documento(supabase, req.tenantId, req.params.id, req.query.versao ?? null)));
