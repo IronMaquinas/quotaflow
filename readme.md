@@ -854,6 +854,7 @@ npm run dev
     - **Kit do motorista**: **CNH** do motorista e **CRLV** do cavalo e de cada implemento puxados dos documentos do cadastro, pela **data da viagem**: vencido → trava (gestor/admin libera com justificativa, registrada); não cadastrado → só avisa; vence em até 30 dias → 🟡. Mais NF-e / CT-e / MDF-e (numa programação nova, anexar salva o rascunho sozinho).
     - **Todo chip faz algo**: com arquivo abre no **visualizador** dentro do sistema (PDF, imagem, XML formatado); NF-e/CT-e/MDF-e faltando abre o seletor; CNH/CRLV faltando explica onde cadastrar.
     - **📲 Link do motorista** (`#at?t=…`, `/api/at-link/:token`, público, sem valores): rota com botão **Abrir no Google Maps**, datas, conjunto, carga, observações e os documentos para abrir/salvar no celular (links renovados a cada abertura); ✓✓ quando o motorista abre. Na ficha: copiar, WhatsApp, "ver como o motorista".
+    - **16c.1 (30/10):** o modal mostra todas as medidas do item (largura, comprimento…); no PDF da AT, a **CNH** vem dos documentos do colaborador (número · categoria · validade) e o **telefone** do colaborador ou do usuário ligado a ele (antes saíam "—").
   - **SaaS genérico:** `tipo_execucao` no modelo de BID/PV (transporte → AT; locação → contrato de locação existente; serviço → AS; venda → entrega). Nesta etapa só transporte gera execução.
   - Rotas `/api/programacao` (`GET /base`, `/execucoes`, `/agenda`, `/pedidos`, `/pvs/:id`; `POST /pvs/:id/at`; `GET|PUT /execucoes/:id`; `POST /execucoes/:id/status`; anexos `POST|GET|DELETE /execucoes/:id/anexos[/:anexo]`; `GET /execucoes/:id/documento`) e `GET /api/comercial/pvs/:id/execucoes` (leitura). Travas respondem 409. Migration 055.
   - Rotas: `/api/comercial/bids/:id/revisao` (GET), `/enviar`, `/reenviar`, `/revisao/iniciar`, `/revisao/descartar`, `/aceite-externo`; `POST /bids/:id/fase` só aceita `perdido` e `reabrir`. Público: `/api/bid-link/:token` (GET, `/responder`, `/codigo`, `/aceitar`) — 40 chamadas por link + IP por hora. Migration 052. **Próxima: 15c** — Pedido de Venda (PV) a partir do BID aceito. **Futuro:** perfil **cliente** com login (mesmo padrão do locatário) — ver `claude/desenho-bid-15b.md`.
@@ -1292,6 +1293,10 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 | **16b** | **Contrato de locação (CL)**: mensalidade, período, mobilização → AT, faturamento mensal previsto |
 | **17a** | **App do motorista na AT**: AT no celular → INSP pré-uso → carregamento → em trânsito → descarregamento (gatilhos em cadeia, offline como na 14a), encerramento |
 | **17b** | Rotas e **ETA com jornada** (API de rotas + Lei 13.103), previsto × real, cruzamento com **multas** |
+| **Agenda da frota — visões** | 🗓 semana (feito) + **mês** e **ano** (visão macro do gestor) — pedido do Marcony em 30/10 |
+| **ETA pela jornada (17b)** | chegada prevista calculada pela rota (origem → destino, veículo pesado) e pela **jornada da transportadora** em ⚙ Configurações (ex.: roda das 08h às 17h, 2 pausas de 30 min + 1 de 1 h; Lei 13.103) — o campo "entrega" vem sugerido e o programador edita |
+| **Multa × programação** | ao lançar uma multa (🚨 Multas/Autuações), o sistema cruza placa + data/hora com as ATs e mostra: **"provável motorista em operação: Fulano — AT-xyz, origem ➜ destino"** com link para a AT. Ajuda o gestor a identificar o condutor (pedido do Marcony em 30/10) |
+| **Nº de série do item** | o motorista precisa saber o nº de série do que transporta (está na NF, mas é mais seguro na tela): campo por item no BID/pedido e editável na programação; aparece no modal, no card, no PDF e no link do motorista. Arquivos: `services/bids.js` (validarGrupos), `services/execucoes.js` (itens da AT), `EditorAT.jsx`, `MesaProgramacao.jsx`, `FichaAT.jsx`, `utils/gerarAT.js`, `TelaATPublica.jsx`, `FichaBid.jsx`, `utils/gerarBid.js` |
 | **18** | **Comunicado de sinistro** (dossiê para a seguradora) e relatório completo da viagem |
 | **19** | **Pesquisa NPS** e indicadores comerciais (conversão, NPS, receita por cliente/trecho) |
 | v2.0 | rastreador/telemetria, CT-e/MDF-e (fiscal — integração com emissor), PWA instalável, QR code no equipamento, agente de IA do gestor |
@@ -1305,7 +1310,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 29/10/2026 (etapa 16c)
+**Última atualização deste documento:** 29/10/2026 (etapa 16c.1)
 
 --------------------------------------------------------------------------------
 

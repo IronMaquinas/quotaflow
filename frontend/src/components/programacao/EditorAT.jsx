@@ -36,7 +36,7 @@ export default function EditorAT({ C, s, pv, trecho, itemId, atual: atual0, base
   const seq = useRef(0);
   const set = (k, v) => setF((x) => ({ ...x, [k]: v }));
   const itens = atual?.itens || (pv.itensTrecho || []).filter((i) => String(i.id) === String(itemId));
-  const resumo = (i) => (pv.colunas || []).slice(0, 4).map((c) => { const v = valorCelula(c, i?.valores?.[c.chave]); return v ? `${c.rotulo}: ${v}` : null; }).filter(Boolean).join(" · ");
+  const resumo = (i) => (pv.colunas || []).filter((c) => c.chave !== "data_prevista" && c.tipo !== "moeda").map((c) => { const v = valorCelula(c, i?.valores?.[c.chave]); return v ? `${c.rotulo}: ${v}` : null; }).filter(Boolean).join(" · ");
   const mot = base.motoristas.find((m) => String(m.id) === String(f.motorista_id));
   const programada = atual && atual.status !== "rascunho";
 

@@ -425,6 +425,19 @@ async function agenda(supabase, tenantId, { de, ate } = {}) {
   const l = (await listar(supabase, tenantId, { de: d0, ate: d1 })).filter((e) => !['cancelada', 'rascunho'].includes(e.status) && e.inicio_previsto);
   return { de: d0, ate: d1, execucoes: l, com_conflito: l.filter((e) => e.conflitos.length).length };
 }
+/** 16c.1: CNH vem dos DOCUMENTOS do colaborador (número + validade); telefone do colaborador ou do usuário ligado a ele */
+async function dadosMotorista(supabase, tenantId, col) {
+  const docs = await carregarDocs(supabase, tenantId);
+  const cnh = docs.filter((d) => String(d.colaborador_id) === String(col.id) && (d.codigo === 'cnh' || /\bcnh\b/i.test(String(d.tipo_nome || '')))).sort((a, b) => String(b.vence_em || '9999').localeCompare(String(a.vence_em || '9999')))[0];
+  let tel = col.telefone || null;
+  if (!tel) {
+    const us = await q(supabase.from('usuarios').select('*').eq('tenant_id', tenantId)).catch(() => []);
+    const u = us.find((x) => col.usuario_id != null && String(x.id) === String(col.usuario_id)) || us.find((x) => col.email && String(x.email || '').toLowerCase() === String(col.email).toLowerCase());
+    tel = u?.telefone || null;
+  }
+  const cnhTxt = cnh ? [cnh.numero, col.cnh_categoria ? `cat. ${col.cnh_categoria}` : null, cnh.vence_em ? `validade ${String(cnh.vence_em).split('-').reverse().join('/')}` : null].filter(Boolean).join(' · ') : (col.cnh_categoria || null);
+  return { nome: col.nome, cpf: col.cpf || null, cnh: cnhTxt, telefone: tel };
+}
 /** PDF da AT para o motorista (SEM valores) */
 async function documento(supabase, tenantId, id) {
   const ex = await exDoTenant(supabase, tenantId, id); if (!ex) return { status: 404, erro: 'AT não encontrada' };
@@ -432,7 +445,7 @@ async function documento(supabase, tenantId, id) {
   const pv = (await q(supabase.from('pedidos_venda').select('*').eq('tenant_id', tenantId).eq('id', ex.pv_id)))[0] || {};
   const col = ex.motorista_id != null ? (await q(supabase.from('colaboradores').select('*').eq('tenant_id', tenantId).eq('id', ex.motorista_id)).catch(() => []))[0] : null;
   return { ...enfeitar(ex), empresa: { nome: emp.nome_fantasia || emp.razao_social || emp.nome || '', razao_social: emp.razao_social || '', cnpj: emp.cnpj || '', telefone: emp.telefone || '' },
-    contato_cliente: pv.contato_nome || null, referencia: pv.referencia || null, motorista: col ? { nome: col.nome, cpf: col.cpf || null, cnh: col.cnh_categoria || null, telefone: col.telefone || null } : null };
+    contato_cliente: pv.contato_nome || null, referencia: pv.referencia || null, motorista: col ? await dadosMotorista(supabase, tenantId, col) : null };
 }
 
 // ─── 16c: 📲 link do motorista (público, sem login, sem valores) ─────────────────

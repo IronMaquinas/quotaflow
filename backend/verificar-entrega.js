@@ -221,7 +221,7 @@ const ESPERADO = {
   'migrations/054_tarefa_atribuida.sql': '586bd43f09653a76e8d6a299e55905e3', // etapa 15c.1 (novo)
   'scripts/previaEmailsBid.js': '45b4dbeb2d2d8d84a24e7a31f6826049', // etapa 15c.3 (novo)
   'migrations/055_execucoes_at.sql': 'fc0a780d147f0b3d7e4c92ec71c4554f', // etapa 16a (novo)
-  'services/execucoes.js': '0c1b5be5a10bc0047986546279943c4f', // etapa 16c
+  'services/execucoes.js': '167bf471fc744bba18c84d44a04cd915', // etapa 16c.1
   'routes/programacao.js': '18dd738055ae6b8efdc5bcd2abd4f0b5', // etapa 16c
   'front:gerarAT.js': 'a8f0c302e3646b42e080ed5132f2c7fb', // etapa 16a (novo)
   'front:TelaProgramacao.jsx': '26ce748fde797019dacb0b268503d9dd', // etapa 16c
@@ -229,22 +229,15 @@ const ESPERADO = {
   'front:MesaProgramacao.jsx': 'fc862d43c50f28164ea36da440383957', // etapa 16c
   'migrations/056_at_rascunho_link_motorista.sql': '4e9a9185cbb0a1f9770e1fe666fc77f3', // etapa 16c (novo)
   'routes/atLink.js': '94bd6f0d9bffdb7872609c43e9ba4b85', // etapa 16c (novo)
-  'front:EditorAT.jsx': '9241bfa299354db4d93276e6c0c0a622', // etapa 16c (novo)
+  'front:EditorAT.jsx': '4e57350fa9d0aeab80b3e7da68b72c21', // etapa 16c.1
   'front:VerArquivo.jsx': 'f429078383f02f0c072637250e7a1fea', // etapa 16c (novo)
   'front:TelaATPublica.jsx': '8063323ad26815a0b5edd5c3fbe67489', // etapa 16c (novo)
 };
 
-// Antes de copiar a etapa 16c — base: 16b.3
+// Antes de copiar a etapa 16c.1 — base: 16c
 const ANTES = {
-  'server.js': '2b7f92a1541e020969d0daf06263b758',
-  'services/execucoes.js': 'a82bb7f8da0a8e1a34dbcb22a05236f4',
-  'routes/programacao.js': 'b3672f7910b0506dce6cdbded61d1821',
-  'services/pedidosVenda.js': 'a167664d5834826bfbb868eadab8517e',
-  'front:main.jsx': '3f7722e2999daec8810d3651f262908b',
-  'front:FichaPedido.jsx': '75aa6e5b4d742730bf3fb62771f60b90',
-  'front:TelaProgramacao.jsx': '117acc6ccdd0a7c1a69bf5c380f5a60c',
-  'front:FichaAT.jsx': 'b0d65525b8684a706421f41bf8af5ede',
-  'front:MesaProgramacao.jsx': 'eebf1786ab8568c7c105c8e9d33fd5e2',
+  'services/execucoes.js': '0c1b5be5a10bc0047986546279943c4f',
+  'front:EditorAT.jsx': '9241bfa299354db4d93276e6c0c0a622',
 };
 
 const RAIZ = process.cwd();
@@ -282,7 +275,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 16c)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 16c.1)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
