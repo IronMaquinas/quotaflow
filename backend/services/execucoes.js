@@ -14,6 +14,7 @@
 
 const crypto = require('crypto');
 const B = () => require('./bids');
+const FV = () => require('./fluxoViagem'); // 16e: fluxo da viagem
 
 async function q(p) { const { data, error } = await p; if (error) throw new Error(error.message); return data || []; }
 const texto = (v, max) => (v == null || String(v).trim() === '' ? null : String(v).trim().slice(0, max));
@@ -102,9 +103,9 @@ async function base(supabase, tenantId) {
   return {
     motoristas: ativos.map((c) => ({ id: c.id, nome: c.nome, funcao: c.funcao?.nome || c.funcao || null, cnh: c.cnh_categoria || null, motorista: ehMotorista(c), selo: selos.get(String(c.id)) || null }))
       .sort((a, b) => (b.motorista - a.motorista) || String(a.nome).localeCompare(String(b.nome), 'pt-BR')),
-    equipamentos: equips.filter((e) => e.ativo !== false).map((e) => ({ id: e.id, tag: e.tag || '', nome: e.nome || '', bloqueado: !!e.bloqueado, bloqueio_motivo: e.bloqueio_motivo || null }))
+    equipamentos: equips.filter((e) => e.ativo !== false).map((e) => ({ id: e.id, tag: e.tag || '', nome: e.nome || '', bloqueado: !!e.bloqueado, bloqueio_motivo: e.bloqueio_motivo || null, inspecao_modelo_id: e.inspecao_modelo_id ?? null }))
       .sort((a, b) => String(a.tag || a.nome).localeCompare(String(b.tag || b.nome))),
-    tipos: TIPOS, status: STATUS, anexos: ANEXOS,
+    tipos: TIPOS, status: STATUS, anexos: ANEXOS, modelos_inspecao: await FV().modelosInspecao(supabase, tenantId), marcos: FV().MARCOS,
   };
 }
 
@@ -270,7 +271,8 @@ async function criar(supabase, tenantId, quem, pvId, body = {}) {
     return { execucao: data[0], avisos: [] };
   }
   const m = await montar(supabase, tenantId, quem, body); if (m.erro) return m;
-  const reg = { ...comum, token: novoToken(), numero: await proximoNumero(supabase, tenantId), tipo, pv_id: pv.id, pv_numero: pv.numero, grupo_id: g.id, grupo_titulo: g.titulo || null, itens, colunas: pv.conteudo?.colunas || [],
+  const fx = await montarFluxo(supabase, tenantId, body, m.dados.conjunto); if (fx.erro) return fx;
+  const reg = { ...comum, fluxo: fx.fluxo, token: novoToken(), numero: await proximoNumero(supabase, tenantId), tipo, pv_id: pv.id, pv_numero: pv.numero, grupo_id: g.id, grupo_titulo: g.titulo || null, itens, colunas: pv.conteudo?.colunas || [],
     cliente_id: pv.cliente_id, cliente_nome: pv.cliente_nome, status: 'programada', ...m.dados, anexos: [], iniciada_em: null, concluida_em: null, cancelada_em: null, cancelada_motivo: null,
     criado_por_nome: quem.usuarioNome || null, criado_em: agora, atualizado_em: agora };
   const { data, error } = await supabase.from('execucoes').insert([reg]).select();
@@ -279,6 +281,14 @@ async function criar(supabase, tenantId, quem, pvId, body = {}) {
   await sincronizarPV(supabase, tenantId, ex, 'programada');
   await registrar(supabase, tenantId, quem, ex, `🚛 ${ex.numero} programada — ${ex.grupo_titulo || 'trecho'} · ${dataHora(ex.inicio_previsto)}${ex.motorista_nome ? ` · ${ex.motorista_nome}` : ''} · ${ex.conjunto.map((c) => c.tag || c.nome).join(' + ')}${ex.liberacao ? ' · ⚠ motorista liberado pelo gestor' : ''}`);
   return { execucao: ex, avisos: m.avisos, conflitos: m.conflitos, docs: m.docs };
+}
+/** 16e: fluxo da viagem — o que veio da tela (validado) ou o padrão; etapas já feitas ficam */
+async function montarFluxo(supabase, tenantId, body, conjunto, antigo = [], conjuntoMudou = false) {
+  const fv = FV(); const modelos = await fv.modelosInspecao(supabase, tenantId);
+  if (body.fluxo !== undefined) { const r = fv.validarFluxo(body.fluxo, { conjunto, modelos }); if (r.erro) return { status: 400, erro: r.erro }; return { fluxo: fv.mesclar(antigo, r.fluxo) }; }
+  if (antigo.length && !conjuntoMudou) return { fluxo: antigo };
+  const equipamentos = await q(supabase.from('equipamentos').select('*').eq('tenant_id', tenantId)).catch(() => []);
+  return { fluxo: fv.mesclar(antigo, fv.fluxoPadrao({ conjunto, modelos, equipamentos })) };
 }
 /** 16c: rascunho — guarda o que veio, sem validar (equipamento/motorista desconhecido é ignorado) */
 async function dadosRascunho(supabase, tenantId, body, atual) {
@@ -291,7 +301,8 @@ async function dadosRascunho(supabase, tenantId, body, atual) {
   const ini = tem('inicio') ? quando(body.inicio) : atual.inicio_previsto; const fim = tem('fim') ? quando(body.fim) : atual.fim_previsto;
   return { inicio_previsto: ini || null, fim_previsto: fim || null, origem: texto(tem('origem') ? body.origem : atual.origem, 300), destino: texto(tem('destino') ? body.destino : atual.destino, 300),
     motorista_id: mot ? mot.id : null, motorista_nome: mot ? mot.nome : null, motorista_selo: mot ? (mot.selo || null) : null, liberacao: null, liberacao_docs: null,
-    cavalo_id: cav ? cav.id : null, conjunto, observacoes: texto(tem('observacoes') ? body.observacoes : atual.observacoes, 2000) };
+    cavalo_id: cav ? cav.id : null, conjunto, observacoes: texto(tem('observacoes') ? body.observacoes : atual.observacoes, 2000),
+    fluxo: Array.isArray(body.fluxo) ? body.fluxo.slice(0, 20) : (atual.fluxo || []) }; // 16e: o fluxo escolhido fica no rascunho
 }
 async function editar(supabase, tenantId, quem, id, body = {}) {
   const ex = await exDoTenant(supabase, tenantId, id); if (!ex) return { status: 404, erro: 'AT não encontrada' };
@@ -305,8 +316,9 @@ async function editar(supabase, tenantId, quem, id, body = {}) {
     }
     // 🚛 programar o rascunho: valida tudo, ganha número AT, link do motorista e atualiza o pedido
     const m = await montar(supabase, tenantId, quem, body, { ...ex, liberacao: null, liberacao_docs: null }); if (m.erro) return m;
+    const fx = await montarFluxo(supabase, tenantId, body, m.dados.conjunto); if (fx.erro) return fx;
     const agora = new Date().toISOString();
-    const { data, error } = await supabase.from('execucoes').update({ ...m.dados, itens: itensSerie, status: 'programada', numero: await proximoNumero(supabase, tenantId), token: ex.token || novoToken(), criado_por_nome: quem.usuarioNome || ex.criado_por_nome || null, atualizado_em: agora }).eq('id', ex.id).eq('tenant_id', tenantId).select();
+    const { data, error } = await supabase.from('execucoes').update({ ...m.dados, fluxo: fx.fluxo, itens: itensSerie, status: 'programada', numero: await proximoNumero(supabase, tenantId), token: ex.token || novoToken(), criado_por_nome: quem.usuarioNome || ex.criado_por_nome || null, atualizado_em: agora }).eq('id', ex.id).eq('tenant_id', tenantId).select();
     if (error) throw new Error(error.message);
     const nova = data[0];
     await sincronizarPV(supabase, tenantId, nova, 'programada');
@@ -315,7 +327,9 @@ async function editar(supabase, tenantId, quem, id, body = {}) {
   }
   if (ex.status !== 'programada') return { status: 409, erro: `AT ${STATUS[ex.status].toLowerCase()} — só dá para editar enquanto está programada` };
   const m = await montar(supabase, tenantId, quem, body, ex); if (m.erro) return m;
-  const { data, error } = await supabase.from('execucoes').update({ ...m.dados, itens: itensSerie, atualizado_em: new Date().toISOString() }).eq('id', ex.id).eq('tenant_id', tenantId).select();
+  const mudouConj = (m.dados.conjunto || []).map((c) => String(c.id)).join(',') !== (ex.conjunto || []).map((c) => String(c.id)).join(',');
+  const fx = await montarFluxo(supabase, tenantId, body, m.dados.conjunto, ex.fluxo || [], mudouConj); if (fx.erro) return fx;
+  const { data, error } = await supabase.from('execucoes').update({ ...m.dados, fluxo: fx.fluxo, itens: itensSerie, atualizado_em: new Date().toISOString() }).eq('id', ex.id).eq('tenant_id', tenantId).select();
   if (error) throw new Error(error.message);
   return { execucao: data[0], avisos: m.avisos, conflitos: m.conflitos, docs: m.docs };
 }
@@ -394,7 +408,7 @@ async function removerAnexo(supabase, tenantId, quem, id, anexoId) {
 }
 
 // ─── leitura ────────────────────────────────────────────────────────────────
-const enfeitar = (e) => ({ ...e, link_motorista: e.status !== 'rascunho' ? linkMotorista(e.token) : null, status_nome: STATUS[e.status] || e.status, tipo_nome: TIPOS[e.tipo] || e.tipo, fim_efetivo: fimEfetivo(e), qtd_itens: (e.itens || []).length,
+const enfeitar = (e) => ({ ...e, fluxo_resumo: e.status === 'rascunho' ? null : FV().resumo(e.fluxo || []), link_motorista: e.status !== 'rascunho' ? linkMotorista(e.token) : null, status_nome: STATUS[e.status] || e.status, tipo_nome: TIPOS[e.tipo] || e.tipo, fim_efetivo: fimEfetivo(e), qtd_itens: (e.itens || []).length,
   anexos_tipos: [...new Set((e.anexos || []).map((a) => a.tipo))], atrasada: e.status === 'programada' && !!e.inicio_previsto && e.inicio_previsto < new Date().toISOString() });
 async function listar(supabase, tenantId, { status, de, ate } = {}) {
   const pvs = await q(supabase.from('pedidos_venda').select('*').eq('tenant_id', tenantId)).catch(() => []);
@@ -415,7 +429,7 @@ async function detalhe(supabase, tenantId, id) {
   const bloqueados = (ex.conjunto || []).map((c) => eqs.find((e) => String(e.id) === String(c.id))).filter((e) => e?.bloqueado).map((e) => ({ tag: e.tag, nome: e.nome, motivo: e.bloqueio_motivo }));
   const docs = semPath(avaliarDocs(await carregarDocs(supabase, tenantId), { motorista_id: ex.motorista_id, motorista_nome: ex.motorista_nome, conjunto: ex.conjunto || [], inicio: ex.inicio_previsto, fim: ex.fim_previsto }));
   const pvs = await q(supabase.from('pedidos_venda').select('*').eq('tenant_id', tenantId).eq('id', ex.pv_id)).catch(() => []);
-  return { execucao: { ...comRef(enfeitar(ex), pvs), conflitos: ATIVAS.includes(ex.status) ? conflitos(ex, outras) : [], bloqueados, docs }, status: STATUS, anexos_tipos: ANEXOS };
+  return { execucao: { ...comRef(enfeitar(ex), pvs), fluxo: ex.status === 'rascunho' ? (ex.fluxo || []) : FV().comLiberacao(ex.fluxo || []), conflitos: ATIVAS.includes(ex.status) ? conflitos(ex, outras) : [], bloqueados, docs }, status: STATUS, anexos_tipos: ANEXOS };
 }
 /** trechos do pedido com as ATs ativas e os itens ainda livres (sem valores) */
 function trechosComATs(pv0, ex, docsBase = null) {
@@ -486,7 +500,10 @@ async function paginaMotorista(supabase, ex) {
   return { numero: ex.numero, ref: exR.ref, status: ex.status, status_nome: STATUS[ex.status], cliente_nome: ex.cliente_nome, pv_numero: ex.pv_numero, grupo_titulo: ex.grupo_titulo,
     origem: ex.origem, destino: ex.destino, inicio_previsto: ex.inicio_previsto, fim_previsto: ex.fim_previsto, motorista_nome: ex.motorista_nome, conjunto: ex.conjunto || [],
     itens: (exR.itens || []).map((i) => ({ id: i.id, n: i.n ?? null, serie: i.serie || '', valores: i.valores || {}, quantidade: i.quantidade ?? 1 })), colunas: (ex.colunas || []).filter((c) => c.chave !== 'data_prevista' && c.tipo !== 'moeda'),
-    observacoes: ex.observacoes, cancelada_motivo: ex.cancelada_motivo, empresa: { nome: emp.nome_fantasia || emp.nome || emp.razao_social || '', telefone: emp.telefone || '' }, kit };
+    observacoes: ex.observacoes, cancelada_motivo: ex.cancelada_motivo, empresa: { nome: emp.nome_fantasia || emp.nome || emp.razao_social || '', telefone: emp.telefone || '' }, kit,
+    fluxo: FV().comLiberacao(ex.fluxo || []).map((x) => ({ id: x.id, tipo: x.tipo, rotulo: x.rotulo, status: x.status, liberada: x.liberada, feita_em: x.feita_em || null, por: x.por || null,
+      inspecao_numero: x.inspecao_numero || null, resultado: x.resultado || null, liberacao: x.liberacao ? { em: x.liberacao.em } : null, equipamento_tag: x.equipamento_tag || null, modelo_nome: x.modelo_nome || null })),
+    motorista_id: ex.motorista_id ?? null };
 }
 
-module.exports = { porToken, paginaMotorista, linkMotorista, docsDoConjunto, linkDocCadastro, descartar, carregarDocs, avaliarDocs, checar, trechosComATs, TIPOS, STATUS, ANEXOS, base, criar, editar, mudarStatus, anexar, linkAnexo, removerAnexo, listar, detalhe, doPV, agenda, documento, conflitos, _definirSelos };
+module.exports = { sincronizarPV, registrar, porToken, paginaMotorista, linkMotorista, docsDoConjunto, linkDocCadastro, descartar, carregarDocs, avaliarDocs, checar, trechosComATs, TIPOS, STATUS, ANEXOS, base, criar, editar, mudarStatus, anexar, linkAnexo, removerAnexo, listar, detalhe, doPV, agenda, documento, conflitos, _definirSelos };

@@ -10,6 +10,7 @@ import apiService from "../../services/apiService";
 import { valorCelula } from "../../utils/gerarBid";
 import { SELO } from "./FichaAT";
 import VerArquivo, { ChipDoc, TXT_DOC } from "./VerArquivo";
+import EditorFluxo, { fluxoPadrao, fluxoServe } from "./EditorFluxo";
 
 const FISCAIS = [["nfe", "NF-e"], ["cte", "CT-e"], ["mdfe", "MDF-e"]];
 const local = (iso) => (iso ? new Date(new Date(iso).getTime() - 3 * 3600000).toISOString().slice(0, 16) : "");
@@ -26,6 +27,8 @@ export default function EditorAT({ C, s, pv, trecho, itemId, atual: atual0, base
     inicio: local(atual0?.inicio_previsto) || (trecho?.datas?.[0] ? `${trecho.datas[0]}T08:00` : ""), fim: local(atual0?.fim_previsto),
     motorista_id: atual0?.motorista_id ?? "", cavalo_id: conj("cavalo", 0), impl1: conj("implemento", 0), impl2: conj("implemento", 1), observacoes: atual0?.observacoes || "",
     just_mot: "", just_docs: "", aceitar: false }));
+  const [passo, setPasso] = useState("dados"); // 16e: dados → 🧭 fluxo da viagem (ao clicar Programar)
+  const [fluxo, setFluxo] = useState(() => (atual0?.fluxo?.length ? atual0.fluxo : null));
   const [series, setSeries] = useState({}); // 16d: nº de série por item (vem do BID/pedido; editável aqui)
   const [docs, setDocs] = useState([]);
   const [conf, setConf] = useState([]);
@@ -67,7 +70,13 @@ export default function EditorAT({ C, s, pv, trecho, itemId, atual: atual0, base
 
   const corpo = (extra = {}) => ({ grupo_id: trecho?.id ?? atual?.grupo_id, itens: atual ? undefined : [itemId], origem: f.coleta, destino: f.entrega, inicio: f.inicio || null, fim: f.fim || null,
     motorista_id: f.motorista_id || null, cavalo_id: f.cavalo_id || null, implementos: [f.impl1, f.impl2].filter(Boolean), observacoes: f.observacoes,
-    liberacao_justificativa: motVermelho ? f.just_mot : undefined, liberacao_docs_justificativa: vencidos.length && !docsJaLiberados ? f.just_docs : undefined, ignorar_conflito: !!f.aceitar, series, ...extra });
+    liberacao_justificativa: motVermelho ? f.just_mot : undefined, liberacao_docs_justificativa: vencidos.length && !docsJaLiberados ? f.just_docs : undefined, ignorar_conflito: !!f.aceitar, series, ...(fluxo ? { fluxo: fluxo.filter((x) => !x.status || x.status === "pendente") } : {}), ...extra });
+  const conjuntoSel = [[f.cavalo_id, "cavalo"], [f.impl1, "implemento"], [f.impl2, "implemento"]].filter(([id]) => id !== "" && id != null)
+    .map(([id, papel]) => { const e = base.equipamentos.find((x) => String(x.id) === String(id)); return e ? { id: e.id, tag: e.tag, nome: e.nome, papel } : null; }).filter(Boolean);
+  const irParaFluxo = () => {
+    if (!fluxoServe(fluxo, conjuntoSel)) { const feitas = (fluxo || []).filter((x) => x.status && x.status !== "pendente"); setFluxo([...feitas, ...fluxoPadrao({ conjunto: conjuntoSel, modelos: base.modelos_inspecao || [], equipamentos: base.equipamentos, marcos: base.marcos || {} })]); }
+    setPasso("fluxo"); setErro(null);
+  };
   const gravar = async (rascunho) => {
     const b = corpo(rascunho ? { rascunho: true } : {});
     return atual ? apiService.put(`/programacao/execucoes/${atual.id}`, b) : apiService.post(`/programacao/pvs/${pv.id}/at`, b);
@@ -120,6 +129,7 @@ export default function EditorAT({ C, s, pv, trecho, itemId, atual: atual0, base
               <input value={series[String(i.id)] ?? i.serie ?? ""} onChange={(e) => setSeries((x) => ({ ...x, [String(i.id)]: e.target.value }))} placeholder="confira na NF" style={{ ...s.input, padding: "5px 8px", fontSize: 12.5, width: 160 }} /></label>
           </div>)}</div>
 
+        {passo === "fluxo" ? <><div style={{ ...s.label, marginBottom: 6 }}>🧭 FLUXO DA VIAGEM</div><EditorFluxo C={C} s={s} fluxo={fluxo || []} setFluxo={setFluxo} base={base} conjunto={conjuntoSel} /></> : <>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{lbl("📍 COLETA", <input value={f.coleta} onChange={(e) => set("coleta", e.target.value)} style={s.input} />, "1 1 340px")}{lbl("DATA E HORA DA COLETA *", <input type="datetime-local" value={f.inicio} onChange={(e) => set("inicio", e.target.value)} style={s.input} />, "0 1 200px")}</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>{lbl("🏁 ENTREGA", <input value={f.entrega} onChange={(e) => set("entrega", e.target.value)} style={s.input} />, "1 1 340px")}{lbl("DATA E HORA DA ENTREGA", <input type="datetime-local" value={f.fim} onChange={(e) => set("fim", e.target.value)} style={s.input} />, "0 1 200px")}</div>
 
@@ -151,15 +161,17 @@ export default function EditorAT({ C, s, pv, trecho, itemId, atual: atual0, base
           <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12.5, marginTop: 4, cursor: "pointer" }}><input type="checkbox" checked={f.aceitar} onChange={(e) => set("aceitar", e.target.checked)} />Programar mesmo assim (viagens em sequência, por exemplo)</label></>)}
 
         <label style={{ display: "block", marginTop: 12 }}><span style={s.label}>OBSERVAÇÕES PARA O MOTORISTA</span><textarea rows={2} value={f.observacoes} onChange={(e) => set("observacoes", e.target.value)} placeholder="Ex.: escolta a partir do km 230; contato no destino: Sr. Paulo (31) 9…" style={{ ...s.input, resize: "vertical" }} /></label>
+        </>}
         {avisos.map((a, i) => <div key={i} style={{ fontSize: 12, color: C.warn, marginTop: 4 }}>{a}</div>)}
         {erro && <div style={{ fontSize: 12.5, color: C.danger, marginTop: 8 }}>✕ {erro}</div>}
 
         <div style={{ display: "flex", gap: 8, marginTop: 14, flexWrap: "wrap", alignItems: "center" }}>
           {atual?.status === "rascunho" && <button type="button" disabled={ocupado} onClick={descartar} style={{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 12 }}>🗑 Descartar rascunho</button>}
+          {passo === "fluxo" && <button type="button" onClick={() => setPasso("dados")} style={{ background: "none", border: "none", color: C.textSub, cursor: "pointer", fontSize: 12.5 }}>← Voltar aos dados</button>}
           <div style={{ flex: 1, fontSize: 11.5, color: C.muted, textAlign: "right" }}>{!faltas.length ? "" : `Para programar: ${faltas.join(" · ")}`}</div>
           <button type="button" onClick={onFechar} style={{ ...s.btn(false), cursor: "pointer", color: C.text, padding: "8px 14px" }}>Cancelar</button>
           {!programada && <button type="button" disabled={ocupado} onClick={() => salvar(true)} style={{ ...s.btn(false), cursor: "pointer", color: C.text, padding: "8px 14px", borderColor: C.accent }}>💾 Salvar rascunho</button>}
-          <button type="button" disabled={ocupado || faltas.length > 0} onClick={() => salvar(false)} style={{ ...s.btn(!ocupado && !faltas.length), padding: "8px 16px" }}>{ocupado ? "Salvando…" : programada ? "Salvar" : "🚛 Programar"}</button>
+          <button type="button" disabled={ocupado || faltas.length > 0} onClick={() => (passo === "dados" ? irParaFluxo() : salvar(false))} style={{ ...s.btn(!ocupado && !faltas.length), padding: "8px 16px" }}>{ocupado ? "Salvando…" : passo === "dados" ? (programada ? "Próximo: fluxo ›" : "🚛 Programar ›") : programada ? "Salvar" : "✓ Confirmar e programar"}</button>
         </div>
       </div>
       {ver && <VerArquivo C={C} s={s} arquivo={ver} onFechar={() => setVer(null)} />}

@@ -11,6 +11,7 @@
 //   POST /execucoes/:id/anexos { tipo, nome, mime, base64 } · GET /execucoes/:id/anexos/:anexo · DELETE /execucoes/:id/anexos/:anexo
 //   GET  /execucoes/:id/documento      dados do PDF da AT
 //   POST /checar { linhas }            16b: conflitos das linhas da mesa antes de salvar
+//   16e: POST /execucoes/:id/fluxo/:etapa/liberar { motivo } (gestor/admin) · POST /pvs/:id/at e PUT aceitam { fluxo: [...] }
 //   16c: POST /docs { motorista_id, cavalo_id, implementos, inicio, fim } · GET /documentos/:id · DELETE /execucoes/:id (rascunho)
 //        POST /pvs/:id/at e PUT /execucoes/:id aceitam { rascunho: true } (salva sem validar) e liberacao_docs_justificativa
 // (403 desloga no front — trava de regra responde 409)
@@ -42,6 +43,11 @@ router.get('/pedidos', responder(async (req) => {
   const ex = await E.listar(supabase, req.tenantId, {}); const docsBase = await E.carregarDocs(supabase, req.tenantId);
   return { pedidos: (data || []).filter((p) => ['aberto', 'em_execucao'].includes(p.status)).map((p) => ({ id: p.id, numero: p.numero, cliente_nome: p.cliente_nome, titulo: p.titulo, referencia: p.referencia, status: p.status, tipo_execucao: p.tipo_execucao || 'transporte',
     colunas: (p.conteudo?.colunas || []).filter((c) => c.chave !== 'data_prevista'), trechos: E.trechosComATs(p, ex.filter((e) => String(e.pv_id) === String(p.id)), docsBase) })).sort((a, b) => String(a.numero).localeCompare(String(b.numero))) };
+}));
+router.post('/execucoes/:id/fluxo/:etapa/liberar', responder(async (req) => { // 16e: gestor libera etapa reprovada
+  const ex = /^\d+$/.test(req.params.id) ? (await supabase.from('execucoes').select('*').eq('tenant_id', req.tenantId).eq('id', req.params.id)).data?.[0] : null;
+  if (!ex) return { status: 404, erro: 'AT não encontrada' };
+  return require('../services/fluxoViagem').liberar(supabase, req.tenantId, await quem(req), ex, req.params.etapa, req.body?.motivo);
 }));
 router.post('/docs', responder((req) => E.docsDoConjunto(supabase, req.tenantId, req.body || {}))); // 16c: CNH/CRLV do que foi escolhido
 router.get('/documentos/:id', responder((req) => E.linkDocCadastro(supabase, req.tenantId, req.params.id))); // 16c: abrir CNH/CRLV do cadastro
