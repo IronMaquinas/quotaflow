@@ -62,7 +62,7 @@ export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onEr
           <div style={{ flex: 1, minWidth: 0 }}>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}><span style={{ fontWeight: 800, fontSize: 17 }}>🚛 {e.numero}</span><span style={s.tag(cor)}>{NOME_STATUS[e.status]}</span>
               {e.atrasada && <span style={s.tag(C.danger)}>⏰ coleta passou</span>}{e.conflitos?.length > 0 && <span style={s.tag(C.warn)}>⚠ conflito de agenda</span>}{e.liberacao && <span style={s.tag(C.danger)}>🔓 motorista liberado</span>}</div>
-            <div style={{ fontSize: 13, color: C.textSub, marginTop: 3 }}><b style={{ color: C.text }}>{e.cliente_nome}</b> · {e.pv_numero} · {e.grupo_titulo}</div>
+            <div style={{ fontSize: 13, color: C.textSub, marginTop: 3 }}><b style={{ color: C.text }}>{e.cliente_nome}</b> · {e.grupo_titulo}{e.ref ? <span title="Rastreabilidade: BID · item · pedido"> · 🔗 {e.ref}</span> : ` · ${e.pv_numero}`}</div>
           </div>
           <button type="button" onClick={onFechar} style={{ background: "transparent", border: "none", color: C.muted, fontSize: 22, cursor: "pointer" }}>×</button>
         </div>
@@ -89,8 +89,8 @@ export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onEr
             </div>
             <div style={{ ...s.label, marginTop: 14 }}>CARGA — ITENS DO TRECHO ({e.itens.length})</div>
             <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
-              <thead><tr>{cols.map((c) => <th key={c.chave} style={{ textAlign: "left", color: C.muted, fontSize: 10, padding: 4 }}>{c.rotulo.toUpperCase()}</th>)}<th style={{ textAlign: "left", color: C.muted, fontSize: 10, padding: 4 }}>QTD</th></tr></thead>
-              <tbody>{e.itens.map((i) => <tr key={i.id}>{cols.map((c) => <td key={c.chave} style={{ padding: 4, borderTop: `1px solid ${C.border}` }}>{valorCelula(c, i.valores?.[c.chave])}</td>)}<td style={{ padding: 4, borderTop: `1px solid ${C.border}` }}>{i.quantidade ?? 1}</td></tr>)}</tbody></table></div>
+              <thead><tr><th style={{ textAlign: "left", color: C.muted, fontSize: 10, padding: 4 }}>#</th>{cols.map((c) => <th key={c.chave} style={{ textAlign: "left", color: C.muted, fontSize: 10, padding: 4 }}>{c.rotulo.toUpperCase()}</th>)}<th style={{ textAlign: "left", color: C.muted, fontSize: 10, padding: 4 }}>Nº DE SÉRIE</th><th style={{ textAlign: "left", color: C.muted, fontSize: 10, padding: 4 }}>QTD</th></tr></thead>
+              <tbody>{e.itens.map((i) => <tr key={i.id}><td style={{ padding: 4, borderTop: `1px solid ${C.border}`, fontWeight: 700 }}>{i.n || "—"}</td>{cols.map((c) => <td key={c.chave} style={{ padding: 4, borderTop: `1px solid ${C.border}` }}>{valorCelula(c, i.valores?.[c.chave])}</td>)}<td style={{ padding: 4, borderTop: `1px solid ${C.border}` }}>{i.serie || <span style={{ color: C.warn }}>—</span>}</td><td style={{ padding: 4, borderTop: `1px solid ${C.border}` }}>{i.quantidade ?? 1}</td></tr>)}</tbody></table></div>
             {e.observacoes && <><div style={{ ...s.label, marginTop: 14 }}>OBSERVAÇÕES</div><div style={{ fontSize: 13, whiteSpace: "pre-wrap" }}>{e.observacoes}</div></>}
             <div style={{ fontSize: 11, color: C.muted, marginTop: 14 }}>Iniciar e concluir a AT atualiza sozinho o status dos itens no pedido {e.pv_numero}. Valores não aparecem aqui (ficam no 📈 Comercial).</div>
           </div>

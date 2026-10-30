@@ -169,10 +169,23 @@ function validarGrupos(grupos, colunas = []) {
         }
         const valor = num(it?.valor); if (Number.isNaN(valor) || (valor != null && valor < 0)) throw new Error(`Valor inválido (grupo ${gi + 1}, item ${ii + 1})`);
         const qtd = num(it?.quantidade); if (Number.isNaN(qtd) || (qtd != null && qtd <= 0)) throw new Error(`Quantidade inválida (grupo ${gi + 1}, item ${ii + 1})`);
-        return { id: texto(it?.id, 20) || novoId(), valores, quantidade: qtd ?? 1, valor };
+        const nItem = Number(it?.n); // 16d: número do item no BID (fixo — o servidor numera os novos)
+        return { id: texto(it?.id, 20) || novoId(), n: Number.isInteger(nItem) && nItem > 0 ? nItem : null, serie: texto(it?.serie, 80) || '', valores, quantidade: qtd ?? 1, valor };
       }),
     };
   });
+}
+/** 16d: número fixo de cada item no BID (1, 2, 3…). Mantém o que já tem; item novo (ou número repetido) ganha o próximo.
+ *  seqMin = o maior número já usado neste BID (conteudo.item_seq) — item tirado não devolve o número. Sem número salvo
+ *  (BID/pedido antigo) a numeração sai na ordem em que os itens aparecem. */
+function numerarItens(grupos = [], seqMin = 0) {
+  let max = Math.max(Number(seqMin) || 0, ...grupos.flatMap((g) => (g.itens || []).map((i) => (Number.isInteger(i.n) && i.n > 0 ? i.n : 0))));
+  const usados = new Set();
+  const gs = grupos.map((g) => ({ ...g, itens: (g.itens || []).map((i) => {
+    let n = Number.isInteger(i.n) && i.n > 0 && !usados.has(i.n) ? i.n : null;
+    if (n == null) n = ++max; usados.add(n); return { ...i, n };
+  }) }));
+  return { grupos: gs, seq: max };
 }
 /** total do item = valor × quantidade; subtotal do grupo = digitado ou soma dos itens; total = digitado ou soma dos grupos */
 function totais(grupos = [], valorTotalManual = null) {
@@ -266,7 +279,7 @@ async function editar(supabase, tenantId, quem, id, body = {}) {
   const conteudo = { ...(b.conteudo || {}) };
   if (tem('secoes')) { const r = validarSecoes(body.secoes); if (r.erro) return { status: 400, erro: r.erro }; conteudo.secoes = r.secoes; upd.conteudo = conteudo; }
   try {
-    if (tem('grupos')) upd.grupos = validarGrupos(body.grupos, conteudo.colunas || []);
+    if (tem('grupos')) { const r = numerarItens(validarGrupos(body.grupos, conteudo.colunas || []), b.conteudo?.item_seq || 0); upd.grupos = r.grupos; conteudo.item_seq = r.seq; upd.conteudo = conteudo; }
     if (tem('condicoes')) upd.condicoes = validarCondicoes(body.condicoes, conteudo.condicoes || []);
   } catch (e) { return { status: 400, erro: e.message }; }
   if (tem('valor_total_manual')) { const n = num(body.valor_total_manual); if (Number.isNaN(n) || (n != null && n < 0)) return { status: 400, erro: 'Valor total inválido' }; upd.valor_total_manual = n; }
@@ -312,6 +325,7 @@ function diferencas(a, b) {
       const ant = ia.get(it.id); const nomeI = it.valores?.modelo || it.valores?.veiculo || `item ${k + 1}`;
       if (!ant) { out.push(`${nomeG(g, i)} — item incluído: ${nomeI}`); return; }
       if (ant.valor !== it.valor) out.push(`${nomeG(g, i)} — ${nomeI}: valor ${brl(ant.valor) || '—'} → ${brl(it.valor) || '—'}`);
+      if ((ant.serie || '') !== (it.serie || '')) out.push(`${nomeG(g, i)} — ${nomeI}: nº de série ${ant.serie || '—'} → ${it.serie || '—'}`);
       if (Number(ant.quantidade || 1) !== Number(it.quantidade || 1)) out.push(`${nomeG(g, i)} — ${nomeI}: quantidade ${ant.quantidade || 1} → ${it.quantidade || 1}`);
       for (const k2 of new Set([...Object.keys(ant.valores || {}), ...Object.keys(it.valores || {})])) {
         if (String(ant.valores?.[k2] ?? '') !== String(it.valores?.[k2] ?? '')) out.push(`${nomeG(g, i)} — ${nomeI}: ${colNome.get(k2) || k2} ${ant.valores?.[k2] ?? '—'} → ${it.valores?.[k2] ?? '—'}`);
@@ -579,6 +593,6 @@ async function documento(supabase, tenantId, id, versao = null) {
   };
 }
 
-module.exports = { TIPOS_EXECUCAO, _definirEnvio, brl, FASES, FASE_NOME, COM_CLIENTE, ABERTAS, podeEditar, bidDoTenant, atividade, retrato, linkCliente, hojeBR, somaDias, diasEntre, enfeitar, q, texto, FASES_ABERTAS: ABERTAS, MOTIVOS_PERDA, TIPOS_ATIV, CAMPOS, OPCOES_FISCAIS, validarModelo, validarGrupos, validarCondicoes, totais, diferencas,
+module.exports = { numerarItens, TIPOS_EXECUCAO, _definirEnvio, brl, FASES, FASE_NOME, COM_CLIENTE, ABERTAS, podeEditar, bidDoTenant, atividade, retrato, linkCliente, hojeBR, somaDias, diasEntre, enfeitar, q, texto, FASES_ABERTAS: ABERTAS, MOTIVOS_PERDA, TIPOS_ATIV, CAMPOS, OPCOES_FISCAIS, validarModelo, validarGrupos, validarCondicoes, totais, diferencas,
   modelosTenant, bibliotecaParaTenant, importar, atualizarDaBiblioteca, salvarModelo, responsaveis,
   criar, editar, fecharVersao, mudarFase, listar, detalhe, criarAtividade, concluirAtividade, tarefas, funil, cliente360, documento, proximoNumero };

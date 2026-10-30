@@ -16,7 +16,8 @@ const dBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : 
 
 function Card({ C, s, pv, item, at, onAbrir, onAbrirAT, onErro, onOk, onMudou, setVer }) {
   const [subindo, setSubindo] = useState(null);
-  const resumo = (pv.colunas || []).slice(0, 3).map((c) => valorCelula(c, item?.valores?.[c.chave])).filter(Boolean).join(" · ") || `Item ${item?.id}`;
+  const resumo = `${item?.n ? `#${item.n} · ` : ""}${(pv.colunas || []).slice(0, 3).map((c) => valorCelula(c, item?.valores?.[c.chave])).filter(Boolean).join(" · ") || `Item ${item?.id}`}`;
+  const serie = (at?.itens || []).find((i) => String(i.id) === String(item?.id))?.serie || item?.serie;
   const rasc = at?.status === "rascunho";
   const cor = !at ? C.border : rasc ? C.warn : COR_STATUS[at.status];
   const anexar = async (tipo, arq) => {
@@ -41,7 +42,7 @@ function Card({ C, s, pv, item, at, onAbrir, onAbrirAT, onErro, onOk, onMudou, s
       </div>
       {!at ? <div style={{ fontSize: 12, color: C.muted }}>{item?.valores?.data_prevista ? `previsto ${dBR(item.valores.data_prevista)} · ` : ""}clique para escolher motorista e conjunto</div> : <>
         <div style={{ fontSize: 12, color: C.textSub }}>🗓 {at.inicio_previsto ? dataHora(at.inicio_previsto) : <span style={{ color: C.warn }}>sem data</span>} · 👤 {at.motorista_nome || <span style={{ color: C.warn }}>motorista a definir</span>}{at.liberacao ? " 🔓" : ""}</div>
-        <div style={{ fontSize: 12, color: C.textSub }}>🚛 {conj || <span style={{ color: C.warn }}>conjunto a definir</span>}</div>
+        <div style={{ fontSize: 12, color: C.textSub }}>🚛 {conj || <span style={{ color: C.warn }}>conjunto a definir</span>}{serie ? <span> · 🔢 série {serie}</span> : null}</div>
         <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 2 }} onClick={(e) => e.stopPropagation()}>
           {(at.docs || []).map((d) => <ChipDoc key={d.chave} C={C} status={d.status} rotulo={d.alvo === "motorista" ? d.rotulo : `${d.rotulo} ${d.dono}`} title={`${d.rotulo} de ${d.dono}: ${TXT_DOC[d.status]}${d.vence_em ? ` · vence ${dBR(d.vence_em)}` : ""}`} onClick={() => verDoc(d)} />)}
           {FISCAIS.map(([k, r]) => { const a = (at.anexos || []).find((x) => x.tipo === k);

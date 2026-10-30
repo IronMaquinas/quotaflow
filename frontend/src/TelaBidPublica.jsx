@@ -48,7 +48,7 @@ export default function TelaBidPublica() {
 
   const doc = p.documento; const cols = doc.conteudo?.colunas || []; const rot = doc.conteudo?.rotulo_grupo || "Grupo";
   const itens = (doc.grupos || []).flatMap((g, gi) => (g.itens || []).map((i) => ({ ...i, grupo: g.titulo || `${rot} ${gi + 1}` })));
-  const resumoItem = (i) => cols.map((c) => (i.valores?.[c.chave] != null && i.valores[c.chave] !== "" ? `${c.rotulo}: ${valorCelula(c, i.valores[c.chave])}` : null)).filter(Boolean).slice(0, 4).join(" · ") || "item";
+  const resumoItem = (i) => (i.n ? `#${i.n} · ` : "") + (i.serie ? `Série ${i.serie} · ` : "") + cols.map((c) => (i.valores?.[c.chave] != null && i.valores[c.chave] !== "" ? `${c.rotulo}: ${valorCelula(c, i.valores[c.chave])}` : null)).filter(Boolean).slice(0, 4).join(" · ") || "item";
   const setR = (id, x) => setResp((r) => ({ ...r, [id]: { ...(r[id] || {}), ...x } }));
   const faltando = itens.filter((i) => { const r = resp[i.id]; return !r?.decisao || (r.decisao === "revisar" && (!r.motivo || (r.motivo === "outro" && !String(r.comentario || "").trim()))) || (r.decisao === "recusado" && !String(r.comentario || "").trim()); }).length;
   const cont = itens.reduce((a, i) => { const d = resp[i.id]?.decisao; if (d) a[d] = (a[d] || 0) + 1; return a; }, {});

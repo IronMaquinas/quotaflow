@@ -54,13 +54,15 @@ export function gerarHtmlBid(d) {
   const ident = `<div class="ident">
       <div>${linha("Razão Social", e.razao_social)}${linha("CNPJ", cnpj(e.cnpj))}${linha("Inscrição Estadual", e.inscricao_estadual)}${linha("Endereço", endereco)}${linha("Complemento", e.complemento)}${linha("Estado", e.uf)}${linha("Opção Fiscal", e.opcao_fiscal)}</div>
       <div>${linha("Bairro", e.bairro)}${linha("Município", e.cidade)}${linha("CEP", cep(e.cep))}${linha("Telefone", e.telefone)}${linha("E-mail", e.email)}</div></div>`;
+  let _pos = 0; const numItem = new Map((d.grupos || []).flatMap((g) => (g.itens || []).map((i) => { _pos++; return [i.id, i.n || _pos]; }))); // 16d: nº do item (fixo; antigo = ordem)
+  const temSerie = (d.grupos || []).some((g) => (g.itens || []).some((i) => i.serie));
   const tabelaGrupo = (g, gi) => {
     const temValorItem = (g.itens || []).some((i) => i.valor != null);
     const temQtd = (g.itens || []).some((i) => Number(i.quantidade || 1) !== 1);
     return `<div class="grupo">${esc(g.titulo || `${rot} ${gi + 1}`)}</div>${g.coleta || g.entrega ? `<div class="rota"><b>Coleta:</b> ${esc(g.coleta || "—")} &nbsp;➜&nbsp; <b>Entrega:</b> ${esc(g.entrega || "—")}</div>` : ""}
-      <table class="tab"><thead><tr>${cols.map((c) => `<th>${esc(c.rotulo)}</th>`).join("")}${temQtd ? "<th>Qtd</th>" : ""}${temValorItem ? '<th class="v">Valor</th>' : ""}</tr></thead><tbody>
-      ${(g.itens || []).map((i) => `<tr>${cols.map((c) => `<td>${esc(valorCelula(c, i.valores?.[c.chave]))}</td>`).join("")}${temQtd ? `<td>${esc(i.quantidade || 1)}</td>` : ""}${temValorItem ? `<td class="v">${i.valor == null ? "—" : brl(Number(i.valor) * Number(i.quantidade || 1))}</td>` : ""}</tr>`).join("")}
-      </tbody>${g.subtotal != null && (d.grupos || []).length > 1 ? `<tfoot><tr><td colspan="${cols.length + (temQtd ? 1 : 0)}">Subtotal — ${esc(g.titulo || `${rot} ${gi + 1}`)}</td><td class="v">${brl(g.subtotal)}</td></tr></tfoot>` : ""}</table>`;
+      <table class="tab"><thead><tr><th>#</th>${cols.map((c) => `<th>${esc(c.rotulo)}</th>`).join("")}${temSerie ? "<th>Nº de série</th>" : ""}${temQtd ? "<th>Qtd</th>" : ""}${temValorItem ? '<th class="v">Valor</th>' : ""}</tr></thead><tbody>
+      ${(g.itens || []).map((i) => `<tr><td><b>${numItem.get(i.id)}</b></td>${cols.map((c) => `<td>${esc(valorCelula(c, i.valores?.[c.chave]))}</td>`).join("")}${temSerie ? `<td>${esc(i.serie || "")}</td>` : ""}${temQtd ? `<td>${esc(i.quantidade || 1)}</td>` : ""}${temValorItem ? `<td class="v">${i.valor == null ? "—" : brl(Number(i.valor) * Number(i.quantidade || 1))}</td>` : ""}</tr>`).join("")}
+      </tbody>${g.subtotal != null && (d.grupos || []).length > 1 ? `<tfoot><tr><td colspan="${cols.length + 1 + (temSerie ? 1 : 0) + (temQtd ? 1 : 0)}">Subtotal — ${esc(g.titulo || `${rot} ${gi + 1}`)}</td><td class="v">${brl(g.subtotal)}</td></tr></tfoot>` : ""}</table>`;
   };
   const condLinhas = (grupo) => conds.filter((c) => (c.grupo || "comercial") === grupo).map((c) => { const v = valorCondicao(c, d.condicoes); return v ? `<div><b>${esc(c.rotulo)}:</b> ${esc(v)};</div>` : ""; }).join("");
   const a = d.assinante || {};

@@ -245,8 +245,9 @@ async function paginaCliente(supabase, b, meta = {}) {
   // sugere a decisão anterior para o item que NÃO mudou desde a resposta anterior
   let sugestao = {};
   if (!v.resposta && anterior?.resposta?.itens) {
-    const itensAnt = new Map((anterior.snapshot?.grupos || []).flatMap((g) => g.itens.map((i) => [i.id, JSON.stringify({ g: g.titulo, ...i })])));
-    for (const g of v.snapshot?.grupos || []) for (const i of g.itens) { const r = anterior.resposta.itens[i.id]; if (r && itensAnt.get(i.id) === JSON.stringify({ g: g.titulo, ...i })) sugestao[i.id] = r; }
+    const chave = (g, { n, serie, ...i }) => JSON.stringify({ g: g.titulo, ...i, serie: serie || '' }); // 16d: o número do item não conta como mudança
+    const itensAnt = new Map((anterior.snapshot?.grupos || []).flatMap((g) => g.itens.map((i) => [i.id, chave(g, i)])));
+    for (const g of v.snapshot?.grupos || []) for (const i of g.itens) { const r = anterior.resposta.itens[i.id]; if (r && itensAnt.get(i.id) === chave(g, i)) sugestao[i.id] = r; }
   }
   let logo = null; try { logo = (await require('./logoEmpresa').obter(supabase, b.tenant_id)).logo; } catch { logo = null; }
   const vencido = B.COM_CLIENTE.includes(b.fase) && !!b.valido_ate && b.valido_ate < hojeBR();

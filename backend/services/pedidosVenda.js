@@ -75,7 +75,7 @@ async function criarPV(supabase, tenantId, b, quem = {}) {
   if (ja) return { pv: ja, existente: true };
   const v = (await q(supabase.from('bid_versoes').select('*').eq('tenant_id', tenantId).eq('bid_id', b.id))).find((x) => x.versao === (b.aceite_versao || b.versao_enviada));
   const s = v?.snapshot || B.retrato(b);
-  const grupos = comStatus(s.grupos || []); const t = B.totais(grupos, s.valor_total_manual);
+  const grupos = comStatus(B.numerarItens(s.grupos || []).grupos); const t = B.totais(grupos, s.valor_total_manual); // 16d: itens numerados
   const agora = new Date().toISOString();
   // 16a: o modelo do BID diz o que o aceite gera (transporte → AT; locação, serviço, venda → etapas futuras)
   const tipoExec = b.modelo_id ? ((await q(supabase.from('bid_modelos').select('*').eq('id', b.modelo_id)).catch(() => []))[0]?.tipo_execucao || 'transporte') : 'transporte';
@@ -120,7 +120,7 @@ async function detalhe(supabase, tenantId, id) {
   const pv = await pvDoTenant(supabase, tenantId, id); if (!pv) return { status: 404, erro: 'Pedido não encontrado' };
   const [adits, bs] = await Promise.all([q(supabase.from('pv_aditivos').select('*').eq('tenant_id', tenantId).eq('pv_id', pv.id)), q(supabase.from('bids').select('*').eq('tenant_id', tenantId).eq('pv_id', pv.id))]);
   const aberto = bs.find((b) => b.tipo === 'aditivo' && B.ABERTAS.includes(b.fase));
-  const t = B.totais(pv.grupos || [], pv.valor_total_manual);
+  const t = B.totais(B.numerarItens(pv.grupos || []).grupos, pv.valor_total_manual); // 16d: itens numerados (pedido antigo: na ordem)
   return { pv: { ...enfeitar(pv), grupos: t.grupos }, aditivos: adits.map(({ antes, depois, ...a }) => a).sort((a, b) => b.numero - a.numero),
     aditivo_aberto: aberto ? { id: aberto.id, numero: aberto.numero, fase: aberto.fase, fase_nome: B.FASE_NOME[aberto.fase], visto_qtd: aberto.visto_qtd } : null,
     aditivos_recusados: bs.filter((b) => b.tipo === 'aditivo' && b.fase === 'perdido').map((b) => ({ id: b.id, numero: b.numero, motivo: b.perda_obs || b.motivo_perda })) };
@@ -227,7 +227,7 @@ async function aplicarAditivo(supabase, tenantId, b, quem = {}) {
   const v = (await q(supabase.from('bid_versoes').select('*').eq('tenant_id', tenantId).eq('bid_id', b.id))).find((x) => x.versao === (b.aceite_versao || b.versao_enviada));
   const s = v?.snapshot || B.retrato(b);
   const statusAntes = new Map((pv.grupos || []).flatMap((g) => (g.itens || []).map((i) => [i.id, i.status || 'a_programar'])));
-  const grupos = comStatus(s.grupos || [], statusAntes); const t = B.totais(grupos, s.valor_total_manual);
+  const grupos = comStatus(B.numerarItens(s.grupos || []).grupos, statusAntes); const t = B.totais(grupos, s.valor_total_manual); // 16d: itens numerados
   const antes = retratoPV(pv); const mudancas = B.diferencas(antes, s).filter((m) => !/Textos das seções|^Validade:/.test(m));
   const n = b.aditivo_numero || Number(pv.aditivo_atual || 0) + 1; const agora = new Date().toISOString();
   const { data: ad, error: e1 } = await supabase.from('pv_aditivos').insert([{ tenant_id: tenantId, pv_id: pv.id, numero: n, bid_id: b.id, bid_versao: v?.versao || null, antes: { ...antes, grupos: pv.grupos }, depois: { ...s, grupos },
@@ -251,7 +251,7 @@ async function documento(supabase, tenantId, id) {
   const [emp, cli, orig] = await Promise.all([q(supabase.from('tenants').select('*').eq('id', tenantId)).then((r) => r[0] || {}),
     pv.cliente_id ? q(supabase.from('clientes').select('*').eq('tenant_id', tenantId).eq('id', pv.cliente_id)).then((r) => r[0] || null) : null,
     pv.bid_id ? q(supabase.from('bids').select('*').eq('tenant_id', tenantId).eq('id', pv.bid_id)).then((r) => r[0] || null) : null]);
-  const t = B.totais(pv.grupos || [], pv.valor_total_manual);
+  const t = B.totais(B.numerarItens(pv.grupos || []).grupos, pv.valor_total_manual); // 16d: itens numerados (pedido antigo: na ordem)
   return { numero: pv.numero, pedido: true, versao: null, rascunho: false, fase: pv.status, valido_ate: null,
     empresa: { razao_social: emp.razao_social || emp.nome || '', nome_fantasia: emp.nome_fantasia || '', cnpj: emp.cnpj || '', inscricao_estadual: emp.inscricao_estadual || '', opcao_fiscal: emp.opcao_fiscal || '',
       endereco: emp.endereco || '', numero: emp.numero || '', complemento: emp.complemento || '', bairro: emp.bairro || '', cidade: emp.cidade || '', uf: emp.regiao || '', cep: emp.cep || '', telefone: emp.telefone || '', email: emp.email || '' },

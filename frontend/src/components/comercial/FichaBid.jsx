@@ -56,7 +56,7 @@ function Grupos({ C, s, conteudo, grupos, setGrupos, travado, resposta }) {
           <label style={{ flex: "1 1 160px" }}><span style={s.label}>SUBTOTAL (OPCIONAL)</span>
             <CampoMoeda disabled={travado} value={g.valor ?? ""} onChange={(v) => setG(gi, { ...g, valor: v === "" ? null : v })} placeholder={calc[gi].soma != null ? `soma: ${brl(calc[gi].soma)}` : "pela soma dos itens"} style={s.input} /></label>
           {!travado && <>
-            <button type="button" title="Duplicar (ex.: o retorno — coleta e entrega já vêm invertidas)" onClick={() => setGrupos([...grupos.slice(0, gi + 1), { ...g, id: nid(), titulo: g.titulo ? `${g.titulo} (cópia)` : "", coleta: g.entrega || "", entrega: g.coleta || "", itens: g.itens.map((i) => ({ ...i, id: nid() })) }, ...grupos.slice(gi + 1)])} style={mini()}>⧉ Duplicar</button>
+            <button type="button" title="Duplicar (ex.: o retorno — coleta e entrega já vêm invertidas)" onClick={() => setGrupos([...grupos.slice(0, gi + 1), { ...g, id: nid(), titulo: g.titulo ? `${g.titulo} (cópia)` : "", coleta: g.entrega || "", entrega: g.coleta || "", itens: g.itens.map((i) => ({ ...i, id: nid(), n: null, serie: "" })) }, ...grupos.slice(gi + 1)])} style={mini()}>⧉ Duplicar</button>
             {grupos.length > 1 && <button type="button" onClick={() => setGrupos(grupos.filter((_, k) => k !== gi))} style={mini(C.danger)}>✕ Tirar</button>}
           </>}
         </div>
@@ -68,20 +68,22 @@ function Grupos({ C, s, conteudo, grupos, setGrupos, travado, resposta }) {
         </div>
         <div style={{ overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
-            <thead><tr>{cols.map((c) => <th key={c.chave} style={{ textAlign: "left", color: C.muted, fontWeight: 600, fontSize: 10, padding: "4px 4px", whiteSpace: "nowrap" }}>{c.rotulo.toUpperCase()}{c.unidade ? ` (${c.unidade})` : ""}</th>)}
-              <th style={{ textAlign: "left", color: C.muted, fontSize: 10, padding: 4 }}>QTD</th><th style={{ textAlign: "left", color: C.muted, fontSize: 10, padding: 4 }}>VALOR UNIT.</th><th /></tr></thead>
+            <thead><tr><th style={{ textAlign: "left", color: C.muted, fontSize: 10, padding: 4 }}>#</th>{cols.map((c) => <th key={c.chave} style={{ textAlign: "left", color: C.muted, fontWeight: 600, fontSize: 10, padding: "4px 4px", whiteSpace: "nowrap" }}>{c.rotulo.toUpperCase()}{c.unidade ? ` (${c.unidade})` : ""}</th>)}
+              <th style={{ textAlign: "left", color: C.muted, fontSize: 10, padding: 4, whiteSpace: "nowrap" }}>Nº DE SÉRIE</th><th style={{ textAlign: "left", color: C.muted, fontSize: 10, padding: 4 }}>QTD</th><th style={{ textAlign: "left", color: C.muted, fontSize: 10, padding: 4 }}>VALOR UNIT.</th><th /></tr></thead>
             <tbody>{g.itens.map((it, ii) => {
               const setI = (x) => setG(gi, { ...g, itens: g.itens.map((y, k) => (k === ii ? x : y)) });
               const rsp = resposta?.itens?.[it.id];
               return (<Fragment key={it.id}><tr>
+                <td style={{ padding: 3, fontWeight: 700, color: C.textSub, fontSize: 12 }} title={it.n ? `Item ${it.n} do BID` : "Número sai ao salvar"}>{it.n || "·"}</td>
                 {cols.map((c) => <td key={c.chave} style={{ padding: 3 }}><Celula C={C} s={s} col={c} travado={travado} valor={it.valores?.[c.chave]} onValor={(v) => { const valores = { ...it.valores }; if (v === undefined || v === "") delete valores[c.chave]; else valores[c.chave] = v; setI({ ...it, valores }); }} /></td>)}
+                <td style={{ padding: 3 }}><input disabled={travado} value={it.serie || ""} onChange={(e) => setI({ ...it, serie: e.target.value })} placeholder="se souber" style={{ ...s.input, padding: "6px 7px", fontSize: 12, width: 110 }} /></td>
                 <td style={{ padding: 3 }}><input disabled={travado} value={it.quantidade ?? 1} inputMode="decimal" onChange={(e) => setI({ ...it, quantidade: e.target.value })} style={{ ...s.input, padding: "6px 7px", fontSize: 12, width: 56 }} /></td>
                 <td style={{ padding: 3, minWidth: 120 }}><CampoMoeda disabled={travado} value={it.valor ?? ""} onChange={(v) => setI({ ...it, valor: v === "" ? null : v })} style={{ ...s.input, padding: "6px 7px", fontSize: 12 }} /></td>
                 <td style={{ padding: 3, whiteSpace: "nowrap" }}>{!travado && <>
-                  <button type="button" title="Duplicar item" onClick={() => setG(gi, { ...g, itens: [...g.itens.slice(0, ii + 1), { ...it, id: nid() }, ...g.itens.slice(ii + 1)] })} style={mini()}>⧉</button>{" "}
+                  <button type="button" title="Duplicar item" onClick={() => setG(gi, { ...g, itens: [...g.itens.slice(0, ii + 1), { ...it, id: nid(), n: null, serie: "" }, ...g.itens.slice(ii + 1)] })} style={mini()}>⧉</button>{" "}
                   {g.itens.length > 1 && <button type="button" title="Tirar item" onClick={() => setG(gi, { ...g, itens: g.itens.filter((_, k) => k !== ii) })} style={mini(C.danger)}>✕</button>}</>}</td>
               </tr>
-              {rsp && <tr><td colSpan={cols.length + 3} style={{ padding: "0 3px 8px" }}>
+              {rsp && <tr><td colSpan={cols.length + 5} style={{ padding: "0 3px 8px" }}>
                 <div style={{ fontSize: 11.5, padding: "5px 9px", borderRadius: 6, background: `${DECISAO[rsp.decisao]?.[1]}18`, color: DECISAO[rsp.decisao]?.[1], borderLeft: `3px solid ${DECISAO[rsp.decisao]?.[1]}` }}>
                   <b>{DECISAO[rsp.decisao]?.[0]}</b>{rsp.motivo ? ` · ${MOTIVO_REV[rsp.motivo] || rsp.motivo}` : ""}{rsp.comentario ? <span style={{ color: C.text }}> — “{rsp.comentario}”</span> : ""}</div></td></tr>}
               </Fragment>);

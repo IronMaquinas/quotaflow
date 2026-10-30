@@ -26,6 +26,7 @@ export default function EditorAT({ C, s, pv, trecho, itemId, atual: atual0, base
     inicio: local(atual0?.inicio_previsto) || (trecho?.datas?.[0] ? `${trecho.datas[0]}T08:00` : ""), fim: local(atual0?.fim_previsto),
     motorista_id: atual0?.motorista_id ?? "", cavalo_id: conj("cavalo", 0), impl1: conj("implemento", 0), impl2: conj("implemento", 1), observacoes: atual0?.observacoes || "",
     just_mot: "", just_docs: "", aceitar: false }));
+  const [series, setSeries] = useState({}); // 16d: nº de série por item (vem do BID/pedido; editável aqui)
   const [docs, setDocs] = useState([]);
   const [conf, setConf] = useState([]);
   const [erro, setErro] = useState(null);
@@ -66,7 +67,7 @@ export default function EditorAT({ C, s, pv, trecho, itemId, atual: atual0, base
 
   const corpo = (extra = {}) => ({ grupo_id: trecho?.id ?? atual?.grupo_id, itens: atual ? undefined : [itemId], origem: f.coleta, destino: f.entrega, inicio: f.inicio || null, fim: f.fim || null,
     motorista_id: f.motorista_id || null, cavalo_id: f.cavalo_id || null, implementos: [f.impl1, f.impl2].filter(Boolean), observacoes: f.observacoes,
-    liberacao_justificativa: motVermelho ? f.just_mot : undefined, liberacao_docs_justificativa: vencidos.length && !docsJaLiberados ? f.just_docs : undefined, ignorar_conflito: !!f.aceitar, ...extra });
+    liberacao_justificativa: motVermelho ? f.just_mot : undefined, liberacao_docs_justificativa: vencidos.length && !docsJaLiberados ? f.just_docs : undefined, ignorar_conflito: !!f.aceitar, series, ...extra });
   const gravar = async (rascunho) => {
     const b = corpo(rascunho ? { rascunho: true } : {});
     return atual ? apiService.put(`/programacao/execucoes/${atual.id}`, b) : apiService.post(`/programacao/pvs/${pv.id}/at`, b);
@@ -112,7 +113,12 @@ export default function EditorAT({ C, s, pv, trecho, itemId, atual: atual0, base
           <div style={{ flex: 1, fontSize: 16, fontWeight: 700 }}>{programada ? `✏ ${atual.numero}` : atual ? "💾 Rascunho da programação" : "🚛 Nova programação"}</div>
           <button type="button" onClick={onFechar} style={{ background: "transparent", border: "none", color: C.muted, fontSize: 22, cursor: "pointer" }}>×</button>
         </div>
-        <div style={{ fontSize: 12.5, color: C.textSub, marginBottom: 10 }}>{pv.numero} · <b style={{ color: C.text }}>{trecho?.titulo || atual?.grupo_titulo}</b>{itens.map((i) => <div key={i.id} style={{ color: C.text, marginTop: 2 }}>📦 {resumo(i) || `Item ${i.id}`}</div>)}</div>
+        <div style={{ fontSize: 12.5, color: C.textSub, marginBottom: 10 }}>{pv.numero} · <b style={{ color: C.text }}>{trecho?.titulo || atual?.grupo_titulo}</b>{atual?.ref && <span> · <span title="Rastreabilidade: BID · item · pedido">🔗 {atual.ref}</span></span>}
+          {itens.map((i) => <div key={i.id} style={{ color: C.text, marginTop: 4, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <span style={{ flex: "1 1 320px" }}>📦 <b>{i.n ? `Item ${i.n}` : "Item"}</b> · {resumo(i) || `Item ${i.id}`}</span>
+            <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 11.5, color: C.textSub }}>Nº DE SÉRIE
+              <input value={series[String(i.id)] ?? i.serie ?? ""} onChange={(e) => setSeries((x) => ({ ...x, [String(i.id)]: e.target.value }))} placeholder="confira na NF" style={{ ...s.input, padding: "5px 8px", fontSize: 12.5, width: 160 }} /></label>
+          </div>)}</div>
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{lbl("📍 COLETA", <input value={f.coleta} onChange={(e) => set("coleta", e.target.value)} style={s.input} />, "1 1 340px")}{lbl("DATA E HORA DA COLETA *", <input type="datetime-local" value={f.inicio} onChange={(e) => set("inicio", e.target.value)} style={s.input} />, "0 1 200px")}</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>{lbl("🏁 ENTREGA", <input value={f.entrega} onChange={(e) => set("entrega", e.target.value)} style={s.input} />, "1 1 340px")}{lbl("DATA E HORA DA ENTREGA", <input type="datetime-local" value={f.fim} onChange={(e) => set("fim", e.target.value)} style={s.input} />, "0 1 200px")}</div>

@@ -37,7 +37,7 @@ export default function FichaPedido({ C, s, id, onFechar, onMudou, onErro, onOk,
   const pdf = async () => { const w = prepararJanela(); try { abrirBid(await apiService.get(`/comercial/pvs/${pv.id}/documento`), w); } catch (e) { if (w) w.close(); onErro(e.message); } };
   const fazerCancelar = async () => { setOcupado(true); try { await apiService.post(`/comercial/pvs/${pv.id}/cancelar`, { motivo: cancelar }); onOk("Pedido cancelado."); setCancelar(null); await carregar(); onMudou?.(); } catch (e) { onErro(e.message); } finally { setOcupado(false); } };
   const bt = (c, cheio = true) => ({ ...s.btn(true, c), cursor: "pointer", padding: "7px 12px", fontSize: 12, ...(cheio ? {} : { background: "transparent", color: c }) });
-  const resumo = (i) => cols.filter((c) => c.chave !== "data_prevista").map((c) => (i.valores?.[c.chave] != null && i.valores[c.chave] !== "" ? `${c.rotulo}: ${valorCelula(c, i.valores[c.chave])}` : null)).filter(Boolean).slice(0, 5).join(" · ") || "item";
+  const resumo = (i) => (i.n ? `#${i.n} · ` : "") + (i.serie ? `Série ${i.serie} · ` : "") + cols.filter((c) => c.chave !== "data_prevista").map((c) => (i.valores?.[c.chave] != null && i.valores[c.chave] !== "" ? `${c.rotulo}: ${valorCelula(c, i.valores[c.chave])}` : null)).filter(Boolean).slice(0, 5).join(" · ") || "item";
   const [nomeSt, corSt] = STATUS_PV[pv.status] || [pv.status, C.muted];
 
   return (

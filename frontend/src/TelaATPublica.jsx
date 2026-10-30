@@ -29,6 +29,7 @@ export default function TelaATPublica() {
         <div style={{ fontSize: 12, opacity: 0.7 }}>{d.empresa?.nome}</div>
         <div style={{ fontSize: 20, fontWeight: 800 }}>🚛 {d.numero}</div>
         <div style={{ fontSize: 13, opacity: 0.85 }}>{d.status_nome} · {d.cliente_nome}</div>
+        {d.ref && <div style={{ fontSize: 11.5, opacity: 0.7, marginTop: 2 }}>🔗 {d.ref}</div>}
       </div>
       <div style={{ maxWidth: 560, margin: "0 auto", padding: 12 }}>
         {d.status === "cancelada" && <div style={{ ...caixa, background: "#fee2e2", color: "#991b1b" }}><b>Esta viagem foi CANCELADA.</b>{d.cancelada_motivo ? ` ${d.cancelada_motivo}` : ""}</div>}
@@ -62,7 +63,7 @@ export default function TelaATPublica() {
         </div>
         <div style={caixa}>
           <div style={rot}>📦 Carga — {d.grupo_titulo}</div>
-          {(d.itens || []).map((i) => <div key={i.id} style={{ fontSize: 14, padding: "4px 0" }}>{cols.map((c) => { const v = celula(c, i.valores?.[c.chave]); return v ? <div key={c.chave}><span style={{ color: "#64748b" }}>{c.rotulo}:</span> {v}</div> : null; })}{Number(i.quantidade || 1) !== 1 ? <div>Quantidade: {i.quantidade}</div> : null}</div>)}
+          {(d.itens || []).map((i) => <div key={i.id} style={{ fontSize: 14, padding: "4px 0" }}>{i.n ? <div style={{ fontWeight: 700 }}>Item {i.n}</div> : null}<div style={{ fontWeight: 700, color: i.serie ? "#0f172a" : "#d97706" }}>Nº de série: {i.serie || "confira na nota fiscal"}</div>{cols.map((c) => { const v = celula(c, i.valores?.[c.chave]); return v ? <div key={c.chave}><span style={{ color: "#64748b" }}>{c.rotulo}:</span> {v}</div> : null; })}{Number(i.quantidade || 1) !== 1 ? <div>Quantidade: {i.quantidade}</div> : null}</div>)}
         </div>
         {d.observacoes && <div style={caixa}><div style={rot}>📝 Observações</div><div style={{ fontSize: 14, whiteSpace: "pre-wrap" }}>{d.observacoes}</div></div>}
         {d.empresa?.telefone && <a href={`tel:${String(d.empresa.telefone).replace(/\D/g, "")}`} style={{ ...caixa, display: "block", textAlign: "center", fontWeight: 700, color: "#0f172a", textDecoration: "none" }}>📞 Falar com a programação — {d.empresa.telefone}</a>}

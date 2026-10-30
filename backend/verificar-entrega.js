@@ -205,39 +205,51 @@ const ESPERADO = {
   'front:TelaUsuariosNova.jsx': 'd7d98c07839cc133077532dd7022c751', // etapa 15a
   'migrations/051_comercial_bid.sql': '65c3c268119eadac6a0ecda34b72197c', // etapa 15a (novo)
   'routes/comercial.js': 'ff61e548b33259099336d900a65c12bb', // etapa 16a
-  'services/bids.js': 'f4536d7a800961cb3995f8c7f3e15e94', // etapa 16b
-  'front:FichaBid.jsx': '85894bf19a9e0b009eb11f5ed9373c02', // etapa 16b
+  'services/bids.js': '420fd93697384f911bdb1b474874fddd', // etapa 16d
+  'front:FichaBid.jsx': '7a7a62a1501ab2be296e7cb3a244c3eb', // etapa 16d
   'front:ModelosBid.jsx': 'fce825c9584b3ff4a2a1040d575de24c', // etapa 15a (novo)
   'front:TelaComercial.jsx': '34b82e458ef12c73c85b85e5da66dfa0', // etapa 15c.2
-  'front:gerarBid.js': 'bd690bbd310b6178063eaf5db50d2b07', // etapa 16b
+  'front:gerarBid.js': '22e048e4f81d260222995d4607127c72', // etapa 16d
   'migrations/052_bid_cliente.sql': 'a8b6f934576474b54a7246fda86d3eda', // etapa 15b (novo)
   'routes/bidLink.js': 'e566a5246b48e24430a997fda8d32e27', // etapa 15b (novo)
-  'services/bidsCliente.js': '5531109676cd1eaaa75eaf72b1cfb0d6', // etapa 15c.3
-  'front:TelaBidPublica.jsx': '314a4376a78aac068a6fede6dcba6f82', // etapa 16b
+  'services/bidsCliente.js': 'eb8e5a254090027082f0ac520c5f92aa', // etapa 16d
+  'front:TelaBidPublica.jsx': 'b4ac367ec733727d25699230beb5d64a', // etapa 16d
   'front:EnviarBid.jsx': '4d97c008534b17bcf66a71f186b4f31a', // etapa 15b.3
   'migrations/053_pedidos_venda.sql': '4036d7fd11c94032774e96372e098942', // etapa 15c (novo)
-  'services/pedidosVenda.js': '2016d01f4cbf570f78ff7621eb7c8700', // etapa 16c
-  'front:FichaPedido.jsx': 'ff1a622b4a7b8f22cee722e7b8db5d41', // etapa 16c
+  'services/pedidosVenda.js': '879c053b0e23658cba36361d8c157a5a', // etapa 16d
+  'front:FichaPedido.jsx': '798337dbd7ba34cc802f8d1bfb40a1b3', // etapa 16d
   'migrations/054_tarefa_atribuida.sql': '586bd43f09653a76e8d6a299e55905e3', // etapa 15c.1 (novo)
   'scripts/previaEmailsBid.js': '45b4dbeb2d2d8d84a24e7a31f6826049', // etapa 15c.3 (novo)
   'migrations/055_execucoes_at.sql': 'fc0a780d147f0b3d7e4c92ec71c4554f', // etapa 16a (novo)
-  'services/execucoes.js': '167bf471fc744bba18c84d44a04cd915', // etapa 16c.1
+  'services/execucoes.js': '14a7827e02aeab120d171ee8e86cde11', // etapa 16d
   'routes/programacao.js': '18dd738055ae6b8efdc5bcd2abd4f0b5', // etapa 16c
-  'front:gerarAT.js': 'a8f0c302e3646b42e080ed5132f2c7fb', // etapa 16a (novo)
-  'front:TelaProgramacao.jsx': '26ce748fde797019dacb0b268503d9dd', // etapa 16c
-  'front:FichaAT.jsx': '5c78d6fd566e0264d662295225608edf', // etapa 16c
-  'front:MesaProgramacao.jsx': 'fc862d43c50f28164ea36da440383957', // etapa 16c
+  'front:gerarAT.js': '86f541f92bd31bf833c139195516d559', // etapa 16d
+  'front:TelaProgramacao.jsx': '906dd121764d8cee618e2c5b15b56135', // etapa 16d
+  'front:FichaAT.jsx': '12c68da6f3a1dfe0e5384fcf0745d6e9', // etapa 16d
+  'front:MesaProgramacao.jsx': '703329dbc5ce9757d27f14ad54a35e32', // etapa 16d
   'migrations/056_at_rascunho_link_motorista.sql': '4e9a9185cbb0a1f9770e1fe666fc77f3', // etapa 16c (novo)
   'routes/atLink.js': '94bd6f0d9bffdb7872609c43e9ba4b85', // etapa 16c (novo)
-  'front:EditorAT.jsx': '4e57350fa9d0aeab80b3e7da68b72c21', // etapa 16c.1
+  'front:EditorAT.jsx': '620981ff029e350366288001f7440f9f', // etapa 16d
   'front:VerArquivo.jsx': 'f429078383f02f0c072637250e7a1fea', // etapa 16c (novo)
-  'front:TelaATPublica.jsx': '8063323ad26815a0b5edd5c3fbe67489', // etapa 16c (novo)
+  'front:TelaATPublica.jsx': '32a224ae5a56851834621ed8ab397627', // etapa 16d
 };
 
-// Antes de copiar a etapa 16c.1 — base: 16c
+// Antes de copiar a etapa 16d — base: 16c.1
 const ANTES = {
-  'services/execucoes.js': '0c1b5be5a10bc0047986546279943c4f',
-  'front:EditorAT.jsx': '9241bfa299354db4d93276e6c0c0a622',
+  'services/bids.js': 'f4536d7a800961cb3995f8c7f3e15e94',
+  'services/bidsCliente.js': '5531109676cd1eaaa75eaf72b1cfb0d6',
+  'services/pedidosVenda.js': '2016d01f4cbf570f78ff7621eb7c8700',
+  'services/execucoes.js': '167bf471fc744bba18c84d44a04cd915',
+  'front:FichaBid.jsx': '85894bf19a9e0b009eb11f5ed9373c02',
+  'front:gerarBid.js': 'bd690bbd310b6178063eaf5db50d2b07',
+  'front:TelaBidPublica.jsx': '314a4376a78aac068a6fede6dcba6f82',
+  'front:FichaPedido.jsx': 'ff1a622b4a7b8f22cee722e7b8db5d41',
+  'front:EditorAT.jsx': '4e57350fa9d0aeab80b3e7da68b72c21',
+  'front:MesaProgramacao.jsx': 'fc862d43c50f28164ea36da440383957',
+  'front:FichaAT.jsx': '5c78d6fd566e0264d662295225608edf',
+  'front:TelaProgramacao.jsx': '26ce748fde797019dacb0b268503d9dd',
+  'front:gerarAT.js': 'a8f0c302e3646b42e080ed5132f2c7fb',
+  'front:TelaATPublica.jsx': '8063323ad26815a0b5edd5c3fbe67489',
 };
 
 const RAIZ = process.cwd();
@@ -275,7 +287,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 16c.1)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 16d)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

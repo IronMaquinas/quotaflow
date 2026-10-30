@@ -25,14 +25,14 @@ export function gerarHtmlAT(d) {
   * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
   @media print { body { background: #fff; } .pagina { margin: 0; padding: 0; } .nao-imprimir { display: none; } } @page { size: A4; margin: 12mm; }
   </style></head><body><div class="pagina">
-    <div class="topo"><div>${logoHtml() || `<b>${esc(d.empresa?.nome)}</b>`}</div><div style="text-align:right"><h1>${esc(d.numero)}</h1><div style="font-size:10.5px;color:#555">Autorização de Transporte · ${esc(d.status_nome || "")}<br/>Pedido ${esc(d.pv_numero)}${d.referencia ? ` · ref. ${esc(d.referencia)}` : ""}</div></div></div>
+    <div class="topo"><div>${logoHtml() || `<b>${esc(d.empresa?.nome)}</b>`}</div><div style="text-align:right"><h1>${esc(d.numero)}</h1><div style="font-size:10.5px;color:#555">Autorização de Transporte · ${esc(d.status_nome || "")}<br/>${d.ref ? esc(d.ref) : `Pedido ${esc(d.pv_numero)}`}${d.referencia ? ` · ref. ${esc(d.referencia)}` : ""}</div></div></div>
     <div class="rota"><div><small>Coleta</small><b>${esc(d.origem || "—")}</b><br/>${dataHora(d.inicio_previsto)}</div><div class="seta">➜</div><div><small>Entrega</small><b>${esc(d.destino || "—")}</b><br/>${d.fim_previsto ? dataHora(d.fim_previsto) : "—"}</div></div>
     <h2>Cliente e trecho</h2><div class="grade">${linha("Cliente", esc(d.cliente_nome))}${linha("Trecho", esc(d.grupo_titulo))}${linha("Contato", esc(d.contato_cliente))}${linha("Itens", esc(d.qtd_itens))}</div>
     <h2>Motorista</h2><div class="grade">${linha("Nome", esc(d.motorista?.nome || d.motorista_nome))}${linha("CPF", esc(d.motorista?.cpf))}${linha("CNH", esc(d.motorista?.cnh))}${linha("Telefone", esc(d.motorista?.telefone))}</div>
     ${d.liberacao ? `<div class="alerta">Motorista liberado pelo gestor ${esc(d.liberacao.por || "")} em ${dataHora(d.liberacao.em)}: ${esc(d.liberacao.justificativa)}</div>` : ""}
     <h2>Conjunto</h2><table><thead><tr><th>Função</th><th>Tag</th><th>Equipamento</th></tr></thead><tbody>${(d.conjunto || []).map((c) => `<tr><td>${c.papel === "cavalo" ? "Cavalo (trator)" : "Implemento"}</td><td><b>${esc(c.tag)}</b></td><td>${esc(c.nome)}</td></tr>`).join("")}</tbody></table>
-    <h2>Carga — itens do trecho</h2><table><thead><tr>${cols.map((c) => `<th>${esc(c.rotulo)}${c.unidade ? ` (${esc(c.unidade)})` : ""}</th>`).join("")}<th>Qtd</th></tr></thead>
-      <tbody>${(d.itens || []).map((i) => `<tr>${cols.map((c) => `<td>${esc(valorCelula(c, i.valores?.[c.chave]))}</td>`).join("")}<td>${esc(i.quantidade ?? 1)}</td></tr>`).join("")}</tbody></table>
+    <h2>Carga — itens do trecho</h2><table><thead><tr><th>Item</th>${cols.map((c) => `<th>${esc(c.rotulo)}${c.unidade ? ` (${esc(c.unidade)})` : ""}</th>`).join("")}<th>Nº de série</th><th>Qtd</th></tr></thead>
+      <tbody>${(d.itens || []).map((i) => `<tr><td><b>${esc(i.n || "")}</b></td>${cols.map((c) => `<td>${esc(valorCelula(c, i.valores?.[c.chave]))}</td>`).join("")}<td><b>${esc(i.serie || "")}</b></td><td>${esc(i.quantidade ?? 1)}</td></tr>`).join("")}</tbody></table>
     ${d.observacoes ? `<h2>Observações</h2><p style="white-space:pre-wrap;margin:0">${esc(d.observacoes)}</p>` : ""}
     ${(d.anexos || []).length ? `<h2>Documentos fiscais</h2><p style="margin:0">${d.anexos.map((a) => `${ANEXO[a.tipo] || a.tipo}: ${esc(a.nome)}`).join(" · ")}</p>` : ""}
     <div class="ass"><div>Motorista</div><div>Responsável pela coleta</div><div>Recebedor (nome, data e hora)</div></div>
