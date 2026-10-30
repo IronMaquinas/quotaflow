@@ -860,6 +860,7 @@ npm run dev
     - **Referência da AT**: "**BID-2026-0015 · item 3 · PV-2026-0009**" no cabeçalho da ficha, no modal, no PDF da AT, no link do motorista e na lista. **Busca por palavras** na aba 🚛 ATs: "BID-2026-0015 item 3", "série SN123", placa, motorista, cidade… → a viagem; dela, a cadeia motorista × item × AT × BID × pedido (auditoria/sinistro).
     - **Nº de série** por item: no BID ("se souber") e editável no modal da programação (confira na NF); vai para a AT, o card, a ficha, o PDF e o link do motorista ("confira na nota fiscal" em destaque se faltar).
     - **Agenda da frota**: **Semana** (14 dias) · **Mês** (calendário com as ATs de cada dia) · **Ano** (dias ocupados por recurso em cada mês; clique no mês abre o calendário). Vermelho = conflito.
+    - **16d.1 (30/10):** AT criada antes da 16d (sem o nº do item gravado) completa o número pelo pedido ao ser exibida — ficha, PDF, link do motorista, lista e busca (antes saía "item ?" e "—").
   - **SaaS genérico:** `tipo_execucao` no modelo de BID/PV (transporte → AT; locação → contrato de locação existente; serviço → AS; venda → entrega). Nesta etapa só transporte gera execução.
   - Rotas `/api/programacao` (`GET /base`, `/execucoes`, `/agenda`, `/pedidos`, `/pvs/:id`; `POST /pvs/:id/at`; `GET|PUT /execucoes/:id`; `POST /execucoes/:id/status`; anexos `POST|GET|DELETE /execucoes/:id/anexos[/:anexo]`; `GET /execucoes/:id/documento`) e `GET /api/comercial/pvs/:id/execucoes` (leitura). Travas respondem 409. Migration 055.
   - Rotas: `/api/comercial/bids/:id/revisao` (GET), `/enviar`, `/reenviar`, `/revisao/iniciar`, `/revisao/descartar`, `/aceite-externo`; `POST /bids/:id/fase` só aceita `perdido` e `reabrir`. Público: `/api/bid-link/:token` (GET, `/responder`, `/codigo`, `/aceitar`) — 40 chamadas por link + IP por hora. Migration 052. **Próxima: 15c** — Pedido de Venda (PV) a partir do BID aceito. **Futuro:** perfil **cliente** com login (mesmo padrão do locatário) — ver `claude/desenho-bid-15b.md`.
@@ -1316,7 +1317,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 29/10/2026 (etapa 16d)
+**Última atualização deste documento:** 29/10/2026 (etapa 16d.1)
 
 --------------------------------------------------------------------------------
 

@@ -221,7 +221,7 @@ const ESPERADO = {
   'migrations/054_tarefa_atribuida.sql': '586bd43f09653a76e8d6a299e55905e3', // etapa 15c.1 (novo)
   'scripts/previaEmailsBid.js': '45b4dbeb2d2d8d84a24e7a31f6826049', // etapa 15c.3 (novo)
   'migrations/055_execucoes_at.sql': 'fc0a780d147f0b3d7e4c92ec71c4554f', // etapa 16a (novo)
-  'services/execucoes.js': '14a7827e02aeab120d171ee8e86cde11', // etapa 16d
+  'services/execucoes.js': '8bada00ec8d59cb8c444b6a238905f34', // etapa 16d.1
   'routes/programacao.js': '18dd738055ae6b8efdc5bcd2abd4f0b5', // etapa 16c
   'front:gerarAT.js': '86f541f92bd31bf833c139195516d559', // etapa 16d
   'front:TelaProgramacao.jsx': '906dd121764d8cee618e2c5b15b56135', // etapa 16d
@@ -234,22 +234,9 @@ const ESPERADO = {
   'front:TelaATPublica.jsx': '32a224ae5a56851834621ed8ab397627', // etapa 16d
 };
 
-// Antes de copiar a etapa 16d — base: 16c.1
+// Antes de copiar a etapa 16d.1 — base: 16d
 const ANTES = {
-  'services/bids.js': 'f4536d7a800961cb3995f8c7f3e15e94',
-  'services/bidsCliente.js': '5531109676cd1eaaa75eaf72b1cfb0d6',
-  'services/pedidosVenda.js': '2016d01f4cbf570f78ff7621eb7c8700',
-  'services/execucoes.js': '167bf471fc744bba18c84d44a04cd915',
-  'front:FichaBid.jsx': '85894bf19a9e0b009eb11f5ed9373c02',
-  'front:gerarBid.js': 'bd690bbd310b6178063eaf5db50d2b07',
-  'front:TelaBidPublica.jsx': '314a4376a78aac068a6fede6dcba6f82',
-  'front:FichaPedido.jsx': 'ff1a622b4a7b8f22cee722e7b8db5d41',
-  'front:EditorAT.jsx': '4e57350fa9d0aeab80b3e7da68b72c21',
-  'front:MesaProgramacao.jsx': 'fc862d43c50f28164ea36da440383957',
-  'front:FichaAT.jsx': '5c78d6fd566e0264d662295225608edf',
-  'front:TelaProgramacao.jsx': '26ce748fde797019dacb0b268503d9dd',
-  'front:gerarAT.js': 'a8f0c302e3646b42e080ed5132f2c7fb',
-  'front:TelaATPublica.jsx': '8063323ad26815a0b5edd5c3fbe67489',
+  'services/execucoes.js': '14a7827e02aeab120d171ee8e86cde11',
 };
 
 const RAIZ = process.cwd();
@@ -287,7 +274,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 16d)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 16d.1)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

@@ -225,7 +225,14 @@ function aplicarSeries(itens = [], series) {
   return itens.map((i) => (series[String(i.id)] !== undefined ? { ...i, serie: texto(series[String(i.id)], 80) || '' } : i));
 }
 const refAT = (e, bidNumero) => [bidNumero, (e.itens || []).length ? `item ${(e.itens || []).map((i) => i.n ?? '?').join(', ')}` : null, e.pv_numero].filter(Boolean).join(' · ');
-const comRef = (e, pvs) => { const pv = pvs.find((p) => String(p.id) === String(e.pv_id)); return { ...e, bid_numero: pv?.bid_numero || null, ref: refAT(e, pv?.bid_numero) }; };
+const comRef = (e, pvs) => {
+  const pv = pvs.find((p) => String(p.id) === String(e.pv_id));
+  // 16d.1: AT criada antes da 16d não guardou o nº do item — completa pelo pedido (mesma numeração do card)
+  const nDe = new Map(pv ? pvNumerado(pv).grupos.flatMap((g) => (g.itens || []).map((i) => [String(i.id), i.n])) : []);
+  const itens = (e.itens || []).map((i) => (i.n ? i : { ...i, n: nDe.get(String(i.id)) ?? null }));
+  const e2 = { ...e, itens };
+  return { ...e2, bid_numero: pv?.bid_numero || null, ref: refAT(e2, pv?.bid_numero) };
+};
 
 // ─── criar / editar / status ────────────────────────────────────────────────
 /** 🚛 Programar um trecho do pedido */
@@ -475,9 +482,10 @@ async function paginaMotorista(supabase, ex) {
   for (const d of docs) kit.push({ grupo: 'cadastro', rotulo: `${d.rotulo} — ${d.dono}`, status: d.status, vence_em: d.vence_em, url: await assinar(d.path), nome: d.arquivo_nome || null });
   for (const a of ex.anexos || []) kit.push({ grupo: 'fiscal', rotulo: ANEXOS[a.tipo] || a.tipo, status: 'ok', url: await assinar(a.path), nome: a.nome, mime: a.mime });
   const pvM = await q(supabase.from('pedidos_venda').select('*').eq('id', ex.pv_id)).catch(() => []);
-  return { numero: ex.numero, ref: comRef(ex, pvM).ref, status: ex.status, status_nome: STATUS[ex.status], cliente_nome: ex.cliente_nome, pv_numero: ex.pv_numero, grupo_titulo: ex.grupo_titulo,
+  const exR = comRef(ex, pvM);
+  return { numero: ex.numero, ref: exR.ref, status: ex.status, status_nome: STATUS[ex.status], cliente_nome: ex.cliente_nome, pv_numero: ex.pv_numero, grupo_titulo: ex.grupo_titulo,
     origem: ex.origem, destino: ex.destino, inicio_previsto: ex.inicio_previsto, fim_previsto: ex.fim_previsto, motorista_nome: ex.motorista_nome, conjunto: ex.conjunto || [],
-    itens: (ex.itens || []).map((i) => ({ id: i.id, n: i.n ?? null, serie: i.serie || '', valores: i.valores || {}, quantidade: i.quantidade ?? 1 })), colunas: (ex.colunas || []).filter((c) => c.chave !== 'data_prevista' && c.tipo !== 'moeda'),
+    itens: (exR.itens || []).map((i) => ({ id: i.id, n: i.n ?? null, serie: i.serie || '', valores: i.valores || {}, quantidade: i.quantidade ?? 1 })), colunas: (ex.colunas || []).filter((c) => c.chave !== 'data_prevista' && c.tipo !== 'moeda'),
     observacoes: ex.observacoes, cancelada_motivo: ex.cancelada_motivo, empresa: { nome: emp.nome_fantasia || emp.nome || emp.razao_social || '', telefone: emp.telefone || '' }, kit };
 }
 
