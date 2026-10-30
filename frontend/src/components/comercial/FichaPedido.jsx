@@ -73,7 +73,7 @@ export default function FichaPedido({ C, s, id, onFechar, onMudou, onErro, onOk,
               <div key={g.id} style={{ ...s.card, padding: 12, marginBottom: 12, background: C.bg }}>
                 <div style={{ display: "flex", alignItems: "baseline", marginBottom: 8 }}><b style={{ flex: 1, fontSize: 13 }}>{g.titulo || `${rot} ${gi + 1}`}</b><span style={{ fontSize: 12, color: C.textSub }}>Subtotal: <b style={{ color: C.text }}>{brl(g.subtotal)}</b></span></div>
                 {(g.coleta || g.entrega) && <div style={{ fontSize: 12, color: C.textSub, margin: "-4px 0 8px" }}>📍 {g.coleta || "—"} ➜ 🏁 {g.entrega || "—"}</div>}
-                {(() => { const atsG = (exe?.execucoes || []).filter((x) => String(x.grupo_id) === String(g.id) && x.status !== "cancelada"); return <>
+                {(() => { const atsG = (exe?.execucoes || []).filter((x) => String(x.grupo_id) === String(g.id) && !["cancelada", "rascunho"].includes(x.status)); return <>
                 {atsG.map((a) => <div key={a.id} style={{ fontSize: 11.5, color: C.textSub, marginBottom: 4 }}>🚛 <b style={{ color: C.text }}>{a.numero}</b> · {a.status_nome} · coleta {dataHora(a.inicio_previsto)} · {(a.conjunto || []).map((c) => c.tag || c.nome).join(" + ")}{a.motorista_nome ? ` · ${a.motorista_nome}` : ""}</div>)}
                 {(g.itens || []).map((i) => { const st = i.status || "a_programar"; const atG = atsG.find((a) => (a.itens || []).some((x) => String(x.id) === String(i.id))); return (
                   <div key={i.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "7px 0", borderTop: `1px solid ${C.border}`, flexWrap: "wrap", opacity: st === "cancelado" ? 0.5 : 1 }}>

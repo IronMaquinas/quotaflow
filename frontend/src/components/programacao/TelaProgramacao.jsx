@@ -36,7 +36,7 @@ export default function TelaProgramacao({ C, s, perfis = [] }) {
   };
   useEffect(() => { carregar(); }, [filtro, de]); // eslint-disable-line
 
-  const aProgramar = useMemo(() => (pedidos || []).map((p) => ({ ...p, faltam: p.trechos.reduce((n, t) => n + t.livres, 0) })), [pedidos]);
+  const aProgramar = useMemo(() => (pedidos || []).map((p) => ({ ...p, faltam: p.trechos.reduce((n, t) => n + (t.a_programar ?? t.livres), 0) })), [pedidos]);
   const totalFaltam = aProgramar.reduce((a, p) => a + p.faltam, 0);
   const atsFiltradas = (ats || []).filter((e) => !busca.trim() || `${e.numero} ${e.cliente_nome} ${e.pv_numero} ${e.motorista_nome} ${e.grupo_titulo} ${e.origem} ${e.destino} ${(e.conjunto || []).map((c) => c.tag).join(" ")}`.toLowerCase().includes(busca.trim().toLowerCase()));
 

@@ -1,177 +1,73 @@
-// components/programacao/MesaProgramacao.jsx — etapa 16b: 🧩 Mesa de programação
-// Uma grade por trecho do pedido: cada LINHA é um item → a sua AT (item × motorista × conjunto × documentos).
-//   · rota e data vêm do BID/pedido (ou da última AT do trecho) — editáveis, sem redigitar
-//   · selo do motorista (🟢🟡🔴⚪), 🔒 equipamento bloqueado e ⚠ conflito de agenda aparecem ENQUANTO escolhe
-//   · cada item = um conjunto = uma AT (16b.1: sem "juntar" — o mesmo conjunto em dois itens são duas viagens)
-//   · "Programar" grava todas as linhas prontas de uma vez; o resto fica como rascunho (neste navegador)
-//   · documentos NF-e/CT-e/MDF-e: depois de programada, clique no chip cinza da AT para anexar (verde = anexado, clique abre) — não trava nada
-import { useState, useEffect, useMemo, useRef } from "react";
+// components/programacao/MesaProgramacao.jsx — etapa 16c: 🧩 Mesa de programação em CARDS
+// Por trecho do pedido, um card por item (um item = um conjunto = uma AT):
+//   ＋ a programar (tracejado) → abre o modal · 💾 rascunho (salvo no servidor) → abre o modal · 🚛 AT → abre a ficha
+// O card mostra o essencial (data, motorista, conjunto) e o KIT DO MOTORISTA: CNH, CRLV do conjunto e NF-e/CT-e/MDF-e —
+// todo chip faz alguma coisa: com arquivo abre no visualizador; NF-e/CT-e/MDF-e faltando abre o seletor de arquivo; CNH/CRLV
+// faltando explica onde cadastrar. 📲 copia o link do motorista (WhatsApp).
+import { useState, useEffect } from "react";
 import apiService from "../../services/apiService";
 import { valorCelula } from "../../utils/gerarBid";
-import { COR_STATUS, NOME_STATUS, SELO, dataHora } from "./FichaAT";
+import { COR_STATUS, NOME_STATUS, dataHora } from "./FichaAT";
+import EditorAT, { lerArquivo, mimeDe } from "./EditorAT";
+import VerArquivo, { ChipDoc, TXT_DOC } from "./VerArquivo";
 
-const DOCS = [["nfe", "NF-e"], ["cte", "CT-e"], ["mdfe", "MDF-e"]];
-const lerRascunho = (k) => { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch { return null; } };
-const gravarRascunho = (k, v) => { try { if (v) localStorage.setItem(k, JSON.stringify(v)); else localStorage.removeItem(k); } catch { /* sem storage: segue sem rascunho */ } };
+const FISCAIS = [["nfe", "NF-e"], ["cte", "CT-e"], ["mdfe", "MDF-e"]];
+const dBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "");
 
-function Trecho({ C, s, pv, t, base, podeLiberar, onAbrirAT, onSalvou, onErro, onOk }) {
-  const chaveRasc = `qf-mesa-${pv.id}-${t.id}`;
-  const livres = t.itens.filter((i) => !i.at);
-  const inicial = () => {
-    const r = lerRascunho(chaveRasc);
-    const cab0 = { coleta: t.coleta || "", entrega: t.entrega || "", inicio: t.datas?.[0] ? `${t.datas[0]}T08:00` : "", fim: "" };
-    const cab = { ...cab0 }; Object.entries(r?.cab || {}).forEach(([k, v]) => { if (v) cab[k] = v; }); // 16b.1: rascunho vazio não apaga a rota do BID
-    const linhas = livres.map((i) => ({ item: String(i.id), inicio: "", motorista_id: "", cavalo_id: "", impl1: "", impl2: "", junto: false, justificativa: "", aceitar: false, observacoes: "", ...(r?.linhas?.[String(i.id)] || {}) }));
-    return { cab, linhas };
-  };
-  const [st, setSt] = useState(inicial);
-  const [cf, setCf] = useState({});
-  const [erros, setErros] = useState({});
-  const [ocupado, setOcupado] = useState(false);
-  const [aberto, setAberto] = useState(true);
-  const [enviando, setEnviando] = useState(null);
-  // 16b.1: anexar NF-e/CT-e/MDF-e direto na grade (mesmo serviço da ficha da AT)
-  const anexar = async (a, tipo, arq) => {
+function Card({ C, s, pv, item, at, onAbrir, onAbrirAT, onErro, onOk, onMudou, setVer }) {
+  const [subindo, setSubindo] = useState(null);
+  const resumo = (pv.colunas || []).slice(0, 3).map((c) => valorCelula(c, item?.valores?.[c.chave])).filter(Boolean).join(" · ") || `Item ${item?.id}`;
+  const rasc = at?.status === "rascunho";
+  const cor = !at ? C.border : rasc ? C.warn : COR_STATUS[at.status];
+  const anexar = async (tipo, arq) => {
     if (!arq) return; if (arq.size > 10 * 1024 * 1024) return onErro("Arquivo maior que 10 MB");
-    const mime = arq.type || (/\.xml$/i.test(arq.name) ? "application/xml" : "");
-    setEnviando(a.id);
-    try {
-      const base64 = await new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1]); r.onerror = ko; r.readAsDataURL(arq); });
-      await apiService.post(`/programacao/execucoes/${a.id}/anexos`, { tipo, nome: arq.name, mime, base64 }); onOk(`${arq.name} anexado à ${a.numero}.`); onSalvou();
-    } catch (e) { onErro(e.message); } finally { setEnviando(null); }
+    setSubindo(tipo);
+    try { await apiService.post(`/programacao/execucoes/${at.id}/anexos`, { tipo, nome: arq.name, mime: mimeDe(arq), base64: await lerArquivo(arq) }); onOk(`${arq.name} anexado.`); onMudou(); }
+    catch (e) { onErro(e.message); } finally { setSubindo(null); }
   };
-  const abrirDoc = async (a, anexo) => { const w = window.open("", "_blank"); try { const r = await apiService.get(`/programacao/execucoes/${a.id}/anexos/${anexo.id}`); if (w) w.location.href = r.url; } catch (e) { if (w) w.close(); onErro(e.message); } };
-  const ultimaChecagem = useRef(0);
-  const { cab, linhas } = st;
-  const setCab = (k, v) => setSt((x) => ({ ...x, cab: { ...x.cab, [k]: v } }));
-  const setL = (i, k, v) => setSt((x) => ({ ...x, linhas: x.linhas.map((l, j) => (j === i ? { ...l, [k]: v } : l)) }));
-  const itemDe = (id) => t.itens.find((i) => String(i.id) === String(id));
-  const resumo = (i) => (pv.colunas || []).slice(0, 3).map((c) => valorCelula(c, i?.valores?.[c.chave])).filter(Boolean).join(" · ") || `Item ${i?.id}`;
-  const mot = (id) => base.motoristas.find((m) => String(m.id) === String(id));
-  const eq = (id) => base.equipamentos.find((e) => String(e.id) === String(id));
-
-  // rascunho no navegador (só o que foi mexido)
-  useEffect(() => { gravarRascunho(chaveRasc, { cab: st.cab, linhas: Object.fromEntries(st.linhas.map(({ item, ...l }) => [item, l])) }); }, [st]); // eslint-disable-line
-
-  const grupos = useMemo(() => {
-    const g = [];
-    linhas.forEach((l, i) => g.push({ idx: [i], lider: i })); // 16b.1: uma linha = um conjunto = uma AT
-    return g;
-  }, [linhas]);
-  const liderDe = (i) => grupos.find((g) => g.idx.includes(i))?.lider ?? i;
-  const inicioDe = (l) => l.inicio || cab.inicio;
-
-  // ⚠ conflitos: confere no servidor (ATs existentes + as próprias linhas) — com pausa para não chamar a cada tecla
-  useEffect(() => {
-    const n = ++ultimaChecagem.current;
-    const ls = grupos.map((g) => { const l = linhas[g.lider]; const m = mot(l.motorista_id); return { chave: l.item, rotulo: `linha “${resumo(itemDe(l.item))}” desta mesa`, inicio: inicioDe(l), fim: cab.fim || null, motorista_id: l.motorista_id || null, motorista_nome: m?.nome || null, cavalo_id: l.cavalo_id || null, implementos: [l.impl1, l.impl2].filter(Boolean),
-      tags: Object.fromEntries([l.cavalo_id, l.impl1, l.impl2].filter(Boolean).map((id) => [id, eq(id)?.tag || eq(id)?.nome])) }; }).filter((x) => x.inicio && (x.motorista_id || x.cavalo_id));
-    if (!ls.length) { setCf({}); return undefined; }
-    const tm = setTimeout(async () => { try { const r = await apiService.post("/programacao/checar", { linhas: ls }); if (n === ultimaChecagem.current) setCf(r.conflitos || {}); } catch { /* checagem é só aviso */ } }, 400);
-    return () => clearTimeout(tm);
-  }, [grupos, cab.inicio, cab.fim]); // eslint-disable-line
-
-  const situacao = (i) => {
-    const l = linhas[liderDe(i)]; const m = mot(l.motorista_id); const lst = [];
-    if (!inicioDe(l)) lst.push(["data", C.muted, "falta data/hora"]);
-    if (!l.cavalo_id) lst.push(["cav", C.muted, "falta o cavalo"]);
-    if (!l.motorista_id) lst.push(["mot", C.warn, "motorista a definir"]);
-    if (m?.selo?.nivel === "atencao" && (l.justificativa || "").trim().length < 15) lst.push(["lib", C.danger, podeLiberar ? "🔴 justificar liberação" : "🔴 precisa de gestor"]);
-    const c = cf[l.item] || [];
-    if (c.length && !l.aceitar) lst.push(["cf", C.warn, "⚠ conflito"]);
-    const pronto = !lst.some(([k]) => ["data", "cav", "lib", "cf"].includes(k));
-    return { pronto, lst, conflitos: c };
+  const verAnexo = async (a) => { setVer({ nome: a.nome, mime: a.mime }); try { const r = await apiService.get(`/programacao/execucoes/${at.id}/anexos/${a.id}`); setVer({ url: r.url, nome: a.nome, mime: a.mime }); } catch (e) { setVer(null); onErro(e.message); } };
+  const verDoc = async (d) => {
+    if (!d.documento_id || !d.tem_arquivo) return onErro(`${d.rotulo} de ${d.dono}: ${d.documento_id ? "cadastrado sem arquivo" : "não está cadastrado"} — inclua em ${d.alvo === "motorista" ? "👷 Pessoas → Documentos" : "documentos do equipamento"}.`);
+    setVer({ nome: `${d.rotulo} — ${d.dono}` }); try { const r = await apiService.get(`/programacao/documentos/${d.documento_id}`); setVer({ url: r.url, nome: r.nome, mime: r.mime }); } catch (e) { setVer(null); onErro(e.message); }
   };
-  const prontos = grupos.filter((g) => situacao(g.lider).pronto);
+  const copiarLink = async () => { try { await navigator.clipboard.writeText(at.link_motorista); onOk("📲 Link do motorista copiado — cole no WhatsApp."); } catch { onErro(`Copie o link: ${at.link_motorista}`); } };
+  const abrir = () => (!at || rasc ? onAbrir() : onAbrirAT(at.id));
+  const conj = (at?.conjunto || []).map((c) => c.tag || c.nome).join(" + ");
+  return (
+    <div className="qf-clicavel" onClick={abrir} style={{ ...s.card, padding: "10px 12px", cursor: "pointer", border: `1px ${at ? "solid" : "dashed"} ${cor}`, borderLeft: `4px solid ${cor}`, background: at ? C.surface || C.bg : "transparent", display: "flex", flexDirection: "column", gap: 5, minHeight: 104 }}>
+      <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+        <b style={{ flex: 1, fontSize: 13, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={resumo}>{resumo}</b>
+        {!at ? <span style={{ fontSize: 11, color: C.accent, fontWeight: 700 }}>＋ Programar</span> : rasc ? <span style={s.tag(C.warn)}>💾 rascunho</span> : <span style={s.tag(cor)}>{at.numero.replace(/^AT-\d{4}-/, "AT ")} · {NOME_STATUS[at.status]}</span>}
+      </div>
+      {!at ? <div style={{ fontSize: 12, color: C.muted }}>{item?.valores?.data_prevista ? `previsto ${dBR(item.valores.data_prevista)} · ` : ""}clique para escolher motorista e conjunto</div> : <>
+        <div style={{ fontSize: 12, color: C.textSub }}>🗓 {at.inicio_previsto ? dataHora(at.inicio_previsto) : <span style={{ color: C.warn }}>sem data</span>} · 👤 {at.motorista_nome || <span style={{ color: C.warn }}>motorista a definir</span>}{at.liberacao ? " 🔓" : ""}</div>
+        <div style={{ fontSize: 12, color: C.textSub }}>🚛 {conj || <span style={{ color: C.warn }}>conjunto a definir</span>}</div>
+        <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 2 }} onClick={(e) => e.stopPropagation()}>
+          {(at.docs || []).map((d) => <ChipDoc key={d.chave} C={C} status={d.status} rotulo={d.alvo === "motorista" ? d.rotulo : `${d.rotulo} ${d.dono}`} title={`${d.rotulo} de ${d.dono}: ${TXT_DOC[d.status]}${d.vence_em ? ` · vence ${dBR(d.vence_em)}` : ""}`} onClick={() => verDoc(d)} />)}
+          {FISCAIS.map(([k, r]) => { const a = (at.anexos || []).find((x) => x.tipo === k);
+            return a ? <ChipDoc key={k} C={C} status="ok" rotulo={r} title={`${a.nome} — clique para ver`} onClick={() => verAnexo(a)} />
+              : <label key={k} style={{ display: "inline-flex" }}><ChipDoc C={C} status="falta" rotulo={r} title={`Anexar ${r}`} carregando={subindo === k} onClick={(e) => e.currentTarget.parentElement.querySelector("input").click()} />
+                <input type="file" accept=".pdf,.xml,.jpg,.jpeg,.png" style={{ display: "none" }} onChange={(e) => { anexar(k, e.target.files?.[0]); e.target.value = ""; }} /></label>; })}
+          {at.link_motorista && <button type="button" title="Copiar o link do motorista (rota + documentos) para mandar no WhatsApp" onClick={copiarLink} style={{ fontSize: 10.5, padding: "2px 6px", borderRadius: 5, border: `1px solid ${C.accent}`, color: C.accent, background: "transparent", cursor: "pointer", fontWeight: 600 }}>📲 link{at.link_visto_em ? " ✓✓" : ""}</button>}
+        </div>
+      </>}
+    </div>
+  );
+}
 
-  const programar = async () => {
-    setOcupado(true); const novosErros = {}; let ok = 0; const feitos = new Set();
-    for (const g of prontos) {
-      const l = linhas[g.lider];
-      try {
-        await apiService.post(`/programacao/pvs/${pv.id}/at`, { grupo_id: t.id, itens: g.idx.map((i) => linhas[i].item), inicio: inicioDe(l), fim: cab.fim || null, origem: cab.coleta, destino: cab.entrega,
-          motorista_id: l.motorista_id || null, cavalo_id: l.cavalo_id, implementos: [l.impl1, l.impl2].filter(Boolean), observacoes: l.observacoes, liberacao_justificativa: l.justificativa || undefined, ignorar_conflito: !!l.aceitar });
-        ok++; g.idx.forEach((i) => feitos.add(linhas[i].item));
-      } catch (e) { novosErros[l.item] = e.message; }
-    }
-    setErros(novosErros); setOcupado(false);
-    if (ok) {
-      setSt((x) => ({ ...x, linhas: x.linhas.filter((l) => !feitos.has(l.item)) }));
-      onOk(`${ok} AT(s) programada(s) — ${t.titulo}.${Object.keys(novosErros).length ? " Algumas linhas não passaram (veja na mesa)." : ""}`); onSalvou();
-    } else if (Object.keys(novosErros).length) onErro("Nenhuma AT programada — veja o motivo em cada linha.");
-  };
-
-  const sel = (v, on, opts, w = 130, extra = {}) => <select value={v} onChange={(e) => on(e.target.value)} style={{ ...s.input, padding: "5px 6px", fontSize: 12, minWidth: w, ...extra }}>{opts}</select>;
-  const optEq = (excluir) => [<option key="" value="">—</option>, ...base.equipamentos.filter((e) => !excluir.includes(String(e.id))).map((e) => <option key={e.id} value={e.id} disabled={e.bloqueado}>{e.bloqueado ? "🔒 " : ""}{e.tag || e.nome}{e.bloqueado ? " (bloqueado)" : ""}</option>)];
-  const optMot = [<option key="" value="">— a definir —</option>, ...base.motoristas.map((m) => <option key={m.id} value={m.id}>{(SELO[m.selo?.nivel] || SELO.sem_funcao)[0]} {m.nome}</option>)];
-  const th = (r, w) => <th style={{ textAlign: "left", fontSize: 10, color: C.muted, padding: "6px 6px", whiteSpace: "nowrap", minWidth: w, borderBottom: `1px solid ${C.border}` }}>{r}</th>;
-  const td = { padding: "6px 6px", borderTop: `1px solid ${C.border}`, verticalAlign: "top", fontSize: 12.5 };
-  const docChip = (ok, rot) => <span key={rot} style={{ fontSize: 10, padding: "1px 5px", borderRadius: 4, marginRight: 3, border: `1px solid ${ok ? C.success : C.border}`, color: ok ? C.success : C.muted, whiteSpace: "nowrap" }}>{ok ? "✓ " : ""}{rot}</span>;
-
+function Trecho({ C, s, pv, t, onAbrir, ...resto }) {
+  const [aberto, setAberto] = useState(true);
+  const atDe = (id) => t.ats.find((a) => (a.itens || []).some((i) => String(i.id) === String(id)));
   return (
     <div style={{ borderTop: `1px solid ${C.border}` }}>
       <div style={{ padding: "10px 14px", display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", cursor: "pointer" }} onClick={() => setAberto(!aberto)}>
         <span style={{ color: C.muted, width: 12 }}>{aberto ? "▾" : "▸"}</span>
         <b style={{ fontSize: 13.5 }}>{t.titulo}</b>
-        <span style={{ fontSize: 12, color: C.muted }}>{t.qtd} item(ns) · {t.qtd - t.livres} programado(s)</span>
-        <div style={{ flex: 1 }} />
-        {t.livres === 0 ? <span style={s.tag(C.success)}>✓ todos programados</span> : <span style={s.tag(C.warn)}>{t.livres} a programar</span>}
+        <span style={{ fontSize: 12, color: C.muted, flex: "1 1 300px", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={`${t.coleta} ➜ ${t.entrega}`}>{t.coleta || t.entrega ? `📍 ${t.coleta || "—"} ➜ 🏁 ${t.entrega || "—"}` : "rota a definir"}</span>
+        {t.a_programar === 0 ? <span style={s.tag(C.success)}>✓ todos programados</span> : <span style={s.tag(C.warn)}>{t.a_programar} a programar</span>}
       </div>
-      {aberto && <div style={{ padding: "0 14px 12px" }}>
-        {t.livres > 0 && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
-          <label style={{ flex: "2 1 260px" }}><span style={s.label}>📍 COLETA {t.rota_do_bid ? "(do BID)" : t.coleta ? "(da última AT)" : ""}</span><input value={cab.coleta} onChange={(e) => setCab("coleta", e.target.value)} placeholder="Endereço de coleta" style={{ ...s.input, fontSize: 12.5 }} /></label>
-          <label style={{ flex: "2 1 260px" }}><span style={s.label}>🏁 ENTREGA {t.rota_do_bid ? "(do BID)" : t.entrega ? "(da última AT)" : ""}</span><input value={cab.entrega} onChange={(e) => setCab("entrega", e.target.value)} placeholder="Endereço de entrega" style={{ ...s.input, fontSize: 12.5 }} /></label>
-          <label style={{ flex: "0 1 190px" }}><span style={s.label}>COLETA — DATA E HORA</span><input type="datetime-local" value={cab.inicio} onChange={(e) => setCab("inicio", e.target.value)} style={{ ...s.input, fontSize: 12.5 }} /></label>
-          <label style={{ flex: "0 1 190px" }}><span style={s.label}>ENTREGA — DATA E HORA</span><input type="datetime-local" value={cab.fim} onChange={(e) => setCab("fim", e.target.value)} style={{ ...s.input, fontSize: 12.5 }} /></label>
-        </div>}
-        <div style={{ overflowX: "auto", border: `1px solid ${C.border}`, borderRadius: 8 }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead><tr>{th("ITEM", 170)}{th("COLETA", 150)}{th("MOTORISTA", 160)}{th("CAVALO", 120)}{th("IMPLEMENTOS", 200)}{th("DOCUMENTOS", 140)}{th("SITUAÇÃO", 150)}</tr></thead>
-            <tbody>
-              {t.ats.map((a) => <tr key={a.id} className="qf-clicavel" onClick={() => onAbrirAT(a.id)} style={{ cursor: "pointer" }}>
-                <td style={td}>{(a.itens || []).map((i) => <div key={i.id}>{resumo(i)}</div>)}<div style={{ fontSize: 11, color: C.accent, fontWeight: 700 }}>🚛 {a.numero}</div></td>
-                <td style={td}>{dataHora(a.inicio_previsto)}</td>
-                <td style={td}>{a.motorista_nome || <span style={{ color: C.warn }}>a definir</span>}{a.liberacao ? " 🔓" : ""}</td>
-                <td style={td}>{(a.conjunto || []).filter((c) => c.papel === "cavalo").map((c) => c.tag || c.nome).join("")}</td>
-                <td style={td}>{(a.conjunto || []).filter((c) => c.papel !== "cavalo").map((c) => c.tag || c.nome).join(" + ") || "—"}</td>
-                <td style={td} onClick={(e) => e.stopPropagation()}>{DOCS.map(([k, r]) => { const anexo = (a.anexos || []).find((x) => x.tipo === k);
-                  return anexo ? <button key={k} type="button" title={`Abrir ${anexo.nome}`} onClick={() => abrirDoc(a, anexo)} style={{ background: "none", border: "none", padding: 0, cursor: "pointer" }}>{docChip(true, r)}</button>
-                    : <label key={k} title={`Anexar ${r} (PDF, XML, JPG ou PNG até 10 MB)`} style={{ cursor: "pointer" }}>{docChip(false, `＋ ${r}`)}<input type="file" accept=".pdf,.xml,.jpg,.jpeg,.png" style={{ display: "none" }} onChange={(e) => { anexar(a, k, e.target.files?.[0]); e.target.value = ""; }} /></label>; })}
-                  {enviando === a.id && <div style={{ fontSize: 10, color: C.muted }}>enviando…</div>}</td>
-                <td style={td}><span style={s.tag(COR_STATUS[a.status])}>{NOME_STATUS[a.status]}</span></td>
-              </tr>)}
-              {linhas.map((l, i) => {
-                const it = itemDe(l.item); const lider = liderDe(i) === i; const sit = situacao(i); const m = mot(l.motorista_id);
-                return <tr key={l.item} style={{ background: lider ? "transparent" : `${C.accent}0c` }}>
-                  <td style={td}><div>{resumo(it)}{Number(it?.quantidade || 1) !== 1 ? ` · qtd ${it.quantidade}` : ""}</div>
-                    {erros[l.item] && <div style={{ fontSize: 11, color: C.danger, marginTop: 3 }}>✕ {erros[l.item]}</div>}</td>
-                  {lider ? <>
-                    <td style={td}><input type="datetime-local" value={l.inicio || cab.inicio} onChange={(e) => setL(i, "inicio", e.target.value)} style={{ ...s.input, padding: "5px 6px", fontSize: 12, color: l.inicio ? C.text : C.textSub }} /></td>
-                    <td style={td}>{sel(l.motorista_id, (v) => setL(i, "motorista_id", v), optMot, 150)}
-                      {m && <div style={{ fontSize: 10.5, color: (SELO[m.selo?.nivel] || SELO.sem_funcao)[1], marginTop: 2 }}>{(SELO[m.selo?.nivel] || SELO.sem_funcao)[2]}{m.selo?.geral != null ? ` · ${m.selo.geral}%` : ""}</div>}
-                      {m?.selo?.nivel === "atencao" && (podeLiberar
-                        ? <input value={l.justificativa} onChange={(e) => setL(i, "justificativa", e.target.value)} placeholder="Justificativa da liberação (≥15)" style={{ ...s.input, padding: "4px 6px", fontSize: 11, marginTop: 3, borderColor: C.danger }} />
-                        : <div style={{ fontSize: 10.5, color: C.danger }}>só gestor/admin libera</div>)}</td>
-                    <td style={td}>{sel(l.cavalo_id, (v) => setL(i, "cavalo_id", v), optEq([l.impl1, l.impl2].map(String)), 110)}</td>
-                    <td style={td}><div style={{ display: "flex", gap: 4 }}>{sel(l.impl1, (v) => setL(i, "impl1", v), optEq([l.cavalo_id, l.impl2].map(String)), 95)}{sel(l.impl2, (v) => setL(i, "impl2", v), optEq([l.cavalo_id, l.impl1].map(String)), 95)}</div></td>
-                  </> : <td colSpan={4} style={{ ...td, color: C.textSub, fontSize: 12 }}>⛓ mesmo conjunto, motorista e horário da linha de cima</td>}
-                  <td style={{ ...td, color: C.muted }}>—</td>{/* 16b.2: sem ícones mortos — os documentos aparecem (clicáveis) quando a linha vira AT */}
-                  <td style={td}>{lider ? <>
-                    {sit.pronto ? <span style={s.tag(C.success)}>✓ pronto</span> : null}
-                    {sit.lst.map(([k, cor, txt]) => <div key={k} style={{ fontSize: 11, color: cor }}>{txt}</div>)}
-                    {sit.conflitos.length > 0 && <div style={{ fontSize: 10.5, color: C.warn, marginTop: 2 }}>{sit.conflitos.map((c, k) => <div key={k}>• {c.texto}</div>)}
-                      <label style={{ display: "flex", gap: 4, alignItems: "center", cursor: "pointer", color: C.text }}><input type="checkbox" checked={l.aceitar} onChange={(e) => setL(i, "aceitar", e.target.checked)} />programar mesmo assim</label></div>}
-                  </> : <span style={{ fontSize: 11, color: C.muted }}>↑</span>}</td>
-                </tr>;
-              })}
-              {!t.ats.length && !linhas.length && <tr><td colSpan={7} style={{ ...td, color: C.muted, textAlign: "center" }}>Sem itens ativos.</td></tr>}
-            </tbody>
-          </table>
-        </div>
-        {linhas.length > 0 && <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 8, flexWrap: "wrap" }}>
-          <span style={{ fontSize: 11.5, color: C.muted, flex: 1 }}>Linhas incompletas ficam salvas como rascunho neste navegador. Depois de programar, a linha da AT mostra ＋ NF-e / CT-e / MDF-e para anexar (não impedem iniciar).</span>
-          <button type="button" disabled={ocupado || !prontos.length} onClick={programar} style={{ ...s.btn(!ocupado && prontos.length > 0), padding: "8px 16px", fontSize: 13 }}>{ocupado ? "Programando…" : `🚛 Programar ${prontos.length} AT${prontos.length === 1 ? "" : "s"} pronta${prontos.length === 1 ? "" : "s"}`}</button>
-        </div>}
+      {aberto && <div style={{ padding: "0 14px 12px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))", gap: 10 }}>
+        {t.itens.map((i) => { const at = atDe(i.id); return <Card key={i.id} C={C} s={s} pv={pv} item={i} at={at} onAbrir={() => onAbrir(t, i, at)} {...resto} />; })}
       </div>}
     </div>
   );
@@ -180,9 +76,11 @@ function Trecho({ C, s, pv, t, base, podeLiberar, onAbrirAT, onSalvou, onErro, o
 export default function MesaProgramacao({ C, s, pedidos, podeLiberar, onAbrirAT, onSalvou, onErro, onOk }) {
   const [base, setBase] = useState(null);
   const [soPendentes, setSoPendentes] = useState(true);
+  const [editor, setEditor] = useState(null); // { pv, t, item, at }
+  const [ver, setVer] = useState(null);
   useEffect(() => { apiService.get("/programacao/base").then(setBase).catch((e) => onErro(e.message)); }, []); // eslint-disable-line
   if (!pedidos || !base) return <div style={{ color: C.muted }}>Carregando…</div>;
-  const lista = pedidos.filter((p) => !soPendentes || p.trechos.some((t) => t.livres > 0));
+  const lista = pedidos.filter((p) => !soPendentes || p.trechos.some((t) => t.a_programar > 0));
   return <>
     <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12.5, color: C.textSub, marginBottom: 10, cursor: "pointer" }}><input type="checkbox" checked={soPendentes} onChange={(e) => setSoPendentes(e.target.checked)} />Só pedidos com itens a programar</label>
     {!lista.length && <div style={{ ...s.card, padding: 24, textAlign: "center", color: C.muted }}>{pedidos.length ? "Tudo programado. 🎉 Desmarque o filtro para ver os pedidos." : "Nenhum pedido aberto. Os pedidos nascem do aceite do BID no 📈 Comercial."}</div>}
@@ -191,8 +89,11 @@ export default function MesaProgramacao({ C, s, pedidos, podeLiberar, onAbrirAT,
         <b>{p.numero}</b><span style={{ color: C.textSub, fontSize: 13 }}>{p.cliente_nome}{p.titulo ? ` · ${p.titulo}` : ""}{p.referencia ? ` · ref. ${p.referencia}` : ""}</span>
       </div>
       {p.tipo_execucao !== "transporte" ? <div style={{ padding: "10px 14px", fontSize: 12.5, color: C.muted, borderTop: `1px solid ${C.border}` }}>Pedido do tipo “{p.tipo_execucao}” — ainda não programável aqui.</div>
-        : p.trechos.filter((t) => t.qtd > 0).map((t) => <Trecho key={`${t.id}:${t.itens.filter((i) => !i.at).map((i) => i.id).join(",")}`} C={C} s={s} pv={p} t={t} base={base} podeLiberar={podeLiberar} onAbrirAT={onAbrirAT} onSalvou={onSalvou} onErro={onErro} onOk={onOk} />)}
+        : p.trechos.filter((t) => t.qtd > 0).map((t) => <Trecho key={t.id} C={C} s={s} pv={p} t={t} onAbrir={(tr, item, at) => setEditor({ pv: p, t: tr, item, at })}
+          onAbrirAT={onAbrirAT} onErro={onErro} onOk={onOk} onMudou={onSalvou} setVer={setVer} />)}
     </div>)}
+    {editor && <EditorAT C={C} s={s} pv={{ id: editor.pv.id, numero: editor.pv.numero, colunas: editor.pv.colunas, itensTrecho: editor.t.itens }} trecho={editor.t} itemId={editor.item.id} atual={editor.at}
+      base={base} podeLiberar={podeLiberar} onErro={onErro} onFechar={() => { setEditor(null); onSalvou(); }} onSalvo={(msg) => { setEditor(null); onOk(msg); onSalvou(); }} />}
+    {ver && <VerArquivo C={C} s={s} arquivo={ver} onFechar={() => setVer(null)} />}
   </>;
 }
-

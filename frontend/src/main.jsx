@@ -14,6 +14,7 @@ import TelaAceitarConvite from "./TelaAceitarConvite";
 import TelaProvaPublica from "./TelaProvaPublica"; // etapa 12e.2b
 import TelaInspecaoPublica from "./TelaInspecaoPublica"; // etapa 14b.1
 import TelaBidPublica from "./TelaBidPublica"; // etapa 15b
+import TelaATPublica from "./TelaATPublica"; // etapa 16c — 📲 link do motorista
 
 console.log('🚀 main.jsx executando');
 
@@ -69,6 +70,11 @@ function Router() {
   // Etapa 12e.2b: link externo da prova de treinamento (#prova?t=...) — público, CPF + data de nascimento.
   if (currentPage.startsWith("prova") || currentPage.startsWith("/prova")) {
     return <TelaProvaPublica />;
+  }
+
+  // Etapa 16c: link do motorista para a AT (#at?t=...) — público, token, sem valores.
+  if (currentPage.startsWith("at?") || currentPage.startsWith("/at?")) {
+    return <TelaATPublica />;
   }
 
   // Etapa 15b: link do cliente para o BID (#bid?t=...) — público, token (como a cotação do fornecedor).

@@ -11,6 +11,8 @@
 //   POST /execucoes/:id/anexos { tipo, nome, mime, base64 } · GET /execucoes/:id/anexos/:anexo · DELETE /execucoes/:id/anexos/:anexo
 //   GET  /execucoes/:id/documento      dados do PDF da AT
 //   POST /checar { linhas }            16b: conflitos das linhas da mesa antes de salvar
+//   16c: POST /docs { motorista_id, cavalo_id, implementos, inicio, fim } · GET /documentos/:id · DELETE /execucoes/:id (rascunho)
+//        POST /pvs/:id/at e PUT /execucoes/:id aceitam { rascunho: true } (salva sem validar) e liberacao_docs_justificativa
 // (403 desloga no front — trava de regra responde 409)
 
 const express = require('express');
@@ -25,7 +27,8 @@ const responder = (fn) => async (req, res) => {
   try { const r = await fn(req); if (r && r.erro) { const { status, ...resto } = r; return res.status(status || 400).json(resto); } res.json(r); }
   catch (err) {
     const m = String(err?.message || '');
-    if (/execucoes|tipo_execucao/.test(m) && /does not exist|schema cache|relation|column/.test(m)) return res.status(409).json({ erro: 'Rode a migration 055 antes (Programação / AT)' });
+    if (/execucoes|tipo_execucao|token|liberacao_docs|link_visto_em/.test(m) && /does not exist|schema cache|relation|column/.test(m)) return res.status(409).json({ erro: 'Rode as migrations 055 e 056 antes (Programação / AT)' });
+    if (/execucoes_status_check|cavalo_id/.test(m)) return res.status(409).json({ erro: 'Rode a migration 056 antes (rascunho da AT)' });
     console.error('❌ [programacao]', m); res.status(500).json({ erro: 'Erro interno — veja o log do servidor' });
   }
 };
@@ -36,10 +39,13 @@ router.get('/execucoes', responder(async (req) => ({ execucoes: await E.listar(s
 router.get('/agenda', responder((req) => E.agenda(supabase, req.tenantId, req.query)));
 router.get('/pedidos', responder(async (req) => {
   const { data, error } = await supabase.from('pedidos_venda').select('*').eq('tenant_id', req.tenantId); if (error) throw new Error(error.message);
-  const ex = await E.listar(supabase, req.tenantId, {});
+  const ex = await E.listar(supabase, req.tenantId, {}); const docsBase = await E.carregarDocs(supabase, req.tenantId);
   return { pedidos: (data || []).filter((p) => ['aberto', 'em_execucao'].includes(p.status)).map((p) => ({ id: p.id, numero: p.numero, cliente_nome: p.cliente_nome, titulo: p.titulo, referencia: p.referencia, status: p.status, tipo_execucao: p.tipo_execucao || 'transporte',
-    colunas: (p.conteudo?.colunas || []).filter((c) => c.chave !== 'data_prevista'), trechos: E.trechosComATs(p, ex.filter((e) => String(e.pv_id) === String(p.id))) })).sort((a, b) => String(a.numero).localeCompare(String(b.numero))) };
+    colunas: (p.conteudo?.colunas || []).filter((c) => c.chave !== 'data_prevista'), trechos: E.trechosComATs(p, ex.filter((e) => String(e.pv_id) === String(p.id)), docsBase) })).sort((a, b) => String(a.numero).localeCompare(String(b.numero))) };
 }));
+router.post('/docs', responder((req) => E.docsDoConjunto(supabase, req.tenantId, req.body || {}))); // 16c: CNH/CRLV do que foi escolhido
+router.get('/documentos/:id', responder((req) => E.linkDocCadastro(supabase, req.tenantId, req.params.id))); // 16c: abrir CNH/CRLV do cadastro
+router.delete('/execucoes/:id', responder(async (req) => E.descartar(supabase, req.tenantId, await quem(req), req.params.id))); // 16c: descartar rascunho
 router.post('/checar', responder((req) => E.checar(supabase, req.tenantId, req.body?.linhas))); // 16b: mesa
 router.get('/pvs/:id', responder((req) => E.doPV(supabase, req.tenantId, req.params.id)));
 router.post('/pvs/:id/at', responder(async (req) => E.criar(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));

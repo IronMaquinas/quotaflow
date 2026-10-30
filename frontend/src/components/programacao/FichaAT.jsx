@@ -1,5 +1,5 @@
 // components/programacao/FichaAT.jsx — etapa 16a
-//   FormAT   — 🚛 programar um trecho (ou editar a AT): coleta/entrega, motorista (selo 🟢🟡🔴⚪), cavalo + até 2 implementos
+//   (16c: programar/editar agora é o EditorAT — modal da mesa; aqui fica a ficha)
 //              (🔒 bloqueados não entram). Respostas do servidor:
 //                · motorista 🔴 → caixa de LIBERAÇÃO (só gestor/admin, com justificativa — fica registrada)
 //                · conflito de agenda → mostra os conflitos e "Programar mesmo assim"
@@ -8,6 +8,8 @@ import { useState, useEffect } from "react";
 import apiService from "../../services/apiService";
 import { abrirAT } from "../../utils/gerarAT";
 import { valorCelula } from "../../utils/gerarBid";
+import EditorAT from "./EditorAT";
+import VerArquivo, { ChipDoc, TXT_DOC } from "./VerArquivo";
 
 export const COR_STATUS = { programada: "#3b82f6", em_execucao: "#f59e0b", concluida: "#22c55e", cancelada: "#ef4444" };
 export const NOME_STATUS = { programada: "Programada", em_execucao: "Em execução", concluida: "Concluída", cancelada: "Cancelada" };
@@ -21,99 +23,26 @@ const casca = (s, conteudo, fechar, largura = 720, z = 330) => (
 );
 const seloTxt = (m) => { const x = SELO[m?.selo?.nivel] || SELO.sem_funcao; return `${x[0]} ${x[2]}${m?.selo?.geral != null ? ` · ${m.selo.geral}%` : ""}`; };
 
-/** pv: { id, numero }, trecho: { id, titulo, datas }, atual: AT para editar (ou null) */
-export function FormAT({ C, s, pv, trecho, colunas = [], atual, podeLiberar, onFechar, onSalvo, onErro }) {
-  const [b, setB] = useState(null);
-  const [f, setF] = useState(() => ({ inicio: local(atual?.inicio_previsto) || (trecho?.datas?.[0] ? `${trecho.datas[0]}T08:00` : ""), fim: local(atual?.fim_previsto), origem: atual?.origem || "", destino: atual?.destino || "",
-    motorista_id: atual?.motorista_id ?? "", cavalo_id: atual?.cavalo_id ?? "", impl1: (atual?.conjunto || []).filter((c) => c.papel === "implemento")[0]?.id ?? "", impl2: (atual?.conjunto || []).filter((c) => c.papel === "implemento")[1]?.id ?? "", observacoes: atual?.observacoes || "" }));
-  const [lib, setLib] = useState(null); // { erro, selo } → pede justificativa
-  const [just, setJust] = useState("");
-  const [conf, setConf] = useState(null); // lista de conflitos
-  const [avisos, setAvisos] = useState([]);
-  const livres = !atual ? (trecho?.itens || []).filter((i) => !i.at) : [];
-  const [selItens, setSelItens] = useState(() => (livres[0] ? [String(livres[0].id)] : [])); // 16a.1: itens desta AT (padrão: 1 item = 1 conjunto)
-  const resumoItem = (i) => colunas.slice(0, 4).map((c) => { const v = valorCelula(c, i.valores?.[c.chave]); return v ? `${c.rotulo}: ${v}` : null; }).filter(Boolean).join(" · ") || `Item ${i.id}`;
-  const [ocupado, setOcupado] = useState(false);
-  useEffect(() => { apiService.get("/programacao/base").then(setB).catch((e) => { onErro(e.message); onFechar(); }); }, []); // eslint-disable-line
-  if (!b) return casca(s, <div style={{ color: C.muted }}>Carregando motoristas e equipamentos…</div>, onFechar);
-  const mot = b.motoristas.find((m) => String(m.id) === String(f.motorista_id));
-  const salvar = async (extra = {}) => {
-    setOcupado(true);
-    const corpo = { grupo_id: trecho?.id, ...(atual ? {} : { itens: selItens }), inicio: f.inicio, fim: f.fim || null, origem: f.origem, destino: f.destino, motorista_id: f.motorista_id || null, cavalo_id: f.cavalo_id || null,
-      implementos: [f.impl1, f.impl2].filter((x) => x !== "" && x != null), observacoes: f.observacoes, ...(lib && just.trim() ? { liberacao_justificativa: just } : {}), ...extra };
-    try {
-      const r = atual ? await apiService.put(`/programacao/execucoes/${atual.id}`, corpo) : await apiService.post(`/programacao/pvs/${pv.id}/at`, corpo);
-      onSalvo(r);
-    } catch (e) {
-      const d = e.data || e.body || e.response || {};
-      if (/VENCIDO|Só gestor ou admin pode liberar/.test(e.message)) setLib({ erro: e.message });
-      else if (/Conflito de agenda/.test(e.message)) setConf(e.message.replace(/^Conflito de agenda: /, "").split(" · "));
-      else onErro(e.message);
-      void d;
-    } finally { setOcupado(false); }
-  };
-  const sel = (k, v) => setF((x) => ({ ...x, [k]: v }));
-  const lbl = (r, el, flex = "1 1 200px") => <label style={{ flex, display: "block" }}><span style={s.label}>{r}</span>{el}</label>;
-  const optEq = (excluir) => b.equipamentos.filter((e) => !excluir.includes(String(e.id))).map((e) => <option key={e.id} value={e.id} disabled={e.bloqueado}>{e.bloqueado ? "🔒 " : ""}{e.tag ? `${e.tag} — ` : ""}{e.nome}{e.bloqueado ? " (bloqueado)" : ""}</option>);
-  return casca(s, <>
-    <div style={{ fontSize: 16, fontWeight: 700 }}>{atual ? `✏ Editar ${atual.numero}` : "🚛 Programar o trecho"}</div>
-    <div style={{ fontSize: 12.5, color: C.textSub, marginBottom: 12 }}>{pv?.numero} · <b style={{ color: C.text }}>{trecho?.titulo || atual?.grupo_titulo}</b>{trecho?.datas?.length ? ` · data prevista no pedido: ${trecho.datas.map((d) => d.split("-").reverse().join("/")).join(", ")}` : ""}</div>
-    {!atual && (trecho?.itens || []).length > 1 && <div style={{ ...s.card, padding: "8px 12px", marginBottom: 12, background: C.bg }}>
-      <div style={{ ...s.label, marginBottom: 4 }}>ITENS DESTA AT — UM CONJUNTO (CAVALO + IMPLEMENTOS)</div>
-      {(trecho.itens || []).map((i) => { const ja = !!i.at; const marc = selItens.includes(String(i.id)); return (
-        <label key={i.id} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12.5, padding: "3px 0", opacity: ja ? 0.5 : 1, cursor: ja ? "default" : "pointer" }}>
-          <input type="checkbox" disabled={ja} checked={ja || marc} onChange={() => setSelItens((x) => (marc ? x.filter((y) => y !== String(i.id)) : [...x, String(i.id)]))} />
-          <span style={{ flex: 1 }}>{resumoItem(i)}{Number(i.quantidade || 1) !== 1 ? ` · qtd ${i.quantidade}` : ""}</span>{ja && <span style={{ fontSize: 11, color: C.muted }}>já na {i.at}</span>}
-        </label>); })}
-      <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Marque o que vai neste conjunto. Os outros itens continuam “a programar” — programe cada conjunto em seguida.</div>
-    </div>}
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{lbl("COLETA — LOCAL", <input value={f.origem} onChange={(e) => sel("origem", e.target.value)} placeholder="Ex.: Pátio Serra/ES" style={s.input} />)}{lbl("COLETA — DATA E HORA *", <input type="datetime-local" value={f.inicio} onChange={(e) => sel("inicio", e.target.value)} style={s.input} />, "0 1 210px")}</div>
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>{lbl("ENTREGA — LOCAL", <input value={f.destino} onChange={(e) => sel("destino", e.target.value)} placeholder="Ex.: Obra BR-040, BH/MG" style={s.input} />)}{lbl("ENTREGA — DATA E HORA", <input type="datetime-local" value={f.fim} onChange={(e) => sel("fim", e.target.value)} style={s.input} />, "0 1 210px")}</div>
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-      {lbl("MOTORISTA", <select value={f.motorista_id} onChange={(e) => { sel("motorista_id", e.target.value); setLib(null); setJust(""); }} style={s.input}><option value="">— definir depois —</option>
-        {b.motoristas.map((m) => <option key={m.id} value={m.id}>{m.nome}{m.cnh ? ` · CNH ${m.cnh}` : ""} · {seloTxt(m)}</option>)}</select>, "1 1 100%")}
-    </div>
-    {mot && <div style={{ fontSize: 12, marginTop: 4, color: (SELO[mot.selo?.nivel] || SELO.sem_funcao)[1] }}>{seloTxt(mot)}{mot.selo?.nivel === "atencao" ? " — precisa da liberação de um gestor" : mot.selo?.nivel === "em_andamento" ? " — pode programar (só aviso)" : ""}</div>}
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-      {lbl("CAVALO (TRATOR) *", <select value={f.cavalo_id} onChange={(e) => sel("cavalo_id", e.target.value)} style={s.input}><option value="">—</option>{optEq([String(f.impl1), String(f.impl2)])}</select>)}
-      {lbl("IMPLEMENTO 1", <select value={f.impl1} onChange={(e) => sel("impl1", e.target.value)} style={s.input}><option value="">—</option>{optEq([String(f.cavalo_id), String(f.impl2)])}</select>)}
-      {lbl("IMPLEMENTO 2", <select value={f.impl2} onChange={(e) => sel("impl2", e.target.value)} style={s.input}><option value="">—</option>{optEq([String(f.cavalo_id), String(f.impl1)])}</select>)}
-    </div>
-    <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>🔒 Equipamento bloqueado por inspeção não pode ser escolhido — libere em 🔍 Inspeções.</div>
-    <label style={{ display: "block", marginTop: 10 }}><span style={s.label}>OBSERVAÇÕES PARA O MOTORISTA</span><textarea rows={2} value={f.observacoes} onChange={(e) => sel("observacoes", e.target.value)} placeholder="Ex.: escolta a partir do km 230; contato no destino: Sr. Paulo (31) 9…" style={{ ...s.input, resize: "vertical" }} /></label>
-
-    {lib && <div style={{ ...s.card, padding: 12, marginTop: 12, borderColor: C.danger, background: `${C.danger}12` }}>
-      <div style={{ fontSize: 13, color: C.danger, fontWeight: 700, marginBottom: 6 }}>🔴 {lib.erro}</div>
-      {podeLiberar ? <><textarea rows={2} value={just} onChange={(e) => setJust(e.target.value)} placeholder="Justificativa da liberação (mínimo 15 caracteres) — ex.: CNH renovada ontem, aguardando o documento físico" style={{ ...s.input, resize: "vertical" }} />
-        <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Fica registrada na AT (quem, quando e por quê) e sai no PDF.</div></>
-        : <div style={{ fontSize: 12.5, color: C.textSub }}>Peça para um gestor liberar, ou escolha outro motorista.</div>}
-    </div>}
-    {conf && <div style={{ ...s.card, padding: 12, marginTop: 12, borderColor: C.warn, background: `${C.warn}12` }}>
-      <div style={{ fontSize: 13, color: C.warn, fontWeight: 700, marginBottom: 4 }}>⚠ Conflito de agenda</div>
-      {conf.map((c, i) => <div key={i} style={{ fontSize: 12.5 }}>• {c}</div>)}
-      <div style={{ display: "flex", gap: 8, marginTop: 8 }}><button type="button" onClick={() => setConf(null)} style={{ ...s.btn(false), cursor: "pointer", color: C.text, padding: "6px 12px", fontSize: 12 }}>Trocar data/recurso</button>
-        <button type="button" disabled={ocupado} onClick={() => { setConf(null); salvar({ ignorar_conflito: true }); }} style={{ ...s.btn(true, C.warn), padding: "6px 12px", fontSize: 12 }}>Programar mesmo assim</button></div>
-    </div>}
-    {avisos.length > 0 && avisos.map((a, i) => <div key={i} style={{ fontSize: 12, color: C.warn, marginTop: 6 }}>{a}</div>)}
-    <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-      <button type="button" onClick={onFechar} style={{ ...s.btn(false), cursor: "pointer", flex: 1, color: C.text }}>Cancelar</button>
-      <button type="button" disabled={ocupado || !f.inicio || !f.cavalo_id || (!atual && !selItens.length) || (lib && podeLiberar && just.trim().length < 15) || (lib && !podeLiberar)} onClick={() => { setAvisos([]); salvar(); }}
-        style={{ ...s.btn(!ocupado && !!f.inicio && !!f.cavalo_id && (!!atual || selItens.length > 0) && !(lib && (!podeLiberar || just.trim().length < 15)), lib ? C.danger : C.accent), flex: 1 }}>{ocupado ? "Salvando…" : lib ? "🔓 Liberar e programar" : atual ? "Salvar" : "🚛 Programar"}</button>
-    </div>
-  </>, onFechar, 760);
-}
-
 export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onErro, onOk }) {
   const [d, setD] = useState(null);
   const [ocupado, setOcupado] = useState(false);
   const [modal, setModal] = useState(null); // { tipo: cancelar|editar|anexo }
+  const [ver, setVer] = useState(null);
+  const [base, setBase] = useState(null);
   const carregar = async () => { try { setD(await apiService.get(`/programacao/execucoes/${id}`)); } catch (e) { onErro(e.message); onFechar(); } };
   useEffect(() => { carregar(); }, [id]); // eslint-disable-line
   if (!d) return null;
   const e = d.execucao; const cols = (e.colunas || []).filter((c) => c.chave !== "data_prevista");
   const acao = async (a, extra = {}, msg) => { setOcupado(true); try { await apiService.post(`/programacao/execucoes/${e.id}/status`, { acao: a, ...extra }); onOk(msg); setModal(null); await carregar(); onMudou?.(); } catch (er) { onErro(er.message); } finally { setOcupado(false); } };
   const pdf = async () => { const w = window.open("", "_blank"); try { abrirAT(await apiService.get(`/programacao/execucoes/${e.id}/documento`), w); } catch (er) { if (w) w.close(); onErro(er.message); } };
-  const abrirAnexo = async (a) => { const w = window.open("", "_blank"); try { const r = await apiService.get(`/programacao/execucoes/${e.id}/anexos/${a.id}`); if (w) w.location.href = r.url; } catch (er) { if (w) w.close(); onErro(er.message); } };
+  const abrirAnexo = async (a) => { setVer({ nome: a.nome, mime: a.mime }); try { const r = await apiService.get(`/programacao/execucoes/${e.id}/anexos/${a.id}`); setVer({ url: r.url, nome: a.nome, mime: a.mime }); } catch (er) { setVer(null); onErro(er.message); } };
+  const verDoc = async (x) => {
+    if (!x.documento_id || !x.tem_arquivo) return onErro(`${x.rotulo} de ${x.dono}: ${x.documento_id ? "cadastrado sem arquivo" : "não está cadastrado"} — inclua em ${x.alvo === "motorista" ? "👷 Pessoas → Documentos" : "documentos do equipamento"}.`);
+    setVer({ nome: `${x.rotulo} — ${x.dono}` }); try { const r = await apiService.get(`/programacao/documentos/${x.documento_id}`); setVer({ url: r.url, nome: r.nome, mime: r.mime }); } catch (er) { setVer(null); onErro(er.message); }
+  };
+  const editar = async () => { try { setBase(base || await apiService.get("/programacao/base")); setModal({ tipo: "editar" }); } catch (er) { onErro(er.message); } };
+  const copiarLink = async () => { try { await navigator.clipboard.writeText(e.link_motorista); onOk("📲 Link copiado — cole no WhatsApp do motorista."); } catch { onErro(`Copie o link: ${e.link_motorista}`); } };
+  const textoZap = () => `Olá${e.motorista_nome ? `, ${e.motorista_nome.split(" ")[0]}` : ""}! Sua viagem ${e.numero}: ${e.origem || "—"} ➜ ${e.destino || "—"}, coleta ${dataHora(e.inicio_previsto)}. Rota e documentos: ${e.link_motorista}`;
   const removerAnexo = async (a) => { setOcupado(true); try { await apiService.delete(`/programacao/execucoes/${e.id}/anexos/${a.id}`); await carregar(); } catch (er) { onErro(er.message); } finally { setOcupado(false); } };
   const enviarAnexo = async (tipo, arq) => {
     if (!arq) return; if (arq.size > 10 * 1024 * 1024) return onErro("Arquivo maior que 10 MB");
@@ -139,7 +68,7 @@ export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onEr
         </div>
         <div style={{ padding: "10px 18px", borderBottom: `1px solid ${C.border}`, display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button type="button" onClick={pdf} style={bt(C.textSub, false)}>📄 PDF da AT</button>
-          {e.status === "programada" && <button type="button" onClick={() => setModal({ tipo: "editar" })} style={bt(C.textSub, false)}>✏ Editar</button>}
+          {e.status === "programada" && <button type="button" onClick={editar} style={bt(C.textSub, false)}>✏ Editar</button>}
           <div style={{ flex: 1 }} />
           {e.status === "programada" && <button type="button" disabled={ocupado} onClick={() => acao("iniciar", {}, `${e.numero} em execução.`)} style={bt(C.warn)}>▶ Iniciar</button>}
           {e.status === "em_execucao" && <button type="button" disabled={ocupado} onClick={() => acao("concluir", {}, `${e.numero} concluída.`)} style={bt(C.success)}>✓ Concluir</button>}
@@ -172,6 +101,16 @@ export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onEr
             {e.liberacao && <div style={{ fontSize: 12, color: C.danger, marginTop: 4 }}>🔓 Liberado por {e.liberacao.por} em {dataHora(e.liberacao.em)}: “{e.liberacao.justificativa}”</div>}
             <div style={{ ...s.label, marginTop: 14 }}>CONJUNTO</div>
             {(e.conjunto || []).map((c) => <div key={c.id} style={{ fontSize: 13, padding: "3px 0" }}>{c.papel === "cavalo" ? "🚛" : "🔗"} <b>{c.tag}</b> {c.nome}</div>)}
+            <div style={{ ...s.label, marginTop: 14 }}>KIT DO MOTORISTA</div>
+            <div style={{ display: "flex", gap: 4, flexWrap: "wrap" }}>{(e.docs || []).map((x) => <ChipDoc key={x.chave} C={C} status={x.status} rotulo={`${x.rotulo} ${x.dono}`} title={`${TXT_DOC[x.status]}${x.vence_em ? ` · vence ${String(x.vence_em).split("-").reverse().join("/")}` : ""}`} onClick={() => verDoc(x)} />)}</div>
+            {e.liberacao_docs && <div style={{ fontSize: 12, color: C.danger, marginTop: 4 }}>🔓 Documento vencido liberado por {e.liberacao_docs.por} em {dataHora(e.liberacao_docs.em)}: “{e.liberacao_docs.justificativa}”</div>}
+            {e.link_motorista && <div style={{ ...s.card, padding: "8px 10px", marginTop: 8, background: "transparent" }}>
+              <div style={{ fontSize: 12.5, fontWeight: 700 }}>📲 Link do motorista {e.link_visto_em ? <span style={{ color: C.success, fontWeight: 400, fontSize: 11 }}>✓✓ aberto em {dataHora(e.link_visto_em)}</span> : <span style={{ color: C.muted, fontWeight: 400, fontSize: 11 }}>ainda não aberto</span>}</div>
+              <div style={{ fontSize: 11, color: C.muted, margin: "2px 0 6px" }}>Rota (com atalho para o Maps), dados da viagem e o kit de documentos no celular — sem login, sem valores.</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}><button type="button" onClick={copiarLink} style={{ ...s.btn(false), cursor: "pointer", color: C.text, padding: "5px 10px", fontSize: 12 }}>📋 Copiar link</button>
+                <a href={`https://wa.me/?text=${encodeURIComponent(textoZap())}`} target="_blank" rel="noreferrer" style={{ ...s.btn(true, "#25d366"), padding: "5px 10px", fontSize: 12, textDecoration: "none" }}>WhatsApp</a>
+                <a href={e.link_motorista} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: C.accent, alignSelf: "center" }}>ver como o motorista ↗</a></div>
+            </div>}
             <div style={{ ...s.label, marginTop: 14 }}>DOCUMENTOS FISCAIS</div>
             {(e.anexos || []).map((a) => <div key={a.id} style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12.5, padding: "4px 0", borderBottom: `1px solid ${C.border}` }}>
               <span style={s.tag(C.accent)}>{d.anexos_tipos?.[a.tipo] || a.tipo}</span><button type="button" className="qf-clicavel" onClick={() => abrirAnexo(a)} style={{ background: "none", border: "none", color: C.text, padding: 0, fontSize: 12.5, flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.nome}</button>
@@ -183,8 +122,9 @@ export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onEr
           </div>
         </div>
       </div>
-      {modal?.tipo === "editar" && <FormAT C={C} s={s} pv={{ id: e.pv_id, numero: e.pv_numero }} trecho={{ id: e.grupo_id, titulo: e.grupo_titulo }} atual={e} podeLiberar={podeLiberar} onErro={onErro} onFechar={() => setModal(null)}
-        onSalvo={async (r) => { setModal(null); onOk(`${e.numero} atualizada.${r.avisos?.length ? ` ${r.avisos.join(" ")}` : ""}`); await carregar(); onMudou?.(); }} />}
+      {modal?.tipo === "editar" && base && <EditorAT C={C} s={s} pv={{ id: e.pv_id, numero: e.pv_numero, colunas: (e.colunas || []).filter((c) => c.chave !== "data_prevista") }} trecho={{ id: e.grupo_id, titulo: e.grupo_titulo }} atual={e} base={base} podeLiberar={podeLiberar}
+        onErro={onErro} onFechar={() => setModal(null)} onSalvo={async (msg) => { setModal(null); onOk(msg); await carregar(); onMudou?.(); }} />}
+      {ver && <VerArquivo C={C} s={s} arquivo={ver} onFechar={() => setVer(null)} />}
       {modal?.tipo === "cancelar" && casca(s, <>
         <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Cancelar a {e.numero}?</div>
         <div style={{ fontSize: 13, color: C.textSub, marginBottom: 8 }}>Os itens do trecho voltam para "a programar" no pedido {e.pv_numero}. O motivo fica registrado.</div>
