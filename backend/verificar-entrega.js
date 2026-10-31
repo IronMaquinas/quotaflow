@@ -69,7 +69,7 @@ const ESPERADO = {
   'services/acessoSpot.js': '6ecce4d16d6b123c6ce93c1223b32f01', // etapa 10c (novo)
   'services/receitaCnpj.js': 'b0e2a678127403d5608723c21ec61b78', // etapa 14d.5
   'services/cadastroPublico.js': '1359e67ff1f2438a964eee7223cf2ed1', // etapa 14d.5
-  'front:App.jsx': 'a6271ec30a4c53bb13bf59cb3a9117fd', // etapa 17a
+  'front:App.jsx': '6bcc9347a28d2b437a2154a59200cda8', // etapa 17a.1
   'front:TelaLogin.jsx': 'bfa1fccbdab99820be2ac14c0e91b2fe', // etapa 14b.1
   'front:TelaSignup.jsx': '345dceefb937b38e74cfef44cfc33ef3', // etapa 11a.3
   'front:AvisoPlanoTenant.jsx': '5795f00c1bc656d0525fd29b6793a96c', // etapa 11a.3
@@ -240,13 +240,9 @@ const ESPERADO = {
   'front:TelaMinhasViagens.jsx': '522b50f6a1971283d451e6d23bc41f2f', // etapa 17a (novo)
 };
 
-// Antes de copiar a etapa 17a — base: 16e.4
+// Antes de copiar a etapa 17a.1 — base: 17a
 const ANTES = {
-  'services/execucoes.js': '61c5b1a1888830ff798baa9f08548c3d',
-  'server.js': 'd6998922fb76ea0b03d83e0b2f324d9d',
-  'middleware/tenantMiddleware.js': '1915134215b1443b8a3e9c1f0f926886',
-  'front:App.jsx': 'b681ca996b797fb288cb4c3552f61877',
-  'front:TelaATPublica.jsx': 'f8f37f36d4ad5ebebd36119779fef5b4',
+  'front:App.jsx': 'a6271ec30a4c53bb13bf59cb3a9117fd',
 };
 
 const RAIZ = process.cwd();
@@ -284,7 +280,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 17a)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 17a.1)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

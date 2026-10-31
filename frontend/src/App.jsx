@@ -413,6 +413,7 @@ const perfil = PERFIS[usuario.perfil] || {
     {id:"inspecoes",     l:"🔍 Inspeções",             perfis:["admin","gestor","comprador","operacao","qualidade"]}, // etapa 14a
     {id:"contratos",     l:"📑 Contratos",             perfis:["admin","gestor","comprador","operacao","qualidade"]}, // etapa 14b.3
     {id:"pessoas",       l:"👷 Pessoas",               perfis:["admin","gestor","qualidade","operacao"]},
+    {id:"minhas_viagens", l:"🚛 Minhas viagens",  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro","comercial"]}, // etapa 17a.1 — motorista com outros perfis
     {id:"meus_treinamentos", l:"🎓 Meus treinamentos",  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro","comercial"]}, // etapa 12e.2b
     {id:"fornecedores",  l:"🏭 Fornecedores",         perfis:["admin","gestor","comprador"]},
     {id:"monitor_cnpj",  l:"🛡 Monitor de CNPJs",     perfis:["admin","gestor","comprador"]}, // etapa 14e
@@ -621,6 +622,7 @@ const perfil = PERFIS[usuario.perfil] || {
         )}
 
         {temAcesso(tela) && tela === "meus_treinamentos" && <TelaMeusTreinamentos />}
+        {temAcesso(tela) && tela === "minhas_viagens" && (<div style={{ flex: 1, overflowY: "auto" }}><TelaMinhasViagens C={C} s={s} /></div>)}
         {temAcesso(tela) && tela === "calendario" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
             <TelaCalendarioManutencao
@@ -2412,6 +2414,7 @@ const PERMISSOES = {
   inspecoes:          ["admin","gestor","comprador","operacao","qualidade"], // etapa 14a
   contratos:          ["admin","gestor","comprador","operacao","qualidade"], // etapa 14b.3
   pessoas:            ["admin","gestor","qualidade","operacao"], // etapa 12c
+  minhas_viagens:     ["admin","gestor","comprador","operacao","qualidade","financeiro","comercial","colaborador"], // etapa 17a.1
   meus_treinamentos:  ["admin","gestor","comprador","operacao","qualidade","financeiro","comercial","colaborador"], // etapa 12e.2b
   fornecedores:       ["admin","gestor","comprador"],
   monitor_cnpj:       ["admin","gestor","comprador"], // etapa 14e
