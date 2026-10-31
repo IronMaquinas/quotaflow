@@ -45,8 +45,9 @@ function tenantMiddleware(req, res, next) {
     if (req.perfis.length > 0 && req.perfis.every((p) => p === "colaborador")) {
       const url = String(req.originalUrl || "").split("?")[0];
       const livre = /^\/api\/meus-treinamentos(\/|$)/.test(url) || /^\/api\/usuarios\/me(\/|$)/.test(url) || /^\/api\/auth\//.test(url)
-        || /^\/api\/inspecoes(\/|$)/.test(url); // 14b.1: "Minhas inspeções" — a rota limita ao que o colaborador pode
-      if (!livre) return res.status(403).json({ erro: "Seu acesso é só a Meus treinamentos e Minhas inspeções" });
+        || /^\/api\/inspecoes(\/|$)/.test(url) // 14b.1: "Minhas inspeções" — a rota limita ao que o colaborador pode
+        || /^\/api\/minhas-viagens(\/|$)/.test(url); // 17a: "Minhas viagens" — só as ATs dele + agenda dos colegas
+      if (!livre) return res.status(403).json({ erro: "Seu acesso é só a Meus treinamentos, Minhas inspeções e Minhas viagens" });
     }
 
     // Etapa 14b.3: perfil "locatario" (cliente que aluga equipamento) só acessa a área dele — o escopo (os contratos

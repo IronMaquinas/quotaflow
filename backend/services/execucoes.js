@@ -486,6 +486,29 @@ async function documento(supabase, tenantId, id) {
     contato_cliente: pv.contato_nome || null, referencia: pv.referencia || null, motorista: col ? await dadosMotorista(supabase, tenantId, col) : null };
 }
 
+// ─── 17a: 🚛 MINHAS VIAGENS — motorista logado (perfil colaborador ligado a colaboradores.usuario_id) ───
+//   minhas: as ATs em que ele é o motorista — ativas + concluídas/canceladas dos últimos 90 dias (com o token: abre o mesmo fluxo do 📲 link)
+//   colegas: só a AGENDA (leitura) das ATs ativas dos outros — AT, rota, datas, motorista, conjunto e etapa; sem documentos, sem token
+async function minhasViagens(supabase, tenantId, colaborador) {
+  const todas = (await q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId))).filter((e) => e.status !== 'rascunho');
+  const pvs = await q(supabase.from('pedidos_venda').select('*').eq('tenant_id', tenantId)).catch(() => []);
+  const limite = new Date(Date.now() - 90 * 86400000).toISOString();
+  const recente = (e) => ATIVAS.includes(e.status) || String(e.concluida_em || e.cancelada_em || e.atualizado_em || e.criado_em || '') >= limite;
+  const ordem = (a, b) => String(a.inicio_previsto || '9').localeCompare(String(b.inicio_previsto || '9'));
+  const minhas = todas.filter((e) => String(e.motorista_id) === String(colaborador.id) && recente(e)).map((e) => comRef(enfeitar(e), pvs))
+    .map((e) => ({ id: e.id, numero: e.numero, ref: e.ref, status: e.status, status_nome: e.status_nome, cliente_nome: e.cliente_nome, grupo_titulo: e.grupo_titulo, origem: e.origem, destino: e.destino,
+      inicio_previsto: e.inicio_previsto, fim_previsto: e.fim_previsto, concluida_em: e.concluida_em, cancelada_em: e.cancelada_em, conjunto: (e.conjunto || []).map((c) => ({ tag: c.tag, nome: c.nome, papel: c.papel })),
+      itens: (e.itens || []).map((i) => ({ n: i.n, serie: i.serie, volumes: i.volumes, valores: i.valores, quantidade: i.quantidade })), colunas: (e.colunas || []).filter((c) => c.chave !== 'data_prevista' && c.tipo !== 'moeda'),
+      fluxo_resumo: e.fluxo_resumo, token: e.token, atrasada: e.atrasada }));
+  const ativas = minhas.filter((e) => ATIVAS.includes(e.status)).sort(ordem);
+  const historico = minhas.filter((e) => !ATIVAS.includes(e.status)).sort((a, b) => String(b.concluida_em || b.cancelada_em || b.inicio_previsto || '').localeCompare(String(a.concluida_em || a.cancelada_em || a.inicio_previsto || '')));
+  const colegas = todas.filter((e) => ATIVAS.includes(e.status) && String(e.motorista_id) !== String(colaborador.id)).map(enfeitar).sort(ordem)
+    .map((e) => ({ id: e.id, numero: e.numero, status: e.status, status_nome: e.status_nome, origem: e.origem, destino: e.destino, inicio_previsto: e.inicio_previsto, fim_previsto: e.fim_previsto,
+      motorista_nome: e.motorista_nome || null, conjunto: (e.conjunto || []).map((c) => c.tag || c.nome), etapa: e.fluxo_resumo ? (e.fluxo_resumo.travada ? `⛔ ${e.fluxo_resumo.reprovada}` : e.fluxo_resumo.atual || 'fluxo concluído') : null,
+      progresso: e.fluxo_resumo ? `${e.fluxo_resumo.feitas}/${e.fluxo_resumo.total}` : null }));
+  return { eu: { nome: colaborador.nome }, ativas, historico, colegas };
+}
+
 // ─── 16c: 📲 link do motorista (público, sem login, sem valores) ─────────────────
 async function porToken(supabase, token) { return /^[0-9a-f]{40}$/.test(String(token || '')) ? (await q(supabase.from('execucoes').select('*').eq('token', token)))[0] || null : null; }
 async function paginaMotorista(supabase, ex) {
@@ -508,4 +531,4 @@ async function paginaMotorista(supabase, ex) {
     motorista_id: ex.motorista_id ?? null };
 }
 
-module.exports = { refDe: (e, pvs) => comRef(e, pvs).ref, sincronizarPV, registrar, porToken, paginaMotorista, linkMotorista, docsDoConjunto, linkDocCadastro, descartar, carregarDocs, avaliarDocs, checar, trechosComATs, TIPOS, STATUS, ANEXOS, base, criar, editar, mudarStatus, anexar, linkAnexo, removerAnexo, listar, detalhe, doPV, agenda, documento, conflitos, _definirSelos };
+module.exports = { minhasViagens, refDe: (e, pvs) => comRef(e, pvs).ref, sincronizarPV, registrar, porToken, paginaMotorista, linkMotorista, docsDoConjunto, linkDocCadastro, descartar, carregarDocs, avaliarDocs, checar, trechosComATs, TIPOS, STATUS, ANEXOS, base, criar, editar, mudarStatus, anexar, linkAnexo, removerAnexo, listar, detalhe, doPV, agenda, documento, conflitos, _definirSelos };

@@ -142,7 +142,8 @@ app.use('/api/recomendacoes', recomendacoesRoutes);
 app.use('/api/plataforma', require('./routes/plataforma')); // Console da Plataforma (etapa 11b) — autenticação própria
 app.use('/api/manutencao', tenantMiddleware, require('./routes/manutencao')); // Calendário de manutenção (etapa 12a) — só leitura
 app.use('/api/pessoas', tenantMiddleware, require('./routes/pessoas')); // Colaboradores e documentos com vencimento (etapa 12c)
-app.use('/api/meus-treinamentos', tenantMiddleware, require('./routes/meusTreinamentos')); // etapa 12e.2b — colaborador logado
+app.use('/api/meus-treinamentos', tenantMiddleware, require('./routes/meusTreinamentos'));
+app.use('/api/minhas-viagens', tenantMiddleware, require('./routes/minhasViagens')); // etapa 17a — 🚛 motorista logado // etapa 12e.2b — colaborador logado
 app.use('/api/prova', require('./routes/provaPublica')); // etapa 12e.2b — link externo da prova (público, CPF + nascimento)
 app.use('/api/autuacoes', tenantMiddleware, require('./routes/autuacoes')); // etapa 12i — autuações da empresa (requisito legal)
 app.use('/api/inspecoes', tenantMiddleware, require('./routes/inspecoes')); // etapa 14a — inspeções de equipamento

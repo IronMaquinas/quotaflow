@@ -35,7 +35,8 @@ import TelaNaoConformidades from "./components/naoConformidades/TelaNaoConformid
 import TelaInspecoes from "./components/inspecoes/TelaInspecoes"; // etapa 14a
 import TelaContratos from "./components/contratos/TelaContratos"; // etapa 14b.3
 import TelaComercial from "./components/comercial/TelaComercial"; // etapa 15a — 📈 Comercial (mini-CRM + BID)
-import TelaProgramacao from "./components/programacao/TelaProgramacao"; // etapa 16a — 🚛 Programação (AT por trecho)
+import TelaProgramacao from "./components/programacao/TelaProgramacao";
+import TelaMinhasViagens from "./components/viagens/TelaMinhasViagens"; // etapa 17a — 🚛 motorista logado // etapa 16a — 🚛 Programação (AT por trecho)
 import { carregarLogoEmpresa } from "./utils/logoEmpresa"; // etapa 14c
 import TelaLocatario from "./components/contratos/TelaLocatario"; // etapa 14b.3
 import TelaCalendarioManutencao from './components/manutencao/TelaCalendarioManutencao'; // etapa 12a
@@ -175,7 +176,7 @@ export default function App() {
   const [osParaAbrir, setOsParaAbrir] = useState(null);
   const [cotacaoParaAbrir, setCotacaoParaAbrir] = useState(null); // 14e.2
   const [ocParaAbrir, setOcParaAbrir] = useState(null); // 14e.2
-  const [abaColaborador, setAbaColaborador] = useState("treinos"); // 14b.1: tela do colaborador
+  const [abaColaborador, setAbaColaborador] = useState("viagens"); // 14b.1: tela do colaborador · 17a: começa em 🚛 Minhas viagens
   useEffect(() => { if (usuario?.id) carregarLogoEmpresa(); }, [usuario?.id]); // 14c: logo da empresa nos documentos
   // 14c.2: "é clicável" — mãozinha + realce ao passar o mouse (className="qf-clicavel")
   useEffect(() => {
@@ -378,11 +379,11 @@ const perfil = PERFIS[usuario.perfil] || {
       </div>
       {/* 14b.1: abas do colaborador — 🎓 treinamentos | 🔍 inspeções */}
       <div style={{ display: "flex", gap: 4, padding: "6px 12px", borderBottom: `1px solid ${C.border}` }}>
-        {[["treinos", "🎓 Treinamentos"], ["inspecoes", "🔍 Inspeções"]].map(([k, l]) => (
+        {[["viagens", "🚛 Viagens"], ["treinos", "🎓 Treinamentos"], ["inspecoes", "🔍 Inspeções"]].map(([k, l]) => (
           <button key={k} onClick={() => setAbaColaborador(k)} style={{ background: "transparent", border: "none", borderBottom: `2px solid ${abaColaborador === k ? C.accent : "transparent"}`, padding: "8px 12px", color: abaColaborador === k ? C.text : C.muted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
         ))}
       </div>
-      <div style={{ flex: 1, overflow: abaColaborador === "inspecoes" ? "auto" : "hidden" }}>{abaColaborador === "inspecoes" ? <TelaInspecoes C={C} s={s} embutida /> : <TelaMeusTreinamentos />}</div>
+      <div style={{ flex: 1, overflow: abaColaborador === "treinos" ? "hidden" : "auto" }}>{abaColaborador === "viagens" ? <TelaMinhasViagens C={C} s={s} /> : abaColaborador === "inspecoes" ? <TelaInspecoes C={C} s={s} embutida /> : <TelaMeusTreinamentos />}</div>
     </div>
   );
 

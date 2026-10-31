@@ -22,8 +22,8 @@ const lerLS = (k, padrao) => { try { return JSON.parse(localStorage.getItem(k) |
 const gravarLS = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch { /* sem storage: segue */ } };
 const pegarGps = () => new Promise((ok) => { try { navigator.geolocation.getCurrentPosition((p) => ok({ lat: p.coords.latitude, lng: p.coords.longitude, precisao: p.coords.accuracy }), () => ok(null), { timeout: 6000, maximumAge: 60000 }); } catch { ok(null); } });
 
-export default function TelaATPublica() {
-  const token = new URLSearchParams(String(window.location.hash || "").split("?")[1] || "").get("t") || "";
+export default function TelaATPublica({ tokenFixo, onVoltar } = {}) { // 17a: também abre dentro de "🚛 Minhas viagens" (motorista logado)
+  const token = tokenFixo || new URLSearchParams(String(window.location.hash || "").split("?")[1] || "").get("t") || "";
   const [d, setD] = useState(() => lerLS(`qf-at-${token}-ultima`, null)); const [erro, setErro] = useState(null);
   const [pend, setPend] = useState(() => lerLS(`qf-at-${token}-pend`, {})); // { etapaId: { tipo, em, gps } } — feito sem internet, aguardando envio
   const [inspLocal, setInspLocal] = useState({}); // { etapaId: 'pendente'|'rascunho'|'erro' } — fila de inspeções do celular
@@ -77,6 +77,7 @@ export default function TelaATPublica() {
   return (
     <div style={{ minHeight: "100vh", background: "#f1f5f9", fontFamily: "system-ui, -apple-system, sans-serif", color: "#0f172a" }}>
       <div style={{ background: "#0f172a", color: "#fff", padding: "14px 16px" }}>
+        {onVoltar && <button type="button" onClick={onVoltar} style={{ background: "none", border: "none", color: "#93c5fd", padding: 0, fontSize: 13, marginBottom: 6, cursor: "pointer" }}>← Minhas viagens</button>}
         <div style={{ fontSize: 12, opacity: 0.7 }}>{d.empresa?.nome}</div>
         <div style={{ fontSize: 20, fontWeight: 800 }}>🚛 {d.numero}</div>
         <div style={{ fontSize: 13, opacity: 0.85 }}>{d.status_nome} · {d.cliente_nome}</div>
