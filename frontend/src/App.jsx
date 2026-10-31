@@ -176,6 +176,8 @@ export default function App() {
   const [osParaAbrir, setOsParaAbrir] = useState(null);
   const [cotacaoParaAbrir, setCotacaoParaAbrir] = useState(null); // 14e.2
   const [ocParaAbrir, setOcParaAbrir] = useState(null); // 14e.2
+  const [abrirAT, setAbrirAT] = useState(null); // 17b: multa → "abrir AT-…" na 🚛 Programação
+  useEffect(() => { const f = (ev) => { setAbrirAT({ id: ev.detail, em: Date.now() }); setTela("programacao"); }; window.addEventListener("qf-abrir-at", f); return () => window.removeEventListener("qf-abrir-at", f); }, []); // eslint-disable-line
   const [abaColaborador, setAbaColaborador] = useState("viagens"); // 14b.1: tela do colaborador · 17a: começa em 🚛 Minhas viagens
   useEffect(() => { if (usuario?.id) carregarLogoEmpresa(); }, [usuario?.id]); // 14c: logo da empresa nos documentos
   // 14c.2: "é clicável" — mãozinha + realce ao passar o mouse (className="qf-clicavel")
@@ -786,7 +788,7 @@ const perfil = PERFIS[usuario.perfil] || {
           </div>)}
 
         {temAcesso(tela) && tela === "comercial" && (<div style={{ flex: 1, overflowY: "auto" }}><TelaComercial C={C} s={s} /></div>)}
-        {temAcesso(tela) && tela === "programacao" && (<div style={{ flex: 1, overflowY: "auto" }}><TelaProgramacao C={C} s={s} perfis={usuario?.perfis || [usuario?.perfil].filter(Boolean)} /></div>)}
+        {temAcesso(tela) && tela === "programacao" && (<div style={{ flex: 1, overflowY: "auto" }}><TelaProgramacao C={C} s={s} abrirAT={abrirAT} perfis={usuario?.perfis || [usuario?.perfil].filter(Boolean)} /></div>)}
 
         {temAcesso(tela) && tela === "contratos" && (
           <div style={{ flex: 1, overflowY: "auto" }}>

@@ -14,7 +14,7 @@ const ddmm = (d) => d.slice(8, 10) + "/" + d.slice(5, 7);
 const MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 const SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
 
-export default function TelaProgramacao({ C, s, perfis = [] }) {
+export default function TelaProgramacao({ C, s, perfis = [], abrirAT = null }) {
   const [aba, setAba] = useState("programar");
   const [pedidos, setPedidos] = useState(null);
   const [ats, setAts] = useState(null);
@@ -25,6 +25,7 @@ export default function TelaProgramacao({ C, s, perfis = [] }) {
   const [visao, setVisao] = useState("semana"); // 16d: semana (14 dias) · mês (calendário) · ano (ocupação por mês)
   const [ficha, setFicha] = useState(null);
   const [msg, setMsg] = useState(null);
+  useEffect(() => { if (abrirAT?.id) { setAba("ats"); setFicha(abrirAT.id); } }, [abrirAT]); // 17b: veio de uma multa
   const podeLiberar = perfis.some((p) => ["admin", "gestor"].includes(p));
   const erro = (t) => setMsg({ t, erro: true });
   const ok = (t) => setMsg({ t });

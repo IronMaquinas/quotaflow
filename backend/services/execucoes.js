@@ -486,6 +486,36 @@ async function documento(supabase, tenantId, id) {
     contato_cliente: pv.contato_nome || null, referencia: pv.referencia || null, motorista: col ? await dadosMotorista(supabase, tenantId, col) : null };
 }
 
+// ─── 17b: 🚦 MULTA × PROGRAMAÇÃO — quem estava com o veículo na hora da infração ───
+//   procura ATs (programadas, em execução ou concluídas — nunca rascunho/cancelada) cujo CONJUNTO tem o veículo (id da frota ou a placa/tag)
+//   e cujo período cobre a data/hora: usa o REAL (iniciada_em → concluida_em) quando há; senão o PREVISTO (coleta → entrega, ou +24 h).
+//   Sem hora: qualquer AT que pegue o dia. Devolve do mais provável para o menos (real antes de previsto).
+const soAlnum = (v) => String(v || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+async function provavelCondutor(supabase, tenantId, { equipamento_id, veiculo, data, hora } = {}) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(data || ''))) return { atas: [] };
+  const placa = soAlnum(veiculo);
+  if (!equipamento_id && !placa) return { atas: [] };
+  const eqs = await q(supabase.from('equipamentos').select('*').eq('tenant_id', tenantId)).catch(() => []);
+  const alvo = equipamento_id ? eqs.find((e) => String(e.id) === String(equipamento_id)) : eqs.find((e) => placa && [e.tag, e.placa, e.nome].some((x) => soAlnum(x) === placa));
+  const bate = (c) => (alvo && String(c.id) === String(alvo.id)) || (placa && [c.tag, c.nome].some((x) => soAlnum(x) === placa));
+  const h = /^\d{2}:\d{2}$/.test(String(hora || '')) ? hora : null;
+  const ini = new Date(`${data}T${h || '00:00'}:00-03:00`).toISOString(); const fim = new Date(`${data}T${h || '23:59'}:59-03:00`).toISOString();
+  const pvs = await q(supabase.from('pedidos_venda').select('*').eq('tenant_id', tenantId)).catch(() => []);
+  const l = (await q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId))).filter((e) => !['rascunho', 'cancelada'].includes(e.status) && (e.conjunto || []).some(bate));
+  const out = [];
+  for (const e of l) {
+    const real = !!e.iniciada_em;
+    const a = e.iniciada_em || e.inicio_previsto; if (!a) continue;
+    const b = e.concluida_em || (real && e.status === 'em_execucao' ? new Date().toISOString() : (e.fim_previsto || fimEfetivo(e)));
+    if (!(a <= fim && b >= ini)) continue;
+    const x = comRef(enfeitar(e), pvs);
+    out.push({ id: e.id, numero: e.numero, ref: x.ref, status: e.status, status_nome: STATUS[e.status], motorista_id: e.motorista_id ?? null, motorista_nome: e.motorista_nome || null,
+      origem: e.origem, destino: e.destino, de: a, ate: b, base: real ? 'real' : 'previsto', conjunto: (e.conjunto || []).map((c) => c.tag || c.nome) });
+  }
+  out.sort((p, r) => (p.base === r.base ? String(r.de).localeCompare(String(p.de)) : p.base === 'real' ? -1 : 1));
+  return { atas: out, veiculo: alvo ? (alvo.tag || alvo.nome) : (veiculo || null) };
+}
+
 // ─── 17a: 🚛 MINHAS VIAGENS — motorista logado (perfil colaborador ligado a colaboradores.usuario_id) ───
 //   minhas: as ATs em que ele é o motorista — ativas + concluídas/canceladas dos últimos 90 dias (com o token: abre o mesmo fluxo do 📲 link)
 //   colegas: só a AGENDA (leitura) das ATs ativas dos outros — AT, rota, datas, motorista, conjunto e etapa; sem documentos, sem token
@@ -531,4 +561,4 @@ async function paginaMotorista(supabase, ex) {
     motorista_id: ex.motorista_id ?? null };
 }
 
-module.exports = { minhasViagens, refDe: (e, pvs) => comRef(e, pvs).ref, sincronizarPV, registrar, porToken, paginaMotorista, linkMotorista, docsDoConjunto, linkDocCadastro, descartar, carregarDocs, avaliarDocs, checar, trechosComATs, TIPOS, STATUS, ANEXOS, base, criar, editar, mudarStatus, anexar, linkAnexo, removerAnexo, listar, detalhe, doPV, agenda, documento, conflitos, _definirSelos };
+module.exports = { provavelCondutor, minhasViagens, refDe: (e, pvs) => comRef(e, pvs).ref, sincronizarPV, registrar, porToken, paginaMotorista, linkMotorista, docsDoConjunto, linkDocCadastro, descartar, carregarDocs, avaliarDocs, checar, trechosComATs, TIPOS, STATUS, ANEXOS, base, criar, editar, mudarStatus, anexar, linkAnexo, removerAnexo, listar, detalhe, doPV, agenda, documento, conflitos, _definirSelos };

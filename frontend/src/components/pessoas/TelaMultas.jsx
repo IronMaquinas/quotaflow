@@ -37,6 +37,16 @@ export default function TelaMultas({ C, s, modal, campo, colabs = [], onAviso, o
     catch (e) { if (/036/.test(e.message || "")) setSemMigration(true); else onErro(e.message); }
   };
   useEffect(() => { carregar(); }, []); // eslint-disable-line
+  // 17b: 🚦 provável condutor — a programação diz quem estava com o veículo na data/hora da infração
+  const [cond, setCond] = useState(null);
+  useEffect(() => {
+    if (!form || !form.data_infracao || !(form.equipamento_id || String(form.veiculo || "").trim())) { setCond(null); return undefined; }
+    const tm = setTimeout(() => apiService.get("/pessoas/multas/condutor-provavel", { equipamento_id: form.equipamento_id || "", veiculo: form.equipamento_id ? "" : form.veiculo, data: form.data_infracao, hora: form.hora_infracao || "" })
+      .then((r) => setCond(r.atas || [])).catch(() => setCond(null)), 350);
+    return () => clearTimeout(tm);
+  }, [form?.equipamento_id, form?.veiculo, form?.data_infracao, form?.hora_infracao]); // eslint-disable-line
+  const vePrograma = (() => { try { const u = JSON.parse(localStorage.getItem("usuario") || "{}"); const p = Array.isArray(u.perfis) && u.perfis.length ? u.perfis : [u.perfil]; return p.some((x) => ["admin", "gestor", "operacao"].includes(x)); } catch { return false; } })();
+  const dh = (v) => (v ? new Date(v).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" }) : "—");
 
   const multas = d?.multas || [];
   const editar = !!d?.pode_editar;
@@ -229,6 +239,17 @@ export default function TelaMultas({ C, s, modal, campo, colabs = [], onAviso, o
             {campo("HORA", <input type="time" value={form.hora_infracao} onChange={(e) => setForm({ ...form, hora_infracao: e.target.value })} style={s.input} />, "0 1 110px")}
             {campo("LOCAL", <input value={form.local} onChange={(e) => setForm({ ...form, local: e.target.value })} placeholder="BR-116 km 230, Guarulhos" style={s.input} />, "2 1 200px")}
           </div>
+          {cond && <div style={{ ...s.card, padding: "10px 12px", marginBottom: 12, borderColor: cond.length ? C.accent : C.border, background: cond.length ? `${C.accent}10` : "transparent" }}>
+            {!cond.length ? <div style={{ fontSize: 12.5, color: C.muted }}>🚛 Nenhuma AT com este veículo em operação {form.hora_infracao ? "nesta data e hora" : "neste dia"} (🚛 Programação).</div> : <>
+              <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 4 }}>🚛 {cond.length > 1 ? `${cond.length} viagens com este veículo ${form.hora_infracao ? "neste horário" : "neste dia"}` : "Provável motorista em operação"}</div>
+              {cond.map((a) => <div key={a.id} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 12.5, padding: "4px 0", borderTop: `1px solid ${C.border}` }}>
+                <div style={{ flex: "1 1 280px" }}><b>{a.motorista_nome || "motorista a definir"}</b> — {a.numero}{a.ref ? ` · ${a.ref}` : ""}<div style={{ color: C.textSub }}>{a.origem || "—"} ➜ {a.destino || "—"} · {dh(a.de)} → {dh(a.ate)} <span style={{ color: a.base === "real" ? C.success : C.warn }}>({a.base === "real" ? "horário real da viagem" : "horário previsto"})</span></div></div>
+                {a.motorista_id && String(form.colaborador_id) !== String(a.motorista_id) && <button type="button" onClick={() => setForm({ ...form, colaborador_id: a.motorista_id })} style={{ ...s.btn(true), padding: "5px 10px", fontSize: 12 }}>Usar como motorista</button>}
+                {a.motorista_id && String(form.colaborador_id) === String(a.motorista_id) && <span style={{ color: C.success, fontSize: 12 }}>✓ é o motorista responsável</span>}
+                {vePrograma && <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("qf-abrir-at", { detail: a.id }))} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 12, textDecoration: "underline" }}>abrir {a.numero} ↗</button>}
+              </div>)}
+              <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>Sugestão pela programação — confira antes de indicar o condutor ao órgão.</div></>}
+          </div>}
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             {campo("Nº DO AUTO", <input value={form.auto_numero} onChange={(e) => setForm({ ...form, auto_numero: e.target.value.toUpperCase() })} style={s.input} />, "1 1 140px")}
             {campo("ÓRGÃO AUTUADOR", <input value={form.orgao} onChange={(e) => setForm({ ...form, orgao: e.target.value })} placeholder="PRF, DETRAN-SP, DER…" list="qf-orgaos" style={s.input} />, "1 1 160px")}

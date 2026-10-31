@@ -760,6 +760,8 @@ router.get('/multas', exigirVer, responderTR(async (req) => {
     equipamentos: eqs.filter((e) => e.ativo !== false).map((e) => ({ id: e.id, tag: e.tag, nome: e.nome })).sort((a, b) => String(a.tag || a.nome).localeCompare(String(b.tag || b.nome))),
     usuarios: us.map((u) => ({ id: u.id, nome: u.nome })).sort((a, b) => String(a.nome).localeCompare(String(b.nome))) };
 }));
+// 17b: 🚦 provável condutor — ATs com o veículo em operação na data/hora da infração (programação)
+router.get('/multas/condutor-provavel', exigirVer, responderTR(async (req) => require('../services/execucoes').provavelCondutor(supabase, req.tenantId, req.query || {}).catch(() => ({ atas: [] })))); // sem a 055: nada
 router.post('/multas', exigirEditar, responderTR(async (req) => MU.criar(supabase, req.tenantId, await quem(req), req.body)));
 router.put('/multas/:id', exigirEditar, responderTR(async (req) => MU.editar(supabase, req.tenantId, await quem(req), await multaOu404(req), req.body)));
 router.post('/multas/:id/status', exigirEditar, responderTR(async (req) => MU.mudarStatus(supabase, req.tenantId, await quem(req), await multaOu404(req), req.body)));

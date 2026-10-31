@@ -69,7 +69,7 @@ const ESPERADO = {
   'services/acessoSpot.js': '6ecce4d16d6b123c6ce93c1223b32f01', // etapa 10c (novo)
   'services/receitaCnpj.js': 'b0e2a678127403d5608723c21ec61b78', // etapa 14d.5
   'services/cadastroPublico.js': '1359e67ff1f2438a964eee7223cf2ed1', // etapa 14d.5
-  'front:App.jsx': '6bcc9347a28d2b437a2154a59200cda8', // etapa 17a.1
+  'front:App.jsx': 'fe842bc3ed81ca6e698af3ecc3da8039', // etapa 17b
   'front:TelaLogin.jsx': 'bfa1fccbdab99820be2ac14c0e91b2fe', // etapa 14b.1
   'front:TelaSignup.jsx': '345dceefb937b38e74cfef44cfc33ef3', // etapa 11a.3
   'front:AvisoPlanoTenant.jsx': '5795f00c1bc656d0525fd29b6793a96c', // etapa 11a.3
@@ -88,7 +88,7 @@ const ESPERADO = {
   'services/planosManutencao.js': 'e32588acaefd47c5cb93bbe0d70ab799', // etapa 12b.4
   'front:TelaPlanosManutencao.jsx': '5fd8c2a3a8c6fdfb599fb98fd9ccabff', // etapa 12b.3 + texto do botão alterado pelo Marcony (18/10)
   'front:ModalTransferirOS.jsx': '8e7c1bf0d6fc9a4f88bdd9087d22cb37', // etapa 12b.3 (novo)
-  'routes/pessoas.js': 'fa47c93d26c6f74a2c87161ee748bd3e', // etapa 12h.1
+  'routes/pessoas.js': 'd9227445ccfc9c085b8aa4c7f5550243', // etapa 17b
   'services/documentos.js': 'e4e3f50ffd6ade91d5c2a51a0b115900', // etapa 12e.3
   'front:TelaPessoas.jsx': '7380e3b38768781c2fef02c624c9e201', // etapa 14c.1
   // etapa 12c.1
@@ -133,7 +133,7 @@ const ESPERADO = {
   'front:gerarDossie.js': 'bfc589f3755b697c4e7f05525589f525', // etapa 14c.2
   'services/multas.js': '0865e57a9d15f1fb27b1c7b07365737a', // etapa 12g (novo)
   'migrations/036_multas.sql': 'b89f5e90964aa538404cccc85e2d4484', // etapa 12g (novo)
-  'front:TelaMultas.jsx': 'f3e8b1c1925f2347f6a6987149485b60', // etapa 14c.1
+  'front:TelaMultas.jsx': '442e9a627432ff03600c30f375e8e176', // etapa 17b
   'front:gerarTermoDesconto.js': '5847f394eae27eef19c87b6371be1f2e', // etapa 14c.2
   'services/disciplinar.js': '07c6440a61f339446412ec7dc91c8e8b', // etapa 12h.2
   'migrations/037_disciplinar.sql': '57507e1c5a097a8dfec9a7084ad81445', // etapa 12h (novo)
@@ -221,10 +221,10 @@ const ESPERADO = {
   'migrations/054_tarefa_atribuida.sql': '586bd43f09653a76e8d6a299e55905e3', // etapa 15c.1 (novo)
   'scripts/previaEmailsBid.js': '45b4dbeb2d2d8d84a24e7a31f6826049', // etapa 15c.3 (novo)
   'migrations/055_execucoes_at.sql': 'fc0a780d147f0b3d7e4c92ec71c4554f', // etapa 16a (novo)
-  'services/execucoes.js': 'f68de3a794420d9d4308cd01bae84edd', // etapa 17a
+  'services/execucoes.js': 'e3389ca04b37ecfb95463f22c6c61566', // etapa 17b
   'routes/programacao.js': 'e0067d5c447eb0ee218ad0ecccf8d0b3', // etapa 16e
   'front:gerarAT.js': 'd05187877f31e92708abba3c7f338ce3', // etapa 16e.1
-  'front:TelaProgramacao.jsx': '906dd121764d8cee618e2c5b15b56135', // etapa 16d
+  'front:TelaProgramacao.jsx': '5b9cd98ef48a4d47c01440c591a0f654', // etapa 17b
   'front:FichaAT.jsx': 'e26921c6517c9b85f0d721b7afe43566', // etapa 16e.1
   'front:MesaProgramacao.jsx': '860f46af7a17ee4148bbbcf072b23525', // etapa 16e
   'migrations/056_at_rascunho_link_motorista.sql': '4e9a9185cbb0a1f9770e1fe666fc77f3', // etapa 16c (novo)
@@ -240,9 +240,13 @@ const ESPERADO = {
   'front:TelaMinhasViagens.jsx': '522b50f6a1971283d451e6d23bc41f2f', // etapa 17a (novo)
 };
 
-// Antes de copiar a etapa 17a.1 — base: 17a
+// Antes de copiar a etapa 17b — base: 17a.1
 const ANTES = {
-  'front:App.jsx': 'a6271ec30a4c53bb13bf59cb3a9117fd',
+  'services/execucoes.js': 'f68de3a794420d9d4308cd01bae84edd',
+  'routes/pessoas.js': 'fa47c93d26c6f74a2c87161ee748bd3e',
+  'front:App.jsx': '6bcc9347a28d2b437a2154a59200cda8',
+  'front:TelaMultas.jsx': 'f3e8b1c1925f2347f6a6987149485b60',
+  'front:TelaProgramacao.jsx': '906dd121764d8cee618e2c5b15b56135',
 };
 
 const RAIZ = process.cwd();
@@ -280,7 +284,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 17a.1)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 17b)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
