@@ -103,6 +103,11 @@ export default function TelaATPublica() {
             } else { // retoma a inspeção começada neste celular (rascunho ou recusada) — não começa outra por cima
               const l = await Fila.listar(`at-${token}-${x.id}`); let r = l.find((y) => y.situacao !== "pendente") || null;
               if (r && r.situacao === "erro") { r = { ...r, situacao: "rascunho" }; await Fila.salvar(r); }
+              if (r && !r.prep?.inicial) { // 16e.2.1: inspeção começada antes do preenchimento — completa os campos vazios com o que a AT sabe
+                try { const pr = (await chamar("GET", `/etapa/${x.id}/preparar`)).prep; const ini = pr?.inicial || {};
+                  const corpo = { ...r.corpo }; for (const k of Object.keys(ini)) if (!String(corpo[k] ?? "").trim()) corpo[k] = ini[k];
+                  r = { ...r, prep: { ...r.prep, inicial: ini }, corpo }; await Fila.salvar(r); } catch { /* sem internet: segue com o que tem */ }
+              }
               setExec({ ...x, rascunho: r });
             }
           };
