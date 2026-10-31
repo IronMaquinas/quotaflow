@@ -5,6 +5,7 @@
 
 const INSP = { equipamento: "🔍 Inspeção de liberação", carregamento: "🔍 Inspeção de carregamento", transito: "🔍 Inspeção em trânsito", descarregamento: "🔍 Inspeção de descarregamento" };
 const TIPO_NOME = { equipamento: "Liberação do equipamento", carregamento: "Carregamento", transito: "Trânsito", descarregamento: "Descarregamento" };
+const MARCOS_PADRAO = { saida_base: "🏭 Saída da base", chegada_cliente: "📍 Chegada no cliente (coleta)", saida_viagem: "🛣 Saída para a viagem (carregado)", chegada_destino: "🏁 Chegada ao destino" };
 const nid = () => Math.random().toString(16).slice(2, 10);
 
 /** mesma sugestão do servidor (fluxoViagem.fluxoPadrao) */
@@ -12,7 +13,7 @@ export function fluxoPadrao({ conjunto = [], modelos = [], equipamentos = [], ma
   const doTipo = (t) => modelos.filter((m) => m.tipo === t);
   const cavalo = conjunto.find((c) => c.papel === "cavalo") || conjunto[0]; const ultimo = conjunto[conjunto.length - 1] || cavalo;
   const insp = (tipo, m, e) => ({ id: nid(), tipo: "inspecao", modelo_tipo: tipo, modelo_id: m.id, modelo_nome: m.nome, equipamento_id: e?.id ?? null, equipamento_tag: e?.tag || e?.nome || null, rotulo: `${INSP[tipo]}${tipo === "equipamento" && e ? ` — ${e.tag || e.nome}` : ""}`, status: "pendente" });
-  const marco = (k) => ({ id: nid(), tipo: "marco", marco: k, rotulo: marcos[k] || k, status: "pendente" });
+  const marco = (k) => ({ id: nid(), tipo: "marco", marco: k, rotulo: marcos[k] || MARCOS_PADRAO[k] || k, status: "pendente" });
   const out = [];
   for (const c of conjunto) { const eq = equipamentos.find((e) => String(e.id) === String(c.id)); const m = doTipo("equipamento").find((x) => String(x.id) === String(eq?.inspecao_modelo_id)) || doTipo("equipamento")[0]; if (m) out.push(insp("equipamento", m, c)); }
   out.push(marco("saida_base"), marco("chegada_cliente"));
@@ -27,7 +28,7 @@ export function fluxoPadrao({ conjunto = [], modelos = [], equipamentos = [], ma
 export const fluxoServe = (fluxo, conjunto) => Array.isArray(fluxo) && fluxo.length > 0 && fluxo.every((x) => x.tipo !== "inspecao" || x.status !== "pendente" || conjunto.some((c) => String(c.id) === String(x.equipamento_id)));
 
 export default function EditorFluxo({ C, s, fluxo, setFluxo, base, conjunto }) {
-  const modelos = base.modelos_inspecao || []; const marcos = base.marcos || {};
+  const modelos = base.modelos_inspecao || []; const marcos = base.marcos || MARCOS_PADRAO;
   const feitas = fluxo.filter((x) => x.status && x.status !== "pendente");
   const pend = fluxo.filter((x) => !x.status || x.status === "pendente");
   const setPend = (l) => setFluxo([...feitas, ...l]);

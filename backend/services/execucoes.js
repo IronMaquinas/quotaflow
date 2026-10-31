@@ -220,10 +220,12 @@ async function registrar(supabase, tenantId, quem, ex, txt) {
 
 // ─── 16d: rastreabilidade — nº do item no BID + nº de série; referência "BID-… · item 3 · PV-…" ───
 const pvNumerado = (pv) => ({ ...pv, grupos: B().numerarItens(pv?.grupos || []).grupos });
-const itemAT = (i, series = {}) => ({ id: i.id, n: i.n ?? null, serie: texto(series[String(i.id)] ?? i.serie, 80) || '', valores: i.valores || {}, quantidade: i.quantidade ?? 1 }); // SEM valores
-function aplicarSeries(itens = [], series) {
-  if (!series || typeof series !== 'object') return itens;
-  return itens.map((i) => (series[String(i.id)] !== undefined ? { ...i, serie: texto(series[String(i.id)], 80) || '' } : i));
+const volumesOk = (v) => { const n = Number(String(v ?? '').replace(',', '.')); return Number.isInteger(n) && n > 0 && n <= 999 ? n : null; };
+const itemAT = (i, series = {}, volumes = {}) => ({ id: i.id, n: i.n ?? null, serie: texto(series[String(i.id)] ?? i.serie, 80) || '', volumes: volumesOk(volumes[String(i.id)] ?? i.volumes), // 16e.1: volumes (peças) no transporte
+  valores: i.valores || {}, quantidade: i.quantidade ?? 1 }); // SEM valores
+function aplicarSeries(itens = [], series, volumes) { // nº de série e volumes editáveis na programação
+  const s = series && typeof series === 'object' ? series : {}; const v = volumes && typeof volumes === 'object' ? volumes : {};
+  return itens.map((i) => ({ ...i, ...(s[String(i.id)] !== undefined ? { serie: texto(s[String(i.id)], 80) || '' } : {}), ...(v[String(i.id)] !== undefined ? { volumes: volumesOk(v[String(i.id)]) } : {}) }));
 }
 const refAT = (e, bidNumero) => [bidNumero, (e.itens || []).length ? `item ${(e.itens || []).map((i) => i.n ?? '?').join(', ')}` : null, e.pv_numero].filter(Boolean).join(' · ');
 const comRef = (e, pvs) => {
@@ -255,7 +257,7 @@ async function criar(supabase, tenantId, quem, pvId, body = {}) {
   }
   if (!ativos.length) return { status: 409, erro: 'O trecho não tem itens ativos' };
   if (!pedidos.length) return { status: 409, erro: 'Todos os itens deste trecho já estão programados' };
-  const itens = ativos.filter((i) => pedidos.includes(String(i.id))).map((i) => itemAT(i, body.series || {})); // SEM valores · 16d: nº do item + série
+  const itens = ativos.filter((i) => pedidos.includes(String(i.id))).map((i) => itemAT(i, body.series || {}, body.volumes || {})); // SEM valores · 16d: nº do item + série
   if (!itens.length) return { status: 409, erro: 'O trecho não tem itens ativos' };
   // 16b: rota padrão = a do trecho (BID/pedido) → senão a última AT do trecho; a programação pode editar
   const ultima = doPedido.filter((e) => String(e.grupo_id) === String(g.id)).sort((a, b) => String(b.criado_em || '').localeCompare(String(a.criado_em || '')))[0];
@@ -306,7 +308,7 @@ async function dadosRascunho(supabase, tenantId, body, atual) {
 }
 async function editar(supabase, tenantId, quem, id, body = {}) {
   const ex = await exDoTenant(supabase, tenantId, id); if (!ex) return { status: 404, erro: 'AT não encontrada' };
-  const itensSerie = aplicarSeries(ex.itens || [], body.series); // 16d: nº de série editável na programação
+  const itensSerie = aplicarSeries(ex.itens || [], body.series, body.volumes); // 16d: nº de série editável na programação
   if (ex.status === 'rascunho') {
     if (body.rascunho === true) {
       const d = await dadosRascunho(supabase, tenantId, body, ex);
@@ -499,7 +501,7 @@ async function paginaMotorista(supabase, ex) {
   const exR = comRef(ex, pvM);
   return { numero: ex.numero, ref: exR.ref, status: ex.status, status_nome: STATUS[ex.status], cliente_nome: ex.cliente_nome, pv_numero: ex.pv_numero, grupo_titulo: ex.grupo_titulo,
     origem: ex.origem, destino: ex.destino, inicio_previsto: ex.inicio_previsto, fim_previsto: ex.fim_previsto, motorista_nome: ex.motorista_nome, conjunto: ex.conjunto || [],
-    itens: (exR.itens || []).map((i) => ({ id: i.id, n: i.n ?? null, serie: i.serie || '', valores: i.valores || {}, quantidade: i.quantidade ?? 1 })), colunas: (ex.colunas || []).filter((c) => c.chave !== 'data_prevista' && c.tipo !== 'moeda'),
+    itens: (exR.itens || []).map((i) => ({ id: i.id, n: i.n ?? null, serie: i.serie || '', volumes: i.volumes ?? null, valores: i.valores || {}, quantidade: i.quantidade ?? 1 })), colunas: (ex.colunas || []).filter((c) => c.chave !== 'data_prevista' && c.tipo !== 'moeda'),
     observacoes: ex.observacoes, cancelada_motivo: ex.cancelada_motivo, empresa: { nome: emp.nome_fantasia || emp.nome || emp.razao_social || '', telefone: emp.telefone || '' }, kit,
     fluxo: FV().comLiberacao(ex.fluxo || []).map((x) => ({ id: x.id, tipo: x.tipo, rotulo: x.rotulo, status: x.status, liberada: x.liberada, feita_em: x.feita_em || null, por: x.por || null,
       inspecao_numero: x.inspecao_numero || null, resultado: x.resultado || null, liberacao: x.liberacao ? { em: x.liberacao.em } : null, equipamento_tag: x.equipamento_tag || null, modelo_nome: x.modelo_nome || null })),

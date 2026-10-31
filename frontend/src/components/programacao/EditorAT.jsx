@@ -29,7 +29,9 @@ export default function EditorAT({ C, s, pv, trecho, itemId, atual: atual0, base
     just_mot: "", just_docs: "", aceitar: false }));
   const [passo, setPasso] = useState("dados"); // 16e: dados → 🧭 fluxo da viagem (ao clicar Programar)
   const [fluxo, setFluxo] = useState(() => (atual0?.fluxo?.length ? atual0.fluxo : null));
-  const [series, setSeries] = useState({}); // 16d: nº de série por item (vem do BID/pedido; editável aqui)
+  const [series, setSeries] = useState({});
+  const [volumes, setVolumes] = useState({}); // 16e.1: volumes (peças) de cada item
+  const [baseF, setBaseF] = useState(null); // 16e.1: modelos de inspeção buscados na hora de montar o fluxo // 16d: nº de série por item (vem do BID/pedido; editável aqui)
   const [docs, setDocs] = useState([]);
   const [conf, setConf] = useState([]);
   const [erro, setErro] = useState(null);
@@ -70,12 +72,22 @@ export default function EditorAT({ C, s, pv, trecho, itemId, atual: atual0, base
 
   const corpo = (extra = {}) => ({ grupo_id: trecho?.id ?? atual?.grupo_id, itens: atual ? undefined : [itemId], origem: f.coleta, destino: f.entrega, inicio: f.inicio || null, fim: f.fim || null,
     motorista_id: f.motorista_id || null, cavalo_id: f.cavalo_id || null, implementos: [f.impl1, f.impl2].filter(Boolean), observacoes: f.observacoes,
-    liberacao_justificativa: motVermelho ? f.just_mot : undefined, liberacao_docs_justificativa: vencidos.length && !docsJaLiberados ? f.just_docs : undefined, ignorar_conflito: !!f.aceitar, series, ...(fluxo ? { fluxo: fluxo.filter((x) => !x.status || x.status === "pendente") } : {}), ...extra });
+    liberacao_justificativa: motVermelho ? f.just_mot : undefined, liberacao_docs_justificativa: vencidos.length && !docsJaLiberados ? f.just_docs : undefined, ignorar_conflito: !!f.aceitar, series, volumes, ...(fluxo ? { fluxo: fluxo.filter((x) => !x.status || x.status === "pendente") } : {}), ...extra });
   const conjuntoSel = [[f.cavalo_id, "cavalo"], [f.impl1, "implemento"], [f.impl2, "implemento"]].filter(([id]) => id !== "" && id != null)
     .map(([id, papel]) => { const e = base.equipamentos.find((x) => String(x.id) === String(id)); return e ? { id: e.id, tag: e.tag, nome: e.nome, papel } : null; }).filter(Boolean);
-  const irParaFluxo = () => {
-    if (!fluxoServe(fluxo, conjuntoSel)) { const feitas = (fluxo || []).filter((x) => x.status && x.status !== "pendente"); setFluxo([...feitas, ...fluxoPadrao({ conjunto: conjuntoSel, modelos: base.modelos_inspecao || [], equipamentos: base.equipamentos, marcos: base.marcos || {} })]); }
-    setPasso("fluxo"); setErro(null);
+  const irParaFluxo = async () => {
+    setErro(null);
+    let b = base; // busca de novo: modelos importados depois de abrir a tela também entram
+    try { b = await apiService.get("/programacao/base"); } catch { /* usa o que já tem */ }
+    if (!Array.isArray(b.modelos_inspecao) || !b.marcos) { setErro("O servidor ainda está com a versão anterior (sem o fluxo da viagem) — reinicie o backend e recarregue a página."); return; }
+    setBaseF(b);
+    const pend = (fluxo || []).filter((x) => !x.status || x.status === "pendente");
+    const semInspecao = !pend.some((x) => x.tipo === "inspecao") && b.modelos_inspecao.length > 0; // fluxo montado antes de ter modelos → refaz
+    if (!fluxoServe(fluxo, conjuntoSel) || semInspecao || pend.some((x) => x.tipo === "marco" && !x.rotulo?.trim().includes(" "))) {
+      const feitas = (fluxo || []).filter((x) => x.status && x.status !== "pendente");
+      setFluxo([...feitas, ...fluxoPadrao({ conjunto: conjuntoSel, modelos: b.modelos_inspecao, equipamentos: b.equipamentos, marcos: b.marcos })]);
+    }
+    setPasso("fluxo");
   };
   const gravar = async (rascunho) => {
     const b = corpo(rascunho ? { rascunho: true } : {});
@@ -127,9 +139,11 @@ export default function EditorAT({ C, s, pv, trecho, itemId, atual: atual0, base
             <span style={{ flex: "1 1 320px" }}>📦 <b>{i.n ? `Item ${i.n}` : "Item"}</b> · {resumo(i) || `Item ${i.id}`}</span>
             <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 11.5, color: C.textSub }}>Nº DE SÉRIE
               <input value={series[String(i.id)] ?? i.serie ?? ""} onChange={(e) => setSeries((x) => ({ ...x, [String(i.id)]: e.target.value }))} placeholder="confira na NF" style={{ ...s.input, padding: "5px 8px", fontSize: 12.5, width: 160 }} /></label>
+            <label title="Em quantas peças (volumes) o item vai — ex.: equipamento desmontado em 3 volumes. Confira na NF." style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 11.5, color: C.textSub }}>VOLUMES
+              <input value={volumes[String(i.id)] ?? i.volumes ?? ""} inputMode="numeric" onChange={(e) => setVolumes((x) => ({ ...x, [String(i.id)]: e.target.value.replace(/\D/g, "").slice(0, 3) }))} placeholder="1" style={{ ...s.input, padding: "5px 8px", fontSize: 12.5, width: 60 }} /></label>
           </div>)}</div>
 
-        {passo === "fluxo" ? <><div style={{ ...s.label, marginBottom: 6 }}>🧭 FLUXO DA VIAGEM</div><EditorFluxo C={C} s={s} fluxo={fluxo || []} setFluxo={setFluxo} base={base} conjunto={conjuntoSel} /></> : <>
+        {passo === "fluxo" ? <><div style={{ ...s.label, marginBottom: 6 }}>🧭 FLUXO DA VIAGEM</div><EditorFluxo C={C} s={s} fluxo={fluxo || []} setFluxo={setFluxo} base={baseF || base} conjunto={conjuntoSel} /></> : <>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{lbl("📍 COLETA", <input value={f.coleta} onChange={(e) => set("coleta", e.target.value)} style={s.input} />, "1 1 340px")}{lbl("DATA E HORA DA COLETA *", <input type="datetime-local" value={f.inicio} onChange={(e) => set("inicio", e.target.value)} style={s.input} />, "0 1 200px")}</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>{lbl("🏁 ENTREGA", <input value={f.entrega} onChange={(e) => set("entrega", e.target.value)} style={s.input} />, "1 1 340px")}{lbl("DATA E HORA DA ENTREGA", <input type="datetime-local" value={f.fim} onChange={(e) => set("fim", e.target.value)} style={s.input} />, "0 1 200px")}</div>
 
