@@ -36,7 +36,7 @@ const COM_CLIENTE = ['aguardando_cliente', 'aguardando_aceite']; // a bola está
 const MOTIVOS_PERDA = { preco: 'Preço', prazo: 'Prazo', veiculo: 'Tipo de veículo / disponibilidade', concorrente: 'Fechou com concorrente', desistiu: 'Cliente desistiu do serviço', recusado_cliente: 'Recusado pelo cliente (no link)', outro: 'Outro motivo' };
 /** 15b: dá para editar o documento? elaboração e revisão solicitada; com o cliente, só depois de "Criar revisão" */
 const podeEditar = (b) => ['elaboracao', 'revisao_solicitada'].includes(b.fase) || (b.em_revisao === true && COM_CLIENTE.includes(b.fase));
-const TIPOS_ATIV = { ligacao: '📞 Ligação', email: '✉ E-mail', reuniao: '🤝 Reunião', nota: '📝 Nota', tarefa: '⏰ Tarefa', evento: '•' };
+const TIPOS_ATIV = { ligacao: '📞 Ligação', email: '✉ E-mail', whatsapp: '💬 WhatsApp', reuniao: '🤝 Reunião', nota: '📝 Nota', tarefa: '⏰ Tarefa', evento: '•' };
 const TIPOS_COLUNA = ['texto', 'numero', 'sim_nao', 'data'];
 const TIPOS_CONDICAO = ['texto', 'moeda', 'numero'];
 const OPCOES_FISCAIS = ['Simples Nacional', 'Lucro Presumido', 'Lucro Real', 'MEI'];
@@ -259,6 +259,7 @@ async function criar(supabase, tenantId, quem, body = {}) {
     assinante, responsavel_id: resp.id, responsavel_nome: resp.nome, fase: 'elaboracao', fase_desde: agora, versao_atual: 0, alterado_desde_versao: true,
     criado_por_nome: quem.usuarioNome || null, criado_em: agora, atualizado_em: agora,
   };
+  if (/^\d+$/.test(String(body.evento_id ?? ''))) reg.evento_id = Number(body.evento_id); // 18b: BID nascido da campanha do evento
   const { data, error } = await supabase.from('bids').insert([reg]).select();
   if (error) throw new Error(error.message);
   await atividade(supabase, tenantId, quem, { bid_id: data[0].id, cliente_id: cli.id, tipo: 'evento', texto: `BID ${reg.numero} criado (modelo ${m.nome})` });
@@ -457,9 +458,10 @@ async function criarAtividade(supabase, tenantId, quem, body = {}) {
   }
   const reg = { tenant_id: tenantId, bid_id: bidId, cliente_id: clienteId, tipo, texto: t, prevista_para: prevista, concluida_em: null,
     usuario_id: quem.usuarioId ?? null, usuario_nome: quem.usuarioNome || null, criado_em: new Date().toISOString() };
+  if (/^\d+$/.test(String(body.evento_id ?? ''))) reg.evento_id = Number(body.evento_id); // 18b: contato da campanha do evento
   if (atrib) Object.assign(reg, { atribuido_id: atrib.id, atribuido_nome: atrib.nome || null });
   const { data, error } = await supabase.from('bid_atividades').insert([reg]).select();
-  if (error) { if (/atribuido/.test(error.message)) return { status: 409, erro: 'Rode a migration 054 antes (tarefa atribuída)' }; throw new Error(error.message); }
+  if (error) { if (/atribuido/.test(error.message)) return { status: 409, erro: 'Rode a migration 054 antes (tarefa atribuída)' }; if (/evento_id|tipo_check/.test(error.message)) return { status: 409, erro: 'Rode a migration 060 antes (prospecção por evento)' }; throw new Error(error.message); }
   if (atrib && String(atrib.id) !== String(quem.usuarioId)) await avisarTarefa(supabase, tenantId, quem, atrib, reg, bidId);
   if (bidId) await supabase.from('bids').update({ atualizado_em: new Date().toISOString() }).eq('id', bidId).eq('tenant_id', tenantId);
   return { atividade: data[0] };

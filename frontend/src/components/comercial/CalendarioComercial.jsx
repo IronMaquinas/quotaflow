@@ -63,7 +63,7 @@ function FormEvento({ C, s, ev, base, onFechar, onSalvo, onErro }) {
   );
 }
 
-export default function CalendarioComercial({ C, s, onAbrirBid, onAbrirPV, onErro, onOk }) {
+export default function CalendarioComercial({ C, s, onAbrirBid, onAbrirPV, onProspectar, onErro, onOk }) {
   const [visao, setVisao] = useState("mes"); const [ref, setRef] = useState(hoje());
   const [dados, setDados] = useState(null); const [base, setBase] = useState(null); const [form, setForm] = useState(null);
   const [mostrar, setMostrar] = useState(() => Object.fromEntries(Object.keys(CAMADAS).map((k) => [k, true])));
@@ -73,7 +73,7 @@ export default function CalendarioComercial({ C, s, onAbrirBid, onAbrirPV, onErr
   const itens = useMemo(() => (dados?.itens || []).filter((i) => mostrar[i.tipo]), [dados, mostrar]);
   const doDia = (d) => itens.filter((i) => (i.ate ? i.data <= d && d <= i.ate : i.data === d));
   const mover = (n) => { if (visao === "ano") setRef(`${Number(ref.slice(0, 4)) + n}-01-01`); else if (visao === "semana") setRef(somaDias(ref, 7 * n)); else { const [y, m] = ref.split("-").map(Number); setRef(new Date(Date.UTC(y, m - 1 + n, 1)).toISOString().slice(0, 10)); } };
-  const clicar = (i) => { if (i.ref?.bid_id) onAbrirBid(i.ref.bid_id); else if (i.ref?.pv_id) onAbrirPV(i.ref.pv_id); else if (i.ref?.evento_id) { const ev = base?.eventos?.find((e) => String(e.id) === String(i.ref.evento_id)); if (ev) setForm({ ev }); } };
+  const clicar = (i) => { if (i.tipo === "prospeccao" && onProspectar) onProspectar(i.ref.evento_id); else if (i.ref?.bid_id) onAbrirBid(i.ref.bid_id); else if (i.ref?.pv_id) onAbrirPV(i.ref.pv_id); else if (i.ref?.evento_id) { const ev = base?.eventos?.find((e) => String(e.id) === String(i.ref.evento_id)); if (ev) setForm({ ev }); } };
   const chip = (i, k) => { const [, cor] = CAMADAS[i.tipo] || ["", C.muted]; return <div key={k} className="qf-clicavel" onClick={() => clicar(i)} title={`${i.titulo}${i.sub ? ` — ${i.sub}` : ""}`}
     style={{ cursor: "pointer", background: `${cor}26`, borderLeft: `3px solid ${cor}`, color: C.text, borderRadius: 4, padding: "1px 5px", marginBottom: 2, fontSize: 10.8, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", textDecoration: i.feita ? "line-through" : "none", opacity: i.feita ? 0.6 : 1 }}>{i.titulo}</div>; };
 
@@ -122,7 +122,8 @@ export default function CalendarioComercial({ C, s, onAbrirBid, onAbrirPV, onErr
         {base.eventos.map((e) => <div key={e.id} className="qf-clicavel" onClick={() => setForm({ ev: e })} style={{ display: "flex", gap: 10, alignItems: "center", padding: "6px 0", borderTop: `1px solid ${C.border}`, cursor: "pointer", flexWrap: "wrap", fontSize: 13 }}>
           <span style={{ flex: "1 1 240px" }}><b>{e.nome}</b> <span style={{ color: C.textSub }}>· {e.tipo_nome}{e.cidade ? ` · ${e.cidade}${e.uf ? `/${e.uf}` : ""}` : ""}{e.repete_anual ? " · 🔁 anual" : ""}</span></span>
           <span style={{ color: C.textSub, fontSize: 12 }}>{e.proxima ? `${dBR(e.proxima.inicio)}${e.faltam > 0 ? ` · faltam ${e.faltam} dias` : " · acontecendo"}` : "já passou"}</span>
-          {e.proxima && <span style={{ fontSize: 11.5, color: e.prospeccao <= hoje() ? CAMADAS.prospeccao[1] : C.muted }}>📣 {e.prospeccao <= hoje() ? "hora de prospectar" : `prospectar a partir de ${dBR(e.prospeccao)}`}</span>}
+          {e.proxima && <span style={{ fontSize: 11.5, color: e.prospeccao <= hoje() ? CAMADAS.prospeccao[1] : C.muted }}>{e.prospeccao <= hoje() ? "📣 hora de prospectar" : `📣 a partir de ${dBR(e.prospeccao)}`}</span>}
+          {onProspectar && <button type="button" onClick={(x) => { x.stopPropagation(); onProspectar(e.id); }} style={{ ...s.btn(e.prospeccao <= hoje(), CAMADAS.prospeccao[1]), padding: "4px 10px", fontSize: 12 }}>📣 Prospectar clientes</button>}
           {e.clientes_nomes?.length > 0 && <span style={{ fontSize: 11.5, color: C.muted }}>👥 {e.clientes_nomes.length}</span>}
         </div>)}
         {!base.eventos.length && <div style={{ fontSize: 12.5, color: C.muted }}>Nenhum evento ainda. Cadastre as feiras e datas do seu mercado — o sistema avisa quando for hora de procurar os clientes.</div>}

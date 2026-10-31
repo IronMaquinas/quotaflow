@@ -36,6 +36,7 @@ const responder = (fn) => async (req, res) => {
   try { const r = await fn(req); if (r && r.erro) return res.status(r.status || 400).json({ erro: r.erro }); res.json(r); }
   catch (err) {
     const m = String(err?.message || '');
+    if (/evento_id|bid_atividades_tipo_check/.test(m) && /does not exist|schema cache|column|check constraint/.test(m)) return res.status(409).json({ erro: 'Rode a migration 060 antes (prospecção por evento)' });
     if (/comercial_eventos/.test(m) && /does not exist|schema cache|relation|column/.test(m)) return res.status(409).json({ erro: 'Rode a migration 059 antes (calendário comercial)' });
     if (/pedidos_venda|pv_aditivos|pv_id|aditivo_numero|tipo/.test(m) && /does not exist|schema cache|relation|column/.test(m)) return res.status(409).json({ erro: 'Rode a migration 053 antes (pedidos de venda)' });
     if (/token|versao_enviada|em_revisao|visto_|aceite_|codigo_|enviada_|bid_visualizacoes|bids_fase_check/.test(m) && /does not exist|schema cache|relation|column|check constraint/.test(m)) return res.status(409).json({ erro: 'Rode a migration 052 antes (BID com o cliente)' });
@@ -93,6 +94,11 @@ router.get('/bids/:id/documento', responder((req) => B.documento(supabase, req.t
 // ─── 18a: 📅 calendário comercial + 🎪 eventos de mercado ───
 router.get('/calendario', responder((req) => CC.calendario(supabase, req.tenantId, req.query)));
 router.get('/eventos', responder(async (req) => ({ eventos: await CC.listarEventos(supabase, req.tenantId), tipos: CC.TIPOS, alertas: await CC.alertas(supabase, req.tenantId), responsaveis: await B.responsaveis(supabase, req.tenantId) })));
+router.get('/eventos/:id/prospeccao', responder(async (req) => { // 18b
+  const r = await CC.prospeccao(supabase, req.tenantId, req.params.id); if (r.erro) return r;
+  const emp = (await supabase.from('tenants').select('*').eq('id', req.tenantId)).data?.[0] || {};
+  return { ...r, empresa: emp.nome_fantasia || emp.nome || emp.razao_social || '', voce: (await quem(req)).usuarioNome || '' };
+}));
 router.post('/eventos', responder(async (req) => CC.criarEvento(supabase, req.tenantId, await quem(req), req.body || {})));
 router.put('/eventos/:id', responder(async (req) => CC.editarEvento(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
 router.delete('/eventos/:id', responder((req) => CC.removerEvento(supabase, req.tenantId, req.params.id)));

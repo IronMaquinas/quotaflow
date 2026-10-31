@@ -165,4 +165,57 @@ async function alertas(supabase, tenantId) {
     .map((e) => ({ id: e.id, nome: e.nome, tipo: e.tipo, cidade: e.cidade, uf: e.uf, inicio: e.proxima.inicio, fim: e.proxima.fim, faltam: e.faltam, clientes_nomes: e.clientes_nomes }));
 }
 
-module.exports = { TIPOS, validar, listarEventos, criarEvento, editarEvento, removerEvento, ocorrencias, proximaOcorrencia, gerarLembretes, calendario, alertas };
+// ─── 18b: 📣 PROSPECÇÃO POR EVENTO ──────────────────────────────────────────
+//   clientes: os LIGADOS ao evento + os 💡 SUGERIDOS (contrataram no mesmo período do ano anterior: pedido com transporte previsto
+//             na janela do evento ±30 dias, ou BID com data prevista nessa janela) — com contatos (do cadastro + dos BIDs),
+//             último BID/pedido, último contato e a SITUAÇÃO na campanha: a contatar → 💬 contatado → 📝 BID criado.
+//   livres: equipamentos sem AT no período do evento (o quanto dá para vender).
+const soDig = (v) => String(v || '').replace(/\D/g, '');
+async function prospeccao(supabase, tenantId, eventoId) {
+  const e = await eventoDoTenant(supabase, tenantId, eventoId); if (!e || e.ativo === false) return { status: 404, erro: 'Evento não encontrado' };
+  const o = proximaOcorrencia(e) || { inicio: e.inicio, fim: e.fim || e.inicio, ano: Number(String(e.inicio).slice(0, 4)) };
+  const [cls, bids, pvs, ativs, exs, eqs] = await Promise.all([
+    q(supabase.from('clientes').select('*').eq('tenant_id', tenantId)).catch(() => []),
+    q(supabase.from('bids').select('*').eq('tenant_id', tenantId)).catch(() => []),
+    q(supabase.from('pedidos_venda').select('*').eq('tenant_id', tenantId)).catch(() => []),
+    q(supabase.from('bid_atividades').select('*').eq('tenant_id', tenantId)).catch(() => []),
+    q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId)).catch(() => []),
+    q(supabase.from('equipamentos').select('*').eq('tenant_id', tenantId)).catch(() => []),
+  ]);
+  // janela do ano anterior (±30 dias)
+  const menos1 = (d) => `${Number(d.slice(0, 4)) - 1}${d.slice(4)}`;
+  const j0 = somaDias(menos1(o.inicio), -30); const j1 = somaDias(menos1(o.fim || o.inicio), 30);
+  const datasDe = (grupos) => (grupos || []).flatMap((g) => (g.itens || []).map((i) => i.valores?.data_prevista)).filter(Boolean);
+  const sugeridos = new Map();
+  for (const p of pvs.filter((x) => x.status !== 'cancelado')) if (p.cliente_id != null && datasDe(p.grupos).some((d) => d >= j0 && d <= j1)) sugeridos.set(String(p.cliente_id), `contratou ${p.numero} no mesmo período de ${Number(o.inicio.slice(0, 4)) - 1}`);
+  for (const b of bids.filter((x) => x.fase !== 'perdido')) if (b.cliente_id != null && !sugeridos.has(String(b.cliente_id)) && datasDe(b.grupos).some((d) => d >= j0 && d <= j1)) sugeridos.set(String(b.cliente_id), `cotou ${b.numero} no mesmo período de ${Number(o.inicio.slice(0, 4)) - 1}`);
+  const ligados = (e.clientes || []).map(String);
+  const ids = [...new Set([...ligados, ...sugeridos.keys()])];
+  const desde = somaDias(o.inicio, -Math.max(Number(e.antecedencia_dias ?? 60), 0) - 30);
+  const lista = ids.map((id) => cls.find((c) => String(c.id) === id)).filter(Boolean).map((c) => {
+    const bc = bids.filter((b) => String(b.cliente_id) === String(c.id)).sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em)));
+    const pc = pvs.filter((p) => String(p.cliente_id) === String(c.id)).sort((a, b) => String(b.criado_em || '').localeCompare(String(a.criado_em || '')));
+    const ac = ativs.filter((a) => String(a.cliente_id) === String(c.id) && a.tipo !== 'tarefa' && a.tipo !== 'evento').sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em)));
+    // contatos: o principal do cadastro + os dos BIDs (sem repetir telefone/e-mail)
+    const contatos = []; const vistos = new Set();
+    for (const x of [{ nome: c.contato_nome, email: c.contato_email, telefone: c.contato_telefone, de: 'cadastro' }, ...bc.map((b) => ({ nome: b.contato_nome, email: b.contato_email, telefone: b.contato_telefone, de: b.numero }))]) {
+      const k = `${soDig(x.telefone)}|${String(x.email || '').toLowerCase()}`; if ((!x.telefone && !x.email) || vistos.has(k)) continue; vistos.add(k); contatos.push(x);
+    }
+    const daCampanha = ac.filter((a) => String(a.evento_id) === String(e.id) || (a.criado_em >= desde && /evento|feira|safra|obra|licita/i.test(String(a.texto)) && String(a.texto).includes(e.nome)));
+    const bidCamp = bc.find((b) => String(b.evento_id) === String(e.id));
+    return { id: c.id, nome: c.nome, cidade: c.cidade || null, uf: c.uf || null, ligado: ligados.includes(String(c.id)), sugestao: sugeridos.get(String(c.id)) || null, contatos,
+      ultimo_bid: bc[0] ? { id: bc[0].id, numero: bc[0].numero, fase: bc[0].fase, em: bc[0].criado_em } : null, ultimo_pedido: pc[0] ? { id: pc[0].id, numero: pc[0].numero, em: pc[0].criado_em } : null,
+      ultimo_contato: ac[0] ? { tipo: ac[0].tipo, em: ac[0].criado_em, texto: ac[0].texto, por: ac[0].usuario_nome } : null,
+      situacao: bidCamp ? 'bid' : daCampanha.length ? 'contatado' : 'a_contatar', contatado_em: daCampanha[0]?.criado_em || null, bid_campanha: bidCamp ? { id: bidCamp.id, numero: bidCamp.numero, fase: bidCamp.fase } : null };
+  }).sort((a, b) => ({ a_contatar: 0, contatado: 1, bid: 2 }[a.situacao] - { a_contatar: 0, contatado: 1, bid: 2 }[b.situacao]) || (b.ligado - a.ligado) || String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
+  // ociosidade: equipamentos sem AT ativa no período do evento
+  const ini = new Date(`${o.inicio}T00:00:00-03:00`).toISOString(); const fim = new Date(`${o.fim || o.inicio}T23:59:59-03:00`).toISOString();
+  const ocupados = new Set(exs.filter((x) => ['programada', 'em_execucao'].includes(x.status) && x.inicio_previsto && x.inicio_previsto <= fim && (x.fim_previsto || x.inicio_previsto) >= ini).flatMap((x) => (x.conjunto || []).map((c) => String(c.id))));
+  const ativosEq = eqs.filter((x) => x.ativo !== false);
+  const livres = ativosEq.filter((x) => !ocupados.has(String(x.id)) && !x.bloqueado);
+  return { evento: { id: e.id, nome: e.nome, tipo: e.tipo, tipo_nome: TIPOS[e.tipo] || e.tipo, cidade: e.cidade, uf: e.uf, inicio: o.inicio, fim: o.fim, faltam: diasEntre(hojeBR(), o.inicio), observacoes: e.observacoes || null },
+    clientes: lista, resumo: { total: lista.length, contatados: lista.filter((x) => x.situacao !== 'a_contatar').length, bids: lista.filter((x) => x.situacao === 'bid').length },
+    livres: { quantos: livres.length, de: ativosEq.length, tags: livres.slice(0, 12).map((x) => x.tag || x.nome) } };
+}
+
+module.exports = { prospeccao, TIPOS, validar, listarEventos, criarEvento, editarEvento, removerEvento, ocorrencias, proximaOcorrencia, gerarLembretes, calendario, alertas };

@@ -381,6 +381,7 @@ Ver seção 5 para o fluxo completo.
 - *(14d.6: sem migration — usa `equipamento_locacoes.fim_previsto`, que já existe desde a 042)*
 - **054 (15c.1)** — `bid_atividades (+) atribuido_id, atribuido_nome` (tarefa do Comercial atribuída a um usuário).
 - **059 (18a)** — tabela **`comercial_eventos`** (eventos de mercado: nome, tipo feira/safra/obra/licitação/outro, cidade/UF, início/fim, repete todo ano, antecedência de prospecção em dias, clientes ligados, responsável, lembretes já criados por ano). Idempotente.
+- **060 (18b)** — `bid_atividades.evento_id` e `bids.evento_id` (ligam contato e BID ao evento de mercado) + tipo de atividade **whatsapp**. Idempotente.
 - **058 (16e.3)** — `tenants (+) base_endereco` (📍 pátio / base da frota — onde o conjunto é liberado; pode ser diferente do endereço fiscal). Idempotente.
 - **057 (16e)** — `execucoes (+) fluxo` (etapas da viagem em ordem: marcações e inspeções, com status, hora, GPS, inspeção feita e liberação do gestor) e `inspecoes (+) execucao_id, etapa_id` (a inspeção feita no fluxo aponta para a AT). Idempotente.
 - **056 (16c)** — `execucoes.status (+) 'rascunho'` (cavalo pode ficar vazio no rascunho), `execucoes (+) token, link_visto_em` (📲 link do motorista) e `liberacao_docs` (CNH/CRLV vencido na data da viagem liberado pelo gestor). Idempotente.
@@ -892,6 +893,7 @@ npm run dev
   - **Lembrete**: no dia da prospecção entra uma **⏰ tarefa** para o responsável ("🎪 Faltam N dias para a Feira X (cidade/UF) — hora de procurar os clientes: A, B…"), uma por evento por ano; e o **📊 Funil** mostra a faixa "📣 Faltam N dias para …". Gerado quando o Comercial abre (funil, tarefas, calendário) — sem rotina agendada.
   - Rotas `/api/comercial/calendario`, `/api/comercial/eventos` (CRUD). Próximo (18b): **sugestão inteligente** — cruzar evento chegando × clientes que contrataram no mesmo período do ano anterior × conjuntos sem AT no período.
   - **18a.1 (31/10):** a data de **fim** não aceita dia antes do início — no evento de mercado e na entrega da programação (o calendário já bloqueia os dias anteriores; mudar o início para depois do fim limpa o fim).
+  - **18b (31/10):** **📣 Prospecção por evento** — painel aberto pela faixa do Funil, pelo item de prospecção do calendário ou pelo botão "📣 Prospectar clientes" do evento: clientes ligados ao evento + **sugeridos** (contrataram ±30 dias da mesma data no ano anterior, por PV ou BID); para cada um, contatos do cadastro e dos BIDs com **💬 WhatsApp** (wa.me com mensagem pronta e editável — {contato} {voce} {empresa} {evento} {data} {local}), 📞 ligar e ✉ e-mail; último BID/pedido/contato; situação **a contatar → contatado → BID criado**; **✓ Registrar contato** (WhatsApp/ligação/e-mail/reunião) e **＋ BID** já ligados ao evento; equipamentos livres no período. Rota `GET /api/comercial/eventos/:id/prospeccao`. Migration 060.
   - **SaaS genérico:** `tipo_execucao` no modelo de BID/PV (transporte → AT; locação → contrato de locação existente; serviço → AS; venda → entrega). Nesta etapa só transporte gera execução.
   - Rotas `/api/programacao` (`GET /base`, `/execucoes`, `/agenda`, `/pedidos`, `/pvs/:id`; `POST /pvs/:id/at`; `GET|PUT /execucoes/:id`; `POST /execucoes/:id/status`; anexos `POST|GET|DELETE /execucoes/:id/anexos[/:anexo]`; `GET /execucoes/:id/documento`) e `GET /api/comercial/pvs/:id/execucoes` (leitura). Travas respondem 409. Migration 055.
   - Rotas: `/api/comercial/bids/:id/revisao` (GET), `/enviar`, `/reenviar`, `/revisao/iniciar`, `/revisao/descartar`, `/aceite-externo`; `POST /bids/:id/fase` só aceita `perdido` e `reabrir`. Público: `/api/bid-link/:token` (GET, `/responder`, `/codigo`, `/aceitar`) — 40 chamadas por link + IP por hora. Migration 052. **Próxima: 15c** — Pedido de Venda (PV) a partir do BID aceito. **Futuro:** perfil **cliente** com login (mesmo padrão do locatário) — ver `claude/desenho-bid-15b.md`.
@@ -1350,7 +1352,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 29/10/2026 (etapa 18a.1)
+**Última atualização deste documento:** 31/10/2026 (etapa 18b)
 
 --------------------------------------------------------------------------------
 

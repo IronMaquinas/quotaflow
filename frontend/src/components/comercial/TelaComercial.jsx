@@ -13,6 +13,7 @@ import FichaBid, { FASES, COR_FASE, NOME_FASE, MOTIVOS, MOTIVOS_MANUAIS, brl } f
 import FichaPedido, { STATUS_PV, STATUS_ITEM } from "./FichaPedido"; // 15c
 import ModelosBid from "./ModelosBid";
 import CalendarioComercial from "./CalendarioComercial"; // 18a
+import PainelProspeccao from "./PainelProspeccao"; // 18b
 import { AbaClientes, CampoDocumento, NotaReceita, CamposCliente, vazioCliente, mascaraDoc } from "../contratos/Clientes";
 
 const semAcento = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -72,7 +73,7 @@ function CartaoBid({ C, s, b, onAbrir, arrastavel }) {
   );
 }
 
-function NovoBid({ C, s, clienteInicial, onCriado, onCancelar, onErro }) {
+function NovoBid({ C, s, clienteInicial, eventoId, onCriado, onCancelar, onErro }) {
   const [modelos, setModelos] = useState(null); const [resp, setResp] = useState([]);
   const [doc, setDoc] = useState(""); const [res, setRes] = useState(null); const [cli, setCli] = useState(vazioCliente()); const [semDoc, setSemDoc] = useState(false);
   const [escolhido, setEscolhido] = useState(clienteInicial || null);
@@ -89,7 +90,7 @@ function NovoBid({ C, s, clienteInicial, onCriado, onCancelar, onErro }) {
     try {
       let c = escolhido;
       if (!c) { const { id, ...corpo } = cli; const r = await apiService.post("/comercial/clientes", { ...corpo, documento: semDoc ? null : cli.documento || doc }); c = r.cliente; } // eslint-disable-line no-unused-vars
-      const r = await apiService.post("/comercial/bids", { ...f, cliente_id: c.id, responsavel_id: f.responsavel_id || undefined, previsao_fechamento: f.previsao_fechamento || null });
+      const r = await apiService.post("/comercial/bids", { ...f, ...(eventoId ? { evento_id: eventoId } : {}), cliente_id: c.id, responsavel_id: f.responsavel_id || undefined, previsao_fechamento: f.previsao_fechamento || null });
       onCriado(r.bid);
     } catch (e) { onErro(e.message); } finally { setOcupado(false); }
   };
@@ -181,6 +182,7 @@ export default function TelaComercial({ C, s }) {
   // 15c.2: sem banner no Funil (empurrava o kanban) — pedido novo (até 3 dias) = selo "N novo(s)" na aba e 🆕 na lista
   const ehNovo = (p) => Date.now() - new Date(p.criado_em) < 3 * 86400000;
   const novos = (pedidos || []).filter(ehNovo).length;
+  const [prospectar, setProspectar] = useState(null); // 18b: id do evento — painel de prospecção
   const [alertasEv, setAlertasEv] = useState([]); // 18a: 🎪 eventos na janela de prospecção (faixa do Funil)
   const [aberto, setAberto] = useState(null); const [novo, setNovo] = useState(null); const [c360, setC360] = useState(null); const [editarCli, setEditarCli] = useState(null);
   const [arrasto, setArrasto] = useState(null); // { id, fase } para perdido/aceito
@@ -233,10 +235,10 @@ export default function TelaComercial({ C, s }) {
         <span style={{ flex: 1 }}>{msg.t}</span><button type="button" onClick={() => setMsg(null)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer" }}>×</button></div>}
 
       {aba === "funil" && alertasEv.length > 0 && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>{alertasEv.map((a) => (
-        <div key={a.id} className="qf-clicavel" onClick={() => setAba("calendario")} style={{ ...s.card, padding: "8px 12px", cursor: "pointer", borderColor: "#f43f5e", background: "#f43f5e12", fontSize: 12.5 }}>
+        <div key={a.id} className="qf-clicavel" onClick={() => setProspectar(a.id)} style={{ ...s.card, padding: "8px 12px", cursor: "pointer", borderColor: "#f43f5e", background: "#f43f5e12", fontSize: 12.5 }}>
           📣 <b>{a.faltam > 0 ? `Faltam ${a.faltam} dias` : "Acontecendo"}</b> para <b>{a.nome}</b>{a.cidade ? ` (${a.cidade}${a.uf ? `/${a.uf}` : ""})` : ""} — hora de procurar os clientes{a.clientes_nomes?.length ? `: ${a.clientes_nomes.slice(0, 4).join(", ")}${a.clientes_nomes.length > 4 ? "…" : ""}` : ""}
         </div>))}</div>}
-      {aba === "calendario" && <CalendarioComercial C={C} s={s} onErro={erro} onOk={ok} onAbrirBid={(id) => setAberto(id)} onAbrirPV={(id) => setPvAberto(id)} />}
+      {aba === "calendario" && <CalendarioComercial C={C} s={s} onErro={erro} onOk={ok} onProspectar={setProspectar} onAbrirBid={(id) => setAberto(id)} onAbrirPV={(id) => setPvAberto(id)} />}
       {aba === "funil" && (!funil ? <div style={{ color: C.muted }}>Carregando…</div> : <>
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap", fontSize: 12, color: C.textSub }}>
           Período <input type="date" value={periodo.de} onChange={(e) => e.target.value && setPeriodo({ ...periodo, de: e.target.value })} style={{ ...s.input, width: 150, padding: "6px 8px" }} />
@@ -330,7 +332,9 @@ export default function TelaComercial({ C, s }) {
       </div>)}
       {pvAberto && <FichaPedido C={C} s={s} id={pvAberto} onFechar={() => { setPvAberto(null); carregar(); }} onMudou={carregar} onErro={erro} onOk={ok} onAbrirBid={(id) => { setPvAberto(null); setAberto(id); }} />}
 
-      {novo && casca(s, <NovoBid C={C} s={s} clienteInicial={novo.cliente || null} onErro={erro} onCancelar={() => setNovo(null)}
+      {prospectar && <PainelProspeccao C={C} s={s} eventoId={prospectar} onErro={erro} onOk={ok} onFechar={() => setProspectar(null)}
+        onAbrirBid={(id) => { setProspectar(null); setAberto(id); }} onNovoBid={(c, eventoId) => { setProspectar(null); setNovo({ cliente: c, evento_id: eventoId }); }} />}
+      {novo && casca(s, <NovoBid C={C} s={s} clienteInicial={novo.cliente || null} eventoId={novo.evento_id || null} onErro={erro} onCancelar={() => setNovo(null)}
         onCriado={async (b) => { setNovo(null); setC360(null); ok(`${b.numero} criado — preencha os itens e as condições.`); await carregar(); setAberto(b.id); }} />, () => setNovo(null), 720, 330)}
       {aberto && <FichaBid C={C} s={s} id={aberto} onFechar={() => { setAberto(null); carregar(); }} onMudou={carregar} onErro={erro} onOk={ok} onAbrirCliente={(cid) => { if (cid) { setAberto(null); setC360(cid); } }} onAbrirPV={(id) => { setAberto(null); setPvAberto(id); }} />}
       {c360 && <Cliente360 C={C} s={s} id={c360} onFechar={() => setC360(null)} onErro={erro} onAbrirBid={(id) => { setC360(null); setAberto(id); }}
