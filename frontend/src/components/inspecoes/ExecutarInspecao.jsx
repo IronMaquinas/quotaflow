@@ -35,7 +35,7 @@ export default function ExecutarInspecao({ tenant, equipamento, modeloId, rascun
       try { prep = carregarPrep ? await carregarPrep() : await apiService.get(`/inspecoes/preparar/${equipamento.id}`, modeloId ? { modelo_id: modeloId } : {}); try { localStorage.setItem(chave, JSON.stringify(prep)); } catch { /* ok */ } }
       catch (e) { try { prep = JSON.parse(localStorage.getItem(chave) || "null"); } catch { /* ok */ } if (!prep) return setErro(e.body ? e.message : "Sem internet e este modelo ainda não foi aberto neste aparelho. Conecte-se uma vez para baixar o modelo."); }
       const novo = { uid: Fila.novoUid(), tenant, situacao: "rascunho", prep, passo: 0, rotulo: [prep.equipamento.tag, prep.equipamento.nome].filter(Boolean).join(" — "),
-        corpo: { ...(extraCorpo || {}), equipamento_id: prep.equipamento.id, modelo_id: prep.modelo.id, iniciada_em: new Date().toISOString(), km: "", horimetro: "", local: "", cliente: "", respostas: {}, obs: "" } };
+        corpo: { ...(extraCorpo || {}), equipamento_id: prep.equipamento.id, modelo_id: prep.modelo.id, iniciada_em: new Date().toISOString(), km: "", horimetro: "", local: "", cliente: "", respostas: {}, obs: "", ...(prep.inicial || {}) } }; // 16e.2: local/cliente vindos da AT (fluxo da viagem)
       novo.corpo.cliente_uid = novo.uid;
       setIt(novo); Fila.salvar(novo);
       try { navigator.geolocation?.getCurrentPosition((p) => setIt((x) => { const y = { ...x, corpo: { ...x.corpo, gps: { lat: p.coords.latitude, lng: p.coords.longitude, precisao: p.coords.accuracy } } }; Fila.salvar(y); return y; }), () => {}, { timeout: 8000, maximumAge: 300000 }); } catch { /* ok */ }
@@ -155,7 +155,7 @@ export default function ExecutarInspecao({ tenant, equipamento, modeloId, rascun
     {prep.equipamento.bloqueado && <div style={{ ...s.card, borderColor: C.danger, padding: 12, marginBottom: 12, color: C.danger, fontSize: 13 }}>⛔ <b>Equipamento bloqueado</b>{prep.equipamento.bloqueio_motivo ? ` — ${prep.equipamento.bloqueio_motivo}` : ""}. Só use depois da liberação do gestor.</div>}
     {prep.modelo.descricao && <div style={{ fontSize: 13, color: C.textSub, marginBottom: 14, whiteSpace: "pre-wrap" }}>{prep.modelo.descricao}</div>}
     {(prep.modelo.campos || []).map((c) => (
-      <label key={c} style={{ display: "block", marginBottom: 14 }}><span style={s.label}>{(CAMPO[c]?.[0] || c).toUpperCase()}</span>
+      <label key={c} style={{ display: "block", marginBottom: 14 }}><span style={s.label}>{(CAMPO[c]?.[0] || c).toUpperCase()}{prep.inicial?.[c] && it.corpo[c] === prep.inicial[c] ? <span title="Preenchido pela AT — confira e corrija se precisar" style={{ marginLeft: 6, textTransform: "none", letterSpacing: 0, color: C.accent, fontWeight: 400 }}>↺ da AT</span> : null}</span>
         <input type={CAMPO[c]?.[1] || "text"} inputMode={CAMPO[c]?.[1] === "number" ? "decimal" : undefined} value={it.corpo[c] ?? ""} onChange={(e) => setCorpo(c, e.target.value)} style={{ ...s.input, fontSize: 17, padding: 12 }} />
         {c === "km" && prep.ultima.km && <span style={{ fontSize: 11, color: C.muted }}>Última leitura: {prep.ultima.km.toLocaleString("pt-BR")} km</span>}
         {c === "horimetro" && prep.ultima.horimetro && <span style={{ fontSize: 11, color: C.muted }}>Última leitura: {prep.ultima.horimetro.toLocaleString("pt-BR")} h</span>}

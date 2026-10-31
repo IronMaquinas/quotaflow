@@ -508,4 +508,4 @@ async function paginaMotorista(supabase, ex) {
     motorista_id: ex.motorista_id ?? null };
 }
 
-module.exports = { sincronizarPV, registrar, porToken, paginaMotorista, linkMotorista, docsDoConjunto, linkDocCadastro, descartar, carregarDocs, avaliarDocs, checar, trechosComATs, TIPOS, STATUS, ANEXOS, base, criar, editar, mudarStatus, anexar, linkAnexo, removerAnexo, listar, detalhe, doPV, agenda, documento, conflitos, _definirSelos };
+module.exports = { refDe: (e, pvs) => comRef(e, pvs).ref, sincronizarPV, registrar, porToken, paginaMotorista, linkMotorista, docsDoConjunto, linkDocCadastro, descartar, carregarDocs, avaliarDocs, checar, trechosComATs, TIPOS, STATUS, ANEXOS, base, criar, editar, mudarStatus, anexar, linkAnexo, removerAnexo, listar, detalhe, doPV, agenda, documento, conflitos, _definirSelos };

@@ -149,7 +149,7 @@ const ESPERADO = {
   'routes/inspecoes.js': '2957a18a385cfc150fad54cdf817b4ce', // etapa 14b.2
   'migrations/040_inspecoes.sql': '0ac35a83c9621397570d1be855727cc9', // etapa 14a (novo)
   'front:TelaInspecoes.jsx': '38ce3918bb74a58317fbfcb14ad63b52', // etapa 14b.3.1
-  'front:ExecutarInspecao.jsx': 'a9febeec704e5acb0740ee4c086de395', // etapa 14b.1
+  'front:ExecutarInspecao.jsx': 'e0a8b769640dffe4f0391460b43e6f70', // etapa 16e.2
   'front:EditorModeloInspecao.jsx': '00fc0578bd4bcba1221b7ced983727dd', // etapa 14c.1
   'front:Esquemas.jsx': 'f68e56580c3ed088c902109fcb016b9c', // etapa 14a (novo)
   'front:BibliotecaInspecoes.jsx': '104cdfc0dca69548cd4d7ab86152a5cb', // etapa 14a (novo)
@@ -221,7 +221,7 @@ const ESPERADO = {
   'migrations/054_tarefa_atribuida.sql': '586bd43f09653a76e8d6a299e55905e3', // etapa 15c.1 (novo)
   'scripts/previaEmailsBid.js': '45b4dbeb2d2d8d84a24e7a31f6826049', // etapa 15c.3 (novo)
   'migrations/055_execucoes_at.sql': 'fc0a780d147f0b3d7e4c92ec71c4554f', // etapa 16a (novo)
-  'services/execucoes.js': '951d2a091f6d3b7bb2239e65a4c5bac9', // etapa 16e.1
+  'services/execucoes.js': '61c5b1a1888830ff798baa9f08548c3d', // etapa 16e.2
   'routes/programacao.js': 'e0067d5c447eb0ee218ad0ecccf8d0b3', // etapa 16e
   'front:gerarAT.js': 'd05187877f31e92708abba3c7f338ce3', // etapa 16e.1
   'front:TelaProgramacao.jsx': '906dd121764d8cee618e2c5b15b56135', // etapa 16d
@@ -232,19 +232,16 @@ const ESPERADO = {
   'front:EditorAT.jsx': '0631841e7d2d934f37b007408a85a6e1', // etapa 16e.1
   'front:VerArquivo.jsx': 'f429078383f02f0c072637250e7a1fea', // etapa 16c (novo)
   'front:TelaATPublica.jsx': '1f9731363917e161371822ec945d6b1c', // etapa 16e.1
-  'services/fluxoViagem.js': '8b25536e3f997f0fa38bdb0e5bc598f7', // etapa 16e (novo)
+  'services/fluxoViagem.js': '8d4988c36503175bfc3e7a4581a82d52', // etapa 16e.2
   'migrations/057_fluxo_viagem.sql': '42cdc0800d3c622f541639bada16b252', // etapa 16e (novo)
   'front:EditorFluxo.jsx': 'eadf4403ff94cd4dad1cf4c98d581dbe', // etapa 16e.1
 };
 
-// Antes de copiar a etapa 16e.1 — base: 16e
+// Antes de copiar a etapa 16e.2 — base: 16e.1
 const ANTES = {
-  'services/execucoes.js': '5307fb28cbda485ad3e488330752c33b',
-  'front:EditorAT.jsx': 'a390799d5563034f26af1c19c93c87ec',
-  'front:EditorFluxo.jsx': 'd70d6e67b8ff0382ea96e1f6d2399cda',
-  'front:FichaAT.jsx': '04063710de7640cbbe5050c1e8814b7c',
-  'front:gerarAT.js': '86f541f92bd31bf833c139195516d559',
-  'front:TelaATPublica.jsx': '811a6ee1a19fb6408b6b961e46f0bdd4',
+  'services/fluxoViagem.js': '8b25536e3f997f0fa38bdb0e5bc598f7',
+  'services/execucoes.js': '951d2a091f6d3b7bb2239e65a4c5bac9',
+  'front:ExecutarInspecao.jsx': 'a9febeec704e5acb0740ee4c086de395',
 };
 
 const RAIZ = process.cwd();
@@ -282,7 +279,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 16e.1)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 16e.2)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

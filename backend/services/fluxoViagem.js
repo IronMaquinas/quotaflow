@@ -149,7 +149,21 @@ async function prepararInspecao(supabase, ex, etapaId) {
   const I = require('./inspecoes');
   const prep = await I.preparar(supabase, ex.tenant_id, et.equipamento_id, et.modelo_id);
   if (prep.erro) return prep;
-  return { prep, etapa: et };
+  return { prep: { ...prep, inicial: await inicialInspecao(supabase, ex, et) }, etapa: et };
+}
+/** 16e.2: o que a AT já sabe para a 1ª tela da inspeção — o motorista confere e corrige
+ *  local: liberação → endereço da empresa (senão a coleta) · carregamento → coleta · trânsito → "Em trânsito: A ➜ B" · descarregamento → entrega
+ *  cliente: "Cliente · AT-… · BID-… item N" (rastreabilidade dentro da própria inspeção) */
+async function inicialInspecao(supabase, ex, et) {
+  const E = require('./execucoes');
+  const pvs = await q(supabase.from('pedidos_venda').select('*').eq('id', ex.pv_id)).catch(() => []);
+  const emp = (await q(supabase.from('tenants').select('*').eq('id', ex.tenant_id)).catch(() => []))[0] || {};
+  const endEmp = [[emp.endereco, emp.numero].filter(Boolean).join(', '), emp.bairro, [emp.cidade, emp.uf].filter(Boolean).join(' - ')].filter(Boolean).join(', ');
+  const curto = (e) => String(e || '').split(',').slice(-2).join(',').replace(/CEP.*$/i, '').trim() || e;
+  const local = { equipamento: endEmp || ex.origem, carregamento: ex.origem, transito: `Em trânsito: ${curto(ex.origem)} ➜ ${curto(ex.destino)}`, descarregamento: ex.destino }[et.modelo_tipo] || ex.origem;
+  const ref = E.refDe ? E.refDe(ex, pvs) : null;
+  const cliente = [ex.cliente_nome, ex.numero, ref && ref.replace(` · ${ex.pv_numero}`, '')].filter(Boolean).join(' · ');
+  return { local: (local || '').slice(0, 200), cliente: cliente.slice(0, 200) };
 }
 /** 📲 envio da inspeção da etapa (idempotente: a fila offline pode reenviar) */
 async function enviarInspecao(supabase, ex, etapaId, body = {}) {
@@ -183,4 +197,4 @@ async function liberar(supabase, tenantId, quem, ex, etapaId, motivo) {
   return { execucao: nova };
 }
 
-module.exports = { MARCOS, INSP, modelosInspecao, fluxoPadrao, validarFluxo, mesclar, proxima, resumo, comLiberacao, conferir, marcar, prepararInspecao, enviarInspecao, liberar, concluida };
+module.exports = { inicialInspecao, MARCOS, INSP, modelosInspecao, fluxoPadrao, validarFluxo, mesclar, proxima, resumo, comLiberacao, conferir, marcar, prepararInspecao, enviarInspecao, liberar, concluida };

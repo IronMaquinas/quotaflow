@@ -870,6 +870,7 @@ npm run dev
     - **Programação**: o card mostra "🧭 4/8 · próxima: …" ou "⛔ … reprovada — aguarda liberação"; a ficha mostra a linha do tempo (hora, quem, INSP, 📍 local) e o botão de liberar.
     - **A pensar (Marcony):** liberação do gestor quando o motorista está sem internet em área remota.
     - **16e.1 (30/10):** o fluxo busca os modelos de inspeção **na hora** de montar (modelo importado depois de abrir a tela entra; se o servidor ainda estiver na versão anterior, a tela avisa para reiniciar o backend); fluxo antigo montado sem modelos (só marcações, ou com rótulos crus como "saida_base") é refeito com a sugestão completa. **Volumes** por item (peças em que o equipamento vai desmontado — confira na NF): campo no modal da programação (e ao editar a AT), coluna na ficha e no PDF da AT, e no link do motorista. A **quantidade** do item continua vindo do BID/pedido (muda por aditivo).
+    - **16e.2 (31/10):** a inspeção feita **dentro do fluxo** já abre com **local** e **cliente/contrato** preenchidos pela AT (marca "↺ da AT"; o motorista confere e corrige): liberação → endereço da empresa (Dados da empresa; senão a coleta) · carregamento → coleta · trânsito → "Em trânsito: A ➜ B" (+ GPS) · descarregamento → entrega; cliente = "Cliente · AT-… · BID-… · item N" (rastreabilidade dentro da própria INSP). Km/horímetro continuam para ler no painel, com a última leitura como dica. Inspeção avulsa e de terceiros não mudam.
   - **SaaS genérico:** `tipo_execucao` no modelo de BID/PV (transporte → AT; locação → contrato de locação existente; serviço → AS; venda → entrega). Nesta etapa só transporte gera execução.
   - Rotas `/api/programacao` (`GET /base`, `/execucoes`, `/agenda`, `/pedidos`, `/pvs/:id`; `POST /pvs/:id/at`; `GET|PUT /execucoes/:id`; `POST /execucoes/:id/status`; anexos `POST|GET|DELETE /execucoes/:id/anexos[/:anexo]`; `GET /execucoes/:id/documento`) e `GET /api/comercial/pvs/:id/execucoes` (leitura). Travas respondem 409. Migration 055.
   - Rotas: `/api/comercial/bids/:id/revisao` (GET), `/enviar`, `/reenviar`, `/revisao/iniciar`, `/revisao/descartar`, `/aceite-externo`; `POST /bids/:id/fase` só aceita `perdido` e `reabrir`. Público: `/api/bid-link/:token` (GET, `/responder`, `/codigo`, `/aceitar`) — 40 chamadas por link + IP por hora. Migration 052. **Próxima: 15c** — Pedido de Venda (PV) a partir do BID aceito. **Futuro:** perfil **cliente** com login (mesmo padrão do locatário) — ver `claude/desenho-bid-15b.md`.
@@ -1326,7 +1327,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 29/10/2026 (etapa 16e.1)
+**Última atualização deste documento:** 29/10/2026 (etapa 16e.2)
 
 --------------------------------------------------------------------------------
 
