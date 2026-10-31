@@ -36,8 +36,8 @@ function FormEvento({ C, s, ev, base, onFechar, onSalvo, onErro }) {
           {lbl("TIPO", <select value={f.tipo} onChange={(e) => set("tipo", e.target.value)} style={s.input}>{Object.entries(base.tipos || {}).map(([k, r]) => <option key={k} value={k}>{r}</option>)}</select>, "0 1 160px")}</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>{lbl("CIDADE", <input value={f.cidade} onChange={(e) => set("cidade", e.target.value)} style={s.input} />)}
           {lbl("UF", <input value={f.uf} maxLength={2} onChange={(e) => set("uf", e.target.value.toUpperCase())} style={s.input} />, "0 1 70px")}
-          {lbl("INÍCIO *", <input type="date" value={f.inicio} onChange={(e) => set("inicio", e.target.value)} style={s.input} />, "0 1 160px")}
-          {lbl("FIM", <input type="date" value={f.fim} onChange={(e) => set("fim", e.target.value)} style={s.input} />, "0 1 160px")}</div>
+          {lbl("INÍCIO *", <input type="date" value={f.inicio} onChange={(e) => { const v = e.target.value; setF((x) => ({ ...x, inicio: v, fim: x.fim && v && x.fim < v ? "" : x.fim })); }} style={s.input} />, "0 1 160px")}
+          {lbl("FIM", <input type="date" value={f.fim} min={f.inicio || undefined} onChange={(e) => set("fim", e.target.value)} style={s.input} />, "0 1 160px")}{/* 18a.1: o calendário não deixa fim antes do início */}</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8, alignItems: "flex-end" }}>
           {lbl("PROSPECTAR QUANTOS DIAS ANTES", <input type="number" min={0} max={365} value={f.antecedencia_dias} onChange={(e) => set("antecedencia_dias", e.target.value)} style={s.input} />, "0 1 210px")}
           {lbl("RESPONSÁVEL (RECEBE A TAREFA)", <select value={f.responsavel_id} onChange={(e) => set("responsavel_id", e.target.value)} style={s.input}><option value="">— quem criar —</option>{(base.responsaveis || []).map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}</select>)}

@@ -229,7 +229,7 @@ const ESPERADO = {
   'front:MesaProgramacao.jsx': '860f46af7a17ee4148bbbcf072b23525', // etapa 16e
   'migrations/056_at_rascunho_link_motorista.sql': '4e9a9185cbb0a1f9770e1fe666fc77f3', // etapa 16c (novo)
   'routes/atLink.js': 'f392ea4dff57d96bc2209bfefdb1707f', // etapa 16e
-  'front:EditorAT.jsx': '0631841e7d2d934f37b007408a85a6e1', // etapa 16e.1
+  'front:EditorAT.jsx': 'b3c118508530dabe34d219a4b04a782a', // etapa 18a.1
   'front:VerArquivo.jsx': 'f429078383f02f0c072637250e7a1fea', // etapa 16c (novo)
   'front:TelaATPublica.jsx': '73116fc205a6f572e987ecdccc44fc93', // etapa 17a
   'services/fluxoViagem.js': '1eeeb43378e4fd6f975840ae73b71bc5', // etapa 16e.4
@@ -240,13 +240,13 @@ const ESPERADO = {
   'front:TelaMinhasViagens.jsx': '522b50f6a1971283d451e6d23bc41f2f', // etapa 17a (novo)
   'services/calendarioComercial.js': 'c6ff95385235b41c32f60f2c80c69636', // etapa 18a (novo)
   'migrations/059_calendario_comercial.sql': '93acdb034cb90c4907b6071eb35a75e9', // etapa 18a (novo)
-  'front:CalendarioComercial.jsx': '071aa6651324bde07caffb3d006e529d', // etapa 18a (novo)
+  'front:CalendarioComercial.jsx': '798584c063c5839f2d6a873917b2b9ed', // etapa 18a.1
 };
 
-// Antes de copiar a etapa 18a — base: 17b
+// Antes de copiar a etapa 18a.1 — base: 18a
 const ANTES = {
-  'routes/comercial.js': 'ff61e548b33259099336d900a65c12bb',
-  'front:TelaComercial.jsx': '34b82e458ef12c73c85b85e5da66dfa0',
+  'front:CalendarioComercial.jsx': '071aa6651324bde07caffb3d006e529d',
+  'front:EditorAT.jsx': '0631841e7d2d934f37b007408a85a6e1',
 };
 
 const RAIZ = process.cwd();
@@ -284,7 +284,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18a)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18a.1)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
