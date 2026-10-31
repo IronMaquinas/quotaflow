@@ -116,6 +116,9 @@ export default function DadosEmpresa({ C, s, onErro, onSalvo }) {
           campo("TELEFONE", <CampoTelefone value={f.telefone || ""} onChange={(v) => setF({ ...f, telefone: v || "" })} C={C} />, "1 1 220px", "tel"),
           campo("E-MAIL", inp("email"), "1 1 220px", "mail"),
         )}
+        {linha( /* 16e.3: onde o conjunto é liberado antes de sair (pode ser diferente do endereço fiscal) */
+          campo("📍 PÁTIO / BASE DA FROTA (ONDE O CONJUNTO É LIBERADO)", inp("base_endereco", { ph: "Ex.: Rod. BR-101, km 280, Serra - ES — vazio = usar o endereço de coleta da AT" }), "1 1 100%", "base"),
+        )}
         {f.migrada_fiscal ? linha(
           campo("INSCRIÇÃO ESTADUAL", inp("inscricao_estadual", { ph: "Números ou ISENTO" }), "1 1 220px", "ie"),
           campo("OPÇÃO FISCAL", <select value={f.opcao_fiscal || ""} onChange={(e) => setF({ ...f, opcao_fiscal: e.target.value })} style={s.input}><option value="">—</option>{(f.opcoes_fiscais || []).map((o) => <option key={o} value={o}>{o}</option>)}</select>, "1 1 220px", "of"),

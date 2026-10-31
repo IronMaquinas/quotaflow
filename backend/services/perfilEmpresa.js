@@ -9,10 +9,10 @@
 
 const R = require('./receitaCnpj');
 
-const CAMPOS = ['razao_social', 'nome_fantasia', 'cnpj', 'endereco', 'numero', 'complemento', 'bairro', 'cidade', 'cep', 'telefone', 'email', 'inscricao_estadual', 'opcao_fiscal']; // 15a: IE e opção fiscal (cabeçalho do BID)
+const CAMPOS = ['razao_social', 'nome_fantasia', 'cnpj', 'endereco', 'numero', 'complemento', 'bairro', 'cidade', 'cep', 'telefone', 'email', 'inscricao_estadual', 'opcao_fiscal', 'base_endereco']; // 15a · 16e.3: pátio/base da frota: IE e opção fiscal (cabeçalho do BID)
 const OPCOES_FISCAIS = ['Simples Nacional', 'Lucro Presumido', 'Lucro Real', 'MEI'];
 const ROTULO = { razao_social: 'Razão social', nome_fantasia: 'Nome fantasia', cnpj: 'CNPJ', endereco: 'Endereço', numero: 'Número', complemento: 'Complemento',
-  bairro: 'Bairro', cidade: 'Cidade', cep: 'CEP', telefone: 'Telefone', email: 'E-mail', regiao: 'Estado (região)', inscricao_estadual: 'Inscrição estadual', opcao_fiscal: 'Opção fiscal' };
+  bairro: 'Bairro', cidade: 'Cidade', cep: 'CEP', telefone: 'Telefone', email: 'E-mail', regiao: 'Estado (região)', inscricao_estadual: 'Inscrição estadual', opcao_fiscal: 'Opção fiscal', base_endereco: 'Pátio / base da frota' };
 const so = (v) => String(v || '').replace(/\D/g, '');
 async function q(p) { const { data, error } = await p; if (error) throw new Error(error.message); return data || []; }
 const tenantDe = async (supabase, id) => (await q(supabase.from('tenants').select('*').eq('id', id)))[0] || null;
