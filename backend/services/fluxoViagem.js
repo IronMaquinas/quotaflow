@@ -161,12 +161,12 @@ async function inicialInspecao(supabase, ex, et) {
   const curto = (e) => String(e || '').split(',').slice(-2).join(',').replace(/CEP.*$/i, '').trim() || e;
   // 16e.3: opções de local (botões na 1ª tela da inspeção) — a sugestão depende do tipo
   const opcoes = [];
-  if (texto(emp.base_endereco, 200)) opcoes.push({ chave: 'base', rotulo: '📍 Base', origem: 'pátio / base da frota', valor: texto(emp.base_endereco, 200) });
+  opcoes.push({ chave: 'base', rotulo: '📍 Base', origem: 'pátio / base da frota', valor: texto(emp.base_endereco, 200) || '' }); // 16e.4: sempre (vazio = avisa para cadastrar)
   if (ex.origem) opcoes.push({ chave: 'coleta', rotulo: '📍 Coleta', origem: 'coleta da AT', valor: String(ex.origem).slice(0, 200) });
   if (ex.origem && ex.destino) opcoes.push({ chave: 'transito', rotulo: '🛣 Em trânsito', origem: 'rota da AT', valor: `Em trânsito: ${curto(ex.origem)} ➜ ${curto(ex.destino)}`.slice(0, 200) });
   if (ex.destino) opcoes.push({ chave: 'entrega', rotulo: '🏁 Entrega', origem: 'entrega da AT', valor: String(ex.destino).slice(0, 200) });
   const pref = { equipamento: ['base', 'coleta'], carregamento: ['coleta'], transito: ['transito'], descarregamento: ['entrega'] }[et.modelo_tipo] || ['coleta'];
-  const sug = pref.map((k) => opcoes.find((o) => o.chave === k)).find(Boolean) || opcoes[0] || null;
+  const sug = pref.map((k) => opcoes.find((o) => o.chave === k && o.valor)).find(Boolean) || opcoes.find((o) => o.valor) || null;
   const ref = E.refDe ? E.refDe(ex, pvs) : null;
   const cliente = [ex.cliente_nome, ex.numero, ref && ref.replace(` · ${ex.pv_numero}`, '')].filter(Boolean).join(' · ').slice(0, 200);
   return { local: sug?.valor || '', cliente, _origem: { local: sug?.origem || null, cliente: 'dados da AT' }, _opcoes_local: opcoes };

@@ -204,17 +204,24 @@ async function preparar(supabase, tenantId, equipId, modeloId) {
   const maxH = ins.reduce((mx, i) => (i.horimetro != null && Number(i.horimetro) > mx ? Number(i.horimetro) : mx), 0);
   return { equipamento: { id: e.id, tag: e.tag, nome: e.nome, bloqueado: !!e.bloqueado, bloqueio_motivo: e.bloqueio_motivo || null },
     modelo: { id: m.id, nome: m.nome, tipo: m.tipo || 'equipamento', descricao: m.descricao || null, categoria: m.categoria, frequencia: m.frequencia, campos: m.campos || [], vistas: m.vistas }, imagens: await linksImagens(supabase, m),
-    ultima: { km: maxKm || null, horimetro: maxH || null, em: ins[0]?.concluida_em || null } };
+    ultima: { km: maxKm || null, horimetro: maxH || null, em: ins[0]?.concluida_em || null },
+    inicial: { local: '', cliente: '', _origem: {}, _opcoes_local: [await opcaoBase(supabase, tenantId)] } }; // 16e.4
 }
 
 /** 14b.1: veículo do próprio terceiro (não cadastrado) — só o modelo; sem última leitura nem bloqueio */
+/** 16e.4: botões de local na 1ª tela da inspeção — fora de uma AT só "📍 Base" (o pátio cadastrado em Dados da empresa) */
+async function opcaoBase(supabase, tenantId) {
+  const emp = (await q(supabase.from('tenants').select('*').eq('id', tenantId)).catch(() => []))[0] || {};
+  return { chave: 'base', rotulo: '📍 Base', origem: 'pátio / base da frota', valor: texto(emp.base_endereco, 200) || '' };
+}
 async function prepararAvulso(supabase, tenantId, { placa, descricao }, modeloId) {
   const m = (await q(supabase.from('inspecao_modelos').select('*').eq('tenant_id', tenantId).eq('id', modeloId)))[0];
   if (!m || m.ativo === false) return { status: 404, erro: 'Modelo não encontrado' };
   const pl = texto(placa, 12); if (!pl) return { status: 400, erro: 'Informe a placa do veículo' };
   return { equipamento: { id: null, tag: pl.toUpperCase(), nome: texto(descricao, 80) || 'Veículo do terceiro', bloqueado: false },
     modelo: { id: m.id, nome: m.nome, tipo: m.tipo || 'equipamento', descricao: m.descricao || null, categoria: m.categoria, frequencia: m.frequencia, campos: m.campos || [], vistas: m.vistas },
-    imagens: await linksImagens(supabase, m), ultima: { km: null, horimetro: null, em: null } };
+    imagens: await linksImagens(supabase, m), ultima: { km: null, horimetro: null, em: null },
+    inicial: { local: '', cliente: '', _origem: {}, _opcoes_local: [await opcaoBase(supabase, tenantId)] } }; // 16e.4
 }
 async function proximoNumero(supabase, tenantId, agoraIso, salto = 0) {
   const ano = new Date(new Date(agoraIso).getTime() - 3 * 3600000).getUTCFullYear();

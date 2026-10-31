@@ -45,7 +45,7 @@ export default function ExecutarInspecao({ tenant, equipamento, modeloId, rascun
   const prep = it?.prep;
   // 16e.3: de onde veio o valor do campo (só enquanto ele é igual ao sugerido)
   const origemDe = (c) => { const ini = prep?.inicial; if (!ini) return null; const v = it?.corpo?.[c];
-    if (c === "local") { const o = (ini._opcoes_local || []).find((x) => x.valor === v); return o ? o.origem : (v && v === ini.local ? ini._origem?.local || "dados da AT" : null); }
+    if (c === "local") { const o = (ini._opcoes_local || []).find((x) => x.valor && x.valor === v); return o ? o.origem : (v && v === ini.local ? ini._origem?.local || "dados da AT" : null); }
     return v && v === ini[c] ? ini._origem?.[c] || "dados da AT" : null; };
   const vistas = prep?.modelo.vistas || [];
   const nPassos = vistas.length + 2;
@@ -162,7 +162,7 @@ export default function ExecutarInspecao({ tenant, equipamento, modeloId, rascun
       <label key={c} style={{ display: "block", marginBottom: 14 }}><span style={s.label}>{(CAMPO[c]?.[0] || c).toUpperCase()}{origemDe(c) ? <span title="Preenchido automaticamente — confira e corrija se precisar" style={{ marginLeft: 6, textTransform: "none", letterSpacing: 0, color: C.accent, fontWeight: 400 }}>↺ {origemDe(c)}</span> : null}</span>
         <input type={CAMPO[c]?.[1] || "text"} inputMode={CAMPO[c]?.[1] === "number" ? "decimal" : undefined} value={it.corpo[c] ?? ""} onChange={(e) => setCorpo(c, e.target.value)} style={{ ...s.input, fontSize: 17, padding: 12 }} />
         {prep.inicial && ["local", "cliente"].includes(c) && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>
-          {c === "local" && (prep.inicial._opcoes_local || []).map((o) => <button key={o.chave} type="button" onClick={() => setCorpo("local", o.valor)} title={o.valor}
+          {c === "local" && (prep.inicial._opcoes_local || []).map((o) => <button key={o.chave} type="button" onClick={() => (o.valor ? (setErro(null), setCorpo("local", o.valor)) : setErro("O endereço da base ainda não foi cadastrado — peça ao gestor para preencher em ⚙ Dados da empresa → 📍 Pátio / base da frota. Por enquanto, digite o local."))} title={o.valor || "Base não cadastrada"}
             style={{ background: it.corpo.local === o.valor ? C.accent : "transparent", color: it.corpo.local === o.valor ? "#fff" : C.textSub, border: `1px solid ${it.corpo.local === o.valor ? C.accent : C.border}`, borderRadius: 16, padding: "6px 12px", fontSize: 13, cursor: "pointer" }}>{o.rotulo}</button>)}
           {c === "cliente" && prep.inicial.cliente && it.corpo.cliente !== prep.inicial.cliente && <button type="button" onClick={() => setCorpo("cliente", prep.inicial.cliente)} style={{ background: "transparent", color: C.textSub, border: `1px solid ${C.border}`, borderRadius: 16, padding: "6px 12px", fontSize: 13, cursor: "pointer" }}>↺ Dados da AT</button>}
           {String(it.corpo[c] || "") !== "" && <button type="button" onClick={() => setCorpo(c, "")} style={{ background: "transparent", color: C.danger, border: `1px solid ${C.border}`, borderRadius: 16, padding: "6px 12px", fontSize: 13, cursor: "pointer" }}>✕ Limpar</button>}
