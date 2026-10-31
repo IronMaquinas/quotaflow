@@ -10,6 +10,7 @@
 //   GET  /bids/:id/documento?versao    dados para o PDF (rascunho ou versão congelada)
 //   15b: GET /bids/:id/revisao (documento final + checklist) · POST /bids/:id/enviar { mensagem, nota } · POST /bids/:id/reenviar
 //        POST /bids/:id/revisao/iniciar · POST /bids/:id/revisao/descartar · POST /bids/:id/aceite-externo { justificativa, data }
+//   18a: GET /calendario?de&ate · GET/POST /eventos · PUT/DELETE /eventos/:id (eventos de mercado + lembrete de prospecção)
 //   15c: GET /pvs · GET /pvs/:id · GET /pvs/:id/documento · POST /pvs/:id/itens/:item/status { status } · POST /pvs/:id/cancelar { motivo }
 //        POST /pvs/:id/aditivo (cria o BID do aditivo) · POST /bids/:id/gerar-pv (BID aceito antes da 15c)
 //        POST /bids/:id/fase só aceita { fase: 'perdido', motivo, obs } e { fase: 'reabrir' } — o resto muda pelo cliente
@@ -30,10 +31,12 @@ const PV = require('../services/pedidosVenda'); // 15c
 const perfisDe = (req) => (Array.isArray(req.perfis) && req.perfis.length ? req.perfis : [req.userPerfil].filter(Boolean));
 const PERFIS = ['admin', 'gestor', 'comercial'];
 router.use((req, res, next) => (perfisDe(req).some((p) => PERFIS.includes(p)) ? next() : res.status(403).json({ erro: 'Sem acesso ao Comercial' })));
+const CC = require('../services/calendarioComercial'); // 18a: 📅 calendário comercial + 🎪 eventos
 const responder = (fn) => async (req, res) => {
   try { const r = await fn(req); if (r && r.erro) return res.status(r.status || 400).json({ erro: r.erro }); res.json(r); }
   catch (err) {
     const m = String(err?.message || '');
+    if (/comercial_eventos/.test(m) && /does not exist|schema cache|relation|column/.test(m)) return res.status(409).json({ erro: 'Rode a migration 059 antes (calendário comercial)' });
     if (/pedidos_venda|pv_aditivos|pv_id|aditivo_numero|tipo/.test(m) && /does not exist|schema cache|relation|column/.test(m)) return res.status(409).json({ erro: 'Rode a migration 053 antes (pedidos de venda)' });
     if (/token|versao_enviada|em_revisao|visto_|aceite_|codigo_|enviada_|bid_visualizacoes|bids_fase_check/.test(m) && /does not exist|schema cache|relation|column|check constraint/.test(m)) return res.status(409).json({ erro: 'Rode a migration 052 antes (BID com o cliente)' });
     if (/bid_|bids|inscricao_estadual|opcao_fiscal/.test(m) && /does not exist|schema cache|relation|column/.test(m)) return res.status(409).json({ erro: 'Rode a migration 051 antes (Comercial / BID)' });
@@ -43,9 +46,9 @@ const responder = (fn) => async (req, res) => {
 };
 const quem = async (req) => { const { data } = await supabase.from('usuarios').select('*').eq('tenant_id', req.tenantId).eq('id', req.userId); return { usuarioId: req.userId, usuarioNome: data?.[0]?.nome || req.userEmail || null }; };
 
-router.get('/funil', responder((req) => B.funil(supabase, req.tenantId, req.query)));
+router.get('/funil', responder(async (req) => { await CC.gerarLembretes(supabase, req.tenantId); return B.funil(supabase, req.tenantId, req.query); }));
 router.get('/responsaveis', responder(async (req) => ({ responsaveis: await B.responsaveis(supabase, req.tenantId), eu: req.userId })));
-router.get('/tarefas', responder(async (req) => ({ tarefas: await B.tarefas(supabase, req.tenantId, req.query.minhas === '1' ? req.userId : null) })));
+router.get('/tarefas', responder(async (req) => ({ _l: await CC.gerarLembretes(supabase, req.tenantId), tarefas: await B.tarefas(supabase, req.tenantId, req.query.minhas === '1' ? req.userId : null) })));
 router.post('/atividades', responder(async (req) => B.criarAtividade(supabase, req.tenantId, await quem(req), req.body || {})));
 router.post('/atividades/:id/concluir', responder((req) => B.concluirAtividade(supabase, req.tenantId, req.params.id, req.body?.feita !== false)));
 
@@ -86,5 +89,12 @@ router.get('/pvs/:id/execucoes', responder((req) => require('../services/execuco
 router.post('/bids/:id/descartar-aditivo', responder(async (req) => PV.descartarAditivo(supabase, req.tenantId, await quem(req), req.params.id))); // 15c.2
 router.post('/bids/:id/gerar-pv', responder(async (req) => PV.gerarManual(supabase, req.tenantId, await quem(req), req.params.id)));
 router.get('/bids/:id/documento', responder((req) => B.documento(supabase, req.tenantId, req.params.id, req.query.versao ?? null)));
+
+// ─── 18a: 📅 calendário comercial + 🎪 eventos de mercado ───
+router.get('/calendario', responder((req) => CC.calendario(supabase, req.tenantId, req.query)));
+router.get('/eventos', responder(async (req) => ({ eventos: await CC.listarEventos(supabase, req.tenantId), tipos: CC.TIPOS, alertas: await CC.alertas(supabase, req.tenantId), responsaveis: await B.responsaveis(supabase, req.tenantId) })));
+router.post('/eventos', responder(async (req) => CC.criarEvento(supabase, req.tenantId, await quem(req), req.body || {})));
+router.put('/eventos/:id', responder(async (req) => CC.editarEvento(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
+router.delete('/eventos/:id', responder((req) => CC.removerEvento(supabase, req.tenantId, req.params.id)));
 
 module.exports = router;

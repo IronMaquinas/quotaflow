@@ -12,6 +12,7 @@ import apiService from "../../services/apiService";
 import FichaBid, { FASES, COR_FASE, NOME_FASE, MOTIVOS, MOTIVOS_MANUAIS, brl } from "./FichaBid";
 import FichaPedido, { STATUS_PV, STATUS_ITEM } from "./FichaPedido"; // 15c
 import ModelosBid from "./ModelosBid";
+import CalendarioComercial from "./CalendarioComercial"; // 18a
 import { AbaClientes, CampoDocumento, NotaReceita, CamposCliente, vazioCliente, mascaraDoc } from "../contratos/Clientes";
 
 const semAcento = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -169,6 +170,7 @@ function Cliente360({ C, s, id, onFechar, onAbrirBid, onNovoBid, onEditar, onErr
 
 export default function TelaComercial({ C, s }) {
   const [aba, setAba] = useState("funil");
+  useEffect(() => { if (aba === "funil") apiService.get("/comercial/eventos").then((r) => setAlertasEv(r.alertas || [])).catch(() => {}); }, [aba]); // 18a: atualiza a faixa ao voltar ao Funil
   const [bids, setBids] = useState(null);
   const [funil, setFunil] = useState(null);
   const [tarefas, setTarefas] = useState([]);
@@ -179,12 +181,14 @@ export default function TelaComercial({ C, s }) {
   // 15c.2: sem banner no Funil (empurrava o kanban) — pedido novo (até 3 dias) = selo "N novo(s)" na aba e 🆕 na lista
   const ehNovo = (p) => Date.now() - new Date(p.criado_em) < 3 * 86400000;
   const novos = (pedidos || []).filter(ehNovo).length;
+  const [alertasEv, setAlertasEv] = useState([]); // 18a: 🎪 eventos na janela de prospecção (faixa do Funil)
   const [aberto, setAberto] = useState(null); const [novo, setNovo] = useState(null); const [c360, setC360] = useState(null); const [editarCli, setEditarCli] = useState(null);
   const [arrasto, setArrasto] = useState(null); // { id, fase } para perdido/aceito
   const [msg, setMsg] = useState(null); const [ocupado, setOcupado] = useState(false);
   const erro = (t) => setMsg(t ? { tipo: "erro", t } : null); const ok = (t) => setMsg({ tipo: "ok", t });
 
   const carregar = async () => {
+    apiService.get("/comercial/eventos").then((r) => setAlertasEv(r.alertas || [])).catch(() => setAlertasEv([]));
     try {
       const [b, fu, ts, pv] = await Promise.all([apiService.get("/comercial/bids"), apiService.get("/comercial/funil", periodo), apiService.get("/comercial/tarefas", soMinhas ? { minhas: "1" } : {}), apiService.get("/comercial/pvs").catch(() => ({ pedidos: [] }))]);
       setBids(b.bids || []); setFunil(fu); setTarefas(ts.tarefas || []); setPedidos(pv.pedidos || []);
@@ -223,11 +227,16 @@ export default function TelaComercial({ C, s }) {
         <button type="button" onClick={() => setNovo({})} style={{ ...s.btn(true, C.accent), cursor: "pointer" }}>＋ Novo BID</button>
       </div>
       <div style={{ display: "flex", gap: 4, borderBottom: `1px solid ${C.border}`, marginBottom: 14, flexWrap: "wrap" }}>
-        {abaBt("funil", "📊 Funil")}{abaBt("bids", "📝 BIDs")}{abaBt("clientes", "👥 Clientes")}{abaBt("pedidos", <>🧾 Pedidos{(pedidos || []).filter((p) => ["aberto", "em_execucao"].includes(p.status)).length ? ` (${pedidos.filter((p) => ["aberto", "em_execucao"].includes(p.status)).length})` : ""}{novos ? <span style={{ ...s.tag(C.success), marginLeft: 6, fontSize: 9.5 }}>{novos} novo{novos > 1 ? "s" : ""}</span> : null}</>)}{abaBt("modelos", "🧩 Modelos de BID")}
+        {abaBt("funil", "📊 Funil")}{abaBt("calendario", "📅 Calendário")}{abaBt("bids", "📝 BIDs")}{abaBt("clientes", "👥 Clientes")}{abaBt("pedidos", <>🧾 Pedidos{(pedidos || []).filter((p) => ["aberto", "em_execucao"].includes(p.status)).length ? ` (${pedidos.filter((p) => ["aberto", "em_execucao"].includes(p.status)).length})` : ""}{novos ? <span style={{ ...s.tag(C.success), marginLeft: 6, fontSize: 9.5 }}>{novos} novo{novos > 1 ? "s" : ""}</span> : null}</>)}{abaBt("modelos", "🧩 Modelos de BID")}
       </div>
       {msg && <div style={{ ...s.card, padding: "9px 12px", marginBottom: 12, fontSize: 13, borderColor: msg.tipo === "erro" ? C.danger : C.success, color: msg.tipo === "erro" ? C.danger : C.success, display: "flex" }}>
         <span style={{ flex: 1 }}>{msg.t}</span><button type="button" onClick={() => setMsg(null)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer" }}>×</button></div>}
 
+      {aba === "funil" && alertasEv.length > 0 && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>{alertasEv.map((a) => (
+        <div key={a.id} className="qf-clicavel" onClick={() => setAba("calendario")} style={{ ...s.card, padding: "8px 12px", cursor: "pointer", borderColor: "#f43f5e", background: "#f43f5e12", fontSize: 12.5 }}>
+          📣 <b>{a.faltam > 0 ? `Faltam ${a.faltam} dias` : "Acontecendo"}</b> para <b>{a.nome}</b>{a.cidade ? ` (${a.cidade}${a.uf ? `/${a.uf}` : ""})` : ""} — hora de procurar os clientes{a.clientes_nomes?.length ? `: ${a.clientes_nomes.slice(0, 4).join(", ")}${a.clientes_nomes.length > 4 ? "…" : ""}` : ""}
+        </div>))}</div>}
+      {aba === "calendario" && <CalendarioComercial C={C} s={s} onErro={erro} onOk={ok} onAbrirBid={(id) => setAberto(id)} onAbrirPV={(id) => setPvAberto(id)} />}
       {aba === "funil" && (!funil ? <div style={{ color: C.muted }}>Carregando…</div> : <>
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap", fontSize: 12, color: C.textSub }}>
           Período <input type="date" value={periodo.de} onChange={(e) => e.target.value && setPeriodo({ ...periodo, de: e.target.value })} style={{ ...s.input, width: 150, padding: "6px 8px" }} />
