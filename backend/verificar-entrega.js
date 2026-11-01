@@ -238,20 +238,16 @@ const ESPERADO = {
   'migrations/058_base_frota.sql': '726daccca8ec58b7bc09dc7ff3a57cf6', // etapa 16e.3 (novo)
   'routes/minhasViagens.js': '2839f5aad536209ef2465538599ce957', // etapa 17a (novo)
   'front:TelaMinhasViagens.jsx': '522b50f6a1971283d451e6d23bc41f2f', // etapa 17a (novo)
-  'services/calendarioComercial.js': '483c783e2e5d94540762f6aa6bee5ee1', // etapa 18b
+  'services/calendarioComercial.js': '11a2cd59d265d852773950b57d67d7ca', // etapa 18b.1
   'migrations/059_calendario_comercial.sql': '93acdb034cb90c4907b6071eb35a75e9', // etapa 18a (novo)
   'front:CalendarioComercial.jsx': 'e04c2fb836b59f0cfe7b82a59132b10c', // etapa 18b
   'migrations/060_prospeccao_evento.sql': 'f52ed7775d71d71c9ce65f0f57982098', // etapa 18b (novo)
   'front:PainelProspeccao.jsx': '4bba9191d1279b40ff981de45b2eea3f', // etapa 18b (novo)
 };
 
-// Antes de copiar a etapa 18b — base: 18a.1
+// Antes de copiar a etapa 18b.1 — base: 18b
 const ANTES = {
-  'services/bids.js': '420fd93697384f911bdb1b474874fddd',
-  'services/calendarioComercial.js': 'c6ff95385235b41c32f60f2c80c69636',
-  'routes/comercial.js': '0fa10c9b53a0749e480df2e0d0b4464e',
-  'front:TelaComercial.jsx': '9081fac250b2ddecf3a9ebbde30dd50c',
-  'front:CalendarioComercial.jsx': '798584c063c5839f2d6a873917b2b9ed',
+  'services/calendarioComercial.js': '483c783e2e5d94540762f6aa6bee5ee1',
 };
 
 const RAIZ = process.cwd();
@@ -289,7 +285,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18b)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18b.1)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

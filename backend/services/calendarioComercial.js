@@ -93,7 +93,15 @@ function ocorrencias(e, de, ate) {
 function proximaOcorrencia(e) { const h = hojeBR(); return ocorrencias(e, h, somaDias(h, 800)).find((o) => o.fim >= h) || null; }
 
 /** ⏰ lembrete: no dia da prospecção (até o fim do evento), uma tarefa por evento por ano */
-async function gerarLembretes(supabase, tenantId) {
+// 18b.1: o Funil chama /funil e /tarefas juntos — sem trava, as duas chamadas criavam o mesmo lembrete
+const _gerando = new Map();
+function gerarLembretes(supabase, tenantId) {
+  const k = String(tenantId);
+  if (_gerando.has(k)) return _gerando.get(k);
+  const p = _gerarLembretes(supabase, tenantId).finally(() => _gerando.delete(k));
+  _gerando.set(k, p); return p;
+}
+async function _gerarLembretes(supabase, tenantId) {
   let ev; try { ev = (await q(supabase.from('comercial_eventos').select('*').eq('tenant_id', tenantId))).filter((e) => e.ativo !== false); } catch { return 0; } // sem a 059
   const h = hojeBR(); let n = 0; let cls = null;
   for (const e of ev) {
@@ -107,8 +115,18 @@ async function gerarLembretes(supabase, tenantId) {
     const reg = { tenant_id: tenantId, bid_id: null, cliente_id: null, tipo: 'tarefa', texto: txt.slice(0, 2000), prevista_para: new Date(`${h}T09:00:00-03:00`).toISOString(), concluida_em: null,
       usuario_id: null, usuario_nome: 'QuotaFlow · 📅 calendário comercial', criado_em: new Date().toISOString() };
     if (e.responsavel_id != null) Object.assign(reg, { atribuido_id: e.responsavel_id, atribuido_nome: e.responsavel_nome || null });
+    // reserva: só segue quem marcou o evento primeiro (protege também com mais de um servidor)
+    const marca = new Date().toISOString();
+    let rq = supabase.from('comercial_eventos').update({ lembretes: { ...(e.lembretes || {}), [String(o.ano)]: 'reservando' }, atualizado_em: marca }).eq('id', e.id).eq('tenant_id', tenantId);
+    rq = e.atualizado_em ? rq.eq('atualizado_em', e.atualizado_em) : rq;
+    const res = await rq.select();
+    if (res.error || !(res.data || []).length) continue;
     const { data, error } = await supabase.from('bid_atividades').insert([reg]).select();
-    if (error) { console.error('⚠️ [calendário comercial] lembrete:', error.message); continue; }
+    if (error) {
+      console.error('⚠️ [calendário comercial] lembrete:', error.message);
+      await supabase.from('comercial_eventos').update({ lembretes: e.lembretes || {} }).eq('id', e.id).eq('tenant_id', tenantId);
+      continue;
+    }
     await supabase.from('comercial_eventos').update({ lembretes: { ...(e.lembretes || {}), [String(o.ano)]: data[0].id } }).eq('id', e.id).eq('tenant_id', tenantId);
     n++;
   }
