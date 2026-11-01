@@ -50,10 +50,21 @@ router.post("/", tenantMiddleware, async (req, res) => {
   }
 });
 
+// 18b.2: tarefa que nasceu de outra tela (ex.: 📣 prospecção) só se encerra lá — 409 (não desloga)
+const ORIGEM_NOME = { prospeccao: "📈 Comercial → 📣 Prospecção (encerra quando o BID for criado ou o comercial cancelar)" };
+async function travaOrigem(req, encerrando) {
+  const t = await DB.selectOne("tarefas", { id: req.params.id }, req.tenantId).catch(() => null);
+  if (!t || !t.origem || !ORIGEM_NOME[t.origem] || !encerrando) return null;
+  return `Esta tarefa se resolve em ${ORIGEM_NOME[t.origem]}.`;
+}
+
 // PUT /api/tarefas/:id - Atualizar tarefa
 router.put("/:id", tenantMiddleware, async (req, res) => {
   try {
     const { id } = req.params;
+    const trava = await travaOrigem(req, ["concluida", "cancelada"].includes(req.body?.status));
+    if (trava) return res.status(409).json({ erro: trava });
+    if (req.body) { delete req.body.origem; delete req.body.origem_ref; }
     const updated = await DB.update("tarefas", id, req.body, req.tenantId);
     if (!updated) return res.status(404).json({ erro: "Tarefa não encontrada" });
     // Parse comentarios se existir
@@ -74,6 +85,8 @@ router.put("/:id", tenantMiddleware, async (req, res) => {
 // DELETE /api/tarefas/:id - Deletar tarefa
 router.delete("/:id", tenantMiddleware, async (req, res) => {
   try {
+    const trava = await travaOrigem(req, true);
+    if (trava) return res.status(409).json({ erro: trava });
     await DB.delete("tarefas", req.params.id, req.tenantId);
     res.json({ ok: true });
   } catch (err) {

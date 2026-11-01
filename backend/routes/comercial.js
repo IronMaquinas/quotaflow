@@ -17,6 +17,7 @@
 //   POST /atividades · POST /atividades/:id/concluir { feita } · GET /tarefas?minhas=1
 //   GET  /modelos · GET /modelos/biblioteca · POST /modelos/importar · POST /modelos · PUT /modelos/:id · POST /modelos/:id/atualizar · DELETE /modelos/:id
 //   GET  /clientes · GET /clientes/consulta/:doc · POST /clientes · PUT /clientes/:id · GET /clientes/:id/360
+//   POST /eventos/:id/prospeccao/cancelar|reabrir|delegar   18b.2 — oportunidade do cliente ou do evento inteiro
 //   GET  /responsaveis                 admin, gestor e comercial ativos
 // (403 desloga no front — trava de regra responde 409)
 
@@ -47,9 +48,9 @@ const responder = (fn) => async (req, res) => {
 };
 const quem = async (req) => { const { data } = await supabase.from('usuarios').select('*').eq('tenant_id', req.tenantId).eq('id', req.userId); return { usuarioId: req.userId, usuarioNome: data?.[0]?.nome || req.userEmail || null }; };
 
-router.get('/funil', responder(async (req) => { await CC.gerarLembretes(supabase, req.tenantId); return B.funil(supabase, req.tenantId, req.query); }));
+router.get('/funil', responder(async (req) => B.funil(supabase, req.tenantId, req.query)));
 router.get('/responsaveis', responder(async (req) => ({ responsaveis: await B.responsaveis(supabase, req.tenantId), eu: req.userId })));
-router.get('/tarefas', responder(async (req) => ({ _l: await CC.gerarLembretes(supabase, req.tenantId), tarefas: await B.tarefas(supabase, req.tenantId, req.query.minhas === '1' ? req.userId : null) })));
+router.get('/tarefas', responder(async (req) => ({ tarefas: await B.tarefas(supabase, req.tenantId, req.query.minhas === '1' ? req.userId : null) })));
 router.post('/atividades', responder(async (req) => B.criarAtividade(supabase, req.tenantId, await quem(req), req.body || {})));
 router.post('/atividades/:id/concluir', responder((req) => B.concluirAtividade(supabase, req.tenantId, req.params.id, req.body?.feita !== false)));
 
@@ -97,8 +98,12 @@ router.get('/eventos', responder(async (req) => ({ eventos: await CC.listarEvent
 router.get('/eventos/:id/prospeccao', responder(async (req) => { // 18b
   const r = await CC.prospeccao(supabase, req.tenantId, req.params.id); if (r.erro) return r;
   const emp = (await supabase.from('tenants').select('*').eq('id', req.tenantId)).data?.[0] || {};
-  return { ...r, empresa: emp.nome_fantasia || emp.nome || emp.razao_social || '', voce: (await quem(req)).usuarioNome || '' };
+  return { ...r, empresa: emp.nome_fantasia || emp.nome || emp.razao_social || '', voce: (await quem(req)).usuarioNome || '', responsaveis: await B.responsaveis(supabase, req.tenantId) };
 }));
+// 18b.2: oportunidades da prospecção — body { cliente_id? (sem = o evento inteiro), motivo | responsavel_id, prazo, observacao }
+router.post('/eventos/:id/prospeccao/cancelar', responder(async (req) => CC.cancelarProspeccao(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
+router.post('/eventos/:id/prospeccao/reabrir', responder(async (req) => CC.reabrirProspeccao(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
+router.post('/eventos/:id/prospeccao/delegar', responder(async (req) => CC.delegarProspeccao(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
 router.post('/eventos', responder(async (req) => CC.criarEvento(supabase, req.tenantId, await quem(req), req.body || {})));
 router.put('/eventos/:id', responder(async (req) => CC.editarEvento(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
 router.delete('/eventos/:id', responder((req) => CC.removerEvento(supabase, req.tenantId, req.params.id)));

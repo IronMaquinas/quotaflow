@@ -169,7 +169,7 @@ function Cliente360({ C, s, id, onFechar, onAbrirBid, onNovoBid, onEditar, onErr
   </>, onFechar, 900);
 }
 
-export default function TelaComercial({ C, s }) {
+export default function TelaComercial({ C, s, abrirProspeccao }) {
   const [aba, setAba] = useState("funil");
   useEffect(() => { if (aba === "funil") apiService.get("/comercial/eventos").then((r) => setAlertasEv(r.alertas || [])).catch(() => {}); }, [aba]); // 18a: atualiza a faixa ao voltar ao Funil
   const [bids, setBids] = useState(null);
@@ -184,6 +184,8 @@ export default function TelaComercial({ C, s }) {
   const novos = (pedidos || []).filter(ehNovo).length;
   const [prospectar, setProspectar] = useState(null); // 18b: id do evento — painel de prospecção
   const [alertasEv, setAlertasEv] = useState([]); // 18a: 🎪 eventos na janela de prospecção (faixa do Funil)
+  const [faixaAberta, setFaixaAberta] = useState(false); // 18b.2: mais de um evento → acordeão
+  useEffect(() => { if (abrirProspeccao?.id) setProspectar(abrirProspeccao.id); }, [abrirProspeccao]); // 18b.2: veio da tarefa do ✅ Plano
   const [aberto, setAberto] = useState(null); const [novo, setNovo] = useState(null); const [c360, setC360] = useState(null); const [editarCli, setEditarCli] = useState(null);
   const [arrasto, setArrasto] = useState(null); // { id, fase } para perdido/aceito
   const [msg, setMsg] = useState(null); const [ocupado, setOcupado] = useState(false);
@@ -234,10 +236,22 @@ export default function TelaComercial({ C, s }) {
       {msg && <div style={{ ...s.card, padding: "9px 12px", marginBottom: 12, fontSize: 13, borderColor: msg.tipo === "erro" ? C.danger : C.success, color: msg.tipo === "erro" ? C.danger : C.success, display: "flex" }}>
         <span style={{ flex: 1 }}>{msg.t}</span><button type="button" onClick={() => setMsg(null)} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer" }}>×</button></div>}
 
-      {aba === "funil" && alertasEv.length > 0 && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>{alertasEv.map((a) => (
-        <div key={a.id} className="qf-clicavel" onClick={() => setProspectar(a.id)} style={{ ...s.card, padding: "8px 12px", cursor: "pointer", borderColor: "#f43f5e", background: "#f43f5e12", fontSize: 12.5 }}>
-          📣 <b>{a.faltam > 0 ? `Faltam ${a.faltam} dias` : "Acontecendo"}</b> para <b>{a.nome}</b>{a.cidade ? ` (${a.cidade}${a.uf ? `/${a.uf}` : ""})` : ""} — hora de procurar os clientes{a.clientes_nomes?.length ? `: ${a.clientes_nomes.slice(0, 4).join(", ")}${a.clientes_nomes.length > 4 ? "…" : ""}` : ""}
-        </div>))}</div>}
+      {aba === "funil" && alertasEv.length > 0 && (() => { // 18b.2: 1 evento = faixa; vários = acordeão (não empurra os indicadores)
+        const linha = (a) => (
+          <div key={a.id} className="qf-clicavel" onClick={() => setProspectar(a.id)} style={{ ...s.card, padding: "8px 12px", cursor: "pointer", borderColor: "#f43f5e", background: "#f43f5e12", fontSize: 12.5 }}>
+            📣 <b>{a.faltam > 0 ? `Faltam ${a.faltam} dias` : "Acontecendo"}</b> para <b>{a.nome}</b>{a.cidade ? ` (${a.cidade}${a.uf ? `/${a.uf}` : ""})` : ""}
+            {a.resumo ? <span style={{ color: C.textSub }}> — {a.resumo.total ? `${a.resumo.contatados} de ${a.resumo.total} contatados · ${a.resumo.bids} BID(s)${a.resumo.cancelados ? ` · ${a.resumo.cancelados} cancelado(s)` : ""}${a.resumo.abertos ? "" : " · ✓ tudo resolvido"}` : "nenhum cliente ligado ainda"}</span>
+              : <> — hora de procurar os clientes{a.clientes_nomes?.length ? `: ${a.clientes_nomes.slice(0, 4).join(", ")}${a.clientes_nomes.length > 4 ? "…" : ""}` : ""}</>}
+          </div>);
+        if (alertasEv.length === 1) return <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>{linha(alertasEv[0])}</div>;
+        const abertos = alertasEv.reduce((n, a) => n + (a.resumo?.abertos || 0), 0);
+        return <div style={{ marginBottom: 10 }}>
+          <div className="qf-clicavel" onClick={() => setFaixaAberta((x) => !x)} style={{ ...s.card, display: "inline-block", padding: "8px 12px", cursor: "pointer", borderColor: "#f43f5e", background: "#f43f5e12", fontSize: 12.5 }}>
+            📣 <b>{alertasEv.length} eventos para prospectar</b> · o próximo em {alertasEv[0].faltam > 0 ? `${alertasEv[0].faltam} dias` : "andamento"} ({alertasEv[0].nome}){abertos ? ` · ${abertos} cliente(s) em aberto` : ""} {faixaAberta ? "▴" : "▾"}
+          </div>
+          {faixaAberta && <div style={{ display: "flex", flexDirection: "column", gap: 6, marginTop: 6, maxHeight: 260, overflowY: "auto" }}>{alertasEv.map(linha)}</div>}
+        </div>;
+      })()}
       {aba === "calendario" && <CalendarioComercial C={C} s={s} onErro={erro} onOk={ok} onProspectar={setProspectar} onAbrirBid={(id) => setAberto(id)} onAbrirPV={(id) => setPvAberto(id)} />}
       {aba === "funil" && (!funil ? <div style={{ color: C.muted }}>Carregando…</div> : <>
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap", fontSize: 12, color: C.textSub }}>
@@ -332,7 +346,7 @@ export default function TelaComercial({ C, s }) {
       </div>)}
       {pvAberto && <FichaPedido C={C} s={s} id={pvAberto} onFechar={() => { setPvAberto(null); carregar(); }} onMudou={carregar} onErro={erro} onOk={ok} onAbrirBid={(id) => { setPvAberto(null); setAberto(id); }} />}
 
-      {prospectar && <PainelProspeccao C={C} s={s} eventoId={prospectar} onErro={erro} onOk={ok} onFechar={() => setProspectar(null)}
+      {prospectar && <PainelProspeccao C={C} s={s} eventoId={prospectar} onErro={erro} onOk={ok} onFechar={() => { setProspectar(null); apiService.get("/comercial/eventos").then((r) => setAlertasEv(r.alertas || [])).catch(() => {}); }}
         onAbrirBid={(id) => { setProspectar(null); setAberto(id); }} onNovoBid={(c, eventoId) => { setProspectar(null); setNovo({ cliente: c, evento_id: eventoId }); }} />}
       {novo && casca(s, <NovoBid C={C} s={s} clienteInicial={novo.cliente || null} eventoId={novo.evento_id || null} onErro={erro} onCancelar={() => setNovo(null)}
         onCriado={async (b) => { setNovo(null); setC360(null); ok(`${b.numero} criado — preencha os itens e as condições.`); await carregar(); setAberto(b.id); }} />, () => setNovo(null), 720, 330)}

@@ -175,16 +175,19 @@ export default function TelaPlanoAcaoNova({ onVoltar, C, s }) {
           const prCfg = prioridadeTarefaCfg[t.prioridade] || { l: t.prioridade, c: C.muted };
           const prazoInfo = fmtDataPrazo(t.prazo);
           const showComent = modalComent === t.id;
+          const daOrigem = t.origem === 'prospeccao'; // 18b.2: encerra sozinha no 📈 Comercial (BID criado ou cancelada)
+          const encerrada = ['concluida', 'cancelada'].includes(t.status);
 
           return (
             <div key={t.id} style={{ ...s.card, overflow: 'hidden', borderLeft: `3px solid ${prCfg.c}` }}>
               <div style={{ padding: '14px 18px', display: 'flex', gap: 14, alignItems: 'flex-start' }}>
                 <div style={{ flexShrink: 0, marginTop: 2 }}>
+                  {daOrigem && encerrada ? <span title="Encerrada pelo Comercial" style={{ background: stCfg.bg, border: `1px solid ${stCfg.c}44`, borderRadius: 6, padding: '4px 8px', color: stCfg.c, fontSize: 11, fontWeight: 600, display: 'inline-block' }}>{stCfg.icon} {stCfg.l}</span> :
                   <select value={t.status} onChange={e => {
                     atualizar(t.id, { status: e.target.value }).catch(alert);
                   }} style={{ background: stCfg.bg, border: `1px solid ${stCfg.c}44`, borderRadius: 6, padding: '4px 8px', color: stCfg.c, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
-                    {Object.entries(statusTarefaCfg).map(([k, v]) => <option key={k} value={k}>{v.icon} {v.l}</option>)}
-                  </select>
+                    {Object.entries(statusTarefaCfg).filter(([k]) => !daOrigem || !['concluida', 'cancelada'].includes(k)).map(([k, v]) => <option key={k} value={k}>{v.icon} {v.l}</option>)}
+                  </select>}
                 </div>
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap', marginBottom: 4 }}>
@@ -195,6 +198,7 @@ export default function TelaPlanoAcaoNova({ onVoltar, C, s }) {
                   {t.detalhe && <div style={{ fontSize: 12, color: C.muted, marginBottom: 6, lineHeight: 1.5 }}>{t.detalhe}</div>}
                   <div style={{ display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 11 }}>
                     {t.responsavel && <span style={{ color: C.textSub }}>👤 {t.responsavel}</span>}
+                    {daOrigem && <span style={{ color: C.accent, cursor: 'pointer', fontWeight: 600 }} onClick={() => window.dispatchEvent(new CustomEvent('qf-abrir-prospeccao', { detail: t.origem_ref }))}>📣 Abrir no Comercial{encerrada ? '' : ' — encerra com o BID ou o cancelamento'}</span>}
                     {prazoInfo && typeof prazoInfo === 'object' && <span style={{ color: prazoInfo.cor }}>📅 {prazoInfo.str} · {prazoInfo.label}</span>}
                     {t.criacao && <span style={{ color: C.muted }}>Criada {new Date(t.criacao).toLocaleDateString('pt-BR')}</span>}
                   </div>
@@ -202,7 +206,7 @@ export default function TelaPlanoAcaoNova({ onVoltar, C, s }) {
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
                   <button onClick={() => setModalComent(showComent ? null : t.id)} style={{ background: showComent ? '#1e2a3f' : 'transparent', border: `1px solid ${C.border}`, borderRadius: 5, padding: '5px 10px', color: showComent ? C.accent : C.muted, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>💬 {t.comentarios?.length || 0}</button>
                   <button onClick={() => { setForm({ titulo: t.titulo, detalhe: t.detalhe || '', responsavel: t.responsavel || '', prazo: t.prazo || '', prioridade: t.prioridade, status: t.status }); setModal({ tipo: 'editar', tarefa: t }); }} style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 5, padding: '5px 9px', color: C.muted, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>✏</button>
-                  <button onClick={() => { if (window.confirm('Excluir tarefa?')) deletar(t.id); }} style={{ background: 'transparent', border: `1px solid #ef444433`, borderRadius: 5, padding: '5px 9px', color: '#ef4444', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>✕</button>
+                  {!daOrigem && <button onClick={() => { if (window.confirm('Excluir tarefa?')) deletar(t.id); }} style={{ background: 'transparent', border: `1px solid #ef444433`, borderRadius: 5, padding: '5px 9px', color: '#ef4444', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>✕</button>}
                 </div>
               </div>
               {showComent && (

@@ -40,7 +40,7 @@ function FormEvento({ C, s, ev, base, onFechar, onSalvo, onErro }) {
           {lbl("FIM", <input type="date" value={f.fim} min={f.inicio || undefined} onChange={(e) => set("fim", e.target.value)} style={s.input} />, "0 1 160px")}{/* 18a.1: o calendário não deixa fim antes do início */}</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8, alignItems: "flex-end" }}>
           {lbl("PROSPECTAR QUANTOS DIAS ANTES", <input type="number" min={0} max={365} value={f.antecedencia_dias} onChange={(e) => set("antecedencia_dias", e.target.value)} style={s.input} />, "0 1 210px")}
-          {lbl("RESPONSÁVEL (RECEBE A TAREFA)", <select value={f.responsavel_id} onChange={(e) => set("responsavel_id", e.target.value)} style={s.input}><option value="">— quem criar —</option>{(base.responsaveis || []).map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}</select>)}
+          {lbl("RESPONSÁVEL PELO EVENTO", <select value={f.responsavel_id} onChange={(e) => set("responsavel_id", e.target.value)} style={s.input}><option value="">— quem criar —</option>{(base.responsaveis || []).map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}</select>)}
           <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13, paddingBottom: 10, cursor: "pointer" }}><input type="checkbox" checked={f.repete_anual} onChange={(e) => set("repete_anual", e.target.checked)} />🔁 Repete todo ano</label>
         </div>
         {prosp && <div style={{ fontSize: 12, color: C.accent, marginTop: 4 }}>📣 Prospecção a partir de {dBR(prosp)}{f.repete_anual ? " (todo ano)" : ""}.</div>}

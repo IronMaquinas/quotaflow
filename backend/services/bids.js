@@ -263,6 +263,7 @@ async function criar(supabase, tenantId, quem, body = {}) {
   const { data, error } = await supabase.from('bids').insert([reg]).select();
   if (error) throw new Error(error.message);
   await atividade(supabase, tenantId, quem, { bid_id: data[0].id, cliente_id: cli.id, tipo: 'evento', texto: `BID ${reg.numero} criado (modelo ${m.nome})` });
+  if (reg.evento_id) await require('./calendarioComercial').sincronizarProspeccao(supabase, tenantId, reg.evento_id).catch((e) => console.warn('⚠️ [prospecção] sincronizar:', e.message)); // 18b.2: BID encerra a oportunidade
   return { bid: data[0] };
 }
 

@@ -5,9 +5,8 @@
 //     TRANSPORTES com data prevista (itens dos BIDs abertos = negociando; dos pedidos abertos = vendidos); ⏰ TAREFAS do comercial;
 //     🎪 EVENTOS de mercado (feira, safra, obra, licitação…) e o dia de começar a PROSPECÇÃO (início − antecedência).
 //   • evento que "repete todo ano" aparece em todos os anos (mesmo dia/mês).
-//   • LEMBRETE: chegando o dia da prospecção, entra uma ⏰ tarefa no Comercial ("Faltam N dias para a Feira X — hora de procurar
-//     os clientes A, B…"), para o responsável do evento — uma por evento por ano (lembretes: { ano: id }). Gerada quando o Comercial
-//     abre (funil, tarefas, calendário) — não depende de rotina agendada.
+//   • LEMBRETE: a faixa 📣 no topo do Funil (calculada na hora). 18b.2: a ⏰ tarefa automática da 18a saiu — cada cliente do evento é
+//     uma OPORTUNIDADE que só se encerra com BID criado ou ✕ cancelada (com motivo); delegar cria tarefa no ✅ Plano espelhada.
 // Regras do backend: sem DB.raw; ids com String(); o mock não aplica default do banco.
 
 async function q(p) { const { data, error } = await p; if (error) throw new Error(error.message); return data || []; }
@@ -92,54 +91,12 @@ function ocorrencias(e, de, ate) {
 }
 function proximaOcorrencia(e) { const h = hojeBR(); return ocorrencias(e, h, somaDias(h, 800)).find((o) => o.fim >= h) || null; }
 
-/** ⏰ lembrete: no dia da prospecção (até o fim do evento), uma tarefa por evento por ano */
-// 18b.1: o Funil chama /funil e /tarefas juntos — sem trava, as duas chamadas criavam o mesmo lembrete
-const _gerando = new Map();
-function gerarLembretes(supabase, tenantId) {
-  const k = String(tenantId);
-  if (_gerando.has(k)) return _gerando.get(k);
-  const p = _gerarLembretes(supabase, tenantId).finally(() => _gerando.delete(k));
-  _gerando.set(k, p); return p;
-}
-async function _gerarLembretes(supabase, tenantId) {
-  let ev; try { ev = (await q(supabase.from('comercial_eventos').select('*').eq('tenant_id', tenantId))).filter((e) => e.ativo !== false); } catch { return 0; } // sem a 059
-  const h = hojeBR(); let n = 0; let cls = null;
-  for (const e of ev) {
-    const o = proximaOcorrencia(e); if (!o) continue;
-    const prosp = somaDias(o.inicio, -Number(e.antecedencia_dias ?? 60));
-    if (h < prosp || (e.lembretes || {})[String(o.ano)]) continue;
-    if (!cls) cls = await q(supabase.from('clientes').select('*').eq('tenant_id', tenantId)).catch(() => []);
-    const nomes = (e.clientes || []).map((id) => cls.find((c) => String(c.id) === String(id))?.nome).filter(Boolean);
-    const faltam = diasEntre(h, o.inicio);
-    const txt = `🎪 ${faltam > 0 ? `Faltam ${faltam} dia(s) para` : 'Começa hoje:'} ${e.nome}${e.cidade ? ` (${e.cidade}${e.uf ? `/${e.uf}` : ''})` : ''}, ${dBR(o.inicio)}${o.fim !== o.inicio ? ` a ${dBR(o.fim)}` : ''} — hora de procurar os clientes${nomes.length ? `: ${nomes.slice(0, 8).join(', ')}${nomes.length > 8 ? '…' : ''}` : ''}.`;
-    const reg = { tenant_id: tenantId, bid_id: null, cliente_id: null, tipo: 'tarefa', texto: txt.slice(0, 2000), prevista_para: new Date(`${h}T09:00:00-03:00`).toISOString(), concluida_em: null,
-      usuario_id: null, usuario_nome: 'QuotaFlow · 📅 calendário comercial', criado_em: new Date().toISOString() };
-    if (e.responsavel_id != null) Object.assign(reg, { atribuido_id: e.responsavel_id, atribuido_nome: e.responsavel_nome || null });
-    // reserva: só segue quem marcou o evento primeiro (protege também com mais de um servidor)
-    const marca = new Date().toISOString();
-    let rq = supabase.from('comercial_eventos').update({ lembretes: { ...(e.lembretes || {}), [String(o.ano)]: 'reservando' }, atualizado_em: marca }).eq('id', e.id).eq('tenant_id', tenantId);
-    rq = e.atualizado_em ? rq.eq('atualizado_em', e.atualizado_em) : rq;
-    const res = await rq.select();
-    if (res.error || !(res.data || []).length) continue;
-    const { data, error } = await supabase.from('bid_atividades').insert([reg]).select();
-    if (error) {
-      console.error('⚠️ [calendário comercial] lembrete:', error.message);
-      await supabase.from('comercial_eventos').update({ lembretes: e.lembretes || {} }).eq('id', e.id).eq('tenant_id', tenantId);
-      continue;
-    }
-    await supabase.from('comercial_eventos').update({ lembretes: { ...(e.lembretes || {}), [String(o.ano)]: data[0].id } }).eq('id', e.id).eq('tenant_id', tenantId);
-    n++;
-  }
-  return n;
-}
-
 // ─── calendário ─────────────────────────────────────────────────────────────
 /** itens entre de e ate: { data, ate, tipo, titulo, sub, fase?, ref } */
 async function calendario(supabase, tenantId, { de, ate } = {}) {
   const B = require('./bids');
   const d0 = DATA.test(String(de || '')) ? de : `${hojeBR().slice(0, 7)}-01`;
   const d1 = DATA.test(String(ate || '')) ? ate : somaDias(d0, 41);
-  await gerarLembretes(supabase, tenantId);
   const [bids, pvs, ativs, evs] = await Promise.all([
     q(supabase.from('bids').select('*').eq('tenant_id', tenantId)),
     q(supabase.from('pedidos_venda').select('*').eq('tenant_id', tenantId)).catch(() => []),
@@ -175,12 +132,17 @@ async function calendario(supabase, tenantId, { de, ate } = {}) {
   itens.sort((x, y) => String(x.data).localeCompare(String(y.data)) || String(x.tipo).localeCompare(String(y.tipo)));
   return { de: d0, ate: d1, itens };
 }
-/** faixa do Funil: eventos na janela de prospecção agora */
+/** faixa do Funil: eventos na janela de prospecção agora (sem os 🔕 cancelados no ano), com o andamento */
 async function alertas(supabase, tenantId) {
-  await gerarLembretes(supabase, tenantId);
   const h = hojeBR();
-  return (await listarEventos(supabase, tenantId).catch(() => [])).filter((e) => e.proxima && e.prospeccao <= h && e.proxima.fim >= h)
-    .map((e) => ({ id: e.id, nome: e.nome, tipo: e.tipo, cidade: e.cidade, uf: e.uf, inicio: e.proxima.inicio, fim: e.proxima.fim, faltam: e.faltam, clientes_nomes: e.clientes_nomes }));
+  const evs = (await listarEventos(supabase, tenantId).catch(() => [])).filter((e) => e.proxima && e.prospeccao <= h && e.proxima.fim >= h);
+  const cache = {}; const out = [];
+  for (const e of evs) {
+    const p = await prospeccao(supabase, tenantId, e.id, cache).catch(() => null);
+    if (p && p.cancelado) continue;
+    out.push({ id: e.id, nome: e.nome, tipo: e.tipo, cidade: e.cidade, uf: e.uf, inicio: e.proxima.inicio, fim: e.proxima.fim, faltam: e.faltam, clientes_nomes: e.clientes_nomes, resumo: p?.resumo || null });
+  }
+  return out.sort((a, b) => a.faltam - b.faltam);
 }
 
 // ─── 18b: 📣 PROSPECÇÃO POR EVENTO ──────────────────────────────────────────
@@ -189,10 +151,13 @@ async function alertas(supabase, tenantId) {
 //             último BID/pedido, último contato e a SITUAÇÃO na campanha: a contatar → 💬 contatado → 📝 BID criado.
 //   livres: equipamentos sem AT no período do evento (o quanto dá para vender).
 const soDig = (v) => String(v || '').replace(/\D/g, '');
-async function prospeccao(supabase, tenantId, eventoId) {
+async function prospeccao(supabase, tenantId, eventoId, cache = {}) {
   const e = await eventoDoTenant(supabase, tenantId, eventoId); if (!e || e.ativo === false) return { status: 404, erro: 'Evento não encontrado' };
   const o = proximaOcorrencia(e) || { inicio: e.inicio, fim: e.fim || e.inicio, ano: Number(String(e.inicio).slice(0, 4)) };
-  const [cls, bids, pvs, ativs, exs, eqs] = await Promise.all([
+  const regs = await linhasProspeccao(supabase, tenantId, e.id, o.ano);
+  const regEv = regs.find((r) => r.cliente_id == null) || null;
+  const regDe = (cid) => regs.find((r) => r.cliente_id != null && String(r.cliente_id) === String(cid)) || null;
+  if (!cache.dados) cache.dados = Promise.all([
     q(supabase.from('clientes').select('*').eq('tenant_id', tenantId)).catch(() => []),
     q(supabase.from('bids').select('*').eq('tenant_id', tenantId)).catch(() => []),
     q(supabase.from('pedidos_venda').select('*').eq('tenant_id', tenantId)).catch(() => []),
@@ -200,6 +165,7 @@ async function prospeccao(supabase, tenantId, eventoId) {
     q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId)).catch(() => []),
     q(supabase.from('equipamentos').select('*').eq('tenant_id', tenantId)).catch(() => []),
   ]);
+  const [cls, bids, pvs, ativs, exs, eqs] = await cache.dados;
   // janela do ano anterior (±30 dias)
   const menos1 = (d) => `${Number(d.slice(0, 4)) - 1}${d.slice(4)}`;
   const j0 = somaDias(menos1(o.inicio), -30); const j1 = somaDias(menos1(o.fim || o.inicio), 30);
@@ -220,20 +186,121 @@ async function prospeccao(supabase, tenantId, eventoId) {
       const k = `${soDig(x.telefone)}|${String(x.email || '').toLowerCase()}`; if ((!x.telefone && !x.email) || vistos.has(k)) continue; vistos.add(k); contatos.push(x);
     }
     const daCampanha = ac.filter((a) => String(a.evento_id) === String(e.id) || (a.criado_em >= desde && /evento|feira|safra|obra|licita/i.test(String(a.texto)) && String(a.texto).includes(e.nome)));
-    const bidCamp = bc.find((b) => String(b.evento_id) === String(e.id));
+    const bidCamp = bc.find((b) => String(b.evento_id) === String(e.id) && Number(String(b.criado_em || '').slice(0, 4)) >= o.ano - 1);
+    const rg = regDe(c.id);
     return { id: c.id, nome: c.nome, cidade: c.cidade || null, uf: c.uf || null, ligado: ligados.includes(String(c.id)), sugestao: sugeridos.get(String(c.id)) || null, contatos,
       ultimo_bid: bc[0] ? { id: bc[0].id, numero: bc[0].numero, fase: bc[0].fase, em: bc[0].criado_em } : null, ultimo_pedido: pc[0] ? { id: pc[0].id, numero: pc[0].numero, em: pc[0].criado_em } : null,
       ultimo_contato: ac[0] ? { tipo: ac[0].tipo, em: ac[0].criado_em, texto: ac[0].texto, por: ac[0].usuario_nome } : null,
-      situacao: bidCamp ? 'bid' : daCampanha.length ? 'contatado' : 'a_contatar', contatado_em: daCampanha[0]?.criado_em || null, bid_campanha: bidCamp ? { id: bidCamp.id, numero: bidCamp.numero, fase: bidCamp.fase } : null };
-  }).sort((a, b) => ({ a_contatar: 0, contatado: 1, bid: 2 }[a.situacao] - { a_contatar: 0, contatado: 1, bid: 2 }[b.situacao]) || (b.ligado - a.ligado) || String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
+      // 18b.2: só se ENCERRA com BID criado ou ✕ cancelada (o evento 🔕 cancelado cancela todos os abertos)
+      situacao: bidCamp ? 'bid' : (rg?.situacao === 'cancelada' || regEv?.situacao === 'cancelada') ? 'cancelada' : daCampanha.length ? 'contatado' : 'a_contatar',
+      contatos_campanha: daCampanha.length, contatado_em: daCampanha[0]?.criado_em || null, bid_campanha: bidCamp ? { id: bidCamp.id, numero: bidCamp.numero, fase: bidCamp.fase } : null,
+      cancelamento: !bidCamp && rg?.situacao === 'cancelada' ? { motivo: rg.motivo, por: rg.cancelado_por, em: rg.cancelado_em } : !bidCamp && regEv?.situacao === 'cancelada' ? { motivo: regEv.motivo, por: regEv.cancelado_por, em: regEv.cancelado_em, do_evento: true } : null,
+      delegado: rg?.responsavel_nome ? { id: rg.responsavel_id, nome: rg.responsavel_nome, prazo: rg.prazo, tarefa_id: rg.tarefa_id } : null, historico: rg?.historico || [] };
+  }).sort((a, b) => (ORD[a.situacao] - ORD[b.situacao]) || (b.ligado - a.ligado) || String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
   // ociosidade: equipamentos sem AT ativa no período do evento
   const ini = new Date(`${o.inicio}T00:00:00-03:00`).toISOString(); const fim = new Date(`${o.fim || o.inicio}T23:59:59-03:00`).toISOString();
   const ocupados = new Set(exs.filter((x) => ['programada', 'em_execucao'].includes(x.status) && x.inicio_previsto && x.inicio_previsto <= fim && (x.fim_previsto || x.inicio_previsto) >= ini).flatMap((x) => (x.conjunto || []).map((c) => String(c.id))));
   const ativosEq = eqs.filter((x) => x.ativo !== false);
   const livres = ativosEq.filter((x) => !ocupados.has(String(x.id)) && !x.bloqueado);
   return { evento: { id: e.id, nome: e.nome, tipo: e.tipo, tipo_nome: TIPOS[e.tipo] || e.tipo, cidade: e.cidade, uf: e.uf, inicio: o.inicio, fim: o.fim, faltam: diasEntre(hojeBR(), o.inicio), observacoes: e.observacoes || null },
-    clientes: lista, resumo: { total: lista.length, contatados: lista.filter((x) => x.situacao !== 'a_contatar').length, bids: lista.filter((x) => x.situacao === 'bid').length },
+    ano: o.ano, cancelado: regEv?.situacao === 'cancelada' ? { motivo: regEv.motivo, por: regEv.cancelado_por, em: regEv.cancelado_em } : null,
+    delegado: regEv?.responsavel_nome ? { id: regEv.responsavel_id, nome: regEv.responsavel_nome, prazo: regEv.prazo, tarefa_id: regEv.tarefa_id } : null, historico: regEv?.historico || [],
+    clientes: lista, resumo: { total: lista.length, contatados: lista.filter((x) => x.situacao === 'bid' || x.contatos_campanha > 0).length, bids: lista.filter((x) => x.situacao === 'bid').length,
+      cancelados: lista.filter((x) => x.situacao === 'cancelada').length, abertos: lista.filter((x) => ['a_contatar', 'contatado'].includes(x.situacao)).length },
     livres: { quantos: livres.length, de: ativosEq.length, tags: livres.slice(0, 12).map((x) => x.tag || x.nome) } };
 }
 
-module.exports = { prospeccao, TIPOS, validar, listarEventos, criarEvento, editarEvento, removerEvento, ocorrencias, proximaOcorrencia, gerarLembretes, calendario, alertas };
+// ─── 18b.2: oportunidades — ✕ cancelar (com motivo), ↩ reabrir, 👤 delegar (tarefa no ✅ Plano espelhada) ───────────
+const ORD = { a_contatar: 0, contatado: 1, bid: 2, cancelada: 3 };
+const ERRO_061 = { status: 409, erro: 'Rode a migration 061 antes (oportunidades da prospecção)' };
+async function linhasProspeccao(supabase, tenantId, eventoId, ano) {
+  try { return await q(supabase.from('comercial_prospeccoes').select('*').eq('tenant_id', tenantId).eq('evento_id', eventoId).eq('ano', ano)); } catch { return []; } // sem a 061
+}
+const hist = (r, o) => [...(Array.isArray(r?.historico) ? r.historico : []), { em: new Date().toISOString(), ...o }].slice(-50);
+/** grava (cria ou atualiza) a linha do evento (clienteId nulo) ou do cliente */
+async function gravarLinha(supabase, tenantId, e, ano, clienteId, upd) {
+  const regs = await q(supabase.from('comercial_prospeccoes').select('*').eq('tenant_id', tenantId).eq('evento_id', e.id).eq('ano', ano));
+  const r = regs.find((x) => (clienteId == null ? x.cliente_id == null : String(x.cliente_id) === String(clienteId)));
+  const agora = new Date().toISOString();
+  if (r) { const { data, error } = await supabase.from('comercial_prospeccoes').update({ ...upd(r), atualizado_em: agora }).eq('id', r.id).eq('tenant_id', tenantId).select(); if (error) throw new Error(error.message); return data[0]; }
+  const base = { tenant_id: tenantId, evento_id: e.id, ano, cliente_id: clienteId == null ? null : clienteId, situacao: 'aberta', motivo: null, cancelado_por: null, cancelado_em: null,
+    responsavel_id: null, responsavel_nome: null, prazo: null, tarefa_id: null, historico: [], criado_em: agora, atualizado_em: agora };
+  const { data, error } = await supabase.from('comercial_prospeccoes').insert([{ ...base, ...upd(base) }]).select(); if (error) throw new Error(error.message); return data[0];
+}
+async function alvo(supabase, tenantId, eventoId, clienteId) {
+  const p = await prospeccao(supabase, tenantId, eventoId); if (p.erro) return { r: p };
+  if (clienteId != null && clienteId !== '') { const c = p.clientes.find((x) => String(x.id) === String(clienteId)); if (!c) return { r: { status: 404, erro: 'Cliente não está nesta prospecção' } }; return { p, c }; }
+  return { p };
+}
+async function cancelarProspeccao(supabase, tenantId, quem, eventoId, body = {}) {
+  const motivo = texto(body.motivo, 500); if (!motivo) return { status: 400, erro: 'Conte o motivo do cancelamento (ex.: já fechou com outro, não vai à feira)' };
+  const { p, c, r } = await alvo(supabase, tenantId, eventoId, body.cliente_id); if (r) return r;
+  if (c && c.situacao === 'bid') return { status: 409, erro: `${c.nome} já tem BID desta prospecção (${c.bid_campanha?.numero}) — encerrada pelo BID` };
+  if (c ? c.situacao === 'cancelada' : p.cancelado) return { status: 409, erro: 'Já está cancelada' };
+  const e = await eventoDoTenant(supabase, tenantId, eventoId); const agora = new Date().toISOString();
+  try { await gravarLinha(supabase, tenantId, e, p.ano, c ? c.id : null, (x) => ({ situacao: 'cancelada', motivo, cancelado_por: quem.usuarioNome || null, cancelado_em: agora, historico: hist(x, { acao: 'cancelada', por: quem.usuarioNome || null, obs: motivo }) })); }
+  catch (er) { if (/comercial_prospeccoes|does not exist|schema cache/.test(er.message)) return ERRO_061; throw er; }
+  return { prospeccao: await sincronizarProspeccao(supabase, tenantId, eventoId) };
+}
+async function reabrirProspeccao(supabase, tenantId, quem, eventoId, body = {}) {
+  const { p, c, r } = await alvo(supabase, tenantId, eventoId, body.cliente_id); if (r) return r;
+  if (c && c.cancelamento?.do_evento) return { status: 409, erro: 'O evento inteiro está cancelado — reabra o evento primeiro' };
+  if (c ? c.situacao !== 'cancelada' : !p.cancelado) return { status: 409, erro: 'Não está cancelada' };
+  const e = await eventoDoTenant(supabase, tenantId, eventoId);
+  try { await gravarLinha(supabase, tenantId, e, p.ano, c ? c.id : null, (x) => ({ situacao: 'aberta', motivo: null, cancelado_por: null, cancelado_em: null, historico: hist(x, { acao: 'reaberta', por: quem.usuarioNome || null }) })); }
+  catch (er) { if (/comercial_prospeccoes|does not exist|schema cache/.test(er.message)) return ERRO_061; throw er; }
+  return { prospeccao: await sincronizarProspeccao(supabase, tenantId, eventoId, { reabrir: true }) };
+}
+async function delegarProspeccao(supabase, tenantId, quem, eventoId, body = {}) {
+  const resp = await responsavelOk(supabase, tenantId, body.responsavel_id); if (resp.erro || !resp.id) return { status: 400, erro: resp.erro || 'Escolha para quem delegar' };
+  if (body.prazo && !DATA.test(String(body.prazo))) return { status: 400, erro: 'Prazo inválido' };
+  const { p, c, r } = await alvo(supabase, tenantId, eventoId, body.cliente_id); if (r) return r;
+  if (c ? ['bid', 'cancelada'].includes(c.situacao) : p.cancelado) return { status: 409, erro: 'Esta prospecção já está encerrada — reabra para delegar' };
+  const e = await eventoDoTenant(supabase, tenantId, eventoId);
+  const vespera = somaDias(p.evento.inicio, -1); const prazo = body.prazo || (vespera < hojeBR() ? hojeBR() : vespera);
+  const obs = texto(body.observacao, 500);
+  try { await gravarLinha(supabase, tenantId, e, p.ano, c ? c.id : null, (x) => ({ responsavel_id: resp.id, responsavel_nome: resp.nome, prazo, historico: hist(x, { acao: 'delegada', por: quem.usuarioNome || null, para: resp.nome, prazo, obs }) })); }
+  catch (er) { if (/comercial_prospeccoes|does not exist|schema cache/.test(er.message)) return ERRO_061; throw er; }
+  return { prospeccao: await sincronizarProspeccao(supabase, tenantId, eventoId, { obs }) };
+}
+/** espelha cada linha delegada numa tarefa do ✅ Plano: aberta enquanto a oportunidade está aberta; concluída com BID; cancelada com ✕.
+ *  A linha do EVENTO conclui quando todos os clientes estão resolvidos (BID ou cancelado). */
+async function sincronizarProspeccao(supabase, tenantId, eventoId, { reabrir = false, obs = null } = {}) {
+  const p = await prospeccao(supabase, tenantId, eventoId); if (p.erro) return p;
+  const regs = await linhasProspeccao(supabase, tenantId, eventoId, p.ano);
+  const ev = p.evento; const quando = `${dBR(ev.inicio)}${ev.fim !== ev.inicio ? ` a ${dBR(ev.fim)}` : ''}`;
+  for (const rg of regs.filter((x) => x.responsavel_nome)) {
+    const c = rg.cliente_id == null ? null : p.clientes.find((x) => String(x.id) === String(rg.cliente_id));
+    if (rg.cliente_id != null && !c) continue;
+    let status = 'pendente'; let fim = null;
+    if (c) {
+      if (c.situacao === 'bid') { status = 'concluida'; fim = `✓ Encerrada: ${c.bid_campanha.numero} criado.`; }
+      else if (c.situacao === 'cancelada') { status = 'cancelada'; fim = `✕ Cancelada por ${c.cancelamento.por || '—'}: ${c.cancelamento.motivo}`; }
+    } else if (p.cancelado) { status = 'cancelada'; fim = `🔕 Evento cancelado por ${p.cancelado.por || '—'}: ${p.cancelado.motivo}`; }
+    else if (p.resumo.total > 0 && p.resumo.abertos === 0) { status = 'concluida'; fim = `✓ Encerrada: ${p.resumo.bids} BID(s), ${p.resumo.cancelados} cancelado(s).`; }
+    const titulo = `📣 Prospectar ${c ? c.nome : 'clientes'} — ${ev.nome} (${quando})`.slice(0, 200);
+    const andamento = c ? (c.contatos_campanha ? `${c.contatos_campanha} contato(s) registrado(s).` : 'Ainda não contatado.') : `${p.resumo.contatados} de ${p.resumo.total} contatados · ${p.resumo.bids} BID(s) · ${p.resumo.cancelados} cancelado(s).`;
+    const detalhe = [fim || `Encerra sozinha quando ${c ? 'o BID for criado' : 'todos os clientes tiverem BID ou forem cancelados'} ou o comercial cancelar.`, andamento,
+      obs && !fim ? `Obs.: ${obs}` : null, 'Resolva em 📈 Comercial → 📣 Prospecção (tarefa criada pelo QuotaFlow).'].filter(Boolean).join(' ');
+    try {
+      if (rg.tarefa_id) {
+        const ts = await q(supabase.from('tarefas').select('*').eq('tenant_id', tenantId).eq('id', rg.tarefa_id)).catch(() => []);
+        const t = ts[0];
+        if (t) {
+          const upd = { titulo, detalhe, responsavel: rg.responsavel_nome, prazo: rg.prazo };
+          if (status !== 'pendente') upd.status = status; else if (['concluida', 'cancelada'].includes(t.status) || reabrir) upd.status = 'pendente';
+          await supabase.from('tarefas').update(upd).eq('id', rg.tarefa_id).eq('tenant_id', tenantId);
+          continue;
+        }
+      }
+      if (status !== 'pendente') continue;
+      const { data, error } = await supabase.from('tarefas').insert([{ tenant_id: tenantId, titulo, detalhe, responsavel: rg.responsavel_nome, prazo: rg.prazo, prioridade: c ? 'media' : 'alta', status: 'pendente',
+        origem: 'prospeccao', origem_ref: String(eventoId), criado_em: new Date().toISOString() }]).select();
+      if (error) throw new Error(error.message);
+      await supabase.from('comercial_prospeccoes').update({ tarefa_id: String(data[0].id) }).eq('id', rg.id).eq('tenant_id', tenantId);
+    } catch (er) { console.warn('⚠️ [prospecção] tarefa do Plano:', er.message); }
+  }
+  return prospeccao(supabase, tenantId, eventoId);
+}
+
+module.exports = { prospeccao, cancelarProspeccao, reabrirProspeccao, delegarProspeccao, sincronizarProspeccao, TIPOS, validar, listarEventos, criarEvento, editarEvento, removerEvento, ocorrencias, proximaOcorrencia, calendario, alertas };
