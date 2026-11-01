@@ -7,6 +7,7 @@
 //     ✓✓ visualizado, alertas (sem abrir, aberto sem resposta, validade) com "＋ tarefa"; a resposta do cliente aparece em cada item.
 import { Fragment, useState, useEffect, useMemo } from "react";
 import apiService from "../../services/apiService";
+import ConcluirTarefa from "./ConcluirTarefa"; // 18b.3
 import CampoMoeda from "../shared/CampoMoeda";
 import CampoTelefone from "../shared/CampoTelefone";
 import { abrirBid, prepararJanela } from "../../utils/gerarBid";
@@ -170,7 +171,7 @@ export default function FichaBid({ C, s, id, onFechar, onMudou, onErro, onOk, on
     try { const { para, ...corpo } = ativ; await apiService.post("/comercial/atividades", { ...corpo, bid_id: b.id, atribuido_id: alvo?.id }); if (alvo) onOk(`Tarefa enviada para ${alvo.nome} (avisado por e-mail).`); setAtiv({ tipo: ativ.tipo === "tarefa" ? "nota" : ativ.tipo, texto: "", prevista_para: "", para: "" }); await carregar(); onMudou?.(); }
     catch (e) { onErro(e.message); } finally { setOcupado(false); }
   };
-  const concluir = async (a, feita = true) => { try { await apiService.post(`/comercial/atividades/${a.id}/concluir`, { feita }); await carregar(); onMudou?.(); } catch (e) { onErro(e.message); } };
+  const concluir = async (a, feita = true, resultado) => { try { await apiService.post(`/comercial/atividades/${a.id}/concluir`, { feita, resultado }); await carregar(); onMudou?.(); } catch (e) { onErro(e.message); throw e; } }; // 18b.3: concluir pede o resultado
   const tentarFechar = () => (sujo ? setModal({ tipo: "fechar" }) : onFechar());
 
   const cor = COR_FASE[b.fase];
@@ -318,8 +319,8 @@ export default function FichaBid({ C, s, id, onFechar, onMudou, onErro, onOk, on
             </div>
             {tarefasAbertas.length > 0 && <div style={{ marginTop: 14 }}><div style={{ ...s.label, marginBottom: 6 }}>⏰ TAREFAS ABERTAS</div>
               {tarefasAbertas.map((a) => { const atrasada = a.prevista_para && a.prevista_para < new Date().toISOString();
-                return (<div key={a.id} style={{ display: "flex", gap: 6, alignItems: "flex-start", fontSize: 12, padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
-                  <input type="checkbox" onChange={() => concluir(a)} title="Concluir" style={{ marginTop: 2 }} />
+                return (<div key={a.id} style={{ display: "flex", flexWrap: "wrap", gap: 6, alignItems: "flex-start", fontSize: 12, padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
+                  <ConcluirTarefa C={C} s={s} onConcluir={(r) => concluir(a, true, r)} />
                   <div style={{ flex: 1 }}>{a.texto}<div style={{ fontSize: 11, color: atrasada ? C.danger : C.muted }}>{atrasada ? "atrasada · " : ""}{dBR(a.prevista_para?.slice(0, 10))}{a.atribuido_nome ? ` · → ${a.atribuido_nome}` : ""}{a.usuario_nome && a.usuario_nome !== a.atribuido_nome ? ` · criada por ${a.usuario_nome}` : ""}</div></div>
                 </div>); })}</div>}
             <div style={{ marginTop: 14 }}>

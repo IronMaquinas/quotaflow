@@ -14,7 +14,7 @@
 //   15c: GET /pvs · GET /pvs/:id · GET /pvs/:id/documento · POST /pvs/:id/itens/:item/status { status } · POST /pvs/:id/cancelar { motivo }
 //        POST /pvs/:id/aditivo (cria o BID do aditivo) · POST /bids/:id/gerar-pv (BID aceito antes da 15c)
 //        POST /bids/:id/fase só aceita { fase: 'perdido', motivo, obs } e { fase: 'reabrir' } — o resto muda pelo cliente
-//   POST /atividades · POST /atividades/:id/concluir { feita } · GET /tarefas?minhas=1
+//   POST /atividades · POST /atividades/:id/concluir { feita, resultado (obrigatório ao concluir — 18b.3) } · GET /tarefas?minhas=1
 //   GET  /modelos · GET /modelos/biblioteca · POST /modelos/importar · POST /modelos · PUT /modelos/:id · POST /modelos/:id/atualizar · DELETE /modelos/:id
 //   GET  /clientes · GET /clientes/consulta/:doc · POST /clientes · PUT /clientes/:id · GET /clientes/:id/360
 //   POST /eventos/:id/prospeccao/cancelar|reabrir|delegar   18b.2 — oportunidade do cliente ou do evento inteiro
@@ -52,7 +52,7 @@ router.get('/funil', responder(async (req) => B.funil(supabase, req.tenantId, re
 router.get('/responsaveis', responder(async (req) => ({ responsaveis: await B.responsaveis(supabase, req.tenantId), eu: req.userId })));
 router.get('/tarefas', responder(async (req) => ({ tarefas: await B.tarefas(supabase, req.tenantId, req.query.minhas === '1' ? req.userId : null) })));
 router.post('/atividades', responder(async (req) => B.criarAtividade(supabase, req.tenantId, await quem(req), req.body || {})));
-router.post('/atividades/:id/concluir', responder((req) => B.concluirAtividade(supabase, req.tenantId, req.params.id, req.body?.feita !== false)));
+router.post('/atividades/:id/concluir', responder(async (req) => B.concluirAtividade(supabase, req.tenantId, req.params.id, req.body?.feita !== false, { resultado: req.body?.resultado, quem: await quem(req) }))); // 18b.3: { feita, resultado }
 
 router.get('/modelos', responder(async (req) => ({ modelos: await B.modelosTenant(supabase, req.tenantId), campos: B.CAMPOS, tipos_execucao: B.TIPOS_EXECUCAO })));
 router.get('/modelos/biblioteca', responder(async (req) => ({ modelos: await B.bibliotecaParaTenant(supabase, req.tenantId) })));

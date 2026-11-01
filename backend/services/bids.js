@@ -481,10 +481,16 @@ async function avisarTarefa(supabase, tenantId, quem, atrib, a, bidId) {
       `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.55;color:#111"><p><b>${esc(quem.usuarioNome || 'Um colega')}</b> criou uma tarefa para você${data ? `, para <b>${data}</b>` : ''}:</p><p style="background:#f4f4f5;padding:10px 12px;border-radius:6px">${esc(a.texto)}</p>${b ? `<p>BID: <b>${esc(b.numero)}</b> — ${esc(b.cliente_nome)}</p>` : ''}<p>Veja em 📈 Comercial → 📊 Funil → ⏰ Tarefas.</p></div>`);
   } catch (e) { console.error('⚠️ [tarefa] e-mail não enviado:', e?.message || e); }
 }
-async function concluirAtividade(supabase, tenantId, id, feita = true) {
+// 18b.3: concluir pede o RESULTADO (fica na própria tarefa, com quem concluiu — vai para a linha do tempo do BID e do Cliente 360°)
+const MARCA_RESULTADO = '\n✓ Resultado';
+async function concluirAtividade(supabase, tenantId, id, feita = true, { resultado = null, quem = {} } = {}) {
   const a = idOk(id) ? (await q(supabase.from('bid_atividades').select('*').eq('tenant_id', tenantId).eq('id', id)))[0] : null;
   if (!a || a.tipo !== 'tarefa') return { status: 404, erro: 'Tarefa não encontrada' };
-  const { error } = await supabase.from('bid_atividades').update({ concluida_em: feita ? new Date().toISOString() : null }).eq('id', a.id).eq('tenant_id', tenantId);
+  const r = texto(resultado, 1000);
+  if (feita && !r) return { status: 400, erro: 'Conte o resultado da tarefa (ex.: liguei, vai decidir sexta)' };
+  const base = String(a.texto || '').split(MARCA_RESULTADO)[0];
+  const novo = feita ? `${base}${MARCA_RESULTADO}${quem.usuarioNome ? ` (${quem.usuarioNome})` : ''}: ${r}` : base;
+  const { error } = await supabase.from('bid_atividades').update({ concluida_em: feita ? new Date().toISOString() : null, texto: novo.slice(0, 4000) }).eq('id', a.id).eq('tenant_id', tenantId);
   if (error) throw new Error(error.message);
   return { ok: true };
 }

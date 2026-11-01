@@ -14,6 +14,7 @@ import FichaPedido, { STATUS_PV, STATUS_ITEM } from "./FichaPedido"; // 15c
 import ModelosBid from "./ModelosBid";
 import CalendarioComercial from "./CalendarioComercial"; // 18a
 import PainelProspeccao from "./PainelProspeccao"; // 18b
+import ConcluirTarefa from "./ConcluirTarefa"; // 18b.3
 import { AbaClientes, CampoDocumento, NotaReceita, CamposCliente, vazioCliente, mascaraDoc } from "../contratos/Clientes";
 
 const semAcento = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -211,7 +212,7 @@ export default function TelaComercial({ C, s, abrirProspeccao }) {
     try { await apiService.post(`/comercial/bids/${id}/fase`, { fase, motivo: extra.motivo, obs: extra.obs }); setArrasto(null); ok(`${b.numero} → ${NOME_FASE[fase]}`); await carregar(); }
     catch (e) { erro(e.message); } finally { setOcupado(false); }
   };
-  const concluir = async (t) => { try { await apiService.post(`/comercial/atividades/${t.id}/concluir`, {}); await carregar(); } catch (e) { erro(e.message); } };
+  const concluir = async (t, resultado) => { try { await apiService.post(`/comercial/atividades/${t.id}/concluir`, { resultado }); ok("Tarefa concluída — o resultado ficou no histórico do BID."); await carregar(); } catch (e) { erro(e.message); throw e; } };
 
   const listaVisivel = useMemo(() => (bids || []).filter((b) => (filtroFase === "todos" || (filtroFase === "abertos" ? !["aceito", "perdido"].includes(b.fase) : b.fase === filtroFase))
     && (!busca.trim() || semAcento(`${b.numero} ${b.cliente_nome} ${b.referencia || ""} ${b.titulo || ""} ${b.responsavel_nome || ""}`).includes(semAcento(busca.trim())))), [bids, busca, filtroFase]);
@@ -295,10 +296,10 @@ export default function TelaComercial({ C, s, abrirProspeccao }) {
           <div style={{ ...s.card, padding: 14, flex: "2 1 380px", minWidth: 0 }}>
             <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}><b style={{ flex: 1, fontSize: 13 }}>⏰ Tarefas</b>
               <label style={{ fontSize: 12, color: C.textSub, display: "flex", gap: 4, alignItems: "center", cursor: "pointer" }}><input type="checkbox" checked={soMinhas} onChange={(e) => setSoMinhas(e.target.checked)} /> só as minhas</label></div>
-            {tarefas.map((t) => <div key={t.id} style={{ display: "flex", gap: 8, alignItems: "flex-start", fontSize: 12.5, padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
-              <input type="checkbox" onChange={() => concluir(t)} title="Concluir" style={{ marginTop: 3 }} />
-              <div style={{ flex: 1, minWidth: 0 }}>{t.texto}<div style={{ fontSize: 11, color: t.atrasada ? C.danger : C.muted }}>{t.atrasada ? "atrasada · " : ""}{dBR(t.prevista_para?.slice(0, 10))}{t.atribuido_nome ? ` · → ${t.atribuido_nome}` : ""}
-                {t.bid_numero && <> · <button type="button" className="qf-clicavel" onClick={() => setAberto(t.bid_id)} style={{ background: "none", border: "none", color: C.textSub, padding: 0, fontSize: 11 }}>{t.bid_numero} {t.cliente_nome}</button></>}</div></div>
+            {tarefas.map((t) => <div key={t.id} style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "flex-start", fontSize: 12.5, padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
+              <ConcluirTarefa C={C} s={s} onConcluir={(r) => concluir(t, r)} />
+              <div style={{ flex: 1, minWidth: 0 }}>{t.texto}<div style={{ fontSize: 11, color: t.atrasada ? C.danger : C.muted }}>{t.atrasada ? "atrasada · " : ""}{dBR(t.prevista_para?.slice(0, 10))}{t.atribuido_nome ? ` · → ${t.atribuido_nome}` : ""}</div></div>
+              {t.bid_numero && <button type="button" onClick={() => setAberto(t.bid_id)} title="Abrir a ficha do BID" style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.accent, borderRadius: 14, padding: "2px 9px", fontSize: 11, cursor: "pointer", whiteSpace: "nowrap" }}>📝 {t.bid_numero}{t.cliente_nome ? ` · ${t.cliente_nome}` : ""}</button>}
             </div>)}
             {!tarefas.length && <div style={{ fontSize: 12, color: C.muted }}>Nenhuma tarefa aberta{soMinhas ? " sua" : ""}. Crie na ficha do BID (⏰ Tarefa com data).</div>}
           </div>
