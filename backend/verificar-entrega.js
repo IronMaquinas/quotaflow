@@ -205,10 +205,10 @@ const ESPERADO = {
   'front:TelaUsuariosNova.jsx': 'd7d98c07839cc133077532dd7022c751', // etapa 15a
   'migrations/051_comercial_bid.sql': '65c3c268119eadac6a0ecda34b72197c', // etapa 15a (novo)
   'routes/comercial.js': 'c9e463131964222d940083f203989ce6', // etapa 18b.3
-  'services/bids.js': 'd0798a78d1a219812df11980d299fa73', // etapa 18b.3
+  'services/bids.js': '46bbb568e935e17ce8d0d14f8a194ff4', // etapa 18b.4
   'front:FichaBid.jsx': '5888208621bb3937eed0849db08e636c', // etapa 18b.3
   'front:ModelosBid.jsx': 'fce825c9584b3ff4a2a1040d575de24c', // etapa 15a (novo)
-  'front:TelaComercial.jsx': '7070525d8c5dbaff81501f197eed2a15', // etapa 18b.3
+  'front:TelaComercial.jsx': 'a7ffccdd142331bf7ecf5d16b1d8c75e', // etapa 18b.4
   'front:gerarBid.js': '22e048e4f81d260222995d4607127c72', // etapa 16d
   'migrations/052_bid_cliente.sql': 'a8b6f934576474b54a7246fda86d3eda', // etapa 15b (novo)
   'routes/bidLink.js': 'e566a5246b48e24430a997fda8d32e27', // etapa 15b (novo)
@@ -238,23 +238,23 @@ const ESPERADO = {
   'migrations/058_base_frota.sql': '726daccca8ec58b7bc09dc7ff3a57cf6', // etapa 16e.3 (novo)
   'routes/minhasViagens.js': '2839f5aad536209ef2465538599ce957', // etapa 17a (novo)
   'front:TelaMinhasViagens.jsx': '522b50f6a1971283d451e6d23bc41f2f', // etapa 17a (novo)
-  'services/calendarioComercial.js': '7bef3b20da5ad411bd5f501a2fff2144', // etapa 18b.2
+  'services/calendarioComercial.js': 'c3cd73106c31a48d3cff2ba4fb48c90e', // etapa 18b.4
   'migrations/059_calendario_comercial.sql': '93acdb034cb90c4907b6071eb35a75e9', // etapa 18a (novo)
   'front:CalendarioComercial.jsx': 'be36b6d80bc30ec187cec4728f18d72e', // etapa 18b.2
   'migrations/060_prospeccao_evento.sql': 'f52ed7775d71d71c9ce65f0f57982098', // etapa 18b (novo)
-  'front:PainelProspeccao.jsx': '2f9068542ce11e4823ef27fae9e4ebb5', // etapa 18b.2
+  'front:PainelProspeccao.jsx': 'db5976b1d1c9622aa587a5ef2b9a246d', // etapa 18b.4
   'routes/tarefas.js': '0caed03208a7c31b63d74918f7e28bff', // etapa 18b.2
   'migrations/061_prospeccao_oportunidades.sql': '528a098239312cff4b7b389d4325b2f3', // etapa 18b.2 (novo)
   'front:TelaPlanoAcaoNova.jsx': 'fb3bf98759b0188b429d05669bdc413c', // etapa 18b.2
   'front:ConcluirTarefa.jsx': 'de3f60dc997a047cc1a29cd2a20ac92d', // etapa 18b.3 (novo)
 };
 
-// Antes de copiar a etapa 18b.3 — base: 18b.2
+// Antes de copiar a etapa 18b.4 — base: 18b.3
 const ANTES = {
-  'services/bids.js': '63865ca27bc6e9952a3da4fe22dda982',
-  'routes/comercial.js': 'f2993b9aa3d7e1cc748396633d6ff601',
-  'front:TelaComercial.jsx': 'eb3f613c2dfdc6ca7ff2b0c3538bfc1b',
-  'front:FichaBid.jsx': '7a7a62a1501ab2be296e7cb3a244c3eb',
+  'services/bids.js': 'd0798a78d1a219812df11980d299fa73',
+  'services/calendarioComercial.js': '7bef3b20da5ad411bd5f501a2fff2144',
+  'front:TelaComercial.jsx': '7070525d8c5dbaff81501f197eed2a15',
+  'front:PainelProspeccao.jsx': '2f9068542ce11e4823ef27fae9e4ebb5',
 };
 
 const RAIZ = process.cwd();
@@ -292,7 +292,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18b.3)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18b.4)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

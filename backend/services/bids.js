@@ -498,10 +498,13 @@ async function concluirAtividade(supabase, tenantId, id, feita = true, { resulta
 async function tarefas(supabase, tenantId, usuarioId = null) {
   const [l, bs] = await Promise.all([q(supabase.from('bid_atividades').select('*').eq('tenant_id', tenantId).eq('tipo', 'tarefa').is('concluida_em', null)), q(supabase.from('bids').select('*').eq('tenant_id', tenantId))]);
   const porId = new Map(bs.map((b) => [String(b.id), b]));
+  // 18b.4: tarefa sem BID (retorno da prospecção) → nome do cliente
+  const semBid = l.filter((a) => !a.bid_id && a.cliente_id != null);
+  const cls = semBid.length ? new Map((await q(supabase.from('clientes').select('*').eq('tenant_id', tenantId)).catch(() => [])).map((c) => [String(c.id), c.nome])) : new Map();
   const agora = new Date().toISOString();
   // 15c.1: "minhas" = atribuídas a mim; tarefa antiga (sem atribuição) segue a regra de antes (criei ou sou o responsável do BID)
   return l.filter((a) => !usuarioId || (a.atribuido_id != null ? String(a.atribuido_id) === String(usuarioId) : String(a.usuario_id) === String(usuarioId) || String(porId.get(String(a.bid_id))?.responsavel_id) === String(usuarioId)))
-    .map((a) => { const b = porId.get(String(a.bid_id)); return { ...a, atrasada: !!a.prevista_para && a.prevista_para < agora, bid_numero: b?.numero || null, cliente_nome: b?.cliente_nome || null }; })
+    .map((a) => { const b = porId.get(String(a.bid_id)); return { ...a, atrasada: !!a.prevista_para && a.prevista_para < agora, bid_numero: b?.numero || null, cliente_nome: b?.cliente_nome || cls.get(String(a.cliente_id)) || null }; })
     .sort((x, y) => String(x.prevista_para || '9').localeCompare(String(y.prevista_para || '9')));
 }
 

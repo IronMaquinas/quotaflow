@@ -299,6 +299,7 @@ export default function TelaComercial({ C, s, abrirProspeccao }) {
             {tarefas.map((t) => <div key={t.id} style={{ display: "flex", flexWrap: "wrap", gap: 8, alignItems: "flex-start", fontSize: 12.5, padding: "6px 0", borderBottom: `1px solid ${C.border}` }}>
               <ConcluirTarefa C={C} s={s} onConcluir={(r) => concluir(t, r)} />
               <div style={{ flex: 1, minWidth: 0 }}>{t.texto}<div style={{ fontSize: 11, color: t.atrasada ? C.danger : C.muted }}>{t.atrasada ? "atrasada · " : ""}{dBR(t.prevista_para?.slice(0, 10))}{t.atribuido_nome ? ` · → ${t.atribuido_nome}` : ""}</div></div>
+              {!t.bid_numero && t.evento_id && <button type="button" onClick={() => setProspectar(t.evento_id)} title="Abrir a prospecção do evento" style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.accent, borderRadius: 14, padding: "2px 9px", fontSize: 11, cursor: "pointer", whiteSpace: "nowrap" }}>📣 {t.cliente_nome || "prospecção"}</button>}
               {t.bid_numero && <button type="button" onClick={() => setAberto(t.bid_id)} title="Abrir a ficha do BID" style={{ background: "transparent", border: `1px solid ${C.border}`, color: C.accent, borderRadius: 14, padding: "2px 9px", fontSize: 11, cursor: "pointer", whiteSpace: "nowrap" }}>📝 {t.bid_numero}{t.cliente_nome ? ` · ${t.cliente_nome}` : ""}</button>}
             </div>)}
             {!tarefas.length && <div style={{ fontSize: 12, color: C.muted }}>Nenhuma tarefa aberta{soMinhas ? " sua" : ""}. Crie na ficha do BID (⏰ Tarefa com data).</div>}
@@ -348,7 +349,7 @@ export default function TelaComercial({ C, s, abrirProspeccao }) {
       {pvAberto && <FichaPedido C={C} s={s} id={pvAberto} onFechar={() => { setPvAberto(null); carregar(); }} onMudou={carregar} onErro={erro} onOk={ok} onAbrirBid={(id) => { setPvAberto(null); setAberto(id); }} />}
 
       {prospectar && <PainelProspeccao C={C} s={s} eventoId={prospectar} onErro={erro} onOk={ok} onFechar={() => { setProspectar(null); apiService.get("/comercial/eventos").then((r) => setAlertasEv(r.alertas || [])).catch(() => {}); }}
-        onAbrirBid={(id) => { setProspectar(null); setAberto(id); }} onNovoBid={(c, eventoId) => { setProspectar(null); setNovo({ cliente: c, evento_id: eventoId }); }} />}
+        onAbrirBid={(id) => { setProspectar(null); setAberto(id); }} onAbrirCliente={(id) => { setProspectar(null); setC360(id); }} onNovoBid={(c, eventoId) => { setProspectar(null); setNovo({ cliente: c, evento_id: eventoId }); }} />}
       {novo && casca(s, <NovoBid C={C} s={s} clienteInicial={novo.cliente || null} eventoId={novo.evento_id || null} onErro={erro} onCancelar={() => setNovo(null)}
         onCriado={async (b) => { setNovo(null); setC360(null); ok(`${b.numero} criado — preencha os itens e as condições.`); await carregar(); setAberto(b.id); }} />, () => setNovo(null), 720, 330)}
       {aberto && <FichaBid C={C} s={s} id={aberto} onFechar={() => { setAberto(null); carregar(); }} onMudou={carregar} onErro={erro} onOk={ok} onAbrirCliente={(cid) => { if (cid) { setAberto(null); setC360(cid); } }} onAbrirPV={(id) => { setAberto(null); setPvAberto(id); }} />}

@@ -186,6 +186,8 @@ async function prospeccao(supabase, tenantId, eventoId, cache = {}) {
       const k = `${soDig(x.telefone)}|${String(x.email || '').toLowerCase()}`; if ((!x.telefone && !x.email) || vistos.has(k)) continue; vistos.add(k); contatos.push(x);
     }
     const daCampanha = ac.filter((a) => String(a.evento_id) === String(e.id) || (a.criado_em >= desde && /evento|feira|safra|obra|licita/i.test(String(a.texto)) && String(a.texto).includes(e.nome)));
+    // 18b.4: retorno combinado (⏰ tarefa da campanha) e o histórico da campanha (contatos + retornos + delegar/cancelar/reabrir)
+    const retornos = ativs.filter((a) => a.tipo === 'tarefa' && String(a.cliente_id) === String(c.id) && String(a.evento_id) === String(e.id));
     const bidCamp = bc.find((b) => String(b.evento_id) === String(e.id) && Number(String(b.criado_em || '').slice(0, 4)) >= o.ano - 1);
     const rg = regDe(c.id);
     return { id: c.id, nome: c.nome, cidade: c.cidade || null, uf: c.uf || null, ligado: ligados.includes(String(c.id)), sugestao: sugeridos.get(String(c.id)) || null, contatos,
@@ -195,6 +197,12 @@ async function prospeccao(supabase, tenantId, eventoId, cache = {}) {
       situacao: bidCamp ? 'bid' : (rg?.situacao === 'cancelada' || regEv?.situacao === 'cancelada') ? 'cancelada' : daCampanha.length ? 'contatado' : 'a_contatar',
       contatos_campanha: daCampanha.length, contatado_em: daCampanha[0]?.criado_em || null, bid_campanha: bidCamp ? { id: bidCamp.id, numero: bidCamp.numero, fase: bidCamp.fase } : null,
       cancelamento: !bidCamp && rg?.situacao === 'cancelada' ? { motivo: rg.motivo, por: rg.cancelado_por, em: rg.cancelado_em } : !bidCamp && regEv?.situacao === 'cancelada' ? { motivo: regEv.motivo, por: regEv.cancelado_por, em: regEv.cancelado_em, do_evento: true } : null,
+      retorno: (() => { const r = retornos.filter((a) => !a.concluida_em).sort((a, b) => String(a.prevista_para).localeCompare(String(b.prevista_para)))[0]; return r ? { id: r.id, em: r.prevista_para, para: r.atribuido_nome || null } : null; })(),
+      campanha: [
+        ...daCampanha.map((a) => ({ em: a.criado_em, tipo: a.tipo, texto: a.texto, por: a.usuario_nome || null })),
+        ...retornos.map((a) => ({ em: a.criado_em, tipo: 'retorno', texto: a.texto, por: a.usuario_nome || null, prevista: a.prevista_para, feita: a.concluida_em || null })),
+        ...(rg?.historico || []).map((h) => ({ em: h.em, tipo: h.acao, texto: [h.para ? `para ${h.para}` : null, h.prazo ? `prazo ${dBR(h.prazo)}` : null, h.obs].filter(Boolean).join(' · ') || null, por: h.por || null })),
+      ].sort((a, b) => String(b.em).localeCompare(String(a.em))),
       delegado: rg?.responsavel_nome ? { id: rg.responsavel_id, nome: rg.responsavel_nome, prazo: rg.prazo, tarefa_id: rg.tarefa_id } : null, historico: rg?.historico || [] };
   }).sort((a, b) => (ORD[a.situacao] - ORD[b.situacao]) || (b.ligado - a.ligado) || String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
   // ociosidade: equipamentos sem AT ativa no período do evento
