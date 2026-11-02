@@ -15,6 +15,7 @@ import ModelosBid from "./ModelosBid";
 import CalendarioComercial from "./CalendarioComercial"; // 18a
 import PainelProspeccao from "./PainelProspeccao"; // 18b
 import ConcluirTarefa from "./ConcluirTarefa"; // 18b.3
+import DetalheExecutivo from "./DetalheExecutivo"; // 18b.9
 import { AbaClientes, CampoDocumento, NotaReceita, CamposCliente, vazioCliente, mascaraDoc } from "../contratos/Clientes";
 
 const semAcento = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -32,9 +33,11 @@ const casca = (s, conteudo, fechar, largura = 640, z = 320) => (
   </div>
 );
 
-function Kpi({ C, s, rotulo, valor, sub, cor }) {
-  return <div style={{ ...s.card, padding: "12px 14px", flex: "1 1 150px", minWidth: 0 }}>
-    <div style={{ fontSize: 10.5, color: C.muted, letterSpacing: ".06em" }}>{rotulo}</div>
+function Kpi({ C, s, rotulo, valor, sub, cor, onClick }) { // 18b.9: com onClick = abre o detalhe (borda de destaque + "ver detalhe ›")
+  return <div className={onClick ? "qf-clicavel" : undefined} onClick={onClick} title={onClick ? "Ver o detalhe" : undefined}
+    style={{ ...s.card, padding: "12px 14px", flex: "1 1 150px", minWidth: 0, cursor: onClick ? "pointer" : "default", position: "relative", ...(onClick ? { borderColor: `${cor || C.accent}55`, boxShadow: `inset 3px 0 0 ${cor || C.accent}` } : {}) }}>
+    {onClick && <span style={{ position: "absolute", top: 10, right: 12, fontSize: 11.5, color: cor || C.accent }}>ver detalhe ›</span>}
+    <div style={{ fontSize: 10.5, color: C.muted, letterSpacing: ".06em", paddingRight: onClick ? 80 : 0 }}>{rotulo}</div>
     <div style={{ fontSize: 20, fontWeight: 800, color: cor || C.text, marginTop: 2, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{valor}</div>
     {sub && <div style={{ fontSize: 11, color: C.textSub, marginTop: 2 }}>{sub}</div>}
   </div>;
@@ -205,6 +208,7 @@ export default function TelaComercial({ C, s, abrirProspeccao, podeContratos }) 
     if (k === "ano") return { de: `${h.slice(0, 4)}-01-01`, ate: h };
     return null; };
   const [preset, setPreset] = useState("tri");
+  const [detalhe, setDetalhe] = useState(null); // 18b.9: card aberto (carteira | receita | em_jogo | perdido)
   const [periodo, setPeriodo] = useState(() => faixa("tri"));
   const [busca, setBusca] = useState(""); const [filtroFase, setFiltroFase] = useState("abertos");
   const [pedidos, setPedidos] = useState(null); const [pvAberto, setPvAberto] = useState(null); // 15c
@@ -295,10 +299,10 @@ export default function TelaComercial({ C, s, abrirProspeccao, podeContratos }) 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
           {funil.executivo && (() => { const x = funil.executivo; const pct = (v) => (v == null ? "—" : `${String(v).replace(".", ",")}%`);
             return <div style={{ display: "flex", gap: 8, flexWrap: "wrap", flexBasis: "100%" }}>{/* 18b.8: visão do dono */}
-              <Kpi C={C} s={s} rotulo="CARTEIRA CONTRATADA" valor={compacto(x.carteira.valor)} sub={`locação ${compacto(x.carteira.locacao_mensal)}/mês (${compacto(x.carteira.locacao_restante)} a receber${x.carteira.locacoes_sem_fim ? ` · ${x.carteira.locacoes_sem_fim} sem fim: 12 meses` : ""}) · ${x.carteira.pedidos} pedido(s) em curso ${compacto(x.carteira.pedidos_valor)}`} cor={C.success} />
-              <Kpi C={C} s={s} rotulo={`RECEITA ${x.receita_ano.ano} (REALIZADO + PREVISTO)`} valor={compacto(x.receita_ano.total)} sub={`realizado ${compacto(x.receita_ano.realizado)} (vendido ${compacto(x.receita_ano.vendido)} + locação ${compacto(x.receita_ano.locacao_realizada)}) · previsto ${compacto(x.receita_ano.previsto)} (locação ${compacto(x.receita_ano.locacao_prevista)} + ${x.receita_ano.bids_no_ano} BID(s) × conversão ${pct(x.receita_ano.conversao_pct)})`} cor={C.accent} />
-              <Kpi C={C} s={s} rotulo="EM JOGO (BIDS EM ANDAMENTO)" valor={compacto(x.em_jogo.valor)} sub={`${x.em_jogo.qtd} BID(s)${x.em_jogo.ponderado != null ? ` · ponderado pela conversão ${compacto(x.em_jogo.ponderado)}` : ""}${k.parados ? ` · ${k.parados} parado(s) +7 d` : ""}${k.expirados ? ` · ${k.expirados} vencido(s)` : ""}`} />
-              <Kpi C={C} s={s} rotulo="PERDIDO NO PERÍODO" valor={compacto(x.perdido.valor)} sub={x.perdido.qtd ? `${x.perdido.qtd} BID(s) · mais comum: ${x.perdido.motivo_top.nome} (${x.perdido.motivo_top.qtd})` : "nenhum BID perdido no período"} cor={x.perdido.qtd ? C.danger : undefined} />
+              <Kpi C={C} s={s} rotulo="CARTEIRA CONTRATADA" onClick={() => setDetalhe("carteira")} valor={compacto(x.carteira.valor)} sub={`locação ${compacto(x.carteira.locacao_mensal)}/mês + ${x.carteira.pedidos} pedido(s) em curso`} cor={C.success} />
+              <Kpi C={C} s={s} rotulo={`RECEITA ${x.receita_ano.ano}`} onClick={() => setDetalhe("receita")} valor={compacto(x.receita_ano.total)} sub={`realizado ${compacto(x.receita_ano.realizado)} + previsto ${compacto(x.receita_ano.previsto)}`} cor={C.accent} />
+              <Kpi C={C} s={s} rotulo="EM JOGO" onClick={() => setDetalhe("em_jogo")} valor={compacto(x.em_jogo.valor)} sub={`${x.em_jogo.qtd} BID(s) em andamento${k.parados || k.expirados ? ` · ${(k.parados || 0) + (k.expirados || 0)} pedem atenção` : ""}`} />
+              <Kpi C={C} s={s} rotulo="PERDIDO NO PERÍODO" onClick={() => setDetalhe("perdido")} valor={compacto(x.perdido.valor)} sub={x.perdido.qtd ? `${x.perdido.qtd} BID(s) · mais comum: ${x.perdido.motivo_top.nome}` : "nenhum BID perdido no período"} cor={x.perdido.qtd ? C.danger : undefined} />
             </div>; })()}
           <Kpi C={C} s={s} rotulo="GANHO NO PERÍODO" valor={compacto(k.valor_ganho)} sub={`${k.ganhos} aceito(s)`} cor={C.success} />
           <Kpi C={C} s={s} rotulo="CONVERSÃO" valor={k.conversao_pct == null ? "—" : `${String(k.conversao_pct).replace(".", ",")}%`} sub={`${k.ganhos} ganho(s) × ${k.perdidos} perdido(s)`} />
@@ -386,6 +390,8 @@ export default function TelaComercial({ C, s, abrirProspeccao, podeContratos }) 
       </div>)}
       {pvAberto && <FichaPedido C={C} s={s} id={pvAberto} onFechar={() => { setPvAberto(null); carregar(); }} onMudou={carregar} onErro={erro} onOk={ok} onAbrirBid={(id) => { setPvAberto(null); setAberto(id); }} />}
 
+      {detalhe && funil?.executivo && <DetalheExecutivo C={C} s={s} qual={detalhe} x={funil.executivo} periodo={periodo} podeContratos={podeContratos} onFechar={() => setDetalhe(null)}
+        onAbrirBid={(id) => { setDetalhe(null); setAberto(id); }} onAbrirPV={(id) => { setDetalhe(null); setPvAberto(id); }} />}
       {prospectar && <PainelProspeccao C={C} s={s} eventoId={prospectar} onErro={erro} onOk={ok} onFechar={() => { setProspectar(null); apiService.get("/comercial/eventos").then((r) => setAlertasEv(r.alertas || [])).catch(() => {}); }}
         onAbrirBid={(id) => { setProspectar(null); setAberto(id); }} onAbrirCliente={(id) => { setProspectar(null); setC360(id); }} onNovoBid={(c, eventoId) => { setProspectar(null); setNovo({ cliente: c, evento_id: eventoId }); }} />}
       {novo && casca(s, <NovoBid C={C} s={s} clienteInicial={novo.cliente || null} eventoId={novo.evento_id || null} onErro={erro} onCancelar={() => setNovo(null)}

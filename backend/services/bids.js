@@ -552,18 +552,22 @@ async function executivo(supabase, tenantId, { bs, abertos, perdidos, motivos })
   const ctr = new Map(ctrs.map((c) => [String(c.id), c]));
   // 📑 locação: valor mensal × meses (até o fim previsto; sem fim previsto conta 12 meses à frente)
   let locMes = 0, locRestante = 0, locSemFim = 0, locRealAno = 0, locPrevAno = 0;
+  const porCtr = new Map(); // 18b.9: composição por contrato (para o modal)
+  const item = (l) => { const k = l.contrato_id != null ? `c${l.contrato_id}` : `l${l.id}`; if (!porCtr.has(k)) { const c = ctr.get(String(l.contrato_id)); porCtr.set(k, { contrato_id: c ? c.id : null, numero: c?.numero || l.contrato || null, cliente: c?.cliente || c?.cliente_nome || l.cliente || null, mensal: 0, a_receber: 0, realizado_ano: 0, previsto_ano: 0, fim_previsto: null, sem_fim: false, equipamentos: 0 }); } return porCtr.get(k); };
   for (const l of locs) {
     const v = Number(l.valor_mensal || 0); if (!v) continue;
+    const it = item(l);
     const fimP = l.fim_previsto || ctr.get(String(l.contrato_id))?.fim_previsto || null;
     const fimReal = l.status === 'encerrada' ? (l.fim_real || fimP || l.inicio) : null;
     // realizado no ano: do início (ou 1º/jan) até hoje (ou o fim real)
     const r0 = l.inicio > ini ? l.inicio : ini; const r1 = [hoje, fimReal].filter(Boolean).sort()[0];
-    locRealAno += v * mesesEntre(r0, r1 < r0 ? r0 : r1);
+    const real = v * mesesEntre(r0, r1 < r0 ? r0 : r1); locRealAno += real; it.realizado_ano += real;
     if (l.status !== 'ativa') continue;
-    locMes += v;
-    const ate = fimP || (locSemFim++, somaDias(hoje, 365));
-    locRestante += v * mesesEntre(hoje, ate);
-    locPrevAno += v * mesesEntre(hoje, ate < fimAno ? ate : fimAno);
+    locMes += v; it.mensal += v; it.equipamentos++;
+    const ate = fimP || (locSemFim++, it.sem_fim = true, somaDias(hoje, 365));
+    if (fimP && (!it.fim_previsto || fimP > it.fim_previsto)) it.fim_previsto = fimP;
+    const rest = v * mesesEntre(hoje, ate); locRestante += rest; it.a_receber += rest;
+    const prev = v * mesesEntre(hoje, ate < fimAno ? ate : fimAno); locPrevAno += prev; it.previsto_ano += prev;
   }
   const emCurso = pvs.filter((p) => ['aberto', 'em_execucao'].includes(p.status));
   const valorPV = emCurso.reduce((t, p) => t + Number(p.valor_total || 0), 0);
@@ -579,12 +583,26 @@ async function executivo(supabase, tenantId, { bs, abertos, perdidos, motivos })
   const r2 = (n) => Math.round(n * 100) / 100;
   const emJogo = abertos.reduce((t, b) => t + Number(b.valor_total || 0), 0);
   const top = [...motivos].sort((a, b) => b.qtd - a.qtd || b.valor - a.valor)[0] || null;
+  // 18b.9: itens de cada card (o modal mostra a composição — mesmas contas dos totais)
+  const rb = (b) => ({ id: b.id, numero: b.numero, cliente: b.cliente_nome || null, titulo: b.titulo || null, fase: b.fase, valor: r2(Number(b.valor_total || 0)) });
+  const contratos = [...porCtr.values()].map((c) => ({ ...c, mensal: r2(c.mensal), a_receber: r2(c.a_receber), realizado_ano: r2(c.realizado_ano), previsto_ano: r2(c.previsto_ano) }));
+  const itens = {
+    contratos: contratos.filter((c) => c.mensal > 0).sort((a, b) => b.a_receber - a.a_receber),
+    contratos_ano: contratos.filter((c) => c.realizado_ano > 0 || c.previsto_ano > 0).sort((a, b) => (b.realizado_ano + b.previsto_ano) - (a.realizado_ano + a.previsto_ano)),
+    pedidos: emCurso.map((p) => ({ id: p.id, numero: p.numero, cliente: p.cliente_nome || null, titulo: p.titulo || null, status: p.status, valor: r2(Number(p.valor_total || 0)) })).sort((a, b) => b.valor - a.valor),
+    aceitos_ano: aceitosAno.map((b) => ({ ...rb(b), em: b.ganho_em })).sort((a, b) => b.valor - a.valor),
+    bids_ano: abertosAno.map((b) => ({ ...rb(b), decisao: b.previsao_fechamento, ponderado: r2(Number(b.valor_total || 0) * (conv ?? 0)) })).sort((a, b) => b.valor - a.valor),
+    em_jogo: abertos.map((b) => ({ ...rb(b), decisao: b.previsao_fechamento || null, dias_na_fase: b.dias_na_fase ?? null, vencido: !!b.expirado, atrasado: !!(b.previsao_fechamento && b.previsao_fechamento < hoje) })).sort((a, b) => b.valor - a.valor),
+    perdidos: perdidos.map((b) => ({ ...rb(b), em: b.perdido_em, motivo: MOTIVOS_PERDA[b.motivo_perda] || b.motivo_perda || null, obs: b.perda_obs || null })).sort((a, b) => b.valor - a.valor),
+    motivos: [...motivos].sort((a, b) => b.valor - a.valor),
+  };
   return {
     carteira: { valor: r2(locRestante + valorPV), locacao_restante: r2(locRestante), locacao_mensal: r2(locMes), locacoes_sem_fim: locSemFim, pedidos: emCurso.length, pedidos_valor: r2(valorPV) },
     receita_ano: { ano: Number(ano), total: r2(vendidoAno + locRealAno + locPrevAno + bidsPrev), realizado: r2(vendidoAno + locRealAno), vendido: r2(vendidoAno), locacao_realizada: r2(locRealAno),
       previsto: r2(locPrevAno + bidsPrev), locacao_prevista: r2(locPrevAno), bids_previstos: r2(bidsPrev), bids_no_ano: abertosAno.length, conversao_pct: conv == null ? null : Math.round(conv * 1000) / 10 },
     em_jogo: { valor: r2(emJogo), qtd: abertos.length, ponderado: conv == null ? null : r2(emJogo * conv) },
     perdido: { valor: r2(perdidos.reduce((t, b) => t + Number(b.valor_total || 0), 0)), qtd: perdidos.length, motivo_top: top ? { nome: top.nome, qtd: top.qtd } : null },
+    itens,
   };
 }
 /** 15b.4: previsão de receita — BIDs abertos pela "decisão esperada" (este mês, próximo, atrasados, sem data) */
