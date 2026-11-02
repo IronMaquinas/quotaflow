@@ -25,7 +25,8 @@
 import { useState, useRef, useEffect } from 'react';
 import apiService from '../../services/apiService';
 import { linhasMarca, desenharMarca, alturaMarca, pegarGps } from "../../utils/marcaFoto"; // 18c
-const marcaNC = async () => ({ oque: "Não conformidade", quem: (() => { try { return JSON.parse(localStorage.getItem("usuario") || "null")?.nome || null; } catch { return null; } })(), gps: await pegarGps(2500) });
+const marcaNC = async (ref = null) => ({ oque: "Não conformidade", ref: ref || null, quem: // 18c.1: ref = NC, item, lote, NF… (rastreabilidade)
+   (() => { try { return JSON.parse(localStorage.getItem("usuario") || "null")?.nome || null; } catch { return null; } })(), gps: await pegarGps(2500) });
 
 const LIMITE_ANEXO_BYTES = 50 * 1024 * 1024; // 50MB por arquivo
 
@@ -265,7 +266,7 @@ export default function ModalNovaNC({ C, s, onFechar, onAtualizar }) {
       try {
         const ehImagem = file.type.startsWith('image/');
         const { dataUri, base64, mime_type, tamanho_bytes } = ehImagem
-          ? await comprimirImagem(file, { marca: await marcaNC() })
+          ? await comprimirImagem(file, { marca: await marcaNC(["nova NC", itemTexto || null, itemSku ? `SKU ${itemSku}` : null, lote ? `lote ${lote}` : null, numeroSerie ? `série ${numeroSerie}` : null, numeroNotaFiscal ? `NF ${numeroNotaFiscal}` : null].filter(Boolean).join(" · ")) })
           : await lerBase64(file);
         novos.push({
           id_local: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,

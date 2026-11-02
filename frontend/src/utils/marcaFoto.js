@@ -10,10 +10,11 @@ export const LIMITE_ANTIGA_MS = 10 * 60 * 1000;
 
 /** monta as linhas: { oque, ref, quem, gps:{lat,lng,precisao}, arquivoEm (ms), agora (ms) } */
 export function linhasMarca({ oque, ref, quem, gps, arquivoEm, agora = Date.now() } = {}) {
-  const l1 = ["QuotaFlow", oque, ref].filter(Boolean).join(" · ");
+  const curta = ["QuotaFlow", oque, ref].filter(Boolean).join(" · ");
+  const l1 = curta.length <= 70 || !ref ? curta : ["QuotaFlow", oque].filter(Boolean).join(" · "); // 18c.1: referência longa ganha linha própria
   const g = gps && Number.isFinite(Number(gps.lat)) ? `GPS ${Number(gps.lat).toFixed(5)}, ${Number(gps.lng).toFixed(5)}${gps.precisao ? ` ±${Math.round(gps.precisao)} m` : ""}` : "sem GPS";
   const l2 = [dataHoraBR(agora), g, quem].filter(Boolean).join(" · ");
-  const linhas = [l1, l2];
+  const linhas = l1 === curta ? [l1, l2] : [l1, String(ref), l2];
   const antiga = Number.isFinite(arquivoEm) && arquivoEm > 0 && agora - arquivoEm > LIMITE_ANTIGA_MS;
   if (antiga) linhas.push(`⚠ foto antiga ou da galeria — arquivo de ${dataHoraBR(arquivoEm)}`);
   return { linhas, antiga };

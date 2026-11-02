@@ -12,7 +12,8 @@ import apiService from "../../services/apiService";
 import ModalPrompt from "../shared/ModalPrompt";
 import ModalGerarPdfNC from "./ModalGerarPdfNC";
 import { linhasMarca, desenharMarca, alturaMarca, pegarGps } from "../../utils/marcaFoto"; // 18c
-const marcaNC = async () => ({ oque: "Não conformidade", quem: (() => { try { return JSON.parse(localStorage.getItem("usuario") || "null")?.nome || null; } catch { return null; } })(), gps: await pegarGps(2500) });
+const marcaNC = async (ref = null) => ({ oque: "Não conformidade", ref: ref || null, quem: // 18c.1: ref = NC, item, lote, NF… (rastreabilidade)
+   (() => { try { return JSON.parse(localStorage.getItem("usuario") || "null")?.nome || null; } catch { return null; } })(), gps: await pegarGps(2500) });
 
 // Sugestão automática de área por tipo de disposição. O usuário pode
 // sobrescrever no mini-modal. Alinhado com o fluxo real: devolução vai
@@ -639,7 +640,7 @@ export default function ModalDetalheNC({
     try {
       for (const file of files) {
         try {
-          const { dataUri, mime_type, tamanho_bytes } = await comprimirImagem(file, { marca: await marcaNC() });
+          const { dataUri, mime_type, tamanho_bytes } = await comprimirImagem(file, { marca: await marcaNC([nc?.numero_nc, nc?.item_nome || nc?.item_nome_avulso, (nc?.item_sku || nc?.item_sku_avulso) ? `SKU ${nc.item_sku || nc.item_sku_avulso}` : null, nc?.lote ? `lote ${nc.lote}` : null, nc?.numero_serie ? `série ${nc.numero_serie}` : null, nc?.numero_nota_fiscal ? `NF ${nc.numero_nota_fiscal}` : null].filter(Boolean).join(" · ")) });
           await apiService.post(`/nao-conformidades/${ncId}/anexos`, {
             url: dataUri,
             mime_type,

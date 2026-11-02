@@ -14,7 +14,8 @@
 
 import { useState, useRef } from 'react';
 import { linhasMarca, desenharMarca, alturaMarca, pegarGps } from "../../utils/marcaFoto"; // 18c
-const marcaNC = async () => ({ oque: "Não conformidade", quem: (() => { try { return JSON.parse(localStorage.getItem("usuario") || "null")?.nome || null; } catch { return null; } })(), gps: await pegarGps(2500) });
+const marcaNC = async (ref = null) => ({ oque: "Não conformidade", ref: ref || null, quem: // 18c.1: ref = NC, item, lote, NF… (rastreabilidade)
+   (() => { try { return JSON.parse(localStorage.getItem("usuario") || "null")?.nome || null; } catch { return null; } })(), gps: await pegarGps(2500) });
 
 // Comprime imagem antes de mandar como base64. Assinatura IDÊNTICA à
 // do ModalDetalheNC.jsx — mesmo comportamento de redimensionamento,
@@ -72,6 +73,7 @@ export default function ModalNaoConformidade({
   quantidadeInicial = '',
   unidadeInicial = 'UN',
   mostraRastreabilidade = false,
+  referencia = null, // 18c.1: vai na tarja das fotos (ex.: recebimento · OV · item)
   onFechar,
   onConfirmar,
 }) {
@@ -93,7 +95,7 @@ export default function ModalNaoConformidade({
     }
     setErro(null);
     try {
-      const { dataUri, mime_type, tamanho_bytes } = await comprimirImagem(file, { marca: await marcaNC() });
+      const { dataUri, mime_type, tamanho_bytes } = await comprimirImagem(file, { marca: await marcaNC(referencia) });
       setAnexos(prev => [...prev, {
         nome_arquivo: file.name,
         url: dataUri,

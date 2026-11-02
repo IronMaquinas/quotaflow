@@ -2569,6 +2569,7 @@ return (
           // com o que o comprador digitou. Só mostra em NC (quarentena
           // pura não recusa quantidade).
           mostraRastreabilidade={modalNCConfig.modo === 'nao_conformidade' && itensParaContar.length > 0}
+          referencia={['Recebimento', ordemVendaSel?.numero, itensParaContar.length === 1 ? itensParaContar[0]?.item_nome : itensParaContar.length > 1 ? `${itensParaContar.length} itens` : null].filter(Boolean).join(' · ')}
           quantidadeInicial={
             itensParaContar[0] && contagens[itensParaContar[0].id]?.quantidade
               ? contagens[itensParaContar[0].id].quantidade

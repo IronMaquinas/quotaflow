@@ -197,7 +197,7 @@ const ESPERADO = {
   'front:cotacoesService.js': 'fd42c81ed12dbb4e7d9fa20b03c22767', // etapa 14e
   'front:TelaMonitorarRespostas.jsx': '2e29288fda23cfcb8acd4584c7dfb8dd', // etapa 14e
   'front:TelaCotacoesNovaComAbas.jsx': 'eaf917e126f9d0742b9780be21b80e9a', // etapa 15a
-  'front:TelaRecebimento.jsx': 'b441323654332068311aba5ce9188d78', // etapa 14e
+  'front:TelaRecebimento.jsx': 'f83efb4e441f5acfa7147ba7cab089bd', // etapa 18c.1
   'front:CnpjsPlataforma.jsx': '0663f0bd670edb45ff9ae8d2c2ef6a09', // etapa 14e.1
   'front:ModalJustificativaCnpj.jsx': '13d5e39c961c4e775fde24c77e4fb7ff', // etapa 14e (novo)
   'front:TelaMonitorCnpj.jsx': '7d9525d956277c38774adf199a1cf76e', // etapa 14e.2
@@ -248,20 +248,19 @@ const ESPERADO = {
   'front:TelaPlanoAcaoNova.jsx': 'fb3bf98759b0188b429d05669bdc413c', // etapa 18b.2
   'front:ConcluirTarefa.jsx': 'de3f60dc997a047cc1a29cd2a20ac92d', // etapa 18b.3 (novo)
   'front:DetalheExecutivo.jsx': '7fe748dd4a963a04f71d264bb189318f', // etapa 18b.9 (novo)
-  'front:marcaFoto.js': '31c7db1cc9399a0d19c993b6fb3c637f', // etapa 18c (novo)
-  'front:ModalNovaNC.jsx': '1b3996d0e3a167ca7f9977bdcc46427c', // etapa 18c
-  'front:ModalDetalheNC.jsx': 'eb9f3baaa3ff44d306b496cf4e54ce9b', // etapa 18c
-  'front:ModalNaoConformidade.jsx': '986a72bc80107f213cad599ea6877332', // etapa 18c
+  'front:marcaFoto.js': 'a6db258788f20a7b85bcf34ebadd5894', // etapa 18c.1
+  'front:ModalNovaNC.jsx': '09465443b4f9c1734de92b2a761616f7', // etapa 18c.1
+  'front:ModalDetalheNC.jsx': 'cd3f1c3005dce6eecbc6dd71082cdaed', // etapa 18c.1
+  'front:ModalNaoConformidade.jsx': '244c331b28157bb6c2f14f4736d461e6', // etapa 18c.1
 };
 
-// Antes de copiar a etapa 18c — base: 18b.9
+// Antes de copiar a etapa 18c.1 — base: 18c
 const ANTES = {
-  'front:filaInspecoes.js': '908b1fc4fe5afa430ea0ea27fbdf28d6',
-  'front:ExecutarInspecao.jsx': 'adce6696647fc3af408b3a7bd5c2baad',
-  'front:TelaATPublica.jsx': '73116fc205a6f572e987ecdccc44fc93',
-  'front:ModalNovaNC.jsx': 'f3731f99fdb3f26d4152760426e33377',
-  'front:ModalDetalheNC.jsx': '858ab824396abc0cec6b0b3dba7ef0be',
-  'front:ModalNaoConformidade.jsx': '2020113820b4766b0bc3b8433735d0f6',
+  'front:marcaFoto.js': '31c7db1cc9399a0d19c993b6fb3c637f',
+  'front:ModalNovaNC.jsx': '1b3996d0e3a167ca7f9977bdcc46427c',
+  'front:ModalDetalheNC.jsx': 'eb9f3baaa3ff44d306b496cf4e54ce9b',
+  'front:ModalNaoConformidade.jsx': '986a72bc80107f213cad599ea6877332',
+  'front:TelaRecebimento.jsx': 'b441323654332068311aba5ce9188d78',
 };
 
 const RAIZ = process.cwd();
@@ -299,7 +298,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18c)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18c.1)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
