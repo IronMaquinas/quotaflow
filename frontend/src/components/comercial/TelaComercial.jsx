@@ -125,8 +125,8 @@ function NovoBid({ C, s, clienteInicial, eventoId, onCriado, onCancelar, onErro 
   </>);
 }
 
-function Cliente360({ C, s, id, onFechar, onAbrirBid, onNovoBid, onEditar, onErro, onAbrirPV }) {
-  const [d, setD] = useState(null); const [a, setA] = useState({ tipo: "nota", texto: "" }); const [ocupado, setOcupado] = useState(false);
+function Cliente360({ C, s, id, onFechar, onAbrirBid, onNovoBid, onEditar, onErro, onAbrirPV, podeContratos }) {
+  const [d, setD] = useState(null); const [a, setA] = useState({ tipo: "nota", texto: "" }); const [ocupado, setOcupado] = useState(false); const [todas, setTodas] = useState(false); // 18b.7: histórico completo em modal
   const carregar = () => apiService.get(`/comercial/clientes/${id}/360`).then(setD).catch((e) => { onErro(e.message); onFechar(); });
   useEffect(() => { carregar(); }, [id]); // eslint-disable-line
   if (!d) return null;
@@ -142,7 +142,8 @@ function Cliente360({ C, s, id, onFechar, onAbrirBid, onNovoBid, onEditar, onErr
     </div>
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
       <Kpi C={C} s={s} rotulo="EM ABERTO" valor={compacto(r.em_aberto)} sub={`${r.abertos} BID(s)`} />
-      <Kpi C={C} s={s} rotulo="GANHO" valor={compacto(r.valor_ganho)} sub={`${r.ganhos} aceito(s) · ${r.perdidos} perdido(s)`} cor={C.success} />
+      <Kpi C={C} s={s} rotulo="GANHO" valor={compacto(r.valor_ganho)} sub={`${r.ganhos} aceito(s)`} cor={C.success} />
+      <Kpi C={C} s={s} rotulo="PERDIDO" valor={compacto(r.valor_perdido || 0)} sub={`${r.perdidos} BID(s) perdido(s)`} cor={r.perdidos ? C.danger : undefined} />{/* 18b.7 */}
       <Kpi C={C} s={s} rotulo="CONTRATOS ATIVOS" valor={r.contratos_ativos} sub={`${d.contratos.length} no total`} />
     </div>
     <div style={{ display: "flex", gap: 14, flexWrap: "wrap" }}>
@@ -154,6 +155,10 @@ function Cliente360({ C, s, id, onFechar, onAbrirBid, onNovoBid, onEditar, onErr
         {(d.pedidos || []).length > 0 && <><div style={{ ...s.label, marginTop: 14 }}>PEDIDOS DE VENDA</div>
           {d.pedidos.map((p) => <div key={p.id} onClick={() => onAbrirPV?.(p.id)} className="qf-clicavel" style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12.5, padding: "7px 0", borderBottom: `1px solid ${C.border}`, textDecoration: "none" }}>
             <span style={s.tag(STATUS_PV[p.status]?.[1])}>{STATUS_PV[p.status]?.[0]}</span><span style={{ flex: 1 }}>🧾 {p.numero}{p.titulo ? ` — ${p.titulo}` : ""}</span><b>{brl(p.valor_total)}</b></div>)}</>}
+        {d.contratos.length > 0 && <><div style={{ ...s.label, marginTop: 14 }}>CONTRATOS DE LOCAÇÃO</div>{/* 18b.7: logo abaixo dos pedidos; abre o contrato */}
+          {d.contratos.map((k) => <div key={k.id} className={podeContratos ? "qf-clicavel" : undefined} title={podeContratos ? "Abrir o contrato" : "Seu perfil não acessa 📑 Contratos"} onClick={() => podeContratos && window.dispatchEvent(new CustomEvent("qf-abrir-contrato", { detail: k.id }))}
+            style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12.5, padding: "7px 0", borderBottom: `1px solid ${C.border}`, cursor: podeContratos ? "pointer" : "default" }}>
+            <span style={s.tag(k.status === "ativo" ? C.success : C.muted)}>{k.status}</span><span style={{ flex: 1 }}>📑 {k.numero}{k.local ? ` · ${k.local}` : ""}{k.inicio ? ` · ${dBR(k.inicio)}` : ""}{k.fim_previsto ? ` → ${dBR(k.fim_previsto)}` : ""}</span>{podeContratos && <span style={{ color: C.accent, fontSize: 12 }}>abrir ›</span>}</div>)}</>}
         {(d.eventos || []).length > 0 && <><div style={{ ...s.label, marginTop: 14 }}>🎪 EVENTOS</div>{/* 18b.6: participação por evento e ano */}
           {d.eventos.map((h, k) => <div key={k} className={h.bid ? "qf-clicavel" : undefined} onClick={() => h.bid && onAbrirBid(h.bid.id)} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12.5, padding: "7px 0", borderBottom: `1px solid ${C.border}`, cursor: h.bid ? "pointer" : "default", flexWrap: "wrap" }}>
             <span style={{ flex: "1 1 200px" }}>{h.evento_nome} <span style={{ color: C.muted }}>· {h.ano}</span></span>
@@ -161,23 +166,32 @@ function Cliente360({ C, s, id, onFechar, onAbrirBid, onNovoBid, onEditar, onErr
               : h.resultado === "cancelada" ? <span style={{ color: C.danger }} title={h.cancelada?.por ? `por ${h.cancelada.por}` : ""}>✕ não participou{h.cancelada?.motivo ? ` — ${h.cancelada.motivo}` : ""}</span>
               : <span style={{ color: C.muted }}>💬 {h.contatos} contato(s), sem resultado</span>}
           </div>)}</>}
-        {d.contratos.length > 0 && <><div style={{ ...s.label, marginTop: 14 }}>CONTRATOS DE LOCAÇÃO</div>
-          {d.contratos.map((k) => <div key={k.id} style={{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px solid ${C.border}` }}><span style={s.tag(k.status === "ativo" ? C.success : C.muted)}>{k.status}</span> {k.numero}{k.local ? ` · ${k.local}` : ""} · {dBR(k.inicio)}{k.fim_previsto ? ` → ${dBR(k.fim_previsto)}` : ""}</div>)}</>}
       </div>
       <div style={{ flex: "2 1 260px", minWidth: 0 }}>
-        <div style={s.label}>ATIVIDADES</div>
+        <div style={s.label}>HISTÓRICO DE ATIVIDADES</div>
         <div style={{ display: "flex", gap: 4, marginBottom: 4 }}>{[["nota", "📝 Nota"], ["ligacao", "📞 Ligação"], ["email", "✉ E-mail"], ["reuniao", "🤝 Reunião"]].map(([k, l]) => <button key={k} type="button" onClick={() => setA({ ...a, tipo: k })} style={{ ...s.tag(a.tipo === k ? C.accent : C.muted), cursor: "pointer", padding: "3px 7px" }}>{l}</button>)}</div>
         <div style={{ display: "flex", gap: 6 }}><input value={a.texto} onChange={(e) => setA({ ...a, texto: e.target.value })} placeholder="O que aconteceu" style={{ ...s.input, fontSize: 12 }} />
           <button type="button" disabled={ocupado || !a.texto.trim()} onClick={registrar} style={{ ...s.btn(!ocupado && !!a.texto.trim(), C.accent), padding: "6px 10px", fontSize: 12 }}>OK</button></div>
-        <div style={{ maxHeight: 320, overflowY: "auto", marginTop: 6 }}>{d.atividades.map((x) => <div key={x.id} style={{ fontSize: 12, padding: "6px 0", borderBottom: `1px solid ${C.border}`, color: x.tipo === "evento" ? C.muted : C.text }}>
-          {x.texto}<div style={{ fontSize: 10.5, color: C.muted }}>{dataHora(x.criado_em)}{x.usuario_nome ? ` · ${x.usuario_nome}` : ""}</div></div>)}</div>
+        {(() => { const linha = (x) => <div key={x.id} style={{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px solid ${C.border}`, color: x.tipo === "evento" ? C.muted : C.text, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+            {x.texto}<div style={{ fontSize: 11, color: C.muted }}>{dataHora(x.criado_em)}{x.usuario_nome ? ` · ${x.usuario_nome}` : ""}</div></div>;
+          const LIM = 10; // 18b.7: os mais recentes aqui; o resto no "Ver mais" (não empurra o Fechar)
+          return <div style={{ marginTop: 6 }}>{d.atividades.slice(0, LIM).map(linha)}
+            {!d.atividades.length && <div style={{ fontSize: 12, color: C.muted }}>Nenhuma atividade ainda.</div>}
+            {d.atividades.length > LIM && <button type="button" onClick={() => setTodas(true)} style={{ ...s.btn(false), width: "100%", marginTop: 8, color: C.accent, cursor: "pointer", fontSize: 12.5 }}>Ver mais ({d.atividades.length - LIM}) — histórico completo</button>}
+            {todas && <div style={{ position: "fixed", inset: 0, background: "#00000090", zIndex: 400, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: 16, overflowY: "auto" }} onClick={() => setTodas(false)}>
+              <div onClick={(e) => e.stopPropagation()} style={{ ...s.card, width: 720, maxWidth: "100%", margin: "auto 0", padding: "16px 20px", color: C.text }}>
+                <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}><b style={{ flex: 1, fontSize: 16 }}>📜 Histórico de atividades — {c.nome}</b><span style={{ fontSize: 12, color: C.muted, marginRight: 10 }}>{d.atividades.length} registro(s)</span>
+                  <button type="button" onClick={() => setTodas(false)} style={{ background: "transparent", border: "none", color: C.muted, fontSize: 22, cursor: "pointer" }}>×</button></div>
+                <div style={{ maxHeight: "70vh", overflowY: "auto" }}>{d.atividades.map(linha)}</div>
+              </div></div>}
+          </div>; })()}
       </div>
     </div>
     <button type="button" onClick={onFechar} style={{ ...s.btn(false), cursor: "pointer", width: "100%", color: C.text, marginTop: 14 }}>Fechar</button>
   </>, onFechar, 900);
 }
 
-export default function TelaComercial({ C, s, abrirProspeccao }) {
+export default function TelaComercial({ C, s, abrirProspeccao, podeContratos }) {
   const [aba, setAba] = useState("funil");
   useEffect(() => { if (aba === "funil") apiService.get("/comercial/eventos").then((r) => setAlertasEv(r.alertas || [])).catch(() => {}); }, [aba]); // 18a: atualiza a faixa ao voltar ao Funil
   const [bids, setBids] = useState(null);
@@ -360,7 +374,7 @@ export default function TelaComercial({ C, s, abrirProspeccao }) {
       {novo && casca(s, <NovoBid C={C} s={s} clienteInicial={novo.cliente || null} eventoId={novo.evento_id || null} onErro={erro} onCancelar={() => setNovo(null)}
         onCriado={async (b) => { setNovo(null); setC360(null); ok(`${b.numero} criado — preencha os itens e as condições.`); await carregar(); setAberto(b.id); }} />, () => setNovo(null), 720, 330)}
       {aberto && <FichaBid C={C} s={s} id={aberto} onFechar={() => { setAberto(null); carregar(); }} onMudou={carregar} onErro={erro} onOk={ok} onAbrirCliente={(cid) => { if (cid) { setAberto(null); setC360(cid); } }} onAbrirPV={(id) => { setAberto(null); setPvAberto(id); }} />}
-      {c360 && <Cliente360 C={C} s={s} id={c360} onFechar={() => setC360(null)} onErro={erro} onAbrirBid={(id) => { setC360(null); setAberto(id); }}
+      {c360 && <Cliente360 C={C} s={s} id={c360} podeContratos={podeContratos} onFechar={() => setC360(null)} onErro={erro} onAbrirBid={(id) => { setC360(null); setAberto(id); }}
         onNovoBid={(c) => setNovo({ cliente: c })} onAbrirPV={(id) => { setC360(null); setPvAberto(id); }} onEditar={(id) => { setC360(null); setAba("clientes"); setEditarCli(id); }} />}
 
       {arrasto && casca(s, <>

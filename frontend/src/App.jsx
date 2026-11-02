@@ -177,6 +177,8 @@ export default function App() {
   const [cotacaoParaAbrir, setCotacaoParaAbrir] = useState(null); // 14e.2
   const [ocParaAbrir, setOcParaAbrir] = useState(null); // 14e.2
   const [abrirAT, setAbrirAT] = useState(null); // 17b: multa → "abrir AT-…" na 🚛 Programação
+  const [abrirContrato, setAbrirContrato] = useState(null); // 18b.7: Cliente 360° → 📑 contrato
+  useEffect(() => { const f = (ev) => { setAbrirContrato({ id: ev.detail, em: Date.now() }); setTela("contratos"); }; window.addEventListener("qf-abrir-contrato", f); return () => window.removeEventListener("qf-abrir-contrato", f); }, []);
   const [abrirProsp, setAbrirProsp] = useState(null); // 18b.2: tarefa do ✅ Plano → 📣 prospecção no Comercial
   useEffect(() => { const f = (ev) => { setAbrirProsp({ id: ev.detail, em: Date.now() }); setTela("comercial"); }; window.addEventListener("qf-abrir-prospeccao", f); return () => window.removeEventListener("qf-abrir-prospeccao", f); }, []);
   useEffect(() => { const f = (ev) => { setAbrirAT({ id: ev.detail, em: Date.now() }); setTela("programacao"); }; window.addEventListener("qf-abrir-at", f); return () => window.removeEventListener("qf-abrir-at", f); }, []); // eslint-disable-line
@@ -789,12 +791,12 @@ const perfil = PERFIS[usuario.perfil] || {
             <TelaConfiguracoes key={configAba||"jornada"} C={C} s={s} abaInicial={configAba} />
           </div>)}
 
-        {temAcesso(tela) && tela === "comercial" && (<div style={{ flex: 1, overflowY: "auto" }}><TelaComercial C={C} s={s} abrirProspeccao={abrirProsp} /></div>)}
+        {temAcesso(tela) && tela === "comercial" && (<div style={{ flex: 1, overflowY: "auto" }}><TelaComercial C={C} s={s} abrirProspeccao={abrirProsp} podeContratos={temAcesso("contratos")} /></div>)}
         {temAcesso(tela) && tela === "programacao" && (<div style={{ flex: 1, overflowY: "auto" }}><TelaProgramacao C={C} s={s} abrirAT={abrirAT} perfis={usuario?.perfis || [usuario?.perfil].filter(Boolean)} /></div>)}
 
         {temAcesso(tela) && tela === "contratos" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
-            <TelaContratos C={C} s={s} onAbrirInspecoes={temAcesso("inspecoes") ? () => setTela("inspecoes") : null} />
+            <TelaContratos C={C} s={s} abrirContrato={abrirContrato} onAbrirInspecoes={temAcesso("inspecoes") ? () => setTela("inspecoes") : null} />
           </div>)}
 
         {temAcesso(tela) && tela === "inspecoes" && (

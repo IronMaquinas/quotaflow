@@ -69,7 +69,7 @@ const ESPERADO = {
   'services/acessoSpot.js': '6ecce4d16d6b123c6ce93c1223b32f01', // etapa 10c (novo)
   'services/receitaCnpj.js': 'b0e2a678127403d5608723c21ec61b78', // etapa 14d.5
   'services/cadastroPublico.js': '1359e67ff1f2438a964eee7223cf2ed1', // etapa 14d.5
-  'front:App.jsx': 'd493c3cd6815d38a0845f645b7901b65', // etapa 18b.2
+  'front:App.jsx': '260b1d32951d223fda034b6eef36bb06', // etapa 18b.7
   'front:TelaLogin.jsx': 'bfa1fccbdab99820be2ac14c0e91b2fe', // etapa 14b.1
   'front:TelaSignup.jsx': '345dceefb937b38e74cfef44cfc33ef3', // etapa 11a.3
   'front:AvisoPlanoTenant.jsx': '5795f00c1bc656d0525fd29b6793a96c', // etapa 11a.3
@@ -167,7 +167,7 @@ const ESPERADO = {
   'routes/contratos.js': '2bb8bfd56d90ca8f610c8205f0cff251', // etapa 14d.6
   'routes/locatario.js': '53e5281ebe17af15c383451f452c61ca', // etapa 14d.2
   'migrations/043_contratos_locatario.sql': 'f25735b281aa176b4c31c3cc2bf283ed', // etapa 14b.3 (novo)
-  'front:TelaContratos.jsx': 'e2680a91a14d7c9eb30099241cd8afc6', // etapa 14d.7
+  'front:TelaContratos.jsx': '5621988d9f02ebd7cd8b3a63546806c1', // etapa 18b.7
   'front:TelaLocatario.jsx': 'bb111fbd38bfaa663465b54f8ee24c42', // etapa 14d.2
   'services/clientes.js': '9714283f0013553dc96a48b75b6734cf', // etapa 14b.3.1 (novo)
   'migrations/044_clientes.sql': '446d1a52049aea19938d36cc2b01653d', // etapa 14b.3.1 (novo)
@@ -205,10 +205,10 @@ const ESPERADO = {
   'front:TelaUsuariosNova.jsx': 'd7d98c07839cc133077532dd7022c751', // etapa 15a
   'migrations/051_comercial_bid.sql': '65c3c268119eadac6a0ecda34b72197c', // etapa 15a (novo)
   'routes/comercial.js': 'a98f3431775c6bf9c88a1c8ed701fe1e', // etapa 18b.6
-  'services/bids.js': '61d02805cdd78ff27a51768e3786d16d', // etapa 18b.6
+  'services/bids.js': '019c7ca544fe001c91caeb1864408b97', // etapa 18b.7
   'front:FichaBid.jsx': '5888208621bb3937eed0849db08e636c', // etapa 18b.3
   'front:ModelosBid.jsx': 'fce825c9584b3ff4a2a1040d575de24c', // etapa 15a (novo)
-  'front:TelaComercial.jsx': '97268c739bff66cd11f5de4bdc42d2a3', // etapa 18b.6
+  'front:TelaComercial.jsx': '03e884a32c184c70787e9806cdf25725', // etapa 18b.7
   'front:gerarBid.js': '22e048e4f81d260222995d4607127c72', // etapa 16d
   'migrations/052_bid_cliente.sql': 'a8b6f934576474b54a7246fda86d3eda', // etapa 15b (novo)
   'routes/bidLink.js': 'e566a5246b48e24430a997fda8d32e27', // etapa 15b (novo)
@@ -249,14 +249,12 @@ const ESPERADO = {
   'front:ConcluirTarefa.jsx': 'de3f60dc997a047cc1a29cd2a20ac92d', // etapa 18b.3 (novo)
 };
 
-// Antes de copiar a etapa 18b.6 — base: 18b.5.2
+// Antes de copiar a etapa 18b.7 — base: 18b.6
 const ANTES = {
-  'services/calendarioComercial.js': 'c3cd73106c31a48d3cff2ba4fb48c90e',
-  'services/bids.js': '46bbb568e935e17ce8d0d14f8a194ff4',
-  'routes/comercial.js': 'c9e463131964222d940083f203989ce6',
-  'front:PainelProspeccao.jsx': 'bd3694b64546b035adf3b76a0e72f7d6',
-  'front:TelaComercial.jsx': 'a7ffccdd142331bf7ecf5d16b1d8c75e',
-  'front:CalendarioComercial.jsx': 'be36b6d80bc30ec187cec4728f18d72e',
+  'services/bids.js': '61d02805cdd78ff27a51768e3786d16d',
+  'front:TelaComercial.jsx': '97268c739bff66cd11f5de4bdc42d2a3',
+  'front:App.jsx': 'd493c3cd6815d38a0845f645b7901b65',
+  'front:TelaContratos.jsx': 'e2680a91a14d7c9eb30099241cd8afc6',
 };
 
 const RAIZ = process.cwd();
@@ -294,7 +292,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18b.6)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18b.7)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

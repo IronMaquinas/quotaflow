@@ -572,11 +572,11 @@ async function cliente360(supabase, tenantId, clienteId) {
   return {
     cliente: c,
     resumo: { abertos: l.filter((b) => ABERTAS.includes(b.fase)).length, ganhos: ganhos.length, perdidos: perdidos.length, valor_ganho: ganhos.reduce((s, b) => s + Number(b.valor_total || 0), 0),
-      em_aberto: l.filter((b) => ABERTAS.includes(b.fase)).reduce((s, b) => s + Number(b.valor_total || 0), 0), contratos_ativos: contratos.filter((k) => k.status === 'ativo').length },
+      em_aberto: l.filter((b) => ABERTAS.includes(b.fase)).reduce((s, b) => s + Number(b.valor_total || 0), 0), valor_perdido: perdidos.reduce((s, b) => s + Number(b.valor_total || 0), 0), contratos_ativos: contratos.filter((k) => k.status === 'ativo').length },
     bids: l.sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em))),
     pedidos: await require('./pedidosVenda').doCliente(supabase, tenantId, c.id), // 15c
     contratos: contratos.map((k) => ({ id: k.id, numero: k.numero, status: k.status, local: k.local, inicio: k.inicio, fim_previsto: k.fim_previsto })).sort((a, b) => String(b.inicio || '').localeCompare(String(a.inicio || ''))),
-    atividades: ativs.sort((x, y) => String(y.criado_em).localeCompare(String(x.criado_em))).slice(0, 100),
+    atividades: ativs.sort((x, y) => String(y.criado_em).localeCompare(String(x.criado_em))).slice(0, 500), // 18b.7: o modal "Ver mais" mostra tudo
     eventos: await require('./calendarioComercial').participacoes(supabase, tenantId, { clienteId: c.id }).catch(() => []), // 18b.6: 🎪 participação em eventos
   };
 }

@@ -19,7 +19,7 @@ export const FASE = { elaboracao: ["📝 EM ELABORAÇÃO", "#64748b"], aguardand
 const faseDe = (c) => c.fase || (c.status === "ativo" ? "elaboracao" : "encerrado");
 const vazio = () => ({ cliente: "", cliente_doc: "", local: "", contato_nome: "", contato_email: "", contato_telefone: "", inicio: hoje(), fim_previsto: "", obs: "" });
 
-export default function TelaContratos({ C, s, onAbrirInspecoes }) {
+export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato }) {
   const [d, setD] = useState(null);
   const [painel, setPainel] = useState(null); // equipamentos e modelos (para adicionar ao contrato)
   const [semMigration, setSemMigration] = useState(false);
@@ -47,6 +47,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes }) {
     try { setPainel(await apiService.get("/inspecoes/painel")); } catch { /* sem acesso às inspeções: segue sem */ }
   };
   useEffect(() => { carregar(); }, []); // eslint-disable-line
+  useEffect(() => { if (abrirContrato?.id != null && d) { const k = (d.contratos || []).find((c) => String(c.id) === String(abrirContrato.id)); if (k) setAbertoId(k.id); } }, [abrirContrato, d]); // 18b.7: veio do Cliente 360°
 
   const editar = !!d?.pode_editar;
   const lista = useMemo(() => (d?.contratos || []).filter((c) => (filtro === "todos" || (filtro === "abertos" ? faseDe(c) !== "encerrado" : faseDe(c) === filtro)) && (!busca.trim() || semAcento(`${c.numero} ${c.cliente} ${c.local || ""} ${c.equipamentos.map((e) => e.tag).join(" ")}`).includes(semAcento(busca.trim())))), [d, filtro, busca]);
