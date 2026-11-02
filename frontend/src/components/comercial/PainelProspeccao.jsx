@@ -111,13 +111,13 @@ export default function PainelProspeccao({ C, s, eventoId, onFechar, onNovoBid, 
                   <button type="button" title="Cancelar esta oportunidade (com motivo)" onClick={() => setOp({ tipo: "cancelar", cliente: c })} style={{ ...acao, color: "#f87171", borderColor: "#f8717155" }}>✕</button></>}
                 {c.situacao === "cancelada" && !c.cancelamento?.do_evento && <button type="button" disabled={ocupado} onClick={() => enviarOp("reabrir", { cliente: c })} style={acao}>↩ Reabrir</button>}
               </div>
-              {(() => { const ult = (c.campanha || []).find((h) => ICO[h.tipo] && !ROT[h.tipo] && h.tipo !== "retorno"); const n = (c.campanha || []).length;
+              {(() => { const ult = (c.campanha || []).find((h) => ICO[h.tipo] && !ROT[h.tipo] && h.tipo !== "retorno"); const n = (c.campanha || []).filter((h) => h !== ult).length; // 18b.5.2: o último contato não se repete no histórico
                 return (ult || n > 0) && <div style={{ fontSize: 13.5, marginTop: 3, color: C.text }}>
                   {ult && <span>{ICO[ult.tipo]} <span style={{ color: C.muted }}>{quandoH(ult.em)}{ult.por ? ` · ${ult.por.split(" ")[0]}` : ""}:</span> {ult.texto}</span>}
-                  {n > 0 && <button type="button" onClick={() => setVerHist((v) => ({ ...v, [c.id]: !v[c.id] }))} style={{ background: "none", border: "none", color: C.accent, fontSize: 13, cursor: "pointer", padding: "0 0 0 8px" }}>{verHist[c.id] ? "ocultar ▴" : `ver ${n === 1 ? "o registro" : `os ${n} registros`} da campanha ▾`}</button>}
+                  {n > 0 && <button type="button" onClick={() => setVerHist((v) => ({ ...v, [c.id]: !v[c.id] }))} style={{ background: "none", border: "none", color: C.accent, fontSize: 13, cursor: "pointer", padding: "0 0 0 8px" }}>{verHist[c.id] ? "ocultar ▴" : `ver ${n === 1 ? "mais 1 registro" : `mais ${n} registros`} da campanha ▾`}</button>}
                 </div>; })()}
               {verHist[c.id] && <div style={{ margin: "6px 0 2px 10px", borderLeft: `2px solid ${C.border}`, paddingLeft: 10 }}>
-                {(c.campanha || []).map((h, k) => <div key={k} style={{ fontSize: 13.5, padding: "3px 0" }}>
+                {(c.campanha || []).filter((h, k, l) => h !== l.find((x) => ICO[x.tipo] && !ROT[x.tipo] && x.tipo !== "retorno")).map((h, k) => <div key={k} style={{ fontSize: 13.5, padding: "3px 0" }}>
                   <span style={{ color: C.muted }}>{ICO[h.tipo] || "•"} {quandoH(h.em)}{h.por ? ` · ${h.por}` : ""}</span>{" "}
                   {ROT[h.tipo] ? <b>{ROT[h.tipo]}</b> : null}{ROT[h.tipo] && h.texto ? " — " : ""}<span style={{ whiteSpace: "pre-wrap" }}>{h.tipo === "retorno" ? String(h.texto || "").replace(/^📅\s*/, "") : h.texto}</span>
                   {h.tipo === "retorno" && <span style={{ color: h.feita ? C.success : C.warn }}> · {h.feita ? `feito em ${quando(h.feita)}` : `para ${quando(h.prevista)}`}</span>}
