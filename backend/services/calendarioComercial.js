@@ -176,6 +176,7 @@ async function prospeccao(supabase, tenantId, eventoId, cache = {}) {
   const ligados = (e.clientes || []).map(String);
   const ids = [...new Set([...ligados, ...sugeridos.keys()])];
   const desde = somaDias(o.inicio, -Math.max(Number(e.antecedencia_dias ?? 60), 0) - 30);
+  const hist = await participacoes(supabase, tenantId, { eventoId: e.id }).catch(() => []); // 18b.6: anos anteriores deste evento
   const lista = ids.map((id) => cls.find((c) => String(c.id) === id)).filter(Boolean).map((c) => {
     const bc = bids.filter((b) => String(b.cliente_id) === String(c.id)).sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em)));
     const pc = pvs.filter((p) => String(p.cliente_id) === String(c.id)).sort((a, b) => String(b.criado_em || '').localeCompare(String(a.criado_em || '')));
@@ -197,6 +198,8 @@ async function prospeccao(supabase, tenantId, eventoId, cache = {}) {
       situacao: bidCamp ? 'bid' : (rg?.situacao === 'cancelada' || regEv?.situacao === 'cancelada') ? 'cancelada' : daCampanha.length ? 'contatado' : 'a_contatar',
       contatos_campanha: daCampanha.length, contatado_em: daCampanha[0]?.criado_em || null, bid_campanha: bidCamp ? { id: bidCamp.id, numero: bidCamp.numero, fase: bidCamp.fase } : null,
       cancelamento: !bidCamp && rg?.situacao === 'cancelada' ? { motivo: rg.motivo, por: rg.cancelado_por, em: rg.cancelado_em } : !bidCamp && regEv?.situacao === 'cancelada' ? { motivo: regEv.motivo, por: regEv.cancelado_por, em: regEv.cancelado_em, do_evento: true } : null,
+      anteriores: hist.filter((h) => String(h.cliente_id) === String(c.id) && h.ano < o.ano).map((h) => ({ ano: h.ano, resultado: h.resultado, motivo: h.cancelada?.motivo || null, bid: h.bid, contatos: h.contatos })),
+      retornos_abertos: retornos.filter((a) => !a.concluida_em).length,
       retorno: (() => { const r = retornos.filter((a) => !a.concluida_em).sort((a, b) => String(a.prevista_para).localeCompare(String(b.prevista_para)))[0]; return r ? { id: r.id, em: r.prevista_para, para: r.atribuido_nome || null } : null; })(),
       campanha: [
         ...daCampanha.map((a) => ({ em: a.criado_em, tipo: a.tipo, texto: a.texto, por: a.usuario_nome || null })),
@@ -248,7 +251,18 @@ async function cancelarProspeccao(supabase, tenantId, quem, eventoId, body = {})
   const e = await eventoDoTenant(supabase, tenantId, eventoId); const agora = new Date().toISOString();
   try { await gravarLinha(supabase, tenantId, e, p.ano, c ? c.id : null, (x) => ({ situacao: 'cancelada', motivo, cancelado_por: quem.usuarioNome || null, cancelado_em: agora, historico: hist(x, { acao: 'cancelada', por: quem.usuarioNome || null, obs: motivo }) })); }
   catch (er) { if (/comercial_prospeccoes|does not exist|schema cache/.test(er.message)) return ERRO_061; throw er; }
-  return { prospeccao: await sincronizarProspeccao(supabase, tenantId, eventoId) };
+  // 18b.6: encerra os 📅 retornos abertos (do cliente, ou de todos no 🔕 evento) — padrão sim; o resultado sai preenchido
+  let retornos = 0;
+  if (body.encerrar_retornos !== false) {
+    const abertos = (await q(supabase.from('bid_atividades').select('*').eq('tenant_id', tenantId).eq('tipo', 'tarefa').eq('evento_id', e.id)).catch(() => []))
+      .filter((a) => !a.concluida_em && (!c || String(a.cliente_id) === String(c.id)));
+    for (const a of abertos) {
+      const base = String(a.texto || '').split('\n✓ Resultado')[0];
+      await supabase.from('bid_atividades').update({ concluida_em: agora, texto: `${base}\n✓ Resultado${quem.usuarioNome ? ` (${quem.usuarioNome})` : ''}: Encerrada — ${c ? 'prospecção cancelada' : 'evento cancelado no ano'}: ${motivo}`.slice(0, 4000) }).eq('id', a.id).eq('tenant_id', tenantId);
+      retornos++;
+    }
+  }
+  return { prospeccao: await sincronizarProspeccao(supabase, tenantId, eventoId), retornos_encerrados: retornos };
 }
 async function reabrirProspeccao(supabase, tenantId, quem, eventoId, body = {}) {
   const { p, c, r } = await alvo(supabase, tenantId, eventoId, body.cliente_id); if (r) return r;
@@ -311,4 +325,47 @@ async function sincronizarProspeccao(supabase, tenantId, eventoId, { reabrir = f
   return prospeccao(supabase, tenantId, eventoId);
 }
 
-module.exports = { prospeccao, cancelarProspeccao, reabrirProspeccao, delegarProspeccao, sincronizarProspeccao, TIPOS, validar, listarEventos, criarEvento, editarEvento, removerEvento, ocorrencias, proximaOcorrencia, calendario, alertas };
+// ─── 18b.6: 📜 HISTÓRICO DE PARTICIPAÇÃO (evento × ano × cliente) — o que já está gravado, organizado ──────────
+//   resultado: 'bid' (BID da campanha, com fase/valor) | 'cancelada' (✕ ou 🔕, com motivo) | 'contatado' (sem resultado) — por ano da ocorrência
+function anoDaOcorrencia(e, iso) {
+  const d = String(iso || '').slice(0, 10); if (!DATA.test(d)) return null;
+  const o = ocorrencias(e, d, somaDias(d, 800)).find((x) => x.fim >= d); return o ? o.ano : Number(d.slice(0, 4));
+}
+async function participacoes(supabase, tenantId, { clienteId = null, eventoId = null } = {}) {
+  const [evs, regs, bids, ativs, cls] = await Promise.all([
+    q(supabase.from('comercial_eventos').select('*').eq('tenant_id', tenantId)).catch(() => []),
+    q(supabase.from('comercial_prospeccoes').select('*').eq('tenant_id', tenantId)).catch(() => []),
+    q(supabase.from('bids').select('*').eq('tenant_id', tenantId)).catch(() => []),
+    q(supabase.from('bid_atividades').select('*').eq('tenant_id', tenantId)).catch(() => []),
+    q(supabase.from('clientes').select('*').eq('tenant_id', tenantId)).catch(() => []),
+  ]);
+  const evPor = new Map(evs.map((e) => [String(e.id), e])); const nomeCli = new Map(cls.map((c) => [String(c.id), c.nome]));
+  const ok = (eid, cid) => (eventoId == null || String(eid) === String(eventoId)) && (clienteId == null || String(cid) === String(clienteId));
+  const mapa = new Map(); // evento|ano|cliente
+  const pega = (e, ano, cid) => { const k = `${e.id}|${ano}|${cid}`; if (!mapa.has(k)) mapa.set(k, { evento_id: e.id, evento_nome: e.nome, ano, cliente_id: cid, cliente_nome: nomeCli.get(String(cid)) || null, contatos: 0, bid: null, cancelada: null }); return mapa.get(k); };
+  for (const a of ativs.filter((x) => x.evento_id != null && x.cliente_id != null && x.tipo !== 'tarefa' && x.tipo !== 'evento')) {
+    const e = evPor.get(String(a.evento_id)); if (!e || !ok(e.id, a.cliente_id)) continue; const ano = anoDaOcorrencia(e, diaBR(a.criado_em)); if (ano) pega(e, ano, a.cliente_id).contatos++;
+  }
+  for (const b of bids.filter((x) => x.evento_id != null && x.cliente_id != null && x.tipo !== 'aditivo')) {
+    const e = evPor.get(String(b.evento_id)); if (!e || !ok(e.id, b.cliente_id)) continue; const ano = anoDaOcorrencia(e, diaBR(b.criado_em)); if (!ano) continue;
+    pega(e, ano, b.cliente_id).bid = { id: b.id, numero: b.numero, fase: b.fase, valor: b.valor_total != null ? Number(b.valor_total) : null };
+  }
+  for (const r of regs.filter((x) => x.situacao === 'cancelada')) {
+    const e = evPor.get(String(r.evento_id)); if (!e) continue;
+    const alvos = r.cliente_id != null ? [r.cliente_id] : [...new Set([...(e.clientes || []), ...[...mapa.values()].filter((m) => String(m.evento_id) === String(e.id) && m.ano === r.ano).map((m) => m.cliente_id)].map(String))];
+    for (const cid of alvos) { if (!ok(e.id, cid)) continue; const m = pega(e, r.ano, cid); if (!m.cancelada || r.cliente_id != null) m.cancelada = { motivo: r.motivo, por: r.cancelado_por, em: r.cancelado_em, do_evento: r.cliente_id == null }; }
+  }
+  return [...mapa.values()].map((m) => ({ ...m, resultado: m.bid ? 'bid' : m.cancelada ? 'cancelada' : 'contatado' }))
+    .sort((a, b) => b.ano - a.ano || String(a.evento_nome).localeCompare(String(b.evento_nome), 'pt-BR') || String(a.cliente_nome).localeCompare(String(b.cliente_nome), 'pt-BR'));
+}
+/** resumo por evento e ano (lista de eventos): clientes · BIDs (aceitos) · não participaram · sem resposta */
+async function resumoAnos(supabase, tenantId) {
+  const out = {};
+  for (const p of await participacoes(supabase, tenantId)) {
+    const k = String(p.evento_id); out[k] = out[k] || {}; const r = out[k][p.ano] = out[k][p.ano] || { ano: p.ano, clientes: 0, bids: 0, aceitos: 0, nao: 0, sem: 0 };
+    r.clientes++; if (p.resultado === 'bid') { r.bids++; if (p.bid.fase === 'aceito') r.aceitos++; } else if (p.resultado === 'cancelada') r.nao++; else r.sem++;
+  }
+  return Object.fromEntries(Object.entries(out).map(([k, v]) => [k, Object.values(v).sort((a, b) => b.ano - a.ano)]));
+}
+
+module.exports = { participacoes, resumoAnos, prospeccao, cancelarProspeccao, reabrirProspeccao, delegarProspeccao, sincronizarProspeccao, TIPOS, validar, listarEventos, criarEvento, editarEvento, removerEvento, ocorrencias, proximaOcorrencia, calendario, alertas };

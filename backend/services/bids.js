@@ -577,6 +577,7 @@ async function cliente360(supabase, tenantId, clienteId) {
     pedidos: await require('./pedidosVenda').doCliente(supabase, tenantId, c.id), // 15c
     contratos: contratos.map((k) => ({ id: k.id, numero: k.numero, status: k.status, local: k.local, inicio: k.inicio, fim_previsto: k.fim_previsto })).sort((a, b) => String(b.inicio || '').localeCompare(String(a.inicio || ''))),
     atividades: ativs.sort((x, y) => String(y.criado_em).localeCompare(String(x.criado_em))).slice(0, 100),
+    eventos: await require('./calendarioComercial').participacoes(supabase, tenantId, { clienteId: c.id }).catch(() => []), // 18b.6: 🎪 participação em eventos
   };
 }
 

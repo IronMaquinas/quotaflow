@@ -902,6 +902,7 @@ npm run dev
   - **18b.5 (01/11):** painel 📣 Prospecção com a **fonte 1,5 pt maior** (textos de 11–13 → 12,5–14,5; título 19) e o modal mais largo (1000 px) para os botões não quebrarem linha.
   - **18b.5.1 (01/11):** no painel 📣, o rótulo "MENSAGEM PRONTA…" (usava o estilo padrão de rótulo, 11) foi para 12,5 e o "Como fica" para 14, com cor mais clara.
   - **18b.5.2 (01/11):** no painel 📣, o último contato (mostrado na linha do cliente) não se repete ao abrir o histórico — o link virou "ver mais N registros da campanha" e só aparece quando há outros registros.
+  - **18b.6 (02/11):** **📜 histórico de participação nos eventos.** (1) **✕ Cancelar** uma oportunidade (ou 🔕 o evento) com 📅 retorno aberto mostra "☑ Encerrar também o retorno de dd/mm" (já marcado): a ⏰ tarefa sai do rodapé com o resultado preenchido ("Encerrada — prospecção cancelada: motivo"); reabrir não ressuscita o retorno. (2) O que já estava gravado (contatos, BID da campanha, cancelamento com motivo) agora aparece organizado por **evento × ano × cliente**: no **Cliente 360°**, seção **🎪 EVENTOS** ("Feira X · 2026 — ✕ não participou — motivo" / "📝 BID-… · Aceito · R$" / "💬 N contato(s), sem resultado"); no **painel do evento**, cada cliente mostra os anos anteriores ("📜 em 2026: ✕ não participou — …"); na **lista de eventos** do calendário, o resumo por ano ("2026: 5 cliente(s) · 2 BID(s) (1 aceito) · 2 não participaram · 1 sem resposta"). O ano é o da ocorrência do evento (prospecção em dezembro para feira de janeiro conta no ano da feira). Sem migration.
   - **SaaS genérico:** `tipo_execucao` no modelo de BID/PV (transporte → AT; locação → contrato de locação existente; serviço → AS; venda → entrega). Nesta etapa só transporte gera execução.
   - Rotas `/api/programacao` (`GET /base`, `/execucoes`, `/agenda`, `/pedidos`, `/pvs/:id`; `POST /pvs/:id/at`; `GET|PUT /execucoes/:id`; `POST /execucoes/:id/status`; anexos `POST|GET|DELETE /execucoes/:id/anexos[/:anexo]`; `GET /execucoes/:id/documento`) e `GET /api/comercial/pvs/:id/execucoes` (leitura). Travas respondem 409. Migration 055.
   - Rotas: `/api/comercial/bids/:id/revisao` (GET), `/enviar`, `/reenviar`, `/revisao/iniciar`, `/revisao/descartar`, `/aceite-externo`; `POST /bids/:id/fase` só aceita `perdido` e `reabrir`. Público: `/api/bid-link/:token` (GET, `/responder`, `/codigo`, `/aceitar`) — 40 chamadas por link + IP por hora. Migration 052. **Próxima: 15c** — Pedido de Venda (PV) a partir do BID aceito. **Futuro:** perfil **cliente** com login (mesmo padrão do locatário) — ver `claude/desenho-bid-15b.md`.
@@ -1360,7 +1361,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 01/11/2026 (etapa 18b.5.2)
+**Última atualização deste documento:** 02/11/2026 (etapa 18b.6)
 
 --------------------------------------------------------------------------------
 

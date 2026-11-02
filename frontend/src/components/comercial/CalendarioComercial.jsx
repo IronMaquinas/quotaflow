@@ -125,6 +125,7 @@ export default function CalendarioComercial({ C, s, onAbrirBid, onAbrirPV, onPro
           {e.proxima && <span style={{ fontSize: 11.5, color: e.prospeccao <= hoje() ? CAMADAS.prospeccao[1] : C.muted }}>{e.prospeccao <= hoje() ? "📣 hora de prospectar" : `📣 a partir de ${dBR(e.prospeccao)}`}</span>}
           {onProspectar && <button type="button" onClick={(x) => { x.stopPropagation(); onProspectar(e.id); }} style={{ ...s.btn(e.prospeccao <= hoje(), CAMADAS.prospeccao[1]), padding: "4px 10px", fontSize: 12 }}>📣 Prospectar clientes</button>}
           {e.clientes_nomes?.length > 0 && <span style={{ fontSize: 11.5, color: C.muted }}>👥 {e.clientes_nomes.length}</span>}
+          {(base.anos?.[String(e.id)] || []).length > 0 && <div style={{ flexBasis: "100%", fontSize: 12, color: C.textSub }}>📜 {base.anos[String(e.id)].slice(0, 3).map((r) => `${r.ano}: ${r.clientes} cliente(s) · ${r.bids} BID(s)${r.aceitos ? ` (${r.aceitos} aceito${r.aceitos > 1 ? "s" : ""})` : ""}${r.nao ? ` · ${r.nao} não participou${r.nao > 1 ? "ram" : ""}` : ""}${r.sem ? ` · ${r.sem} sem resposta` : ""}`).join("  ·  ")}</div>}{/* 18b.6 */}
         </div>)}
         {!base.eventos.length && <div style={{ fontSize: 12.5, color: C.muted }}>Nenhum evento ainda. Cadastre as feiras e datas do seu mercado — o sistema avisa quando for hora de procurar os clientes.</div>}
       </div>}

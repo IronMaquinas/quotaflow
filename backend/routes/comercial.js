@@ -94,7 +94,7 @@ router.get('/bids/:id/documento', responder((req) => B.documento(supabase, req.t
 
 // ─── 18a: 📅 calendário comercial + 🎪 eventos de mercado ───
 router.get('/calendario', responder((req) => CC.calendario(supabase, req.tenantId, req.query)));
-router.get('/eventos', responder(async (req) => ({ eventos: await CC.listarEventos(supabase, req.tenantId), tipos: CC.TIPOS, alertas: await CC.alertas(supabase, req.tenantId), responsaveis: await B.responsaveis(supabase, req.tenantId) })));
+router.get('/eventos', responder(async (req) => ({ eventos: await CC.listarEventos(supabase, req.tenantId), tipos: CC.TIPOS, alertas: await CC.alertas(supabase, req.tenantId), anos: await CC.resumoAnos(supabase, req.tenantId).catch(() => ({})), responsaveis: await B.responsaveis(supabase, req.tenantId) })));
 router.get('/eventos/:id/prospeccao', responder(async (req) => { // 18b
   const r = await CC.prospeccao(supabase, req.tenantId, req.params.id); if (r.erro) return r;
   const emp = (await supabase.from('tenants').select('*').eq('id', req.tenantId)).data?.[0] || {};

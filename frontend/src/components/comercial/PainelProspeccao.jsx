@@ -42,10 +42,10 @@ export default function PainelProspeccao({ C, s, eventoId, onFechar, onNovoBid, 
     setOcupado(true);
     try {
       const alvo = extra.cliente !== undefined ? extra.cliente : op?.cliente;
-      const body = { cliente_id: alvo ? alvo.id : undefined, ...(tipo === "cancelar" ? { motivo: op.motivo } : tipo === "delegar" ? { responsavel_id: op.responsavel_id, prazo: op.prazo || undefined, observacao: op.observacao || undefined } : {}) };
+      const body = { cliente_id: alvo ? alvo.id : undefined, ...(tipo === "cancelar" ? { motivo: op.motivo, encerrar_retornos: op.encerrar !== false } : tipo === "delegar" ? { responsavel_id: op.responsavel_id, prazo: op.prazo || undefined, observacao: op.observacao || undefined } : {}) };
       const r = await apiService.post(`/comercial/eventos/${ev.id}/prospeccao/${tipo}`, body);
       const nome = alvo ? alvo.nome : "o evento";
-      onOk(tipo === "cancelar" ? `Prospecção de ${nome} cancelada.` : tipo === "reabrir" ? `Prospecção de ${nome} reaberta.` : `Delegado — a tarefa está no ✅ Plano de ${(d.responsaveis || []).find((u) => String(u.id) === String(op.responsavel_id))?.nome || "quem recebeu"}.`);
+      onOk(tipo === "cancelar" ? `Prospecção de ${nome} cancelada${r?.retornos_encerrados ? ` — ${r.retornos_encerrados} retorno(s) encerrado(s)` : ""}.` : tipo === "reabrir" ? `Prospecção de ${nome} reaberta.` : `Delegado — a tarefa está no ✅ Plano de ${(d.responsaveis || []).find((u) => String(u.id) === String(op.responsavel_id))?.nome || "quem recebeu"}.`);
       setOp(null); if (r?.prospeccao) setD((x) => ({ ...x, ...r.prospeccao })); else await carregar();
     } catch (e) { onErro(e.message); } finally { setOcupado(false); }
   };
@@ -53,6 +53,10 @@ export default function PainelProspeccao({ C, s, eventoId, onFechar, onNovoBid, 
     {op.tipo === "cancelar" ? <>
       <div style={{ fontSize: 14, marginBottom: 6 }}>{cliente ? <>✕ Cancelar a prospecção de <b>{cliente.nome}</b></> : <>🔕 Não prospectar <b>{ev.nome}</b> em {d.ano} — encerra todos os clientes em aberto</>}</div>
       <textarea rows={2} autoFocus value={op.motivo || ""} onChange={(e) => setOp({ ...op, motivo: e.target.value })} placeholder="Motivo (obrigatório). Ex.: já fechou com outro transportador; não vai à feira este ano" style={{ ...s.input, resize: "vertical", fontSize: 14 }} />
+      {(() => { const n = cliente ? (cliente.retornos_abertos || 0) : d.clientes.reduce((t, x) => t + (x.retornos_abertos || 0), 0); // 18b.6
+        return n > 0 && <label style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 13.5, marginTop: 6, cursor: "pointer" }}>
+          <input type="checkbox" checked={op.encerrar !== false} onChange={(e) => setOp({ ...op, encerrar: e.target.checked })} />
+          Encerrar também {cliente && n === 1 && cliente.retorno ? `o retorno de ${quando(cliente.retorno.em)}` : `${n} retorno(s) aberto(s)`} <span style={{ color: C.muted }}>(o resultado sai preenchido com o motivo)</span></label>; })()}
     </> : <>
       <div style={{ fontSize: 14, marginBottom: 6 }}>👤 Delegar {cliente ? <b>{cliente.nome}</b> : <>a prospecção de <b>{ev.nome}</b> (todos os clientes)</>} — vira tarefa no ✅ Plano e se encerra sozinha {cliente ? "com o BID ou o cancelamento" : "quando todos tiverem BID ou forem cancelados"}</div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
@@ -123,6 +127,7 @@ export default function PainelProspeccao({ C, s, eventoId, onFechar, onNovoBid, 
                   {h.tipo === "retorno" && <span style={{ color: h.feita ? C.success : C.warn }}> · {h.feita ? `feito em ${quando(h.feita)}` : `para ${quando(h.prevista)}`}</span>}
                 </div>)}
               </div>}
+              {(c.anteriores || []).length > 0 && <div style={{ fontSize: 13, color: C.textSub, marginTop: 3 }}>📜 {c.anteriores.map((h) => `em ${h.ano}: ${h.resultado === "bid" ? `📝 ${h.bid.numero}${h.bid.fase === "aceito" ? " (aceito)" : h.bid.fase === "perdido" ? " (perdido)" : ""}` : h.resultado === "cancelada" ? `✕ não participou${h.motivo ? ` — ${h.motivo}` : ""}` : "💬 contatado, sem resultado"}`).join(" · ")}</div>}
               {c.cancelamento && <div style={{ fontSize: 13, color: "#f87171", marginTop: 2 }}>✕ {c.cancelamento.do_evento ? "Evento cancelado" : "Cancelada"}{c.cancelamento.por ? ` por ${c.cancelamento.por}` : ""} em {quando(c.cancelamento.em)}: {c.cancelamento.motivo}</div>}
               {formOp(c)}
               <div style={{ fontSize: 13, color: C.textSub, marginTop: 2 }}>

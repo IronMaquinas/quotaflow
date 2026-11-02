@@ -154,6 +154,13 @@ function Cliente360({ C, s, id, onFechar, onAbrirBid, onNovoBid, onEditar, onErr
         {(d.pedidos || []).length > 0 && <><div style={{ ...s.label, marginTop: 14 }}>PEDIDOS DE VENDA</div>
           {d.pedidos.map((p) => <div key={p.id} onClick={() => onAbrirPV?.(p.id)} className="qf-clicavel" style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12.5, padding: "7px 0", borderBottom: `1px solid ${C.border}`, textDecoration: "none" }}>
             <span style={s.tag(STATUS_PV[p.status]?.[1])}>{STATUS_PV[p.status]?.[0]}</span><span style={{ flex: 1 }}>🧾 {p.numero}{p.titulo ? ` — ${p.titulo}` : ""}</span><b>{brl(p.valor_total)}</b></div>)}</>}
+        {(d.eventos || []).length > 0 && <><div style={{ ...s.label, marginTop: 14 }}>🎪 EVENTOS</div>{/* 18b.6: participação por evento e ano */}
+          {d.eventos.map((h, k) => <div key={k} className={h.bid ? "qf-clicavel" : undefined} onClick={() => h.bid && onAbrirBid(h.bid.id)} style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12.5, padding: "7px 0", borderBottom: `1px solid ${C.border}`, cursor: h.bid ? "pointer" : "default", flexWrap: "wrap" }}>
+            <span style={{ flex: "1 1 200px" }}>{h.evento_nome} <span style={{ color: C.muted }}>· {h.ano}</span></span>
+            {h.resultado === "bid" ? <span style={{ color: h.bid.fase === "aceito" ? C.success : h.bid.fase === "perdido" ? C.danger : C.text }}>📝 {h.bid.numero} · {NOME_FASE[h.bid.fase] || h.bid.fase}{h.bid.valor ? ` · ${brl(h.bid.valor)}` : ""}</span>
+              : h.resultado === "cancelada" ? <span style={{ color: C.danger }} title={h.cancelada?.por ? `por ${h.cancelada.por}` : ""}>✕ não participou{h.cancelada?.motivo ? ` — ${h.cancelada.motivo}` : ""}</span>
+              : <span style={{ color: C.muted }}>💬 {h.contatos} contato(s), sem resultado</span>}
+          </div>)}</>}
         {d.contratos.length > 0 && <><div style={{ ...s.label, marginTop: 14 }}>CONTRATOS DE LOCAÇÃO</div>
           {d.contratos.map((k) => <div key={k.id} style={{ fontSize: 12.5, padding: "6px 0", borderBottom: `1px solid ${C.border}` }}><span style={s.tag(k.status === "ativo" ? C.success : C.muted)}>{k.status}</span> {k.numero}{k.local ? ` · ${k.local}` : ""} · {dBR(k.inicio)}{k.fim_previsto ? ` → ${dBR(k.fim_previsto)}` : ""}</div>)}</>}
       </div>
