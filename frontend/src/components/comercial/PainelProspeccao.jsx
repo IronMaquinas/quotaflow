@@ -88,9 +88,9 @@ export default function PainelProspeccao({ C, s, eventoId, onFechar, onNovoBid, 
           <span style={{ color: C.textSub }}>🚛 {d.livres.quantos} de {d.livres.de} equipamentos livres no período{d.livres.tags.length ? ` (${d.livres.tags.join(", ")})` : ""}</span>
         </div>
         <div style={{ padding: "10px 18px", borderBottom: `1px solid ${C.border}` }}>
-          <div style={{ ...s.label, marginBottom: 4 }}>MENSAGEM PRONTA (WHATSAPP / E-MAIL) — {"{contato}"} {"{voce}"} {"{empresa}"} {"{evento}"} {"{data}"} {"{local}"} são trocados sozinhos</div>
+          <div style={{ ...s.label, fontSize: 12.5, marginBottom: 6 }}>MENSAGEM PRONTA (WHATSAPP / E-MAIL) — {"{contato}"} {"{voce}"} {"{empresa}"} {"{evento}"} {"{data}"} {"{local}"} são trocados sozinhos</div>
           <textarea rows={2} value={msg || ""} onChange={(e) => setMsg(e.target.value)} style={{ ...s.input, resize: "vertical", fontSize: 14 }} />
-          <div style={{ fontSize: 13, color: C.muted, marginTop: 4 }}>Como fica: “{texto(d.clientes[0]?.contatos[0]?.nome)}”</div>
+          <div style={{ fontSize: 14, color: C.textSub, marginTop: 6, lineHeight: 1.5 }}>Como fica: “{texto(d.clientes[0]?.contatos[0]?.nome)}”</div>
         </div>
         <div style={{ padding: "8px 18px 16px", maxHeight: "60vh", overflowY: "auto" }}>
           {d.clientes.map((c) => { const [sit, cor] = SIT[c.situacao];
