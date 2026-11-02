@@ -205,10 +205,10 @@ const ESPERADO = {
   'front:TelaUsuariosNova.jsx': 'd7d98c07839cc133077532dd7022c751', // etapa 15a
   'migrations/051_comercial_bid.sql': '65c3c268119eadac6a0ecda34b72197c', // etapa 15a (novo)
   'routes/comercial.js': 'a98f3431775c6bf9c88a1c8ed701fe1e', // etapa 18b.6
-  'services/bids.js': '019c7ca544fe001c91caeb1864408b97', // etapa 18b.7
+  'services/bids.js': '816f100fdd1eaf92a834ae489937ef16', // etapa 18b.8
   'front:FichaBid.jsx': '5888208621bb3937eed0849db08e636c', // etapa 18b.3
   'front:ModelosBid.jsx': 'fce825c9584b3ff4a2a1040d575de24c', // etapa 15a (novo)
-  'front:TelaComercial.jsx': '03e884a32c184c70787e9806cdf25725', // etapa 18b.7
+  'front:TelaComercial.jsx': 'e7b407d97d11c14154c310b0144e0b1e', // etapa 18b.8
   'front:gerarBid.js': '22e048e4f81d260222995d4607127c72', // etapa 16d
   'migrations/052_bid_cliente.sql': 'a8b6f934576474b54a7246fda86d3eda', // etapa 15b (novo)
   'routes/bidLink.js': 'e566a5246b48e24430a997fda8d32e27', // etapa 15b (novo)
@@ -249,12 +249,10 @@ const ESPERADO = {
   'front:ConcluirTarefa.jsx': 'de3f60dc997a047cc1a29cd2a20ac92d', // etapa 18b.3 (novo)
 };
 
-// Antes de copiar a etapa 18b.7 — base: 18b.6
+// Antes de copiar a etapa 18b.8 — base: 18b.7
 const ANTES = {
-  'services/bids.js': '61d02805cdd78ff27a51768e3786d16d',
-  'front:TelaComercial.jsx': '97268c739bff66cd11f5de4bdc42d2a3',
-  'front:App.jsx': 'd493c3cd6815d38a0845f645b7901b65',
-  'front:TelaContratos.jsx': 'e2680a91a14d7c9eb30099241cd8afc6',
+  'services/bids.js': '019c7ca544fe001c91caeb1864408b97',
+  'front:TelaComercial.jsx': '03e884a32c184c70787e9806cdf25725',
 };
 
 const RAIZ = process.cwd();
@@ -292,7 +290,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18b.7)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18b.8)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

@@ -536,6 +536,55 @@ async function funil(supabase, tenantId, { de, ate } = {}) {
     },
     previsao: previsaoReceita(abertos),
     motivos,
+    executivo: await executivo(supabase, tenantId, { bs, abertos, perdidos, motivos }), // 18b.8
+  };
+}
+// ─── 18b.8: visão do dono / gerente comercial — carteira, receita do ano, em jogo, perdido (só RECEITA; custo fica para depois) ───
+const DIAS_MES = 30.4375;
+const mesesEntre = (a, b) => (a && b && b > a ? (Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 86400000 / DIAS_MES : 0);
+async function executivo(supabase, tenantId, { bs, abertos, perdidos, motivos }) {
+  const hoje = hojeBR(); const ano = hoje.slice(0, 4); const ini = `${ano}-01-01`; const fimAno = `${ano}-12-31`;
+  const [locs, ctrs, pvs] = await Promise.all([
+    q(supabase.from('equipamento_locacoes').select('*').eq('tenant_id', tenantId)).catch(() => []),
+    q(supabase.from('locacao_contratos').select('*').eq('tenant_id', tenantId)).catch(() => []),
+    q(supabase.from('pedidos_venda').select('*').eq('tenant_id', tenantId)).catch(() => []),
+  ]);
+  const ctr = new Map(ctrs.map((c) => [String(c.id), c]));
+  // 📑 locação: valor mensal × meses (até o fim previsto; sem fim previsto conta 12 meses à frente)
+  let locMes = 0, locRestante = 0, locSemFim = 0, locRealAno = 0, locPrevAno = 0;
+  for (const l of locs) {
+    const v = Number(l.valor_mensal || 0); if (!v) continue;
+    const fimP = l.fim_previsto || ctr.get(String(l.contrato_id))?.fim_previsto || null;
+    const fimReal = l.status === 'encerrada' ? (l.fim_real || fimP || l.inicio) : null;
+    // realizado no ano: do início (ou 1º/jan) até hoje (ou o fim real)
+    const r0 = l.inicio > ini ? l.inicio : ini; const r1 = [hoje, fimReal].filter(Boolean).sort()[0];
+    locRealAno += v * mesesEntre(r0, r1 < r0 ? r0 : r1);
+    if (l.status !== 'ativa') continue;
+    locMes += v;
+    const ate = fimP || (locSemFim++, somaDias(hoje, 365));
+    locRestante += v * mesesEntre(hoje, ate);
+    locPrevAno += v * mesesEntre(hoje, ate < fimAno ? ate : fimAno);
+  }
+  const emCurso = pvs.filter((p) => ['aberto', 'em_execucao'].includes(p.status));
+  const valorPV = emCurso.reduce((t, p) => t + Number(p.valor_total || 0), 0);
+  // 📈 receita do ano: vendido (BIDs aceitos no ano) + locação já corrida  |  previsto: locação até dez + BIDs abertos com decisão no ano × conversão
+  const diaBR = (iso) => (iso ? new Date(new Date(iso).getTime() - 3 * 3600000).toISOString().slice(0, 10) : '');
+  const aceitosAno = bs.filter((b) => b.fase === 'aceito' && diaBR(b.ganho_em).startsWith(ano));
+  const perdidosAno = bs.filter((b) => b.fase === 'perdido' && diaBR(b.perdido_em).startsWith(ano));
+  const decid = aceitosAno.length + perdidosAno.length;
+  const conv = decid ? aceitosAno.length / decid : null;
+  const vendidoAno = aceitosAno.reduce((t, b) => t + Number(b.valor_total || 0), 0);
+  const abertosAno = abertos.filter((b) => b.previsao_fechamento && b.previsao_fechamento >= hoje && b.previsao_fechamento <= fimAno);
+  const bidsPrev = abertosAno.reduce((t, b) => t + Number(b.valor_total || 0), 0) * (conv ?? 0);
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const emJogo = abertos.reduce((t, b) => t + Number(b.valor_total || 0), 0);
+  const top = [...motivos].sort((a, b) => b.qtd - a.qtd || b.valor - a.valor)[0] || null;
+  return {
+    carteira: { valor: r2(locRestante + valorPV), locacao_restante: r2(locRestante), locacao_mensal: r2(locMes), locacoes_sem_fim: locSemFim, pedidos: emCurso.length, pedidos_valor: r2(valorPV) },
+    receita_ano: { ano: Number(ano), total: r2(vendidoAno + locRealAno + locPrevAno + bidsPrev), realizado: r2(vendidoAno + locRealAno), vendido: r2(vendidoAno), locacao_realizada: r2(locRealAno),
+      previsto: r2(locPrevAno + bidsPrev), locacao_prevista: r2(locPrevAno), bids_previstos: r2(bidsPrev), bids_no_ano: abertosAno.length, conversao_pct: conv == null ? null : Math.round(conv * 1000) / 10 },
+    em_jogo: { valor: r2(emJogo), qtd: abertos.length, ponderado: conv == null ? null : r2(emJogo * conv) },
+    perdido: { valor: r2(perdidos.reduce((t, b) => t + Number(b.valor_total || 0), 0)), qtd: perdidos.length, motivo_top: top ? { nome: top.nome, qtd: top.qtd } : null },
   };
 }
 /** 15b.4: previsão de receita — BIDs abertos pela "decisão esperada" (este mês, próximo, atrasados, sem data) */

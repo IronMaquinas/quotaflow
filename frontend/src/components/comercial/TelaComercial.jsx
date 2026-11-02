@@ -198,7 +198,14 @@ export default function TelaComercial({ C, s, abrirProspeccao, podeContratos }) 
   const [funil, setFunil] = useState(null);
   const [tarefas, setTarefas] = useState([]);
   const [soMinhas, setSoMinhas] = useState(true);
-  const [periodo, setPeriodo] = useState({ de: menosDias(89), ate: hoje() });
+  // 18b.8: pré-seletores de período — mês corrente · últimos 3 meses · acumulado do ano · período (datas)
+  const faixa = (k) => { const h = hoje(); const d = new Date(`${h.slice(0, 7)}-01T12:00:00Z`);
+    if (k === "mes") return { de: `${h.slice(0, 7)}-01`, ate: h };
+    if (k === "tri") { d.setUTCMonth(d.getUTCMonth() - 2); return { de: d.toISOString().slice(0, 10), ate: h }; }
+    if (k === "ano") return { de: `${h.slice(0, 4)}-01-01`, ate: h };
+    return null; };
+  const [preset, setPreset] = useState("tri");
+  const [periodo, setPeriodo] = useState(() => faixa("tri"));
   const [busca, setBusca] = useState(""); const [filtroFase, setFiltroFase] = useState("abertos");
   const [pedidos, setPedidos] = useState(null); const [pvAberto, setPvAberto] = useState(null); // 15c
   // 15c.2: sem banner no Funil (empurrava o kanban) — pedido novo (até 3 dias) = selo "N novo(s)" na aba e 🆕 na lista
@@ -277,12 +284,22 @@ export default function TelaComercial({ C, s, abrirProspeccao, podeContratos }) 
       {aba === "calendario" && <CalendarioComercial C={C} s={s} onErro={erro} onOk={ok} onProspectar={setProspectar} onAbrirBid={(id) => setAberto(id)} onAbrirPV={(id) => setPvAberto(id)} />}
       {aba === "funil" && (!funil ? <div style={{ color: C.muted }}>Carregando…</div> : <>
         <div style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 10, flexWrap: "wrap", fontSize: 12, color: C.textSub }}>
-          Período <input type="date" value={periodo.de} onChange={(e) => e.target.value && setPeriodo({ ...periodo, de: e.target.value })} style={{ ...s.input, width: 150, padding: "6px 8px" }} />
-          até <input type="date" value={periodo.ate} onChange={(e) => e.target.value && setPeriodo({ ...periodo, ate: e.target.value })} style={{ ...s.input, width: 150, padding: "6px 8px" }} />
-          <span style={{ color: C.muted }}>(ganhos, perdidos e conversão; o que está em aberto é sempre o atual)</span>
+          {[["mes", "Mês corrente"], ["tri", "Últimos 3 meses"], ["ano", "Acumulado do ano"], ["livre", "Período"]].map(([k, r]) => <button key={k} type="button" onClick={() => { setPreset(k); const f = faixa(k); if (f) setPeriodo(f); }}
+            style={{ background: preset === k ? C.accent : "transparent", color: preset === k ? "#fff" : C.text, border: `1px solid ${preset === k ? C.accent : C.border}`, borderRadius: 16, padding: "5px 12px", fontSize: 12.5, cursor: "pointer" }}>{r}</button>)}
+          {preset === "livre" ? <>
+            <input type="date" value={periodo.de} max={periodo.ate} onChange={(e) => e.target.value && setPeriodo({ ...periodo, de: e.target.value })} style={{ ...s.input, width: 150, padding: "6px 8px" }} />
+            até <input type="date" value={periodo.ate} min={periodo.de} onChange={(e) => e.target.value && setPeriodo({ ...periodo, ate: e.target.value })} style={{ ...s.input, width: 150, padding: "6px 8px" }} /></>
+            : <span style={{ color: C.textSub }}>{dBR(periodo.de)} a {dBR(periodo.ate)}</span>}
+          <span style={{ color: C.muted }}>(vale para perdido, ganhos e conversão; carteira, receita do ano e em jogo são sempre o atual)</span>
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
-          <Kpi C={C} s={s} rotulo="EM ABERTO NO FUNIL" valor={compacto(k.em_aberto)} sub={`${k.qtd_aberto} BID(s)${k.parados ? ` · ${k.parados} parado(s) +7 d` : ""}${k.expirados ? ` · ${k.expirados} vencido(s)` : ""}`} />
+          {funil.executivo && (() => { const x = funil.executivo; const pct = (v) => (v == null ? "—" : `${String(v).replace(".", ",")}%`);
+            return <div style={{ display: "flex", gap: 8, flexWrap: "wrap", flexBasis: "100%" }}>{/* 18b.8: visão do dono */}
+              <Kpi C={C} s={s} rotulo="CARTEIRA CONTRATADA" valor={compacto(x.carteira.valor)} sub={`locação ${compacto(x.carteira.locacao_mensal)}/mês (${compacto(x.carteira.locacao_restante)} a receber${x.carteira.locacoes_sem_fim ? ` · ${x.carteira.locacoes_sem_fim} sem fim: 12 meses` : ""}) · ${x.carteira.pedidos} pedido(s) em curso ${compacto(x.carteira.pedidos_valor)}`} cor={C.success} />
+              <Kpi C={C} s={s} rotulo={`RECEITA ${x.receita_ano.ano} (REALIZADO + PREVISTO)`} valor={compacto(x.receita_ano.total)} sub={`realizado ${compacto(x.receita_ano.realizado)} (vendido ${compacto(x.receita_ano.vendido)} + locação ${compacto(x.receita_ano.locacao_realizada)}) · previsto ${compacto(x.receita_ano.previsto)} (locação ${compacto(x.receita_ano.locacao_prevista)} + ${x.receita_ano.bids_no_ano} BID(s) × conversão ${pct(x.receita_ano.conversao_pct)})`} cor={C.accent} />
+              <Kpi C={C} s={s} rotulo="EM JOGO (BIDS EM ANDAMENTO)" valor={compacto(x.em_jogo.valor)} sub={`${x.em_jogo.qtd} BID(s)${x.em_jogo.ponderado != null ? ` · ponderado pela conversão ${compacto(x.em_jogo.ponderado)}` : ""}${k.parados ? ` · ${k.parados} parado(s) +7 d` : ""}${k.expirados ? ` · ${k.expirados} vencido(s)` : ""}`} />
+              <Kpi C={C} s={s} rotulo="PERDIDO NO PERÍODO" valor={compacto(x.perdido.valor)} sub={x.perdido.qtd ? `${x.perdido.qtd} BID(s) · mais comum: ${x.perdido.motivo_top.nome} (${x.perdido.motivo_top.qtd})` : "nenhum BID perdido no período"} cor={x.perdido.qtd ? C.danger : undefined} />
+            </div>; })()}
           <Kpi C={C} s={s} rotulo="GANHO NO PERÍODO" valor={compacto(k.valor_ganho)} sub={`${k.ganhos} aceito(s)`} cor={C.success} />
           <Kpi C={C} s={s} rotulo="CONVERSÃO" valor={k.conversao_pct == null ? "—" : `${String(k.conversao_pct).replace(".", ",")}%`} sub={`${k.ganhos} ganho(s) × ${k.perdidos} perdido(s)`} />
           <Kpi C={C} s={s} rotulo="TICKET MÉDIO" valor={compacto(k.ticket_medio)} sub="dos aceitos no período" />
@@ -291,7 +308,7 @@ export default function TelaComercial({ C, s, abrirProspeccao, podeContratos }) 
         {funil.previsao && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
           <Kpi C={C} s={s} rotulo={`PREVISTO PARA FECHAR EM ${mesNome(funil.previsao.mes)}`} valor={compacto(funil.previsao.este_mes.valor)} sub={`${funil.previsao.este_mes.qtd} BID(s) com decisão esperada no mês`} cor={C.accent} />
           <Kpi C={C} s={s} rotulo={`PREVISTO PARA ${mesNome(funil.previsao.proximo_mes)}`} valor={compacto(funil.previsao.proximo.valor)} sub={`${funil.previsao.proximo.qtd} BID(s)`} />
-          <Kpi C={C} s={s} rotulo="DECISÃO ESPERADA JÁ PASSOU" valor={compacto(funil.previsao.atrasados.valor)} sub={`${funil.previsao.atrasados.qtd} BID(s) — atualizar a data ou ligar`} cor={funil.previsao.atrasados.qtd ? C.danger : undefined} />
+          <Kpi C={C} s={s} rotulo="DECISÃO ESPERADA JÁ PASSOU" valor={compacto(funil.previsao.atrasados.valor)} sub={`${funil.previsao.atrasados.qtd} BID(s) em aberto cuja data de decisão já venceu — atualizar a data ou ligar`} cor={funil.previsao.atrasados.qtd ? C.danger : undefined} />
           <Kpi C={C} s={s} rotulo="SEM DATA DE DECISÃO" valor={compacto(funil.previsao.sem_data.valor)} sub={`${funil.previsao.sem_data.qtd} BID(s) em aberto sem previsão`} cor={funil.previsao.sem_data.qtd ? C.warn : undefined} />
         </div>}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
