@@ -11,6 +11,8 @@ import { useState, useEffect, useRef } from "react";
 import apiService from "../../services/apiService";
 import ModalPrompt from "../shared/ModalPrompt";
 import ModalGerarPdfNC from "./ModalGerarPdfNC";
+import { linhasMarca, desenharMarca, alturaMarca, pegarGps } from "../../utils/marcaFoto"; // 18c
+const marcaNC = async () => ({ oque: "Não conformidade", quem: (() => { try { return JSON.parse(localStorage.getItem("usuario") || "null")?.nome || null; } catch { return null; } })(), gps: await pegarGps(2500) });
 
 // Sugestão automática de área por tipo de disposição. O usuário pode
 // sobrescrever no mini-modal. Alinhado com o fluxo real: devolução vai
@@ -93,7 +95,7 @@ function fmtDataHora(iso) {
 // Lê o File, redimensiona pra caber em 1200px de largura máxima, aplica
 // JPEG quality 0.75. Resultado vira data URI (~150-250KB por foto).
 // ─────────────────────────────────────────────────────────────────────────
-function comprimirImagem(file, { maxDim = 1200, quality = 0.75 } = {}) {
+function comprimirImagem(file, { maxDim = 1200, quality = 0.75, marca = null } = {}) { // 18c: marca de rastreabilidade
   return new Promise((resolve, reject) => {
     if (!file || !file.type.startsWith("image/")) {
       reject(new Error("Arquivo não é uma imagem"));
@@ -115,9 +117,11 @@ function comprimirImagem(file, { maxDim = 1200, quality = 0.75 } = {}) {
         }
         const canvas = document.createElement("canvas");
         canvas.width = width;
-        canvas.height = height;
+        const lm = marca ? linhasMarca({ ...marca, arquivoEm: file.lastModified }).linhas : null; // 18c.1: tarja abaixo da foto
+        canvas.height = height + (lm ? alturaMarca(width, height, lm) : 0);
         const ctx = canvas.getContext("2d");
         ctx.drawImage(img, 0, 0, width, height);
+        if (lm) desenharMarca(ctx, width, height, lm);
         const dataUri = canvas.toDataURL("image/jpeg", quality);
         const tamanhoBytes = Math.round((dataUri.length - 22) * 0.75);
         resolve({ dataUri, mime_type: "image/jpeg", tamanho_bytes: tamanhoBytes });
@@ -635,7 +639,7 @@ export default function ModalDetalheNC({
     try {
       for (const file of files) {
         try {
-          const { dataUri, mime_type, tamanho_bytes } = await comprimirImagem(file);
+          const { dataUri, mime_type, tamanho_bytes } = await comprimirImagem(file, { marca: await marcaNC() });
           await apiService.post(`/nao-conformidades/${ncId}/anexos`, {
             url: dataUri,
             mime_type,

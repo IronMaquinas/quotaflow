@@ -13,12 +13,14 @@
 //   />
 
 import { useState, useRef } from 'react';
+import { linhasMarca, desenharMarca, alturaMarca, pegarGps } from "../../utils/marcaFoto"; // 18c
+const marcaNC = async () => ({ oque: "Não conformidade", quem: (() => { try { return JSON.parse(localStorage.getItem("usuario") || "null")?.nome || null; } catch { return null; } })(), gps: await pegarGps(2500) });
 
 // Comprime imagem antes de mandar como base64. Assinatura IDÊNTICA à
 // do ModalDetalheNC.jsx — mesmo comportamento de redimensionamento,
 // mesma qualidade, mesmo shape de retorno. Arquivos não-imagem
 // (PDF) são rejeitados (erro claro) em vez de tentar comprimir.
-function comprimirImagem(file, { maxDim = 1200, quality = 0.75 } = {}) {
+function comprimirImagem(file, { maxDim = 1200, quality = 0.75, marca = null } = {}) { // 18c: marca de rastreabilidade
   return new Promise((resolve, reject) => {
     if (!file || !file.type.startsWith('image/')) {
       reject(new Error('Arquivo não é uma imagem'));
@@ -40,9 +42,11 @@ function comprimirImagem(file, { maxDim = 1200, quality = 0.75 } = {}) {
         }
         const canvas = document.createElement('canvas');
         canvas.width = width;
-        canvas.height = height;
+        const lm = marca ? linhasMarca({ ...marca, arquivoEm: file.lastModified }).linhas : null; // 18c.1: tarja abaixo da foto
+        canvas.height = height + (lm ? alturaMarca(width, height, lm) : 0);
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
+        if (lm) desenharMarca(ctx, width, height, lm);
         const dataUri = canvas.toDataURL('image/jpeg', quality);
         const tamanhoBytes = Math.round((dataUri.length - 22) * 0.75);
         resolve({ dataUri, mime_type: 'image/jpeg', tamanho_bytes: tamanhoBytes });
@@ -89,7 +93,7 @@ export default function ModalNaoConformidade({
     }
     setErro(null);
     try {
-      const { dataUri, mime_type, tamanho_bytes } = await comprimirImagem(file);
+      const { dataUri, mime_type, tamanho_bytes } = await comprimirImagem(file, { marca: await marcaNC() });
       setAnexos(prev => [...prev, {
         nome_arquivo: file.name,
         url: dataUri,

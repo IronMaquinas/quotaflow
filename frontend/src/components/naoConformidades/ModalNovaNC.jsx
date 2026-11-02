@@ -24,6 +24,8 @@
 
 import { useState, useRef, useEffect } from 'react';
 import apiService from '../../services/apiService';
+import { linhasMarca, desenharMarca, alturaMarca, pegarGps } from "../../utils/marcaFoto"; // 18c
+const marcaNC = async () => ({ oque: "Não conformidade", quem: (() => { try { return JSON.parse(localStorage.getItem("usuario") || "null")?.nome || null; } catch { return null; } })(), gps: await pegarGps(2500) });
 
 const LIMITE_ANEXO_BYTES = 50 * 1024 * 1024; // 50MB por arquivo
 
@@ -77,7 +79,7 @@ function abrirAnexoEmNovaAba(dataUri, mimeType, nomeArquivo) {
 }
 
 // ── Compressão de imagem client-side (mesmo padrão do ModalDetalheNC) ──
-function comprimirImagem(file, { maxDim = 1200, quality = 0.75 } = {}) {
+function comprimirImagem(file, { maxDim = 1200, quality = 0.75, marca = null } = {}) { // 18c: marca de rastreabilidade
   return new Promise((resolve, reject) => {
     if (!file || !file.type.startsWith('image/')) {
       reject(new Error('Arquivo não é imagem'));
@@ -99,9 +101,11 @@ function comprimirImagem(file, { maxDim = 1200, quality = 0.75 } = {}) {
         }
         const canvas = document.createElement('canvas');
         canvas.width = width;
-        canvas.height = height;
+        const lm = marca ? linhasMarca({ ...marca, arquivoEm: file.lastModified }).linhas : null; // 18c.1: tarja abaixo da foto
+        canvas.height = height + (lm ? alturaMarca(width, height, lm) : 0);
         const ctx = canvas.getContext('2d');
         ctx.drawImage(img, 0, 0, width, height);
+        if (lm) desenharMarca(ctx, width, height, lm);
         const dataUri = canvas.toDataURL('image/jpeg', quality);
         const base64 = dataUri.split(',')[1] || '';
         const tamanhoBytes = Math.round((base64.length * 3) / 4);
@@ -261,7 +265,7 @@ export default function ModalNovaNC({ C, s, onFechar, onAtualizar }) {
       try {
         const ehImagem = file.type.startsWith('image/');
         const { dataUri, base64, mime_type, tamanho_bytes } = ehImagem
-          ? await comprimirImagem(file)
+          ? await comprimirImagem(file, { marca: await marcaNC() })
           : await lerBase64(file);
         novos.push({
           id_local: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,

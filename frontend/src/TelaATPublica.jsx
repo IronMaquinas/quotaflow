@@ -67,7 +67,7 @@ export default function TelaATPublica({ tokenFixo, onVoltar } = {}) { // 17a: ta
   const cols = d.colunas || [];
   if (exec) {
     const tenant = `at-${token}-${exec.id}`;
-    return <div style={{ background: CE.bg, minHeight: "100vh" }}><ExecutarInspecao C={CE} s={SE} tenant={tenant} equipamento={{ id: exec.equipamento_id || exec.id }} chavePrep={exec.id}
+    return <div style={{ background: CE.bg, minHeight: "100vh" }}><ExecutarInspecao C={CE} s={SE} tenant={tenant} referencia={d.numero || null} quem={quem.outro ? quem.nome : (d.motorista_nome || null)} equipamento={{ id: exec.equipamento_id || exec.id }} chavePrep={exec.id}
       rascunho={exec.rascunho || null} carregarPrep={async () => (await chamar("GET", `/etapa/${exec.id}/preparar`)).prep}
       enviarFn={(corpo) => chamar("POST", `/etapa/${exec.id}/inspecao`, corpo)}
       extraCorpo={quem.outro ? { terceiro: { nome: quem.nome.trim(), cpf: String(quem.cpf).replace(/\D/g, "") } } : {}}

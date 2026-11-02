@@ -9,13 +9,14 @@ import apiService from "../../services/apiService";
 import AssinaturaTela from "../shared/AssinaturaTela";
 import { FundoVista } from "./Esquemas";
 import * as Fila from "../../utils/filaInspecoes";
+import { pegarGps } from "../../utils/marcaFoto"; // 18c
 
 const COR = { ok: "#22c55e", nok: "#ef4444", na: "#64748b" };
 const CAMPO = { km: ["Km (hodômetro)", "number"], horimetro: ["Horímetro (h)", "number"], local: ["Local", "text"], cliente: ["Cliente / contrato", "text"] };
 const urlFoto = (f) => f.previa || `data:${f.mime};base64,${f.base64}`;
 
 /** item: rascunho da fila (retomar) — ou { equipamento, modeloId } para começar */
-export default function ExecutarInspecao({ tenant, equipamento, modeloId, rascunho, onFechar, onConcluida, C, s, carregarPrep, chavePrep, enviarFn, extraCorpo }) {
+export default function ExecutarInspecao({ tenant, equipamento, modeloId, rascunho, onFechar, onConcluida, C, s, carregarPrep, chavePrep, enviarFn, extraCorpo, referencia, quem }) {
   const enviarAgora = enviarFn || ((corpo) => apiService.post("/inspecoes/enviar", corpo));
   const [it, setIt] = useState(rascunho || null);
   const [erro, setErro] = useState(null);
@@ -88,7 +89,12 @@ export default function ExecutarInspecao({ tenant, equipamento, modeloId, rascun
   const tudoOk = () => { const v = vistas[passo - 1]; mudar((x) => { const r = { ...x.corpo.respostas }; for (const p of v.pontos) if (p.tipo === "ok_nok" && !r[p.id]?.status) r[p.id] = { ...(r[p.id] || {}), status: "ok" }; return { ...x, corpo: { ...x.corpo, respostas: r } }; }); };
   const addFoto = async (p, file) => {
     if (!file) return;
-    try { const f = await Fila.comprimirFoto(file); const atual = resp(p.id).fotos || []; if (atual.length >= 4) return setErro("No máximo 4 fotos por ponto"); setResp(p.id, { fotos: [...atual, { base64: f.base64, mime: f.mime }] }); }
+    // 18c: 📸 marca de rastreabilidade (o quê · AT/placa · data/hora · GPS · quem) gravada na foto
+    const usu = (() => { try { return JSON.parse(localStorage.getItem("usuario") || "null")?.nome || null; } catch { return null; } })();
+    const gps = it?.corpo?.gps || await pegarGps(2500);
+    const marca = { oque: `Inspeção ${prep?.modelo?.nome || ""}`.trim(), ref: [referencia || it?.corpo?.cliente || null, prep?.equipamento?.tag].filter(Boolean).join(" · ") || null,
+      quem: extraCorpo?.terceiro?.nome || quem || usu, gps };
+    try { const f = await Fila.comprimirFoto(file, 1280, 0.72, marca); if (f.antiga) setErro("⚠ Esta foto parece antiga ou da galeria — ela foi aceita, mas sai marcada assim. Prefira tirar na hora."); const atual = resp(p.id).fotos || []; if (atual.length >= 4) return setErro("No máximo 4 fotos por ponto"); setResp(p.id, { fotos: [...atual, { base64: f.base64, mime: f.mime }] }); }
     catch (e) { setErro(e.message); }
   };
 

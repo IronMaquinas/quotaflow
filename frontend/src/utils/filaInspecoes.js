@@ -3,6 +3,7 @@
 // Sem internet: fica na fila e reenvia sozinha quando a conexão volta (evento "online") ou ao abrir a tela.
 // O envio é idempotente no servidor (cliente_uid), então reenviar nunca duplica.
 // Sem IndexedDB (aba anônima antiga): cai num Map em memória — funciona enquanto a página estiver aberta.
+import { linhasMarca, desenharMarca, alturaMarca } from "./marcaFoto"; // 18c
 
 const DB = "quotaflow-inspecoes";
 const LOJA = "itens";
@@ -81,8 +82,9 @@ export async function sincronizar(tenant, enviarFn) {
   return { enviadas };
 }
 
-/** Comprime uma foto (File) para JPEG ~1280px — fotos de celular têm 4–8 MB. → { base64, mime, previa } */
-export function comprimirFoto(file, lado = 1280, qualidade = 0.72) {
+/** Comprime uma foto (File) para JPEG ~1280px — fotos de celular têm 4–8 MB. → { base64, mime, previa, antiga }
+ *  18c: marca = { oque, ref, quem, gps } → grava a faixa de rastreabilidade nos pixels (utils/marcaFoto.js) */
+export function comprimirFoto(file, lado = 1280, qualidade = 0.72, marca = null) {
   return new Promise((ok, falha) => {
     const r = new FileReader();
     r.onerror = () => falha(new Error("Não foi possível ler a foto"));
@@ -92,9 +94,12 @@ export function comprimirFoto(file, lado = 1280, qualidade = 0.72) {
       img.onload = () => {
         const k = Math.min(1, lado / Math.max(img.width, img.height));
         const cv = document.createElement("canvas"); cv.width = Math.round(img.width * k); cv.height = Math.round(img.height * k);
-        cv.getContext("2d").drawImage(img, 0, 0, cv.width, cv.height);
+        const hFoto = cv.height; let antiga = false; let m = null;
+        if (marca) { m = linhasMarca({ ...marca, arquivoEm: file.lastModified }); antiga = m.antiga; cv.height = hFoto + alturaMarca(cv.width, hFoto, m.linhas); } // 18c.1: tarja abaixo
+        const ctx = cv.getContext("2d"); ctx.drawImage(img, 0, 0, cv.width, hFoto);
+        if (m) desenharMarca(ctx, cv.width, hFoto, m.linhas);
         const url = cv.toDataURL("image/jpeg", qualidade);
-        ok({ base64: url.split(",")[1], mime: "image/jpeg", previa: url });
+        ok({ base64: url.split(",")[1], mime: "image/jpeg", previa: url, antiga });
       };
       img.src = r.result;
     };
