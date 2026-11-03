@@ -141,7 +141,7 @@ async function sincronizarTarefa(supabase, tenantId, m) {
       return m.tarefa_id;
     }
     if (final || !m.responsavel_id) return null;
-    const { data, error } = await supabase.from('tarefas').insert([{ tenant_id: tenantId, titulo: t.titulo, detalhe: t.detalhe, responsavel: m.responsavel_nome || null, prazo: t.prazo, prioridade: 'alta', status: 'pendente', criado_em: new Date().toISOString() }]).select();
+    const { data, error } = await supabase.from('tarefas').insert([{ tenant_id: tenantId, titulo: t.titulo, detalhe: t.detalhe, responsavel: m.responsavel_nome || null, prazo: t.prazo, prioridade: 'alta', status: 'pendente', origem: 'multa', origem_ref: m.id != null ? String(m.id) : null, criado_em: new Date().toISOString() }]).select(); // 18g: origem → tipo da tarefa (065)
     if (error) throw new Error(error.message);
     const id = String(data[0].id);
     await supabase.from('multas').update({ tarefa_id: id }).eq('id', m.id).eq('tenant_id', tenantId);
