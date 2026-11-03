@@ -1,7 +1,7 @@
 // frontend/src/components/configuracoes/TelaConfiguracoes.jsx
 //
 // Tela de configurações do tenant. v1 cobre:
-//   - Jornada de trabalho (padrão)
+//   - Jornada de trabalho (padrão) + 🚛 dias operacionais da frota (18f)
 //   - Feriados do calendário
 //   - Empresa: região (UF) — padrão das demandas spot e do Match Score
 //
@@ -13,6 +13,7 @@ import { useState, useEffect, useCallback } from "react";
 import apiService from "../../services/apiService";
 import LogoEmpresa from "./LogoEmpresa"; // etapa 14c
 import DadosEmpresa from "./DadosEmpresa"; // etapa 14d.4
+import DiasFrota from "./DiasFrota"; // etapa 18f
 
 // ─────────────────────────────────────────────────────────────────────────
 // HELPERS de conversão minuto ↔ HH:MM
@@ -83,7 +84,7 @@ export default function TelaConfiguracoes({ C, s, abaInicial }) {
         </div>
       )}
 
-      {abaAtiva === "jornada" && <SecaoJornada C={C} s={s} onErro={setErro} />}
+      {abaAtiva === "jornada" && <><SecaoJornada C={C} s={s} onErro={setErro} /><DiasFrota C={C} s={s} onErro={setErro} /></>}
       {abaAtiva === "feriados" && <SecaoFeriados C={C} s={s} onErro={setErro} />}
       {abaAtiva === "custos" && <SecaoCustosOperacionais C={C} s={s} onErro={setErro} />}
       {abaAtiva === "comunicacoes" && <SecaoComunicacoes C={C} s={s} onErro={setErro} />}

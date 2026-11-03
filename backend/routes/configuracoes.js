@@ -345,6 +345,12 @@ router.delete('/logo', tenantMiddleware, respLogo((req) => (podeLogo(req) ? LOGO
 //   GET /api/configuracoes/cep/:cep             → endereço do CEP (BrasilAPI)
 const PERFIL = require('../services/perfilEmpresa');
 const quemE = async (req) => { try { const u = await DB.selectOne('usuarios', { id: req.userId }, req.tenantId); return { id: req.userId, nome: u?.nome || null }; } catch { return { id: req.userId, nome: null }; } };
+// Etapa 18f: 🚛 dias operacionais da frota (services/frotaCalendario.js) — base dos indicadores de utilização
+//   GET /api/configuracoes/frota-dias → { dias_semana: [0..6], descontar_feriados, migrou }
+//   PUT /api/configuracoes/frota-dias (admin, gestor) { dias_semana, descontar_feriados } — sem permissão = 409
+const FROTA = require('../services/frotaCalendario');
+router.get('/frota-dias', tenantMiddleware, respLogo((req) => FROTA.obter(supabase, req.tenantId)));
+router.put('/frota-dias', tenantMiddleware, respLogo((req) => (podeLogo(req) ? FROTA.salvar(supabase, req.tenantId, req.body || {}) : { status: 409, erro: 'Só admin ou gestor alteram os dias da frota' })));
 router.get('/empresa/dados', tenantMiddleware, respLogo((req) => PERFIL.dados(supabase, req.tenantId)));
 router.put('/empresa/dados', tenantMiddleware, respLogo(async (req) => (podeLogo(req) ? PERFIL.salvar(supabase, req.tenantId, await quemE(req), req.body || {}) : { status: 403, erro: 'Só admin ou gestor' })));
 router.get('/empresa/status', tenantMiddleware, respLogo((req) => PERFIL.status(supabase, req.tenantId)));

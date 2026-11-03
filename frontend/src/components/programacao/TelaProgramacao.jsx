@@ -1,11 +1,13 @@
 // components/programacao/TelaProgramacao.jsx — etapa 16a: 🚛 Programação (operação, gestor, admin — SEM valores)
 //   📋 A programar — pedidos abertos e seus trechos → 🚛 Programar (gera a AT do trecho)
 //   🚛 ATs        — lista com filtro de status, ⚠ conflito, ⏰ coleta passou → abre a ficha
+//                   18f: 🔎 pesquisa do histórico — período + motorista + equipamento da frota + texto (AT, item, série, cliente…) · ⬇ CSV
 //   🗓 Agenda     — frota (equipamentos e motoristas) × 14 dias; conflito em vermelho
 import { useState, useEffect, useMemo } from "react";
 import apiService from "../../services/apiService";
 import FichaAT, { COR_STATUS, NOME_STATUS, dataHora } from "./FichaAT";
 import MesaProgramacao from "./MesaProgramacao";
+import FiltroPeriodo, { faixaPeriodo } from "../shared/FiltroPeriodo"; // 18f
 
 const hoje = () => new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
 const somaDias = (d, n) => new Date(new Date(`${d}T12:00:00Z`).getTime() + n * 86400000).toISOString().slice(0, 10);
@@ -13,6 +15,18 @@ const diaBR = (iso) => (iso ? new Date(new Date(iso).getTime() - 3 * 3600000).to
 const ddmm = (d) => d.slice(8, 10) + "/" + d.slice(5, 7);
 const MESES = ["Janeiro", "Fevereiro", "Março", "Abril", "Maio", "Junho", "Julho", "Agosto", "Setembro", "Outubro", "Novembro", "Dezembro"];
 const SEMANA = ["dom", "seg", "ter", "qua", "qui", "sex", "sáb"];
+// 18f: exporta a pesquisa (separador ; para abrir direto no Excel em pt-BR)
+const csvCampo = (v) => { const t = String(v ?? ""); return /[;"\n]/.test(t) ? `"${t.replace(/"/g, '""')}"` : t; };
+const brData = (iso) => (iso ? new Date(new Date(iso).getTime() - 3 * 3600000).toISOString().slice(0, 16).replace("T", " ").replace(/^(\d{4})-(\d{2})-(\d{2})/, "$3/$2/$1") : "");
+export function csvATs(lista) {
+  const cab = ["AT", "Situação", "Coleta prevista", "Início real", "Conclusão", "Origem", "Destino", "Cliente", "Pedido", "Trecho", "Motorista", "Conjunto", "Itens"];
+  const linhas = lista.map((e) => [e.numero, e.status_nome || e.status, brData(e.inicio_previsto), brData(e.iniciada_em), brData(e.concluida_em), e.origem, e.destino, e.cliente_nome, e.ref || e.pv_numero, e.grupo_titulo, e.motorista_nome, (e.conjunto || []).map((c) => c.tag || c.nome).join(" + "), (e.itens || []).map((i) => [i.n && `#${i.n}`, i.descricao || i.nome, i.serie && `série ${i.serie}`].filter(Boolean).join(" ")).join(" | ")]);
+  return "\ufeff" + [cab, ...linhas].map((l) => l.map(csvCampo).join(";")).join("\r\n");
+}
+function baixarCsv(lista) {
+  const url = URL.createObjectURL(new Blob([csvATs(lista)], { type: "text/csv;charset=utf-8" }));
+  const a = document.createElement("a"); a.href = url; a.download = `ats-${hoje()}.csv`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000);
+}
 
 export default function TelaProgramacao({ C, s, perfis = [], abrirAT = null }) {
   const [aba, setAba] = useState("programar");
@@ -20,6 +34,9 @@ export default function TelaProgramacao({ C, s, perfis = [], abrirAT = null }) {
   const [ats, setAts] = useState(null);
   const [filtro, setFiltro] = useState("ativas");
   const [busca, setBusca] = useState("");
+  const [per, setPer] = useState(faixaPeriodo("tudo")); // 18f: período da pesquisa
+  const [fMot, setFMot] = useState(""); // 18f: motorista
+  const [fEq, setFEq] = useState(""); // 18f: equipamento da frota (tag)
   const [ag, setAg] = useState(null);
   const [de, setDe] = useState(hoje());
   const [visao, setVisao] = useState("semana"); // 16d: semana (14 dias) · mês (calendário) · ano (ocupação por mês)
@@ -36,17 +53,21 @@ export default function TelaProgramacao({ C, s, perfis = [], abrirAT = null }) {
   const mover = (n) => { if (visao === "ano") setDe(`${Number(de.slice(0, 4)) + n}-01-01`); else if (visao === "mes") { const [y, m] = de.split("-").map(Number); const d = new Date(Date.UTC(y, m - 1 + n, 1)); setDe(d.toISOString().slice(0, 10)); } else setDe(somaDias(de, 7 * n)); };
   const carregar = async () => {
     try {
-      const [p, a, g] = await Promise.all([apiService.get("/programacao/pedidos"), apiService.get(`/programacao/execucoes?status=${filtro}`), apiService.get(`/programacao/agenda?de=${periodo[0]}&ate=${periodo[1]}`)]);
+      const [p, a, g] = await Promise.all([apiService.get("/programacao/pedidos"), apiService.get(`/programacao/execucoes?status=${filtro}${per.de ? `&de=${per.de}&ate=${per.ate}` : ""}`), apiService.get(`/programacao/agenda?de=${periodo[0]}&ate=${periodo[1]}`)]);
       setPedidos(p.pedidos); setAts(a.execucoes); setAg(g);
     } catch (e) { erro(e.message); }
   };
-  useEffect(() => { carregar(); }, [filtro, de, visao]); // eslint-disable-line
+  useEffect(() => { carregar(); }, [filtro, de, visao, per.de, per.ate]); // eslint-disable-line
+  const mudarPer = (v) => { setPer(v); if (v.de && filtro === "ativas") setFiltro(""); }; // 18f: pesquisar o passado → todas as situações
 
   const aProgramar = useMemo(() => (pedidos || []).map((p) => ({ ...p, faltam: p.trechos.reduce((n, t) => n + (t.a_programar ?? t.livres), 0) })), [pedidos]);
   const totalFaltam = aProgramar.reduce((a, p) => a + p.faltam, 0);
   // 16d: busca por palavras (todas precisam aparecer) — ex.: "BID-2026-0015 item 3", "série SN123", "ABC-333 Ana"
   const palheiro = (e) => `${e.numero} ${e.ref || ""} ${(e.itens || []).map((i) => `item ${i.n} #${i.n} série serie ${i.serie || ""}`).join(" ")} ${e.cliente_nome} ${e.pv_numero} ${e.motorista_nome} ${e.grupo_titulo} ${e.origem} ${e.destino} ${(e.conjunto || []).map((c) => c.tag).join(" ")}`.toLowerCase().replace(/·/g, " ");
-  const atsFiltradas = (ats || []).filter((e) => { const p = busca.trim().toLowerCase().split(/\s+/).filter(Boolean); if (!p.length) return true; const h = palheiro(e); return p.every((w) => (w === "item" ? true : /^\d+$/.test(w) && p[p.indexOf(w) - 1] === "item" ? new RegExp(`item ${w}(\\D|$)`).test(h) : h.includes(w))); });
+  const nomeMot = (e) => e.motorista_nome || "";
+  const motoristas = useMemo(() => [...new Set((ats || []).map(nomeMot).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [ats]);
+  const equipamentos = useMemo(() => [...new Set((ats || []).flatMap((e) => (e.conjunto || []).map((c) => c.tag || c.nome)).filter(Boolean))].sort((a, b) => a.localeCompare(b)), [ats]);
+  const atsFiltradas = (ats || []).filter((e) => (!fMot || nomeMot(e) === fMot) && (!fEq || (e.conjunto || []).some((c) => (c.tag || c.nome) === fEq))).filter((e) => { const p = busca.trim().toLowerCase().split(/\s+/).filter(Boolean); if (!p.length) return true; const h = palheiro(e); return p.every((w) => (w === "item" ? true : /^\d+$/.test(w) && p[p.indexOf(w) - 1] === "item" ? new RegExp(`item ${w}(\\D|$)`).test(h) : h.includes(w))); });
 
   const abaBt = (k, r, n) => <button key={k} type="button" onClick={() => setAba(k)} style={{ background: aba === k ? C.accent : "transparent", color: aba === k ? "#fff" : C.textSub, border: `1px solid ${aba === k ? C.accent : C.border}`, borderRadius: 8, padding: "7px 14px", fontSize: 13, cursor: "pointer", fontWeight: 600 }}>{r}{n ? <span style={{ marginLeft: 6, background: "#ffffff30", borderRadius: 10, padding: "0 6px", fontSize: 11 }}>{n}</span> : null}</button>;
   const chip = (e) => <span style={s.tag(COR_STATUS[e.status])}>{NOME_STATUS[e.status]}</span>;
@@ -107,13 +128,22 @@ export default function TelaProgramacao({ C, s, perfis = [], abrirAT = null }) {
           <select value={filtro} onChange={(e) => setFiltro(e.target.value)} style={{ ...s.input, width: 200 }}><option value="ativas">Ativas (programadas + em execução)</option>{Object.entries(NOME_STATUS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}<option value="">Todas</option></select>
           <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar AT, BID, item (ex.: BID-2026-0015 item 3), nº de série, cliente, motorista, placa, cidade…" style={{ ...s.input, flex: 1, minWidth: 220 }} />
         </div>
+        <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap", alignItems: "center" }}>
+          <FiltroPeriodo C={C} s={s} valor={per} onChange={mudarPer} comTudo />
+          <select aria-label="Motorista" value={fMot} onChange={(e) => setFMot(e.target.value)} style={{ ...s.input, width: 190 }}><option value="">👤 Todos os motoristas</option>{motoristas.map((m) => <option key={m} value={m}>{m}</option>)}</select>
+          <select aria-label="Equipamento" value={fEq} onChange={(e) => setFEq(e.target.value)} style={{ ...s.input, width: 190 }}><option value="">🚛 Todos os equipamentos</option>{equipamentos.map((m) => <option key={m} value={m}>{m}</option>)}</select>
+          {(fMot || fEq || busca || per.de) ? <button type="button" onClick={() => { setFMot(""); setFEq(""); setBusca(""); setPer(faixaPeriodo("tudo")); }} style={{ background: "transparent", border: "none", color: C.accent, cursor: "pointer", fontSize: 12.5 }}>✕ limpar</button> : null}
+          <span style={{ marginLeft: "auto", fontSize: 12.5, color: C.muted }}>{atsFiltradas.length} AT(s)</span>
+          {atsFiltradas.length ? <button type="button" onClick={() => baixarCsv(atsFiltradas)} style={{ ...s.btn(false), cursor: "pointer", color: C.text, padding: "5px 12px", fontSize: 12 }}>⬇ CSV</button> : null}
+        </div>
         {!ats ? <div style={{ color: C.muted }}>Carregando…</div> : !atsFiltradas.length ? <div style={{ ...s.card, padding: 24, textAlign: "center", color: C.muted }}>Nenhuma AT neste filtro.</div> :
           <div style={{ ...s.card, padding: 0, overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse", fontSize: 13 }}>
-            <thead><tr>{["AT", "Status", "Coleta", "Rota", "Cliente / trecho", "Motorista", "Conjunto", ""].map((h) => <th key={h} style={{ textAlign: "left", fontSize: 10.5, color: C.muted, padding: "8px 10px", borderBottom: `1px solid ${C.border}` }}>{h.toUpperCase()}</th>)}</tr></thead>
+            <thead><tr>{["AT", "Status", "Coleta", "Conclusão", "Rota", "Cliente / trecho", "Motorista", "Conjunto", ""].map((h) => <th key={h} style={{ textAlign: "left", fontSize: 10.5, color: C.muted, padding: "8px 10px", borderBottom: `1px solid ${C.border}` }}>{h.toUpperCase()}</th>)}</tr></thead>
             <tbody>{atsFiltradas.map((e) => <tr key={e.id} className="qf-clicavel" onClick={() => setFicha(e.id)} style={{ cursor: "pointer" }}>
               <td style={{ padding: "8px 10px", borderTop: `1px solid ${C.border}`, fontWeight: 700, whiteSpace: "nowrap" }}>{e.numero}</td>
               <td style={{ padding: "8px 10px", borderTop: `1px solid ${C.border}` }}>{chip(e)}</td>
               <td style={{ padding: "8px 10px", borderTop: `1px solid ${C.border}`, whiteSpace: "nowrap", color: e.atrasada ? C.danger : C.text }}>{dataHora(e.inicio_previsto)}{e.atrasada ? " ⏰" : ""}</td>
+              <td style={{ padding: "8px 10px", borderTop: `1px solid ${C.border}`, whiteSpace: "nowrap", color: C.textSub }}>{e.concluida_em ? dataHora(e.concluida_em) : e.fim_previsto ? <span title="previsto">{dataHora(e.fim_previsto)} <span style={{ fontSize: 10.5 }}>prev.</span></span> : "—"}</td>
               <td style={{ padding: "8px 10px", borderTop: `1px solid ${C.border}`, color: C.textSub }}>{e.origem || "—"} ➜ {e.destino || "—"}</td>
               <td style={{ padding: "8px 10px", borderTop: `1px solid ${C.border}` }}>{e.cliente_nome}<div style={{ fontSize: 11.5, color: C.muted }}>{e.ref || e.pv_numero} · {e.grupo_titulo}</div></td>
               <td style={{ padding: "8px 10px", borderTop: `1px solid ${C.border}` }}>{e.motorista_nome || <span style={{ color: C.warn }}>a definir</span>}{e.liberacao ? " 🔓" : ""}</td>
