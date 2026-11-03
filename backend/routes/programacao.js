@@ -9,7 +9,7 @@
 //   POST /pvs/:id/at                   { grupo_id, inicio, fim, origem, destino, motorista_id, cavalo_id, implementos, observacoes, liberacao_justificativa, ignorar_conflito }
 //   GET  /execucoes/:id · PUT /execucoes/:id · POST /execucoes/:id/status { acao: iniciar|concluir|cancelar|reabrir, motivo }
 //   POST /execucoes/:id/anexos { tipo, nome, mime, base64 } · GET /execucoes/:id/anexos/:anexo · DELETE /execucoes/:id/anexos/:anexo
-//   GET  /execucoes/:id/documento      dados do PDF da AT
+//   GET  /execucoes/:id/documento      dados do PDF da AT · GET /execucoes/:id/relatorio  18e: relatório completo da viagem
 //   POST /checar { linhas }            16b: conflitos das linhas da mesa antes de salvar
 //   16e: POST /execucoes/:id/fluxo/:etapa/liberar { motivo } (gestor/admin) · POST /pvs/:id/at e PUT aceitam { fluxo: [...] }
 //   16c: POST /docs { motorista_id, cavalo_id, implementos, inicio, fim } · GET /documentos/:id · DELETE /execucoes/:id (rascunho)
@@ -61,6 +61,7 @@ router.post('/execucoes/:id/status', responder(async (req) => E.mudarStatus(supa
 router.post('/execucoes/:id/anexos', responder(async (req) => E.anexar(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
 router.get('/execucoes/:id/anexos/:anexo', responder((req) => E.linkAnexo(supabase, req.tenantId, req.params.id, req.params.anexo)));
 router.delete('/execucoes/:id/anexos/:anexo', responder(async (req) => E.removerAnexo(supabase, req.tenantId, await quem(req), req.params.id, req.params.anexo)));
+router.get('/execucoes/:id/relatorio', responder((req) => E.relatorioViagem(supabase, req.tenantId, req.params.id))); // 18e: relatório completo da viagem
 router.get('/execucoes/:id/documento', responder((req) => E.documento(supabase, req.tenantId, req.params.id)));
 
 module.exports = router;

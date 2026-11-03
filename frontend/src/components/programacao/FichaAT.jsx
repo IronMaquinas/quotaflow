@@ -7,6 +7,7 @@
 import { useState, useEffect } from "react";
 import apiService from "../../services/apiService";
 import { abrirAT } from "../../utils/gerarAT";
+import { abrirRelatorioViagem } from "../../utils/gerarRelatorioViagem"; // 18e
 import { valorCelula } from "../../utils/gerarBid";
 import EditorAT from "./EditorAT";
 import VerArquivo, { ChipDoc, TXT_DOC } from "./VerArquivo";
@@ -35,6 +36,7 @@ export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onEr
   if (!d) return null;
   const e = d.execucao; const temFluxo = (e.fluxo || []).length > 0; const cols = (e.colunas || []).filter((c) => c.chave !== "data_prevista");
   const acao = async (a, extra = {}, msg) => { setOcupado(true); try { await apiService.post(`/programacao/execucoes/${e.id}/status`, { acao: a, ...extra }); onOk(msg); setModal(null); await carregar(); onMudou?.(); } catch (er) { onErro(er.message); } finally { setOcupado(false); } };
+  const relatorio = async () => { const w = window.open("", "_blank"); try { abrirRelatorioViagem(await apiService.get(`/programacao/execucoes/${e.id}/relatorio`), w); } catch (er) { if (w) w.close(); onErro(er.message); } }; // 18e
   const pdf = async () => { const w = window.open("", "_blank"); try { abrirAT(await apiService.get(`/programacao/execucoes/${e.id}/documento`), w); } catch (er) { if (w) w.close(); onErro(er.message); } };
   const abrirAnexo = async (a) => { setVer({ nome: a.nome, mime: a.mime }); try { const r = await apiService.get(`/programacao/execucoes/${e.id}/anexos/${a.id}`); setVer({ url: r.url, nome: a.nome, mime: a.mime }); } catch (er) { setVer(null); onErro(er.message); } };
   const verDoc = async (x) => {
@@ -70,6 +72,7 @@ export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onEr
         </div>
         <div style={{ padding: "10px 18px", borderBottom: `1px solid ${C.border}`, display: "flex", gap: 8, flexWrap: "wrap" }}>
           <button type="button" onClick={pdf} style={bt(C.textSub, false)}>📄 PDF da AT</button>
+          {e.status !== "rascunho" && <button type="button" onClick={relatorio} title="AT + fluxo (hora, GPS, quem) + inspeções com fotos + documentos — para o cliente e como evidência" style={bt(C.accent, false)}>📑 Relatório da viagem</button>}
           {e.status === "programada" && <button type="button" onClick={editar} style={bt(C.textSub, false)}>✏ Editar</button>}
           <div style={{ flex: 1 }} />
           {temFluxo && ["programada", "em_execucao"].includes(e.status) && <span style={{ fontSize: 12, color: C.muted, alignSelf: "center" }}>🧭 O motorista conduz a viagem pelo 📲 link — começa e termina sozinha</span>}

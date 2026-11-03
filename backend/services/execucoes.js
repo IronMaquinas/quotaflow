@@ -486,6 +486,38 @@ async function documento(supabase, tenantId, id) {
     contato_cliente: pv.contato_nome || null, referencia: pv.referencia || null, motorista: col ? await dadosMotorista(supabase, tenantId, col) : null };
 }
 
+// ─── 18e: 📑 RELATÓRIO COMPLETO DA VIAGEM — a AT + o fluxo (hora/GPS/quem de cada etapa) + as inspeções (resultado, itens
+//   não OK, fotos com a tarja de rastreabilidade) + documentos + previsto × real. Para o cliente e como evidência.
+async function relatorioViagem(supabase, tenantId, id) {
+  const doc = await documento(supabase, tenantId, id); if (doc.erro) return doc;
+  const ex = await exDoTenant(supabase, tenantId, id);
+  const I = require('./inspecoes');
+  const ins = (await q(supabase.from('inspecoes').select('*').eq('tenant_id', tenantId)).catch(() => []))
+    .filter((i) => String(i.execucao_id) === String(ex.id) || (ex.fluxo || []).some((e) => e.inspecao_id != null && String(e.inspecao_id) === String(i.id)))
+    .sort((a, b) => String(a.concluida_em).localeCompare(String(b.concluida_em)));
+  const inspecoes = [];
+  for (const i of ins) {
+    const det = await I.detalhe(supabase, tenantId, i.id).catch(() => null); const fotos = det?.fotos || {};
+    const resp = i.respostas || [];
+    inspecoes.push({ id: i.id, numero: i.numero || null, modelo: i.modelo_nome, equipamento: i.equipamento_nome, executor: i.executor_nome, concluida_em: i.concluida_em, resultado: i.resultado,
+      km: i.km ?? null, horimetro: i.horimetro ?? null, local: i.local || null, gps: i.gps || null, etapa_id: i.etapa_id || null,
+      nao_ok: resp.filter((r) => r.status === 'nok').map((r) => ({ rotulo: r.rotulo, obs: r.obs || null, resolvido: !!r.resolvido, resolucao: r.resolucao || null, critico: !!(r.critico || r.impede) })),
+      fotos: resp.flatMap((r) => (r.fotos || []).map((f) => ({ url: fotos[f] || null, legenda: r.rotulo, nok: r.status === 'nok' }))).filter((f) => f.url)
+        .sort((a, b) => b.nok - a.nok).slice(0, 12),
+      total_pontos: resp.length });
+  }
+  const fluxo = require('./fluxoViagem').comLiberacao(ex.fluxo || []).map((e) => ({ id: e.id, rotulo: e.rotulo, tipo: e.tipo, status: e.status, feita_em: e.feita_em || null, gps: e.gps || null, por: e.por || null,
+    inspecao_numero: e.inspecao_numero || null, resultado: e.resultado || null, liberacao: e.liberacao || null }));
+  const horas = (a, b) => (a && b ? Math.round(((Date.parse(b) - Date.parse(a)) / 3600000) * 10) / 10 : null);
+  const kms = inspecoes.map((i) => Number(i.km)).filter((n) => Number.isFinite(n) && n > 0);
+  return { ...doc, fluxo, inspecoes,
+    real: { iniciada_em: ex.iniciada_em || null, concluida_em: ex.concluida_em || null, duracao_h: horas(ex.iniciada_em, ex.concluida_em),
+      atraso_h: ex.concluida_em && ex.fim_previsto ? horas(ex.fim_previsto, ex.concluida_em) : null, km: kms.length >= 2 ? { de: Math.min(...kms), ate: Math.max(...kms), rodados: Math.max(...kms) - Math.min(...kms) } : null },
+    resumo: { etapas: fluxo.length, feitas: fluxo.filter((e) => ['feita', 'liberada'].includes(e.status) || e.feita_em).length, inspecoes: inspecoes.length,
+      reprovadas: inspecoes.filter((i) => i.resultado === 'reprovado').length, nao_ok: inspecoes.reduce((t, i) => t + i.nao_ok.length, 0) },
+    emitido_em: new Date().toISOString() };
+}
+
 // ─── 17b: 🚦 MULTA × PROGRAMAÇÃO — quem estava com o veículo na hora da infração ───
 //   procura ATs (programadas, em execução ou concluídas — nunca rascunho/cancelada) cujo CONJUNTO tem o veículo (id da frota ou a placa/tag)
 //   e cujo período cobre a data/hora: usa o REAL (iniciada_em → concluida_em) quando há; senão o PREVISTO (coleta → entrega, ou +24 h).
@@ -561,4 +593,4 @@ async function paginaMotorista(supabase, ex) {
     motorista_id: ex.motorista_id ?? null };
 }
 
-module.exports = { provavelCondutor, minhasViagens, refDe: (e, pvs) => comRef(e, pvs).ref, sincronizarPV, registrar, porToken, paginaMotorista, linkMotorista, docsDoConjunto, linkDocCadastro, descartar, carregarDocs, avaliarDocs, checar, trechosComATs, TIPOS, STATUS, ANEXOS, base, criar, editar, mudarStatus, anexar, linkAnexo, removerAnexo, listar, detalhe, doPV, agenda, documento, conflitos, _definirSelos };
+module.exports = { relatorioViagem, provavelCondutor, minhasViagens, refDe: (e, pvs) => comRef(e, pvs).ref, sincronizarPV, registrar, porToken, paginaMotorista, linkMotorista, docsDoConjunto, linkDocCadastro, descartar, carregarDocs, avaliarDocs, checar, trechosComATs, TIPOS, STATUS, ANEXOS, base, criar, editar, mudarStatus, anexar, linkAnexo, removerAnexo, listar, detalhe, doPV, agenda, documento, conflitos, _definirSelos };
