@@ -152,6 +152,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato })
           <div key={e.locacao_id} style={{ padding: "8px 0", borderBottom: `1px solid ${C.border}`, opacity: e.ativa ? 1 : 0.6 }}>
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <div style={{ flex: "1 1 200px", fontSize: 13 }}><b>{e.tag}</b> — {e.nome}{e.bloqueado && <span style={{ ...s.tag(C.danger), marginLeft: 6 }}>⛔ BLOQUEADO</span>}
+                {e.ativa && String(e.inicio).slice(0, 10) > hoje() && <span style={{ ...s.tag(C.warn), marginLeft: 6 }} title="O equipamento só entra nas medições a partir desta data — confira se o ano está certo">⏳ começa em {dataBR(e.inicio)}</span>}{/* 18d.4 */}
                 <div style={{ fontSize: 11, color: C.muted }}>{e.ativa ? `início ${dataBR(e.inicio)} · término ${e.fim_previsto ? dataBR(e.fim_previsto) : "sem prazo"}` : `devolvido em ${dataBR(e.fim_real)}`}{e.valor_mensal != null ? ` · ${Number(e.valor_mensal).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}/mês` : e.ativa ? " · sem valor mensal" : ""}{e.entrega_inspecao_id ? " · ✓ entrega" : e.ativa ? " · sem inspeção de entrega" : ""}{e.devolucao_inspecao_id ? " · ✓ devolução" : ""}</div></div>
               {e.ativa && editar && (dataEq?.id === e.locacao_id
                 ? <span style={{ display: "flex", gap: 4, alignItems: "flex-end", flexWrap: "wrap" }}>
@@ -171,7 +172,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato })
         {aberto.equipamentos.length === 0 && <div style={{ fontSize: 13, color: C.muted, padding: "6px 0" }}>Nenhum equipamento neste contrato.</div>}
 
         <div style={{ display: "flex", alignItems: "center", marginTop: 16, marginBottom: 4 }}>{/* 18d */}
-          <div style={{ fontWeight: 700, flex: 1 }}>📏 Medições <span style={{ fontWeight: 400, fontSize: 12, color: C.muted }}>· ciclo {aberto.medicao_dia_inicio ? `do dia ${aberto.medicao_dia_inicio}` : "mês do calendário"}{aberto.medicao_vencimento_dia ? ` · vencimento dia ${String(aberto.medicao_vencimento_dia).padStart(2, "0")}` : ""} · {aberto.medicao_locatario ? "você revisa e envia, o cliente aprova" : "a empresa revisa e fecha"} · uma medição por mês com todos os equipamentos · valores do contrato, proporcionais aos dias</span></div>
+          <div style={{ fontWeight: 700, flex: 1 }}>📏 Medições <span style={{ fontWeight: 400, fontSize: 12, color: C.muted }}>· ciclo {aberto.medicao_dia_inicio ? `do dia ${aberto.medicao_dia_inicio}` : "mês do calendário"}{aberto.medicao_vencimento_dia ? ` · vencimento dia ${String(aberto.medicao_vencimento_dia).padStart(2, "0")}` : ""} · {aberto.medicao_locatario ? "você revisa e envia, o cliente aprova" : "a empresa revisa e fecha"} · uma medição por mês com todos os equipamentos (a do mês corrente aparece nos últimos 10 dias) · valores do contrato, proporcionais aos dias</span></div>
         </div>
         {ciclosMed ? <CiclosMedicao C={C} s={s} ciclos={ciclosMed} podeAbrir={editar} onAbrir={(x) => abrirCiclo(aberto.id, x)} /> : <div style={{ fontSize: 12.5, color: C.muted }}>Rode a migration 062 para usar a medição.</div>}
 

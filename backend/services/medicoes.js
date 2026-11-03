@@ -22,6 +22,9 @@ const hojeBR = R.hojeBR;
 const diaBR = (iso) => (iso ? new Date(new Date(iso).getTime() - 3 * 3600000).toISOString().slice(0, 10) : null);
 const diasEntre = (a, b) => Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 86400000);
 const r2 = (n) => Math.round(Number(n) * 100) / 100;
+// 18d.4: a medição do ciclo corrente só aparece (e é gerada) nos últimos D_ANTES dias do ciclo — antes disso é ruído na tela
+const D_ANTES = 10;
+const naJanela = (x, hoje) => x.fim < hoje || diasEntre(hoje, x.fim) <= D_ANTES;
 const STATUS_NOME = { aberta: 'Em preparação', enviada: 'Aguardando o cliente', aprovada: 'Aprovada', devolvida: 'Contestada pelo cliente', pendente: 'A gerar' };
 const STATUS_NOME_CLIENTE = { enviada: 'Aguardando a sua aprovação', aprovada: 'Aprovada', devolvida: 'Contestada — a locadora vai revisar' };
 const ERRO_062 = { status: 409, erro: 'Rode a migration 062 antes (medição da locação)' };
@@ -95,7 +98,7 @@ async function listar(supabase, tenantId, contratoId) {
   try { ms = await q(supabase.from('locacao_medicoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id)); } catch (e) { if (sem062(e)) return ERRO_062; throw e; }
   const hoje = hojeBR();
   for (let k = 0; k < ms.length; k++) if (ms[k].status === 'aberta') ms[k] = await sincronizar(supabase, tenantId, ms[k], c).catch(() => ms[k]); // 18d.3
-  const lista = ciclos(c, hoje).map((x) => {
+  const lista = ciclos(c, hoje).filter((x) => { const m = ms.find((y) => y.inicio === x.inicio); return naJanela(x, hoje) || (m && m.status !== 'aberta'); }).map((x) => { // 18d.4: D-10
     const m = ms.find((y) => y.inicio === x.inicio) || null;
     return { ...x, medicao_id: m?.id || null, status: m?.status || 'pendente', status_nome: STATUS_NOME[m?.status || 'pendente'], em_andamento: x.fim >= hoje, ...(m ? resumo(m) : {}) };
   });
@@ -249,6 +252,7 @@ async function pendencias(supabase, tenantId, quem = { usuarioNome: 'QuotaFlow' 
   for (const c of cs.filter((x) => x.status === 'ativo')) {
     for (const x of ciclos(c, hoje).slice(0, 3)) {
       let m = ms.find((y) => String(y.contrato_id) === String(c.id) && y.inicio === x.inicio);
+      if (!naJanela(x, hoje) && (!m || m.status === 'aberta')) continue; // 18d.4: ciclo corrente só a partir de D-10
       if (!m) { const r = await abrir(supabase, tenantId, quem, c.id, x.inicio).catch(() => null); m = r?.medicao; if (!m) continue; }
       else m = await sincronizar(supabase, tenantId, m, c).catch(() => m); // 18d.3: equipamento que entrou depois de gerar
       if (m.status === 'aprovada') continue;
@@ -356,4 +360,4 @@ async function avisosDiarios(supabase, { hoje = hojeBR(), enviar = null } = {}) 
   return r;
 }
 
-module.exports = { STATUS_NOME, cicloDe, ciclos, listar, detalhe, abrir, recalcular, salvar, enviar, reabrir, aprovarCliente, contestar, acaoEmpresa, pendencias, painelLocatario, acaoLocatario, informativo, avisosDiarios, _definirEnvio };
+module.exports = { D_ANTES, naJanela, STATUS_NOME, cicloDe, ciclos, listar, detalhe, abrir, recalcular, salvar, enviar, reabrir, aprovarCliente, contestar, acaoEmpresa, pendencias, painelLocatario, acaoLocatario, informativo, avisosDiarios, _definirEnvio };
