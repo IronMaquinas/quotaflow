@@ -1,5 +1,6 @@
 // components/programacao/MesaProgramacao.jsx — etapa 16c: 🧩 Mesa de programação em CARDS
 // Por trecho do pedido, um card por item (um item = um conjunto = uma AT):
+//   18g.1: selo 🧾 fiscal n/4 no trecho (tarefa TSK-TR do trecho; ⏰ prazo vencido; clique abre no ✅ Plano)
 //   ＋ a programar (tracejado) → abre o modal · 💾 rascunho (salvo no servidor) → abre o modal · 🚛 AT → abre a ficha
 // O card mostra o essencial (data, motorista, conjunto) e o KIT DO MOTORISTA: CNH, CRLV do conjunto e NF-e/CT-e/MDF-e —
 // todo chip faz alguma coisa: com arquivo abre no visualizador; NF-e/CT-e/MDF-e faltando abre o seletor de arquivo; CNH/CRLV
@@ -67,6 +68,9 @@ function Trecho({ C, s, pv, t, onAbrir, ...resto }) {
         <b style={{ fontSize: 13.5 }}>{t.titulo}</b>
         <span style={{ fontSize: 12, color: C.muted, flex: "1 1 300px", minWidth: 0, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={`${t.coleta} ➜ ${t.entrega}`}>{t.coleta || t.entrega ? `📍 ${t.coleta || "—"} ➜ 🏁 ${t.entrega || "—"}` : "rota a definir"}</span>
         {t.a_programar === 0 ? <span style={s.tag(C.success)}>✓ todos programados</span> : <span style={s.tag(C.warn)}>{t.a_programar} a programar</span>}
+        {t.fiscal ? <span role="button" title={`${t.fiscal.numero || "Tarefa fiscal"} — ${t.fiscal.status === "cancelada" ? "dispensada" : t.fiscal.feitos === t.fiscal.total ? "NF-e, CT-e, averbação e MDF-e ✓" : `falta: ${t.fiscal.proximo || "—"}`}${t.fiscal.prazo ? ` · prazo ${t.fiscal.prazo.split("-").reverse().join("/")}` : ""} — abrir no ✅ Plano`}
+          onClick={(e) => { e.stopPropagation(); window.dispatchEvent(new CustomEvent("qf-abrir-tarefa", { detail: t.fiscal.numero })); }}
+          style={{ ...s.tag(t.fiscal.status === "cancelada" ? C.muted : t.fiscal.feitos === t.fiscal.total ? C.success : t.fiscal.atrasada ? C.danger : C.accent), cursor: "pointer" }}>🧾 fiscal {t.fiscal.status === "cancelada" ? "dispensado" : `${t.fiscal.feitos}/${t.fiscal.total}`}{t.fiscal.atrasada ? " ⏰" : ""}{t.fiscal.alertas ? " ⚠️" : ""}</span> : null} {/* 18g.1 */}
       </div>
       {aberto && <div style={{ padding: "0 14px 12px", display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))", gap: 10 }}>
         {t.itens.map((i) => { const at = atDe(i.id); return <Card key={i.id} C={C} s={s} pv={pv} item={i} at={at} onAbrir={() => onAbrir(t, i, at)} {...resto} />; })}

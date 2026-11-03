@@ -67,7 +67,10 @@ async function aoAceitar(supabase, tenantId, bidId, quem = {}) {
   try {
     const b = (await q(supabase.from('bids').select('*').eq('tenant_id', tenantId).eq('id', bidId)))[0];
     if (!b || b.fase !== 'aceito') return null;
-    return b.tipo === 'aditivo' ? await aplicarAditivo(supabase, tenantId, b, quem) : await criarPV(supabase, tenantId, b, quem);
+    const r = b.tipo === 'aditivo' ? await aplicarAditivo(supabase, tenantId, b, quem) : await criarPV(supabase, tenantId, b, quem);
+    const pvId = r?.pv?.id ?? b.pv_id; // 18g.1: 🧾 tarefa fiscal por trecho já nasce com o pedido
+    if (pvId != null) await require('./tarefasFiscais').sincronizar(supabase, tenantId, { pvId }).catch((e) => console.error('❌ [fiscal] ao aceitar:', e?.message || e));
+    return r;
   } catch (e) { console.error('❌ [PV] falha ao gerar a partir do aceite:', e?.message || e); return { erro: e?.message || 'falha' }; }
 }
 async function criarPV(supabase, tenantId, b, quem = {}) {

@@ -104,6 +104,7 @@ export default function TelaUsuariosNova({ useUsuarios, C, s }) {
     { codigo: 'qualidade',   label: 'Qualidade',     desc: 'NC, curadoria, causa raiz' },
     { codigo: 'financeiro',  label: 'Financeiro',    desc: 'Contas a pagar, custo, fiscal' },
     { codigo: 'comercial',   label: 'Comercial',     desc: 'Funil, BIDs e clientes (📈 Comercial)' }, // 15a
+    { codigo: 'fiscal',      label: 'Fiscal',        desc: 'NF-e, CT-e, averbação e MDF-e do transporte (🧾 tarefas TR do ✅ Plano)' }, // 18g.1
   ];
   const perfilLabels = Object.fromEntries(PERFIS_SISTEMA.map(p => [p.codigo, p.label]));
 

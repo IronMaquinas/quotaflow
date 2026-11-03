@@ -182,6 +182,8 @@ export default function App() {
   const [abrirProsp, setAbrirProsp] = useState(null); // 18b.2: tarefa do ✅ Plano → 📣 prospecção no Comercial
   useEffect(() => { const f = (ev) => { setAbrirProsp({ id: ev.detail, em: Date.now() }); setTela("comercial"); }; window.addEventListener("qf-abrir-prospeccao", f); return () => window.removeEventListener("qf-abrir-prospeccao", f); }, []);
   useEffect(() => { const f = (ev) => { setAbrirAT({ id: ev.detail, em: Date.now() }); setTela("programacao"); }; window.addEventListener("qf-abrir-at", f); return () => window.removeEventListener("qf-abrir-at", f); }, []); // eslint-disable-line
+  const [abrirTarefa, setAbrirTarefa] = useState(null); // 18g.1: selo 🧾 fiscal da Mesa → tarefa no ✅ Plano
+  useEffect(() => { const f = (ev) => { if (!ev.detail) return; setAbrirTarefa({ numero: ev.detail, em: Date.now() }); setTela("plano"); }; window.addEventListener("qf-abrir-tarefa", f); return () => window.removeEventListener("qf-abrir-tarefa", f); }, []); // eslint-disable-line
   const [abaColaborador, setAbaColaborador] = useState("viagens"); // 14b.1: tela do colaborador · 17a: começa em 🚛 Minhas viagens
   useEffect(() => { if (usuario?.id) carregarLogoEmpresa(); }, [usuario?.id]); // 14c: logo da empresa nos documentos
   // 14c.2: "é clicável" — mãozinha + realce ao passar o mouse (className="qf-clicavel")
@@ -395,7 +397,7 @@ const perfil = PERFIS[usuario.perfil] || {
 
   // Nav items filtrados por perfil
   const navItems = [
-    {id:"home",          l:"Início",                  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro","comercial"]},
+    {id:"home",          l:"Início",                  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro","comercial","fiscal"]},
     {id:"comercial",     l:"📈 Comercial",            perfis:["admin","gestor","comercial"]}, // etapa 15a
     {id:"programacao",   l:"🚛 Programação",          perfis:["admin","gestor","operacao"]}, // etapa 16a
     {id:"ordem_servico", l:"🛠️ Ordem de Serviço",    perfis:["admin","gestor","operacao","qualidade"]},
@@ -409,7 +411,7 @@ const perfil = PERFIS[usuario.perfil] || {
     {id:"historico_estoque", l:"📜 Movimentações",    perfis:["admin","gestor","comprador"]},
     {id:"aprovacoes",    l:"✅ Aprovações",           perfis:["admin","gestor"], badge: totalPendencias > 0 ? totalPendencias : null},
     {id:"ordensvenda",   l:"📄 Ordens de Venda",      perfis:["admin","gestor","comprador"]},
-    {id:"plano",         l:`✅ Plano${tarefas.dados.filter(t=>t.status==="em_andamento").length>0?` (${tarefas.dados.filter(t=>t.status==="em_andamento").length})`:""}`, perfis:["admin","gestor","comprador"]},
+    {id:"plano",         l:`✅ Plano${tarefas.dados.filter(t=>t.status==="em_andamento").length>0?` (${tarefas.dados.filter(t=>t.status==="em_andamento").length})`:""}`, perfis:["admin","gestor","comprador","fiscal"]},
     {id:"financeiro",    l:"💰 Financeiro",           perfis:["admin","gestor","financeiro"]},
     {id:"relatorio",     l:"📄 Relatório",            perfis:["admin","gestor"]},
     {id:"historico",     l:"📉 Histórico Preços",     perfis:["admin","gestor"]},
@@ -853,7 +855,7 @@ const perfil = PERFIS[usuario.perfil] || {
         )}
         {temAcesso(tela) && tela === "plano" && (
           <div style={{flex:1,overflowY:"auto"}}>
-            <TelaPlanoAcaoNova useTarefas={useTarefas} onVoltar={()=>navegar("relatorio")} C={C} s={s} />
+            <TelaPlanoAcaoNova useTarefas={useTarefas} onVoltar={()=>navegar("relatorio")} C={C} s={s} abrirTarefa={abrirTarefa} ambienteInicial={perfisLogado.includes("fiscal") && !perfisLogado.some(p => ["admin","gestor"].includes(p)) ? "TR" : "todos"} />
           </div>
         )}        
       </div>
@@ -2386,6 +2388,7 @@ const PERFIS = {
   qualidade:   { l:"Qualidade",     c:"#10b981", icon:"✅" },
   financeiro:  { l:"Financeiro",    c:"#06b6d4", icon:"💰" },
   comercial:   { l:"Comercial",     c:"#ec4899", icon:"📈" }, // etapa 15a
+  fiscal:      { l:"Fiscal",        c:"#14b8a6", icon:"🧾" }, // etapa 18g.1
   // legado (mantidos pra não quebrar dado antigo em teste)
   tecnico:     { l:"Técnico",       c:"#f59e0b", icon:"🔧" },
   fornecedor:  { l:"Fornecedor",    c:"#22c55e", icon:"🏢" },
@@ -2396,7 +2399,7 @@ const PERFIS = {
 // tela) e com os 6 perfis canônicos do banco. `tecnico` e `fornecedor`
 // são legado (mantidos pra compat com dados antigos em teste).
 const PERMISSOES = {
-  home:               ["admin","gestor","comprador","operacao","qualidade","financeiro","comercial"],
+  home:               ["admin","gestor","comprador","operacao","qualidade","financeiro","comercial","fiscal"],
   comercial:          ["admin","gestor","comercial"], // etapa 15a
   programacao:        ["admin","gestor","operacao"], // etapa 16a
   ordem_servico:      ["admin","gestor","operacao","qualidade"],
@@ -2410,7 +2413,7 @@ const PERMISSOES = {
   historico_estoque:  ["admin","gestor","comprador"],
   aprovacoes:         ["admin","gestor"],
   ordensvenda:        ["admin","gestor","comprador"],
-  plano:              ["admin","gestor","comprador"],
+  plano:              ["admin","gestor","comprador","fiscal"], // 18g.1: fiscal
   financeiro:         ["admin","gestor","financeiro"],
   relatorio:          ["admin","gestor"],
   historico:          ["admin","gestor"],

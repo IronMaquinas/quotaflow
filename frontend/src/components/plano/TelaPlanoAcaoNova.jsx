@@ -1,10 +1,13 @@
 // components/plano/TelaPlanoAcaoNova.jsx — ✅ Plano de ação
 //   18g: 🔗 rastreabilidade — número TSK-<tipo>-<ano>-<nnnn> (imutável), "ambientes" por tipo (TR · NC · AU · MT · CM · HR · GN),
 //        📎 evidências, 📜 histórico (quem fez o quê e quando), 🔗 vínculos (BID → PV → TSK → AT…).
+//   18g.1: 🧾 tarefa fiscal (origem 'fiscal'): checklist NF-e → CT-e → averbação → MDF-e; conclui sozinha; "Dispensar" cancela.
+//          props ambienteInicial (perfil Fiscal abre em TR) e abrirTarefa ({ numero }) — vem do selo da Mesa.
 //        Tarefa numerada não se exclui: cancela (fica no histórico). Confirmações no modal do app (sem window.confirm/alert).
 import { useState, useEffect } from 'react';
 import { useTarefas } from '../../hooks/useTarefas';
 import apiService from '../../services/apiService';
+import ChecklistFiscal from './ChecklistFiscal'; // 18g.1
 
 export const TIPOS_TAREFA = {
   TR: { nome: 'Transporte', icone: '🚚' }, NC: { nome: 'Não conformidade', icone: '⚠️' }, AU: { nome: 'Auditoria', icone: '🔎' },
@@ -17,10 +20,10 @@ const FORM0 = { titulo: '', detalhe: '', responsavel: '', prazo: '', prioridade:
 const lerBase64 = (f) => new Promise((ok, erro) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1] || ''); r.onerror = () => erro(new Error('Não consegui ler o arquivo')); r.readAsDataURL(f); });
 const tipoDe = (t) => t.tipo || ({ prospeccao: 'CM', multa: 'HR', autuacao: 'NC', fiscal: 'TR' }[t.origem]) || 'GN';
 
-export default function TelaPlanoAcaoNova({ onVoltar, C, s }) {
+export default function TelaPlanoAcaoNova({ onVoltar, C, s, ambienteInicial = 'todos', abrirTarefa = null }) {
   const { dados: tarefas, loading, erro, listar, criar, atualizar, deletar, adicionarComentario } = useTarefas();
   const [filtro, setFiltro] = useState('abertas');
-  const [ambiente, setAmbiente] = useState('todos');
+  const [ambiente, setAmbiente] = useState(ambienteInicial);
   const [search, setSearch] = useState('');
   const [modal, setModal] = useState(null);
   const [aberta, setAberta] = useState(null); // { id, aba }
@@ -32,6 +35,8 @@ export default function TelaPlanoAcaoNova({ onVoltar, C, s }) {
   const [enviando, setEnviando] = useState(false);
 
   useEffect(() => { listar(); }, []); // eslint-disable-line
+  useEffect(() => { if (!abrirTarefa?.numero) return; setAmbiente('todos'); setFiltro('todos'); setSearch(abrirTarefa.numero); }, [abrirTarefa]); // 18g.1: veio do selo da Mesa
+  useEffect(() => { if (!abrirTarefa?.numero) return; const t = (tarefas || []).find((x) => x.numero === abrirTarefa.numero); if (t && aberta?.id !== t.id) setAberta({ id: t.id, aba: t.origem === 'fiscal' ? 'fiscal' : 'hist' }); }, [abrirTarefa, tarefas]); // eslint-disable-line
   useEffect(() => { if (!aviso) return; const x = setTimeout(() => setAviso(null), aviso.erro ? 7000 : 3500); return () => clearTimeout(x); }, [aviso]);
   const ok = (t) => setAviso({ t }); const falha = (e) => setAviso({ t: e?.message || String(e), erro: true });
 
@@ -147,7 +152,7 @@ export default function TelaPlanoAcaoNova({ onVoltar, C, s }) {
           const stCfg = statusTarefaCfg[t.status] || { l: t.status, c: C.muted };
           const prCfg = prioridadeTarefaCfg[t.prioridade] || { l: t.prioridade, c: C.muted };
           const prazoInfo = fmtDataPrazo(t.prazo);
-          const daOrigem = t.origem === 'prospeccao'; // 18b.2: encerra sozinha no 📈 Comercial (BID criado ou cancelada)
+          const daOrigem = ['prospeccao', 'fiscal'].includes(t.origem); // 18b.2: encerra sozinha no 📈 Comercial · 18g.1: fiscal conclui com os 4 documentos
           const encerrada = ['concluida', 'cancelada'].includes(t.status);
           const tp = TIPOS_TAREFA[tipoDe(t)];
           const aba = aberta?.id === t.id ? aberta.aba : null;
@@ -155,7 +160,7 @@ export default function TelaPlanoAcaoNova({ onVoltar, C, s }) {
             <div key={t.id} style={{ ...s.card, overflow: 'hidden', borderLeft: `3px solid ${prCfg.c}` }}>
               <div style={{ padding: '14px 18px', display: 'flex', gap: 14, alignItems: 'flex-start', flexWrap: 'wrap' }}>
                 <div style={{ flexShrink: 0, marginTop: 2 }}>
-                  {daOrigem && encerrada ? <span title="Encerrada pelo Comercial" style={{ background: stCfg.bg, border: `1px solid ${stCfg.c}44`, borderRadius: 6, padding: '4px 8px', color: stCfg.c, fontSize: 11, fontWeight: 600, display: 'inline-block' }}>{stCfg.icon} {stCfg.l}</span> :
+                  {daOrigem && encerrada ? <span title={t.origem === 'fiscal' ? 'Encerrada pelos documentos fiscais' : 'Encerrada pelo Comercial'} style={{ background: stCfg.bg, border: `1px solid ${stCfg.c}44`, borderRadius: 6, padding: '4px 8px', color: stCfg.c, fontSize: 11, fontWeight: 600, display: 'inline-block' }}>{stCfg.icon} {stCfg.l}</span> :
                     <select aria-label="Situação" value={t.status} onChange={(e) => mudarStatus(t, e.target.value)} style={{ background: stCfg.bg, border: `1px solid ${stCfg.c}44`, borderRadius: 6, padding: '4px 8px', color: stCfg.c, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', fontWeight: 600 }}>
                       {Object.entries(statusTarefaCfg).filter(([k]) => !daOrigem || !['concluida', 'cancelada'].includes(k)).map(([k, v]) => <option key={k} value={k}>{v.icon} {v.l}</option>)}
                     </select>}
@@ -170,13 +175,15 @@ export default function TelaPlanoAcaoNova({ onVoltar, C, s }) {
                   {t.detalhe && <div style={{ fontSize: 12, color: C.muted, marginBottom: 6, lineHeight: 1.5 }}>{t.detalhe}</div>}
                   <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 11, alignItems: 'center' }}>
                     {t.responsavel && <span style={{ color: C.textSub }}>👤 {t.responsavel}</span>}
-                    {daOrigem && <span style={{ color: C.accent, cursor: 'pointer', fontWeight: 600 }} onClick={() => window.dispatchEvent(new CustomEvent('qf-abrir-prospeccao', { detail: t.origem_ref }))}>📣 Abrir no Comercial{encerrada ? '' : ' — encerra com o BID ou o cancelamento'}</span>}
+                    {t.fiscal && <span onClick={() => setAberta(aba === 'fiscal' ? null : { id: t.id, aba: 'fiscal' })} style={{ color: t.fiscal.feitos === t.fiscal.total ? C.success : C.accent, cursor: 'pointer', fontWeight: 600 }}>🧾 {t.fiscal.feitos}/{t.fiscal.total}{t.fiscal.proximo && !encerrada ? ` · próximo: ${{ nfe: 'NF-e', cte: 'CT-e', averbacao: 'averbação', mdfe: 'MDF-e' }[t.fiscal.proximo]}` : ''}{t.fiscal.alertas?.length ? ` · ⚠️ ${t.fiscal.alertas.length}` : ''}</span>}
+                    {t.origem === 'prospeccao' && <span style={{ color: C.accent, cursor: 'pointer', fontWeight: 600 }} onClick={() => window.dispatchEvent(new CustomEvent('qf-abrir-prospeccao', { detail: t.origem_ref }))}>📣 Abrir no Comercial{encerrada ? '' : ' — encerra com o BID ou o cancelamento'}</span>}
                     {prazoInfo && <span style={{ color: encerrada ? C.muted : prazoInfo.cor }}>📅 {prazoInfo.str}{encerrada ? '' : ` · ${prazoInfo.label}`}</span>}
                     {(t.vinculos || []).map((v, i) => <span key={i} onClick={() => abrirVinculo(v)} title={EVENTO[v.tipo] ? 'Abrir' : undefined}
                       style={{ color: EVENTO[v.tipo] ? C.accent : C.textSub, cursor: EVENTO[v.tipo] ? 'pointer' : 'default', fontFamily: 'ui-monospace, monospace' }}>🔗 {v.numero || `${VINC[v.tipo] || v.tipo} ${v.id}`}</span>)}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>
+                  {t.fiscal && abaBt(t, 'fiscal', `🧾 ${t.fiscal.feitos}/${t.fiscal.total}`)}
                   {abaBt(t, 'coment', `💬 ${t.comentarios?.length || 0}`)}
                   {abaBt(t, 'evid', `📎 ${t.anexos?.length || 0}`)}
                   {t.numero && abaBt(t, 'hist', '📜')}
@@ -184,6 +191,11 @@ export default function TelaPlanoAcaoNova({ onVoltar, C, s }) {
                   {!daOrigem && !t.numero && <button type="button" aria-label="Excluir" onClick={() => setConfirmar({ texto: 'Excluir esta tarefa?', acao: () => deletar(t.id).then(() => ok('Tarefa excluída')) })} style={{ background: 'transparent', border: `1px solid #ef444433`, borderRadius: 5, padding: '5px 9px', color: '#ef4444', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>✕</button>}
                 </div>
               </div>
+
+              {aba === 'fiscal' && t.fiscal && (
+                <div style={{ borderTop: `1px solid ${C.border}`, background: C.bg, padding: '14px 18px' }}>
+                  <ChecklistFiscal C={C} s={s} tarefa={t} onAtualizou={listar} onErro={falha} onOk={ok} />
+                </div>)}
 
               {aba === 'coment' && (
                 <div style={{ borderTop: `1px solid ${C.border}`, background: C.bg, padding: '14px 18px' }}>
@@ -264,7 +276,7 @@ export default function TelaPlanoAcaoNova({ onVoltar, C, s }) {
                   <option value="alta">🔴 Alta</option><option value="media">🟡 Média</option><option value="baixa">🟢 Baixa</option>
                 </select>
                 <select value={form.status} onChange={(e) => setForm((f) => ({ ...f, status: e.target.value }))} style={{ ...s.input, appearance: 'none' }}>
-                  {Object.entries(statusTarefaCfg).filter(([k]) => !(modal !== 'nova' && modal.tarefa.origem === 'prospeccao' && ['concluida', 'cancelada'].includes(k))).map(([k, v]) => <option key={k} value={k}>{v.l}</option>)}
+                  {Object.entries(statusTarefaCfg).filter(([k]) => !(modal !== 'nova' && ['prospeccao', 'fiscal'].includes(modal.tarefa.origem) && ['concluida', 'cancelada'].includes(k) && k !== modal.tarefa.status)).map(([k, v]) => <option key={k} value={k}>{v.l}</option>)}
                 </select>
               </div>
             </div>

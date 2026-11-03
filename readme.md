@@ -387,6 +387,7 @@ Ver seção 5 para o fluxo completo.
 - **063 (18d.2)** — `locacao_contratos.medicao_vencimento_dia` (1–31, dia de vencimento da cobrança — aparece no Boletim de Medição). Idempotente.
 - **064 (18f)** — `tenants.frota_dias_semana` (dias da semana em que a frota opera, `0`=dom … `6`=sáb; padrão `'1,2,3,4,5,6'` = seg a sáb) e `tenants.frota_descontar_feriados` (padrão sim). Base dos indicadores de utilização × alocação. Idempotente.
 - **065 (18g)** — 🔗 rastreabilidade das tarefas: `tarefas.tipo` (TR · NC · AU · MT · CM · HR · GN), `tarefas.numero` (`TSK-<tipo>-<ano>-<nnnn>`, dado pelo trigger `tarefas_numerar` e imutável), `tarefas.anexos` / `historico` / `vinculos` (jsonb) e a tabela `tarefa_sequencias` (último número por empresa, tipo e ano). Numera as tarefas que já existem pela data de criação (tipo pela origem: prospecção → CM, multa → HR, autuação → NC; o resto → GN). Idempotente.
+- **066 (18g.1)** — 🧾 perfil **`fiscal`** (catálogo `perfis` + CHECK de `usuarios.perfil` / `usuario_perfis.perfil_codigo`), `tenants.fiscal_antecedencia_dias` (prazo da tarefa fiscal em dias úteis antes do trecho, 0–30, padrão 2 = D-2) e `tarefas.checklist` (jsonb: NF-e, CT-e, averbação, MDF-e com as entradas e a dispensa). Idempotente.
 - **058 (16e.3)** — `tenants (+) base_endereco` (📍 pátio / base da frota — onde o conjunto é liberado; pode ser diferente do endereço fiscal). Idempotente.
 - **057 (16e)** — `execucoes (+) fluxo` (etapas da viagem em ordem: marcações e inspeções, com status, hora, GPS, inspeção feita e liberação do gestor) e `inspecoes (+) execucao_id, etapa_id` (a inspeção feita no fluxo aponta para a AT). Idempotente.
 - **056 (16c)** — `execucoes.status (+) 'rascunho'` (cavalo pode ficar vazio no rascunho), `execucoes (+) token, link_visto_em` (📲 link do motorista) e `liberacao_docs` (CNH/CRLV vencido na data da viagem liberado pelo gestor). Idempotente.
@@ -925,6 +926,7 @@ npm run dev
   - **18f (03/11):** **🔎 pesquisa do histórico de ATs** na aba 🚛 ATs da Programação: pré-seletores de período (mês, 3 meses, ano, **tudo**, período livre; ao escolher um período a situação passa para "Todas"), filtros por **👤 motorista** e **🚛 equipamento da frota** (cavalo/implemento), a busca por texto de antes (AT, BID, item, nº de série, cliente, placa, cidade), contador de resultados, coluna **Conclusão** (real ou prevista) e **⬇ CSV** da pesquisa (separador `;`, abre direto no Excel). **🚛 Dias operacionais da frota** em ⚙️ Configurações › Jornada: dias da semana (padrão **seg a sáb**) + descontar feriados — base da 18f.1 (utilização × alocação). `GET/PUT /api/configuracoes/frota-dias` (admin/gestor; sem permissão = 409). Migration 064.
   - **18f.1 (03/11):** **📊 Utilização × alocação** — nova aba na 🚚 Programação, por **🚛 equipamento da frota** (os que já entraram em alguma AT; equipamento só de locação fica de fora) e **👤 motorista**. **Hoje é a linha divisória:** utilização = dias operacionais em AT iniciada (do início real à conclusão, ou até hoje); alocação = dias de AT programada/em execução de amanhã ao fim previsto (viagem de 20 dias no 10º dia → 10 em uso + 10 reservados). Disponível = dias operacionais (18f) − dias **parado** (equipamento bloqueado por inspeção reprovada, desde o bloqueio); ocioso = disponível − em uso; rodar em domingo/feriado aparece como "fora do calendário" sem inflar o %. KPIs (utilização, alocação, disponibilidade, dias ociosos), ranking (mais/menos utilizados quando há mais de 5) e tabela por item. **💰 Só admin/gestor:** receita realizada e reservada (valor dos itens da AT no pedido, rateado pelos dias da viagem), **R$/dia em uso** e **receita perdida em ociosidade** (estimada: dias ociosos × R$/dia do recurso, ou a média). Presets: este mês, últimos/próximos 30 dias, este ano, período. **📑 Relatório detalhado** (A4 paisagem) com o resumo e as ATs de cada equipamento e motorista. `GET /api/programacao/utilizacao?de&ate`. Sem migration. Próximo: card na Homescreen do gestor; parado por OS de manutenção e férias/afastamento do motorista.
   - **18g (03/11):** **🔗 rastreabilidade das tarefas** (auditoria ISO) — vale para todas as tarefas do ✅ Plano. **Número `TSK-<tipo>-<ano>-<nnnn>`** (ex.: TSK-TR-2026-0001; TSK = *task*, neutro para escalar fora do Brasil) dado pelo banco e **imutável** — reclassificar muda só o tipo e fica no histórico; tarefa numerada não se exclui, cancela. **Tipos / "ambientes":** 🚚 TR Transporte · ⚠️ NC Não conformidade · 🔎 AU Auditoria · 🔧 MT Manutenção · 📈 CM Comercial · 👥 HR Pessoas · 📌 GN Geral — chips com contador no topo do Plano (a tarefa nova já nasce no tipo do chip aberto). **📎 Evidências** (PDF, XML, JPG, PNG), **📜 histórico** (criação, cada campo de → para com quem e quando, reclassificação, evidência anexada/removida) e **🔗 vínculos** clicáveis (AT abre a Programação, prospecção abre o Comercial). Busca pelo nº, BID ou AT; KPI de atrasadas; filtro "Abertas" padrão; confirmações e avisos no modal/aviso do app (saíram `window.confirm` e `alert` do Plano). Multas e autuações passam a gravar a origem (→ HR / NC). Rotas: `GET /api/tarefas/tipos`, `GET /:id`, `POST/GET/DELETE /:id/anexos`. Migration 065. Base da tarefa fiscal automática (18g.1) — desenho completo em "🧾 Documentos fiscais do transporte".
+  - **18g.1 (03/11):** **🧾 tarefa fiscal automática por trecho do pedido.** O BID aprovado vira PV e **cada trecho de transporte ganha uma tarefa TSK-TR** ("🧾 Documentos fiscais — PV-… · Ida") para o **time fiscal (perfil novo 🧾 Fiscal) e o gestor**, com vínculos BID → PV → trecho → AT, prioridade alta e **prazo D-2 dias úteis** (seg a sex, sem feriados) antes da data do trecho — configurável em ⚙️ Configurações › Empresa. Se a data do trecho muda, o prazo acompanha (com histórico); trecho ou pedido cancelado cancela a tarefa aberta. **Checklist NF-e → CT-e → averbação → MDF-e** (painel 🧾 no card do Plano): cada documento com nº/chave + **PDF (dá o ✓)** + **XML opcional** que preenche sozinho (chave, nº, partes, valor, peso/volumes; do MDF-e: placas, condutor/CPF, CT-e, seguradora, apólice, nº de averbação) e **confere as chaves** (CT-e cita a NF-e? MDF-e cita o CT-e? averbação do MDF-e = a anotada?). A tarefa **conclui sozinha** com os 4 ✓ (no Plano não se conclui nem cancela à mão — 409); **🚫 Dispensar** com justificativa (carga própria, transporte interno) cancela e fica no histórico. **Espelho com a AT:** os PDFs da tarefa aparecem na AT do trecho (NF-e e CT-e em todas; MDF-e na AT da placa, ou na única AT) e o que for anexado direto na AT entra no checklist ("da AT-…"). **Selo na Mesa** "🧾 fiscal n/4" em cada trecho (verde completo, vermelho ⏰ prazo vencido, ⚠️ chaves divergentes, "dispensado"), que abre a tarefa no ✅ Plano. Perfil Fiscal: Início + ✅ Plano (abre no ambiente 🚚 Transporte). Rotas: `POST /api/tarefas/:id/fiscal/:item` (nfe, cte, averbacao, mdfe), `DELETE /api/tarefas/:id/fiscal/:item/:entrada`, `POST /api/tarefas/:id/fiscal/dispensar`, `GET/PUT /api/configuracoes/fiscal`; `GET /api/tarefas` e `GET /api/programacao/pedidos` sincronizam as tarefas fiscais. Migration 066. Fica para a 18g.2: AT a partir do MDF-e, alerta na saída da base sem CT-e/MDF-e, PDFs no link do motorista, encerramento do MDF-e e aviso por e-mail ao gestor.
   - **SaaS genérico:** `tipo_execucao` no modelo de BID/PV (transporte → AT; locação → contrato de locação existente; serviço → AS; venda → entrega). Nesta etapa só transporte gera execução.
   - Rotas `/api/programacao` (`GET /base`, `/execucoes`, `/agenda`, `/pedidos`, `/pvs/:id`; `POST /pvs/:id/at`; `GET|PUT /execucoes/:id`; `POST /execucoes/:id/status`; anexos `POST|GET|DELETE /execucoes/:id/anexos[/:anexo]`; `GET /execucoes/:id/documento`) e `GET /api/comercial/pvs/:id/execucoes` (leitura). Travas respondem 409. Migration 055.
   - Rotas: `/api/comercial/bids/:id/revisao` (GET), `/enviar`, `/reenviar`, `/revisao/iniciar`, `/revisao/descartar`, `/aceite-externo`; `POST /bids/:id/fase` só aceita `perdido` e `reabrir`. Público: `/api/bid-link/:token` (GET, `/responder`, `/codigo`, `/aceitar`) — 40 chamadas por link + IP por hora. Migration 052. **Próxima: 15c** — Pedido de Venda (PV) a partir do BID aceito. **Futuro:** perfil **cliente** com login (mesmo padrão do locatário) — ver `claude/desenho-bid-15b.md`.
@@ -1297,7 +1299,7 @@ Objetivo: fechar o ciclo do negócio da transportadora dentro do QuotaFlow. Hoje
 - **Evidências** (PDF, XML, JPG, PNG — bucket `documentos`), **histórico** (quem fez o quê e quando: criação, cada campo alterado de → para, reclassificação, evidência anexada/removida) e **vínculos** (BID, PV, trecho, AT, NC, prospecção, contrato…) clicáveis.
 - **No ✅ Plano:** chips por tipo com contador, busca pelo número/BID/AT, KPI de atrasadas, confirmações no modal do app.
 
-**2. Tarefa fiscal automática (18g.1 — migration 066: perfil 🧾 Fiscal + configuração)**
+**2. Tarefa fiscal automática (18g.1 ✅ — migration 066: perfil 🧾 Fiscal + configuração)**
 - **Gatilho:** o BID aprovado vira PV → nasce **uma tarefa TR por trecho** (ida e volta têm NF-e/CT-e próprios). Se a data do trecho muda, o prazo acompanha; trecho cancelado encerra a tarefa; pedido pode **dispensar documentos fiscais** com justificativa (carga própria, transporte interno).
 - **Prazo:** **D-2 dias úteis** antes da data prevista do trecho (configurável em ⚙️ Configurações), para dar tempo de correr atrás da NF com o cliente antes de emitir a AT em D-1 ou D0.
 - **Quem vê:** **todos os usuários com perfil 🧾 Fiscal + o gestor** (empresa pequena: 1 ou 2 pessoas acumulando funções; quem pegar primeiro assume). Perfil novo 🧾 Fiscal: ✅ Plano (tarefas TR), ficha do CT-e e anexos fiscais; vê o valor da carga e do frete (entram no CT-e), não os demais valores comerciais.
@@ -1313,9 +1315,30 @@ Objetivo: fechar o ciclo do negócio da transportadora dentro do QuotaFlow. Hoje
 
 **4. Ficha do CT-e (18g.3)** — para quem não tem o XML em mãos: tudo o que o emissor pede, já preenchido a partir do pedido/AT, com copiar por campo, PDF e CSV no padrão dos campos do CT-e (atende ~80% dos emissores; XML do CT-e fica para depois). Remetente, destinatário, tomador, expedidor/recebedor (CNPJ, IE, endereço), municípios (IBGE), UF, CFOP, carga (descrição, peso, volumes, valor, chaves das NF-e), componentes do frete, ICMS, RNTRC, seguro (seguradora, apólice, averbação). Apólices cadastradas em ⚙️ (seguradora, nº, vigência).
 
-**5. Sinistro (18e.1 — migration 067)** fica depois: já nasce com CT-e, apólice e averbação vinculados à viagem.
+**5. Sinistro** — virou o módulo unificado viagem + locação (18h, migration 067): ver "⚠️ Registro de ocorrência / sinistro" abaixo.
 
 **Fora do escopo:** emissão do CT-e/MDF-e (certificado digital, SEFAZ) e integração automática com a averbadora — v2.0.
+
+### ⚠️ Registro de ocorrência / sinistro — viagem (AT) e locação (contrato) (desenho fechado com o Marcony em 03/11/2026 · etapa 18h · migration 067)
+**Um módulo só, dois pontos de partida.** Mesmo número (**SIN-AAAA-NNNN**), mesma tela, mesmo dossiê — muda só de onde vêm os dados preenchidos sozinhos. Poupa a troca de e-mails/WhatsApp entre cliente, comercial e operação.
+
+**Pelo locatário (acesso do cliente, contrato de locação):**
+1. No contrato: **"⚠️ Registrar avaria / sinistro"** → **escolhe o equipamento** entre os locados (ex.: 10).
+2. O sistema preenche: contrato (CL-…), equipamento (tag, modelo, nº de série), local da obra, data/hora, GPS, quem registrou e a **última inspeção** do equipamento com o resultado ("estava OK na inspeção de 28/10" — evidência).
+3. Ele escolhe o **tipo** (avaria/dano · pane/falha mecânica · acidente · furto/roubo · outro), marca se **o equipamento está parado** e descreve.
+4. **Fotos** com o mesmo componente da inspeção: compressão, **tarja de rastreabilidade com a referência SIN** (`marcaFoto.js`) e miniaturas; anexa também o boletim de ocorrência, se houver.
+5. **Enviar** → e-mail ao comercial + tarefa **TSK-MT** vinculada ao SIN; o locatário acompanha a situação na tela dele.
+- **Atalho pela inspeção:** item reprovado numa inspeção de rotina do locatário → botão "registrar ocorrência" já com os itens não OK e as fotos.
+
+**Pelo comercial (📑 Contratos → aba ⚠️ Ocorrências):**
+- **Situação:** registrada → em análise → em atendimento (técnico/OS) → encerrada.
+- **Responsabilidade:** cliente (mau uso → cobrança) · locadora (desgaste) · seguro · a definir.
+- **Conversa com o cliente dentro do registro** (como a contestação da medição).
+- **Equipamento parado: o sistema só avisa — o comercial decide** (não bloqueia sozinho; decisão do Marcony, 03/11).
+- **Ligação com a medição:** os dias parados aparecem como informação na medição do ciclo (sem desconto automático).
+- **Dossiê em PDF** para a seguradora ou para a cobrança.
+
+**Pela AT (viagem):** o mesmo registro, preenchido com motorista, conjunto, carga, **CT-e, apólice e averbação** (da tarefa fiscal 🧾) e a última posição; registrado pelo motorista ou pelo gestor.
 
 ### Nomes (sem confundir com o que já existe)
 | Documento | Código | Observação |
@@ -1325,7 +1348,7 @@ Objetivo: fechar o ciclo do negócio da transportadora dentro do QuotaFlow. Hoje
 | Autorização de Transporte | **AT-2026-0001** | uma por viagem/conjunto (sugestão do Marcony). **Não** é OS: **OS** fica para a manutenção |
 | Contrato de Locação | **CL-2026-0001** | locação mensal. Mobilização/desmobilização geram ATs |
 | Inspeção | **INSP-2026-0001** | numeração visível nas inspeções que já existem (14a). Tipos: pré-uso, carregamento, em trânsito, descarregamento |
-| Comunicado de Sinistro | **SIN-2026-0001** | dossiê para a seguradora |
+| Registro de ocorrência / sinistro | **SIN-2026-0001** | viagem (AT) e locação (contrato) — dossiê para a seguradora ou cobrança (18h) |
 | Tarefa do ✅ Plano | **TSK-TR-2026-0001** | `TSK-<tipo>-<ano>-<nnnn>` (TR · NC · AU · MT · CM · HR · GN) — imutável (18g) |
 
 ### Fluxo
@@ -1407,10 +1430,10 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 | ~~Relatório completo da viagem~~ ✅ 18e | entregue em 03/11 |
 | ~~🔎 Pesquisa de ATs + 📊 utilização × alocação~~ ✅ 18f / 18f.1 | entregue em 03/11 — próximo: card na Homescreen do gestor; parado por OS de manutenção; férias/afastamento do motorista |
 | ~~🔗 Rastreabilidade das tarefas~~ ✅ 18g | entregue em 03/11 — TSK-<tipo>-<ano>-<nnnn>, evidências, histórico, vínculos |
-| **18g.1** | 🧾 perfil Fiscal + **tarefa fiscal automática por trecho do PV** (D-2 úteis configurável) com checklist NF-e → CT-e → averbação → MDF-e, upload PDF + leitura do XML, selo na Mesa, alertas (migration 066) |
-| **18g.2** | **AT a partir do MDF-e** (rascunho preenchido pelo XML), divergência AT × MDF-e, PDFs no link do motorista, ☐ encerrar MDF-e |
+| ~~18g.1~~ ✅ | entregue em 03/11 — 🧾 perfil Fiscal + **tarefa fiscal automática por trecho do PV** (D-2 úteis configurável) com checklist NF-e → CT-e → averbação → MDF-e, upload PDF + leitura do XML, selo na Mesa, alertas (migration 066) |
+| **18g.2** | **AT a partir do MDF-e** (rascunho preenchido pelo XML), divergência AT × MDF-e, PDFs no link do motorista, ☐ encerrar MDF-e, alerta na saída da base sem CT-e/MDF-e, aviso por e-mail ao gestor do prazo fiscal vencido |
 | **18g.3** | **Ficha do CT-e** (copiar por campo, PDF, CSV) + apólices em ⚙️ |
-| **18e.1** | **Comunicado de sinistro** SIN-AAAA-NNNN (dossiê para a seguradora, com CT-e/apólice/averbação da viagem) — migration 067 |
+| **18h** | **⚠️ Registro de ocorrência / sinistro unificado** SIN-AAAA-NNNN — pela AT (viagem) e pelo contrato de locação (o locatário escolhe o equipamento, fotos com tarja, conversa com o comercial, equipamento parado só avisa) — migration 067 |
 | **💰 Valor gerado (savings)** | ideia de 02/11 (consultora de precificação, exemplo Tractian): medir o **estado atual** do cliente na entrada e mostrar os **ganhos reais** com o QuotaFlow — savings calculados pelos dados (compras, multas, manutenção, comercial, horas poupadas) + savings informados pelo cliente, ROI × assinatura e contador agregado para marketing. Desenho em `claude/desenho-valor-gerado.md` |
 | **🧠 Analista da rotina de inspeção (frota interna + externa)** | pedido do Marcony (02/11): indicador de **cumprimento mensal** como gestão da rotina de inspeção — % por mês (12 meses, tendência), por equipamento, por responsável (empresa × locatário × terceiro/link), atrasadas recorrentes, reprovações e itens que mais falham, tempo entre reprovação e liberação, OS abertas por inspeção; **e-mail mensal ao gestor** com o relatório (reaproveita o 🖨 Relatório de cumprimento) e um parecer do **Analista Sênior (IA)** cruzando inspeções × multas × manutenção × locação (ex.: "CV-03 reprovou 3× no freio em 60 dias e teve 2 corretivas — avaliar substituição"). Entra junto do item 21 (Relatório do Analista Sênior). |
 | ~~📏 Medição mensal da locação~~ ✅ 18d | entregue em 03/11 — escopo por equipamento no contrato (hora / dia / fixo mensal, quantidade programada), **ciclo de medição** (checkbox "Mês do calendário"), toggles **Checklist pelo locatário** e **Medição pelo locatário**; medição programado × realizado com "↻ Repetir programado" + observações; locatário preenche na aba 📏 Medições da tela do cliente (e-mail de lembrete) e o comercial aprova → PDF do Boletim de Medição; sem desconto/penalidade automática. Desenho em `claude/desenho-medicao-locacao.md` |
@@ -1427,7 +1450,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 03/11/2026 (etapa 18g)
+**Última atualização deste documento:** 03/11/2026 (etapa 18g.1)
 
 --------------------------------------------------------------------------------
 

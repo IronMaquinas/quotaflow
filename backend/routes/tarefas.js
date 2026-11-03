@@ -7,12 +7,15 @@
 //   DELETE /api/tarefas/:id                     só tarefa sem número (as numeradas se cancelam — auditoria)
 //   POST   /api/tarefas/:id/comentario          { texto }
 //   POST   /api/tarefas/:id/anexos              { nome, mime, base64 } evidência · GET /:id/anexos/:anexo (link) · DELETE /:id/anexos/:anexo
+//   18g.1 🧾 tarefa fiscal (origem 'fiscal'): POST /:id/fiscal/dispensar { motivo } · POST /:id/fiscal/:item { numero, chave, pdf:{nome,mime,base64}, xml:{nome,base64} }
+//         (item = nfe | cte | averbacao | mdfe) · DELETE /:id/fiscal/:item/:entrada · GET / sincroniza antes (cria/atualiza a tarefa de cada trecho)
 //   18b.2: tarefa que nasceu de outra tela (ex.: 📣 prospecção) só se encerra lá — 409 (não desloga)
 const express = require("express");
 const router = express.Router();
 const { supabase } = require("../db");
 const tenantMiddleware = require("../middleware/tenantMiddleware");
 const T = require("../services/tarefas");
+const TF = require("../services/tarefasFiscais"); // 18g.1
 
 const quem = async (req) => { try { const { data } = await supabase.from("usuarios").select("*").eq("tenant_id", req.tenantId).eq("id", req.userId); return { id: req.userId, nome: data?.[0]?.nome || req.userEmail || null, email: req.userEmail || null }; } catch { return { id: req.userId, nome: req.userEmail || null }; } };
 const responder = (fn, criado = false) => async (req, res) => {
@@ -20,13 +23,16 @@ const responder = (fn, criado = false) => async (req, res) => {
   catch (err) { console.error("❌ [tarefas]", err.message); res.status(500).json({ erro: err.message }); }
 };
 
-router.get("/", tenantMiddleware, responder((req) => T.listar(supabase, req.tenantId)));
+router.get("/", tenantMiddleware, responder(async (req) => { await TF.sincronizar(supabase, req.tenantId, { quem: await quem(req) }).catch((e) => console.error("❌ [fiscal] sincronizar", e.message)); return T.listar(supabase, req.tenantId); }));
 router.get("/tipos", tenantMiddleware, responder(async () => ({ tipos: T.TIPOS, vinculos: T.VINCULOS })));
 router.get("/:id", tenantMiddleware, responder((req) => T.detalhe(supabase, req.tenantId, req.params.id)));
 router.post("/", tenantMiddleware, responder(async (req) => T.criar(supabase, req.tenantId, await quem(req), req.body || {}), true));
 router.put("/:id", tenantMiddleware, responder(async (req) => T.atualizar(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
 router.delete("/:id", tenantMiddleware, responder((req) => T.excluir(supabase, req.tenantId, req.params.id)));
 router.post("/:id/comentario", tenantMiddleware, responder(async (req) => T.comentar(supabase, req.tenantId, await quem(req), req.params.id, req.body?.texto)));
+router.post("/:id/fiscal/dispensar", tenantMiddleware, responder(async (req) => TF.dispensar(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
+router.post("/:id/fiscal/:item", tenantMiddleware, responder(async (req) => TF.registrarDoc(supabase, req.tenantId, await quem(req), req.params.id, req.params.item, req.body || {})));
+router.delete("/:id/fiscal/:item/:entrada", tenantMiddleware, responder(async (req) => TF.removerDoc(supabase, req.tenantId, await quem(req), req.params.id, req.params.item, req.params.entrada)));
 router.post("/:id/anexos", tenantMiddleware, responder(async (req) => T.anexar(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
 router.get("/:id/anexos/:anexo", tenantMiddleware, responder((req) => T.linkAnexo(supabase, req.tenantId, req.params.id, req.params.anexo)));
 router.delete("/:id/anexos/:anexo", tenantMiddleware, responder(async (req) => T.removerAnexo(supabase, req.tenantId, await quem(req), req.params.id, req.params.anexo)));

@@ -9,7 +9,9 @@ const TIPOS = {
   MT: { nome: 'Manutenção', icone: '🔧' }, CM: { nome: 'Comercial', icone: '📈' }, HR: { nome: 'Pessoas', icone: '👥' }, GN: { nome: 'Geral', icone: '📌' },
 };
 const TIPO_DA_ORIGEM = { prospeccao: 'CM', multa: 'HR', autuacao: 'NC', fiscal: 'TR', nc: 'NC' }; // igual à qf_tarefa_tipo_da_origem (065)
-const ORIGEM_NOME = { prospeccao: '📈 Comercial → 📣 Prospecção (encerra quando o BID for criado ou o comercial cancelar)' };
+const ORIGEM_NOME = { prospeccao: '📈 Comercial → 📣 Prospecção (encerra quando o BID for criado ou o comercial cancelar)',
+  fiscal: '🧾 Documentos (conclui sozinha com NF-e, CT-e, averbação e MDF-e ✓; para cancelar use "Dispensar" com a justificativa)' }; // 18g.1
+const TF = () => require('./tarefasFiscais'); // 18g.1
 const STATUS = { pendente: 'Pendente', em_andamento: 'Em andamento', concluida: 'Concluída', cancelada: 'Cancelada' };
 const PRIORIDADE = { alta: 'Alta', media: 'Média', baixa: 'Baixa' };
 const VINCULOS = { bid: 'BID', pv: 'Pedido', trecho: 'Trecho', at: 'AT', nc: 'NC', prospeccao: 'Prospecção', contrato: 'Contrato', inspecao: 'Inspeção', multa: 'Multa', autuacao: 'Autuação', tarefa: 'Tarefa' };
@@ -30,7 +32,8 @@ function enfeitar(t) {
   const tipo = tipoDe(t);
   return { ...t, tipo, tipo_nome: TIPOS[tipo]?.nome, tipo_icone: TIPOS[tipo]?.icone, numero: t.numero || null,
     comentarios: jsonArr(t.comentarios), anexos: jsonArr(t.anexos).map(({ path, ...a }) => a), historico: jsonArr(t.historico), vinculos: jsonArr(t.vinculos),
-    trava_origem: ORIGEM_NOME[t.origem] ? ORIGEM_NOME[t.origem] : null };
+    trava_origem: ORIGEM_NOME[t.origem] ? ORIGEM_NOME[t.origem] : null,
+    ...(t.origem === 'fiscal' ? { fiscal: TF().resumo(t.checklist || TF().novoChecklist()), checklist: t.checklist || TF().novoChecklist() } : {}) };
 }
 const entrada = (quem, acao, x = {}) => ({ em: new Date().toISOString(), por: quem?.nome || null, acao, ...x });
 
