@@ -25,6 +25,7 @@ export default function ExecutarInspecao({ tenant, equipamento, modeloId, rascun
   const [enviando, setEnviando] = useState(false);
   const [aberto, setAberto] = useState(null); // ponto expandido
   const [sair, setSair] = useState(false);
+  const [ampliar, setAmpliar] = useState(null); // 18c.2: { src, rotulo, ponto, i } — foto em tela cheia
   const topo = useRef(null);
 
   // começa: busca o modelo (ou usa o que ficou guardado no aparelho, se estiver sem internet)
@@ -118,6 +119,13 @@ export default function ExecutarInspecao({ tenant, equipamento, modeloId, rascun
 
   const tela = (conteudo) => (
     <div style={{ position: "fixed", inset: 0, background: C.bg, zIndex: 250, overflowY: "auto" }}>
+      {ampliar && <div onClick={() => setAmpliar(null)} style={{ position: "fixed", inset: 0, background: "#000000e6", zIndex: 500, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 12 }}>
+        <img src={ampliar.src} alt="" style={{ maxWidth: "100%", maxHeight: "80vh", objectFit: "contain", borderRadius: 6 }} />
+        <div style={{ color: "#e2e8f0", fontSize: 14, marginTop: 10, textAlign: "center" }}>{ampliar.rotulo}</div>
+        <div style={{ display: "flex", gap: 10, marginTop: 12 }} onClick={(e) => e.stopPropagation()}>
+          <button type="button" onClick={() => { const r = resp(ampliar.ponto); setResp(ampliar.ponto, { fotos: (r.fotos || []).filter((_, j) => j !== ampliar.i) }); setAmpliar(null); }} style={{ background: "transparent", border: "1px solid #ef444488", color: "#f87171", borderRadius: 8, padding: "10px 16px", fontSize: 15, cursor: "pointer" }}>🗑 Excluir foto</button>
+          <button type="button" onClick={() => setAmpliar(null)} style={{ background: "#3b82f6", border: "none", color: "#fff", borderRadius: 8, padding: "10px 22px", fontSize: 15, cursor: "pointer" }}>Fechar</button>
+        </div></div>}
       <div ref={topo} style={{ maxWidth: 720, margin: "0 auto", padding: "14px 14px 120px" }}>{conteudo}</div>
     </div>
   );
@@ -231,7 +239,7 @@ export default function ExecutarInspecao({ tenant, equipamento, modeloId, rascun
                 <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
                   {(r.fotos || []).map((ft, i) => (
                     <div key={i} style={{ position: "relative" }}>
-                      <img src={urlFoto(ft)} alt="" style={{ width: 70, height: 70, objectFit: "cover", borderRadius: 6, border: `1px solid ${C.border}` }} />
+                      <img src={urlFoto(ft)} alt="" title="Ver a foto" onClick={() => setAmpliar({ src: urlFoto(ft), rotulo: p.rotulo, ponto: p.id, i })} style={{ width: 70, height: 70, objectFit: "cover", borderRadius: 6, border: `1px solid ${C.border}`, cursor: "zoom-in" }} />
                       <button type="button" onClick={() => setResp(p.id, { fotos: r.fotos.filter((_, j) => j !== i) })} style={{ position: "absolute", top: -6, right: -6, width: 20, height: 20, borderRadius: "50%", border: "none", background: C.danger, color: "#fff", fontSize: 11, cursor: "pointer" }}>✕</button>
                     </div>
                   ))}
