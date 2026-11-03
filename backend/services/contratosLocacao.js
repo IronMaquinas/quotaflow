@@ -47,6 +47,7 @@ function validar(body, parcial = false) {
   // 18d: 📏 medição — ciclo (dia 1–28; vazio = mês do calendário) e os toggles do locatário
   if (tem('medicao_dia_inicio')) { const d = body.medicao_dia_inicio === '' || body.medicao_dia_inicio == null ? null : Number(body.medicao_dia_inicio); if (d != null && !(Number.isInteger(d) && d >= 1 && d <= 28)) return { erro: 'Início do ciclo de medição: um dia de 1 a 28 (ou marque "Mês do calendário")' }; out.medicao_dia_inicio = d === 1 ? null : d; }
   for (const k of ['checklist_locatario', 'medicao_locatario']) if (tem(k)) out[k] = body[k] === true;
+  if (tem('medicao_vencimento_dia')) { const d = body.medicao_vencimento_dia === '' || body.medicao_vencimento_dia == null ? null : Number(body.medicao_vencimento_dia); if (d != null && !(Number.isInteger(d) && d >= 1 && d <= 31)) return { erro: 'Dia de vencimento: de 1 a 31' }; out.medicao_vencimento_dia = d; } // 18d.2
   return { dados: out };
 }
 
@@ -144,7 +145,7 @@ async function escopoEquipamento(supabase, tenantId, id, equipId, body = {}) {
   if (!l) return { status: 400, erro: 'Este equipamento não está locado neste contrato' };
   const un = body.medicao_unidade || null; if (un && !['hora', 'dia', 'fixo'].includes(un)) return { status: 400, erro: 'Unidade: hora, dia ou valor fixo mensal' };
   const num = (v) => (v === '' || v == null ? null : Number(String(v).replace(',', '.')));
-  const qtd = un === 'fixo' ? 1 : num(body.medicao_qtd); const val = num(body.medicao_valor);
+  const qtd = un === 'fixo' ? 1 : num(body.medicao_qtd); const val = un === 'fixo' ? null : num(body.medicao_valor); // 18d.1: fixo usa o valor mensal do contrato (sem digitar de novo)
   if (un && un !== 'fixo' && !(qtd > 0)) return { status: 400, erro: 'Informe a quantidade programada por ciclo (ex.: 200 h, 22 dias)' };
   if (val != null && !(val >= 0)) return { status: 400, erro: 'Valor unitário inválido' };
   const { error } = await supabase.from('equipamento_locacoes').update({ medicao_unidade: un, medicao_qtd: un ? qtd : null, medicao_valor: val }).eq('id', l.id).eq('tenant_id', tenantId);

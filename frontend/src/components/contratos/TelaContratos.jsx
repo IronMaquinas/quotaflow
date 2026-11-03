@@ -36,7 +36,6 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato })
   // 18d: 📏 medição
   const [ciclosMed, setCiclosMed] = useState(null);   // ciclos do contrato aberto
   const [medAberta, setMedAberta] = useState(null);   // id da medição no modal
-  const [escopo, setEscopo] = useState(null);         // { equipamento_id, medicao_unidade, medicao_qtd, medicao_valor }
   const [pendMed, setPendMed] = useState([]);         // pendências (aba Contratos)
   const [addEq, setAddEq] = useState(null);     // { equipamento_id, inicio, comRotina, modelo_id, frequencia }
   const [acesso, setAcesso] = useState(null);   // { nome, email, senha, telefone }
@@ -98,10 +97,10 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato })
         {[["abertos", "Abertos"], ["elaboracao", "📝 Em elaboração"], ["aguardando_aceite", "⏳ Aguardando aceite"], ["andamento", "✅ Em andamento"], ["encerrado", "🏁 Encerrados"], ["todos", "Todos"]].map(([k, l]) => <button key={k} type="button" onClick={() => setFiltro(k)} style={{ ...s.btn(filtro === k, C.accent), cursor: "pointer", padding: "5px 12px", fontSize: 12, color: filtro === k ? "#fff" : C.text }}>{l}</button>)}
       </div>}
       {aba === "contratos" && pendMed.length > 0 && <div style={{ ...s.card, padding: "10px 14px", marginBottom: 12, borderColor: pendMed.some((x) => x.status === "enviada") ? C.warn : C.border }}>
-        <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 4 }}>📏 Medições pendentes ({pendMed.length})</div>{/* 18d */}
+        <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 4 }}>📏 Medições para revisar e enviar ({pendMed.length})</div>{/* 18d */}
         {pendMed.slice(0, 8).map((x) => <div key={`${x.contrato_id}-${x.inicio}`} className="qf-clicavel" onClick={() => abrirCiclo(x.contrato_id, x)} style={{ display: "flex", gap: 8, alignItems: "center", padding: "5px 0", borderTop: `1px solid ${C.border}`, fontSize: 13, cursor: "pointer", flexWrap: "wrap" }}>
           <span style={{ flex: "1 1 220px" }}><b>{x.numero}</b> · {x.cliente} · {x.rotulo}</span>
-          <span style={s.tag(corStatusMedicao(x.status))}>{x.status === "enviada" ? "📤 enviada — aprovar" : x.status === "pendente" ? (x.medicao_locatario ? "aguardando o locatário" : "a lançar") : x.status_nome}</span><span style={{ color: C.accent }}>abrir ›</span></div>)}
+          <span style={{ fontSize: 12.5, color: C.textSub }}>{x.total_cobrar != null ? Number(x.total_cobrar).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : ""}</span><span style={s.tag(corStatusMedicao(x.status))}>{x.status === "aberta" ? (x.medicao_locatario ? "pronta — revisar e enviar" : "pronta — revisar e fechar") : x.status_nome}</span><span style={{ color: C.accent }}>abrir ›</span></div>)}
         {pendMed.length > 8 && <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>+ {pendMed.length - 8} — abra o contrato para ver todas.</div>}
       </div>}
       {aba !== "contratos" ? null : !d ? <div style={{ color: C.muted }}>Carregando…</div> : (
@@ -154,17 +153,6 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato })
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
               <div style={{ flex: "1 1 200px", fontSize: 13 }}><b>{e.tag}</b> — {e.nome}{e.bloqueado && <span style={{ ...s.tag(C.danger), marginLeft: 6 }}>⛔ BLOQUEADO</span>}
                 <div style={{ fontSize: 11, color: C.muted }}>{e.ativa ? `início ${dataBR(e.inicio)} · término ${e.fim_previsto ? dataBR(e.fim_previsto) : "sem prazo"}` : `devolvido em ${dataBR(e.fim_real)}`}{e.valor_mensal != null ? ` · ${Number(e.valor_mensal).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}/mês` : e.ativa ? " · sem valor mensal" : ""}{e.entrega_inspecao_id ? " · ✓ entrega" : e.ativa ? " · sem inspeção de entrega" : ""}{e.devolucao_inspecao_id ? " · ✓ devolução" : ""}</div></div>
-              {e.ativa && <div style={{ flexBasis: "100%", order: 9, fontSize: 12, color: e.medicao_unidade ? C.textSub : C.muted, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>{/* 18d: escopo da medição */}
-                {escopo?.equipamento_id === e.equipamento_id ? <>
-                  <select value={escopo.medicao_unidade} onChange={(x) => setEscopo({ ...escopo, medicao_unidade: x.target.value })} style={{ ...s.input, width: 150, padding: "4px 6px", fontSize: 12 }}>
-                    <option value="">— sem medição —</option><option value="hora">Por hora</option><option value="dia">Por dia</option><option value="fixo">Valor fixo mensal</option></select>
-                  {escopo.medicao_unidade && escopo.medicao_unidade !== "fixo" && <input inputMode="decimal" value={escopo.medicao_qtd ?? ""} onChange={(x) => setEscopo({ ...escopo, medicao_qtd: x.target.value })} placeholder={escopo.medicao_unidade === "hora" ? "h por ciclo (ex.: 200)" : "dias por ciclo (ex.: 22)"} style={{ ...s.input, width: 160, padding: "4px 6px", fontSize: 12 }} />}
-                  {escopo.medicao_unidade && <input inputMode="decimal" value={escopo.medicao_valor ?? ""} onChange={(x) => setEscopo({ ...escopo, medicao_valor: x.target.value })} placeholder={escopo.medicao_unidade === "fixo" ? "R$ por mês (opcional)" : `R$ por ${escopo.medicao_unidade} (opcional)`} style={{ ...s.input, width: 170, padding: "4px 6px", fontSize: 12 }} />}
-                  <button type="button" disabled={ocupado} onClick={async () => { const r = await acao(() => apiService.put(`/contratos/${aberto.id}/equipamentos/${e.equipamento_id}/escopo`, escopo), "Escopo da medição salvo."); if (r) setEscopo(null); }} style={bt(C.accent)}>Salvar</button>
-                  <button type="button" onClick={() => setEscopo(null)} style={bt(C.muted, false)}>Cancelar</button>
-                </> : <>📏 {e.medicao_unidade ? <>Medição: <b style={{ color: C.text }}>{e.medicao_unidade === "fixo" ? "valor fixo mensal" : `${Number(e.medicao_qtd).toLocaleString("pt-BR")} ${e.medicao_unidade === "hora" ? "h" : "dia(s)"} por ciclo`}</b>{e.medicao_valor != null ? ` · ${Number(e.medicao_valor).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}${e.medicao_unidade === "fixo" ? "/mês" : `/${e.medicao_unidade}`}` : ""}</> : "sem escopo de medição"}
-                  {editar && <button type="button" onClick={() => setEscopo({ equipamento_id: e.equipamento_id, medicao_unidade: e.medicao_unidade || "", medicao_qtd: e.medicao_qtd ?? "", medicao_valor: e.medicao_valor ?? "" })} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 12 }}>✏ {e.medicao_unidade ? "alterar" : "definir"}</button>}</>}
-              </div>}
               {e.ativa && editar && (dataEq?.id === e.locacao_id
                 ? <span style={{ display: "flex", gap: 4, alignItems: "flex-end", flexWrap: "wrap" }}>
                     <label style={{ fontSize: 10, color: C.muted }}>INÍCIO<input type="date" value={dataEq.inicio} onChange={(x) => setDataEq({ ...dataEq, inicio: x.target.value })} style={{ ...s.input, width: 145, padding: "5px 8px", display: "block" }} /></label>
@@ -183,7 +171,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato })
         {aberto.equipamentos.length === 0 && <div style={{ fontSize: 13, color: C.muted, padding: "6px 0" }}>Nenhum equipamento neste contrato.</div>}
 
         <div style={{ display: "flex", alignItems: "center", marginTop: 16, marginBottom: 4 }}>{/* 18d */}
-          <div style={{ fontWeight: 700, flex: 1 }}>📏 Medições <span style={{ fontWeight: 400, fontSize: 12, color: C.muted }}>· ciclo {aberto.medicao_dia_inicio ? `do dia ${aberto.medicao_dia_inicio}` : "mês do calendário"} · {aberto.medicao_locatario ? "o locatário preenche, você aprova" : "a empresa lança e aprova"}</span></div>
+          <div style={{ fontWeight: 700, flex: 1 }}>📏 Medições <span style={{ fontWeight: 400, fontSize: 12, color: C.muted }}>· ciclo {aberto.medicao_dia_inicio ? `do dia ${aberto.medicao_dia_inicio}` : "mês do calendário"}{aberto.medicao_vencimento_dia ? ` · vencimento dia ${String(aberto.medicao_vencimento_dia).padStart(2, "0")}` : ""} · {aberto.medicao_locatario ? "você revisa e envia, o cliente aprova" : "a empresa revisa e fecha"} · valores do contrato, proporcionais aos dias</span></div>
         </div>
         {ciclosMed ? <CiclosMedicao C={C} s={s} ciclos={ciclosMed} podeAbrir={editar} onAbrir={(x) => abrirCiclo(aberto.id, x)} /> : <div style={{ fontSize: 12.5, color: C.muted }}>Rode a migration 062 para usar a medição.</div>}
 
@@ -228,17 +216,18 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato })
             {!!form.medicao_dia_inicio && <label style={{ display: "flex", gap: 6, alignItems: "center" }}>começa no dia <input type="number" min={2} max={28} value={form.medicao_dia_inicio} onChange={(e) => setForm({ ...form, medicao_dia_inicio: e.target.value })} style={{ ...s.input, width: 70, padding: "4px 6px" }} />
               <span style={{ color: C.muted }}>(ex.: 10 → do dia 10 ao dia 9 do mês seguinte)</span></label>}
           </div>
+          <label style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, fontSize: 13 }}>Vencimento da cobrança: dia <input type="number" min={1} max={31} value={form.medicao_vencimento_dia ?? ""} onChange={(e) => setForm({ ...form, medicao_vencimento_dia: e.target.value })} placeholder="ex.: 5" style={{ ...s.input, width: 80, padding: "4px 6px" }} /> <span style={{ color: C.muted }}>(aparece no boletim)</span></label>
           <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 8, fontSize: 13, cursor: "pointer" }}><input type="checkbox" checked={!!form.checklist_locatario} onChange={(e) => setForm({ ...form, checklist_locatario: e.target.checked })} style={{ marginTop: 3 }} />
             <span><b>Checklist pelo locatário</b> — as inspeções de rotina dos equipamentos deste contrato ficam com o cliente (ele faz pelo acesso dele). Desmarcado, a empresa faz.</span></label>
           <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 6, fontSize: 13, cursor: "pointer" }}><input type="checkbox" checked={!!form.medicao_locatario} onChange={(e) => setForm({ ...form, medicao_locatario: e.target.checked })} style={{ marginTop: 3 }} />
-            <span><b>Medição pelo locatário</b> — o cliente preenche a medição de cada ciclo e você aprova. Desmarcado, a empresa lança e fecha sozinha.</span></label>
+            <span><b>Aprovação da medição pelo locatário</b> — o sistema monta a medição de cada ciclo, você revisa e envia, e o cliente aprova (ou comenta na linha do item). Desmarcado, você revisa e fecha sozinho.</span></label>
         </div>}
         <label style={{ display: "block", marginTop: 8 }}><span style={s.label}>OBSERVAÇÕES</span><textarea rows={2} value={form.obs || ""} onChange={(e) => setForm({ ...form, obs: e.target.value })} style={{ ...s.input, resize: "vertical" }} /></label>
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
           <button type="button" onClick={() => setForm(null)} style={{ ...s.btn(false), cursor: "pointer", flex: 1, color: C.text }}>Cancelar</button>
           <button type="button" disabled={ocupado} onClick={async () => {
-            const { local, contato_nome, contato_email, contato_telefone, fim_previsto, obs, medicao_dia_inicio, checklist_locatario, medicao_locatario } = form;
-            const r = await acao(() => apiService.put(`/contratos/${form.id}`, { local, contato_nome, contato_email, contato_telefone, fim_previsto: fim_previsto || null, obs, medicao_dia_inicio: medicao_dia_inicio || null, checklist_locatario: !!checklist_locatario, medicao_locatario: !!medicao_locatario }), "Contrato salvo.");
+            const { local, contato_nome, contato_email, contato_telefone, fim_previsto, obs, medicao_dia_inicio, medicao_vencimento_dia, checklist_locatario, medicao_locatario } = form;
+            const r = await acao(() => apiService.put(`/contratos/${form.id}`, { local, contato_nome, contato_email, contato_telefone, fim_previsto: fim_previsto || null, obs, medicao_dia_inicio: medicao_dia_inicio || null, medicao_vencimento_dia: medicao_vencimento_dia === "" || medicao_vencimento_dia == null ? null : Number(medicao_vencimento_dia), checklist_locatario: !!checklist_locatario, medicao_locatario: !!medicao_locatario }), "Contrato salvo.");
             if (r && abertoId) carregarMed(abertoId);
             if (r) setForm(null);
           }} style={{ ...s.btn(!ocupado, C.accent), flex: 1 }}>Salvar</button>

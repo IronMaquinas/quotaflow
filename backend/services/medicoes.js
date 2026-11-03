@@ -1,15 +1,16 @@
-// backend/services/medicoes.js — etapa 18d: 📏 MEDIÇÃO MENSAL DO CONTRATO DE LOCAÇÃO (desenho: claude/desenho-medicao-locacao.md)
+// backend/services/medicoes.js — etapa 18d · 18d.2 (simplificada): 📏 MEDIÇÃO MENSAL DO CONTRATO DE LOCAÇÃO
 //
-//   • ciclo: do dia `medicao_dia_inicio` (1–28) ao dia anterior do mês seguinte; nulo = mês do calendário (1 ao último dia).
-//     Os ciclos contam do início do contrato até o ciclo de hoje.
-//   • escopo por equipamento (equipamento_locacoes): unidade hora | dia | fixo, quantidade programada por ciclo e valor unitário
-//     (informativo). A medição copia o escopo ao abrir — mudar o escopo depois não altera medição já aberta.
-//   • uma medição por contrato × ciclo: itens [{ locacao_id, equipamento_id, tag, nome, unidade, programado, realizado, obs, valor }]
-//     "↻ Repetir programado" (realizado = programado). Situação: aberta → enviada (locatário) → aprovada | devolvida.
-//     Sem o toggle "Medição pelo locatário", a própria empresa preenche e aprova (aberta → aprovada).
-//   • informativo automático (só leitura): inspeções previstas × cumpridas no prazo por equipamento (rotinas do contrato),
-//     horímetro das inspeções no ciclo (referência para quem cobra por hora). Gravado na aprovação (fica congelado no BM).
-//   • sem desconto nem penalidade: o sistema mostra programado × realizado; as partes se entendem.
+// 18d.2 (decidido com o Marcony, 03/11/2026 — "bem simples, sentir o mercado"; 90% são locações de valor fixo mensal):
+//   • o SISTEMA monta a medição de cada ciclo dos contratos ativos (relatório "pronto"): por equipamento, o valor mensal do
+//     contrato, os dias em que ele esteve no contrato dentro do ciclo e o VALOR RECOMENDADO (proporcional aos dias —
+//     ex.: entrou dia 15 num ciclo de 1 a 30 → 16/30 do mensal). Nada de horas/dias digitados.
+//   • o COMERCIAL revisa (edita o valor a cobrar e a observação), salva e 📤 envia ao cliente — ou, sem o toggle
+//     "Medição pelo locatário", só ✓ fecha.
+//   • o CLIENTE (locatário) recebe o e-mail e a pendência no perfil dele: ✓ aprova, ou ✕ contesta comentando na linha do item.
+//     Contestada volta para o comercial ajustar e reenviar.
+//   • situação (coluna status): aberta = em preparação · enviada = aguardando o cliente · aprovada · devolvida = contestada.
+//   • informativo automático (inspeções do ciclo) continua, congelado no fechamento. Ciclo: dia de início (1–28) ou mês do
+//     calendário; vencimento da cobrança (dia) no contrato — só informativo no boletim.
 // Regras do backend: sem DB.raw; ids com String(); 409 para trava de regra.
 
 const R = require('./rotinasInspecao');
@@ -19,9 +20,10 @@ const texto = (v, max) => (v == null || String(v).trim() === '' ? null : String(
 const DATA = /^\d{4}-\d{2}-\d{2}$/;
 const hojeBR = R.hojeBR;
 const diaBR = (iso) => (iso ? new Date(new Date(iso).getTime() - 3 * 3600000).toISOString().slice(0, 10) : null);
-const UNIDADES = { hora: 'h', dia: 'dia(s)', fixo: 'mês' };
-const UNIDADE_NOME = { hora: 'Hora', dia: 'Dia', fixo: 'Valor fixo mensal' };
-const STATUS_NOME = { aberta: 'Aberta', enviada: 'Enviada pelo locatário', aprovada: 'Aprovada', devolvida: 'Devolvida ao locatário', pendente: 'A abrir' };
+const diasEntre = (a, b) => Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 86400000);
+const r2 = (n) => Math.round(Number(n) * 100) / 100;
+const STATUS_NOME = { aberta: 'Em preparação', enviada: 'Aguardando o cliente', aprovada: 'Aprovada', devolvida: 'Contestada pelo cliente', pendente: 'A gerar' };
+const STATUS_NOME_CLIENTE = { enviada: 'Aguardando a sua aprovação', aprovada: 'Aprovada', devolvida: 'Contestada — a locadora vai revisar' };
 const ERRO_062 = { status: 409, erro: 'Rode a migration 062 antes (medição da locação)' };
 const sem062 = (e) => /locacao_medicoes|medicao_|checklist_locatario|does not exist|schema cache/.test(String(e?.message || ''));
 
@@ -51,31 +53,6 @@ function ciclos(c, hoje = hojeBR()) {
   return out.reverse();
 }
 
-// ─── leitura ────────────────────────────────────────────────────────────────
-async function contratoDo(supabase, tenantId, id) {
-  return /^\d+$/.test(String(id)) ? (await q(supabase.from('locacao_contratos').select('*').eq('tenant_id', tenantId).eq('id', id)))[0] || null : null;
-}
-async function medicaoDo(supabase, tenantId, id) {
-  return /^\d+$/.test(String(id)) ? (await q(supabase.from('locacao_medicoes').select('*').eq('tenant_id', tenantId).eq('id', id)))[0] || null : null;
-}
-const resumo = (m) => {
-  const itens = m.itens || [];
-  return { preenchidos: itens.filter((i) => i.realizado != null && i.realizado !== '').length, total: itens.length,
-    divergentes: itens.filter((i) => i.realizado != null && i.realizado !== '' && i.programado != null && Number(i.realizado) !== Number(i.programado)).length };
-};
-/** lista de ciclos do contrato com a medição de cada um (ou "a abrir") */
-async function listar(supabase, tenantId, contratoId) {
-  const c = await contratoDo(supabase, tenantId, contratoId); if (!c) return { status: 404, erro: 'Contrato não encontrado' };
-  let ms = [];
-  try { ms = await q(supabase.from('locacao_medicoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id)); } catch (e) { if (sem062(e)) return ERRO_062; throw e; }
-  const hoje = hojeBR();
-  const lista = ciclos(c, hoje).map((x) => {
-    const m = ms.find((y) => y.inicio === x.inicio) || null;
-    return { ...x, medicao_id: m?.id || null, status: m?.status || 'pendente', status_nome: STATUS_NOME[m?.status || 'pendente'], em_andamento: x.fim >= hoje, ...(m ? resumo(m) : {}) };
-  });
-  return { contrato: { id: c.id, numero: c.numero, cliente: c.cliente, medicao_dia_inicio: c.medicao_dia_inicio ?? null, medicao_locatario: !!c.medicao_locatario, checklist_locatario: !!c.checklist_locatario }, ciclos: lista };
-}
-
 /** informativo automático do ciclo: inspeções (rotinas das locações do contrato) e horímetro por equipamento */
 async function informativo(supabase, tenantId, c, inicio, fim) {
   const hoje = hojeBR();
@@ -100,89 +77,140 @@ async function informativo(supabase, tenantId, c, inicio, fim) {
     total: { previstas: tot.reduce((t, x) => t + x.previstas, 0), no_prazo: tot.reduce((t, x) => t + x.no_prazo, 0), feitas: tot.reduce((t, x) => t + x.feitas, 0), reprovadas: tot.reduce((t, x) => t + x.reprovadas, 0) } };
 }
 
-/** detalhe: a medição + o informativo (ao vivo enquanto não aprovada; congelado depois) */
-async function detalhe(supabase, tenantId, medicaoId) {
+// ─── leitura ────────────────────────────────────────────────────────────────
+async function contratoDo(supabase, tenantId, id) {
+  return /^\d+$/.test(String(id)) ? (await q(supabase.from('locacao_contratos').select('*').eq('tenant_id', tenantId).eq('id', id)))[0] || null : null;
+}
+async function medicaoDo(supabase, tenantId, id) {
+  return /^\d+$/.test(String(id)) ? (await q(supabase.from('locacao_medicoes').select('*').eq('tenant_id', tenantId).eq('id', id)))[0] || null : null;
+}
+const resumo = (m) => {
+  const itens = m.itens || [];
+  return { total_itens: itens.length, total_cobrar: r2(itens.reduce((t, i) => t + Number(i.valor || 0), 0)), total_recomendado: r2(itens.reduce((t, i) => t + Number(i.valor_recomendado || 0), 0)),
+    comentarios: itens.filter((i) => i.comentario_cliente).length, ajustados: itens.filter((i) => i.valor != null && i.valor_recomendado != null && Number(i.valor) !== Number(i.valor_recomendado)).length };
+};
+async function listar(supabase, tenantId, contratoId) {
+  const c = await contratoDo(supabase, tenantId, contratoId); if (!c) return { status: 404, erro: 'Contrato não encontrado' };
+  let ms = [];
+  try { ms = await q(supabase.from('locacao_medicoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id)); } catch (e) { if (sem062(e)) return ERRO_062; throw e; }
+  const hoje = hojeBR();
+  const lista = ciclos(c, hoje).map((x) => {
+    const m = ms.find((y) => y.inicio === x.inicio) || null;
+    return { ...x, medicao_id: m?.id || null, status: m?.status || 'pendente', status_nome: STATUS_NOME[m?.status || 'pendente'], em_andamento: x.fim >= hoje, ...(m ? resumo(m) : {}) };
+  });
+  return { contrato: { id: c.id, numero: c.numero, cliente: c.cliente, medicao_dia_inicio: c.medicao_dia_inicio ?? null, medicao_vencimento_dia: c.medicao_vencimento_dia ?? null, medicao_locatario: !!c.medicao_locatario, checklist_locatario: !!c.checklist_locatario }, ciclos: lista };
+}
+
+/** detalhe: a medição + o informativo (ao vivo enquanto não fechada; congelado depois) */
+async function detalhe(supabase, tenantId, medicaoId, { cliente = false } = {}) {
   let m; try { m = await medicaoDo(supabase, tenantId, medicaoId); } catch (e) { if (sem062(e)) return ERRO_062; throw e; }
   if (!m) return { status: 404, erro: 'Medição não encontrada' };
   const c = await contratoDo(supabase, tenantId, m.contrato_id);
   const info = m.status === 'aprovada' && m.informativo ? m.informativo : await informativo(supabase, tenantId, c, m.inicio, m.fim);
   const emp = (await q(supabase.from('tenants').select('*').eq('id', tenantId)))[0] || {};
-  return { medicao: { ...m, status_nome: STATUS_NOME[m.status], rotulo: cicloDe(c.medicao_dia_inicio, m.inicio).rotulo, ...resumo(m) },
-    contrato: { id: c.id, numero: c.numero, cliente: c.cliente, local: c.local, medicao_locatario: !!c.medicao_locatario },
-    informativo: info, unidades: UNIDADES, unidade_nome: UNIDADE_NOME,
+  return { medicao: { ...m, status_nome: (cliente ? STATUS_NOME_CLIENTE : STATUS_NOME)[m.status] || STATUS_NOME[m.status], rotulo: cicloDe(c.medicao_dia_inicio, m.inicio).rotulo, ...resumo(m) },
+    contrato: { id: c.id, numero: c.numero, cliente: c.cliente, local: c.local, medicao_locatario: !!c.medicao_locatario, medicao_vencimento_dia: c.medicao_vencimento_dia ?? null },
+    informativo: info,
     empresa: { nome: emp.nome_fantasia || emp.nome || emp.razao_social || '', razao_social: emp.razao_social || null, cnpj: emp.cnpj || null } };
 }
 
-// ─── escrita ────────────────────────────────────────────────────────────────
+// ─── geração ────────────────────────────────────────────────────────────────
 const evento = (acao, por, obs) => ({ em: new Date().toISOString(), acao, por: por || null, obs: obs || null });
-/** abre a medição do ciclo (copia o escopo dos equipamentos que estiveram no contrato no ciclo) */
+/** itens do ciclo: equipamentos que estiveram no contrato em algum dia do ciclo, com dias e valor recomendado (proporcional) */
+async function montarItens(supabase, tenantId, c, x) {
+  const locs = (await q(supabase.from('equipamento_locacoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id)))
+    .filter((l) => l.inicio <= x.fim && (!(l.fim_real || null) || l.fim_real >= x.inicio));
+  const eqs = new Map((await q(supabase.from('equipamentos').select('*').eq('tenant_id', tenantId))).map((e) => [String(e.id), e]));
+  const diasCiclo = diasEntre(x.inicio, x.fim) + 1;
+  return locs.map((l) => {
+    const e = eqs.get(String(l.equipamento_id)) || {};
+    const de = l.inicio > x.inicio ? l.inicio : x.inicio;
+    const fimLoc = l.fim_real || null; const ate = fimLoc && fimLoc < x.fim ? fimLoc : x.fim;
+    const dias = Math.max(0, diasEntre(de, ate) + 1);
+    const mensal = l.valor_mensal != null ? Number(l.valor_mensal) : null;
+    const rec = mensal == null ? null : dias >= diasCiclo ? r2(mensal) : r2((mensal * dias) / diasCiclo);
+    return { locacao_id: l.id, equipamento_id: l.equipamento_id, tag: e.tag || null, nome: e.nome || null, de, ate, dias, dias_ciclo: diasCiclo,
+      valor_mensal: mensal, valor_recomendado: rec, valor: rec, obs: null, comentario_cliente: null };
+  }).sort((a, b) => String(a.tag || '').localeCompare(String(b.tag || '')));
+}
+/** gera (se ainda não existe) a medição do ciclo — já com o valor recomendado como "valor a cobrar" */
 async function abrir(supabase, tenantId, quem, contratoId, inicio) {
   const c = await contratoDo(supabase, tenantId, contratoId); if (!c) return { status: 404, erro: 'Contrato não encontrado' };
   const x = ciclos(c).find((y) => y.inicio === inicio); if (!x) return { status: 400, erro: 'Ciclo inválido para este contrato' };
   let ja; try { ja = (await q(supabase.from('locacao_medicoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id))).find((m) => m.inicio === x.inicio); } catch (e) { if (sem062(e)) return ERRO_062; throw e; }
   if (ja) return { medicao: ja };
-  const locs = (await q(supabase.from('equipamento_locacoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id)))
-    .filter((l) => l.inicio <= x.fim && (!(l.fim_real || null) || l.fim_real >= x.inicio)); // esteve no contrato em algum dia do ciclo
-  const eqs = new Map((await q(supabase.from('equipamentos').select('*').eq('tenant_id', tenantId))).map((e) => [String(e.id), e]));
-  const itens = locs.map((l) => { const e = eqs.get(String(l.equipamento_id)) || {}; const un = l.medicao_unidade || null;
-    return { locacao_id: l.id, equipamento_id: l.equipamento_id, tag: e.tag || null, nome: e.nome || null, unidade: un,
-      programado: l.medicao_qtd != null ? Number(l.medicao_qtd) : (un === 'fixo' ? 1 : null), realizado: null, obs: null,
-      valor: l.medicao_valor != null ? Number(l.medicao_valor) : (un === 'fixo' && l.valor_mensal != null ? Number(l.valor_mensal) : null) }; })
-    .sort((a, b) => String(a.tag || '').localeCompare(String(b.tag || '')));
+  const itens = await montarItens(supabase, tenantId, c, x);
   const agora = new Date().toISOString();
   const { data, error } = await supabase.from('locacao_medicoes').insert([{ tenant_id: tenantId, contrato_id: c.id, inicio: x.inicio, fim: x.fim, status: 'aberta', itens, obs: null, informativo: null,
     preenchido_por: null, preenchido_em: null, enviado_por: null, enviado_em: null, aprovado_por: null, aprovado_em: null, devolvido_motivo: null,
-    historico: [evento('aberta', quem.usuarioNome)], criado_em: agora, atualizado_em: agora }]).select();
+    historico: [evento('gerada', quem?.usuarioNome || 'QuotaFlow')], criado_em: agora, atualizado_em: agora }]).select();
   if (error) { if (/locacao_medicoes_uk|duplicate/.test(error.message)) return { medicao: (await q(supabase.from('locacao_medicoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id))).find((m) => m.inicio === x.inicio) }; if (sem062(error)) return ERRO_062; throw new Error(error.message); }
   return { medicao: data[0] };
 }
-/** salva o realizado (empresa ou locatário). body: { itens: [{ locacao_id, realizado, obs }], obs, repetir_programado } */
-async function salvar(supabase, tenantId, quem, m, body = {}, { locatario = false } = {}) {
-  const editavel = locatario ? ['aberta', 'devolvida'] : ['aberta', 'devolvida', 'enviada'];
-  if (!editavel.includes(m.status)) return { status: 409, erro: m.status === 'aprovada' ? 'Medição aprovada — reabra para alterar' : 'Medição enviada — aguarde a análise da empresa' };
-  const por = new Map((Array.isArray(body.itens) ? body.itens : []).map((i) => [String(i.locacao_id), i]));
-  const itens = (m.itens || []).map((i) => {
-    if (body.repetir_programado && i.programado != null) return { ...i, realizado: i.programado };
-    const v = por.get(String(i.locacao_id)); if (!v) return i;
-    let r = v.realizado; if (r === '' || r == null) r = null; else { r = Number(String(r).replace(',', '.')); if (!Number.isFinite(r) || r < 0) r = i.realizado; }
-    return { ...i, realizado: r, obs: v.obs !== undefined ? texto(v.obs, 300) : i.obs };
-  });
-  const upd = { itens, atualizado_em: new Date().toISOString(), preenchido_por: quem.usuarioNome || null, preenchido_em: new Date().toISOString() };
-  if (body.obs !== undefined) upd.obs = texto(body.obs, 1000);
-  const { data, error } = await supabase.from('locacao_medicoes').update(upd).eq('id', m.id).eq('tenant_id', tenantId).select();
-  if (error) throw new Error(error.message);
-  return { medicao: data[0] };
-}
-const faltando = (m) => (m.itens || []).filter((i) => i.realizado == null);
-async function mudar(supabase, tenantId, m, upd, ev) {
-  const { data, error } = await supabase.from('locacao_medicoes').update({ ...upd, historico: [...(m.historico || []), ev].slice(-60), atualizado_em: new Date().toISOString() }).eq('id', m.id).eq('tenant_id', tenantId).select();
-  if (error) throw new Error(error.message);
-  return { medicao: data[0] };
-}
-/** locatário envia para a empresa analisar */
-async function enviar(supabase, tenantId, quem, m) {
-  if (!['aberta', 'devolvida'].includes(m.status)) return { status: 409, erro: 'Esta medição não está aberta para envio' };
-  if (faltando(m).length) return { status: 400, erro: `Preencha o realizado de todos os equipamentos (faltam ${faltando(m).length}) — use "↻ Repetir programado" se foi igual` };
-  return mudar(supabase, tenantId, m, { status: 'enviada', enviado_por: quem.usuarioNome || null, enviado_em: new Date().toISOString(), devolvido_motivo: null }, evento('enviada', quem.usuarioNome));
-}
-/** empresa aprova (com o toggle: só depois de enviada; sem o toggle: direto da aberta) — congela o informativo */
-async function aprovar(supabase, tenantId, quem, m) {
+/** ↻ recalcular: refaz os itens (equipamentos/valores do contrato mudaram) — só em preparação ou contestada; mantém observações */
+async function recalcular(supabase, tenantId, quem, m) {
+  if (!['aberta', 'devolvida'].includes(m.status)) return { status: 409, erro: 'Só dá para recalcular a medição em preparação ou contestada' };
   const c = await contratoDo(supabase, tenantId, m.contrato_id);
-  const pode = c?.medicao_locatario ? ['enviada'] : ['aberta', 'devolvida', 'enviada'];
-  if (!pode.includes(m.status)) return { status: 409, erro: m.status === 'aprovada' ? 'Já aprovada' : 'O locatário preenche esta medição — aguarde o envio' };
-  if (faltando(m).length) return { status: 400, erro: `Falta o realizado de ${faltando(m).length} equipamento(s)` };
-  const info = await informativo(supabase, tenantId, c, m.inicio, m.fim);
-  return mudar(supabase, tenantId, m, { status: 'aprovada', aprovado_por: quem.usuarioNome || null, aprovado_em: new Date().toISOString(), informativo: info }, evento('aprovada', quem.usuarioNome));
+  const novos = await montarItens(supabase, tenantId, c, { inicio: m.inicio, fim: m.fim });
+  const itens = novos.map((n) => { const v = (m.itens || []).find((i) => String(i.locacao_id) === String(n.locacao_id)); return v ? { ...n, obs: v.obs, comentario_cliente: v.comentario_cliente } : n; });
+  return mudar(supabase, tenantId, m, { itens }, evento('recalculada', quem.usuarioNome));
 }
-async function devolver(supabase, tenantId, quem, m, motivo) {
-  const mot = texto(motivo, 500); if (!mot) return { status: 400, erro: 'Conte o que precisa ser corrigido' };
-  if (m.status !== 'enviada') return { status: 409, erro: 'Só a medição enviada pelo locatário pode ser devolvida' };
-  return mudar(supabase, tenantId, m, { status: 'devolvida', devolvido_motivo: mot }, evento('devolvida', quem.usuarioNome, mot));
+
+// ─── escrita ────────────────────────────────────────────────────────────────
+async function mudar(supabase, tenantId, m, upd, ev) {
+  const { data, error } = await supabase.from('locacao_medicoes').update({ ...upd, ...(ev ? { historico: [...(m.historico || []), ev].slice(-60) } : {}), atualizado_em: new Date().toISOString() }).eq('id', m.id).eq('tenant_id', tenantId).select();
+  if (error) throw new Error(error.message);
+  return { medicao: data[0] };
+}
+const valorOk = (v) => { if (v === '' || v == null) return null; const n = Number(String(v).replace(/\./g, (x, i, t) => (t.includes(',') ? '' : x)).replace(',', '.')); return Number.isFinite(n) && n >= 0 ? r2(n) : undefined; };
+/** comercial: salva o valor a cobrar e as observações (em preparação ou contestada). body: { itens: [{ locacao_id, valor, obs }], obs } */
+async function salvar(supabase, tenantId, quem, m, body = {}) {
+  if (!['aberta', 'devolvida'].includes(m.status)) return { status: 409, erro: m.status === 'aprovada' ? 'Medição aprovada — reabra para alterar' : 'Medição com o cliente — aguarde a resposta' };
+  const por = new Map((Array.isArray(body.itens) ? body.itens : []).map((i) => [String(i.locacao_id), i]));
+  for (const v of por.values()) if (v.valor !== undefined && valorOk(v.valor) === undefined) return { status: 400, erro: 'Valor a cobrar inválido' };
+  const itens = (m.itens || []).map((i) => { const v = por.get(String(i.locacao_id)); if (!v) return i;
+    return { ...i, ...(v.valor !== undefined ? { valor: valorOk(v.valor) } : {}), ...(v.obs !== undefined ? { obs: texto(v.obs, 300) } : {}) }; });
+  const upd = { itens, preenchido_por: quem.usuarioNome || null, preenchido_em: new Date().toISOString() };
+  if (body.obs !== undefined) upd.obs = texto(body.obs, 1000);
+  return mudar(supabase, tenantId, m, upd, null);
+}
+const semValor = (m) => (m.itens || []).filter((i) => i.valor == null);
+/** comercial: 📤 envia ao cliente (com o toggle) ou ✓ fecha (sem o toggle) */
+async function enviar(supabase, tenantId, quem, m) {
+  if (!['aberta', 'devolvida'].includes(m.status)) return { status: 409, erro: 'Esta medição já foi enviada' };
+  if (!(m.itens || []).length) return { status: 400, erro: 'Nenhum equipamento no contrato neste ciclo' };
+  if (semValor(m).length) return { status: 400, erro: `Informe o valor a cobrar de ${semValor(m).length} equipamento(s) (o contrato não tem valor mensal)` };
+  const c = await contratoDo(supabase, tenantId, m.contrato_id);
+  if (!c.medicao_locatario) { // fecha direto — a empresa cuida de tudo
+    const info = await informativo(supabase, tenantId, c, m.inicio, m.fim);
+    return mudar(supabase, tenantId, m, { status: 'aprovada', enviado_por: quem.usuarioNome || null, enviado_em: new Date().toISOString(), aprovado_por: quem.usuarioNome || null, aprovado_em: new Date().toISOString(), informativo: info }, evento('fechada', quem.usuarioNome));
+  }
+  const itens = (m.itens || []).map((i) => ({ ...i, comentario_cliente: null })); // nova rodada: comentários anteriores ficam no histórico
+  const r = await mudar(supabase, tenantId, m, { itens, status: 'enviada', enviado_por: quem.usuarioNome || null, enviado_em: new Date().toISOString(), devolvido_motivo: null }, evento('enviada', quem.usuarioNome, m.status === 'devolvida' ? 'reenviada após contestação' : null));
+  await avisarCliente(supabase, tenantId, c, r.medicao).catch((e) => console.warn('⚠️ [medição] e-mail ao cliente:', e.message));
+  return r;
 }
 async function reabrir(supabase, tenantId, quem, m, motivo) {
-  if (m.status !== 'aprovada') return { status: 409, erro: 'Só a medição aprovada pode ser reaberta' };
+  if (!['aprovada', 'enviada'].includes(m.status)) return { status: 409, erro: 'Só a medição enviada ou aprovada pode ser reaberta' };
   const mot = texto(motivo, 500); if (!mot) return { status: 400, erro: 'Conte por que está reabrindo' };
   return mudar(supabase, tenantId, m, { status: 'aberta', aprovado_por: null, aprovado_em: null, informativo: null }, evento('reaberta', quem.usuarioNome, mot));
+}
+/** cliente: ✓ aprova */
+async function aprovarCliente(supabase, tenantId, quem, m) {
+  if (m.status !== 'enviada') return { status: 409, erro: 'Esta medição não está aguardando a sua aprovação' };
+  const c = await contratoDo(supabase, tenantId, m.contrato_id);
+  const info = await informativo(supabase, tenantId, c, m.inicio, m.fim);
+  return mudar(supabase, tenantId, m, { status: 'aprovada', aprovado_por: quem.usuarioNome || null, aprovado_em: new Date().toISOString(), informativo: info }, evento('aprovada pelo cliente', quem.usuarioNome));
+}
+/** cliente: ✕ contesta — comentário na linha do item (pelo menos um) e/ou geral. body: { itens: [{ locacao_id, comentario }], motivo } */
+async function contestar(supabase, tenantId, quem, m, body = {}) {
+  if (m.status !== 'enviada') return { status: 409, erro: 'Esta medição não está aguardando a sua aprovação' };
+  const por = new Map((Array.isArray(body.itens) ? body.itens : []).map((i) => [String(i.locacao_id), texto(i.comentario, 500)]));
+  const itens = (m.itens || []).map((i) => ({ ...i, comentario_cliente: por.get(String(i.locacao_id)) || null }));
+  const geral = texto(body.motivo, 1000);
+  if (!geral && !itens.some((i) => i.comentario_cliente)) return { status: 400, erro: 'Comente na linha do item (ou no campo geral) o que não está de acordo' };
+  const resumoTxt = [geral, ...itens.filter((i) => i.comentario_cliente).map((i) => `${i.tag}: ${i.comentario_cliente}`)].filter(Boolean).join(' · ');
+  return mudar(supabase, tenantId, m, { itens, status: 'devolvida', devolvido_motivo: resumoTxt.slice(0, 1000) }, evento('contestada pelo cliente', quem.usuarioNome, resumoTxt.slice(0, 500)));
 }
 
 // ─── visão da empresa (rotas) ───────────────────────────────────────────────
@@ -190,25 +218,27 @@ async function acaoEmpresa(supabase, tenantId, quem, medicaoId, acao, body = {})
   let m; try { m = await medicaoDo(supabase, tenantId, medicaoId); } catch (e) { if (sem062(e)) return ERRO_062; throw e; }
   if (!m) return { status: 404, erro: 'Medição não encontrada' };
   if (acao === 'salvar') return salvar(supabase, tenantId, quem, m, body);
-  if (acao === 'aprovar') return aprovar(supabase, tenantId, quem, m);
-  if (acao === 'devolver') return devolver(supabase, tenantId, quem, m, body.motivo);
+  if (acao === 'enviar') return enviar(supabase, tenantId, quem, m);
+  if (acao === 'recalcular') return recalcular(supabase, tenantId, quem, m);
   if (acao === 'reabrir') return reabrir(supabase, tenantId, quem, m, body.motivo);
   return { status: 400, erro: 'Ação inválida' };
 }
-/** pendências da empresa (aba 📏 Medições em Contratos): enviadas para aprovar + ciclos encerrados sem medição aprovada */
-async function pendencias(supabase, tenantId) {
+/** 📏 relatórios da empresa: GERA sozinho a medição do ciclo corrente (e dos anteriores sem medição) dos contratos ativos
+ *  e lista o que precisa de ação: em preparação (prontas para revisar e enviar), contestadas, aguardando o cliente */
+async function pendencias(supabase, tenantId, quem = { usuarioNome: 'QuotaFlow' }) {
   let cs, ms; try { [cs, ms] = await Promise.all([q(supabase.from('locacao_contratos').select('*').eq('tenant_id', tenantId)), q(supabase.from('locacao_medicoes').select('*').eq('tenant_id', tenantId))]); }
   catch (e) { if (sem062(e)) return ERRO_062; throw e; }
   const hoje = hojeBR(); const out = [];
   for (const c of cs.filter((x) => x.status === 'ativo')) {
-    for (const x of ciclos(c, hoje).slice(0, 13)) {
-      const m = ms.find((y) => String(y.contrato_id) === String(c.id) && y.inicio === x.inicio);
-      const st = m?.status || 'pendente';
-      if (st === 'aprovada' || (x.fim >= hoje && st !== 'enviada')) continue; // ciclo corrente só aparece se já foi enviado
-      out.push({ contrato_id: c.id, numero: c.numero, cliente: c.cliente, ...x, medicao_id: m?.id || null, status: st, status_nome: STATUS_NOME[st], medicao_locatario: !!c.medicao_locatario, ...(m ? resumo(m) : {}) });
+    for (const x of ciclos(c, hoje).slice(0, 3)) {
+      let m = ms.find((y) => String(y.contrato_id) === String(c.id) && y.inicio === x.inicio);
+      if (!m) { const r = await abrir(supabase, tenantId, quem, c.id, x.inicio).catch(() => null); m = r?.medicao; if (!m) continue; }
+      if (m.status === 'aprovada') continue;
+      out.push({ contrato_id: c.id, numero: c.numero, cliente: c.cliente, ...x, medicao_id: m.id, status: m.status, status_nome: STATUS_NOME[m.status], medicao_locatario: !!c.medicao_locatario, em_andamento: x.fim >= hoje, ...resumo(m) });
     }
   }
-  return { pendencias: out.sort((a, b) => (a.status === 'enviada' ? 0 : 1) - (b.status === 'enviada' ? 0 : 1) || a.inicio.localeCompare(b.inicio)) };
+  const ord = { devolvida: 0, aberta: 1, enviada: 2 };
+  return { pendencias: out.sort((a, b) => (ord[a.status] - ord[b.status]) || a.inicio.localeCompare(b.inicio)) };
 }
 
 // ─── visão do LOCATÁRIO (escopo pelo usuário logado — services/contratosLocacao.escopoLocatario) ─────────
@@ -216,69 +246,75 @@ async function contratosDoLocatario(supabase, tenantId, usuarioId) {
   const esc = await require('./contratosLocacao').escopoLocatario(supabase, tenantId, usuarioId);
   return esc.contratos.filter((c) => c.medicao_locatario);
 }
+/** o cliente só vê as medições que o comercial já enviou (enviada, contestada, aprovada) */
 async function painelLocatario(supabase, tenantId, usuarioId) {
   let cs; try { cs = await contratosDoLocatario(supabase, tenantId, usuarioId); } catch (e) { if (sem062(e)) return { contratos: [] }; throw e; }
-  const out = [];
-  for (const c of cs) { const l = await listar(supabase, tenantId, c.id); if (!l.erro) out.push({ ...l.contrato, ciclos: l.ciclos.slice(0, 12) }); }
-  return { contratos: out };
+  const ms = cs.length ? await q(supabase.from('locacao_medicoes').select('*').eq('tenant_id', tenantId)).catch(() => []) : [];
+  return { contratos: cs.map((c) => ({ id: c.id, numero: c.numero, cliente: c.cliente, medicoes: ms.filter((m) => String(m.contrato_id) === String(c.id) && (m.status !== 'aberta' || m.enviado_em))
+    .sort((a, b) => b.inicio.localeCompare(a.inicio)).slice(0, 12)
+    .map((m) => ({ medicao_id: m.id, inicio: m.inicio, fim: m.fim, rotulo: cicloDe(c.medicao_dia_inicio, m.inicio).rotulo, status: m.status === 'aberta' ? 'devolvida' : m.status,
+      status_nome: m.status === 'aberta' ? 'Em revisão pela locadora' : STATUS_NOME_CLIENTE[m.status], ...resumo(m) })) })).filter((c) => c.medicoes.length) };
 }
 async function medicaoDoLocatario(supabase, tenantId, usuarioId, medicaoId) {
   const cs = await contratosDoLocatario(supabase, tenantId, usuarioId);
   const m = await medicaoDo(supabase, tenantId, medicaoId);
-  return m && cs.some((c) => String(c.id) === String(m.contrato_id)) ? m : null;
+  return m && (m.status !== 'aberta' || m.enviado_em) && cs.some((c) => String(c.id) === String(m.contrato_id)) ? m : null;
 }
-async function acaoLocatario(supabase, tenantId, usuario, acao, { contratoId, inicio, medicaoId, body = {} } = {}) {
+async function acaoLocatario(supabase, tenantId, usuario, acao, { medicaoId, body = {} } = {}) {
   const quem = { usuarioId: usuario.id, usuarioNome: usuario.nome || usuario.email };
   try {
-    if (acao === 'abrir') {
-      const cs = await contratosDoLocatario(supabase, tenantId, usuario.id);
-      if (!cs.some((c) => String(c.id) === String(contratoId))) return { status: 404, erro: 'Contrato não encontrado' };
-      return abrir(supabase, tenantId, quem, contratoId, inicio);
-    }
     const m = await medicaoDoLocatario(supabase, tenantId, usuario.id, medicaoId); if (!m) return { status: 404, erro: 'Medição não encontrada' };
-    if (acao === 'ver') { const d = await detalhe(supabase, tenantId, m.id); return d; }
-    if (acao === 'salvar') return salvar(supabase, tenantId, quem, m, body, { locatario: true });
-    if (acao === 'enviar') return enviar(supabase, tenantId, quem, m);
+    if (acao === 'ver') return detalhe(supabase, tenantId, m.id, { cliente: true });
+    if (acao === 'aprovar') return aprovarCliente(supabase, tenantId, quem, m);
+    if (acao === 'contestar') return contestar(supabase, tenantId, quem, m, body);
     return { status: 400, erro: 'Ação inválida' };
   } catch (e) { if (sem062(e)) return ERRO_062; throw e; }
 }
 
-// ─── ✉ lembretes diários ao LOCATÁRIO (cron das 7h / POST /api/recomendacoes/resumo-diario) ──────────────
-//   • medição (toggle "Medição pelo locatário"): ciclo encerrado sem envio → no 1º dia ('lembrete') e 5 dias depois ('5')
-//   • inspeção (toggle "Checklist pelo locatário"): rotina do locatário atrasada → uma vez por vencimento
-//   Controle em avisos_enviados (migration 029); sem ela não avisa (evita repetir todo dia).
+// ─── ✉ e-mails ao LOCATÁRIO ─────────────────────────────────────────────────
 const escH = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 const dBR = (d) => String(d || '').slice(0, 10).split('-').reverse().join('/');
+const brl = (v) => Number(v || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+let mandarEmail = (para, assunto, html) => require('./emailService').enviarEmailCotacao(para, assunto, html);
+function _definirEnvio(fn) { mandarEmail = fn; }
+async function destinatarios(supabase, tenantId, contratoId) {
+  const [vinc, usuarios] = await Promise.all([q(supabase.from('locacao_contrato_usuarios').select('*').eq('tenant_id', tenantId)), q(supabase.from('usuarios').select('*').eq('tenant_id', tenantId))]);
+  return vinc.filter((v) => String(v.contrato_id) === String(contratoId)).map((v) => usuarios.find((u) => String(u.id) === String(v.usuario_id))).filter((u) => u && u.ativo !== false && u.email);
+}
+async function empresaNome(supabase, tenantId) { const e = (await q(supabase.from('tenants').select('*').eq('id', tenantId)))[0] || {}; return e.nome_fantasia || e.nome || e.razao_social || 'a locadora'; }
+const portal = () => String(process.env.FRONTEND_URL || '').replace(/\/+$/, '');
+/** no envio: "a medição de out/2026 está pronta para a sua aprovação" */
+async function avisarCliente(supabase, tenantId, c, m) {
+  const para = await destinatarios(supabase, tenantId, c.id); if (!para.length) return 0;
+  const emp = await empresaNome(supabase, tenantId); const rot = cicloDe(c.medicao_dia_inicio, m.inicio).rotulo; const tot = resumo(m).total_cobrar;
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.55;color:#111"><p>Olá! A medição do contrato <b>${escH(c.numero)}</b> de <b>${escH(rot)}</b> (${dBR(m.inicio)} a ${dBR(m.fim)}) está pronta para a sua aprovação.</p>
+    <p>Total: <b>${brl(tot)}</b>${c.medicao_vencimento_dia ? ` · vencimento dia ${String(c.medicao_vencimento_dia).padStart(2, '0')}` : ''}</p><p>Confira, aprove ou comente o que não estiver de acordo.</p>
+    ${portal() ? `<p><a href="${portal()}/#medicoes" style="background:#2563eb;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">Abrir a medição no QuotaFlow</a></p>` : ''}<p style="color:#666;font-size:12px">${escH(emp)} — enviado pelo QuotaFlow.</p></div>`;
+  let n = 0; for (const u of para) { try { await mandarEmail(u.email, `📏 Medição ${rot} do contrato ${c.numero} — aguardando a sua aprovação`, html); n++; } catch (e) { console.error('❌ [medição] e-mail:', e.message || e); } }
+  return n;
+}
+/** lembretes diários (cron das 7h / POST /api/recomendacoes/resumo-diario):
+ *  • medição enviada e ainda sem resposta do cliente: lembrete 3 dias depois do envio (uma vez)
+ *  • inspeção (toggle "Checklist pelo locatário"): rotina do locatário atrasada → uma vez por vencimento
+ *  Controle em avisos_enviados (migration 029); sem ela não avisa. */
 async function avisosDiarios(supabase, { hoje = hojeBR(), enviar = null } = {}) {
-  const mandar = enviar || ((para, assunto, html) => require('./emailService').enviarEmailCotacao(para, assunto, html));
+  const mandar = enviar || mandarEmail;
   const r = { medicao: 0, inspecao: 0, emails: 0, falhas: 0 };
   let cs; try { cs = (await q(supabase.from('locacao_contratos').select('*'))).filter((c) => c.status === 'ativo' && (c.medicao_locatario || c.checklist_locatario)); } catch (e) { if (sem062(e)) return r; throw e; }
   const porTenant = new Map(); for (const c of cs) { const k = String(c.tenant_id); if (!porTenant.has(k)) porTenant.set(k, []); porTenant.get(k).push(c); }
-  const portal = String(process.env.FRONTEND_URL || '').replace(/\/+$/, '');
   for (const [tenantId, lista] of porTenant) {
     let enviados; try { enviados = await q(supabase.from('avisos_enviados').select('*').eq('tenant_id', tenantId)); } catch { continue; } // sem a 029
     const ja = new Set(enviados.map((a) => `${a.chave}|${a.marco}`));
-    const [vinc, usuarios, ms, emp] = await Promise.all([
-      q(supabase.from('locacao_contrato_usuarios').select('*').eq('tenant_id', tenantId)),
-      q(supabase.from('usuarios').select('*').eq('tenant_id', tenantId)),
-      q(supabase.from('locacao_medicoes').select('*').eq('tenant_id', tenantId)).catch(() => []),
-      q(supabase.from('tenants').select('*').eq('id', tenantId)).then((l) => l[0] || {}),
-    ]);
-    const empresa = emp.nome_fantasia || emp.nome || emp.razao_social || 'a locadora';
+    const ms = await q(supabase.from('locacao_medicoes').select('*').eq('tenant_id', tenantId)).catch(() => []);
+    const emp = await empresaNome(supabase, tenantId);
     let painel = null;
     for (const c of lista) {
-      const para = vinc.filter((v) => String(v.contrato_id) === String(c.id)).map((v) => usuarios.find((u) => String(u.id) === String(v.usuario_id))).filter((u) => u && u.ativo !== false && u.email);
-      if (!para.length) continue;
-      const itens = []; // { chave, marco, linha }
-      if (c.medicao_locatario) {
-        for (const x of ciclos(c, hoje).filter((y) => y.fim < hoje).slice(0, 3)) {
-          const m = ms.find((y) => String(y.contrato_id) === String(c.id) && y.inicio === x.inicio);
-          if (m && ['enviada', 'aprovada'].includes(m.status)) continue;
-          const dias = Math.round((Date.parse(`${hoje}T12:00:00Z`) - Date.parse(`${x.fim}T12:00:00Z`)) / 86400000);
-          const marco = dias >= 5 ? '5' : 'lembrete'; const chave = `medicao:${c.id}:${x.inicio}`;
-          if (ja.has(`${chave}|${marco}`) || (marco === 'lembrete' && ja.has(`${chave}|5`))) continue;
-          itens.push({ chave, marco, tipo: 'medicao', linha: `📏 <b>Medição ${escH(x.rotulo)}</b> (${dBR(x.inicio)} a ${dBR(x.fim)})${m?.status === 'devolvida' ? ' — <b>devolvida para correção</b>' : ''}: preencha o realizado de cada equipamento e envie.` });
-        }
+      const para = await destinatarios(supabase, tenantId, c.id); if (!para.length) continue;
+      const itens = [];
+      if (c.medicao_locatario) for (const m of ms.filter((y) => String(y.contrato_id) === String(c.id) && y.status === 'enviada' && y.enviado_em)) {
+        if (diasEntre(diaBR(m.enviado_em), hoje) < 3) continue;
+        const chave = `medicao_aprov:${m.id}:${diaBR(m.enviado_em)}`; if (ja.has(`${chave}|3`)) continue;
+        itens.push({ chave, marco: '3', tipo: 'medicao', linha: `📏 <b>Medição ${escH(cicloDe(c.medicao_dia_inicio, m.inicio).rotulo)}</b> (${brl(resumo(m).total_cobrar)}) aguardando a sua aprovação desde ${dBR(diaBR(m.enviado_em))}.` });
       }
       if (c.checklist_locatario) {
         if (!painel) painel = await R.painel(supabase, tenantId).catch(() => ({}));
@@ -291,18 +327,15 @@ async function avisosDiarios(supabase, { hoje = hojeBR(), enviar = null } = {}) 
       }
       if (!itens.length) continue;
       const nMed = itens.filter((i) => i.tipo === 'medicao').length; const nIns = itens.length - nMed;
-      const assunto = `${nMed ? `📏 Medição do contrato ${c.numero}` : ''}${nMed && nIns ? ' e ' : ''}${nIns ? `🔍 ${nIns} inspeção(ões) atrasada(s)` : ''} — ${empresa}`;
-      const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.55;color:#111"><p>Olá! Pendências do contrato <b>${escH(c.numero)}</b> com <b>${escH(empresa)}</b>:</p><ul>${itens.map((i) => `<li>${i.linha}</li>`).join('')}</ul>${portal ? `<p><a href="${portal}/#${nMed ? 'medicoes' : 'contratos'}" style="background:#2563eb;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">Abrir no QuotaFlow</a></p>` : ''}<p style="color:#666;font-size:12px">Aviso automático do QuotaFlow.</p></div>`;
+      const assunto = `${nMed ? `📏 Medição do contrato ${c.numero} aguardando aprovação` : ''}${nMed && nIns ? ' e ' : ''}${nIns ? `🔍 ${nIns} inspeção(ões) atrasada(s)` : ''} — ${emp}`;
+      const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.55;color:#111"><p>Olá! Pendências do contrato <b>${escH(c.numero)}</b> com <b>${escH(emp)}</b>:</p><ul>${itens.map((i) => `<li>${i.linha}</li>`).join('')}</ul>${portal() ? `<p><a href="${portal()}/#${nMed ? 'medicoes' : 'contratos'}" style="background:#2563eb;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">Abrir no QuotaFlow</a></p>` : ''}<p style="color:#666;font-size:12px">Aviso automático do QuotaFlow.</p></div>`;
       let ok = 0;
       for (const u of para) { try { await mandar(u.email, assunto, html); ok++; r.emails++; } catch (e) { r.falhas++; console.error('❌ [medição] e-mail:', e.message || e); } }
-      if (ok) {
-        await supabase.from('avisos_enviados').upsert(itens.map((i) => ({ tenant_id: tenantId, chave: i.chave, marco: i.marco, destinatarios: ok })), { onConflict: 'tenant_id,chave,marco', ignoreDuplicates: true });
-        r.medicao += nMed; r.inspecao += nIns;
-      }
+      if (ok) { await supabase.from('avisos_enviados').upsert(itens.map((i) => ({ tenant_id: tenantId, chave: i.chave, marco: i.marco, destinatarios: ok })), { onConflict: 'tenant_id,chave,marco', ignoreDuplicates: true }); r.medicao += nMed; r.inspecao += nIns; }
     }
   }
   console.log(`📏 [medição] lembretes ao locatário: ${r.medicao} medição(ões), ${r.inspecao} inspeção(ões), ${r.emails} e-mail(s), ${r.falhas} falha(s)`);
   return r;
 }
 
-module.exports = { avisosDiarios, UNIDADES, UNIDADE_NOME, STATUS_NOME, cicloDe, ciclos, listar, detalhe, abrir, salvar, enviar, aprovar, devolver, reabrir, acaoEmpresa, pendencias, painelLocatario, acaoLocatario, informativo };
+module.exports = { STATUS_NOME, cicloDe, ciclos, listar, detalhe, abrir, recalcular, salvar, enviar, reabrir, aprovarCliente, contestar, acaoEmpresa, pendencias, painelLocatario, acaoLocatario, informativo, avisosDiarios, _definirEnvio };

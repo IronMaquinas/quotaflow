@@ -14,7 +14,7 @@ import { abrirRelatorioInspecao, prepararJanela } from "../../utils/gerarRelator
 import { gerarHtmlContrato, abrirContrato, prepararJanela as janelaContrato } from "../../utils/gerarContrato"; // 14d
 import { dadosEmpresa } from "../../utils/logoEmpresa";
 import AssinaturaTela from "../shared/AssinaturaTela";
-import MedicaoModal, { CiclosMedicao } from "./MedicaoModal"; // 18d
+import MedicaoModal, { corStatusMedicao } from "./MedicaoModal"; // 18d
 
 const RES = { aprovado: ["✓ Aprovado", "#22c55e"], ressalvas: ["⚠ Ressalvas", "#f59e0b"], reprovado: ["⛔ Reprovado", "#ef4444"] };
 const dataBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
@@ -36,8 +36,6 @@ export default function TelaLocatario({ C, s, usuario }) {
   const [med, setMed] = useState(null); const [medAberta, setMedAberta] = useState(null);
   const carregarMed = async () => { try { setMed(await apiService.get("/locatario/medicoes")); } catch { setMed({ contratos: [] }); } };
   useEffect(() => { carregarMed(); }, []);
-  const abrirCiclo = async (c, x) => { if (x.medicao_id) return setMedAberta(x.medicao_id);
-    try { const r = await apiService.post("/locatario/medicoes/abrir", { contrato_id: c.id, inicio: x.inicio }); setMedAberta(r.medicao.id); await carregarMed(); } catch (e) { err(e.message); } };
   const ok = (t) => setAviso({ tipo: "ok", texto: t });
   const err = (t) => setAviso({ tipo: "erro", texto: t });
   useEffect(() => { if (!aviso) return; const t = setTimeout(() => setAviso(null), 7000); return () => clearTimeout(t); }, [aviso]);
@@ -82,13 +80,16 @@ export default function TelaLocatario({ C, s, usuario }) {
       </div>}
 
       {med?.contratos?.length > 0 && <div style={{ display: "flex", gap: 6, marginBottom: 12, borderBottom: `1px solid ${C.border}` }}>{/* 18d */}
-        {[["contratos", "📑 Contratos e inspeções"], ["medicoes", `📏 Medições${med.contratos.some((c) => c.ciclos.some((x) => ["pendente", "aberta", "devolvida"].includes(x.status) && !x.em_andamento)) ? " •" : ""}`]].map(([k, l]) =>
+        {[["contratos", "📑 Contratos e inspeções"], ["medicoes", `📏 Medições${med.contratos.some((c) => c.medicoes.some((x) => x.status === "enviada")) ? " •" : ""}`]].map(([k, l]) =>
           <button key={k} type="button" onClick={() => setAba(k)} style={{ background: "transparent", border: "none", borderBottom: `2px solid ${aba === k ? C.accent : "transparent"}`, color: aba === k ? C.text : C.textSub, padding: "8px 12px", fontSize: 14, cursor: "pointer", fontWeight: aba === k ? 700 : 400 }}>{l}</button>)}
       </div>}
-      {aba === "medicoes" && med?.contratos?.length > 0 && med.contratos.map((c) => <div key={c.id} style={card}>
+      {aba === "medicoes" && med?.contratos?.length > 0 && med.contratos.map((c) => <div key={c.id} style={card}>{/* 18d.2: medições enviadas pela locadora */}
         <div style={{ fontWeight: 700, fontSize: 16 }}>📑 {c.numero}</div>
-        <div style={{ fontSize: 12.5, color: C.textSub, marginBottom: 6 }}>{c.cliente} · ciclo {c.medicao_dia_inicio ? `do dia ${c.medicao_dia_inicio}` : "mês do calendário"} — preencha o realizado de cada equipamento e envie para a locadora aprovar.</div>
-        <CiclosMedicao C={C} s={s} ciclos={c.ciclos} onAbrir={(x) => abrirCiclo(c, x)} />
+        <div style={{ fontSize: 12.5, color: C.textSub, marginBottom: 6 }}>{c.cliente} — confira a medição de cada mês e aprove, ou comente o que não estiver de acordo.</div>
+        {c.medicoes.map((x) => <div key={x.medicao_id} className="qf-clicavel" onClick={() => setMedAberta(x.medicao_id)} style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 0", borderTop: `1px solid ${C.border}`, fontSize: 14, cursor: "pointer", flexWrap: "wrap" }}>
+          <span style={{ flex: "1 1 200px" }}>📏 <b>{x.rotulo}</b> <span style={{ color: C.muted }}>· {dataBR(x.inicio)} a {dataBR(x.fim)}</span></span>
+          <b>{Number(x.total_cobrar || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}</b>
+          <span style={s.tag(corStatusMedicao(x.status))}>{x.status_nome}</span><span style={{ color: C.accent }}>abrir ›</span></div>)}
       </div>)}
       {medAberta && <MedicaoModal C={C} s={s} medicaoId={medAberta} base="/locatario" modo="locatario" onFechar={() => setMedAberta(null)} onMudou={carregarMed} onErro={err} onOk={ok} />}
       {aba === "medicoes" && med?.contratos?.length > 0 ? null : !d ? <div style={{ color: C.muted }}>Carregando…</div> : d.contratos.length === 0 ? (

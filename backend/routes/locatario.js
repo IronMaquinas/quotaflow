@@ -7,7 +7,7 @@
 //   GET  /preparar/:equip?modelo_id=    modelo para inspecionar (só equipamento de locação ativa dele, modelo das rotinas)
 //   POST /enviar                        envia a inspeção (mesmo corpo do app; idempotente — fila offline)
 //   POST /contratos/:id/aceite          { assinatura_png, nome } — 14d: aceite do contrato emitido (só contrato dele)
-//   18d — 📏 GET /medicoes · POST /medicoes/abrir { contrato_id, inicio } · GET /medicoes/:id · PUT /medicoes/:id · POST /medicoes/:id/enviar
+//   18d.2 — 📏 GET /medicoes (as enviadas pela locadora) · GET /medicoes/:id · POST /medicoes/:id/aprovar · POST /medicoes/:id/contestar { itens: [{ locacao_id, comentario }], motivo }
 //   GET  /inspecoes/:id                 detalhe (só inspeção feita numa locação dos contratos dele)
 
 const express = require('express');
@@ -30,10 +30,9 @@ router.get('/preparar/:equip', responder((req) => CT.prepararLocatario(supabase,
 router.post('/enviar', responder(async (req) => CT.enviarLocatario(supabase, req.tenantId, await eu(req), req.body || {})));
 router.post('/contratos/:id/aceite', responder(async (req) => CT.aceitarLocatario(supabase, req.tenantId, await eu(req), req.params.id, req.body || {}))); // 14d
 router.get('/medicoes', responder((req) => MD.painelLocatario(supabase, req.tenantId, req.userId)));
-router.post('/medicoes/abrir', responder(async (req) => MD.acaoLocatario(supabase, req.tenantId, await eu(req), 'abrir', { contratoId: req.body?.contrato_id, inicio: req.body?.inicio })));
 router.get('/medicoes/:id', responder(async (req) => MD.acaoLocatario(supabase, req.tenantId, await eu(req), 'ver', { medicaoId: req.params.id })));
-router.put('/medicoes/:id', responder(async (req) => MD.acaoLocatario(supabase, req.tenantId, await eu(req), 'salvar', { medicaoId: req.params.id, body: req.body || {} })));
-router.post('/medicoes/:id/enviar', responder(async (req) => MD.acaoLocatario(supabase, req.tenantId, await eu(req), 'enviar', { medicaoId: req.params.id })));
+router.post('/medicoes/:id/aprovar', responder(async (req) => MD.acaoLocatario(supabase, req.tenantId, await eu(req), 'aprovar', { medicaoId: req.params.id })));
+router.post('/medicoes/:id/contestar', responder(async (req) => MD.acaoLocatario(supabase, req.tenantId, await eu(req), 'contestar', { medicaoId: req.params.id, body: req.body || {} })));
 router.get('/inspecoes/:id', responder((req) => CT.detalheLocatario(supabase, req.tenantId, req.userId, req.params.id)));
 
 module.exports = router;
