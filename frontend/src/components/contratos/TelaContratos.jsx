@@ -9,7 +9,7 @@ import { corEstado, txtEstado } from "../inspecoes/RotinasLocacao";
 import { FormNovoContrato, AbaClientes, mascaraDoc } from "./Clientes"; // 14b.3.1
 import { AbaModelos, DocumentoContrato } from "./ModelosContrato"; // 14d
 import CampoTelefone, { telefoneExibir } from "../shared/CampoTelefone";
-import MedicaoModal, { CiclosMedicao, corStatusMedicao } from "./MedicaoModal"; // 18d
+import AbaMedicoes from "./AbaMedicoes"; // 18d.5
 
 const FREQ = { diaria: "Diária", semanal: "Semanal", quinzenal: "Quinzenal", mensal: "Mensal" };
 const dataBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
@@ -34,8 +34,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato })
   const [abertoId, setAbertoId] = useState(null);
   const [form, setForm] = useState(null);       // novo / editar contrato
   // 18d: 📏 medição
-  const [ciclosMed, setCiclosMed] = useState(null);   // ciclos do contrato aberto
-  const [medAberta, setMedAberta] = useState(null);   // id da medição no modal
+  const [filtroMed, setFiltroMed] = useState(null);   // 18d.5: abrir a aba Medições já filtrada por um contrato
   const [pendMed, setPendMed] = useState([]);         // pendências (aba Contratos)
   const [addEq, setAddEq] = useState(null);     // { equipamento_id, inicio, comRotina, modelo_id, frequencia }
   const [acesso, setAcesso] = useState(null);   // { nome, email, senha, telefone }
@@ -57,14 +56,10 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato })
   const editar = !!d?.pode_editar;
   const lista = useMemo(() => (d?.contratos || []).filter((c) => (filtro === "todos" || (filtro === "abertos" ? faseDe(c) !== "encerrado" : faseDe(c) === filtro)) && (!busca.trim() || semAcento(`${c.numero} ${c.cliente} ${c.local || ""} ${c.equipamentos.map((e) => e.tag).join(" ")}`).includes(semAcento(busca.trim())))), [d, filtro, busca]);
   const aberto = (d?.contratos || []).find((c) => c.id === abertoId) || null;
-  const carregarMed = async (id) => { try { const r = await apiService.get(`/contratos/${id}/medicoes`); setCiclosMed(r.ciclos || []); } catch { setCiclosMed(null); } };
   const carregarPend = async () => { try { setPendMed((await apiService.get("/contratos/medicoes/pendencias")).pendencias || []); } catch { setPendMed([]); } };
-  useEffect(() => { if (abertoId) carregarMed(abertoId); else setCiclosMed(null); }, [abertoId]); // eslint-disable-line
   useEffect(() => { carregarPend(); }, []); // eslint-disable-line
-  const abrirCiclo = async (contratoId, x) => {
-    if (x.medicao_id) return setMedAberta(x.medicao_id);
-    try { const r = await apiService.post(`/contratos/${contratoId}/medicoes`, { inicio: x.inicio }); setMedAberta(r.medicao.id); await carregarMed(contratoId); carregarPend(); } catch (e) { err(e.message); }
-  };
+  const paraEnviar = pendMed.filter((x) => ["aberta", "devolvida"].includes(x.status)).length; // 18d.5: contador da aba
+
   const modelos = (painel?.modelos || []).filter((m) => m.ativo !== false);
   const naBase = (painel?.equipamentos || []).filter((e) => e.situacao !== "locado");
   const acao = async (fn, msg) => { setOcupado(true); try { const r = await fn(); if (msg) ok(typeof msg === "function" ? msg(r) : msg); await carregar(); return r; } catch (e) { err(e.message); return null; } finally { setOcupado(false); } };
@@ -89,20 +84,15 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato })
       </div>
       {aviso && <div style={{ ...s.card, padding: "10px 14px", marginBottom: 12, fontSize: 13, borderColor: aviso.tipo === "erro" ? C.danger : C.success, color: aviso.tipo === "erro" ? C.danger : C.success }}>{aviso.texto}</div>}
       <div style={{ display: "flex", gap: 6, marginBottom: 12, borderBottom: `1px solid ${C.border}` }}>
-        {[["contratos", "📑 Contratos"], ["clientes", "👥 Clientes"], ["modelos", "📄 Modelos de contrato"]].map(([k, l]) => <button key={k} type="button" onClick={() => setAba(k)} style={{ background: "transparent", border: "none", borderBottom: `2px solid ${aba === k ? C.accent : "transparent"}`, padding: "8px 12px", color: aba === k ? C.text : C.muted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>)}
+        {[["contratos", "📑 Contratos"], ["medicoes", <>📏 Medições{paraEnviar > 0 && <span style={{ marginLeft: 6, background: C.danger, color: "#fff", borderRadius: 10, padding: "0 7px", fontSize: 11.5, fontWeight: 700 }}>{paraEnviar}</span>}</>], ["clientes", "👥 Clientes"], ["modelos", "📄 Modelos de contrato"]].map(([k, l]) => <button key={k} type="button" onClick={() => setAba(k)} style={{ background: "transparent", border: "none", borderBottom: `2px solid ${aba === k ? C.accent : "transparent"}`, padding: "8px 12px", color: aba === k ? C.text : C.muted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>)}
       </div>
       {aba === "clientes" && <AbaClientes C={C} s={s} editar={editar} onErro={err} onOk={ok} abrirId={clienteAbrir} onAberto={() => setClienteAbrir(null)} />}
       {aba === "modelos" && <AbaModelos C={C} s={s} editar={editar} onErro={err} onOk={ok} />}
+      {aba === "medicoes" && <AbaMedicoes C={C} s={s} editar={editar} filtroContrato={filtroMed} onFiltroUsado={() => setFiltroMed(null)} onMudou={carregarPend} onErro={err} onOk={ok} />}{/* 18d.5 */}
       {aba === "contratos" && <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
         {[["abertos", "Abertos"], ["elaboracao", "📝 Em elaboração"], ["aguardando_aceite", "⏳ Aguardando aceite"], ["andamento", "✅ Em andamento"], ["encerrado", "🏁 Encerrados"], ["todos", "Todos"]].map(([k, l]) => <button key={k} type="button" onClick={() => setFiltro(k)} style={{ ...s.btn(filtro === k, C.accent), cursor: "pointer", padding: "5px 12px", fontSize: 12, color: filtro === k ? "#fff" : C.text }}>{l}</button>)}
       </div>}
-      {aba === "contratos" && pendMed.length > 0 && <div style={{ ...s.card, padding: "10px 14px", marginBottom: 12, borderColor: pendMed.some((x) => x.status === "enviada") ? C.warn : C.border }}>
-        <div style={{ fontWeight: 700, fontSize: 13.5, marginBottom: 4 }}>📏 Medições para revisar e enviar ({pendMed.length})</div>{/* 18d */}
-        {pendMed.slice(0, 8).map((x) => <div key={`${x.contrato_id}-${x.inicio}`} className="qf-clicavel" onClick={() => abrirCiclo(x.contrato_id, x)} style={{ display: "flex", gap: 8, alignItems: "center", padding: "5px 0", borderTop: `1px solid ${C.border}`, fontSize: 13, cursor: "pointer", flexWrap: "wrap" }}>
-          <span style={{ flex: "1 1 220px" }}><b>{x.numero}</b> · {x.cliente} · {x.rotulo}</span>
-          <span style={{ fontSize: 12.5, color: C.textSub }}>{x.total_cobrar != null ? Number(x.total_cobrar).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }) : ""}</span><span style={s.tag(corStatusMedicao(x.status))}>{x.status === "aberta" ? (x.medicao_locatario ? "pronta — revisar e enviar" : "pronta — revisar e fechar") : x.status_nome}</span><span style={{ color: C.accent }}>abrir ›</span></div>)}
-        {pendMed.length > 8 && <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>+ {pendMed.length - 8} — abra o contrato para ver todas.</div>}
-      </div>}
+      {aba === "contratos" && paraEnviar > 0 && <div className="qf-clicavel" onClick={() => setAba("medicoes")} style={{ fontSize: 13, color: C.accent, marginBottom: 10, cursor: "pointer" }}>📏 {paraEnviar} medição(ões) para revisar e enviar ›</div>}{/* 18d.5 */}
       {aba !== "contratos" ? null : !d ? <div style={{ color: C.muted }}>Carregando…</div> : (
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(320px, 1fr))", gap: 10 }}>
           {lista.map((c) => (
@@ -171,10 +161,8 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato })
         ))}
         {aberto.equipamentos.length === 0 && <div style={{ fontSize: 13, color: C.muted, padding: "6px 0" }}>Nenhum equipamento neste contrato.</div>}
 
-        <div style={{ display: "flex", alignItems: "center", marginTop: 16, marginBottom: 4 }}>{/* 18d */}
-          <div style={{ fontWeight: 700, flex: 1 }}>📏 Medições <span style={{ fontWeight: 400, fontSize: 12, color: C.muted }}>· ciclo {aberto.medicao_dia_inicio ? `do dia ${aberto.medicao_dia_inicio}` : "mês do calendário"}{aberto.medicao_vencimento_dia ? ` · vencimento dia ${String(aberto.medicao_vencimento_dia).padStart(2, "0")}` : ""} · {aberto.medicao_locatario ? "você revisa e envia, o cliente aprova" : "a empresa revisa e fecha"} · uma medição por mês com todos os equipamentos (a do mês corrente aparece nos últimos 10 dias) · valores do contrato, proporcionais aos dias</span></div>
-        </div>
-        {ciclosMed ? <CiclosMedicao C={C} s={s} ciclos={ciclosMed} podeAbrir={editar} onAbrir={(x) => abrirCiclo(aberto.id, x)} /> : <div style={{ fontSize: 12.5, color: C.muted }}>Rode a migration 062 para usar a medição.</div>}
+        <div style={{ marginTop: 14 }}><button type="button" onClick={() => { setFiltroMed(aberto.id); setAbertoId(null); setAba("medicoes"); }} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 13, padding: 0 }}>📏 Ver medições deste contrato ›</button>
+          <span style={{ fontSize: 12, color: C.muted, marginLeft: 8 }}>ciclo {aberto.medicao_dia_inicio ? `do dia ${aberto.medicao_dia_inicio}` : "mês do calendário"}{aberto.medicao_vencimento_dia ? ` · vencimento dia ${String(aberto.medicao_vencimento_dia).padStart(2, "0")}` : ""}</span></div>{/* 18d.5 */}
 
         <DocumentoContrato C={C} s={s} contrato={aberto} editar={editar} onErro={err} onOk={ok} onMudou={carregar} />
 
@@ -229,12 +217,11 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato })
           <button type="button" disabled={ocupado} onClick={async () => {
             const { local, contato_nome, contato_email, contato_telefone, fim_previsto, obs, medicao_dia_inicio, medicao_vencimento_dia, checklist_locatario, medicao_locatario } = form;
             const r = await acao(() => apiService.put(`/contratos/${form.id}`, { local, contato_nome, contato_email, contato_telefone, fim_previsto: fim_previsto || null, obs, medicao_dia_inicio: medicao_dia_inicio || null, medicao_vencimento_dia: medicao_vencimento_dia === "" || medicao_vencimento_dia == null ? null : Number(medicao_vencimento_dia), checklist_locatario: !!checklist_locatario, medicao_locatario: !!medicao_locatario }), "Contrato salvo.");
-            if (r && abertoId) carregarMed(abertoId);
             if (r) setForm(null);
           }} style={{ ...s.btn(!ocupado, C.accent), flex: 1 }}>Salvar</button>
         </div>
       </>, () => setForm(null), 620, 320)}
-      {medAberta && <MedicaoModal C={C} s={s} medicaoId={medAberta} podeEditar={editar} onFechar={() => setMedAberta(null)} onMudou={() => { if (abertoId) carregarMed(abertoId); carregarPend(); }} onErro={err} onOk={ok} />}
+
 
       {novo && modal(<FormNovoContrato C={C} s={s} ocupado={ocupado} onErro={err} onCancelar={() => setNovo(false)}
         onSalvar={async (corpo) => { const r = await acao(() => apiService.post("/contratos", corpo), (x) => `Contrato ${x.contrato.numero} criado — agora adicione os equipamentos e os acessos.`); if (r) { setNovo(false); setAbertoId(r.contrato.id); } }} />, () => setNovo(false), 680, 320)}

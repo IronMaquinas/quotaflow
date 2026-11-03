@@ -17,6 +17,7 @@
 //          POST /modelos/:id/atualizar · DELETE /modelos/:id · PUT /:id/condicoes · GET /:id/previa?modelo_id · POST /:id/emitir { forcar } · POST /:id/aceite-papel { data, obs } (14d.2)
 //   18d — 📏 medição: PUT /:id/equipamentos/:equip/escopo { medicao_unidade, medicao_qtd, medicao_valor } · GET /medicoes/pendencias
 //          GET /:id/medicoes (ciclos) · POST /:id/medicoes { inicio } (abre) · GET /medicoes/:mid · PUT /medicoes/:mid { itens, obs, repetir_programado }
+//          18d.5: GET /medicoes/painel (resumo + pendências + histórico)
 //          18d.2: POST /medicoes/:mid/enviar (envia ao cliente ou fecha) · /recalcular · /reabrir { motivo }
 //   POST   /usuarios/:usuario/pausar         { ativo: false|true } — só usuário que é SÓ locatário
 
@@ -63,6 +64,7 @@ router.get('/clientes/consulta/:doc', exigirVer, responder((req) => CL.consultar
 router.post('/clientes', exigirEditar, responder((req) => CL.criar(supabase, req.tenantId, req.body || {})));
 router.put('/clientes/:id', exigirEditar, responder((req) => CL.editar(supabase, req.tenantId, req.params.id, req.body || {})));
 // 18d — 📏 medição (antes das rotas /:id)
+router.get('/medicoes/painel', exigirVer, responder(async (req) => MD.painelEmpresa(supabase, req.tenantId, await quem(req)))); // 18d.5
 router.get('/medicoes/pendencias', exigirVer, responder(async (req) => MD.pendencias(supabase, req.tenantId, await quem(req))));
 router.get('/medicoes/:mid', exigirVer, responder((req) => MD.detalhe(supabase, req.tenantId, req.params.mid)));
 router.put('/medicoes/:mid', exigirEditar, responder(async (req) => MD.acaoEmpresa(supabase, req.tenantId, await quem(req), req.params.mid, 'salvar', req.body || {})));

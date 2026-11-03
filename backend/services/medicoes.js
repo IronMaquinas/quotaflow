@@ -263,6 +263,43 @@ async function pendencias(supabase, tenantId, quem = { usuarioNome: 'QuotaFlow' 
   return { pendencias: out.sort((a, b) => (ord[a.status] - ord[b.status]) || a.inicio.localeCompare(b.inicio)) };
 }
 
+/** 18d.5: 📏 aba Medições (empresa) — resumo + pendências + histórico (filtros de período/contrato/cliente/equipamento na tela) */
+async function painelEmpresa(supabase, tenantId, quem) {
+  const pend = await pendencias(supabase, tenantId, quem); if (pend.erro) return pend;
+  const [cs, ms, locs, eqs] = await Promise.all([
+    q(supabase.from('locacao_contratos').select('*').eq('tenant_id', tenantId)), q(supabase.from('locacao_medicoes').select('*').eq('tenant_id', tenantId)),
+    q(supabase.from('equipamento_locacoes').select('*').eq('tenant_id', tenantId)), q(supabase.from('equipamentos').select('*').eq('tenant_id', tenantId)),
+  ]);
+  const hoje = hojeBR(); const ativos = cs.filter((c) => c.status === 'ativo'); const cid = new Set(ativos.map((c) => String(c.id)));
+  const locAtivas = locs.filter((l) => l.status === 'ativa' && cid.has(String(l.contrato_id)) && l.inicio <= hoje);
+  const porC = new Map(cs.map((c) => [String(c.id), c]));
+  // mês anterior (ciclo do calendário que terminou antes do mês corrente)
+  const d = new Date(`${hoje.slice(0, 7)}-01T12:00:00Z`); d.setUTCMonth(d.getUTCMonth() - 1); const mesAnt = d.toISOString().slice(0, 7);
+  const doMesAnt = ms.filter((m) => m.inicio.slice(0, 7) === mesAnt);
+  const tot = (m) => r2((m.itens || []).reduce((t, i) => t + Number(i.valor || 0), 0));
+  const em60 = new Date(Date.parse(`${hoje}T12:00:00Z`) + 60 * 86400000).toISOString().slice(0, 10);
+  const vencendo = ativos.filter((c) => c.fim_previsto && c.fim_previsto >= hoje && c.fim_previsto <= em60);
+  const resumo = {
+    valor_mensal: r2(locAtivas.reduce((t, l) => t + Number(l.valor_mensal || 0), 0)), equipamentos: locAtivas.length, contratos_ativos: ativos.length,
+    para_revisar: pend.pendencias.filter((x) => ['aberta', 'devolvida'].includes(x.status)).length, contestadas: pend.pendencias.filter((x) => x.status === 'devolvida').length,
+    aguardando: pend.pendencias.filter((x) => x.status === 'enviada').length, aguardando_valor: r2(pend.pendencias.filter((x) => x.status === 'enviada').reduce((t, x) => t + Number(x.total_cobrar || 0), 0)),
+    mes_anterior: { mes: mesAnt, medido: r2(doMesAnt.filter((m) => m.status === 'aprovada').reduce((t, m) => t + tot(m), 0)), previsto: r2(doMesAnt.reduce((t, m) => t + (m.itens || []).reduce((s2, i) => s2 + Number(i.valor_recomendado || 0), 0), 0)),
+      fechadas: doMesAnt.filter((m) => m.status === 'aprovada').length, total: doMesAnt.length },
+    vencendo: vencendo.length, vencendo_lista: vencendo.map((c) => ({ id: c.id, numero: c.numero, cliente: c.cliente, fim_previsto: c.fim_previsto })).sort((a, b) => a.fim_previsto.localeCompare(b.fim_previsto)),
+  };
+  const eqNome = new Map(eqs.map((e) => [String(e.id), e]));
+  const historico = ms.filter((m) => { const c = porC.get(String(m.contrato_id)); return c && (naJanela({ inicio: m.inicio, fim: m.fim }, hoje) || m.status !== 'aberta'); })
+    .map((m) => { const c = porC.get(String(m.contrato_id));
+      return { medicao_id: m.id, contrato_id: c.id, numero: c.numero, cliente: c.cliente, cliente_id: c.cliente_id ?? null, inicio: m.inicio, fim: m.fim, rotulo: cicloDe(c.medicao_dia_inicio, m.inicio).rotulo,
+        status: m.status, status_nome: STATUS_NOME[m.status], total: tot(m), aprovado_em: m.aprovado_em || null,
+        itens: (m.itens || []).map((i) => ({ equipamento_id: i.equipamento_id, tag: i.tag || eqNome.get(String(i.equipamento_id))?.tag || null, nome: i.nome, valor: i.valor, dias: i.dias, dias_ciclo: i.dias_ciclo })) }; })
+    .sort((a, b) => b.inicio.localeCompare(a.inicio) || String(a.numero).localeCompare(String(b.numero)));
+  const opcoes = { contratos: cs.map((c) => ({ id: c.id, numero: c.numero, cliente: c.cliente })).sort((a, b) => String(b.numero).localeCompare(String(a.numero))),
+    clientes: [...new Set(cs.map((c) => c.cliente).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR')),
+    equipamentos: [...new Map(historico.flatMap((h) => h.itens).map((i) => [String(i.equipamento_id), { id: i.equipamento_id, tag: i.tag, nome: i.nome }])).values()].sort((a, b) => String(a.tag).localeCompare(String(b.tag))) };
+  return { resumo, pendencias: pend.pendencias, historico, opcoes };
+}
+
 // ─── visão do LOCATÁRIO (escopo pelo usuário logado — services/contratosLocacao.escopoLocatario) ─────────
 async function contratosDoLocatario(supabase, tenantId, usuarioId) {
   const esc = await require('./contratosLocacao').escopoLocatario(supabase, tenantId, usuarioId);
@@ -360,4 +397,4 @@ async function avisosDiarios(supabase, { hoje = hojeBR(), enviar = null } = {}) 
   return r;
 }
 
-module.exports = { D_ANTES, naJanela, STATUS_NOME, cicloDe, ciclos, listar, detalhe, abrir, recalcular, salvar, enviar, reabrir, aprovarCliente, contestar, acaoEmpresa, pendencias, painelLocatario, acaoLocatario, informativo, avisosDiarios, _definirEnvio };
+module.exports = { painelEmpresa, D_ANTES, naJanela, STATUS_NOME, cicloDe, ciclos, listar, detalhe, abrir, recalcular, salvar, enviar, reabrir, aprovarCliente, contestar, acaoEmpresa, pendencias, painelLocatario, acaoLocatario, informativo, avisosDiarios, _definirEnvio };
