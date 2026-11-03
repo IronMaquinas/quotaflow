@@ -8,6 +8,7 @@
 import { useState, useEffect } from "react";
 import apiService from "../../services/apiService";
 import { abrirRelatorioCumprimento, prepararJanela } from "../../utils/gerarRelatorioCumprimento";
+import FiltroPeriodo, { faixaPeriodo } from "../shared/FiltroPeriodo"; // 18c.4
 
 const FREQ = { diaria: "Diária", semanal: "Semanal", quinzenal: "Quinzenal", mensal: "Mensal" };
 const dataBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
@@ -145,18 +146,16 @@ export function ModalEncerrar({ e, C, s, onFechar, onMudou, onErro }) {
 }
 
 export function AbaCumprimento({ C, s, onErro }) {
-  const [de, setDe] = useState(somaDias(hoje(), -29));
-  const [ate, setAte] = useState(hoje());
+  const [per, setPer] = useState(() => faixaPeriodo("mes")); // 18c.4: pré-seletores (recarrega sozinho)
+  const { de, ate } = per;
   const [d, setD] = useState(null);
   const carregar = async () => { try { setD(await apiService.get("/inspecoes/cumprimento", { de, ate })); } catch (e) { onErro(e.message); } };
-  useEffect(() => { carregar(); }, []); // eslint-disable-line
+  useEffect(() => { carregar(); }, [de, ate]); // eslint-disable-line
   const corPct = (p) => (p == null ? C.muted : p >= 90 ? C.success : p >= 70 ? C.warn : C.danger);
   return (
     <div>
       <div style={{ display: "flex", gap: 8, alignItems: "flex-end", flexWrap: "wrap", marginBottom: 12 }}>
-        {campo(s, "DE", <input type="date" value={de} onChange={(e) => setDe(e.target.value)} style={s.input} />, "0 0 160px")}
-        {campo(s, "ATÉ", <input type="date" value={ate} onChange={(e) => setAte(e.target.value)} style={s.input} />, "0 0 160px")}
-        <button type="button" onClick={carregar} style={{ ...s.btn(true, C.accent), cursor: "pointer" }}>Atualizar</button>
+        <FiltroPeriodo C={C} s={s} valor={per} onChange={setPer} />
         {d && <button type="button" onClick={() => { const w = prepararJanela(); try { abrirRelatorioCumprimento(d, w); } catch (e) { onErro(e.message); } }} style={{ ...s.btn(false), cursor: "pointer", color: C.text, background: "transparent" }}>🖨 Relatório</button>}
       </div>
       {!d ? <div style={{ color: C.muted }}>Carregando…</div> : (<>

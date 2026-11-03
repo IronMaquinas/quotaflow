@@ -15,6 +15,7 @@ import * as Fila from "../../utils/filaInspecoes";
 import { abrirRelatorioInspecao, prepararJanela } from "../../utils/gerarRelatorioInspecao";
 import { LinhaRotinas, ModalRotinas, ModalLocar, ModalEncerrar, AbaCumprimento } from "./RotinasLocacao"; // 14b.2
 import { idCurto } from "../../utils/marcaFoto"; // 18c.3
+import FiltroPeriodo, { faixaPeriodo } from "../shared/FiltroPeriodo"; // 18c.4
 
 const RES = { aprovado: ["✓ Aprovado", "#22c55e"], ressalvas: ["⚠ Ressalvas", "#f59e0b"], reprovado: ["⛔ Reprovado", "#ef4444"] };
 const COR = { ok: "#22c55e", nok: "#ef4444", na: "#64748b" };
@@ -31,6 +32,7 @@ export default function TelaInspecoes({ C, s, onAbrirOS, onIrParaOS, embutida = 
   const [semMigration, setSemMigration] = useState(false);
   const [aviso, setAviso] = useState(null);
   const [busca, setBusca] = useState("");
+  const [perHist, setPerHist] = useState(() => faixaPeriodo("tudo")); // 18c.4: período no histórico
   const [filtroEq, setFiltroEq] = useState("");
   const [exec, setExec] = useState(null);       // { equipamento, modeloId } | { rascunho }
   const [escolher, setEscolher] = useState(null); // equipamento sem modelo padrão
@@ -130,7 +132,8 @@ export default function TelaInspecoes({ C, s, onAbrirOS, onIrParaOS, embutida = 
   if (semMigration) return <div style={{ padding: 24 }}><div style={{ ...s.card, padding: 20, color: C.warn }}>Rode a migration <b>040_inspecoes.sql</b> no Supabase para usar as inspeções.</div></div>;
 
   const eqs = (painel?.equipamentos || []).filter((e) => !busca.trim() || semAcento(`${e.tag} ${e.nome} ${e.local || ""}`).includes(semAcento(busca.trim())));
-  const listaF = lista.filter((i) => (!filtroEq || String(i.equipamento_id) === String(filtroEq)) && (aba !== "hist" || !busca.trim() || (semAcento(`${i.equipamento_nome} ${i.executor_nome} ${i.modelo_nome} ${i.numero || ""}`).includes(semAcento(busca.trim())) || (!!i.id_foto && semAcento(busca).replace(/[^a-z0-9]/g, "").replace(/^id/, "").length >= 4 && i.id_foto.replace("-", "").toLowerCase().startsWith(semAcento(busca).replace(/[^a-z0-9]/g, "").replace(/^id/, ""))))));
+  const diaI = (i) => (i.concluida_em ? new Date(new Date(i.concluida_em).getTime() - 3 * 3600000).toISOString().slice(0, 10) : "");
+  const listaF = lista.filter((i) => (!filtroEq || String(i.equipamento_id) === String(filtroEq)) && (aba !== "hist" || !perHist.de || (diaI(i) >= perHist.de && diaI(i) <= perHist.ate)) && (aba !== "hist" || !busca.trim() || (semAcento(`${i.equipamento_nome} ${i.executor_nome} ${i.modelo_nome} ${i.numero || ""}`).includes(semAcento(busca.trim())) || (!!i.id_foto && semAcento(busca).replace(/[^a-z0-9]/g, "").replace(/^id/, "").length >= 4 && i.id_foto.replace("-", "").toLowerCase().startsWith(semAcento(busca).replace(/[^a-z0-9]/g, "").replace(/^id/, ""))))));
   const bloqueados = (painel?.equipamentos || []).filter((e) => e.bloqueado).length;
   const abas = colab ? [["equip", "🚚 Inspecionar"], ["hist", "📋 Minhas inspeções"]] : [["equip", `🚚 Equipamentos${bloqueados ? ` (⛔ ${bloqueados})` : ""}`], ["hist", "📋 Inspeções"], ["cumprimento", "📊 Cumprimento"], ["modelos", "🧩 Modelos"]];
   const atrasada = (e) => (e.rotinas || []).some((r) => r.estado === "atrasada");
@@ -214,9 +217,13 @@ export default function TelaInspecoes({ C, s, onAbrirOS, onIrParaOS, embutida = 
 
       {painel && aba === "hist" && (
         <div>
-          <select value={filtroEq} onChange={(e) => setFiltroEq(e.target.value)} style={{ ...s.input, maxWidth: 320, marginBottom: 10 }}>
+          <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
+          <select value={filtroEq} onChange={(e) => setFiltroEq(e.target.value)} style={{ ...s.input, maxWidth: 320 }}>
             <option value="">Todos os equipamentos</option>{(painel.equipamentos || []).map((e) => <option key={e.id} value={e.id}>{e.tag} — {e.nome}</option>)}
           </select>
+          <FiltroPeriodo C={C} s={s} valor={perHist} onChange={setPerHist} comTudo />
+          <span style={{ fontSize: 12, color: C.muted }}>{listaF.length} inspeção(ões)</span>
+          </div>
           <div style={{ ...s.card, overflow: "hidden" }}>
             {listaF.map((i, k) => { const r = RES[i.resultado] || ["—", C.muted]; return (
               <div key={i.id} onClick={() => abrir(i.id)} style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 14px", borderBottom: k < listaF.length - 1 ? `1px solid ${C.border}` : "none", cursor: "pointer", flexWrap: "wrap" }}>
