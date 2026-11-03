@@ -126,7 +126,7 @@ async function locar(supabase, tenantId, quem, equipId, body = {}) {
   const { error: eu } = await supabase.from('equipamentos').update({ situacao: 'locado', locacao_id: loc.id }).eq('id', e.id).eq('tenant_id', tenantId);
   if (eu) throw new Error(eu.message);
   if (body.rotina) {
-    const r = await criarRotina(supabase, tenantId, { equipamento_id: e.id, modelo_id: body.rotina.modelo_id, frequencia: body.rotina.frequencia, responsavel: 'locatario', inicio: somaDias(inicio, FREQ[body.rotina.frequencia]) });
+    const r = await criarRotina(supabase, tenantId, { equipamento_id: e.id, modelo_id: body.rotina.modelo_id, frequencia: body.rotina.frequencia, responsavel: body.rotina.responsavel === 'empresa' ? 'empresa' : 'locatario', inicio: somaDias(inicio, FREQ[body.rotina.frequencia]) }); // 18d: o contrato decide (toggle "Checklist pelo locatário")
     if (r.erro) return r;
   }
   return { locacao: loc };

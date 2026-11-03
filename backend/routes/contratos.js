@@ -15,6 +15,9 @@
 //   GET    /clientes · GET /clientes/consulta/:doc (cadastro → Receita) · POST /clientes · PUT /clientes/:id — 14b.3.1
 //   14d — modelos de contrato: GET /modelos · GET /modelos/biblioteca · POST /modelos/importar · POST /modelos · PUT /modelos/:id
 //          POST /modelos/:id/atualizar · DELETE /modelos/:id · PUT /:id/condicoes · GET /:id/previa?modelo_id · POST /:id/emitir { forcar } · POST /:id/aceite-papel { data, obs } (14d.2)
+//   18d — 📏 medição: PUT /:id/equipamentos/:equip/escopo { medicao_unidade, medicao_qtd, medicao_valor } · GET /medicoes/pendencias
+//          GET /:id/medicoes (ciclos) · POST /:id/medicoes { inicio } (abre) · GET /medicoes/:mid · PUT /medicoes/:mid { itens, obs, repetir_programado }
+//          POST /medicoes/:mid/aprovar · /devolver { motivo } · /reabrir { motivo }
 //   POST   /usuarios/:usuario/pausar         { ativo: false|true } — só usuário que é SÓ locatário
 
 const express = require('express');
@@ -23,6 +26,7 @@ const { supabase } = require('../db');
 const CT = require('../services/contratosLocacao');
 const CL = require('../services/clientes'); // 14b.3.1
 const CM = require('../services/contratoModelos'); // 14d
+const MD = require('../services/medicoes'); // 18d
 
 const perfisDe = (req) => (Array.isArray(req.perfis) && req.perfis.length ? req.perfis : [req.userPerfil].filter(Boolean));
 const VER = ['admin', 'gestor', 'operacao', 'comprador', 'qualidade']; // qualidade: a tela de inspeções lista os contratos ao locar (403 derruba a sessão no front)
@@ -35,6 +39,7 @@ const responder = (fn) => async (req, res) => {
     const m = String(err?.message || '');
     if (/contrato_modelos|modelo_id|condicoes|emitido_|aceite_|valor_mensal/.test(m) && /does not exist|schema cache|relation|column/.test(m)) return res.status(409).json({ erro: 'Rode a migration 046 antes (modelos de contrato)' });
     if (/clientes|cliente_id/.test(m) && /does not exist|schema cache|relation|column/.test(m)) return res.status(409).json({ erro: 'Rode a migration 044 antes (clientes)' });
+    if (/locacao_medicoes|medicao_|checklist_locatario/.test(m)) return res.status(409).json({ erro: 'Rode a migration 062 antes (medição da locação)' });
     if (/locacao_contrato|contrato_id|does not exist|schema cache/.test(m)) return res.status(409).json({ erro: 'Rode a migration 043 antes (contratos de locação)' });
     console.error('❌ [contratos]', m); res.status(500).json({ erro: 'Erro interno — veja o log do servidor' });
   }
@@ -57,6 +62,14 @@ router.get('/clientes', exigirVer, responder(async (req) => ({ clientes: await C
 router.get('/clientes/consulta/:doc', exigirVer, responder((req) => CL.consultar(supabase, req.tenantId, req.params.doc)));
 router.post('/clientes', exigirEditar, responder((req) => CL.criar(supabase, req.tenantId, req.body || {})));
 router.put('/clientes/:id', exigirEditar, responder((req) => CL.editar(supabase, req.tenantId, req.params.id, req.body || {})));
+// 18d — 📏 medição (antes das rotas /:id)
+router.get('/medicoes/pendencias', exigirVer, responder((req) => MD.pendencias(supabase, req.tenantId)));
+router.get('/medicoes/:mid', exigirVer, responder((req) => MD.detalhe(supabase, req.tenantId, req.params.mid)));
+router.put('/medicoes/:mid', exigirEditar, responder(async (req) => MD.acaoEmpresa(supabase, req.tenantId, await quem(req), req.params.mid, 'salvar', req.body || {})));
+for (const a of ['aprovar', 'devolver', 'reabrir']) router.post(`/medicoes/:mid/${a}`, exigirEditar, responder(async (req) => MD.acaoEmpresa(supabase, req.tenantId, await quem(req), req.params.mid, a, req.body || {})));
+router.get('/:id/medicoes', exigirVer, responder((req) => MD.listar(supabase, req.tenantId, req.params.id)));
+router.post('/:id/medicoes', exigirEditar, responder(async (req) => MD.abrir(supabase, req.tenantId, await quem(req), req.params.id, req.body?.inicio)));
+router.put('/:id/equipamentos/:equip/escopo', exigirEditar, responder((req) => CT.escopoEquipamento(supabase, req.tenantId, req.params.id, req.params.equip, req.body || {})));
 router.get('/', exigirVer, responder(async (req) => ({ contratos: await CT.listar(supabase, req.tenantId), pode_editar: perfisDe(req).some((p) => EDITAR.includes(p)) })));
 router.post('/', exigirEditar, responder(async (req) => CT.criar(supabase, req.tenantId, await quem(req), req.body || {})));
 router.put('/:id', exigirEditar, responder((req) => CT.editar(supabase, req.tenantId, req.params.id, req.body || {})));

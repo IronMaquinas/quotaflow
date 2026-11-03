@@ -14,6 +14,7 @@ import { abrirRelatorioInspecao, prepararJanela } from "../../utils/gerarRelator
 import { gerarHtmlContrato, abrirContrato, prepararJanela as janelaContrato } from "../../utils/gerarContrato"; // 14d
 import { dadosEmpresa } from "../../utils/logoEmpresa";
 import AssinaturaTela from "../shared/AssinaturaTela";
+import MedicaoModal, { CiclosMedicao } from "./MedicaoModal"; // 18d
 
 const RES = { aprovado: ["✓ Aprovado", "#22c55e"], ressalvas: ["⚠ Ressalvas", "#f59e0b"], reprovado: ["⛔ Reprovado", "#ef4444"] };
 const dataBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
@@ -30,6 +31,13 @@ export default function TelaLocatario({ C, s, usuario }) {
   const [doc, setDoc] = useState(null); // 14d: contrato para ler e aceitar
   const [ass, setAss] = useState(null);
   const [aceitando, setAceitando] = useState(false);
+  // 18d: 📏 medições (só contratos com "Medição pelo locatário")
+  const [aba, setAba] = useState(() => (/medicoes/.test(window.location.hash) ? "medicoes" : "contratos"));
+  const [med, setMed] = useState(null); const [medAberta, setMedAberta] = useState(null);
+  const carregarMed = async () => { try { setMed(await apiService.get("/locatario/medicoes")); } catch { setMed({ contratos: [] }); } };
+  useEffect(() => { carregarMed(); }, []);
+  const abrirCiclo = async (c, x) => { if (x.medicao_id) return setMedAberta(x.medicao_id);
+    try { const r = await apiService.post("/locatario/medicoes/abrir", { contrato_id: c.id, inicio: x.inicio }); setMedAberta(r.medicao.id); await carregarMed(); } catch (e) { err(e.message); } };
   const ok = (t) => setAviso({ tipo: "ok", texto: t });
   const err = (t) => setAviso({ tipo: "erro", texto: t });
   useEffect(() => { if (!aviso) return; const t = setTimeout(() => setAviso(null), 7000); return () => clearTimeout(t); }, [aviso]);
@@ -73,7 +81,17 @@ export default function TelaLocatario({ C, s, usuario }) {
           </div>))}
       </div>}
 
-      {!d ? <div style={{ color: C.muted }}>Carregando…</div> : d.contratos.length === 0 ? (
+      {med?.contratos?.length > 0 && <div style={{ display: "flex", gap: 6, marginBottom: 12, borderBottom: `1px solid ${C.border}` }}>{/* 18d */}
+        {[["contratos", "📑 Contratos e inspeções"], ["medicoes", `📏 Medições${med.contratos.some((c) => c.ciclos.some((x) => ["pendente", "aberta", "devolvida"].includes(x.status) && !x.em_andamento)) ? " •" : ""}`]].map(([k, l]) =>
+          <button key={k} type="button" onClick={() => setAba(k)} style={{ background: "transparent", border: "none", borderBottom: `2px solid ${aba === k ? C.accent : "transparent"}`, color: aba === k ? C.text : C.textSub, padding: "8px 12px", fontSize: 14, cursor: "pointer", fontWeight: aba === k ? 700 : 400 }}>{l}</button>)}
+      </div>}
+      {aba === "medicoes" && med?.contratos?.length > 0 && med.contratos.map((c) => <div key={c.id} style={card}>
+        <div style={{ fontWeight: 700, fontSize: 16 }}>📑 {c.numero}</div>
+        <div style={{ fontSize: 12.5, color: C.textSub, marginBottom: 6 }}>{c.cliente} · ciclo {c.medicao_dia_inicio ? `do dia ${c.medicao_dia_inicio}` : "mês do calendário"} — preencha o realizado de cada equipamento e envie para a locadora aprovar.</div>
+        <CiclosMedicao C={C} s={s} ciclos={c.ciclos} onAbrir={(x) => abrirCiclo(c, x)} />
+      </div>)}
+      {medAberta && <MedicaoModal C={C} s={s} medicaoId={medAberta} base="/locatario" modo="locatario" onFechar={() => setMedAberta(null)} onMudou={carregarMed} onErro={err} onOk={ok} />}
+      {aba === "medicoes" && med?.contratos?.length > 0 ? null : !d ? <div style={{ color: C.muted }}>Carregando…</div> : d.contratos.length === 0 ? (
         <div style={{ ...card, color: C.textSub }}>Nenhum contrato de locação ativo no seu acesso. Fale com a locadora.</div>
       ) : d.contratos.map((c) => (
         <div key={c.id} style={card}>
@@ -101,7 +119,7 @@ export default function TelaLocatario({ C, s, usuario }) {
         </div>
       ))}
 
-      {d && d.inspecoes.length > 0 && <div style={card}>
+      {aba === "contratos" && d && d.inspecoes.length > 0 && <div style={card}>
         <div style={{ fontWeight: 700, marginBottom: 6 }}>📋 Inspeções</div>
         {d.inspecoes.map((i) => { const r = RES[i.resultado] || ["—", C.muted]; return (
           <div key={i.id} onClick={() => abrir(i.id)} style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 0", borderTop: `1px solid ${C.border}`, cursor: "pointer", flexWrap: "wrap" }}>

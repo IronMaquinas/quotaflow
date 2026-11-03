@@ -7,12 +7,14 @@
 //   GET  /preparar/:equip?modelo_id=    modelo para inspecionar (só equipamento de locação ativa dele, modelo das rotinas)
 //   POST /enviar                        envia a inspeção (mesmo corpo do app; idempotente — fila offline)
 //   POST /contratos/:id/aceite          { assinatura_png, nome } — 14d: aceite do contrato emitido (só contrato dele)
+//   18d — 📏 GET /medicoes · POST /medicoes/abrir { contrato_id, inicio } · GET /medicoes/:id · PUT /medicoes/:id · POST /medicoes/:id/enviar
 //   GET  /inspecoes/:id                 detalhe (só inspeção feita numa locação dos contratos dele)
 
 const express = require('express');
 const router = express.Router();
 const { supabase } = require('../db');
 const CT = require('../services/contratosLocacao');
+const MD = require('../services/medicoes'); // 18d
 
 const perfisDe = (req) => (Array.isArray(req.perfis) && req.perfis.length ? req.perfis : [req.userPerfil].filter(Boolean));
 const exigirLocatario = (req, res, next) => (perfisDe(req).includes('locatario') ? next() : res.status(403).json({ erro: 'Área do locatário' }));
@@ -27,6 +29,11 @@ router.get('/painel', responder((req) => CT.painelLocatario(supabase, req.tenant
 router.get('/preparar/:equip', responder((req) => CT.prepararLocatario(supabase, req.tenantId, req.userId, req.params.equip, req.query.modelo_id || null)));
 router.post('/enviar', responder(async (req) => CT.enviarLocatario(supabase, req.tenantId, await eu(req), req.body || {})));
 router.post('/contratos/:id/aceite', responder(async (req) => CT.aceitarLocatario(supabase, req.tenantId, await eu(req), req.params.id, req.body || {}))); // 14d
+router.get('/medicoes', responder((req) => MD.painelLocatario(supabase, req.tenantId, req.userId)));
+router.post('/medicoes/abrir', responder(async (req) => MD.acaoLocatario(supabase, req.tenantId, await eu(req), 'abrir', { contratoId: req.body?.contrato_id, inicio: req.body?.inicio })));
+router.get('/medicoes/:id', responder(async (req) => MD.acaoLocatario(supabase, req.tenantId, await eu(req), 'ver', { medicaoId: req.params.id })));
+router.put('/medicoes/:id', responder(async (req) => MD.acaoLocatario(supabase, req.tenantId, await eu(req), 'salvar', { medicaoId: req.params.id, body: req.body || {} })));
+router.post('/medicoes/:id/enviar', responder(async (req) => MD.acaoLocatario(supabase, req.tenantId, await eu(req), 'enviar', { medicaoId: req.params.id })));
 router.get('/inspecoes/:id', responder((req) => CT.detalheLocatario(supabase, req.tenantId, req.userId, req.params.id)));
 
 module.exports = router;

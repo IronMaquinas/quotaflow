@@ -44,6 +44,9 @@ function validar(body, parcial = false) {
   if (!parcial || tem('inicio')) { if (!DATA.test(String(body.inicio || ''))) return { erro: 'Informe a data de início' }; out.inicio = body.inicio; }
   if (tem('fim_previsto')) { if (body.fim_previsto && !DATA.test(String(body.fim_previsto))) return { erro: 'Fim previsto inválido' }; out.fim_previsto = body.fim_previsto || null; }
   if (out.inicio && out.fim_previsto && out.fim_previsto < out.inicio) return { erro: 'O fim previsto é antes do início' };
+  // 18d: 📏 medição — ciclo (dia 1–28; vazio = mês do calendário) e os toggles do locatário
+  if (tem('medicao_dia_inicio')) { const d = body.medicao_dia_inicio === '' || body.medicao_dia_inicio == null ? null : Number(body.medicao_dia_inicio); if (d != null && !(Number.isInteger(d) && d >= 1 && d <= 28)) return { erro: 'Início do ciclo de medição: um dia de 1 a 28 (ou marque "Mês do calendário")' }; out.medicao_dia_inicio = d === 1 ? null : d; }
+  for (const k of ['checklist_locatario', 'medicao_locatario']) if (tem(k)) out[k] = body[k] === true;
   return { dados: out };
 }
 
@@ -61,7 +64,8 @@ async function montar(supabase, tenantId, contratos, { comAcessos = true } = {})
     const minhas = locs.filter((l) => String(l.contrato_id) === String(c.id));
     const equipamentos = minhas.map((l) => { const e = equips.get(String(l.equipamento_id)) || {}; const pe = painel[String(l.equipamento_id)] || {};
       return { locacao_id: l.id, equipamento_id: l.equipamento_id, tag: e.tag, nome: e.nome, ativa: l.status === 'ativa', inicio: l.inicio, fim_previsto: l.fim_previsto || null, fim_real: l.fim_real,
-        entrega_inspecao_id: l.entrega_inspecao_id, devolucao_inspecao_id: l.devolucao_inspecao_id, valor_mensal: l.valor_mensal ?? null, bloqueado: l.status === 'ativa' && !!e.bloqueado,
+        entrega_inspecao_id: l.entrega_inspecao_id, devolucao_inspecao_id: l.devolucao_inspecao_id, valor_mensal: l.valor_mensal ?? null,
+        medicao_unidade: l.medicao_unidade || null, medicao_qtd: l.medicao_qtd ?? null, medicao_valor: l.medicao_valor ?? null, // 18d: escopo bloqueado: l.status === 'ativa' && !!e.bloqueado,
         rotinas: l.status === 'ativa' ? (pe.rotinas || []).filter((r) => !r.locacao_id || String(r.locacao_id) === String(l.id)) : [] }; })
       .sort((a, b) => (b.ativa - a.ativa) || String(a.tag).localeCompare(String(b.tag)));
     const acessos = vinc.filter((v) => String(v.contrato_id) === String(c.id)).map((v) => { const u = usuarios.find((x) => String(x.id) === String(v.usuario_id)); return u ? { usuario_id: u.id, nome: u.nome, email: u.email, ativo: !!u.ativo } : null; }).filter(Boolean);
@@ -97,6 +101,11 @@ async function editar(supabase, tenantId, id, body = {}) {
   const v = validar({ inicio: c.inicio, ...body }, true); if (v.erro) return { status: 400, erro: v.erro };
   const { data, error } = await supabase.from('locacao_contratos').update(v.dados).eq('id', c.id).eq('tenant_id', tenantId).select();
   if (error) throw new Error(error.message);
+  // 18d: mudou "Checklist pelo locatário" → as rotinas das locações ativas do contrato passam para quem faz agora
+  if (v.dados.checklist_locatario !== undefined && v.dados.checklist_locatario !== !!c.checklist_locatario) {
+    const ativas = (await q(supabase.from('equipamento_locacoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id))).filter((l) => l.status === 'ativa');
+    for (const l of ativas) await supabase.from('equipamento_rotinas').update({ responsavel: v.dados.checklist_locatario ? 'locatario' : 'empresa' }).eq('tenant_id', tenantId).eq('locacao_id', l.id);
+  }
   // 14d.6: equipamentos que seguiam o fim previsto do contrato acompanham a nova data (os que têm data própria ficam como estão)
   if (v.dados.fim_previsto !== undefined && String(v.dados.fim_previsto || '') !== String(c.fim_previsto || '')) {
     const locs = await q(supabase.from('equipamento_locacoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id));
@@ -108,7 +117,10 @@ async function editar(supabase, tenantId, id, body = {}) {
 }
 async function adicionarEquipamento(supabase, tenantId, quem, id, body = {}) {
   const c = await doTenant(supabase, tenantId, id); if (!c || c.status !== 'ativo') return { status: 400, erro: 'Contrato não encontrado ou encerrado' };
-  return R.locar(supabase, tenantId, quem, body.equipamento_id, { contrato_id: c.id, inicio: body.inicio || hojeBR(), fim_previsto: body.fim_previsto || null, local: body.local, rotina: body.rotina || null }); // 14d.6: término previsto por equipamento (vazio = o do contrato)
+  const rotina = body.rotina ? { ...body.rotina, responsavel: c.checklist_locatario === false ? 'empresa' : 'locatario' } : null; // 18d: toggle "Checklist pelo locatário" (sem a 062 = locatário, como antes)
+  const r = await R.locar(supabase, tenantId, quem, body.equipamento_id, { contrato_id: c.id, inicio: body.inicio || hojeBR(), fim_previsto: body.fim_previsto || null, local: body.local, rotina });
+  if (!r.erro && (body.medicao_unidade || body.medicao_qtd != null)) { const l = (await q(supabase.from('equipamento_locacoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id).eq('equipamento_id', body.equipamento_id))).find((x) => x.status === 'ativa'); if (l) { const e = await escopoEquipamento(supabase, tenantId, c.id, body.equipamento_id, body); if (e.erro) return e; } }
+  return r; // 14d.6: término previsto por equipamento (vazio = o do contrato)
 }
 /** 14d.3: tirar o equipamento do contrato SEM devolução (lançado por engano / cliente desistiu antes de sair).
  *  Só se a locação ainda não tem nenhuma inspeção — depois disso, o caminho é 🏠 Devolver (fica no histórico). */
@@ -123,6 +135,20 @@ async function cancelarEquipamento(supabase, tenantId, id, equipId) {
   if (error) throw new Error(error.message);
   const e = (await q(supabase.from('equipamentos').select('*').eq('tenant_id', tenantId).eq('id', equipId)))[0];
   if (e && String(e.locacao_id) === String(l.id)) { const { error: eu } = await supabase.from('equipamentos').update({ situacao: 'base', locacao_id: null }).eq('id', e.id).eq('tenant_id', tenantId); if (eu) throw new Error(eu.message); }
+  return { ok: true };
+}
+/** 18d: 📏 escopo da medição do equipamento no contrato — { medicao_unidade: hora|dia|fixo|'', medicao_qtd, medicao_valor } */
+async function escopoEquipamento(supabase, tenantId, id, equipId, body = {}) {
+  const c = await doTenant(supabase, tenantId, id); if (!c) return { status: 404, erro: 'Contrato não encontrado' };
+  const l = (await q(supabase.from('equipamento_locacoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id).eq('equipamento_id', equipId))).find((x) => x.status === 'ativa');
+  if (!l) return { status: 400, erro: 'Este equipamento não está locado neste contrato' };
+  const un = body.medicao_unidade || null; if (un && !['hora', 'dia', 'fixo'].includes(un)) return { status: 400, erro: 'Unidade: hora, dia ou valor fixo mensal' };
+  const num = (v) => (v === '' || v == null ? null : Number(String(v).replace(',', '.')));
+  const qtd = un === 'fixo' ? 1 : num(body.medicao_qtd); const val = num(body.medicao_valor);
+  if (un && un !== 'fixo' && !(qtd > 0)) return { status: 400, erro: 'Informe a quantidade programada por ciclo (ex.: 200 h, 22 dias)' };
+  if (val != null && !(val >= 0)) return { status: 400, erro: 'Valor unitário inválido' };
+  const { error } = await supabase.from('equipamento_locacoes').update({ medicao_unidade: un, medicao_qtd: un ? qtd : null, medicao_valor: val }).eq('id', l.id).eq('tenant_id', tenantId);
+  if (error) { if (/medicao_/.test(error.message)) return { status: 409, erro: 'Rode a migration 062 antes (medição da locação)' }; throw new Error(error.message); }
   return { ok: true };
 }
 /** 14d.3: mudar a data de saída do equipamento (cliente adiou/antecipou) · 14d.6: e o término previsto ({ inicio, fim_previsto }) */
@@ -267,5 +293,5 @@ async function detalheLocatario(supabase, tenantId, usuarioId, inspId) {
   return r;
 }
 
-module.exports = { cancelarEquipamento, alterarInicioEquipamento, soLocatario, perfisDe, validar, listar, criar, editar, adicionarEquipamento, devolverEquipamento, encerrar, criarAcesso, removerAcesso, pausarUsuario,
+module.exports = { escopoEquipamento, cancelarEquipamento, alterarInicioEquipamento, soLocatario, perfisDe, validar, listar, criar, editar, adicionarEquipamento, devolverEquipamento, encerrar, criarAcesso, removerAcesso, pausarUsuario,
   escopoLocatario, painelLocatario, aceitarLocatario, permissaoInspecao, prepararLocatario, enviarLocatario, detalheLocatario };

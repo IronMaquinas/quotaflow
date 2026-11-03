@@ -262,6 +262,8 @@ if (process.env.CRON_INTERNO === '1') {
     require('./services/monitorCnpj').rodarCiclo(require('./db').supabase).then((r) => console.log('[CRON] Monitor de CNPJs:', JSON.stringify(r))).catch(console.error);
     // etapa 15b: BID com validade vencendo em 2 dias → e-mail ao responsável
     require('./services/bidsCliente').avisosDiarios(require('./db').supabase).then((r) => console.log('[CRON] Avisos de BID:', JSON.stringify(r))).catch(console.error);
+    // etapa 18d: 📏 lembretes ao locatário — medição do ciclo e inspeção atrasada (toggles do contrato)
+    require('./services/medicoes').avisosDiarios(require('./db').supabase).catch(console.error);
   }, { timezone: 'America/Sao_Paulo' });
 }
 
