@@ -1,4 +1,4 @@
-// backend/services/medicoes.js — etapa 18d · 18d.2 (simplificada): 📏 MEDIÇÃO MENSAL DO CONTRATO DE LOCAÇÃO
+// backend/services/medicoes.js — etapa 18d · 18d.2 (simplificada) · 18d.3 (em preparação acompanha o contrato): 📏 MEDIÇÃO MENSAL DO CONTRATO DE LOCAÇÃO
 //
 // 18d.2 (decidido com o Marcony, 03/11/2026 — "bem simples, sentir o mercado"; 90% são locações de valor fixo mensal):
 //   • o SISTEMA monta a medição de cada ciclo dos contratos ativos (relatório "pronto"): por equipamento, o valor mensal do
@@ -94,6 +94,7 @@ async function listar(supabase, tenantId, contratoId) {
   let ms = [];
   try { ms = await q(supabase.from('locacao_medicoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id)); } catch (e) { if (sem062(e)) return ERRO_062; throw e; }
   const hoje = hojeBR();
+  for (let k = 0; k < ms.length; k++) if (ms[k].status === 'aberta') ms[k] = await sincronizar(supabase, tenantId, ms[k], c).catch(() => ms[k]); // 18d.3
   const lista = ciclos(c, hoje).map((x) => {
     const m = ms.find((y) => y.inicio === x.inicio) || null;
     return { ...x, medicao_id: m?.id || null, status: m?.status || 'pendente', status_nome: STATUS_NOME[m?.status || 'pendente'], em_andamento: x.fim >= hoje, ...(m ? resumo(m) : {}) };
@@ -106,6 +107,7 @@ async function detalhe(supabase, tenantId, medicaoId, { cliente = false } = {}) 
   let m; try { m = await medicaoDo(supabase, tenantId, medicaoId); } catch (e) { if (sem062(e)) return ERRO_062; throw e; }
   if (!m) return { status: 404, erro: 'Medição não encontrada' };
   const c = await contratoDo(supabase, tenantId, m.contrato_id);
+  if (!cliente) m = await sincronizar(supabase, tenantId, m, c); // 18d.3
   const info = m.status === 'aprovada' && m.informativo ? m.informativo : await informativo(supabase, tenantId, c, m.inicio, m.fim);
   const emp = (await q(supabase.from('tenants').select('*').eq('id', tenantId)))[0] || {};
   return { medicao: { ...m, status_nome: (cliente ? STATUS_NOME_CLIENTE : STATUS_NOME)[m.status] || STATUS_NOME[m.status], rotulo: cicloDe(c.medicao_dia_inicio, m.inicio).rotulo, ...resumo(m) },
@@ -146,6 +148,21 @@ async function abrir(supabase, tenantId, quem, contratoId, inicio) {
     historico: [evento('gerada', quem?.usuarioNome || 'QuotaFlow')], criado_em: agora, atualizado_em: agora }]).select();
   if (error) { if (/locacao_medicoes_uk|duplicate/.test(error.message)) return { medicao: (await q(supabase.from('locacao_medicoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id))).find((m) => m.inicio === x.inicio) }; if (sem062(error)) return ERRO_062; throw new Error(error.message); }
   return { medicao: data[0] };
+}
+/** 18d.3: mantém a medição EM PREPARAÇÃO em dia com o contrato (equipamento que entrou/saiu, valor mensal ou datas que mudaram
+ *  depois que ela foi gerada). Sem revisão do comercial ainda → refaz tudo; já revisada → só acrescenta o equipamento que faltava
+ *  e tira o que não está mais no ciclo (os valores que ele digitou ficam). Medição enviada/aprovada não muda. */
+const chaveItens = (l) => JSON.stringify((l || []).map((i) => [String(i.locacao_id), i.de, i.ate, i.valor_mensal]).sort());
+async function sincronizar(supabase, tenantId, m, c = null) {
+  if (m.status !== 'aberta') return m;
+  c = c || await contratoDo(supabase, tenantId, m.contrato_id); if (!c) return m;
+  const novos = await montarItens(supabase, tenantId, c, { inicio: m.inicio, fim: m.fim });
+  if (chaveItens(novos) === chaveItens(m.itens)) return m;
+  let itens;
+  if (!m.preenchido_em) itens = novos.map((n) => { const v = (m.itens || []).find((i) => String(i.locacao_id) === String(n.locacao_id)); return v ? { ...n, obs: v.obs } : n; });
+  else itens = novos.map((n) => { const v = (m.itens || []).find((i) => String(i.locacao_id) === String(n.locacao_id)); return v ? { ...n, valor: v.valor, obs: v.obs, comentario_cliente: v.comentario_cliente } : { ...n, novo: true }; });
+  const r = await mudar(supabase, tenantId, m, { itens }, evento('atualizada com o contrato', 'QuotaFlow'));
+  return r.medicao;
 }
 /** ↻ recalcular: refaz os itens (equipamentos/valores do contrato mudaram) — só em preparação ou contestada; mantém observações */
 async function recalcular(supabase, tenantId, quem, m) {
@@ -233,6 +250,7 @@ async function pendencias(supabase, tenantId, quem = { usuarioNome: 'QuotaFlow' 
     for (const x of ciclos(c, hoje).slice(0, 3)) {
       let m = ms.find((y) => String(y.contrato_id) === String(c.id) && y.inicio === x.inicio);
       if (!m) { const r = await abrir(supabase, tenantId, quem, c.id, x.inicio).catch(() => null); m = r?.medicao; if (!m) continue; }
+      else m = await sincronizar(supabase, tenantId, m, c).catch(() => m); // 18d.3: equipamento que entrou depois de gerar
       if (m.status === 'aprovada') continue;
       out.push({ contrato_id: c.id, numero: c.numero, cliente: c.cliente, ...x, medicao_id: m.id, status: m.status, status_nome: STATUS_NOME[m.status], medicao_locatario: !!c.medicao_locatario, em_andamento: x.fim >= hoje, ...resumo(m) });
     }

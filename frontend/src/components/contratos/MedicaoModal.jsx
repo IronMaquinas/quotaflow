@@ -62,7 +62,7 @@ export default function MedicaoModal({ C, s, medicaoId, base = "/contratos", mod
             <tbody>{(m.itens || []).map((i) => { const k = String(i.locacao_id); const x = ed[k] || {}; const v = editavel ? num(x.valor) : i.valor;
               const ajustado = v != null && i.valor_recomendado != null && Math.abs(v - i.valor_recomendado) > 0.005;
               return <tr key={k} style={{ borderTop: `1px solid ${C.border}`, verticalAlign: "top" }}>
-                <td style={{ padding: 6 }}><b>{i.tag}</b> <span style={{ color: C.textSub }}>{i.nome}</span></td>
+                <td style={{ padding: 6 }}><b>{i.tag}</b> <span style={{ color: C.textSub }}>{i.nome}</span>{!cliente && i.novo && <div style={{ fontSize: 11.5, color: C.warn }}>entrou no contrato depois da revisão — confira o valor</div>}</td>
                 <td style={{ padding: 6, whiteSpace: "nowrap", color: C.textSub }}>{dataBR(i.de)} a {dataBR(i.ate)}<div style={{ fontSize: 12.5 }}>{i.dias} de {i.dias_ciclo} dia(s){i.dias < i.dias_ciclo ? " · proporcional" : ""}</div></td>
                 <td style={{ padding: 6, textAlign: "right", whiteSpace: "nowrap" }}>{i.valor_mensal != null ? brl(i.valor_mensal) : <span style={{ color: C.warn }}>sem valor no contrato</span>}</td>
                 {!cliente && <td style={{ padding: 6, textAlign: "right", whiteSpace: "nowrap", color: C.textSub }}>{brl(i.valor_recomendado)}</td>}

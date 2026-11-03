@@ -171,7 +171,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato })
         {aberto.equipamentos.length === 0 && <div style={{ fontSize: 13, color: C.muted, padding: "6px 0" }}>Nenhum equipamento neste contrato.</div>}
 
         <div style={{ display: "flex", alignItems: "center", marginTop: 16, marginBottom: 4 }}>{/* 18d */}
-          <div style={{ fontWeight: 700, flex: 1 }}>📏 Medições <span style={{ fontWeight: 400, fontSize: 12, color: C.muted }}>· ciclo {aberto.medicao_dia_inicio ? `do dia ${aberto.medicao_dia_inicio}` : "mês do calendário"}{aberto.medicao_vencimento_dia ? ` · vencimento dia ${String(aberto.medicao_vencimento_dia).padStart(2, "0")}` : ""} · {aberto.medicao_locatario ? "você revisa e envia, o cliente aprova" : "a empresa revisa e fecha"} · valores do contrato, proporcionais aos dias</span></div>
+          <div style={{ fontWeight: 700, flex: 1 }}>📏 Medições <span style={{ fontWeight: 400, fontSize: 12, color: C.muted }}>· ciclo {aberto.medicao_dia_inicio ? `do dia ${aberto.medicao_dia_inicio}` : "mês do calendário"}{aberto.medicao_vencimento_dia ? ` · vencimento dia ${String(aberto.medicao_vencimento_dia).padStart(2, "0")}` : ""} · {aberto.medicao_locatario ? "você revisa e envia, o cliente aprova" : "a empresa revisa e fecha"} · uma medição por mês com todos os equipamentos · valores do contrato, proporcionais aos dias</span></div>
         </div>
         {ciclosMed ? <CiclosMedicao C={C} s={s} ciclos={ciclosMed} podeAbrir={editar} onAbrir={(x) => abrirCiclo(aberto.id, x)} /> : <div style={{ fontSize: 12.5, color: C.muted }}>Rode a migration 062 para usar a medição.</div>}
 
