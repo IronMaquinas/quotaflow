@@ -8,7 +8,7 @@
 //   POST   /api/tarefas/:id/comentario          { texto }
 //   POST   /api/tarefas/:id/anexos              { nome, mime, base64 } evidência · GET /:id/anexos/:anexo (link) · DELETE /:id/anexos/:anexo
 //   18g.1 🧾 tarefa fiscal (origem 'fiscal'): POST /:id/fiscal/dispensar { motivo } · POST /:id/fiscal/:item { numero, chave, pdf:{nome,mime,base64}, xml:{nome,base64} }
-//         (item = nfe | cte | averbacao | mdfe) · DELETE /:id/fiscal/:item/:entrada · GET / sincroniza antes (cria/atualiza a tarefa de cada trecho)
+//         (item = nfe | cte | averbacao | mdfe) · 18g.1.1: { entrada, pdf } completa com o PDF a entrada salva só com o XML · DELETE /:id/fiscal/:item/:entrada · GET / sincroniza antes (cria/atualiza a tarefa de cada trecho)
 //   18b.2: tarefa que nasceu de outra tela (ex.: 📣 prospecção) só se encerra lá — 409 (não desloga)
 const express = require("express");
 const router = express.Router();

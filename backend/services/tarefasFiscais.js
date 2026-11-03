@@ -7,6 +7,7 @@
 //   A tarefa conclui sozinha com os 4 ✓; "Dispensar" (com justificativa) cancela — carga própria, transporte interno…
 //   Espelho com a AT: o PDF anexado na tarefa aparece na AT do trecho (NF-e e CT-e em todas; MDF-e na AT da placa, ou na única AT);
 //   o que for anexado direto na AT marca a tarefa. Sincronização preguiçosa (ao abrir o ✅ Plano e a Mesa) + após o aceite do BID.
+//   18g.1.1: { entrada, pdf } completa com o PDF um documento salvo só com o XML.
 //   Sem a migration 066 (tarefas.checklist) nada é criado.
 const crypto = require('crypto');
 
@@ -236,6 +237,22 @@ async function registrarDoc(supabase, tenantId, quem, id, item, body = {}) {
   const t = await tarefaFiscal(supabase, tenantId, id); if (!t) return { status: 404, erro: 'Tarefa fiscal não encontrada' };
   if (!('checklist' in t)) return { status: 409, erro: 'Rode a migration 066 antes (documentos fiscais)' };
   if (['cancelada'].includes(t.status)) return { status: 409, erro: 'Tarefa dispensada/cancelada' };
+  if (body.entrada) { // 18g.1.1: completar com o PDF uma entrada que foi salva só com o XML
+    const ck0 = t.checklist || novoChecklist(); const e0 = jsonArr(ck0[item]?.entradas).find((x) => x.id === body.entrada);
+    if (!e0) return { status: 404, erro: 'Documento não encontrado' };
+    if (e0.pdf_anexo) return { status: 409, erro: 'Este documento já tem o PDF' };
+    if (!body.pdf?.base64) return { status: 400, erro: 'Anexe o PDF' };
+    const pdf0 = await subir(supabase, tenantId, t, body.pdf, PDF); if (pdf0?.erro) return { status: 400, erro: pdf0.erro === true ? 'PDF (ou imagem JPG/PNG do documento)' : pdf0.erro };
+    const ck = { ...ck0, [item]: { entradas: jsonArr(ck0[item]?.entradas).map((x) => (x.id === e0.id ? { ...x, pdf_anexo: pdf0.id } : x)) } };
+    const { _buf, ...an } = pdf0; const st = statusPelo(t, ck);
+    const hist = [entrada(quem, 'anexo', { texto: `📄 PDF do ${ITENS[item]}${e0.numero ? ` nº ${e0.numero}` : ''}` })];
+    if (st !== t.status) hist.push(entrada(quem, 'status', { campo: 'situação', de: t.status, para: st === 'concluida' ? 'Concluída' : 'Em andamento', texto: st === 'concluida' ? 'Concluída sozinha: NF-e, CT-e, averbação e MDF-e ✓' : null }));
+    const { error } = await supabase.from('tarefas').update({ checklist: ck, anexos: [...jsonArr(t.anexos), { ...an, por: quem?.nome || null, fiscal: item }], status: st, historico: [...jsonArr(t.historico), ...hist] }).eq('id', t.id).eq('tenant_id', tenantId);
+    if (error) throw new Error(error.message);
+    const pvId0 = String(t.origem_ref || '').split(':')[0]; if (pvId0) await sincronizar(supabase, tenantId, { pvId: pvId0, quem }).catch(() => null);
+    const fim = (await q(supabase.from('tarefas').select('*').eq('tenant_id', tenantId).eq('id', t.id)))[0];
+    return { tarefa: fim, resumo: resumo(fim.checklist) };
+  }
   let dados = null;
   if (body.xml?.base64) {
     if (item === 'averbacao') return { status: 400, erro: 'A averbação não tem leitura de XML — informe o número' };
@@ -251,7 +268,7 @@ async function registrarDoc(supabase, tenantId, quem, id, item, body = {}) {
   const xml = body.xml?.base64 ? await subir(supabase, tenantId, t, { ...body.xml, mime: 'application/xml' }, { 'application/xml': 'xml' }) : null; if (xml?.erro) return { status: 400, erro: xml.erro };
   const ck0 = t.checklist || novoChecklist();
   const dup = chave && jsonArr(ck0[item]?.entradas).some((e) => e.chave === chave);
-  if (dup) return { status: 409, erro: `Esse ${ITENS[item]} (chave ${chave.slice(-8)}) já está na tarefa` };
+  if (dup) return { status: 409, erro: `Esse ${ITENS[item]} (chave ${chave.slice(-8)}) já está na tarefa${jsonArr(ck0[item]?.entradas).find((e) => e.chave === chave && !e.pdf_anexo) ? ' — use "＋ anexar PDF" na linha dele' : ''}` };
   const ent = { id: crypto.randomBytes(5).toString('hex'), numero, chave, pdf_anexo: pdf?.id || null, xml_anexo: xml?.id || null, dados, por: quem?.nome || null, em: new Date().toISOString(), origem: 'tarefa' };
   const ck = { ...ck0, [item]: { entradas: [...jsonArr(ck0[item]?.entradas), ent] } };
   const novosAnexos = [pdf, xml].filter(Boolean).map(({ _buf, ...a }) => ({ ...a, por: quem?.nome || null, fiscal: item }));

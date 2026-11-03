@@ -1,8 +1,10 @@
 // components/plano/ChecklistFiscal.jsx — etapa 18g.1: 🧾 documentos da tarefa fiscal (TSK-TR-…) no ✅ Plano
 //   NF-e → CT-e → averbação → MDF-e. Cada um: nº/chave + PDF (dá o ✓) + XML (opcional: preenche e confere as chaves).
+//   18g.1.1: XML primeiro — ao escolher, já mostra o que foi lido e preenche nº e chave (a conferência oficial é no servidor).
 //   O que foi anexado direto na AT aparece aqui ("da AT-…"). Dispensar = cancelar com justificativa (fica no histórico).
 import { useState } from "react";
 import apiService from "../../services/apiService";
+import { lerXmlFiscal } from "../../utils/lerXmlFiscal"; // 18g.1.1: prévia do XML no navegador
 
 export const ITENS_FISCAIS = [
   ["nfe", "NF-e", "Nota fiscal da mercadoria — pegue com o cliente (remetente)"],
@@ -19,10 +21,18 @@ export default function ChecklistFiscal({ C, s, tarefa, onAtualizou, onErro, onO
   const ck = tarefa.checklist || {}; const r = tarefa.fiscal || { itens: {}, alertas: [], feitos: 0, total: 4 };
   const [abrindo, setAbrindo] = useState(null); // item com o formulário aberto
   const [f, setF] = useState({ numero: "", chave: "", pdf: null, xml: null });
+  const [lido, setLido] = useState(null); // { resumo } | { erro }
   const [ocupado, setOcupado] = useState(false);
   const [disp, setDisp] = useState(null); // motivo da dispensa (string) quando aberto
   const encerrada = ["cancelada"].includes(tarefa.status);
-  const abrir = (k) => { setAbrindo(abrindo === k ? null : k); setF({ numero: "", chave: "", pdf: null, xml: null }); };
+  const abrir = (k) => { setAbrindo(abrindo === k ? null : k); setF({ numero: "", chave: "", pdf: null, xml: null }); setLido(null); };
+  const escolherXml = async (k, arq) => {
+    if (!arq) { setF((v) => ({ ...v, xml: null })); setLido(null); return; }
+    const txt = await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result || "")); fr.onerror = () => ok(""); fr.readAsText(arq); });
+    const r0 = lerXmlFiscal(k, txt);
+    if (r0.erro) { setF((v) => ({ ...v, xml: null })); setLido({ erro: r0.erro }); return; }
+    setF((v) => ({ ...v, xml: arq, numero: v.numero || r0.numero || "", chave: v.chave || r0.chave || "" })); setLido({ resumo: r0.resumo });
+  };
 
   const enviar = async (k) => {
     setOcupado(true);
@@ -35,12 +45,17 @@ export default function ChecklistFiscal({ C, s, tarefa, onAtualizou, onErro, onO
       await onAtualizou?.();
     } catch (e) { onErro?.(e); } finally { setOcupado(false); }
   };
+  const completarPdf = async (k, e, arq) => { // 18g.1.1: entrada salva só com o XML → anexa o PDF depois
+    setOcupado(true);
+    try { const res = await apiService.post(`/tarefas/${tarefa.id}/fiscal/${k}`, { entrada: e.id, pdf: { nome: arq.name, mime: mimeDe(arq), base64: await lerBase64(arq) } }); onOk?.(`📄 PDF anexado${res?.resumo ? ` — ${res.resumo.feitos}/${res.resumo.total}` : ""}`); await onAtualizou?.(); }
+    catch (er) { onErro?.(er); } finally { setOcupado(false); }
+  };
   const remover = async (k, e) => { setOcupado(true); try { await apiService.delete(`/tarefas/${tarefa.id}/fiscal/${k}/${e.id}`); onOk?.("Documento removido"); await onAtualizou?.(); } catch (er) { onErro?.(er); } finally { setOcupado(false); } };
   const abrirAnexo = async (id) => { try { const x = await apiService.get(`/tarefas/${tarefa.id}/anexos/${id}`); if (x?.url) window.open(x.url, "_blank"); } catch (e) { onErro?.(e); } };
   const dispensar = async () => { setOcupado(true); try { await apiService.post(`/tarefas/${tarefa.id}/fiscal/dispensar`, { motivo: disp }); setDisp(null); onOk?.(`${tarefa.numero || "Tarefa"} dispensada`); await onAtualizou?.(); } catch (e) { onErro?.(e); } finally { setOcupado(false); } };
 
-  const arquivo = (rot, k, accept) => <label style={{ ...s.btn(false), display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", fontSize: 12, cursor: "pointer", color: f[k] ? C.accent : C.text }}>
-    {f[k] ? `✓ ${f[k].name}` : rot}<input type="file" aria-label={rot} accept={accept} style={{ display: "none" }} onChange={(e) => { const x = e.target.files?.[0]; setF((v) => ({ ...v, [k]: x || null })); e.target.value = ""; }} /></label>;
+  const arquivo = (rot, k, accept, aoEscolher) => <label style={{ ...s.btn(false), display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", fontSize: 12, cursor: "pointer", color: f[k] ? C.accent : C.text }}>
+    {f[k] ? `✓ ${f[k].name}` : rot}<input type="file" aria-label={rot} accept={accept} style={{ display: "none" }} onChange={(e) => { const x = e.target.files?.[0]; if (aoEscolher) aoEscolher(x || null); else setF((v) => ({ ...v, [k]: x || null })); e.target.value = ""; }} /></label>;
 
   return <div>
     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
@@ -65,7 +80,7 @@ export default function ChecklistFiscal({ C, s, tarefa, onAtualizou, onErro, onO
           {e.pdf_anexo && <span style={{ color: C.accent, cursor: "pointer" }} onClick={() => abrirAnexo(e.pdf_anexo)}>📄 PDF</span>}
           {e.xml_anexo && <span style={{ color: C.accent, cursor: "pointer" }} onClick={() => abrirAnexo(e.xml_anexo)}>🧩 XML</span>}
           {e.origem === "at" && <span style={{ color: C.accent, cursor: "pointer" }} onClick={() => window.dispatchEvent(new CustomEvent("qf-abrir-at", { detail: e.at_id }))}>📎 {e.nome} — da {e.at_numero}</span>}
-          {k !== "averbacao" && !e.pdf_anexo && e.origem !== "at" && <span style={{ color: C.warn }}>⚠️ falta o PDF (é o que dá o ✓)</span>}
+          {k !== "averbacao" && !e.pdf_anexo && e.origem !== "at" && <span style={{ color: C.warn }}>⚠️ falta o PDF (é o que dá o ✓){!encerrada && <label style={{ marginLeft: 8, color: C.accent, cursor: "pointer", fontWeight: 600 }}>＋ anexar PDF<input type="file" aria-label={`PDF do ${nome} ${e.numero || ""}`} accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" style={{ display: "none" }} onChange={(ev) => { const x = ev.target.files?.[0]; ev.target.value = ""; if (x) completarPdf(k, e, x); }} /></label>}</span>}
           {e.dados?.placa && <span style={{ color: C.textSub }}>🚛 {[e.dados.placa, ...(e.dados.reboques || [])].join(" + ")}{e.dados.condutores?.[0]?.nome ? ` · 👤 ${e.dados.condutores[0].nome}` : ""}</span>}
           {e.dados?.valor_frete != null && <span style={{ color: C.textSub }}>frete R$ {Number(e.dados.valor_frete).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>}
           {e.dados?.peso != null && k === "nfe" && <span style={{ color: C.textSub }}>{Number(e.dados.peso).toLocaleString("pt-BR")} kg</span>}
@@ -73,12 +88,14 @@ export default function ChecklistFiscal({ C, s, tarefa, onAtualizou, onErro, onO
           {!encerrada && e.origem !== "at" && <button type="button" aria-label={`Remover ${nome}`} disabled={ocupado} onClick={() => remover(k, e)} style={{ background: "transparent", border: "none", color: C.danger, cursor: "pointer", fontSize: 12 }}>🗑</button>}
         </div>)}
         {abrindo === k && <div style={{ padding: "10px 0 2px 32px", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+          {k !== "averbacao" && arquivo("🧩 XML (preenche sozinho)", "xml", ".xml,text/xml,application/xml", (x) => escolherXml(k, x))}
           <input aria-label={`Número ${nome}`} value={f.numero} onChange={(e) => setF({ ...f, numero: e.target.value })} placeholder={k === "averbacao" ? "Nº da averbação *" : "Nº (opcional se tiver o XML)"} style={{ ...s.input, width: 190, marginBottom: 0 }} />
           {k !== "averbacao" && <input aria-label={`Chave ${nome}`} value={f.chave} onChange={(e) => setF({ ...f, chave: e.target.value })} placeholder="Chave de acesso (44 dígitos)" style={{ ...s.input, width: 300, marginBottom: 0, fontFamily: "ui-monospace, monospace", fontSize: 12 }} />}
           {arquivo(k === "averbacao" ? "📄 Comprovante (opcional)" : "📄 PDF *", "pdf", ".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png")}
-          {k !== "averbacao" && arquivo("🧩 XML (preenche sozinho)", "xml", ".xml,text/xml,application/xml")}
           <button type="button" disabled={ocupado || (k === "averbacao" ? !f.numero.trim() : !(f.pdf || f.xml))} onClick={() => enviar(k)}
             style={{ ...s.btn(!ocupado && (k === "averbacao" ? !!f.numero.trim() : !!(f.pdf || f.xml))), padding: "7px 14px", fontSize: 12.5, cursor: "pointer" }}>{ocupado ? "Enviando…" : "Salvar"}</button>
+          {lido && <div style={{ flexBasis: "100%", fontSize: 12.5, color: lido.erro ? C.danger : C.success }}>{lido.erro ? `⚠️ ${lido.erro}` : `✓ XML lido: ${lido.resumo}`}</div>}
+          {k !== "averbacao" && f.xml && !f.pdf && <div style={{ flexBasis: "100%", fontSize: 12, color: C.warn }}>Falta o PDF ({{ nfe: "DANFE", cte: "DACTE", mdfe: "DAMDFE" }[k]}) — é ele que dá o ✓ (o motorista apresenta na fiscalização). Dá para salvar agora e anexar depois.</div>}
         </div>}
       </div>;
     })}
