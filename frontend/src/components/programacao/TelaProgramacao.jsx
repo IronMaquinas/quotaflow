@@ -3,11 +3,13 @@
 //   🚛 ATs        — lista com filtro de status, ⚠ conflito, ⏰ coleta passou → abre a ficha
 //                   18f: 🔎 pesquisa do histórico — período + motorista + equipamento da frota + texto (AT, item, série, cliente…) · ⬇ CSV
 //   🗓 Agenda     — frota (equipamentos e motoristas) × 14 dias; conflito em vermelho
+//   📊 Utilização — 18f.1: utilização (passado) × alocação (futuro) por equipamento e motorista + 📑 relatório detalhado
 import { useState, useEffect, useMemo } from "react";
 import apiService from "../../services/apiService";
 import FichaAT, { COR_STATUS, NOME_STATUS, dataHora } from "./FichaAT";
 import MesaProgramacao from "./MesaProgramacao";
 import FiltroPeriodo, { faixaPeriodo } from "../shared/FiltroPeriodo"; // 18f
+import PainelUtilizacao from "./PainelUtilizacao"; // 18f.1
 
 const hoje = () => new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
 const somaDias = (d, n) => new Date(new Date(`${d}T12:00:00Z`).getTime() + n * 86400000).toISOString().slice(0, 10);
@@ -118,7 +120,7 @@ export default function TelaProgramacao({ C, s, perfis = [], abrirAT = null }) {
         <button type="button" onClick={carregar} style={{ ...s.btn(false), cursor: "pointer", color: C.text, padding: "6px 12px", fontSize: 12 }}>↻ Atualizar</button>
       </div>
       <div style={{ display: "flex", gap: 8, marginBottom: 14, flexWrap: "wrap" }}>
-        {abaBt("programar", "🧩 Mesa de programação", totalFaltam)}{abaBt("ats", "🚛 ATs", (ats || []).filter((e) => e.conflitos?.length || e.atrasada).length ? "⚠" : null)}{abaBt("agenda", "🗓 Agenda da frota", ag?.com_conflito ? `${ag.com_conflito} ⚠` : null)}
+        {abaBt("programar", "🧩 Mesa de programação", totalFaltam)}{abaBt("ats", "🚛 ATs", (ats || []).filter((e) => e.conflitos?.length || e.atrasada).length ? "⚠" : null)}{abaBt("agenda", "🗓 Agenda da frota", ag?.com_conflito ? `${ag.com_conflito} ⚠` : null)}{abaBt("utilizacao", "📊 Utilização")}
       </div>
 
       {aba === "programar" && <MesaProgramacao C={C} s={s} pedidos={pedidos} podeLiberar={podeLiberar} onAbrirAT={setFicha} onSalvou={carregar} onErro={erro} onOk={ok} />}
@@ -151,6 +153,8 @@ export default function TelaProgramacao({ C, s, perfis = [], abrirAT = null }) {
               <td style={{ padding: "8px 10px", borderTop: `1px solid ${C.border}` }}>{e.conflitos?.length ? <span title={e.conflitos.map((c) => c.texto).join("\n")} style={s.tag(C.warn)}>⚠ conflito</span> : null}</td>
             </tr>)}</tbody></table></div>}
       </>}
+
+      {aba === "utilizacao" && <PainelUtilizacao C={C} s={s} />}
 
       {aba === "agenda" && <>
         <div style={{ display: "flex", gap: 8, marginBottom: 10, alignItems: "center", flexWrap: "wrap" }}>

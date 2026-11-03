@@ -49,6 +49,6 @@ function diasOperacionais(de, ate, cal) {
   return out;
 }
 
-const descrever = (cfg) => `${cfg.dias_semana.map((n) => NOMES[n]).join(', ')}${cfg.descontar_feriados ? ' · sem feriados' : ''}`;
+const descrever = (cfg) => `${cfg.dias_semana.map((n) => NOMES[n]).join(', ')}${cfg.descontar_feriados ? ' · feriados não contam' : ' · feriados contam'}`;
 
 module.exports = { obter, salvar, calendario, diasOperacionais, ehOperacional, descrever, PADRAO, NOMES, _lerDias: lerDias };

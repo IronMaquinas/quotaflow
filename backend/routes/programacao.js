@@ -14,12 +14,14 @@
 //   16e: POST /execucoes/:id/fluxo/:etapa/liberar { motivo } (gestor/admin) · POST /pvs/:id/at e PUT aceitam { fluxo: [...] }
 //   16c: POST /docs { motorista_id, cavalo_id, implementos, inicio, fim } · GET /documentos/:id · DELETE /execucoes/:id (rascunho)
 //        POST /pvs/:id/at e PUT /execucoes/:id aceitam { rascunho: true } (salva sem validar) e liberacao_docs_justificativa
+//   18f.1: GET /utilizacao?de&ate     📊 utilização (passado) × alocação (futuro) — receita só para admin/gestor
 // (403 desloga no front — trava de regra responde 409)
 
 const express = require('express');
 const router = express.Router();
 const { supabase } = require('../db');
 const E = require('../services/execucoes');
+const U = require('../services/utilizacaoFrota'); // 18f.1
 
 const perfisDe = (req) => (Array.isArray(req.perfis) && req.perfis.length ? req.perfis : [req.userPerfil].filter(Boolean));
 const PERFIS = ['admin', 'gestor', 'operacao'];
@@ -37,6 +39,7 @@ const quem = async (req) => { const { data } = await supabase.from('usuarios').s
 
 router.get('/base', responder((req) => E.base(supabase, req.tenantId)));
 router.get('/execucoes', responder(async (req) => ({ execucoes: await E.listar(supabase, req.tenantId, req.query), status: E.STATUS })));
+router.get('/utilizacao', responder((req) => U.painel(supabase, req.tenantId, { de: req.query.de, ate: req.query.ate }, { comValores: perfisDe(req).some((p) => ['admin', 'gestor'].includes(p)) })));
 router.get('/agenda', responder((req) => E.agenda(supabase, req.tenantId, req.query)));
 router.get('/pedidos', responder(async (req) => {
   const { data, error } = await supabase.from('pedidos_venda').select('*').eq('tenant_id', req.tenantId); if (error) throw new Error(error.message);
