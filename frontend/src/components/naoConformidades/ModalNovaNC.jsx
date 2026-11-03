@@ -265,9 +265,11 @@ export default function ModalNovaNC({ C, s, onFechar, onAtualizar }) {
       }
       try {
         const ehImagem = file.type.startsWith('image/');
-        const { dataUri, base64, mime_type, tamanho_bytes } = ehImagem
-          ? await comprimirImagem(file, { marca: await marcaNC(["nova NC", itemTexto || null, itemSku ? `SKU ${itemSku}` : null, lote ? `lote ${lote}` : null, numeroSerie ? `série ${numeroSerie}` : null, numeroNotaFiscal ? `NF ${numeroNotaFiscal}` : null].filter(Boolean).join(" · ")) })
-          : await lerBase64(file);
+        const arq = ehImagem ? null : await lerBase64(file);
+        const captura = ehImagem ? { ...(await marcaNC()), agora: Date.now() } : null; // hora e GPS do momento da foto
+        // 18c.3: prévia com tarja PROVISÓRIA ("nº gerado ao registrar"); ao registrar, a tarja é refeita com o nº da NC
+        const r0 = ehImagem ? await comprimirImagem(file, { marca: { ...captura, ref: "nova NC · nº gerado ao registrar" } }) : null;
+        const { dataUri, base64, mime_type, tamanho_bytes } = ehImagem ? r0 : arq;
         novos.push({
           id_local: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
           nome: file.name,
@@ -275,6 +277,7 @@ export default function ModalNovaNC({ C, s, onFechar, onAtualizar }) {
           tamanho_bytes,
           base64,
           dataUri,
+          file: ehImagem ? file : null, captura,
         });
       } catch (err) {
         setErro(`Falha ao processar "${file.name}": ${err.message}`);
@@ -348,8 +351,13 @@ export default function ModalNovaNC({ C, s, onFechar, onAtualizar }) {
           setProgressoAnexo({ atual: i + 1, total });
           const a = anexos[i];
           try {
+            let base64 = a.base64;
+            if (a.file && a.captura) { // 18c.3: agora a NC tem número — grava a tarja com ele (hora/GPS da captura)
+              const ref = [r?.nc?.numero_nc, itemTexto.trim() || null, itemSku ? `SKU ${itemSku}` : null, lote.trim() ? `lote ${lote.trim()}` : null, numeroSerie.trim() ? `série ${numeroSerie.trim()}` : null, numeroNotaFiscal.trim() ? `NF ${numeroNotaFiscal.trim()}` : null].filter(Boolean).join(' · ');
+              try { base64 = (await comprimirImagem(a.file, { marca: { ...a.captura, ref } })).base64 || base64; } catch { /* fica a prévia */ }
+            }
             await apiService.post(`/nao-conformidades/${ncCriadaId}/anexos`, {
-              base64: a.base64,
+              base64,
               mime_type: a.mime_type,
               nome_arquivo: a.nome,
             });

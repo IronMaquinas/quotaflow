@@ -145,16 +145,16 @@ const ESPERADO = {
   'migrations/039_autuacoes.sql': '22fd55f61f36a8e9daf3c22ea794cc6f', // etapa 12i (novo)
   'front:TelaAutuacoes.jsx': '950f7b2d5e24f583eaf04c5bf023e2f5', // etapa 14c.1
   'front:TelaNaoConformidades.jsx': 'eeaf572c39ce97d4bf77f7985c84867d', // etapa 12i.1
-  'services/inspecoes.js': '3b00611497483ab193b9ebeb8308e9fe', // etapa 16e.4
+  'services/inspecoes.js': '3a0b0f74f10f39e6b2d2acf0831b6aca', // etapa 18c.3
   'routes/inspecoes.js': '2957a18a385cfc150fad54cdf817b4ce', // etapa 14b.2
   'migrations/040_inspecoes.sql': '0ac35a83c9621397570d1be855727cc9', // etapa 14a (novo)
-  'front:TelaInspecoes.jsx': '38ce3918bb74a58317fbfcb14ad63b52', // etapa 14b.3.1
-  'front:ExecutarInspecao.jsx': '04b0cf69221629bc941abeee4b9e4687', // etapa 18c
+  'front:TelaInspecoes.jsx': '2d3bb8f9c6ca1d8a7ec807a46308038d', // etapa 18c.3
+  'front:ExecutarInspecao.jsx': '42aca570e936f3d535571c3c5256c2ec', // etapa 18c.3
   'front:EditorModeloInspecao.jsx': '00fc0578bd4bcba1221b7ced983727dd', // etapa 14c.1
   'front:Esquemas.jsx': 'f68e56580c3ed088c902109fcb016b9c', // etapa 14a (novo)
   'front:BibliotecaInspecoes.jsx': '104cdfc0dca69548cd4d7ab86152a5cb', // etapa 14a (novo)
   'front:filaInspecoes.js': '68d6f8212410167291b1d8c7e4b1a6e3', // etapa 18c
-  'front:gerarRelatorioInspecao.js': '53a655d7f3fe94d2efa61abfc4e35385', // etapa 14c.1
+  'front:gerarRelatorioInspecao.js': '0b12351755d3be30a0297c48a6ea8c9f', // etapa 18c.3
   'routes/inspecaoLink.js': 'e4f98c085d4ec2f7b0fa1556b267fa45', // etapa 14b.1 (novo)
   'migrations/041_inspecoes_tipos_links.sql': 'ddfd59d129a129f0ac2c3f7aef9f62aa', // etapa 14b.1 (novo)
   'front:TelaInspecaoPublica.jsx': '41f4af3384a6db56d3d13dcb0081f6d3', // etapa 14b.1 (novo)
@@ -248,19 +248,20 @@ const ESPERADO = {
   'front:TelaPlanoAcaoNova.jsx': 'fb3bf98759b0188b429d05669bdc413c', // etapa 18b.2
   'front:ConcluirTarefa.jsx': 'de3f60dc997a047cc1a29cd2a20ac92d', // etapa 18b.3 (novo)
   'front:DetalheExecutivo.jsx': '7fe748dd4a963a04f71d264bb189318f', // etapa 18b.9 (novo)
-  'front:marcaFoto.js': 'a6db258788f20a7b85bcf34ebadd5894', // etapa 18c.1
-  'front:ModalNovaNC.jsx': '09465443b4f9c1734de92b2a761616f7', // etapa 18c.1
+  'front:marcaFoto.js': '61fc663e418ff25ac21fd67a04915f5f', // etapa 18c.3
+  'front:ModalNovaNC.jsx': '4e6f0f8a0f0708ea862b475bca5df49d', // etapa 18c.3
   'front:ModalDetalheNC.jsx': 'cd3f1c3005dce6eecbc6dd71082cdaed', // etapa 18c.1
   'front:ModalNaoConformidade.jsx': '244c331b28157bb6c2f14f4736d461e6', // etapa 18c.1
 };
 
-// Antes de copiar a etapa 18c.1 — base: 18c
+// Antes de copiar a etapa 18c.3 — base: 18c.2
 const ANTES = {
-  'front:marcaFoto.js': '31c7db1cc9399a0d19c993b6fb3c637f',
-  'front:ModalNovaNC.jsx': '1b3996d0e3a167ca7f9977bdcc46427c',
-  'front:ModalDetalheNC.jsx': 'eb9f3baaa3ff44d306b496cf4e54ce9b',
-  'front:ModalNaoConformidade.jsx': '986a72bc80107f213cad599ea6877332',
-  'front:TelaRecebimento.jsx': 'b441323654332068311aba5ce9188d78',
+  'front:marcaFoto.js': 'a6db258788f20a7b85bcf34ebadd5894',
+  'front:ExecutarInspecao.jsx': 'fc0da82fc62238698b6ed8a87bce8fb3',
+  'front:ModalNovaNC.jsx': '09465443b4f9c1734de92b2a761616f7',
+  'front:TelaInspecoes.jsx': '38ce3918bb74a58317fbfcb14ad63b52',
+  'front:gerarRelatorioInspecao.js': '53a655d7f3fe94d2efa61abfc4e35385',
+  'services/inspecoes.js': '3b00611497483ab193b9ebeb8308e9fe',
 };
 
 const RAIZ = process.cwd();
@@ -298,7 +299,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18c.1)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18c.3)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

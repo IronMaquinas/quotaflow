@@ -5,6 +5,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { FundoVista } from "../components/inspecoes/Esquemas";
 import { logoHtml } from "./logoEmpresa"; // 14c
+import { idCurto } from "./marcaFoto"; // 18c.3
 
 const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const dataHora = (d) => (d ? new Date(d).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", dateStyle: "short", timeStyle: "short" }) : "—");
@@ -65,7 +66,7 @@ export function gerarHtmlInspecao({ inspecao: i, fotos = {}, imagens = {}, empre
   </style></head><body><div class="pagina">
     <div style="display:flex;justify-content:space-between;border-bottom:2px solid #111;padding-bottom:6px">
       <div>${logoHtml()}<b style="font-size:14px">${esc(empresa.razao_social || empresa.nome)}</b><div style="color:#555;font-size:10px">${empresa.cnpj ? `CNPJ ${esc(fmtCNPJ(empresa.cnpj))}` : ""}</div></div>
-      <div style="text-align:right;font-size:10px;color:#555">Relatório de inspeção ${esc(i.numero || `nº ${i.id}`)}<br/>emitido em ${dataHora(new Date())}</div>
+      <div style="text-align:right;font-size:10px;color:#555">Relatório de inspeção ${esc(i.numero || `nº ${i.id}`)}${idCurto(i.cliente_uid) ? ` · ID ${esc(idCurto(i.cliente_uid))}` : ""}<br/>emitido em ${dataHora(new Date())}</div>
     </div>
     <h1>Relatório de inspeção de equipamento</h1>
     <span class="res" style="color:${resCor};border-color:${resCor}">${resTxt}</span>${corr ? ' <span class="res" style="color:#16a34a;border-color:#16a34a">✓ CORRIGIDO</span>' : ""}

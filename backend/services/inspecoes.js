@@ -319,7 +319,9 @@ async function enviar(supabase, tenantId, executor, body = {}, opcoes = {}) {
 // ─── consulta ─────────────────────────────────────────────────────────────
 /** 14b.1.4: todos os itens não OK já resolvidos (na hora, sem OS ou OS concluída)? O resultado registrado não muda. */
 const corrigida = (i) => { const nok = (i.respostas || []).filter((r) => r.status === 'nok'); return nok.length > 0 && nok.every((r) => r.resolvido || r.resolucao_posterior || (i.os_abertas || []).some((o) => o.ponto_id === r.ponto_id && o.concluida_em)); };
-const leve = (i) => ({ id: i.id, locacao_id: i.locacao_id ?? null, numero: i.numero || null, tipo: i.tipo || 'equipamento', colaborador_id: i.colaborador_id, equipamento_id: i.equipamento_id, equipamento_nome: i.equipamento_nome, modelo_nome: i.modelo_nome, executor_nome: i.executor_nome, executor_tipo: i.executor_tipo,
+// 18c.3: código curto do cliente_uid (o mesmo que vai na tarja das fotos — ex.: 7F3A-9C21)
+const idCurto = (uid) => { const t = String(uid || '').replace(/[^a-z0-9]/gi, '').toUpperCase().slice(0, 8); return t.length === 8 ? `${t.slice(0, 4)}-${t.slice(4)}` : t || null; };
+const leve = (i) => ({ id: i.id, id_foto: idCurto(i.cliente_uid), locacao_id: i.locacao_id ?? null, numero: i.numero || null, tipo: i.tipo || 'equipamento', colaborador_id: i.colaborador_id, equipamento_id: i.equipamento_id, equipamento_nome: i.equipamento_nome, modelo_nome: i.modelo_nome, executor_nome: i.executor_nome, executor_tipo: i.executor_tipo,
   terceiro: i.terceiro, km: i.km, horimetro: i.horimetro, local: i.local, cliente: i.cliente, concluida_em: i.concluida_em, resultado: i.resultado, origem: i.origem,
   nao_ok: (i.respostas || []).filter((r) => r.status === 'nok').length, corrigida: corrigida(i), // 14b.1.4
   impede: (i.respostas || []).filter((r) => r.impede).length, os_abertas: i.os_abertas || [] });

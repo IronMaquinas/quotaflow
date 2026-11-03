@@ -14,6 +14,7 @@ import { FundoVista } from "./Esquemas";
 import * as Fila from "../../utils/filaInspecoes";
 import { abrirRelatorioInspecao, prepararJanela } from "../../utils/gerarRelatorioInspecao";
 import { LinhaRotinas, ModalRotinas, ModalLocar, ModalEncerrar, AbaCumprimento } from "./RotinasLocacao"; // 14b.2
+import { idCurto } from "../../utils/marcaFoto"; // 18c.3
 
 const RES = { aprovado: ["✓ Aprovado", "#22c55e"], ressalvas: ["⚠ Ressalvas", "#f59e0b"], reprovado: ["⛔ Reprovado", "#ef4444"] };
 const COR = { ok: "#22c55e", nok: "#ef4444", na: "#64748b" };
@@ -129,7 +130,7 @@ export default function TelaInspecoes({ C, s, onAbrirOS, onIrParaOS, embutida = 
   if (semMigration) return <div style={{ padding: 24 }}><div style={{ ...s.card, padding: 20, color: C.warn }}>Rode a migration <b>040_inspecoes.sql</b> no Supabase para usar as inspeções.</div></div>;
 
   const eqs = (painel?.equipamentos || []).filter((e) => !busca.trim() || semAcento(`${e.tag} ${e.nome} ${e.local || ""}`).includes(semAcento(busca.trim())));
-  const listaF = lista.filter((i) => (!filtroEq || String(i.equipamento_id) === String(filtroEq)) && (aba !== "hist" || !busca.trim() || semAcento(`${i.equipamento_nome} ${i.executor_nome} ${i.modelo_nome}`).includes(semAcento(busca.trim()))));
+  const listaF = lista.filter((i) => (!filtroEq || String(i.equipamento_id) === String(filtroEq)) && (aba !== "hist" || !busca.trim() || (semAcento(`${i.equipamento_nome} ${i.executor_nome} ${i.modelo_nome} ${i.numero || ""}`).includes(semAcento(busca.trim())) || (!!i.id_foto && semAcento(busca).replace(/[^a-z0-9]/g, "").replace(/^id/, "").length >= 4 && i.id_foto.replace("-", "").toLowerCase().startsWith(semAcento(busca).replace(/[^a-z0-9]/g, "").replace(/^id/, ""))))));
   const bloqueados = (painel?.equipamentos || []).filter((e) => e.bloqueado).length;
   const abas = colab ? [["equip", "🚚 Inspecionar"], ["hist", "📋 Minhas inspeções"]] : [["equip", `🚚 Equipamentos${bloqueados ? ` (⛔ ${bloqueados})` : ""}`], ["hist", "📋 Inspeções"], ["cumprimento", "📊 Cumprimento"], ["modelos", "🧩 Modelos"]];
   const atrasada = (e) => (e.rotinas || []).some((r) => r.estado === "atrasada");
@@ -145,7 +146,7 @@ export default function TelaInspecoes({ C, s, onAbrirOS, onIrParaOS, embutida = 
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
         <div style={{ fontSize: embutida ? 17 : 20, fontWeight: 700, flex: 1 }}>🔍 {colab ? "Minhas inspeções" : "Inspeções de equipamento"}</div>
         {editar && aba === "equip" && <button type="button" onClick={abrirLinks} style={bt(C.accent, false)}>🔗 Links de terceiros</button>}
-        <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="🔍 Buscar…" style={{ ...s.input, width: 220 }} />
+        <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="🔍 Buscar (nº, ID da foto…)" title="Aceita o número (INSP-…) ou o ID que sai na tarja das fotos (ex.: 7F3A-9C21)" style={{ ...s.input, width: 220 }} />
       </div>
       {aviso && <div style={{ ...s.card, padding: "10px 14px", marginBottom: 12, fontSize: 13, borderColor: aviso.tipo === "erro" ? C.danger : C.success, color: aviso.tipo === "erro" ? C.danger : C.success }}>{aviso.texto}</div>}
 
@@ -390,7 +391,7 @@ export function DetalheInspecao({ d, C, s, bt, onRelatorio, onAbrirOS, onIrParaO
       {corrigida && <span style={{ ...s.tag(C.success), fontSize: 12 }}>✓ Corrigido</span>}
     </div>
     <div style={{ fontSize: 12, color: C.textSub, marginTop: 4 }}>
-      {i.numero || `Nº ${i.id}`} · {i.modelo_nome} · {dataHora(i.concluida_em)} · {i.executor_nome}{i.terceiro?.locatario ? ` (locatário — ${i.terceiro.empresa || ""}${i.terceiro.contrato ? ` · ${i.terceiro.contrato}` : ""})` : ""}{i.executor_tipo === "terceiro" ? ` (terceiro${i.terceiro?.empresa ? ` — ${i.terceiro.empresa}` : ""}${i.terceiro?.cpf ? ` · CPF ${String(i.terceiro.cpf).replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4")}` : ""})` : ""}
+      {i.numero || `Nº ${i.id}`}{idCurto(i.cliente_uid) ? <span title="ID que sai na tarja das fotos desta inspeção"> · ID {idCurto(i.cliente_uid)}</span> : null} · {i.modelo_nome} · {dataHora(i.concluida_em)} · {i.executor_nome}{i.terceiro?.locatario ? ` (locatário — ${i.terceiro.empresa || ""}${i.terceiro.contrato ? ` · ${i.terceiro.contrato}` : ""})` : ""}{i.executor_tipo === "terceiro" ? ` (terceiro${i.terceiro?.empresa ? ` — ${i.terceiro.empresa}` : ""}${i.terceiro?.cpf ? ` · CPF ${String(i.terceiro.cpf).replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4")}` : ""})` : ""}
       {i.km != null ? ` · ${Number(i.km).toLocaleString("pt-BR")} km` : ""}{i.horimetro != null ? ` · ${Number(i.horimetro).toLocaleString("pt-BR")} h` : ""}{i.local ? ` · ${i.local}` : ""}{i.cliente ? ` · ${i.cliente}` : ""}
     </div>
     {d.entrega && <div style={{ ...s.card, padding: "8px 12px", marginTop: 10, fontSize: 12, borderColor: C.warn }}>📍 Devolução da locação de <b>{d.entrega.cliente}</b> — comparada com a entrega <b>{d.entrega.numero || `nº ${d.entrega.id}`}</b> ({dataHora(d.entrega.concluida_em)}, {d.entrega.executor_nome}). Em cada item: "entrega: … →" e o estado na devolução; em laranja o que mudou.</div>}

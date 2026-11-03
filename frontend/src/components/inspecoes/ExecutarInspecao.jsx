@@ -94,7 +94,7 @@ export default function ExecutarInspecao({ tenant, equipamento, modeloId, rascun
     const usu = (() => { try { return JSON.parse(localStorage.getItem("usuario") || "null")?.nome || null; } catch { return null; } })();
     const gps = it?.corpo?.gps || await pegarGps(2500);
     const marca = { oque: `Inspeção ${prep?.modelo?.nome || ""}`.trim(), ref: [referencia || it?.corpo?.cliente || null, prep?.equipamento?.tag].filter(Boolean).join(" · ") || null,
-      quem: extraCorpo?.terceiro?.nome || quem || usu, gps };
+      quem: extraCorpo?.terceiro?.nome || quem || usu, gps, id: it?.corpo?.cliente_uid || it?.uid || null }; // 18c.3: ID da inspeção (antes de ter número)
     try { const f = await Fila.comprimirFoto(file, 1280, 0.72, marca); if (f.antiga) setErro("⚠ Esta foto parece antiga ou da galeria — ela foi aceita, mas sai marcada assim. Prefira tirar na hora."); const atual = resp(p.id).fotos || []; if (atual.length >= 4) return setErro("No máximo 4 fotos por ponto"); setResp(p.id, { fotos: [...atual, { base64: f.base64, mime: f.mime }] }); }
     catch (e) { setErro(e.message); }
   };
