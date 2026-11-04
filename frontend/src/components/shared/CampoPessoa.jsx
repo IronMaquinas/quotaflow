@@ -2,6 +2,7 @@
 //   pessoas: [{ ref: 'c:12' | 'u:5', nome, funcao, email, login, afastado }] (GET /api/tarefas/pessoas)
 //   valor: { nome, ref } — ref null = texto livre (ex.: "Time fiscal"), não ligado ao cadastro
 //   A lista abre "flutuando" (position: fixed) para não ser cortada dentro de modal com rolagem.
+//   18g.2b: autocomplete puro — nada abre até digitar a primeira letra; no máximo 8 sugestões.
 //   ↑ ↓ para navegar, Enter escolhe, Esc fecha. Busca sem acento, por nome, função ou e-mail.
 import { useState, useRef, useEffect } from "react";
 
@@ -15,7 +16,7 @@ export default function CampoPessoa({ C, s, pessoas = [], valor = { nome: "", re
   const medir = () => { const r = campo.current?.getBoundingClientRect?.(); if (r) setPos({ top: r.bottom + 4, left: r.left, width: r.width }); };
   useEffect(() => { if (!aberto) return; medir(); const f = () => medir(); window.addEventListener("resize", f); window.addEventListener("scroll", f, true); return () => { window.removeEventListener("resize", f); window.removeEventListener("scroll", f, true); }; }, [aberto]); // eslint-disable-line
   const termo = sem(valor.nome).trim();
-  const lista = (termo ? pessoas.filter((p) => termo.split(/\s+/).every((w) => sem(`${p.nome} ${p.funcao || ""} ${p.email || ""}`).includes(w))) : pessoas).slice(0, 8);
+  const lista = termo ? pessoas.filter((p) => termo.split(/\s+/).every((w) => sem(`${p.nome} ${p.funcao || ""} ${p.email || ""}`).includes(w))).slice(0, 8) : []; // 18g.2b: só abre depois da 1ª letra
   const sel = valor.ref ? pessoas.find((p) => p.ref === valor.ref) : null;
   const escolher = (p) => { onChange?.({ nome: p.nome, ref: p.ref }); setAberto(false); };
   const tecla = (e) => {

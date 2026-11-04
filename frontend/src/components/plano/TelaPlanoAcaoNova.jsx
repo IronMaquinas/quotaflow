@@ -4,12 +4,15 @@
 //   18g.1: 🧾 tarefa fiscal (origem 'fiscal'): checklist NF-e → CT-e → averbação → MDF-e; conclui sozinha; "Dispensar" cancela.
 //          props ambienteInicial (perfil Fiscal abre em TR) e abrirTarefa ({ numero }) — vem do selo da Mesa.
 //   18g.2a: 👤 responsável escolhido do cadastro (digita e o sistema encontra usuários e colaboradores) + filtro "👤 Minhas".
+//   18g.2b: 📅 período (abertura · prazo · conclusão) + responsável; resumo do filtro; 📑 relatório, 🔎 modo auditoria (histórico, evidências, vínculos) e ⬇ CSV.
 //        Tarefa numerada não se exclui: cancela (fica no histórico). Confirmações no modal do app (sem window.confirm/alert).
 import { useState, useEffect } from 'react';
 import { useTarefas } from '../../hooks/useTarefas';
 import apiService from '../../services/apiService';
 import ChecklistFiscal from './ChecklistFiscal'; // 18g.1
 import CampoPessoa from '../shared/CampoPessoa'; // 18g.2a
+import FiltroPeriodo, { faixaPeriodo } from '../shared/FiltroPeriodo'; // 18g.2b
+import { resumoTarefas, dataBase, abrirRelatorioTarefas, csvTarefas, TIPOS_REL } from '../../utils/gerarRelatorioTarefas'; // 18g.2b
 
 export const TIPOS_TAREFA = {
   TR: { nome: 'Transporte', icone: '🚚' }, NC: { nome: 'Não conformidade', icone: '⚠️' }, AU: { nome: 'Auditoria', icone: '🔎' },
@@ -28,6 +31,9 @@ export default function TelaPlanoAcaoNova({ onVoltar, C, s, ambienteInicial = 't
   const [filtro, setFiltro] = useState('abertas');
   const [ambiente, setAmbiente] = useState(ambienteInicial);
   const [search, setSearch] = useState('');
+  const [per, setPer] = useState(faixaPeriodo('tudo')); // 18g.2b
+  const [base, setBase] = useState('abertura'); // 18g.2b: abertura · prazo · conclusao
+  const [fResp, setFResp] = useState(''); // 18g.2b
   const [modal, setModal] = useState(null);
   const [aberta, setAberta] = useState(null); // { id, aba }
   const [novoComent, setNovoComent] = useState('');
@@ -45,7 +51,9 @@ export default function TelaPlanoAcaoNova({ onVoltar, C, s, ambienteInicial = 't
   const ok = (t) => setAviso({ t }); const falha = (e) => setAviso({ t: e?.message || String(e), erro: true });
 
   const lista = tarefas || [];
-  const doAmbiente = lista.filter((t) => ambiente === 'todos' || tipoDe(t) === ambiente);
+  const noPer = (t) => { if (!per.de) return true; const d = dataBase(t, base); return !!d && d >= per.de && d <= per.ate; }; // 18g.2b
+  const responsaveis = [...new Set(lista.map((t) => t.responsavel).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const doAmbiente = lista.filter((t) => (ambiente === 'todos' || tipoDe(t) === ambiente) && noPer(t) && (!fResp || t.responsavel === fResp));
   const q = search.trim().toLowerCase();
   const tarefasFiltradas = doAmbiente
     .filter((t) => filtro === 'todos' || (filtro === 'abertas' ? !['concluida', 'cancelada'].includes(t.status) : filtro === 'minhas' ? (gente.eu != null && String(t.responsavel_usuario_id ?? '') === String(gente.eu) && !['concluida', 'cancelada'].includes(t.status)) : t.status === filtro || t.prioridade === filtro))
@@ -106,6 +114,12 @@ export default function TelaPlanoAcaoNova({ onVoltar, C, s, ambienteInicial = 't
   const removerEvidencia = (t, a) => setConfirmar({ texto: `Remover a evidência "${a.nome}"? A remoção fica no histórico.`, acao: async () => { await apiService.delete(`/tarefas/${t.id}/anexos/${a.id}`); await listar(); ok('Evidência removida'); } });
   const abrirVinculo = (v) => { const ev = EVENTO[v.tipo]; if (ev) window.dispatchEvent(new CustomEvent(ev, { detail: v.tipo === 'at' ? v.id : (v.id ?? v.numero) })); };
 
+  const descFiltros = () => [ambiente !== 'todos' ? `Tipo: ${TIPOS_REL[ambiente]}` : 'Todos os tipos',
+    per.de ? `${{ abertura: 'Abertas', prazo: 'Prazo', conclusao: 'Concluídas' }[base]} de ${per.de.split('-').reverse().join('/')} a ${per.ate.split('-').reverse().join('/')}` : 'Todo o período',
+    { abertas: 'Situação: abertas', minhas: 'Minhas tarefas', todos: 'Todas as situações', pendente: 'Pendentes', em_andamento: 'Em andamento', concluida: 'Concluídas', cancelada: 'Canceladas', alta: 'Prioridade alta' }[filtro],
+    fResp ? `Responsável: ${fResp}` : null, q ? `Busca: "${search.trim()}"` : null].filter(Boolean).join(' · ');
+  const relatorio = (auditoria) => { try { abrirRelatorioTarefas(tarefasFiltradas, { titulo: 'Relatório do Plano de ação', filtros: descFiltros(), auditoria }); } catch (e) { falha(e); } };
+  const baixarCsv = () => { const url = URL.createObjectURL(new Blob([csvTarefas(tarefasFiltradas)], { type: 'text/csv;charset=utf-8' })); const a = document.createElement('a'); a.href = url; a.download = `tarefas-${hojeIso}.csv`; document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(url), 2000); };
   const chipNum = (t) => t.numero ? <span title="Número de rastreabilidade (não muda)" style={{ fontFamily: 'ui-monospace, Menlo, monospace', fontSize: 11.5, fontWeight: 700, color: C.accent, background: `${C.accent}18`, border: `1px solid ${C.accent}44`, borderRadius: 5, padding: '2px 7px', whiteSpace: 'nowrap' }}>{t.numero}</span> : null;
   const abaBt = (t, k, rot) => { const on = aberta?.id === t.id && aberta.aba === k; return <button key={k} type="button" onClick={() => setAberta(on ? null : { id: t.id, aba: k })} style={{ background: on ? '#1e2a3f' : 'transparent', border: `1px solid ${on ? C.accent : C.border}`, borderRadius: 5, padding: '5px 9px', color: on ? C.accent : C.muted, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit', whiteSpace: 'nowrap' }}>{rot}</button>; };
 
@@ -146,6 +160,26 @@ export default function TelaPlanoAcaoNova({ onVoltar, C, s, ambienteInicial = 't
             {{ abertas: 'Abertas', minhas: '👤 Minhas', todos: 'Todas', pendente: 'Pendente', em_andamento: 'Em andamento', concluida: 'Concluída', cancelada: 'Cancelada', alta: '🔴 Alta' }[f]}
           </button>))}
       </div>
+      {/* 18g.2b: período + responsável + relatório */}
+      <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap', alignItems: 'center' }}>
+        <FiltroPeriodo C={C} s={s} valor={per} comTudo onChange={(v) => { setPer(v); if (v.de && filtro === 'abertas') setFiltro('todos'); }} />
+        <select aria-label="Data do período" value={base} onChange={(e) => setBase(e.target.value)} style={{ ...s.input, width: 200, marginBottom: 0 }}>
+          <option value="abertura">pela data de abertura</option><option value="prazo">pelo prazo</option><option value="conclusao">pela data de conclusão</option>
+        </select>
+        <select aria-label="Responsável" value={fResp} onChange={(e) => setFResp(e.target.value)} style={{ ...s.input, width: 230, marginBottom: 0 }}>
+          <option value="">👤 Todos os responsáveis</option>{responsaveis.map((n) => <option key={n} value={n}>{n}</option>)}
+        </select>
+        <span style={{ flex: 1 }} />
+        <button type="button" disabled={!tarefasFiltradas.length} onClick={() => relatorio(false)} style={{ ...s.btn(false), color: C.text, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>📑 Relatório</button>
+        <button type="button" disabled={!tarefasFiltradas.length} onClick={() => relatorio(true)} title="Relatório + ficha de cada tarefa com histórico, evidências e vínculos" style={{ ...s.btn(false), color: C.text, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>🔎 Modo auditoria</button>
+        <button type="button" disabled={!tarefasFiltradas.length} onClick={baixarCsv} style={{ ...s.btn(false), color: C.text, padding: '6px 12px', fontSize: 12, cursor: 'pointer' }}>⬇ CSV</button>
+      </div>
+      {(per.de || fResp || filtro !== 'abertas' || ambiente !== 'todos' || q) && tarefasFiltradas.length > 0 && (() => { const r = resumoTarefas(tarefasFiltradas); return (
+        <div style={{ ...s.card, padding: '10px 16px', marginBottom: 14, display: 'flex', gap: 18, flexWrap: 'wrap', fontSize: 12.5, color: C.textSub }}>
+          <span><b style={{ color: C.text }}>{r.total}</b> no filtro</span><span><b style={{ color: C.text }}>{r.abertas}</b> abertas</span><span><b style={{ color: C.success }}>{r.concluidas}</b> concluídas</span>
+          <span>no prazo: <b style={{ color: C.text }}>{r.no_prazo_pct == null ? '—' : `${r.no_prazo_pct}%`}</b></span><span><b style={{ color: r.atrasadas ? C.danger : C.text }}>{r.atrasadas}</b> atrasadas</span>
+          <span><b style={{ color: C.text }}>{r.canceladas}</b> canceladas</span><span>tempo médio: <b style={{ color: C.text }}>{r.dias_medios == null ? '—' : `${String(r.dias_medios).replace('.', ',')} dias`}</b></span>
+        </div>); })()}
 
       {loading && !lista.length && <div style={{ color: C.muted, padding: 20, textAlign: 'center' }}>Carregando...</div>}
       {erro && <div style={{ color: '#ef4444', padding: 20, background: '#ef444422', borderRadius: 8, marginBottom: 16 }}>{erro}</div>}
