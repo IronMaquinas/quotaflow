@@ -220,7 +220,7 @@ async function espelhar(supabase, tenantId, t, ats, quem) {
   if (JSON.stringify(pend.map((x) => x.at_id).sort()) !== pendAntes) { ck = { ...ck, encerramento: { entradas: jsonArr(ck.encerramento?.entradas), pendentes: pend } }; mudouT = true; }
   // AT → tarefa
   for (const at of ats) for (const a of jsonArr(at.anexos)) {
-    const k = Object.keys(ANEXO_AT).find((x) => ANEXO_AT[x] === a.tipo); if (!k || a.tarefa_anexo) continue;
+    const k = Object.keys(ANEXO_AT).find((x) => ANEXO_AT[x] === a.tipo); if (!k || a.tarefa_anexo || a.evento) continue; // 18g.2.6: evento não vira documento
     const ref = `${at.id}:${a.id}`; if (jsonArr(ck[k]?.entradas).some((e) => e.at_anexo === ref)) continue;
     ck = { ...ck, [k]: { entradas: [...jsonArr(ck[k]?.entradas), { id: crypto.randomBytes(5).toString('hex'), at_anexo: ref, at_id: String(at.id), at_numero: at.numero, nome: a.nome, por: a.por || null, em: a.em || new Date().toISOString(), origem: 'at' }] } };
     mudouT = true;
@@ -524,11 +524,15 @@ async function docDaAT(supabase, tenantId, atId, anexoId) {
   return { at, tarefa: t, item, entrada: e };
 }
 async function substituirPelaAT(supabase, tenantId, quem, atId, anexoId, body = {}) {
-  const r = await docDaAT(supabase, tenantId, atId, anexoId); if (r.erro) return r;
+  const r = await docDaAT(supabase, tenantId, atId, anexoId);
+  if (r.erro && /direto na AT/.test(r.erro)) return require('./execucoes').substituirAnexo(supabase, tenantId, quem, atId, anexoId, body); // 18g.2.6
+  if (r.erro) return r;
   return substituirDoc(supabase, tenantId, quem, r.tarefa.id, r.item, r.entrada.id, { ...body, via: r.at.status === 'rascunho' ? 'AT (rascunho)' : r.at.numero });
 }
 async function eventoPelaAT(supabase, tenantId, quem, atId, anexoId, body = {}) {
-  const r = await docDaAT(supabase, tenantId, atId, anexoId); if (r.erro) return r;
+  const r = await docDaAT(supabase, tenantId, atId, anexoId);
+  if (r.erro && /direto na AT/.test(r.erro)) return require('./execucoes').eventoAnexo(supabase, tenantId, quem, atId, anexoId, body); // 18g.2.6
+  if (r.erro) return r;
   return eventoDoc(supabase, tenantId, quem, r.tarefa.id, r.item, r.entrada.id, { ...body, via: r.at.numero });
 }
 /** trocou o motorista na AT → evento "inclusão de condutor" no MDF-e ligado a ela (condutor = o motorista atual da AT) */

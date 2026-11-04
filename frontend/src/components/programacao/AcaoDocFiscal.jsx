@@ -36,7 +36,7 @@ export default function AcaoDocFiscal({ C, s, modo, at, anexo = null, onFechar, 
     <div role="dialog" aria-modal="true" style={{ ...s.card, width: 560, maxWidth: "100%", padding: 20 }}>
       <div style={{ display: "flex", alignItems: "center", marginBottom: 6 }}><b style={{ flex: 1, fontSize: 15 }}>{titulo}</b><button type="button" aria-label="Fechar" onClick={onFechar} style={{ background: "none", border: "none", color: C.muted, fontSize: 20, cursor: "pointer" }}>×</button></div>
       <div style={{ fontSize: 12.5, color: C.textSub, marginBottom: 12 }}>
-        {modo === "subst" ? <>{anexo?.nome} · {at.numero}. A versão atual fica guardada na tarefa fiscal{anexo?.tarefa_numero ? ` (${anexo.tarefa_numero})` : ""} e a AT passa a usar a nova.{at.status === "em_execucao" ? " O caminhão já saiu: só o gestor substitui, e o motorista vê \"versão atualizada\" no link." : ""}</>
+        {modo === "subst" ? <>{anexo?.nome} · {at.numero}. A versão atual fica guardada {anexo?.tarefa_id ? `na tarefa fiscal${anexo?.tarefa_numero ? ` (${anexo.tarefa_numero})` : ""}` : "no histórico da AT"} e a AT passa a usar a nova.{at.status === "em_execucao" ? " O caminhão já saiu: só o gestor substitui, e o motorista vê \"versão atualizada\" no link." : ""}</>
           : modo === "condutor" ? <>O motorista da {at.numero} agora é <b>{at.motorista_nome}</b>. Anexe o comprovante do evento de inclusão de condutor emitido no seu sistema de MDF-e — o aviso de divergência sai da AT.</>
           : <>O documento original continua valendo; o PDF do evento fica junto dele, na AT e no link do motorista.</>}
       </div>
@@ -44,7 +44,7 @@ export default function AcaoDocFiscal({ C, s, modo, at, anexo = null, onFechar, 
         {modo === "subst" && <>
           <select aria-label="Motivo da substituição" value={f.motivo_tipo} onChange={(e) => setF({ ...f, motivo_tipo: e.target.value })} style={{ ...s.input, flex: "1 1 100%", marginBottom: 0 }}><option value="">Motivo *</option>{MOTIVOS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
           <input aria-label="Detalhe do motivo" value={f.motivo} onChange={(e) => setF({ ...f, motivo: e.target.value })} placeholder={f.motivo_tipo === "outro" ? "Explique (mín. 10 caracteres) *" : "Detalhe (opcional)"} style={{ ...s.input, flex: "1 1 100%", marginBottom: 0 }} />
-          {arq("🧩 XML novo (opcional)", "xml", ".xml,text/xml,application/xml", escolherXml)}
+          {anexo?.tarefa_id && arq("🧩 XML novo (opcional)", "xml", ".xml,text/xml,application/xml", escolherXml)}
         </>}
         {modo === "evento" && <>
           <select aria-label="Tipo do evento" value={f.tipo} onChange={(e) => setF({ ...f, tipo: e.target.value })} style={{ ...s.input, flex: "1 1 220px", marginBottom: 0 }}>{(EVENTOS[k] || []).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>

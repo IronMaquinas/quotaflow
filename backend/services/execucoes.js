@@ -404,10 +404,61 @@ async function removerAnexo(supabase, tenantId, quem, id, anexoId) {
   if (!a) return { status: 404, erro: 'Anexo não encontrado' };
   if (ex.status === 'concluida') return { status: 409, erro: 'AT concluída — reabra para mexer nos anexos' };
   if (a.tarefa_anexo) return { status: 409, erro: `Este documento vem da ${a.tarefa_numero || 'tarefa fiscal'} (🧾 ✅ Plano) — é controlado lá` }; // 18g.2.3
+  if (['nfe', 'cte', 'mdfe'].includes(a.tipo) && ex.status !== 'rascunho') return { status: 409, erro: `${ANEXOS[a.tipo]} da AT não se remove — use 🔁 Substituir (com motivo; a versão anterior fica guardada)` }; // 18g.2.6
   try { await supabase.storage.from(BUCKET).remove([a.path]); } catch { /* não bloqueia */ }
   const { data, error } = await supabase.from('execucoes').update({ anexos: (ex.anexos || []).filter((x) => x.id !== anexoId), atualizado_em: new Date().toISOString() }).eq('id', ex.id).eq('tenant_id', tenantId).select();
   if (error) throw new Error(error.message);
   return { execucao: data[0] };
+}
+
+// ─── 18g.2.6: documento fiscal anexado direto na AT — substituir com versão / evento (mesmas regras da tarefa fiscal) ───
+const MOTIVOS_SUB = { arquivo_errado: 'Arquivo errado anexado (mesmo documento)', reemitido: 'Documento cancelado e reemitido', outro: 'Outro' };
+const EVENTOS_AT = { cce: 'Carta de correção (CC-e)', inclusao_condutor: 'Inclusão de condutor (MDF-e)', outro: 'Evento / correção' };
+const nomeDe = (quem) => quem?.nome || quem?.usuarioNome || null;
+async function subirAnexoAT(supabase, tenantId, ex, arq) {
+  if (!arq?.base64) return { status: 400, erro: 'Anexe o PDF' };
+  const ext = MIME[arq.mime]; if (!ext || ext === 'xml') return { status: 400, erro: 'PDF, JPG ou PNG' };
+  const buf = Buffer.from(String(arq.base64), 'base64'); if (!buf.length) return { status: 400, erro: 'Arquivo vazio' }; if (buf.length > LIMITE) return { status: 400, erro: 'Arquivo maior que 10 MB' };
+  const aid = crypto.randomBytes(6).toString('hex'); const path = `tenant-${tenantId}/execucoes/${ex.id}/${Date.now()}-${aid}.${ext}`;
+  const { error } = await supabase.storage.from(BUCKET).upload(path, buf, { contentType: arq.mime, upsert: false }); if (error) throw new Error(`Falha ao subir o arquivo: ${error.message}`);
+  return { aid, path, ext, tamanho: buf.length, mime: arq.mime, nome: texto(arq.nome, 160) };
+}
+function regraSituacao(ex, quem, substituir = true) {
+  if (ex.status === 'cancelada') return { status: 409, erro: 'AT cancelada' };
+  if (substituir && ex.status === 'concluida') return { status: 409, erro: `${ex.numero} já foi concluída — o documento não pode ser substituído. Use "＋ Evento / correção" (ex.: CC-e)` };
+  if (substituir && ex.status === 'em_execucao' && !(quem?.perfis || []).some((p) => ['admin', 'gestor'].includes(p))) return { status: 409, erro: `${ex.numero} já está em execução (o caminhão saiu) — só o gestor pode substituir o documento` };
+  return null;
+}
+async function substituirAnexo(supabase, tenantId, quem, id, anexoId, body = {}) {
+  const ex = await exDoTenant(supabase, tenantId, id); if (!ex) return { status: 404, erro: 'AT não encontrada' };
+  const a = (ex.anexos || []).find((x) => x.id === anexoId); if (!a) return { status: 404, erro: 'Anexo não encontrado' };
+  if (!['nfe', 'cte', 'mdfe'].includes(a.tipo) || a.evento) return { status: 409, erro: 'Só NF-e, CT-e e MDF-e são substituídos com versão' };
+  const tipo = MOTIVOS_SUB[body.motivo_tipo] ? body.motivo_tipo : null; if (!tipo) return { status: 400, erro: 'Escolha o motivo da substituição' };
+  const motivo = texto(body.motivo, 400); if (tipo === 'outro' && motivo.length < 10) return { status: 400, erro: 'Explique o motivo (mínimo 10 caracteres)' };
+  const trava = regraSituacao(ex, quem); if (trava) return trava;
+  const up = await subirAnexoAT(supabase, tenantId, ex, body.pdf); if (up.erro) return up;
+  const agora = new Date().toISOString(); const v = (a.versao || 1) + 1;
+  const novo = { ...a, nome: up.nome || `${ANEXOS[a.tipo]}.${up.ext}`, path: up.path, mime: up.mime, tamanho: up.tamanho, em: agora, por: nomeDe(quem), versao: v, atualizado_em: agora,
+    versoes: [...(a.versoes || []), { versao: a.versao || 1, nome: a.nome, path: a.path, mime: a.mime, em: a.em, por: a.por, substituida_em: agora, substituida_por: nomeDe(quem), motivo_tipo: tipo, motivo: motivo || null }] };
+  const { data, error } = await supabase.from('execucoes').update({ anexos: (ex.anexos || []).map((x) => (x.id === a.id ? novo : x)), atualizado_em: agora }).eq('id', ex.id).eq('tenant_id', tenantId).select();
+  if (error) throw new Error(error.message);
+  await registrar(supabase, tenantId, { usuarioNome: nomeDe(quem) }, ex, `🔁 ${ANEXOS[a.tipo]} da ${ex.numero} substituído (v${v}) — ${MOTIVOS_SUB[tipo]}${motivo ? `: ${motivo}` : ''}${ex.status === 'em_execucao' ? ' · motorista avisado no link' : ''}`).catch(() => null);
+  return { execucao: data[0], versao: v };
+}
+async function eventoAnexo(supabase, tenantId, quem, id, anexoId, body = {}) {
+  const ex = await exDoTenant(supabase, tenantId, id); if (!ex) return { status: 404, erro: 'AT não encontrada' };
+  const a = (ex.anexos || []).find((x) => x.id === anexoId); if (!a) return { status: 404, erro: 'Anexo não encontrado' };
+  if (!['nfe', 'cte', 'mdfe'].includes(a.tipo)) return { status: 409, erro: 'Evento só para NF-e, CT-e ou MDF-e' };
+  const tipo = EVENTOS_AT[body.tipo] ? body.tipo : null; if (!tipo) return { status: 400, erro: 'Escolha o tipo do evento' };
+  if (tipo === 'inclusao_condutor' && a.tipo !== 'mdfe') return { status: 400, erro: 'Inclusão de condutor é evento do MDF-e' };
+  const desc = texto(body.descricao, 400); if (tipo === 'outro' && desc.length < 5) return { status: 400, erro: 'Descreva o evento' };
+  const trava = regraSituacao(ex, quem, false); if (trava) return trava;
+  const up = await subirAnexoAT(supabase, tenantId, ex, body.pdf); if (up.erro) return up;
+  const ev = { id: up.aid, tipo: a.tipo, nome: `${EVENTOS_AT[tipo]} — ${ANEXOS[a.tipo]}${desc ? ` · ${desc}` : ''}`.slice(0, 160), path: up.path, mime: up.mime, tamanho: up.tamanho, em: new Date().toISOString(), por: nomeDe(quem), evento: tipo, pai: a.id };
+  const { data, error } = await supabase.from('execucoes').update({ anexos: [...(ex.anexos || []), ev], atualizado_em: new Date().toISOString() }).eq('id', ex.id).eq('tenant_id', tenantId).select();
+  if (error) throw new Error(error.message);
+  await registrar(supabase, tenantId, { usuarioNome: nomeDe(quem) }, ex, `📎 ${EVENTOS_AT[tipo]} no ${ANEXOS[a.tipo]} da ${ex.numero}${desc ? ` — ${desc}` : ''}`).catch(() => null);
+  return { execucao: data[0], evento: ev };
 }
 
 // ─── leitura ────────────────────────────────────────────────────────────────
@@ -595,4 +646,4 @@ async function paginaMotorista(supabase, ex) {
     motorista_id: ex.motorista_id ?? null };
 }
 
-module.exports = { relatorioViagem, provavelCondutor, minhasViagens, refDe: (e, pvs) => comRef(e, pvs).ref, sincronizarPV, registrar, porToken, paginaMotorista, linkMotorista, docsDoConjunto, linkDocCadastro, descartar, carregarDocs, avaliarDocs, checar, trechosComATs, TIPOS, STATUS, ANEXOS, base, criar, editar, mudarStatus, anexar, linkAnexo, removerAnexo, listar, detalhe, doPV, agenda, documento, conflitos, _definirSelos };
+module.exports = { substituirAnexo, eventoAnexo, relatorioViagem, provavelCondutor, minhasViagens, refDe: (e, pvs) => comRef(e, pvs).ref, sincronizarPV, registrar, porToken, paginaMotorista, linkMotorista, docsDoConjunto, linkDocCadastro, descartar, carregarDocs, avaliarDocs, checar, trechosComATs, TIPOS, STATUS, ANEXOS, base, criar, editar, mudarStatus, anexar, linkAnexo, removerAnexo, listar, detalhe, doPV, agenda, documento, conflitos, _definirSelos };
