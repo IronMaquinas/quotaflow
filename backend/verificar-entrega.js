@@ -224,9 +224,9 @@ const ESPERADO = {
   'services/execucoes.js': '35e1e9e9dc4a44eef8e68200444dc5dd', // etapa 18g.2
   'routes/programacao.js': 'ae12123a04d441719ecd27c6d0a8d0e1', // etapa 18g.2
   'front:gerarAT.js': 'd05187877f31e92708abba3c7f338ce3', // etapa 16e.1
-  'front:TelaProgramacao.jsx': '69c9b88e0327ae7c1bcf9960f1021622', // etapa 18f.1
-  'front:FichaAT.jsx': '7521e9ede9a3d4510c7f1da63f6a1a51', // etapa 18g.2
-  'front:MesaProgramacao.jsx': 'aeeff12bb154cafbad33283577b055b9', // etapa 18g.2
+  'front:TelaProgramacao.jsx': '4412d157e3d7d579b7c36891e4fe7353', // etapa 18g.2.1
+  'front:FichaAT.jsx': 'ea475f957fe21677693e05af06c2267a', // etapa 18g.2.1
+  'front:MesaProgramacao.jsx': '3ee851df585bea973a6fa97fb1699e5d', // etapa 18g.2.2
   'migrations/056_at_rascunho_link_motorista.sql': '4e9a9185cbb0a1f9770e1fe666fc77f3', // etapa 16c (novo)
   'routes/atLink.js': 'f392ea4dff57d96bc2209bfefdb1707f', // etapa 16e
   'front:EditorAT.jsx': 'fcb77d8397281457f4e5e07774e59422', // etapa 18g.2c
@@ -269,7 +269,7 @@ const ESPERADO = {
   'migrations/065_tarefas_rastreabilidade.sql': '3902af0a80d08839d542bd2a65e99d87', // etapa 18g (novo)
   'services/tarefas.js': '9d43b74825db840e65054fbc7fb96fa7', // etapa 18g.2a
   'migrations/066_fiscal_transporte.sql': 'eeef7d2fb80ae6ad0ec6069a3342e0ff', // etapa 18g.1 (novo)
-  'services/tarefasFiscais.js': '84f3bbda08043ad2fbb38358a1f6a5d5', // etapa 18g.2
+  'services/tarefasFiscais.js': 'aae12f0e34d5699d89f7b432f1949059', // etapa 18g.2.1
   'front:ChecklistFiscal.jsx': '0147a084ad0583eec9fa9334fede04ed', // etapa 18g.2
   'front:ConfigFiscal.jsx': 'b4ceec47991a295f38f32992348ddcf8', // etapa 18g.1 (novo)
   'front:lerXmlFiscal.js': '8d657863784b4e6c468b29bd8152e53f', // etapa 18g.1.1 (novo)
@@ -278,16 +278,9 @@ const ESPERADO = {
   'front:gerarRelatorioTarefas.js': '483dd597e30b11635886ba51406d36cf', // etapa 18g.2b (novo)
 };
 
-// Antes de copiar a etapa 18g.2 — base: 18g.2c
+// Antes de copiar a etapa 18g.2.2 — base: 18g.2.1
 const ANTES = {
-  'services/tarefasFiscais.js': '1ed8ca3086dd04581e8dcf3b63f593de',
-  'routes/tarefas.js': 'e25ee79c9439bd7c0f90e44167b2355f',
-  'routes/programacao.js': '311f959803a7d1df0f72fdb73545c457',
-  'services/execucoes.js': '28ecbb57e48379a336d3331fc81bae8c',
-  'front:ChecklistFiscal.jsx': '3aa251816230d68c72aa799ff7ce71aa',
-  'front:FichaAT.jsx': '479852ab302f53440f7cf48427e93179',
-  'front:MesaProgramacao.jsx': '97d46eaba6599cd273647346b0efd2c9',
-  'front:TelaPlanoAcaoNova.jsx': '26765598a3fe812a49f277907540841b',
+  'front:MesaProgramacao.jsx': '189a87e2b5505ae41292195dd86596ea',
 };
 
 const RAIZ = process.cwd();
@@ -325,7 +318,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18g.2)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18g.2.2)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

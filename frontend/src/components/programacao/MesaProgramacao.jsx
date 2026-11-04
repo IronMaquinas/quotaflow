@@ -5,7 +5,7 @@
 // O card mostra o essencial (data, motorista, conjunto) e o KIT DO MOTORISTA: CNH, CRLV do conjunto e NF-e/CT-e/MDF-e —
 // todo chip faz alguma coisa: com arquivo abre no visualizador; NF-e/CT-e/MDF-e faltando abre o seletor de arquivo; CNH/CRLV
 // faltando explica onde cadastrar. 📲 copia o link do motorista (WhatsApp).
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import apiService from "../../services/apiService";
 import { valorCelula } from "../../utils/gerarBid";
 import { COR_STATUS, NOME_STATUS, dataHora } from "./FichaAT";
@@ -84,8 +84,10 @@ export default function MesaProgramacao({ C, s, pedidos, podeLiberar, onAbrirAT,
   const [base, setBase] = useState(null);
   const [soPendentes, setSoPendentes] = useState(true);
   const [editor, setEditor] = useState(null); // { pv, t, item, at }
+  const jaAbriu = useRef(null); // 18g.2.2: abre UMA vez por pedido de abertura (senão, ao fechar, o recarregar reabria o editor)
   useEffect(() => { // 18g.2.1: rascunho aberto de fora (tarefa fiscal / ficha) → abre o mesmo editor do card
-    if (!abrirRascunho?.id || !pedidos) return;
+    if (!abrirRascunho?.id || !pedidos || jaAbriu.current === abrirRascunho.em) return;
+    jaAbriu.current = abrirRascunho.em;
     for (const p of pedidos) for (const t of p.trechos || []) { const at = (t.ats || []).find((a) => String(a.id) === String(abrirRascunho.id)); if (at) { const item = (t.itens || []).find((i) => (at.itens || []).some((x) => String(x.id) === String(i.id))) || (t.itens || [])[0]; setSoPendentes(false); setEditor({ pv: p, t, item, at }); return; } }
   }, [abrirRascunho, pedidos]); // eslint-disable-line
   const [ver, setVer] = useState(null);
