@@ -24,7 +24,7 @@ const casca = (s, conteudo, fechar, largura = 720, z = 330) => (
 );
 const seloTxt = (m) => { const x = SELO[m?.selo?.nivel] || SELO.sem_funcao; return `${x[0]} ${x[2]}${m?.selo?.geral != null ? ` · ${m.selo.geral}%` : ""}`; };
 
-export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onErro, onOk }) {
+export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onErro, onOk, onEditarRascunho = null }) {
   const [d, setD] = useState(null);
   const [ocupado, setOcupado] = useState(false);
   const [modal, setModal] = useState(null); // { tipo: cancelar|editar|anexo }
@@ -74,6 +74,7 @@ export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onEr
           <button type="button" onClick={pdf} style={bt(C.textSub, false)}>📄 PDF da AT</button>
           {e.status !== "rascunho" && <button type="button" onClick={relatorio} title="AT + fluxo (hora, GPS, quem) + inspeções com fotos + documentos — para o cliente e como evidência" style={bt(C.accent, false)}>📑 Relatório da viagem</button>}
           {e.status === "programada" && <button type="button" onClick={editar} style={bt(C.textSub, false)}>✏ Editar</button>}
+          {e.status === "rascunho" && onEditarRascunho && <button type="button" onClick={() => onEditarRascunho(e.id)} style={bt(C.accent)}>✏ Continuar programação</button>} {/* 18g.2.1 */}
           <div style={{ flex: 1 }} />
           {temFluxo && ["programada", "em_execucao"].includes(e.status) && <span style={{ fontSize: 12, color: C.muted, alignSelf: "center" }}>🧭 O motorista conduz a viagem pelo 📲 link — começa e termina sozinha</span>}
           {!temFluxo && e.status === "programada" && <button type="button" disabled={ocupado} onClick={() => acao("iniciar", {}, `${e.numero} em execução.`)} style={bt(C.warn)}>▶ Iniciar</button>}

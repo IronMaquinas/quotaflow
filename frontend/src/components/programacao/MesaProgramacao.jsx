@@ -80,10 +80,14 @@ function Trecho({ C, s, pv, t, onAbrir, ...resto }) {
   );
 }
 
-export default function MesaProgramacao({ C, s, pedidos, podeLiberar, onAbrirAT, onSalvou, onErro, onOk }) {
+export default function MesaProgramacao({ C, s, pedidos, podeLiberar, onAbrirAT, onSalvou, onErro, onOk, abrirRascunho = null }) {
   const [base, setBase] = useState(null);
   const [soPendentes, setSoPendentes] = useState(true);
   const [editor, setEditor] = useState(null); // { pv, t, item, at }
+  useEffect(() => { // 18g.2.1: rascunho aberto de fora (tarefa fiscal / ficha) → abre o mesmo editor do card
+    if (!abrirRascunho?.id || !pedidos) return;
+    for (const p of pedidos) for (const t of p.trechos || []) { const at = (t.ats || []).find((a) => String(a.id) === String(abrirRascunho.id)); if (at) { const item = (t.itens || []).find((i) => (at.itens || []).some((x) => String(x.id) === String(i.id))) || (t.itens || [])[0]; setSoPendentes(false); setEditor({ pv: p, t, item, at }); return; } }
+  }, [abrirRascunho, pedidos]); // eslint-disable-line
   const [ver, setVer] = useState(null);
   useEffect(() => { apiService.get("/programacao/base").then(setBase).catch((e) => onErro(e.message)); }, []); // eslint-disable-line
   if (!pedidos || !base) return <div style={{ color: C.muted }}>Carregando…</div>;

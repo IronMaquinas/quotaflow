@@ -44,7 +44,13 @@ export default function TelaProgramacao({ C, s, perfis = [], abrirAT = null }) {
   const [visao, setVisao] = useState("semana"); // 16d: semana (14 dias) · mês (calendário) · ano (ocupação por mês)
   const [ficha, setFicha] = useState(null);
   const [msg, setMsg] = useState(null);
-  useEffect(() => { if (abrirAT?.id) { setAba("ats"); setFicha(abrirAT.id); } }, [abrirAT]); // 17b: veio de uma multa
+  const [rasc, setRasc] = useState(null); // 18g.2.1: rascunho → editor da Mesa
+  useEffect(() => { // 17b: veio de uma multa · 18g.2.1: se for rascunho, abre o editor da Mesa (rascunho não aparece em 🚛 ATs)
+    if (!abrirAT?.id) return;
+    if (!pedidos) return;
+    const ehRasc = pedidos.some((p) => (p.trechos || []).some((t) => (t.ats || []).some((a) => String(a.id) === String(abrirAT.id) && a.status === "rascunho")));
+    if (ehRasc) { setAba("programar"); setFicha(null); setRasc({ id: abrirAT.id, em: Date.now() }); } else { setAba("ats"); setFicha(abrirAT.id); }
+  }, [abrirAT, pedidos === null]); // eslint-disable-line
   const podeLiberar = perfis.some((p) => ["admin", "gestor"].includes(p));
   const erro = (t) => setMsg({ t, erro: true });
   const ok = (t) => setMsg({ t });
@@ -123,7 +129,7 @@ export default function TelaProgramacao({ C, s, perfis = [], abrirAT = null }) {
         {abaBt("programar", "🧩 Mesa de programação", totalFaltam)}{abaBt("ats", "🚛 ATs", (ats || []).filter((e) => e.conflitos?.length || e.atrasada).length ? "⚠" : null)}{abaBt("agenda", "🗓 Agenda da frota", ag?.com_conflito ? `${ag.com_conflito} ⚠` : null)}{abaBt("utilizacao", "📊 Utilização")}
       </div>
 
-      {aba === "programar" && <MesaProgramacao C={C} s={s} pedidos={pedidos} podeLiberar={podeLiberar} onAbrirAT={setFicha} onSalvou={carregar} onErro={erro} onOk={ok} />}
+      {aba === "programar" && <MesaProgramacao C={C} s={s} pedidos={pedidos} abrirRascunho={rasc} podeLiberar={podeLiberar} onAbrirAT={setFicha} onSalvou={carregar} onErro={erro} onOk={ok} />}
 
       {aba === "ats" && <>
         <div style={{ display: "flex", gap: 8, marginBottom: 10, flexWrap: "wrap" }}>
@@ -180,7 +186,7 @@ export default function TelaProgramacao({ C, s, perfis = [], abrirAT = null }) {
             </tr>)}</tbody></table></div>}
       </>}
 
-      {ficha && <FichaAT C={C} s={s} id={ficha} podeLiberar={podeLiberar} onFechar={() => setFicha(null)} onMudou={carregar} onErro={erro} onOk={ok} />}
+      {ficha && <FichaAT C={C} s={s} id={ficha} podeLiberar={podeLiberar} onEditarRascunho={(rid) => { setFicha(null); setAba("programar"); setRasc({ id: rid, em: Date.now() }); }} onFechar={() => setFicha(null)} onMudou={carregar} onErro={erro} onOk={ok} />}
       {msg && <div style={{ position: "fixed", bottom: 20, left: "50%", transform: "translateX(-50%)", zIndex: 400, background: msg.erro ? C.danger : C.success, color: "#fff", padding: "10px 18px", borderRadius: 10, fontSize: 13, maxWidth: "90vw", boxShadow: "0 8px 24px #0006" }}>{msg.t}</div>}
     </div>
   );

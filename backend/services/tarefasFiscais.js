@@ -408,7 +408,7 @@ async function divergencias(supabase, tenantId, ats = null) {
     const cond = (e.dados.condutores || [])[0];
     if (cond) {
       const col = cols.find((c) => String(c.id) === String(at.motorista_id)); const cpfAT = String(col?.cpf || '').replace(/\D/g, ''); const cpfM = String(cond.cpf || '').replace(/\D/g, '');
-      const igual = at.motorista_id && ((cpfAT && cpfM && cpfAT === cpfM) || (!cpfAT && semAcento(at.motorista_nome) === semAcento(cond.nome)));
+      const igual = at.motorista_id && ((cpfAT && cpfM && cpfAT === cpfM) || semAcento(at.motorista_nome) === semAcento(cond.nome)); // CPF ou nome
       if (!igual) msgs.push(`Motorista da AT (${at.motorista_nome || 'a definir'}) ≠ condutor do MDF-e (${cond.nome || cpfM}) — registre a inclusão de condutor no MDF-e`);
     }
     if (msgs.length) out[String(at.id)] = [...(out[String(at.id)] || []), ...msgs];
