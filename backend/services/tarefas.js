@@ -23,7 +23,7 @@ const MIME = { 'application/pdf': 'pdf', 'application/xml': 'xml', 'text/xml': '
 
 const texto = (v, n) => String(v ?? '').trim().slice(0, n);
 const jsonArr = (v) => { if (Array.isArray(v)) return v; if (typeof v === 'string') { try { const x = JSON.parse(v); return Array.isArray(x) ? x : []; } catch { return []; } } return []; };
-const semMigration = (m) => /tipo|numero|anexos|historico|vinculos|tarefa_sequencias/.test(m) && /does not exist|schema cache|column|relation/.test(m);
+const semMigration = (m) => /tipo|numero|anexos|historico|vinculos|tarefa_sequencias|responsavel_usuario_id|responsavel_colaborador_id/.test(m) && /does not exist|schema cache|column|relation/.test(m);
 const ERRO_065 = { status: 409, erro: 'Rode a migration 065 antes (rastreabilidade das tarefas)' };
 const tipoDe = (t) => t.tipo || TIPO_DA_ORIGEM[t.origem] || 'GN';
 const valorTxt = (k, v) => (v == null || v === '' ? '—' : k === 'status' ? STATUS[v] || v : k === 'prioridade' ? PRIORIDADE[v] || v : k === 'tipo' ? `${v} · ${TIPOS[v]?.nome || ''}` : k === 'prazo' ? String(v).slice(0, 10).split('-').reverse().join('/') : String(v).slice(0, 120));
@@ -60,18 +60,49 @@ async function detalhe(supabase, tenantId, id) {
   return enfeitar(t);
 }
 
+// ─── 18g.2a: 👤 responsável pelo cadastro (usuários com login + colaboradores de 👷 Pessoas) ─────────
+const idOk = (v) => v != null && String(v).trim() !== '';
+async function pessoas(supabase, tenantId) {
+  const [us, cs] = await Promise.all([
+    supabase.from('usuarios').select('*').eq('tenant_id', tenantId).then((r) => r.data || []).catch(() => []),
+    supabase.from('colaboradores').select('*').eq('tenant_id', tenantId).then((r) => r.data || []).catch(() => []),
+  ]);
+  const ativosU = us.filter((u) => u.ativo !== 0 && u.ativo !== false && !['fornecedor', 'locatario'].includes(u.perfil));
+  const out = []; const usados = new Set();
+  for (const c of cs.filter((c) => c.situacao !== 'desligado')) {
+    const u = idOk(c.usuario_id) ? ativosU.find((x) => String(x.id) === String(c.usuario_id)) : null; if (u) usados.add(String(u.id));
+    out.push({ ref: `c:${c.id}`, nome: c.nome, funcao: c.funcao?.nome || c.funcao || null, email: u?.email || null, usuario_id: u ? String(u.id) : null, colaborador_id: String(c.id), login: !!u, afastado: c.situacao === 'afastado' });
+  }
+  for (const u of ativosU) if (!usados.has(String(u.id))) out.push({ ref: `u:${u.id}`, nome: u.nome || u.email, funcao: null, email: u.email || null, usuario_id: String(u.id), colaborador_id: null, login: true });
+  return out.filter((p) => p.nome).sort((a, b) => String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
+}
+/** { responsavel, responsavel_usuario_id, responsavel_colaborador_id } a partir de responsavel_ref ('c:12' / 'u:5') ou do texto livre */
+async function resolverResponsavel(supabase, tenantId, body) {
+  if (idOk(body.responsavel_ref)) {
+    const p = (await pessoas(supabase, tenantId)).find((x) => x.ref === String(body.responsavel_ref));
+    if (!p) return { erro: 'Responsável não encontrado no cadastro' };
+    return { responsavel: p.nome, responsavel_usuario_id: p.usuario_id, responsavel_colaborador_id: p.colaborador_id };
+  }
+  return { responsavel: texto(body.responsavel, 120) || null, responsavel_usuario_id: null, responsavel_colaborador_id: null };
+}
+const semRespIds = (o) => { const { responsavel_usuario_id: _u, responsavel_colaborador_id: _c, ...x } = o; return x; };
+
 async function criar(supabase, tenantId, quem, body = {}) {
   const titulo = texto(body.titulo, 200); if (!titulo) return { status: 400, erro: 'Título é obrigatório' };
   const tipo = body.tipo ? String(body.tipo).toUpperCase() : 'GN';
   if (!TIPOS[tipo]) return { status: 400, erro: `Tipo inválido (${Object.keys(TIPOS).join(', ')})` };
   const agora = new Date().toISOString();
-  const linha = { tenant_id: tenantId, titulo, detalhe: texto(body.detalhe, 4000), responsavel: texto(body.responsavel, 120) || null, prazo: body.prazo || null,
+  const resp = await resolverResponsavel(supabase, tenantId, body); if (resp.erro) return { status: 400, erro: resp.erro };
+  const linha = { tenant_id: tenantId, titulo, detalhe: texto(body.detalhe, 4000), ...(resp.responsavel_usuario_id || resp.responsavel_colaborador_id ? resp : { responsavel: resp.responsavel }), prazo: body.prazo || null,
     prioridade: PRIORIDADE[body.prioridade] ? body.prioridade : 'media', status: STATUS[body.status] ? body.status : 'pendente', criado_em: agora,
     tipo, anexos: [], vinculos: limparVinculos(body.vinculos), historico: [entrada(quem, 'criada', { texto: `Tipo ${tipo} · ${TIPOS[tipo].nome}` })] };
   const { data, error } = await supabase.from('tarefas').insert([linha]).select();
   if (error) {
     if (!semMigration(error.message)) throw new Error(error.message);
-    const { tipo: _t, anexos: _a, vinculos: _v, historico: _h, ...velha } = linha; // sem a 065: cria como antes (sem número)
+    if (/responsavel_(usuario|colaborador)_id/.test(error.message)) { // sem a 067: grava só o nome
+      const r1 = await supabase.from('tarefas').insert([semRespIds(linha)]).select(); if (!r1.error) return enfeitar(r1.data[0]);
+    }
+    const { tipo: _t, anexos: _a, vinculos: _v, historico: _h, ...velha } = semRespIds(linha); // sem a 065: cria como antes (sem número)
     const r = await supabase.from('tarefas').insert([velha]).select(); if (r.error) throw new Error(r.error.message);
     return enfeitar(r.data[0]);
   }
@@ -97,12 +128,20 @@ async function atualizar(supabase, tenantId, quem, id, body = {}) {
     upd[k] = v;
     hist.push(entrada(quem, k === 'status' ? 'status' : k === 'tipo' ? 'reclassificada' : 'editada', { campo: ROTULO[k], de: valorTxt(k, antes), para: valorTxt(k, v) }));
   }
+  if ('responsavel_ref' in body || 'responsavel' in body) { // 18g.2a: liga ao cadastro (ou limpa os ids se virou texto livre)
+    const resp = await resolverResponsavel(supabase, tenantId, body); if (resp.erro) return { status: 400, erro: resp.erro };
+    if (String(resp.responsavel ?? '') !== String(t.responsavel ?? '') && !('responsavel' in upd)) { upd.responsavel = resp.responsavel; hist.push(entrada(quem, 'editada', { campo: ROTULO.responsavel, de: valorTxt('responsavel', t.responsavel), para: valorTxt('responsavel', resp.responsavel) })); }
+    else if ('responsavel' in upd) upd.responsavel = resp.responsavel;
+    if (String(resp.responsavel_usuario_id ?? '') !== String(t.responsavel_usuario_id ?? '')) upd.responsavel_usuario_id = resp.responsavel_usuario_id;
+    if (String(resp.responsavel_colaborador_id ?? '') !== String(t.responsavel_colaborador_id ?? '')) upd.responsavel_colaborador_id = resp.responsavel_colaborador_id;
+  }
   if ('vinculos' in body) upd.vinculos = limparVinculos(body.vinculos);
   if (!Object.keys(upd).length) return enfeitar(t);
   if (hist.length) upd.historico = [...jsonArr(t.historico), ...hist];
   const { data, error } = await supabase.from('tarefas').update(upd).eq('id', t.id).eq('tenant_id', tenantId).select();
   if (error) { if (semMigration(error.message)) { // sem a 065: grava só os campos antigos
-    const velhos = Object.fromEntries(Object.entries(upd).filter(([k]) => !['tipo', 'historico', 'vinculos'].includes(k)));
+    if (/responsavel_(usuario|colaborador)_id/.test(error.message)) { const r1 = await supabase.from('tarefas').update(semRespIds(upd)).eq('id', t.id).eq('tenant_id', tenantId).select(); if (!r1.error) return enfeitar(r1.data[0]); }
+    const velhos = Object.fromEntries(Object.entries(semRespIds(upd)).filter(([k]) => !['tipo', 'historico', 'vinculos'].includes(k)));
     if (!Object.keys(velhos).length) return ERRO_065;
     const r = await supabase.from('tarefas').update(velhos).eq('id', t.id).eq('tenant_id', tenantId).select(); if (r.error) throw new Error(r.error.message); return enfeitar(r.data[0]);
   } throw new Error(error.message); }
@@ -167,4 +206,4 @@ async function registrar(supabase, tenantId, id, quem, acao, extra = {}) {
   } catch { /* histórico não pode derrubar quem chamou */ }
 }
 
-module.exports = { TIPOS, VINCULOS, STATUS, listar, detalhe, criar, atualizar, excluir, comentar, anexar, linkAnexo, removerAnexo, registrar, enfeitar };
+module.exports = { pessoas, resolverResponsavel, TIPOS, VINCULOS, STATUS, listar, detalhe, criar, atualizar, excluir, comentar, anexar, linkAnexo, removerAnexo, registrar, enfeitar };

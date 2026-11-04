@@ -3,11 +3,13 @@
 //        📎 evidências, 📜 histórico (quem fez o quê e quando), 🔗 vínculos (BID → PV → TSK → AT…).
 //   18g.1: 🧾 tarefa fiscal (origem 'fiscal'): checklist NF-e → CT-e → averbação → MDF-e; conclui sozinha; "Dispensar" cancela.
 //          props ambienteInicial (perfil Fiscal abre em TR) e abrirTarefa ({ numero }) — vem do selo da Mesa.
+//   18g.2a: 👤 responsável escolhido do cadastro (digita e o sistema encontra usuários e colaboradores) + filtro "👤 Minhas".
 //        Tarefa numerada não se exclui: cancela (fica no histórico). Confirmações no modal do app (sem window.confirm/alert).
 import { useState, useEffect } from 'react';
 import { useTarefas } from '../../hooks/useTarefas';
 import apiService from '../../services/apiService';
 import ChecklistFiscal from './ChecklistFiscal'; // 18g.1
+import CampoPessoa from '../shared/CampoPessoa'; // 18g.2a
 
 export const TIPOS_TAREFA = {
   TR: { nome: 'Transporte', icone: '🚚' }, NC: { nome: 'Não conformidade', icone: '⚠️' }, AU: { nome: 'Auditoria', icone: '🔎' },
@@ -16,7 +18,8 @@ export const TIPOS_TAREFA = {
 const VINC = { bid: 'BID', pv: 'Pedido', trecho: 'Trecho', at: 'AT', nc: 'NC', prospeccao: 'Prospecção', contrato: 'Contrato', inspecao: 'Inspeção', multa: 'Multa', autuacao: 'Autuação', tarefa: 'Tarefa' };
 const EVENTO = { at: 'qf-abrir-at', prospeccao: 'qf-abrir-prospeccao', contrato: 'qf-abrir-contrato' };
 const ACAO = { criada: '✨ criada', status: '🔄 situação', editada: '✏️ editada', reclassificada: '🏷 reclassificada', anexo: '📎 evidência', anexo_removido: '🗑 evidência removida' };
-const FORM0 = { titulo: '', detalhe: '', responsavel: '', prazo: '', prioridade: 'media', status: 'pendente', tipo: 'GN' };
+const FORM0 = { titulo: '', detalhe: '', responsavel: '', responsavel_ref: null, prazo: '', prioridade: 'media', status: 'pendente', tipo: 'GN' };
+const refDe = (t) => (t.responsavel_colaborador_id != null ? `c:${t.responsavel_colaborador_id}` : t.responsavel_usuario_id != null ? `u:${t.responsavel_usuario_id}` : null);
 const lerBase64 = (f) => new Promise((ok, erro) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(',')[1] || ''); r.onerror = () => erro(new Error('Não consegui ler o arquivo')); r.readAsDataURL(f); });
 const tipoDe = (t) => t.tipo || ({ prospeccao: 'CM', multa: 'HR', autuacao: 'NC', fiscal: 'TR' }[t.origem]) || 'GN';
 
@@ -33,8 +36,9 @@ export default function TelaPlanoAcaoNova({ onVoltar, C, s, ambienteInicial = 't
   const [aviso, setAviso] = useState(null);
   const [confirmar, setConfirmar] = useState(null); // { texto, acao }
   const [enviando, setEnviando] = useState(false);
+  const [gente, setGente] = useState({ eu: null, pessoas: [] }); // 18g.2a
 
-  useEffect(() => { listar(); }, []); // eslint-disable-line
+  useEffect(() => { listar(); apiService.get('/tarefas/pessoas').then((r) => setGente({ eu: r?.eu ?? null, pessoas: r?.pessoas || [] })).catch(() => {}); }, []); // eslint-disable-line
   useEffect(() => { if (!abrirTarefa?.numero) return; setAmbiente('todos'); setFiltro('todos'); setSearch(abrirTarefa.numero); }, [abrirTarefa]); // 18g.1: veio do selo da Mesa
   useEffect(() => { if (!abrirTarefa?.numero) return; const t = (tarefas || []).find((x) => x.numero === abrirTarefa.numero); if (t && aberta?.id !== t.id) setAberta({ id: t.id, aba: t.origem === 'fiscal' ? 'fiscal' : 'hist' }); }, [abrirTarefa, tarefas]); // eslint-disable-line
   useEffect(() => { if (!aviso) return; const x = setTimeout(() => setAviso(null), aviso.erro ? 7000 : 3500); return () => clearTimeout(x); }, [aviso]);
@@ -44,7 +48,7 @@ export default function TelaPlanoAcaoNova({ onVoltar, C, s, ambienteInicial = 't
   const doAmbiente = lista.filter((t) => ambiente === 'todos' || tipoDe(t) === ambiente);
   const q = search.trim().toLowerCase();
   const tarefasFiltradas = doAmbiente
-    .filter((t) => filtro === 'todos' || (filtro === 'abertas' ? !['concluida', 'cancelada'].includes(t.status) : t.status === filtro || t.prioridade === filtro))
+    .filter((t) => filtro === 'todos' || (filtro === 'abertas' ? !['concluida', 'cancelada'].includes(t.status) : filtro === 'minhas' ? (gente.eu != null && String(t.responsavel_usuario_id ?? '') === String(gente.eu) && !['concluida', 'cancelada'].includes(t.status)) : t.status === filtro || t.prioridade === filtro))
     .filter((t) => !q || [t.numero, t.titulo, t.responsavel, t.detalhe, ...(t.vinculos || []).map((v) => v.numero)].some((x) => String(x || '').toLowerCase().includes(q)))
     .sort((a, b) => String(a.prazo || '9999').localeCompare(String(b.prazo || '9999')) || String(a.numero || '').localeCompare(String(b.numero || '')));
 
@@ -137,9 +141,9 @@ export default function TelaPlanoAcaoNova({ onVoltar, C, s, ambienteInicial = 't
 
       <div style={{ display: 'flex', gap: 8, marginBottom: 14, flexWrap: 'wrap' }}>
         <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar nº (TSK-…), tarefa, responsável, BID, AT…" style={{ ...s.input, width: 300, marginBottom: 0 }} />
-        {['abertas', 'todos', 'pendente', 'em_andamento', 'concluida', 'cancelada', 'alta'].map((f) => (
+        {['abertas', 'minhas', 'todos', 'pendente', 'em_andamento', 'concluida', 'cancelada', 'alta'].map((f) => (
           <button key={f} type="button" onClick={() => setFiltro(f)} style={{ background: filtro === f ? '#1e2a3f' : 'transparent', border: `1px solid ${filtro === f ? C.accent : C.border}`, borderRadius: 6, padding: '6px 12px', color: filtro === f ? C.accent : C.muted, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>
-            {{ abertas: 'Abertas', todos: 'Todas', pendente: 'Pendente', em_andamento: 'Em andamento', concluida: 'Concluída', cancelada: 'Cancelada', alta: '🔴 Alta' }[f]}
+            {{ abertas: 'Abertas', minhas: '👤 Minhas', todos: 'Todas', pendente: 'Pendente', em_andamento: 'Em andamento', concluida: 'Concluída', cancelada: 'Cancelada', alta: '🔴 Alta' }[f]}
           </button>))}
       </div>
 
@@ -174,7 +178,7 @@ export default function TelaPlanoAcaoNova({ onVoltar, C, s, ambienteInicial = 't
                   </div>
                   {t.detalhe && <div style={{ fontSize: 12, color: C.muted, marginBottom: 6, lineHeight: 1.5 }}>{t.detalhe}</div>}
                   <div style={{ display: 'flex', gap: 14, flexWrap: 'wrap', fontSize: 11, alignItems: 'center' }}>
-                    {t.responsavel && <span style={{ color: C.textSub }}>👤 {t.responsavel}</span>}
+                    {t.responsavel && <span title={refDe(t) ? 'Ligado ao cadastro' : 'Texto livre'} style={{ color: C.textSub }}>👤 {t.responsavel}{refDe(t) ? ' ✓' : ''}</span>}
                     {t.fiscal && <span onClick={() => setAberta(aba === 'fiscal' ? null : { id: t.id, aba: 'fiscal' })} style={{ color: t.fiscal.feitos === t.fiscal.total ? C.success : C.accent, cursor: 'pointer', fontWeight: 600 }}>🧾 {t.fiscal.feitos}/{t.fiscal.total}{t.fiscal.proximo && !encerrada ? ` · próximo: ${{ nfe: 'NF-e', cte: 'CT-e', averbacao: 'averbação', mdfe: 'MDF-e' }[t.fiscal.proximo]}` : ''}{t.fiscal.alertas?.length ? ` · ⚠️ ${t.fiscal.alertas.length}` : ''}</span>}
                     {t.origem === 'prospeccao' && <span style={{ color: C.accent, cursor: 'pointer', fontWeight: 600 }} onClick={() => window.dispatchEvent(new CustomEvent('qf-abrir-prospeccao', { detail: t.origem_ref }))}>📣 Abrir no Comercial{encerrada ? '' : ' — encerra com o BID ou o cancelamento'}</span>}
                     {prazoInfo && <span style={{ color: encerrada ? C.muted : prazoInfo.cor }}>📅 {prazoInfo.str}{encerrada ? '' : ` · ${prazoInfo.label}`}</span>}
@@ -187,7 +191,7 @@ export default function TelaPlanoAcaoNova({ onVoltar, C, s, ambienteInicial = 't
                   {abaBt(t, 'coment', `💬 ${t.comentarios?.length || 0}`)}
                   {abaBt(t, 'evid', `📎 ${t.anexos?.length || 0}`)}
                   {t.numero && abaBt(t, 'hist', '📜')}
-                  <button type="button" aria-label="Editar" onClick={() => { setForm({ titulo: t.titulo, detalhe: t.detalhe || '', responsavel: t.responsavel || '', prazo: t.prazo ? String(t.prazo).slice(0, 10) : '', prioridade: t.prioridade || 'media', status: t.status, tipo: tipoDe(t) }); setModal({ tipo: 'editar', tarefa: t }); }} style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 5, padding: '5px 9px', color: C.muted, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>✏</button>
+                  <button type="button" aria-label="Editar" onClick={() => { setForm({ titulo: t.titulo, detalhe: t.detalhe || '', responsavel: t.responsavel || '', responsavel_ref: refDe(t), prazo: t.prazo ? String(t.prazo).slice(0, 10) : '', prioridade: t.prioridade || 'media', status: t.status, tipo: tipoDe(t) }); setModal({ tipo: 'editar', tarefa: t }); }} style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 5, padding: '5px 9px', color: C.muted, fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>✏</button>
                   {!daOrigem && !t.numero && <button type="button" aria-label="Excluir" onClick={() => setConfirmar({ texto: 'Excluir esta tarefa?', acao: () => deletar(t.id).then(() => ok('Tarefa excluída')) })} style={{ background: 'transparent', border: `1px solid #ef444433`, borderRadius: 5, padding: '5px 9px', color: '#ef4444', fontSize: 11, cursor: 'pointer', fontFamily: 'inherit' }}>✕</button>}
                 </div>
               </div>
@@ -268,7 +272,7 @@ export default function TelaPlanoAcaoNova({ onVoltar, C, s, ambienteInicial = 't
                 <textarea value={form.detalhe} onChange={(e) => setForm((f) => ({ ...f, detalhe: e.target.value }))} rows={3} placeholder="Descreva a tarefa..." style={{ ...s.input, resize: 'none' }} />
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-                <div><label style={s.label}>RESPONSÁVEL</label><input type="text" value={form.responsavel} onChange={(e) => setForm((f) => ({ ...f, responsavel: e.target.value }))} placeholder="Nome" style={s.input} /></div>
+                <div><label style={s.label}>RESPONSÁVEL</label><CampoPessoa C={C} s={s} pessoas={gente.pessoas} valor={{ nome: form.responsavel, ref: form.responsavel_ref }} onChange={(v) => setForm((f) => ({ ...f, responsavel: v.nome, responsavel_ref: v.ref }))} placeholder="Digite o nome…" /></div>
                 <div><label style={s.label}>PRAZO *</label><input type="date" aria-label="Prazo" value={form.prazo} onChange={(e) => setForm((f) => ({ ...f, prazo: e.target.value }))} style={s.input} /></div>
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 14 }}>

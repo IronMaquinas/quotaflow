@@ -1,8 +1,9 @@
 // routes/tarefas.js — ✅ Plano de ação · etapa 18g: rastreabilidade (services/tarefas.js)
 //   GET    /api/tarefas                         lista (com número TSK-…, tipo, evidências, histórico, vínculos)
+//   GET    /api/tarefas/pessoas                 18g.2a: usuários + colaboradores para escolher o responsável ({ eu, pessoas })
 //   GET    /api/tarefas/tipos                   tipos (TR · NC · AU · MT · CM · HR · GN)
 //   GET    /api/tarefas/:id                     uma tarefa
-//   POST   /api/tarefas                         { titulo, detalhe, responsavel, prazo, prioridade, status, tipo, vinculos }
+//   POST   /api/tarefas                         { titulo, detalhe, responsavel | responsavel_ref (c:id / u:id), prazo, prioridade, status, tipo, vinculos }
 //   PUT    /api/tarefas/:id                     campos acima — cada mudança vai para o histórico (número não muda)
 //   DELETE /api/tarefas/:id                     só tarefa sem número (as numeradas se cancelam — auditoria)
 //   POST   /api/tarefas/:id/comentario          { texto }
@@ -24,6 +25,7 @@ const responder = (fn, criado = false) => async (req, res) => {
 };
 
 router.get("/", tenantMiddleware, responder(async (req) => { await TF.sincronizar(supabase, req.tenantId, { quem: await quem(req) }).catch((e) => console.error("❌ [fiscal] sincronizar", e.message)); return T.listar(supabase, req.tenantId); }));
+router.get("/pessoas", tenantMiddleware, responder(async (req) => ({ eu: req.userId != null ? String(req.userId) : null, pessoas: await T.pessoas(supabase, req.tenantId) }))); // 18g.2a
 router.get("/tipos", tenantMiddleware, responder(async () => ({ tipos: T.TIPOS, vinculos: T.VINCULOS })));
 router.get("/:id", tenantMiddleware, responder((req) => T.detalhe(supabase, req.tenantId, req.params.id)));
 router.post("/", tenantMiddleware, responder(async (req) => T.criar(supabase, req.tenantId, await quem(req), req.body || {}), true));
