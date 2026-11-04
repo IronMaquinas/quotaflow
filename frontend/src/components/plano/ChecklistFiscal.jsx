@@ -2,6 +2,7 @@
 //   NF-e → CT-e → averbação → MDF-e. Cada um: nº/chave + PDF (dá o ✓) + XML (opcional: preenche e confere as chaves).
 //   18g.1.1: XML primeiro — ao escolher, já mostra o que foi lido e preenche nº e chave (a conferência oficial é no servidor).
 //   18g.2: MDF-e com XML → "🚚 Programar AT deste MDF-e" (rascunho na Mesa, já com placa/motorista); AT concluída → 🏁 encerrar o MDF-e.
+//   18g.2.3: com AT no trecho (mesmo rascunho) os documentos ficam 🔒 travados (sem 🗑); "Programar AT" avisa se há documento sem salvar.
 //   O que foi anexado direto na AT aparece aqui ("da AT-…"). Dispensar = cancelar com justificativa (fica no histórico).
 import { useState } from "react";
 import apiService from "../../services/apiService";
@@ -26,6 +27,7 @@ export default function ChecklistFiscal({ C, s, tarefa, onAtualizou, onErro, onO
   const [ocupado, setOcupado] = useState(false);
   const [disp, setDisp] = useState(null); // motivo da dispensa (string) quando aberto
   const encerrada = ["cancelada"].includes(tarefa.status);
+  const travado = ck.travado || []; // 18g.2.3
   const abrir = (k) => { setAbrindo(abrindo === k ? null : k); setF({ numero: "", chave: "", pdf: null, xml: null }); setLido(null); };
   const escolherXml = async (k, arq) => {
     if (!arq) { setF((v) => ({ ...v, xml: null })); setLido(null); return; }
@@ -52,6 +54,9 @@ export default function ChecklistFiscal({ C, s, tarefa, onAtualizou, onErro, onO
     catch (er) { onErro?.(er); } finally { setOcupado(false); }
   };
   const programar = async (e) => { // 18g.2
+    if (abrindo && (f.pdf || f.xml || String(f.numero || "").trim() || String(f.chave || "").trim())) { // 18g.2.3: não perde o que está no formulário
+      onErro?.(new Error(`Você tem um documento (${ITENS_FISCAIS.find((x) => x[0] === abrindo)?.[1]}) preenchido e ainda não salvo — clique em Salvar (ou Fechar) antes de programar a AT.`)); return;
+    }
     setOcupado(true);
     try { const r0 = await apiService.post(`/tarefas/${tarefa.id}/fiscal/mdfe/${e.id}/programar`, {}); onOk?.(`🚚 AT em rascunho criada — confira e programe na 🧩 Mesa${r0?.avisos?.length ? ` · ⚠️ ${r0.avisos.join("; ")}` : ""}`); await onAtualizou?.(); }
     catch (er) { onErro?.(er); } finally { setOcupado(false); }
@@ -76,6 +81,7 @@ export default function ChecklistFiscal({ C, s, tarefa, onAtualizou, onErro, onO
       <div style={{ flex: 1, height: 6, background: C.border, borderRadius: 3, overflow: "hidden", minWidth: 80 }}><div style={{ width: `${(r.feitos / (r.total || 4)) * 100}%`, height: "100%", background: r.feitos === r.total ? C.success : C.accent }} /></div>
       <b style={{ fontSize: 12.5, color: r.feitos === r.total ? C.success : C.text }}>{r.feitos}/{r.total}</b>
     </div>
+    {travado.length > 0 && <div style={{ fontSize: 12.5, color: C.textSub, background: `${C.accent}12`, border: `1px solid ${C.accent}44`, borderRadius: 8, padding: "8px 12px", marginBottom: 10 }}>🔒 <b>Documentos travados</b> — já estão na {travado.map((x) => x.numero).join(", ")}. Para trocar um documento, descarte o rascunho ou cancele a AT (com motivo): assim a AT e a tarefa nunca divergem. Dá para acrescentar documento (fica no histórico).</div>}
     {ck.dispensa && <div style={{ fontSize: 12.5, color: C.warn, marginBottom: 10 }}>🚫 Dispensada por {ck.dispensa.por || "—"} em {quando(ck.dispensa.em)}: {ck.dispensa.motivo}</div>}
     {(r.alertas || []).map((a, i) => <div key={i} style={{ fontSize: 12.5, color: C.danger, marginBottom: 6 }}>⚠️ {a}</div>)}
     {ITENS_FISCAIS.map(([k, nome, dica], i) => {
@@ -100,7 +106,7 @@ export default function ChecklistFiscal({ C, s, tarefa, onAtualizou, onErro, onO
           {e.dados?.valor_frete != null && <span style={{ color: C.textSub }}>frete R$ {Number(e.dados.valor_frete).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>}
           {e.dados?.peso != null && k === "nfe" && <span style={{ color: C.textSub }}>{Number(e.dados.peso).toLocaleString("pt-BR")} kg</span>}
           <span style={{ color: C.muted, fontSize: 11 }}>{e.por || "—"} · {quando(e.em)}</span>
-          {!encerrada && e.origem !== "at" && <button type="button" aria-label={`Remover ${nome}`} disabled={ocupado} onClick={() => remover(k, e)} style={{ background: "transparent", border: "none", color: C.danger, cursor: "pointer", fontSize: 12 }}>🗑</button>}
+          {!encerrada && !travado.length && e.origem !== "at" && <button type="button" aria-label={`Remover ${nome}`} disabled={ocupado} onClick={() => remover(k, e)} style={{ background: "transparent", border: "none", color: C.danger, cursor: "pointer", fontSize: 12 }}>🗑</button>}
         </div>)}
         {abrindo === k && <div style={{ padding: "10px 0 2px 32px", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           {k !== "averbacao" && arquivo("🧩 XML (preenche sozinho)", "xml", ".xml,text/xml,application/xml", (x) => escolherXml(k, x))}

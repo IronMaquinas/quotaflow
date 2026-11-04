@@ -11,6 +11,9 @@
 //   18g.2: a AT espelha o MDF-e — "🚚 Programar AT deste MDF-e" cria a AT em rascunho (placa → equipamento, CPF/nome → motorista,
 //          início da viagem do XML); cada MDF-e fica ligado à sua AT (at_id); divergência AT × MDF-e (placas/condutor) na ficha e na Mesa;
 //          AT concluída com MDF-e → passo "Encerrar MDF-e" (a tarefa volta a "em andamento" até registrar o encerramento).
+//   18g.2.3: os PDFs também vão para o RASCUNHO da AT (kit do motorista já completo ao programar); e, com AT no trecho
+//            (mesmo rascunho), os documentos da tarefa ficam TRAVADOS para remoção/troca — só destravam descartando o rascunho
+//            ou cancelando a AT (rastreabilidade TSK ↔ AT). Acrescentar documento continua possível (fica no histórico).
 //   Sem a migration 066 (tarefas.checklist) nada é criado.
 const crypto = require('crypto');
 
@@ -141,13 +144,15 @@ async function sincronizar(supabase, tenantId, { pvId = null, quem = { nome: 'Qu
   pvs = pvs.filter((p) => (p.tipo_execucao || 'transporte') === 'transporte');
   if (!pvs.length) return { ok: true, criadas: 0 };
   const cfg = await config(supabase, tenantId);
-  const ex = (await q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId)).catch(() => [])).filter((e) => !['cancelada', 'rascunho'].includes(e.status));
+  const exTodas = (await q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId)).catch(() => [])).filter((e) => e.status !== 'cancelada'); // 18g.2.3: inclui rascunho
+  const ex = exTodas.filter((e) => e.status !== 'rascunho');
   const porRef = new Map(tarefas.map((t) => [String(t.origem_ref), t]));
   let criadas = 0; let alteradas = 0;
   for (const pv of pvs) {
     for (const g of pv.grupos || []) {
       const ref = `${pv.id}:${g.id}`; let t = porRef.get(ref);
       const ats = ex.filter((e) => String(e.pv_id) === String(pv.id) && String(e.grupo_id) === String(g.id));
+      const atsTodas = exTodas.filter((e) => String(e.pv_id) === String(pv.id) && String(e.grupo_id) === String(g.id)); // 18g.2.3
       const ativos = (g.itens || []).filter((i) => i.status !== 'cancelado');
       const pendente = ativos.some((i) => i.status !== 'concluido');
       const data = dataDoTrecho(g, ats);
@@ -181,7 +186,7 @@ async function sincronizar(supabase, tenantId, { pvId = null, quem = { nome: 'Qu
           const { data: d } = await supabase.from('tarefas').update(upd).eq('id', t.id).eq('tenant_id', tenantId).select(); if (d?.[0]) t = d[0]; alteradas++;
         }
       }
-      if (t && t.status !== 'cancelada' && ats.length) await espelhar(supabase, tenantId, t, ats, quem).catch((e) => console.error('❌ [fiscal] espelho', e.message));
+      if (t && t.status !== 'cancelada' && atsTodas.length) await espelhar(supabase, tenantId, t, atsTodas, quem).catch((e) => console.error('❌ [fiscal] espelho', e.message));
     }
   }
   return { ok: true, criadas, alteradas };
@@ -200,6 +205,8 @@ async function espelhar(supabase, tenantId, t, ats, quem) {
     if (!alvo) return e; mudouT = true; return { ...e, at_id: String(alvo.id), at_numero: alvo.numero };
   });
   if (mudouT) ck = { ...ck, mdfe: { entradas: mdfes } };
+  const trava = ats.map((at) => ({ id: String(at.id), numero: at.status === 'rascunho' ? 'rascunho da AT' : at.numero, status: at.status })); // 18g.2.3
+  if (JSON.stringify(trava) !== JSON.stringify(ck.travado || [])) { ck = { ...ck, travado: trava }; mudouT = true; }
   // 18g.2: AT concluída que tem MDF-e → pendência de encerramento
   const comMdfe = new Set(mdfes.filter((e) => e.at_id).map((e) => String(e.at_id)));
   for (const at of ats) for (const a of jsonArr(at.anexos)) if (a.tipo === 'mdfe') comMdfe.add(String(at.id));
@@ -314,7 +321,7 @@ async function registrarDoc(supabase, tenantId, quem, id, item, body = {}) {
   const ck = { ...ck0, [item]: { entradas: [...jsonArr(ck0[item]?.entradas), ent] } };
   const novosAnexos = [pdf, xml].filter(Boolean).map(({ _buf, ...a }) => ({ ...a, por: quem?.nome || null, fiscal: item }));
   const st = statusPelo(t, ck);
-  const hist = [entrada(quem, 'anexo', { texto: `🧾 ${ITENS[item]}${numero ? ` nº ${numero}` : ''}${pdf ? ' · PDF' : ''}${xml ? ' · XML lido' : ''}` })];
+  const hist = [entrada(quem, 'anexo', { texto: `🧾 ${ITENS[item]}${numero ? ` nº ${numero}` : ''}${pdf ? ' · PDF' : ''}${xml ? ' · XML lido' : ''}${(t.checklist?.travado || []).length ? ` · acrescentado com AT no trecho (${t.checklist.travado.map((x) => x.numero).join(', ')})` : ''}` })];
   if (st !== t.status) hist.push(entrada(quem, 'status', { campo: 'situação', de: t.status, para: st === 'concluida' ? 'Concluída' : 'Em andamento', texto: st === 'concluida' ? 'Concluída sozinha: NF-e, CT-e, averbação e MDF-e ✓' : null }));
   const { data, error } = await supabase.from('tarefas').update({ checklist: ck, anexos: [...jsonArr(t.anexos), ...novosAnexos], status: st, historico: [...jsonArr(t.historico), ...hist] }).eq('id', t.id).eq('tenant_id', tenantId).select();
   if (error) throw new Error(error.message);
@@ -329,6 +336,9 @@ async function removerDoc(supabase, tenantId, quem, id, item, entradaId) {
   const ck0 = t.checklist || novoChecklist(); const e = jsonArr(ck0[item]?.entradas).find((x) => x.id === entradaId);
   if (!e) return { status: 404, erro: 'Documento não encontrado' };
   if (e.origem === 'at') return { status: 409, erro: `Este documento foi anexado na ${e.at_numero} — remova por lá` };
+  { const [pvT, gT] = String(t.origem_ref || '').split(':'); // 18g.2.3: com AT no trecho (mesmo rascunho), a tarefa trava
+    const ativas = (await q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId).eq('pv_id', pvT)).catch(() => [])).filter((x) => String(x.grupo_id) === String(gT) && x.status !== 'cancelada');
+    if (ativas.length) return { status: 409, erro: `🔒 Documentos travados: o trecho já tem ${ativas.map((x) => (x.status === 'rascunho' ? 'um rascunho de AT' : x.numero)).join(', ')}. Para trocar um documento, descarte o rascunho ou cancele a AT (com motivo) — assim a AT e a tarefa nunca divergem.` }; }
   if (t.status === 'cancelada') return { status: 409, erro: 'Tarefa dispensada/cancelada' };
   const ck = { ...ck0, [item]: { entradas: jsonArr(ck0[item]?.entradas).filter((x) => x.id !== entradaId) } };
   const tira = [e.pdf_anexo, e.xml_anexo].filter(Boolean);

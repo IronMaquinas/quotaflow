@@ -340,7 +340,7 @@ async function descartar(supabase, tenantId, quem, id) {
   const ex = await exDoTenant(supabase, tenantId, id); if (!ex) return { status: 404, erro: 'AT não encontrada' };
   if (ex.status !== 'rascunho') return { status: 409, erro: 'Só rascunho pode ser descartado — AT programada se cancela (com motivo)' };
   const { error } = await supabase.from('execucoes').delete().eq('id', ex.id).eq('tenant_id', tenantId); if (error) throw new Error(error.message);
-  for (const a of ex.anexos || []) { try { await supabase.storage.from(BUCKET).remove([a.path]); } catch { /* arquivo órfão não impede descartar */ } }
+  for (const a of ex.anexos || []) { if (a.tarefa_anexo) continue; try { await supabase.storage.from(BUCKET).remove([a.path]); } catch { /* arquivo órfão não impede descartar */ } } // 18g.2.3: o arquivo da tarefa fiscal fica
   return { ok: true };
 }
 /** ▶ iniciar · ✓ concluir · ✕ cancelar (motivo) · ↺ reabrir (concluída/cancelada → programada) */
@@ -403,6 +403,7 @@ async function removerAnexo(supabase, tenantId, quem, id, anexoId) {
   const ex = await exDoTenant(supabase, tenantId, id); const a = (ex?.anexos || []).find((x) => x.id === anexoId);
   if (!a) return { status: 404, erro: 'Anexo não encontrado' };
   if (ex.status === 'concluida') return { status: 409, erro: 'AT concluída — reabra para mexer nos anexos' };
+  if (a.tarefa_anexo) return { status: 409, erro: `Este documento vem da ${a.tarefa_numero || 'tarefa fiscal'} (🧾 ✅ Plano) — é controlado lá` }; // 18g.2.3
   try { await supabase.storage.from(BUCKET).remove([a.path]); } catch { /* não bloqueia */ }
   const { data, error } = await supabase.from('execucoes').update({ anexos: (ex.anexos || []).filter((x) => x.id !== anexoId), atualizado_em: new Date().toISOString() }).eq('id', ex.id).eq('tenant_id', tenantId).select();
   if (error) throw new Error(error.message);

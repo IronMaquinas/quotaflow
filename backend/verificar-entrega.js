@@ -221,7 +221,7 @@ const ESPERADO = {
   'migrations/054_tarefa_atribuida.sql': '586bd43f09653a76e8d6a299e55905e3', // etapa 15c.1 (novo)
   'scripts/previaEmailsBid.js': '45b4dbeb2d2d8d84a24e7a31f6826049', // etapa 15c.3 (novo)
   'migrations/055_execucoes_at.sql': 'fc0a780d147f0b3d7e4c92ec71c4554f', // etapa 16a (novo)
-  'services/execucoes.js': '35e1e9e9dc4a44eef8e68200444dc5dd', // etapa 18g.2
+  'services/execucoes.js': '8a445f29735c08e44952e1d63b43352d', // etapa 18g.2.3
   'routes/programacao.js': 'ae12123a04d441719ecd27c6d0a8d0e1', // etapa 18g.2
   'front:gerarAT.js': 'd05187877f31e92708abba3c7f338ce3', // etapa 16e.1
   'front:TelaProgramacao.jsx': '4412d157e3d7d579b7c36891e4fe7353', // etapa 18g.2.1
@@ -269,8 +269,8 @@ const ESPERADO = {
   'migrations/065_tarefas_rastreabilidade.sql': '3902af0a80d08839d542bd2a65e99d87', // etapa 18g (novo)
   'services/tarefas.js': '9d43b74825db840e65054fbc7fb96fa7', // etapa 18g.2a
   'migrations/066_fiscal_transporte.sql': 'eeef7d2fb80ae6ad0ec6069a3342e0ff', // etapa 18g.1 (novo)
-  'services/tarefasFiscais.js': 'aae12f0e34d5699d89f7b432f1949059', // etapa 18g.2.1
-  'front:ChecklistFiscal.jsx': '0147a084ad0583eec9fa9334fede04ed', // etapa 18g.2
+  'services/tarefasFiscais.js': '649f3e175f6a27ea4393fa00ab463895', // etapa 18g.2.3
+  'front:ChecklistFiscal.jsx': 'b9803fe8297008af6e49c8e8aab649fd', // etapa 18g.2.3
   'front:ConfigFiscal.jsx': 'b4ceec47991a295f38f32992348ddcf8', // etapa 18g.1 (novo)
   'front:lerXmlFiscal.js': '8d657863784b4e6c468b29bd8152e53f', // etapa 18g.1.1 (novo)
   'migrations/067_tarefa_responsavel.sql': '3e718fa4290311abef8fdb5b2e68eb6b', // etapa 18g.2a (novo)
@@ -278,9 +278,11 @@ const ESPERADO = {
   'front:gerarRelatorioTarefas.js': '483dd597e30b11635886ba51406d36cf', // etapa 18g.2b (novo)
 };
 
-// Antes de copiar a etapa 18g.2.2 — base: 18g.2.1
+// Antes de copiar a etapa 18g.2.3 — base: 18g.2.2
 const ANTES = {
-  'front:MesaProgramacao.jsx': '189a87e2b5505ae41292195dd86596ea',
+  'services/tarefasFiscais.js': 'aae12f0e34d5699d89f7b432f1949059',
+  'services/execucoes.js': '35e1e9e9dc4a44eef8e68200444dc5dd',
+  'front:ChecklistFiscal.jsx': '0147a084ad0583eec9fa9334fede04ed',
 };
 
 const RAIZ = process.cwd();
@@ -318,7 +320,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18g.2.2)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18g.2.3)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
