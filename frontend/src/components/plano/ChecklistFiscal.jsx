@@ -1,6 +1,7 @@
 // components/plano/ChecklistFiscal.jsx — etapa 18g.1: 🧾 documentos da tarefa fiscal (TSK-TR-…) no ✅ Plano
 //   NF-e → CT-e → averbação → MDF-e. Cada um: nº/chave + PDF (dá o ✓) + XML (opcional: preenche e confere as chaves).
 //   18g.1.1: XML primeiro — ao escolher, já mostra o que foi lido e preenche nº e chave (a conferência oficial é no servidor).
+//   18g.2: MDF-e com XML → "🚚 Programar AT deste MDF-e" (rascunho na Mesa, já com placa/motorista); AT concluída → 🏁 encerrar o MDF-e.
 //   O que foi anexado direto na AT aparece aqui ("da AT-…"). Dispensar = cancelar com justificativa (fica no histórico).
 import { useState } from "react";
 import apiService from "../../services/apiService";
@@ -50,6 +51,18 @@ export default function ChecklistFiscal({ C, s, tarefa, onAtualizou, onErro, onO
     try { const res = await apiService.post(`/tarefas/${tarefa.id}/fiscal/${k}`, { entrada: e.id, pdf: { nome: arq.name, mime: mimeDe(arq), base64: await lerBase64(arq) } }); onOk?.(`📄 PDF anexado${res?.resumo ? ` — ${res.resumo.feitos}/${res.resumo.total}` : ""}`); await onAtualizou?.(); }
     catch (er) { onErro?.(er); } finally { setOcupado(false); }
   };
+  const programar = async (e) => { // 18g.2
+    setOcupado(true);
+    try { const r0 = await apiService.post(`/tarefas/${tarefa.id}/fiscal/mdfe/${e.id}/programar`, {}); onOk?.(`🚚 AT em rascunho criada — confira e programe na 🧩 Mesa${r0?.avisos?.length ? ` · ⚠️ ${r0.avisos.join("; ")}` : ""}`); await onAtualizou?.(); }
+    catch (er) { onErro?.(er); } finally { setOcupado(false); }
+  };
+  const [enc, setEnc] = useState({}); // at_id → { numero, pdf }
+  const encerrar = async (p) => {
+    setOcupado(true);
+    try { const v = enc[p.at_id] || {}; const corpo = { at_id: p.at_id, numero: v.numero || undefined }; if (v.pdf) corpo.pdf = { nome: v.pdf.name, mime: mimeDe(v.pdf), base64: await lerBase64(v.pdf) };
+      const r0 = await apiService.post(`/tarefas/${tarefa.id}/fiscal/encerramento`, corpo); onOk?.(`🏁 MDF-e da ${p.at_numero} encerrado${r0?.tarefa?.status === "concluida" ? " · tarefa concluída ✓" : ""}`); setEnc((x) => ({ ...x, [p.at_id]: undefined })); await onAtualizou?.(); }
+    catch (er) { onErro?.(er); } finally { setOcupado(false); }
+  };
   const remover = async (k, e) => { setOcupado(true); try { await apiService.delete(`/tarefas/${tarefa.id}/fiscal/${k}/${e.id}`); onOk?.("Documento removido"); await onAtualizou?.(); } catch (er) { onErro?.(er); } finally { setOcupado(false); } };
   const abrirAnexo = async (id) => { try { const x = await apiService.get(`/tarefas/${tarefa.id}/anexos/${id}`); if (x?.url) window.open(x.url, "_blank"); } catch (e) { onErro?.(e); } };
   const dispensar = async () => { setOcupado(true); try { await apiService.post(`/tarefas/${tarefa.id}/fiscal/dispensar`, { motivo: disp }); setDisp(null); onOk?.(`${tarefa.numero || "Tarefa"} dispensada`); await onAtualizou?.(); } catch (e) { onErro?.(e); } finally { setOcupado(false); } };
@@ -82,6 +95,8 @@ export default function ChecklistFiscal({ C, s, tarefa, onAtualizou, onErro, onO
           {e.origem === "at" && <span style={{ color: C.accent, cursor: "pointer" }} onClick={() => window.dispatchEvent(new CustomEvent("qf-abrir-at", { detail: e.at_id }))}>📎 {e.nome} — da {e.at_numero}</span>}
           {k !== "averbacao" && !e.pdf_anexo && e.origem !== "at" && <span style={{ color: C.warn }}>⚠️ falta o PDF (é o que dá o ✓){!encerrada && <label style={{ marginLeft: 8, color: C.accent, cursor: "pointer", fontWeight: 600 }}>＋ anexar PDF<input type="file" aria-label={`PDF do ${nome} ${e.numero || ""}`} accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" style={{ display: "none" }} onChange={(ev) => { const x = ev.target.files?.[0]; ev.target.value = ""; if (x) completarPdf(k, e, x); }} /></label>}</span>}
           {e.dados?.placa && <span style={{ color: C.textSub }}>🚛 {[e.dados.placa, ...(e.dados.reboques || [])].join(" + ")}{e.dados.condutores?.[0]?.nome ? ` · 👤 ${e.dados.condutores[0].nome}` : ""}</span>}
+          {k === "mdfe" && e.at_id && <span style={{ color: C.accent, cursor: "pointer", fontWeight: 600 }} onClick={() => window.dispatchEvent(new CustomEvent("qf-abrir-at", { detail: e.at_id }))}>🔗 {/^RASC-/.test(e.at_numero || "") ? "💾 rascunho da AT (programe na Mesa)" : e.at_numero || "AT"}</span>}
+          {k === "mdfe" && !e.at_id && e.dados && !encerrada && <button type="button" disabled={ocupado} onClick={() => programar(e)} style={{ ...s.btn(true), padding: "4px 10px", fontSize: 12, cursor: "pointer" }}>🚚 Programar AT deste MDF-e</button>}
           {e.dados?.valor_frete != null && <span style={{ color: C.textSub }}>frete R$ {Number(e.dados.valor_frete).toLocaleString("pt-BR", { minimumFractionDigits: 2 })}</span>}
           {e.dados?.peso != null && k === "nfe" && <span style={{ color: C.textSub }}>{Number(e.dados.peso).toLocaleString("pt-BR")} kg</span>}
           <span style={{ color: C.muted, fontSize: 11 }}>{e.por || "—"} · {quando(e.em)}</span>
@@ -99,6 +114,17 @@ export default function ChecklistFiscal({ C, s, tarefa, onAtualizou, onErro, onO
         </div>}
       </div>;
     })}
+    {(r.encerramento?.pendentes?.length > 0 || r.encerramento?.feitos > 0) && <div style={{ border: `1px solid ${r.encerramento.pendentes.length ? `${C.warn}88` : `${C.success}66`}`, borderRadius: 8, padding: "10px 12px", marginBottom: 8, background: C.surface }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "center" }}><span style={{ width: 22, height: 22, borderRadius: 11, display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 12, fontWeight: 700, background: r.encerramento.pendentes.length ? "transparent" : C.success, color: r.encerramento.pendentes.length ? C.warn : "#fff", border: `1px solid ${r.encerramento.pendentes.length ? C.warn : C.success}` }}>{r.encerramento.pendentes.length ? "5" : "✓"}</span>
+        <b style={{ fontSize: 13.5 }}>🏁 Encerrar MDF-e</b><span style={{ fontSize: 11.5, color: C.muted }}>Viagem concluída: encerre o MDF-e no emissor (MDF-e aberto impede emitir outro para a mesma placa)</span></div>
+      {(ck.encerramento?.entradas || []).map((x) => <div key={x.id} style={{ fontSize: 12.5, padding: "6px 0 0 32px" }}>✓ <b>{x.at_numero}</b>{x.numero ? ` · protocolo ${x.numero}` : ""}{x.pdf_anexo ? <span style={{ color: C.accent, cursor: "pointer", marginLeft: 8 }} onClick={() => abrirAnexo(x.pdf_anexo)}>📄 comprovante</span> : null} <span style={{ color: C.muted, fontSize: 11 }}>{x.por || "—"} · {quando(x.em)}</span></div>)}
+      {r.encerramento.pendentes.map((p) => <div key={p.at_id} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "8px 0 0 32px" }}>
+        <b style={{ fontSize: 12.5 }}>{p.at_numero}</b>
+        <input aria-label={`Protocolo ${p.at_numero}`} value={enc[p.at_id]?.numero || ""} onChange={(e) => setEnc((x) => ({ ...x, [p.at_id]: { ...(x[p.at_id] || {}), numero: e.target.value } }))} placeholder="Protocolo do encerramento (opcional)" style={{ ...s.input, width: 230, marginBottom: 0 }} />
+        <label style={{ ...s.btn(false), display: "inline-flex", padding: "6px 12px", fontSize: 12, cursor: "pointer", color: enc[p.at_id]?.pdf ? C.accent : C.text }}>{enc[p.at_id]?.pdf ? `✓ ${enc[p.at_id].pdf.name}` : "📄 Comprovante (opcional)"}<input type="file" accept=".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png" style={{ display: "none" }} onChange={(e) => { const f0 = e.target.files?.[0]; e.target.value = ""; setEnc((x) => ({ ...x, [p.at_id]: { ...(x[p.at_id] || {}), pdf: f0 || null } })); }} /></label>
+        <button type="button" disabled={ocupado} onClick={() => encerrar(p)} style={{ ...s.btn(true), padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>🏁 Encerrado</button>
+      </div>)}
+    </div>}
     {!encerrada && tarefa.status !== "concluida" && (disp == null
       ? <button type="button" onClick={() => setDisp("")} style={{ background: "transparent", border: "none", color: C.muted, cursor: "pointer", fontSize: 12, padding: 0, marginTop: 4 }}>🚫 Dispensar documentos fiscais deste trecho…</button>
       : <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}>

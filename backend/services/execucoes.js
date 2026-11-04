@@ -431,7 +431,8 @@ async function detalhe(supabase, tenantId, id) {
   const bloqueados = (ex.conjunto || []).map((c) => eqs.find((e) => String(e.id) === String(c.id))).filter((e) => e?.bloqueado).map((e) => ({ tag: e.tag, nome: e.nome, motivo: e.bloqueio_motivo }));
   const docs = semPath(avaliarDocs(await carregarDocs(supabase, tenantId), { motorista_id: ex.motorista_id, motorista_nome: ex.motorista_nome, conjunto: ex.conjunto || [], inicio: ex.inicio_previsto, fim: ex.fim_previsto }));
   const pvs = await q(supabase.from('pedidos_venda').select('*').eq('tenant_id', tenantId).eq('id', ex.pv_id)).catch(() => []);
-  return { execucao: { ...comRef(enfeitar(ex), pvs), fluxo: ex.status === 'rascunho' ? (ex.fluxo || []) : FV().comLiberacao(ex.fluxo || []), conflitos: ATIVAS.includes(ex.status) ? conflitos(ex, outras) : [], bloqueados, docs }, status: STATUS, anexos_tipos: ANEXOS };
+  const divergencias_mdfe = ((await require('./tarefasFiscais').divergencias(supabase, tenantId, [ex]).catch(() => ({})))[String(ex.id)]) || []; // 18g.2: AT × MDF-e
+  return { execucao: { ...comRef(enfeitar(ex), pvs), fluxo: ex.status === 'rascunho' ? (ex.fluxo || []) : FV().comLiberacao(ex.fluxo || []), conflitos: ATIVAS.includes(ex.status) ? conflitos(ex, outras) : [], bloqueados, docs, divergencias_mdfe }, status: STATUS, anexos_tipos: ANEXOS };
 }
 /** trechos do pedido com as ATs ativas e os itens ainda livres (sem valores) */
 function trechosComATs(pv0, ex, docsBase = null) {

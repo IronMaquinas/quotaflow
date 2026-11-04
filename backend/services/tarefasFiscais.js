@@ -8,6 +8,9 @@
 //   Espelho com a AT: o PDF anexado na tarefa aparece na AT do trecho (NF-e e CT-e em todas; MDF-e na AT da placa, ou na única AT);
 //   o que for anexado direto na AT marca a tarefa. Sincronização preguiçosa (ao abrir o ✅ Plano e a Mesa) + após o aceite do BID.
 //   18g.1.1: { entrada, pdf } completa com o PDF um documento salvo só com o XML.
+//   18g.2: a AT espelha o MDF-e — "🚚 Programar AT deste MDF-e" cria a AT em rascunho (placa → equipamento, CPF/nome → motorista,
+//          início da viagem do XML); cada MDF-e fica ligado à sua AT (at_id); divergência AT × MDF-e (placas/condutor) na ficha e na Mesa;
+//          AT concluída com MDF-e → passo "Encerrar MDF-e" (a tarefa volta a "em andamento" até registrar o encerramento).
 //   Sem a migration 066 (tarefas.checklist) nada é criado.
 const crypto = require('crypto');
 
@@ -79,7 +82,9 @@ function resumo(ck) {
   if (!ck) return null;
   const itens = Object.fromEntries(ORDEM.map((k) => [k, okItem(k, ck[k])]));
   const alertas = conferir(ck);
-  return { feitos: ORDEM.filter((k) => itens[k]).length, total: ORDEM.length, itens, alertas, proximo: ORDEM.find((k) => !itens[k]) || null, dispensa: ck.dispensa || null, data_trecho: ck.data_trecho || null };
+  const enc = ck.encerramento || {}; const pend = jsonArr(enc.pendentes).filter((a) => !jsonArr(enc.entradas).some((e) => String(e.at_id) === String(a.at_id))); // 18g.2
+  return { feitos: ORDEM.filter((k) => itens[k]).length, total: ORDEM.length, itens, alertas, proximo: ORDEM.find((k) => !itens[k]) || (pend.length ? 'encerramento' : null), dispensa: ck.dispensa || null, data_trecho: ck.data_trecho || null,
+    encerramento: { pendentes: pend, feitos: jsonArr(enc.entradas).length } };
 }
 /** confere as chaves entre os documentos (só quando há XML) */
 function conferir(ck) {
@@ -97,7 +102,7 @@ function conferir(ck) {
 const statusPelo = (t, ck) => {
   if (t.status === 'cancelada') return 'cancelada';
   const r = resumo(ck);
-  if (r.feitos === r.total) return 'concluida';
+  if (r.feitos === r.total) return r.encerramento.pendentes.length ? 'em_andamento' : 'concluida'; // 18g.2: falta encerrar o MDF-e
   if (r.feitos > 0 || ORDEM.some((k) => jsonArr(ck[k]?.entradas).length)) return 'em_andamento';
   return t.status === 'concluida' ? 'em_andamento' : t.status || 'pendente';
 };
@@ -185,6 +190,22 @@ async function sincronizar(supabase, tenantId, { pvId = null, quem = { nome: 'Qu
 /** tarefa ↔ ATs do trecho: PDFs da tarefa vão para a AT; anexos NF-e/CT-e/MDF-e feitos direto na AT marcam a tarefa */
 async function espelhar(supabase, tenantId, t, ats, quem) {
   let ck = t.checklist || novoChecklist(); let mudouT = false; const anexosT = jsonArr(t.anexos);
+  // 18g.2: cada MDF-e fica ligado a uma AT (pela placa, ou a única AT do trecho) — depois disso vale o vínculo, não a placa
+  const norm = (p) => String(p || '').replace(/\W/g, '').toUpperCase();
+  const mdfes = jsonArr(ck.mdfe?.entradas).map((e) => {
+    if (e.at_id) { const a0 = ats.find((x) => String(x.id) === String(e.at_id)); if (a0 && a0.numero !== e.at_numero) { mudouT = true; return { ...e, at_numero: a0.numero }; } return e; } // rascunho virou AT-…
+    if (e.origem === 'at') return e;
+    const placas = e.dados ? [e.dados.placa, ...(e.dados.reboques || [])].filter(Boolean).map(norm) : [];
+    const alvo = ats.find((at) => placas.length && (at.conjunto || []).some((c) => placas.includes(norm(c.tag || c.placa)))) || (ats.length === 1 ? ats[0] : null);
+    if (!alvo) return e; mudouT = true; return { ...e, at_id: String(alvo.id), at_numero: alvo.numero };
+  });
+  if (mudouT) ck = { ...ck, mdfe: { entradas: mdfes } };
+  // 18g.2: AT concluída que tem MDF-e → pendência de encerramento
+  const comMdfe = new Set(mdfes.filter((e) => e.at_id).map((e) => String(e.at_id)));
+  for (const at of ats) for (const a of jsonArr(at.anexos)) if (a.tipo === 'mdfe') comMdfe.add(String(at.id));
+  const pend = ats.filter((at) => at.status === 'concluida' && comMdfe.has(String(at.id))).map((at) => ({ at_id: String(at.id), at_numero: at.numero, concluida_em: at.concluida_em || null }));
+  const pendAntes = JSON.stringify(jsonArr(ck.encerramento?.pendentes).map((x) => x.at_id).sort());
+  if (JSON.stringify(pend.map((x) => x.at_id).sort()) !== pendAntes) { ck = { ...ck, encerramento: { entradas: jsonArr(ck.encerramento?.entradas), pendentes: pend } }; mudouT = true; }
   // AT → tarefa
   for (const at of ats) for (const a of jsonArr(at.anexos)) {
     const k = Object.keys(ANEXO_AT).find((x) => ANEXO_AT[x] === a.tipo); if (!k || a.tarefa_anexo) continue;
@@ -195,8 +216,7 @@ async function espelhar(supabase, tenantId, t, ats, quem) {
   // tarefa → AT
   for (const at of ats) {
     if (at.status === 'concluida') continue;
-    const alvo = (k, e) => k !== 'mdfe' || ats.length === 1 || (e.dados && [e.dados.placa, ...(e.dados.reboques || [])].filter(Boolean).map((p) => String(p).replace(/\W/g, '').toUpperCase())
-      .some((p) => (at.conjunto || []).some((c) => String(c.tag || c.placa || '').replace(/\W/g, '').toUpperCase() === p)));
+    const alvo = (k, e) => k !== 'mdfe' || (e.at_id ? String(e.at_id) === String(at.id) : ats.length === 1);
     const quer = []; for (const k of Object.keys(ANEXO_AT)) for (const e of jsonArr(ck[k]?.entradas)) if (e.pdf_anexo && alvo(k, e)) { const an = anexosT.find((x) => x.id === e.pdf_anexo); if (an) quer.push({ k, e, an }); }
     const atuais = jsonArr(at.anexos);
     const daTarefa = atuais.filter((a) => a.tarefa_id && String(a.tarefa_id) === String(t.id));
@@ -209,9 +229,12 @@ async function espelhar(supabase, tenantId, t, ats, quem) {
   }
   if (mudouT) {
     const st = statusPelo(t, ck); const upd = { checklist: ck };
-    const hist = [entrada(quem, 'anexo', { texto: '📎 documento anexado na AT entrou no checklist' })];
-    if (st !== t.status) { upd.status = st; hist.push(entrada(quem, 'status', { campo: 'situação', de: t.status, para: st === 'concluida' ? 'Concluída' : 'Em andamento', texto: st === 'concluida' ? 'Concluída sozinha: NF-e, CT-e, averbação e MDF-e ✓' : null })); }
-    upd.historico = [...jsonArr(t.historico), ...hist];
+    const hist = [];
+    if (JSON.stringify(t.checklist?.nfe) !== JSON.stringify(ck.nfe) || JSON.stringify(t.checklist?.cte) !== JSON.stringify(ck.cte)) hist.push(entrada(quem, 'anexo', { texto: '📎 documento anexado na AT entrou no checklist' }));
+    const novasPend = pend.filter((x) => !jsonArr(t.checklist?.encerramento?.pendentes).some((y) => y.at_id === x.at_id));
+    for (const x of novasPend) hist.push(entrada(quem, 'editada', { texto: `🏁 ${x.at_numero} concluída — falta encerrar o MDF-e` }));
+    if (st !== t.status) { upd.status = st; hist.push(entrada(quem, 'status', { campo: 'situação', de: t.status === 'concluida' ? 'Concluída' : t.status === 'em_andamento' ? 'Em andamento' : 'Pendente', para: st === 'concluida' ? 'Concluída' : 'Em andamento', texto: st === 'concluida' ? 'Concluída sozinha: NF-e, CT-e, averbação e MDF-e ✓' : null })); }
+    if (hist.length) upd.historico = [...jsonArr(t.historico), ...hist];
     await supabase.from('tarefas').update(upd).eq('id', t.id).eq('tenant_id', tenantId);
   }
 }
@@ -232,7 +255,25 @@ async function subir(supabase, tenantId, t, arq, mimeOk) {
   return { id: aid, nome: texto(arq.nome, 160) || `documento.${ext}`, path, mime: arq.mime, tamanho: buf.length, em: new Date().toISOString(), _buf: buf };
 }
 
+async function registrarEncerramento(supabase, tenantId, quem, t, body) { // 18g.2: 🏁 encerramento do MDF-e da AT concluída
+  const ck0 = t.checklist || novoChecklist(); const r0 = resumo(ck0);
+  const p = r0.encerramento.pendentes.find((x) => String(x.at_id) === String(body.at_id)) || (r0.encerramento.pendentes.length === 1 && !body.at_id ? r0.encerramento.pendentes[0] : null);
+  if (!p) return { status: 409, erro: 'Nenhuma AT concluída aguardando o encerramento do MDF-e' };
+  const pdf = await subir(supabase, tenantId, t, body.pdf, PDF); if (pdf?.erro) return { status: 400, erro: pdf.erro === true ? 'Comprovante em PDF ou imagem' : pdf.erro };
+  const ent = { id: crypto.randomBytes(5).toString('hex'), at_id: p.at_id, at_numero: p.at_numero, numero: texto(body.numero, 60) || null, pdf_anexo: pdf?.id || null, por: quem?.nome || null, em: new Date().toISOString() };
+  const ck = { ...ck0, encerramento: { pendentes: jsonArr(ck0.encerramento?.pendentes), entradas: [...jsonArr(ck0.encerramento?.entradas), ent] } };
+  const st = statusPelo(t, ck);
+  const hist = [entrada(quem, 'anexo', { texto: `🏁 MDF-e da ${p.at_numero} encerrado${ent.numero ? ` (protocolo ${ent.numero})` : ''}` })];
+  if (st !== t.status) hist.push(entrada(quem, 'status', { campo: 'situação', de: 'Em andamento', para: st === 'concluida' ? 'Concluída' : 'Em andamento', texto: st === 'concluida' ? 'Concluída: documentos ✓ e MDF-e encerrado' : null }));
+  const an = pdf ? (({ _buf, ...x }) => ({ ...x, por: quem?.nome || null, fiscal: 'encerramento' }))(pdf) : null;
+  const { error } = await supabase.from('tarefas').update({ checklist: ck, status: st, anexos: an ? [...jsonArr(t.anexos), an] : jsonArr(t.anexos), historico: [...jsonArr(t.historico), ...hist] }).eq('id', t.id).eq('tenant_id', tenantId);
+  if (error) throw new Error(error.message);
+  const fim = (await q(supabase.from('tarefas').select('*').eq('tenant_id', tenantId).eq('id', t.id)))[0];
+  return { tarefa: fim, resumo: resumo(fim.checklist) };
+}
+
 async function registrarDoc(supabase, tenantId, quem, id, item, body = {}) {
+  if (item === 'encerramento') { const t0 = await tarefaFiscal(supabase, tenantId, id); if (!t0) return { status: 404, erro: 'Tarefa fiscal não encontrada' }; return registrarEncerramento(supabase, tenantId, quem, t0, body); }
   if (!ITENS[item]) return { status: 400, erro: 'Documento inválido (nfe, cte, averbacao, mdfe)' };
   const t = await tarefaFiscal(supabase, tenantId, id); if (!t) return { status: 404, erro: 'Tarefa fiscal não encontrada' };
   if (!('checklist' in t)) return { status: 409, erro: 'Rode a migration 066 antes (documentos fiscais)' };
@@ -312,12 +353,75 @@ async function dispensar(supabase, tenantId, quem, id, { motivo } = {}) {
   return { tarefa: data[0] };
 }
 
+// ─── 18g.2: a AT espelha o MDF-e ────────────────────────────────────────────
+const soAlnum = (v) => String(v || '').replace(/\W/g, '').toUpperCase();
+const semAcento = (t) => String(t || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+/** casa o que está no MDF-e com o cadastro: placa → equipamento, CPF (ou nome) → colaborador */
+async function casarMdfe(supabase, tenantId, dados) {
+  const [eqs, cols] = await Promise.all([q(supabase.from('equipamentos').select('*').eq('tenant_id', tenantId)).catch(() => []), q(supabase.from('colaboradores').select('*').eq('tenant_id', tenantId)).catch(() => [])]);
+  const achaEq = (pl) => eqs.find((e) => e.ativo !== false && pl && [e.tag, e.placa, e.nome].some((x) => soAlnum(x) === soAlnum(pl)));
+  const cond = (dados?.condutores || [])[0] || null; const cpf = String(cond?.cpf || '').replace(/\D/g, '');
+  const mot = cond ? cols.find((c) => c.situacao !== 'desligado' && ((cpf && String(c.cpf || '').replace(/\D/g, '') === cpf) || (cond.nome && semAcento(c.nome) === semAcento(cond.nome)))) : null;
+  const cav = achaEq(dados?.placa); const impl = (dados?.reboques || []).map(achaEq);
+  const avisos = [];
+  if (dados?.placa && !cav) avisos.push(`Placa ${dados.placa} (cavalo) não está cadastrada em ⚙ Equipamentos`);
+  (dados?.reboques || []).forEach((pl, i) => { if (!impl[i]) avisos.push(`Placa ${pl} (reboque) não está cadastrada em ⚙ Equipamentos`); });
+  if (cond && !mot) avisos.push(`Condutor ${cond.nome || ''}${cpf ? ` (CPF ${cpf})` : ''} não está em 👷 Pessoas`);
+  return { cavalo: cav || null, implementos: impl.filter(Boolean), motorista: mot || null, avisos };
+}
+
+async function programarDoMdfe(supabase, tenantId, quem, id, entradaId) {
+  const t = await tarefaFiscal(supabase, tenantId, id); if (!t) return { status: 404, erro: 'Tarefa fiscal não encontrada' };
+  const ck = t.checklist || novoChecklist(); const e = jsonArr(ck.mdfe?.entradas).find((x) => x.id === entradaId);
+  if (!e) return { status: 404, erro: 'MDF-e não encontrado na tarefa' };
+  if (!e.dados) return { status: 409, erro: 'Este MDF-e não tem o XML — anexe o XML para programar a AT a partir dele' };
+  if (e.at_id) { const ja = (await q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId).eq('id', e.at_id)).catch(() => []))[0];
+    if (ja && ja.status !== 'cancelada') return { status: 409, erro: `Este MDF-e já está na ${ja.numero}`, existente: ja.id }; } // rascunho descartado / AT cancelada → pode programar de novo
+  const [pvId, grupoId] = String(t.origem_ref || '').split(':');
+  const m = await casarMdfe(supabase, tenantId, e.dados);
+  const ini = e.dados.inicio_viagem ? new Date(e.dados.inicio_viagem).toISOString() : (ck.data_trecho ? `${ck.data_trecho}T11:00:00.000Z` : null);
+  const E = require('./execucoes');
+  const r = await E.criar(supabase, tenantId, { usuarioId: quem?.id || null, usuarioNome: quem?.nome || null, perfis: quem?.perfis || [] }, pvId, {
+    grupo_id: grupoId, rascunho: true, motorista_id: m.motorista?.id ?? '', cavalo_id: m.cavalo?.id ?? '', implementos: m.implementos.map((x) => x.id), inicio: ini,
+    observacoes: `Programada a partir do MDF-e nº ${e.numero || '—'} (${t.numero || 'tarefa fiscal'}).${m.avisos.length ? ` Conferir: ${m.avisos.join('; ')}.` : ''}` });
+  if (r?.erro) return r;
+  const at = r.execucao || r;
+  const ck2 = { ...ck, mdfe: { entradas: jsonArr(ck.mdfe?.entradas).map((x) => (x.id === e.id ? { ...x, at_id: String(at.id), at_numero: at.numero } : x)) } };
+  await supabase.from('tarefas').update({ checklist: ck2, historico: [...jsonArr(t.historico), entrada(quem, 'editada', { texto: `🚚 AT em rascunho criada a partir do MDF-e nº ${e.numero || '—'}${m.avisos.length ? ` — conferir: ${m.avisos.join('; ')}` : ''}` })] }).eq('id', t.id).eq('tenant_id', tenantId);
+  return { execucao: at, avisos: m.avisos, casou: { motorista: m.motorista?.nome || null, cavalo: m.cavalo?.tag || null, implementos: m.implementos.map((x) => x.tag) } };
+}
+
+/** divergência AT × MDF-e ligado a ela: placas e condutor (a AT deve espelhar o MDF-e) → { at_id: [mensagens] } */
+async function divergencias(supabase, tenantId, ats = null) {
+  const ts = await q(supabase.from('tarefas').select('*').eq('tenant_id', tenantId).eq('origem', 'fiscal')).catch(() => []);
+  const ligados = ts.filter((t) => t.status !== 'cancelada').flatMap((t) => jsonArr(t.checklist?.mdfe?.entradas).filter((e) => e.at_id && e.dados).map((e) => ({ ...e, tarefa: t.numero })));
+  if (!ligados.length) return {};
+  const lista = ats || await q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId)).catch(() => []);
+  const cols = await q(supabase.from('colaboradores').select('*').eq('tenant_id', tenantId)).catch(() => []);
+  const out = {};
+  for (const e of ligados) {
+    const at = lista.find((x) => String(x.id) === String(e.at_id)); if (!at || ['cancelada'].includes(at.status)) continue;
+    const msgs = [];
+    const doMdfe = [e.dados.placa, ...(e.dados.reboques || [])].filter(Boolean).map(soAlnum).sort();
+    const daAT = (at.conjunto || []).map((c) => soAlnum(c.tag || c.placa)).filter(Boolean).sort();
+    if (doMdfe.length && JSON.stringify(doMdfe) !== JSON.stringify(daAT)) msgs.push(`Conjunto da AT (${daAT.join(' + ') || '—'}) ≠ MDF-e nº ${e.numero || ''} (${doMdfe.join(' + ')}) — emita um novo MDF-e ou ajuste a AT`);
+    const cond = (e.dados.condutores || [])[0];
+    if (cond) {
+      const col = cols.find((c) => String(c.id) === String(at.motorista_id)); const cpfAT = String(col?.cpf || '').replace(/\D/g, ''); const cpfM = String(cond.cpf || '').replace(/\D/g, '');
+      const igual = at.motorista_id && ((cpfAT && cpfM && cpfAT === cpfM) || (!cpfAT && semAcento(at.motorista_nome) === semAcento(cond.nome)));
+      if (!igual) msgs.push(`Motorista da AT (${at.motorista_nome || 'a definir'}) ≠ condutor do MDF-e (${cond.nome || cpfM}) — registre a inclusão de condutor no MDF-e`);
+    }
+    if (msgs.length) out[String(at.id)] = [...(out[String(at.id)] || []), ...msgs];
+  }
+  return out;
+}
+
 /** selo da Mesa: resumo por trecho (pvId:grupoId → { numero, feitos, total, status, prazo, atrasada }) */
 async function selos(supabase, tenantId) {
   const ts = await q(supabase.from('tarefas').select('*').eq('tenant_id', tenantId).eq('origem', 'fiscal')).catch(() => []);
   const hoje = hojeBR(); const m = {};
-  for (const t of ts) { const r = resumo(t.checklist); if (!r) continue; m[String(t.origem_ref)] = { id: t.id, numero: t.numero || null, feitos: r.feitos, total: r.total, status: t.status, prazo: t.prazo ? String(t.prazo).slice(0, 10) : null, atrasada: !['concluida', 'cancelada'].includes(t.status) && !!t.prazo && String(t.prazo).slice(0, 10) < hoje, alertas: r.alertas.length, proximo: r.proximo ? ITENS[r.proximo] : null }; }
+  for (const t of ts) { const r = resumo(t.checklist); if (!r) continue; m[String(t.origem_ref)] = { id: t.id, numero: t.numero || null, feitos: r.feitos, total: r.total, status: t.status, prazo: t.prazo ? String(t.prazo).slice(0, 10) : null, atrasada: !['concluida', 'cancelada'].includes(t.status) && !!t.prazo && String(t.prazo).slice(0, 10) < hoje, alertas: r.alertas.length, proximo: r.proximo ? (ITENS[r.proximo] || 'encerrar MDF-e') : null, encerrar: r.encerramento.pendentes.length }; }
   return m;
 }
 
-module.exports = { ITENS, ORDEM, sincronizar, registrarDoc, removerDoc, dispensar, selos, resumo, conferir, lerXml, config, salvarConfig, diasUteisAntes, novoChecklist };
+module.exports = { programarDoMdfe, divergencias, casarMdfe, ITENS, ORDEM, sincronizar, registrarDoc, removerDoc, dispensar, selos, resumo, conferir, lerXml, config, salvarConfig, diasUteisAntes, novoChecklist };

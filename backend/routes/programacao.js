@@ -45,10 +45,10 @@ router.get('/utilizacao', responder((req) => U.painel(supabase, req.tenantId, { 
 router.get('/agenda', responder((req) => E.agenda(supabase, req.tenantId, req.query)));
 router.get('/pedidos', responder(async (req) => {
   const { data, error } = await supabase.from('pedidos_venda').select('*').eq('tenant_id', req.tenantId); if (error) throw new Error(error.message);
-  await TF.sincronizar(supabase, req.tenantId).catch((e) => console.error('❌ [fiscal] sincronizar', e.message)); const fiscal = await TF.selos(supabase, req.tenantId).catch(() => ({}));
+  await TF.sincronizar(supabase, req.tenantId).catch((e) => console.error('❌ [fiscal] sincronizar', e.message)); const fiscal = await TF.selos(supabase, req.tenantId).catch(() => ({})); const diverg = await TF.divergencias(supabase, req.tenantId).catch(() => ({})); // 18g.2
   const ex = await E.listar(supabase, req.tenantId, {}); const docsBase = await E.carregarDocs(supabase, req.tenantId);
   return { pedidos: (data || []).filter((p) => ['aberto', 'em_execucao'].includes(p.status)).map((p) => ({ id: p.id, numero: p.numero, cliente_nome: p.cliente_nome, titulo: p.titulo, referencia: p.referencia, status: p.status, tipo_execucao: p.tipo_execucao || 'transporte',
-    colunas: (p.conteudo?.colunas || []).filter((c) => c.chave !== 'data_prevista'), trechos: E.trechosComATs(p, ex.filter((e) => String(e.pv_id) === String(p.id)), docsBase).map((t) => ({ ...t, fiscal: fiscal[`${p.id}:${t.id}`] || null })) })).sort((a, b) => String(a.numero).localeCompare(String(b.numero))) };
+    colunas: (p.conteudo?.colunas || []).filter((c) => c.chave !== 'data_prevista'), trechos: E.trechosComATs(p, ex.filter((e) => String(e.pv_id) === String(p.id)), docsBase).map((t) => ({ ...t, fiscal: fiscal[`${p.id}:${t.id}`] || null, ats: (t.ats || []).map((a) => (diverg[String(a.id)] ? { ...a, divergencias_mdfe: diverg[String(a.id)] } : a)) })) })).sort((a, b) => String(a.numero).localeCompare(String(b.numero))) };
 }));
 router.post('/execucoes/:id/fluxo/:etapa/liberar', responder(async (req) => { // 16e: gestor libera etapa reprovada
   const ex = /^\d+$/.test(req.params.id) ? (await supabase.from('execucoes').select('*').eq('tenant_id', req.tenantId).eq('id', req.params.id)).data?.[0] : null;

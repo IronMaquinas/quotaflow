@@ -81,9 +81,10 @@ export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onEr
           {["programada", "em_execucao"].includes(e.status) && <button type="button" disabled={ocupado} onClick={() => setModal({ tipo: "cancelar", motivo: "" })} style={bt(C.danger, false)}>✕ Cancelar AT</button>}
           {["concluida", "cancelada"].includes(e.status) && <button type="button" disabled={ocupado} onClick={() => acao("reabrir", {}, `${e.numero} reaberta.`)} style={bt(C.warn, false)}>↺ Reabrir</button>}
         </div>
-        {(e.conflitos?.length > 0 || e.bloqueados?.length > 0 || e.cancelada_motivo) && <div style={{ padding: "8px 18px", background: `${C.warn}14`, borderBottom: `1px solid ${C.border}`, fontSize: 12.5 }}>
+        {(e.conflitos?.length > 0 || e.bloqueados?.length > 0 || e.cancelada_motivo || e.divergencias_mdfe?.length > 0) && <div style={{ padding: "8px 18px", background: `${C.warn}14`, borderBottom: `1px solid ${C.border}`, fontSize: 12.5 }}>
           {(e.bloqueados || []).map((x, i) => <div key={`b${i}`} style={{ color: C.danger }}>🔒 {x.tag || x.nome} foi bloqueado por inspeção{x.motivo ? ` (${x.motivo})` : ""} — troque o equipamento (✏ Editar) ou libere em 🔍 Inspeções.</div>)}
           {(e.conflitos || []).map((x, i) => <div key={`c${i}`} style={{ color: C.warn }}>⚠ {x.texto}</div>)}
+          {(e.divergencias_mdfe || []).map((x, i) => <div key={`m${i}`} style={{ color: C.danger }}>🧾 {x}</div>)} {/* 18g.2: a AT deve espelhar o MDF-e */}
           {e.cancelada_motivo && <div style={{ color: C.danger }}>✕ Cancelada em {dataHora(e.cancelada_em)}: {e.cancelada_motivo}</div>}
         </div>}
         <div style={{ display: "flex", flexWrap: "wrap" }}>
