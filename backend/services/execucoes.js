@@ -581,7 +581,7 @@ async function relatorioViagem(supabase, tenantId, id) {
       total_pontos: resp.length });
   }
   const fluxo = require('./fluxoViagem').comLiberacao(ex.fluxo || []).map((e) => ({ id: e.id, rotulo: e.rotulo, tipo: e.tipo, status: e.status, feita_em: e.feita_em || null, gps: e.gps || null, por: e.por || null,
-    inspecao_numero: e.inspecao_numero || null, resultado: e.resultado || null, liberacao: e.liberacao || null }));
+    inspecao_numero: e.inspecao_numero || null, resultado: e.resultado || null, liberacao: e.liberacao || null, alerta_docs: e.alerta_docs || null }));
   const horas = (a, b) => (a && b ? Math.round(((Date.parse(b) - Date.parse(a)) / 3600000) * 10) / 10 : null);
   const kms = inspecoes.map((i) => Number(i.km)).filter((n) => Number.isFinite(n) && n > 0);
   const historico_docs = await require('./tarefasFiscais').historicoDocsAT(supabase, tenantId, ex).catch(() => []); // 18g.2.8

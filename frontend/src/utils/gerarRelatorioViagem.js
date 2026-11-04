@@ -49,7 +49,7 @@ export function gerarHtmlRelatorioViagem(d) {
       <tbody>${(d.itens || []).map((i) => `<tr><td><b>${esc(i.n || "")}</b></td>${cols.map((c) => `<td>${esc(valorCelula(c, i.valores?.[c.chave]))}</td>`).join("")}<td>${esc(i.serie || "")}</td><td>${esc(i.quantidade ?? 1)}</td><td>${esc(i.volumes ?? "")}</td></tr>`).join("")}</tbody></table>
     <h2>Fluxo da viagem</h2><table><thead><tr><th>Etapa</th><th>Situação</th><th>Quando</th><th>Quem</th><th>GPS</th></tr></thead><tbody>
       ${(d.fluxo || []).map((e) => `<tr><td>${esc(e.rotulo)}${e.inspecao_numero ? `<br/><small>${esc(e.inspecao_numero)}${e.resultado ? ` — ${esc((RES[e.resultado] || [e.resultado])[0])}` : ""}</small>` : ""}</td>
-        <td>${esc(ST[e.status] || e.status)}${e.liberacao ? `<br/><small>liberada por ${esc(e.liberacao.por || "")} em ${dataHora(e.liberacao.em)}: ${esc(e.liberacao.motivo)}</small>` : ""}</td><td>${dataHora(e.feita_em)}</td><td>${esc(e.por || "")}</td><td>${gpsLink(e.gps)}</td></tr>`).join("")}
+        <td>${esc(ST[e.status] || e.status)}${e.alerta_docs ? `<br/><small class="nok">⚠️ saiu sem ${esc(e.alerta_docs.faltam.join(" e "))}</small>` : ""}${e.liberacao ? `<br/><small>liberada por ${esc(e.liberacao.por || "")} em ${dataHora(e.liberacao.em)}: ${esc(e.liberacao.motivo)}</small>` : ""}</td><td>${dataHora(e.feita_em)}</td><td>${esc(e.por || "")}</td><td>${gpsLink(e.gps)}</td></tr>`).join("")}
       ${!(d.fluxo || []).length ? '<tr><td colspan="5">Sem fluxo de etapas nesta AT.</td></tr>' : ""}</tbody></table>
     <h2>Inspeções</h2>
     ${(d.inspecoes || []).map((i) => { const rr = RES[i.resultado] || [i.resultado || "—", "#111"];

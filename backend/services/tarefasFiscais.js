@@ -19,6 +19,8 @@
 //            rascunho/programada → fiscal ou gestor · em execução → só gestor (motorista vê "versão atualizada") · concluída → só evento.
 //   18g.2.5: a AT é o lugar de agir — substituir / evento direto pelo anexo da AT (a TSK continua a fonte única, histórico nos dois);
 //            trocou o motorista na AT → "＋ Registrar inclusão de condutor (MDF-e)" e a divergência some.
+//   18g.2d: ⚠️ saída da base sem CT-e/MDF-e → alerta (informativo, não trava) gravado na etapa + e-mail ao gestor e ao fiscal;
+//           ⏰ prazo da tarefa fiscal vencido → e-mail (uma vez por tarefa) no disparo diário das 7h.
 //   Sem a migration 066 (tarefas.checklist) nada é criado.
 const crypto = require('crypto');
 
@@ -181,7 +183,7 @@ async function sincronizar(supabase, tenantId, { pvId = null, quem = { nome: 'Qu
         if (t.status !== 'cancelada' && (pv.status === 'cancelado' || !ativos.length)) {
           if (t.status !== 'concluida') { upd.status = 'cancelada'; hist.push(entrada(quem, 'status', { campo: 'situação', de: t.status, para: 'Cancelada', texto: pv.status === 'cancelado' ? `Pedido ${pv.numero} cancelado` : 'Trecho cancelado' })); }
         } else if (data && data !== ck.data_trecho && t.status !== 'concluida') {
-          upd.prazo = prazo; upd.checklist = { ...ck, data_trecho: data };
+          upd.prazo = prazo; upd.checklist = { ...ck, data_trecho: data, aviso_vencido_em: null }; // 18g.2d: novo prazo → pode avisar de novo
           hist.push(entrada(quem, 'editada', { campo: 'prazo', de: dBR(t.prazo) || '—', para: dBR(prazo), texto: `A data do trecho mudou para ${dBR(data)}` }));
         }
         const vAntes = JSON.stringify(jsonArr(t.vinculos).map((v) => `${v.tipo}:${v.id}`).sort()); const vDepois = JSON.stringify(vinculos.map((v) => `${v.tipo}:${v.id}`).sort());
@@ -574,6 +576,68 @@ async function historicoDocsAT(supabase, tenantId, ex) {
   return out.filter((x) => x.em).sort((x, y) => String(y.em).localeCompare(String(x.em)));
 }
 
+// ─── 18g.2d: avisos ─────────────────────────────────────────────────────────
+const EMAIL_OK = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+const escH = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+const frontendURL = () => String(process.env.FRONTEND_URL || 'http://localhost:5173').replace(/^FRONTEND_URL=/, '').replace(/\/+$/, '');
+let enviarEmail = async (para, assunto, html) => require('./emailService').enviarEmailFornecedor(para, assunto, html);
+function _definirEnvio(fn) { enviarEmail = fn; }
+/** e-mails dos gestores/admin (e do perfil fiscal, se pedir) ativos */
+async function destinatariosFiscais(supabase, tenantId, { fiscal = true } = {}) {
+  const us = (await q(supabase.from('usuarios').select('*').eq('tenant_id', tenantId)).catch(() => [])).filter((u) => u.ativo !== false && u.ativo !== 0);
+  const ups = us.length ? await q(supabase.from('usuario_perfis').select('*').in('usuario_id', us.map((u) => u.id))).catch(() => []) : [];
+  const alvo = fiscal ? ['admin', 'gestor', 'fiscal'] : ['admin', 'gestor'];
+  const ok = us.filter((u) => [u.perfil, ...ups.filter((p) => String(p.usuario_id) === String(u.id)).map((p) => p.perfil_codigo)].some((p) => alvo.includes(p)));
+  return [...new Set(ok.map((u) => String(u.email || '').toLowerCase()).filter((e) => EMAIL_OK.test(e)))];
+}
+async function enviarAviso(supabase, tenantId, assunto, corpo, botao = 'Abrir o QuotaFlow') {
+  const emp = (await q(supabase.from('tenants').select('*').eq('id', tenantId)).catch(() => []))[0] || {};
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;color:#111;font-size:14px;line-height:1.55"><div style="font-weight:700;border-bottom:2px solid #111;padding-bottom:6px;margin-bottom:14px">${escH(emp.nome_fantasia || emp.razao_social || emp.nome || 'QuotaFlow')}</div>${corpo}<p style="margin:20px 0"><a href="${frontendURL()}" style="background:#2563eb;color:#fff;text-decoration:none;padding:10px 18px;border-radius:6px;font-weight:700">${escH(botao)}</a></p><p style="font-size:11px;color:#666">Aviso automático do QuotaFlow.</p></div>`;
+  const paras = await destinatariosFiscais(supabase, tenantId); let n = 0;
+  for (const para of paras) { try { await enviarEmail(para, assunto, html); n++; } catch (e) { console.error('⚠️ [fiscal] e-mail não enviado:', para, e?.message || e); } }
+  return n;
+}
+
+/** ⚠️ ao marcar a saída da base: faltam CT-e/MDF-e na AT? → { faltam: ['CT-e','MDF-e'] } (null = tudo certo) */
+function faltasNaSaida(ex) {
+  const tem = (t) => jsonArr(ex.anexos).some((a) => a.tipo === t && !a.evento && !a.retirado);
+  const faltam = [['cte', 'CT-e'], ['mdfe', 'MDF-e']].filter(([t]) => !tem(t)).map(([, n]) => n);
+  return faltam.length ? faltam : null;
+}
+async function alertarSaida(supabase, ex, etapa, faltam) {
+  try {
+    const tenantId = ex.tenant_id;
+    const placas = (ex.conjunto || []).map((c) => c.tag || c.nome).filter(Boolean).join(' + ');
+    await enviarAviso(supabase, tenantId, `⚠️ ${ex.numero} saiu da base sem ${faltam.join(' e ')}`,
+      `<p style="font-size:15px"><b>⚠️ ${escH(ex.numero)} saiu da base sem ${escH(faltam.join(' e '))}.</b></p>
+       <p>${escH(etapa.rotulo || 'Saída da base')} marcada ${etapa.feita_em ? `em ${escH(new Date(etapa.feita_em).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }))}` : 'agora'} por ${escH(etapa.por || ex.motorista_nome || 'motorista')}.</p>
+       <p>Motorista: <b>${escH(ex.motorista_nome || '—')}</b> · Conjunto: <b>${escH(placas || '—')}</b> · ${escH(ex.cliente_nome || '')} · ${escH(ex.origem || '')} → ${escH(ex.destino || '')}</p>
+       <p>A viagem <b>não foi travada</b> (o alerta é informativo). Anexe o documento na AT ou na tarefa fiscal do trecho — o motorista recebe pelo link.</p>`, 'Abrir a AT no QuotaFlow → 🚚 Programação');
+    const ts = await q(supabase.from('tarefas').select('*').eq('tenant_id', tenantId).eq('origem', 'fiscal').eq('origem_ref', `${ex.pv_id}:${ex.grupo_id}`)).catch(() => []);
+    for (const t of ts) await supabase.from('tarefas').update({ historico: [...jsonArr(t.historico), entrada({ nome: 'QuotaFlow' }, 'editada', { texto: `⚠️ ${ex.numero} saiu da base sem ${faltam.join(' e ')} — gestor avisado` })] }).eq('id', t.id).eq('tenant_id', tenantId);
+  } catch (e) { console.error('⚠️ [fiscal] alerta de saída:', e?.message || e); }
+}
+
+/** ⏰ disparo diário: tarefa fiscal com prazo vencido → um e-mail por empresa (cada tarefa avisada uma vez) */
+async function avisosPrazoVencido(supabase, { hoje = hojeBR() } = {}) {
+  const ts = await q(supabase.from('tarefas').select('*').eq('origem', 'fiscal')).catch(() => []);
+  const vencidas = ts.filter((t) => !['concluida', 'cancelada'].includes(t.status) && t.prazo && String(t.prazo).slice(0, 10) < hoje && t.checklist && !t.checklist.aviso_vencido_em);
+  const porTenant = {}; vencidas.forEach((t) => { (porTenant[t.tenant_id] = porTenant[t.tenant_id] || []).push(t); });
+  let empresas = 0; let tarefas = 0;
+  for (const [tenantId, l] of Object.entries(porTenant)) {
+    const linhas = l.map((t) => { const r = resumo(t.checklist); const falta = ORDEM.filter((k) => !r.itens[k]).map((k) => ITENS[k]).join(', ');
+      return `<tr><td style="padding:4px 8px;border-bottom:1px solid #ddd"><b>${escH(t.numero || '')}</b></td><td style="padding:4px 8px;border-bottom:1px solid #ddd">${escH(String(t.titulo || '').replace(/^🧾 Documentos fiscais — /, ''))}</td><td style="padding:4px 8px;border-bottom:1px solid #ddd">${escH(String(t.prazo).slice(0, 10).split('-').reverse().join('/'))}</td><td style="padding:4px 8px;border-bottom:1px solid #ddd;color:#b91c1c">${escH(falta || '—')}</td></tr>`; }).join('');
+    const n = await enviarAviso(supabase, tenantId, `⏰ ${l.length} tarefa(s) fiscal(is) com prazo vencido`,
+      `<p style="font-size:15px"><b>⏰ ${l.length} tarefa(s) fiscal(is) passaram do prazo</b> sem todos os documentos.</p>
+       <table style="border-collapse:collapse;font-size:13px;width:100%"><tr style="text-align:left;color:#555"><th style="padding:4px 8px">Tarefa</th><th style="padding:4px 8px">Pedido · trecho</th><th style="padding:4px 8px">Prazo</th><th style="padding:4px 8px">Falta</th></tr>${linhas}</table>
+       <p>Providencie antes da saída do caminhão — no ✅ Plano, ambiente 🚚 Transporte.</p>`, 'Abrir o ✅ Plano no QuotaFlow');
+    const agora = new Date().toISOString();
+    for (const t of l) await supabase.from('tarefas').update({ checklist: { ...t.checklist, aviso_vencido_em: agora }, historico: [...jsonArr(t.historico), entrada({ nome: 'QuotaFlow' }, 'editada', { texto: `⏰ Prazo vencido — e-mail enviado a ${n} pessoa(s) (gestor/fiscal)` })] }).eq('id', t.id).eq('tenant_id', t.tenant_id);
+    empresas++; tarefas += l.length;
+  }
+  return { empresas, tarefas };
+}
+
 /** selo da Mesa: resumo por trecho (pvId:grupoId → { numero, feitos, total, status, prazo, atrasada }) */
 async function selos(supabase, tenantId) {
   const ts = await q(supabase.from('tarefas').select('*').eq('tenant_id', tenantId).eq('origem', 'fiscal')).catch(() => []);
@@ -582,4 +646,4 @@ async function selos(supabase, tenantId) {
   return m;
 }
 
-module.exports = { historicoDocsAT, docDaAT, substituirPelaAT, eventoPelaAT, inclusaoCondutor, substituirDoc, eventoDoc, MOTIVOS, EVENTOS, programarDoMdfe, divergencias, casarMdfe, ITENS, ORDEM, sincronizar, registrarDoc, removerDoc, dispensar, selos, resumo, conferir, lerXml, config, salvarConfig, diasUteisAntes, novoChecklist };
+module.exports = { faltasNaSaida, alertarSaida, avisosPrazoVencido, destinatariosFiscais, _definirEnvio, historicoDocsAT, docDaAT, substituirPelaAT, eventoPelaAT, inclusaoCondutor, substituirDoc, eventoDoc, MOTIVOS, EVENTOS, programarDoMdfe, divergencias, casarMdfe, ITENS, ORDEM, sincronizar, registrarDoc, removerDoc, dispensar, selos, resumo, conferir, lerXml, config, salvarConfig, diasUteisAntes, novoChecklist };

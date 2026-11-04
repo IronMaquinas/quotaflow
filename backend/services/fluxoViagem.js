@@ -137,8 +137,14 @@ async function marcar(supabase, ex, etapaId, { gps, em, por } = {}) {
   if (c.ja) return { execucao: ex, repetido: true };
   if (c.erro) return c;
   if (c.etapa.tipo !== 'marco') return { status: 400, erro: 'Esta etapa é uma inspeção — faça a inspeção' };
-  const nova = await gravarEtapa(supabase, ex, c.i, { status: 'feita', feita_em: quandoOk(em), gps: gpsOk(gps), por: texto(por, 120) || ex.motorista_nome || null }, { usuarioNome: texto(por, 120) || ex.motorista_nome || 'motorista' });
-  return { ok: true, status_at: nova.status };
+  // 18g.2d: saída da base (ou, sem ela no fluxo, a saída para a viagem) sem CT-e/MDF-e → alerta informativo na etapa + e-mail ao gestor
+  const TF = require('./tarefasFiscais');
+  const ehSaida = c.etapa.marco === 'saida_base' || (c.etapa.marco === 'saida_viagem' && !(ex.fluxo || []).some((x) => x.marco === 'saida_base'));
+  const faltam = ehSaida && (ex.tipo || 'transporte') === 'transporte' ? TF.faltasNaSaida(ex) : null;
+  const patch = { status: 'feita', feita_em: quandoOk(em), gps: gpsOk(gps), por: texto(por, 120) || ex.motorista_nome || null, ...(faltam ? { alerta_docs: { faltam, em: new Date().toISOString() } } : {}) };
+  const nova = await gravarEtapa(supabase, ex, c.i, patch, { usuarioNome: texto(por, 120) || ex.motorista_nome || 'motorista' });
+  if (faltam) await TF.alertarSaida(supabase, nova, { ...c.etapa, ...patch }, faltam);
+  return { ok: true, status_at: nova.status, ...(faltam ? { alerta_docs: faltam } : {}) };
 }
 /** 📲 dados para começar a inspeção da etapa (mesmo "preparar" do app de inspeção) */
 async function prepararInspecao(supabase, ex, etapaId) {
