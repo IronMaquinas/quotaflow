@@ -551,6 +551,29 @@ async function inclusaoCondutor(supabase, tenantId, quem, atId, body = {}) {
   return eventoDoc(supabase, tenantId, quem, alvo.t.id, 'mdfe', alvo.e.id, { tipo: 'inclusao_condutor', descricao: texto(body.descricao, 400) || null, pdf: body.pdf, via: at.numero, condutor: { nome: at.motorista_nome, cpf: col?.cpf || null } });
 }
 
+/** 18g.2.8: 📜 histórico dos documentos fiscais de uma AT (anexado, substituído vN, retirado, evento) — direto na AT ou vindo da tarefa */
+const MOTIVO_TXT = { arquivo_errado: 'arquivo errado anexado', reemitido: 'documento cancelado e reemitido', outro: 'outro motivo' };
+async function historicoDocsAT(supabase, tenantId, ex) {
+  const out = []; const nomeTipo = (t) => ITENS[Object.keys(ANEXO_AT).find((k) => ANEXO_AT[k] === t)] || 'Documento';
+  const tarefas = {}; const tarefaDe = async (id) => { if (!(id in tarefas)) tarefas[id] = await tarefaFiscal(supabase, tenantId, id).catch(() => null); return tarefas[id]; };
+  for (const a of jsonArr(ex.anexos)) {
+    if (!ANEXO_AT[Object.keys(ANEXO_AT).find((k) => ANEXO_AT[k] === a.tipo)]) continue;
+    const doc = nomeTipo(a.tipo);
+    if (a.evento) { out.push({ em: a.em, por: a.por, acao: 'evento', doc, texto: `📎 ${a.nome}${a.tarefa_numero ? ` (pela ${a.tarefa_numero})` : ''}` }); continue; }
+    let versoes = jsonArr(a.versoes); let origem = null; let atual = { em: a.em, por: a.por, nome: a.nome, versao: a.versao || 1 };
+    if (a.tarefa_id) {
+      const t = await tarefaDe(a.tarefa_id); const item = Object.keys(ANEXO_AT).find((k) => ANEXO_AT[k] === a.tipo);
+      const e = t && jsonArr(t.checklist?.[item]?.entradas).find((x) => x.pdf_anexo === a.tarefa_anexo);
+      if (e) { versoes = jsonArr(e.versoes).map((v) => ({ ...v, nome: v.numero ? `${doc} nº ${v.numero}` : doc })); atual = { em: e.em, por: e.por, nome: e.numero ? `${doc} nº ${e.numero}` : a.nome, versao: e.versao || 1 }; origem = t.numero; }
+    }
+    const primeira = versoes[0] || atual;
+    out.push({ em: primeira.em, por: primeira.por, acao: 'anexado', doc, texto: `➕ ${primeira.nome || a.nome} anexado${origem ? ` (na ${origem})` : ''}` });
+    versoes.forEach((v, i) => { const prox = versoes[i + 1] || atual; out.push({ em: v.substituida_em, por: v.substituida_por, acao: 'substituido', doc, texto: `🔁 v${v.versao} → v${prox.versao || v.versao + 1}: ${prox.nome || a.nome} — ${MOTIVO_TXT[v.motivo_tipo] || 'substituído'}${v.motivo ? `: ${v.motivo}` : ''}` }); });
+    if (a.retirado) out.push({ em: a.retirado.em, por: a.retirado.por, acao: 'retirado', doc, texto: `⊘ ${a.nome} retirado (anexado por engano): ${a.retirado.motivo}` });
+  }
+  return out.filter((x) => x.em).sort((x, y) => String(y.em).localeCompare(String(x.em)));
+}
+
 /** selo da Mesa: resumo por trecho (pvId:grupoId → { numero, feitos, total, status, prazo, atrasada }) */
 async function selos(supabase, tenantId) {
   const ts = await q(supabase.from('tarefas').select('*').eq('tenant_id', tenantId).eq('origem', 'fiscal')).catch(() => []);
@@ -559,4 +582,4 @@ async function selos(supabase, tenantId) {
   return m;
 }
 
-module.exports = { docDaAT, substituirPelaAT, eventoPelaAT, inclusaoCondutor, substituirDoc, eventoDoc, MOTIVOS, EVENTOS, programarDoMdfe, divergencias, casarMdfe, ITENS, ORDEM, sincronizar, registrarDoc, removerDoc, dispensar, selos, resumo, conferir, lerXml, config, salvarConfig, diasUteisAntes, novoChecklist };
+module.exports = { historicoDocsAT, docDaAT, substituirPelaAT, eventoPelaAT, inclusaoCondutor, substituirDoc, eventoDoc, MOTIVOS, EVENTOS, programarDoMdfe, divergencias, casarMdfe, ITENS, ORDEM, sincronizar, registrarDoc, removerDoc, dispensar, selos, resumo, conferir, lerXml, config, salvarConfig, diasUteisAntes, novoChecklist };

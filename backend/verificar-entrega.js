@@ -221,11 +221,11 @@ const ESPERADO = {
   'migrations/054_tarefa_atribuida.sql': '586bd43f09653a76e8d6a299e55905e3', // etapa 15c.1 (novo)
   'scripts/previaEmailsBid.js': '45b4dbeb2d2d8d84a24e7a31f6826049', // etapa 15c.3 (novo)
   'migrations/055_execucoes_at.sql': 'fc0a780d147f0b3d7e4c92ec71c4554f', // etapa 16a (novo)
-  'services/execucoes.js': '287f270642b1a7a14438110adad568c6', // etapa 18g.2.7
+  'services/execucoes.js': '64b94a916ceeb792473044e05a148d6f', // etapa 18g.2.8
   'routes/programacao.js': '98c064abc94e08bd5556d578748a8235', // etapa 18g.2.7
   'front:gerarAT.js': 'd05187877f31e92708abba3c7f338ce3', // etapa 16e.1
   'front:TelaProgramacao.jsx': '4412d157e3d7d579b7c36891e4fe7353', // etapa 18g.2.1
-  'front:FichaAT.jsx': '779b922252a341cddf1f01d5ac36af21', // etapa 18g.2.7
+  'front:FichaAT.jsx': '3034945b304498155014acf93fde3659', // etapa 18g.2.8
   'front:MesaProgramacao.jsx': '3ee851df585bea973a6fa97fb1699e5d', // etapa 18g.2.2
   'migrations/056_at_rascunho_link_motorista.sql': '4e9a9185cbb0a1f9770e1fe666fc77f3', // etapa 16c (novo)
   'routes/atLink.js': 'f392ea4dff57d96bc2209bfefdb1707f', // etapa 16e
@@ -259,7 +259,7 @@ const ESPERADO = {
   'front:gerarMedicao.js': '24dbe95cf8751b58aa142b487cc777ed', // etapa 18d.2
   'migrations/063_medicao_vencimento.sql': '0b27bacd7a6a0b6d77c01a8039f5192d', // etapa 18d.2 (novo)
   'front:AbaMedicoes.jsx': '368b54092f0a25f379ecdaacfebf2d41', // etapa 18d.5 (novo)
-  'front:gerarRelatorioViagem.js': 'e6014591d9d33e4fa4e2798de55aadf7', // etapa 18e (novo)
+  'front:gerarRelatorioViagem.js': '673808fdf49f6cd317a49738c088c195', // etapa 18g.2.8
   'services/frotaCalendario.js': 'fd8d5e58894fd55bae016f9cdc362e9b', // etapa 18f.1
   'migrations/064_frota_dias_operacao.sql': 'd96a047b8c22b7d52c0d4a83d1b715ae', // etapa 18f (novo)
   'front:DiasFrota.jsx': '5458e631dfecb24b534d7208fd46be23', // etapa 18f (novo)
@@ -269,7 +269,7 @@ const ESPERADO = {
   'migrations/065_tarefas_rastreabilidade.sql': '3902af0a80d08839d542bd2a65e99d87', // etapa 18g (novo)
   'services/tarefas.js': '9d43b74825db840e65054fbc7fb96fa7', // etapa 18g.2a
   'migrations/066_fiscal_transporte.sql': 'eeef7d2fb80ae6ad0ec6069a3342e0ff', // etapa 18g.1 (novo)
-  'services/tarefasFiscais.js': '8143bc5098c8c71720c872f66bababd7', // etapa 18g.2.7
+  'services/tarefasFiscais.js': 'e15081d34740b555650a25e9cd708f31', // etapa 18g.2.8
   'front:ChecklistFiscal.jsx': '1634e6d08490a83f1c0c86c983eb69ae', // etapa 18g.2.4
   'front:ConfigFiscal.jsx': 'b4ceec47991a295f38f32992348ddcf8', // etapa 18g.1 (novo)
   'front:lerXmlFiscal.js': '8d657863784b4e6c468b29bd8152e53f', // etapa 18g.1.1 (novo)
@@ -279,13 +279,12 @@ const ESPERADO = {
   'front:AcaoDocFiscal.jsx': 'eed319fa1d63b104146db0b8eabcd7ed', // etapa 18g.2.7
 };
 
-// Antes de copiar a etapa 18g.2.7 — base: 18g.2.6
+// Antes de copiar a etapa 18g.2.8 — base: 18g.2.7
 const ANTES = {
-  'services/execucoes.js': 'bf48f7b80f947788dcf4d7d7e8d9e880',
-  'services/tarefasFiscais.js': '51a3f2bfde75c6b571e54f4dd899dd99',
-  'routes/programacao.js': '058bcb87a3fcfb87c24c6be1275eb4f3',
-  'front:FichaAT.jsx': '1909a97875b85fadf465d714fe3eb2e7',
-  'front:AcaoDocFiscal.jsx': '8383212ab522babeba4f160e5fe42919',
+  'services/tarefasFiscais.js': '8143bc5098c8c71720c872f66bababd7',
+  'services/execucoes.js': '287f270642b1a7a14438110adad568c6',
+  'front:FichaAT.jsx': '779b922252a341cddf1f01d5ac36af21',
+  'front:gerarRelatorioViagem.js': 'e6014591d9d33e4fa4e2798de55aadf7',
 };
 
 const RAIZ = process.cwd();
@@ -323,7 +322,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18g.2.7)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18g.2.8)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

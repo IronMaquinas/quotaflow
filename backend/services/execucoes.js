@@ -503,8 +503,9 @@ async function detalhe(supabase, tenantId, id) {
   const bloqueados = (ex.conjunto || []).map((c) => eqs.find((e) => String(e.id) === String(c.id))).filter((e) => e?.bloqueado).map((e) => ({ tag: e.tag, nome: e.nome, motivo: e.bloqueio_motivo }));
   const docs = semPath(avaliarDocs(await carregarDocs(supabase, tenantId), { motorista_id: ex.motorista_id, motorista_nome: ex.motorista_nome, conjunto: ex.conjunto || [], inicio: ex.inicio_previsto, fim: ex.fim_previsto }));
   const pvs = await q(supabase.from('pedidos_venda').select('*').eq('tenant_id', tenantId).eq('id', ex.pv_id)).catch(() => []);
+  const historico_docs = await require('./tarefasFiscais').historicoDocsAT(supabase, tenantId, ex).catch(() => []); // 18g.2.8
   const divergencias_mdfe = ((await require('./tarefasFiscais').divergencias(supabase, tenantId, [ex]).catch(() => ({})))[String(ex.id)]) || []; // 18g.2: AT × MDF-e
-  return { execucao: { ...comRef(enfeitar(ex), pvs), fluxo: ex.status === 'rascunho' ? (ex.fluxo || []) : FV().comLiberacao(ex.fluxo || []), conflitos: ATIVAS.includes(ex.status) ? conflitos(ex, outras) : [], bloqueados, docs, divergencias_mdfe }, status: STATUS, anexos_tipos: ANEXOS };
+  return { execucao: { ...comRef(enfeitar(ex), pvs), fluxo: ex.status === 'rascunho' ? (ex.fluxo || []) : FV().comLiberacao(ex.fluxo || []), conflitos: ATIVAS.includes(ex.status) ? conflitos(ex, outras) : [], bloqueados, docs, divergencias_mdfe, historico_docs }, status: STATUS, anexos_tipos: ANEXOS };
 }
 /** trechos do pedido com as ATs ativas e os itens ainda livres (sem valores) */
 function trechosComATs(pv0, ex, docsBase = null) {
@@ -583,7 +584,8 @@ async function relatorioViagem(supabase, tenantId, id) {
     inspecao_numero: e.inspecao_numero || null, resultado: e.resultado || null, liberacao: e.liberacao || null }));
   const horas = (a, b) => (a && b ? Math.round(((Date.parse(b) - Date.parse(a)) / 3600000) * 10) / 10 : null);
   const kms = inspecoes.map((i) => Number(i.km)).filter((n) => Number.isFinite(n) && n > 0);
-  return { ...doc, fluxo, inspecoes,
+  const historico_docs = await require('./tarefasFiscais').historicoDocsAT(supabase, tenantId, ex).catch(() => []); // 18g.2.8
+  return { ...doc, fluxo, inspecoes, historico_docs, anexos: (ex.anexos || []).filter((a) => !a.retirado).map((a) => ({ tipo: a.tipo, nome: a.nome, versao: a.versao || 1, evento: a.evento || null })),
     real: { iniciada_em: ex.iniciada_em || null, concluida_em: ex.concluida_em || null, duracao_h: horas(ex.iniciada_em, ex.concluida_em),
       atraso_h: ex.concluida_em && ex.fim_previsto ? horas(ex.fim_previsto, ex.concluida_em) : null, km: kms.length >= 2 ? { de: Math.min(...kms), ate: Math.max(...kms), rodados: Math.max(...kms) - Math.min(...kms) } : null },
     resumo: { etapas: fluxo.length, feitas: fluxo.filter((e) => ['feita', 'liberada'].includes(e.status) || e.feita_em).length, inspecoes: inspecoes.length,
