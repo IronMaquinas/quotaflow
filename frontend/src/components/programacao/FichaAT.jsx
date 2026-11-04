@@ -3,6 +3,7 @@
 //              (🔒 bloqueados não entram). Respostas do servidor:
 //                · motorista 🔴 → caixa de LIBERAÇÃO (só gestor/admin, com justificativa — fica registrada)
 //                · conflito de agenda → mostra os conflitos e "Programar mesmo assim"
+//   18g.2.5: documento que veio da tarefa fiscal → 🔁 substituir / ＋ evento aqui mesmo; divergência de motorista → ＋ inclusão de condutor
 //   FichaAT  — detalhe: rota, itens (sem valores), motorista, conjunto, anexos NF-e/CT-e/MDF-e, ▶ iniciar · ✓ concluir · ✕ cancelar · ↺ reabrir, 📄 PDF
 import { useState, useEffect } from "react";
 import apiService from "../../services/apiService";
@@ -11,6 +12,7 @@ import { abrirRelatorioViagem } from "../../utils/gerarRelatorioViagem"; // 18e
 import { valorCelula } from "../../utils/gerarBid";
 import EditorAT from "./EditorAT";
 import VerArquivo, { ChipDoc, TXT_DOC } from "./VerArquivo";
+import AcaoDocFiscal from "./AcaoDocFiscal"; // 18g.2.5: substituir / evento / inclusão de condutor pela AT
 
 export const COR_STATUS = { programada: "#3b82f6", em_execucao: "#f59e0b", concluida: "#22c55e", cancelada: "#ef4444" };
 export const NOME_STATUS = { programada: "Programada", em_execucao: "Em execução", concluida: "Concluída", cancelada: "Cancelada" };
@@ -29,6 +31,7 @@ export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onEr
   const [ocupado, setOcupado] = useState(false);
   const [modal, setModal] = useState(null); // { tipo: cancelar|editar|anexo }
   const [ver, setVer] = useState(null);
+  const [acaoDoc, setAcaoDoc] = useState(null); // 18g.2.5: { modo, anexo }
   const [liberando, setLiberando] = useState(null); // 16e: { id, motivo }
   const [base, setBase] = useState(null);
   const carregar = async () => { try { setD(await apiService.get(`/programacao/execucoes/${id}`)); } catch (e) { onErro(e.message); onFechar(); } };
@@ -85,7 +88,7 @@ export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onEr
         {(e.conflitos?.length > 0 || e.bloqueados?.length > 0 || e.cancelada_motivo || e.divergencias_mdfe?.length > 0) && <div style={{ padding: "8px 18px", background: `${C.warn}14`, borderBottom: `1px solid ${C.border}`, fontSize: 12.5 }}>
           {(e.bloqueados || []).map((x, i) => <div key={`b${i}`} style={{ color: C.danger }}>🔒 {x.tag || x.nome} foi bloqueado por inspeção{x.motivo ? ` (${x.motivo})` : ""} — troque o equipamento (✏ Editar) ou libere em 🔍 Inspeções.</div>)}
           {(e.conflitos || []).map((x, i) => <div key={`c${i}`} style={{ color: C.warn }}>⚠ {x.texto}</div>)}
-          {(e.divergencias_mdfe || []).map((x, i) => <div key={`m${i}`} style={{ color: C.danger }}>🧾 {x}</div>)} {/* 18g.2: a AT deve espelhar o MDF-e */}
+          {(e.divergencias_mdfe || []).map((x, i) => <div key={`m${i}`} style={{ color: C.danger }}>🧾 {x}{/^Motorista da AT/.test(x) && e.motorista_id && <button type="button" onClick={() => setAcaoDoc({ modo: "condutor" })} style={{ ...s.btn(true), marginLeft: 8, padding: "3px 10px", fontSize: 12, cursor: "pointer" }}>＋ Registrar inclusão de condutor (MDF-e)</button>}</div>)} {/* 18g.2: a AT deve espelhar o MDF-e */}
           {e.cancelada_motivo && <div style={{ color: C.danger }}>✕ Cancelada em {dataHora(e.cancelada_em)}: {e.cancelada_motivo}</div>}
         </div>}
         <div style={{ display: "flex", flexWrap: "wrap" }}>
@@ -136,7 +139,10 @@ export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onEr
             <div style={{ ...s.label, marginTop: 14 }}>DOCUMENTOS FISCAIS</div>
             {(e.anexos || []).map((a) => <div key={a.id} style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12.5, padding: "4px 0", borderBottom: `1px solid ${C.border}` }}>
               <span style={s.tag(C.accent)}>{d.anexos_tipos?.[a.tipo] || a.tipo}</span><button type="button" className="qf-clicavel" onClick={() => abrirAnexo(a)} style={{ background: "none", border: "none", color: C.text, padding: 0, fontSize: 12.5, flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.nome}</button>
-              {e.status !== "concluida" && <button type="button" title="Remover" onClick={() => removerAnexo(a)} style={{ background: "none", border: "none", color: C.danger, cursor: "pointer" }}>✕</button>}</div>)}
+              {a.tarefa_id ? <>{!a.evento && !["concluida", "cancelada"].includes(e.status) && <button type="button" title="Substituir (motivo obrigatório; a versão anterior fica guardada)" aria-label={`Substituir ${a.nome}`} onClick={() => setAcaoDoc({ modo: "subst", anexo: a })} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 13 }}>🔁</button>}
+                {e.status !== "cancelada" && <button type="button" title="＋ Evento / correção (CC-e, inclusão de condutor…)" aria-label={`Evento ${a.nome}`} onClick={() => setAcaoDoc({ modo: "evento", anexo: a })} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 13 }}>＋</button>}
+                {a.versao > 1 && <span style={s.tag(C.accent)}>v{a.versao}</span>}</>
+                : e.status !== "concluida" && <button type="button" title="Remover" onClick={() => removerAnexo(a)} style={{ background: "none", border: "none", color: C.danger, cursor: "pointer" }}>✕</button>}</div>)}
             {!(e.anexos || []).length && <div style={{ fontSize: 12, color: C.muted }}>Nenhum ainda.</div>}
             {e.status !== "concluida" && e.status !== "cancelada" && <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 8 }}>{Object.entries(d.anexos_tipos || {}).map(([k, l]) => (
               <label key={k} style={{ ...s.tag(C.accent), cursor: "pointer", padding: "4px 8px" }}>＋ {l}<input type="file" accept=".pdf,.xml,.jpg,.jpeg,.png" style={{ display: "none" }} disabled={ocupado} onChange={(x) => { enviarAnexo(k, x.target.files?.[0]); x.target.value = ""; }} /></label>))}</div>}
@@ -154,6 +160,7 @@ export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onEr
         <div style={{ display: "flex", gap: 10, marginTop: 14 }}><button type="button" onClick={() => setModal(null)} style={{ ...s.btn(false), cursor: "pointer", flex: 1, color: C.text }}>Voltar</button>
           <button type="button" disabled={ocupado || modal.motivo.trim().length < 10} onClick={() => acao("cancelar", { motivo: modal.motivo }, `${e.numero} cancelada.`)} style={{ ...s.btn(modal.motivo.trim().length >= 10, C.danger), flex: 1 }}>Cancelar AT</button></div>
       </>, () => setModal(null), 460, 340)}
+      {acaoDoc && <AcaoDocFiscal C={C} s={s} modo={acaoDoc.modo} at={e} anexo={acaoDoc.anexo} onFechar={() => setAcaoDoc(null)} onFeito={async (msg) => { setAcaoDoc(null); onOk(msg); await carregar(); onMudou?.(); }} />}
     </div>
   );
 }
