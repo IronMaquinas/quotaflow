@@ -14,6 +14,9 @@
 //   18g.2.3: os PDFs também vão para o RASCUNHO da AT (kit do motorista já completo ao programar); e, com AT no trecho
 //            (mesmo rascunho), os documentos da tarefa ficam TRAVADOS para remoção/troca — só destravam descartando o rascunho
 //            ou cancelando a AT (rastreabilidade TSK ↔ AT). Acrescentar documento continua possível (fica no histórico).
+//   18g.2.4: 🔁 substituir documento com versão (motivo obrigatório; a versão anterior fica guardada; a AT recebe a nova sozinha)
+//            · ＋ evento/correção (CC-e, inclusão de condutor…) pendurado no documento original · regras pela situação da AT:
+//            rascunho/programada → fiscal ou gestor · em execução → só gestor (motorista vê "versão atualizada") · concluída → só evento.
 //   Sem a migration 066 (tarefas.checklist) nada é criado.
 const crypto = require('crypto');
 
@@ -222,14 +225,19 @@ async function espelhar(supabase, tenantId, t, ats, quem) {
   }
   // tarefa → AT
   for (const at of ats) {
-    if (at.status === 'concluida') continue;
+    const fechada = at.status === 'concluida'; // 18g.2.4: AT concluída só recebe evento/correção novo (nada sai)
     const alvo = (k, e) => k !== 'mdfe' || (e.at_id ? String(e.at_id) === String(at.id) : ats.length === 1);
-    const quer = []; for (const k of Object.keys(ANEXO_AT)) for (const e of jsonArr(ck[k]?.entradas)) if (e.pdf_anexo && alvo(k, e)) { const an = anexosT.find((x) => x.id === e.pdf_anexo); if (an) quer.push({ k, e, an }); }
+    const quer = []; for (const k of Object.keys(ANEXO_AT)) for (const e of jsonArr(ck[k]?.entradas)) {
+      if (!alvo(k, e)) continue;
+      if (e.pdf_anexo) { const an = anexosT.find((x) => x.id === e.pdf_anexo); if (an) quer.push({ k, e, an }); }
+      for (const ev of jsonArr(e.eventos)) if (ev.pdf_anexo) { const an = anexosT.find((x) => x.id === ev.pdf_anexo); if (an) quer.push({ k, e, an, ev }); } // 18g.2.4: CC-e / evento vai junto
+    }
     const atuais = jsonArr(at.anexos);
     const daTarefa = atuais.filter((a) => a.tarefa_id && String(a.tarefa_id) === String(t.id));
-    const manter = atuais.filter((a) => !(a.tarefa_id && String(a.tarefa_id) === String(t.id)) || quer.some((x) => x.an.id === a.tarefa_anexo));
-    const novos = quer.filter((x) => !daTarefa.some((a) => a.tarefa_anexo === x.an.id)).map(({ k, e, an }) => ({ id: crypto.randomBytes(6).toString('hex'), tipo: ANEXO_AT[k], nome: an.nome, path: an.path, mime: an.mime, tamanho: an.tamanho,
-      em: an.em, por: an.por, tarefa_id: String(t.id), tarefa_anexo: an.id, tarefa_numero: t.numero || null, numero_doc: e.numero || null }));
+    const manter = fechada ? atuais : atuais.filter((a) => !(a.tarefa_id && String(a.tarefa_id) === String(t.id)) || quer.some((x) => x.an.id === a.tarefa_anexo));
+    const novos = quer.filter((x) => !daTarefa.some((a) => a.tarefa_anexo === x.an.id) && (!fechada || x.ev)).map(({ k, e, an, ev }) => ({ id: crypto.randomBytes(6).toString('hex'), tipo: ANEXO_AT[k], nome: ev ? `${EVENTOS[ev.tipo] || 'Evento'} — ${ITENS[k]} ${e.numero || ''}`.trim() : an.nome, path: an.path, mime: an.mime, tamanho: an.tamanho,
+      em: an.em, por: an.por, tarefa_id: String(t.id), tarefa_anexo: an.id, tarefa_numero: t.numero || null, numero_doc: e.numero || null,
+      ...(ev ? { evento: ev.tipo } : {}), ...(!ev && (e.versao || 1) > 1 ? { versao: e.versao, atualizado_em: e.em } : {}) }));
     if (novos.length || manter.length !== atuais.length) {
       await supabase.from('execucoes').update({ anexos: [...manter, ...novos], atualizado_em: new Date().toISOString() }).eq('id', at.id).eq('tenant_id', tenantId);
     }
@@ -426,6 +434,79 @@ async function divergencias(supabase, tenantId, ats = null) {
   return out;
 }
 
+// ─── 18g.2.4: substituir com versão · evento/correção ───────────────────────
+const MOTIVOS = { arquivo_errado: 'Arquivo errado anexado (mesmo documento)', reemitido: 'Documento cancelado e reemitido', outro: 'Outro' };
+const EVENTOS = { cce: 'Carta de correção (CC-e)', inclusao_condutor: 'Inclusão de condutor (MDF-e)', outro: 'Evento / correção' };
+async function atsDoDoc(supabase, tenantId, t, item, e) {
+  const [pvT, gT] = String(t.origem_ref || '').split(':');
+  const ats = (await q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId).eq('pv_id', pvT)).catch(() => [])).filter((x) => String(x.grupo_id) === String(gT) && x.status !== 'cancelada');
+  return item === 'mdfe' && e.at_id ? ats.filter((x) => String(x.id) === String(e.at_id)) : ats;
+}
+const ehGestor = (quem) => (quem?.perfis || []).some((p) => ['admin', 'gestor'].includes(p));
+
+async function substituirDoc(supabase, tenantId, quem, id, item, entradaId, body = {}) {
+  if (!ITENS[item]) return { status: 400, erro: 'Documento inválido' };
+  const t = await tarefaFiscal(supabase, tenantId, id); if (!t) return { status: 404, erro: 'Tarefa fiscal não encontrada' };
+  if (t.status === 'cancelada') return { status: 409, erro: 'Tarefa dispensada/cancelada' };
+  const ck0 = t.checklist || novoChecklist(); const e = jsonArr(ck0[item]?.entradas).find((x) => x.id === entradaId);
+  if (!e) return { status: 404, erro: 'Documento não encontrado' };
+  if (e.origem === 'at') return { status: 409, erro: `Este documento foi anexado na ${e.at_numero} — troque por lá` };
+  const tipo = MOTIVOS[body.motivo_tipo] ? body.motivo_tipo : null; if (!tipo) return { status: 400, erro: 'Escolha o motivo da substituição' };
+  const motivo = texto(body.motivo, 400); if (tipo === 'outro' && motivo.length < 10) return { status: 400, erro: 'Explique o motivo (mínimo 10 caracteres)' };
+  const ats = await atsDoDoc(supabase, tenantId, t, item, e);
+  const conc = ats.find((x) => x.status === 'concluida'); if (conc) return { status: 409, erro: `${conc.numero} já foi concluída — o documento não pode ser substituído. Use "＋ Evento / correção" (ex.: CC-e)` };
+  const emExec = ats.filter((x) => x.status === 'em_execucao');
+  if (emExec.length && !ehGestor(quem)) return { status: 409, erro: `${emExec.map((x) => x.numero).join(', ')} já está em execução (o caminhão saiu) — só o gestor pode substituir o documento` };
+  let dados = null;
+  if (body.xml?.base64) { if (item === 'averbacao') return { status: 400, erro: 'A averbação não tem XML' }; dados = lerXml(item, Buffer.from(String(body.xml.base64), 'base64').toString('utf8')); if (dados.erro) return { status: 400, erro: dados.erro }; }
+  const numero = texto(body.numero, 60) || dados?.numero || (item === 'averbacao' ? null : e.numero) || null;
+  const chave = so44(body.chave) || dados?.chave || (tipo === 'arquivo_errado' ? e.chave : null) || null;
+  if (item === 'averbacao') { if (!numero) return { status: 400, erro: 'Informe o novo número da averbação' }; }
+  else if (!body.pdf?.base64) return { status: 400, erro: `Anexe o PDF correto do ${ITENS[item]}` };
+  if (tipo === 'arquivo_errado' && e.chave && chave && chave !== e.chave) return { status: 409, erro: `A chave do arquivo novo (…${chave.slice(-8)}) é diferente da original (…${e.chave.slice(-8)}) — se o documento foi reemitido, escolha "Documento cancelado e reemitido"` };
+  if (tipo === 'reemitido' && item !== 'averbacao' && (!chave || chave === e.chave)) return { status: 409, erro: 'Documento reemitido tem chave nova — informe a chave ou anexe o XML novo' };
+  const pdf = await subir(supabase, tenantId, t, body.pdf, PDF); if (pdf?.erro) return { status: 400, erro: pdf.erro === true ? 'PDF (ou imagem JPG/PNG do documento)' : pdf.erro };
+  const xml = body.xml?.base64 ? await subir(supabase, tenantId, t, { ...body.xml, mime: 'application/xml' }, { 'application/xml': 'xml' }) : null;
+  const agora = new Date().toISOString(); const v = (e.versao || 1) + 1;
+  const anterior = { versao: e.versao || 1, numero: e.numero, chave: e.chave, pdf_anexo: e.pdf_anexo, xml_anexo: e.xml_anexo, dados: e.dados, por: e.por, em: e.em, substituida_em: agora, substituida_por: quem?.nome || null, motivo_tipo: tipo, motivo: motivo || null };
+  const nova = { ...e, numero, chave, pdf_anexo: pdf?.id || (item === 'averbacao' ? null : e.pdf_anexo), xml_anexo: xml?.id || null, dados: dados || (tipo === 'arquivo_errado' ? e.dados : null), por: quem?.nome || null, em: agora, versao: v, versoes: [...jsonArr(e.versoes), anterior] };
+  const ck = { ...ck0, [item]: { entradas: jsonArr(ck0[item]?.entradas).map((x) => (x.id === e.id ? nova : x)) } };
+  const tira = [e.pdf_anexo, e.xml_anexo].filter(Boolean);
+  const anexos = [...jsonArr(t.anexos).map((a) => (tira.includes(a.id) ? { ...a, substituido: true, substituido_em: agora } : a)), ...[pdf, xml].filter(Boolean).map(({ _buf, ...a }) => ({ ...a, por: quem?.nome || null, fiscal: item }))];
+  const st = statusPelo(t, ck);
+  const txt = `🔁 ${ITENS[item]}${numero ? ` nº ${numero}` : ''} substituído (v${v}) — ${MOTIVOS[tipo]}${motivo ? `: ${motivo}` : ''}${ats.length ? ` · AT atualizada: ${ats.map((x) => x.status === 'rascunho' ? 'rascunho' : x.numero).join(', ')}` : ''}${emExec.length ? ' · motorista avisado no link' : ''}`;
+  const hist = [entrada(quem, 'anexo', { texto: txt })];
+  if (st !== t.status) hist.push(entrada(quem, 'status', { campo: 'situação', de: t.status === 'concluida' ? 'Concluída' : 'Em andamento', para: st === 'concluida' ? 'Concluída' : 'Em andamento' }));
+  const { error } = await supabase.from('tarefas').update({ checklist: ck, anexos, status: st, historico: [...jsonArr(t.historico), ...hist] }).eq('id', t.id).eq('tenant_id', tenantId);
+  if (error) throw new Error(error.message);
+  const [pvT] = String(t.origem_ref || '').split(':'); await sincronizar(supabase, tenantId, { pvId: pvT, quem }).catch(() => null);
+  const E = require('./execucoes'); for (const at of ats.filter((x) => x.status !== 'rascunho')) await E.registrar(supabase, tenantId, { usuarioNome: quem?.nome || null }, at, `${txt.replace(/ · AT atualizada:.*/, '')} — ${at.numero} (${t.numero || 'tarefa fiscal'})`).catch(() => null);
+  const fim = (await q(supabase.from('tarefas').select('*').eq('tenant_id', tenantId).eq('id', t.id)))[0];
+  return { tarefa: fim, resumo: resumo(fim.checklist), ats: ats.map((x) => x.numero) };
+}
+
+async function eventoDoc(supabase, tenantId, quem, id, item, entradaId, body = {}) {
+  if (!['nfe', 'cte', 'mdfe'].includes(item)) return { status: 400, erro: 'Evento só para NF-e, CT-e ou MDF-e' };
+  const t = await tarefaFiscal(supabase, tenantId, id); if (!t) return { status: 404, erro: 'Tarefa fiscal não encontrada' };
+  if (t.status === 'cancelada') return { status: 409, erro: 'Tarefa dispensada/cancelada' };
+  const ck0 = t.checklist || novoChecklist(); const e = jsonArr(ck0[item]?.entradas).find((x) => x.id === entradaId);
+  if (!e) return { status: 404, erro: 'Documento não encontrado' };
+  const tipo = EVENTOS[body.tipo] ? body.tipo : null; if (!tipo) return { status: 400, erro: 'Escolha o tipo do evento' };
+  if (tipo === 'inclusao_condutor' && item !== 'mdfe') return { status: 400, erro: 'Inclusão de condutor é evento do MDF-e' };
+  const desc = texto(body.descricao, 400); if (tipo === 'outro' && desc.length < 5) return { status: 400, erro: 'Descreva o evento' };
+  if (!body.pdf?.base64) return { status: 400, erro: 'Anexe o PDF do evento' };
+  const pdf = await subir(supabase, tenantId, t, body.pdf, PDF); if (pdf?.erro) return { status: 400, erro: pdf.erro === true ? 'PDF ou imagem' : pdf.erro };
+  const ev = { id: crypto.randomBytes(5).toString('hex'), tipo, descricao: desc || null, pdf_anexo: pdf.id, por: quem?.nome || null, em: new Date().toISOString() };
+  const ck = { ...ck0, [item]: { entradas: jsonArr(ck0[item]?.entradas).map((x) => (x.id === e.id ? { ...x, eventos: [...jsonArr(x.eventos), ev] } : x)) } };
+  const { _buf, ...an } = pdf;
+  const txt = `📎 ${EVENTOS[tipo]} no ${ITENS[item]}${e.numero ? ` nº ${e.numero}` : ''}${desc ? ` — ${desc}` : ''}`;
+  const { error } = await supabase.from('tarefas').update({ checklist: ck, anexos: [...jsonArr(t.anexos), { ...an, por: quem?.nome || null, fiscal: item, evento: tipo }], historico: [...jsonArr(t.historico), entrada(quem, 'anexo', { texto: txt })] }).eq('id', t.id).eq('tenant_id', tenantId);
+  if (error) throw new Error(error.message);
+  const [pvT] = String(t.origem_ref || '').split(':'); await sincronizar(supabase, tenantId, { pvId: pvT, quem }).catch(() => null);
+  const fim = (await q(supabase.from('tarefas').select('*').eq('tenant_id', tenantId).eq('id', t.id)))[0];
+  return { tarefa: fim, evento: ev };
+}
+
 /** selo da Mesa: resumo por trecho (pvId:grupoId → { numero, feitos, total, status, prazo, atrasada }) */
 async function selos(supabase, tenantId) {
   const ts = await q(supabase.from('tarefas').select('*').eq('tenant_id', tenantId).eq('origem', 'fiscal')).catch(() => []);
@@ -434,4 +515,4 @@ async function selos(supabase, tenantId) {
   return m;
 }
 
-module.exports = { programarDoMdfe, divergencias, casarMdfe, ITENS, ORDEM, sincronizar, registrarDoc, removerDoc, dispensar, selos, resumo, conferir, lerXml, config, salvarConfig, diasUteisAntes, novoChecklist };
+module.exports = { substituirDoc, eventoDoc, MOTIVOS, EVENTOS, programarDoMdfe, divergencias, casarMdfe, ITENS, ORDEM, sincronizar, registrarDoc, removerDoc, dispensar, selos, resumo, conferir, lerXml, config, salvarConfig, diasUteisAntes, novoChecklist };

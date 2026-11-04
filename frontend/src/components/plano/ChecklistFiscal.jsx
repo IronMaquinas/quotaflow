@@ -3,6 +3,7 @@
 //   18g.1.1: XML primeiro — ao escolher, já mostra o que foi lido e preenche nº e chave (a conferência oficial é no servidor).
 //   18g.2: MDF-e com XML → "🚚 Programar AT deste MDF-e" (rascunho na Mesa, já com placa/motorista); AT concluída → 🏁 encerrar o MDF-e.
 //   18g.2.3: com AT no trecho (mesmo rascunho) os documentos ficam 🔒 travados (sem 🗑); "Programar AT" avisa se há documento sem salvar.
+//   18g.2.4: 🔁 Substituir (versão anterior guardada, motivo obrigatório, AT atualizada) · ＋ Evento / correção (CC-e, inclusão de condutor).
 //   O que foi anexado direto na AT aparece aqui ("da AT-…"). Dispensar = cancelar com justificativa (fica no histórico).
 import { useState } from "react";
 import apiService from "../../services/apiService";
@@ -54,14 +55,57 @@ export default function ChecklistFiscal({ C, s, tarefa, onAtualizou, onErro, onO
     catch (er) { onErro?.(er); } finally { setOcupado(false); }
   };
   const programar = async (e) => { // 18g.2
-    if (abrindo && (f.pdf || f.xml || String(f.numero || "").trim() || String(f.chave || "").trim())) { // 18g.2.3: não perde o que está no formulário
-      onErro?.(new Error(`Você tem um documento (${ITENS_FISCAIS.find((x) => x[0] === abrindo)?.[1]}) preenchido e ainda não salvo — clique em Salvar (ou Fechar) antes de programar a AT.`)); return;
+    if ((abrindo && (f.pdf || f.xml || String(f.numero || "").trim() || String(f.chave || "").trim())) || (acao && (acao.pdf || acao.xml))) { // 18g.2.3: não perde o que está no formulário
+      onErro?.(new Error(`Você tem um documento (${ITENS_FISCAIS.find((x) => x[0] === (abrindo || acao?.k))?.[1]}) preenchido e ainda não salvo — clique em Salvar (ou Fechar) antes de programar a AT.`)); return;
     }
     setOcupado(true);
     try { const r0 = await apiService.post(`/tarefas/${tarefa.id}/fiscal/mdfe/${e.id}/programar`, {}); onOk?.(`🚚 AT em rascunho criada — confira e programe na 🧩 Mesa${r0?.avisos?.length ? ` · ⚠️ ${r0.avisos.join("; ")}` : ""}`); await onAtualizou?.(); }
     catch (er) { onErro?.(er); } finally { setOcupado(false); }
   };
   const [enc, setEnc] = useState({}); // at_id → { numero, pdf }
+  // 18g.2.4: 🔁 substituir com versão · ＋ evento / correção
+  const MOTIVOS = [["arquivo_errado", "Arquivo errado anexado (mesmo documento)"], ["reemitido", "Documento cancelado e reemitido"], ["outro", "Outro motivo"]];
+  const EVENTOS = { nfe: [["cce", "Carta de correção (CC-e)"], ["outro", "Outro evento"]], cte: [["cce", "Carta de correção (CC-e)"], ["outro", "Outro evento"]], mdfe: [["inclusao_condutor", "Inclusão de condutor"], ["outro", "Outro evento"]] };
+  const [acao, setAcao] = useState(null); // { k, id, modo: 'subst' | 'evento', ... }
+  const [verVersoes, setVerVersoes] = useState(null);
+  const abrirAcao = (k, e, modo) => setAcao(acao?.id === e.id && acao.modo === modo ? null : { k, id: e.id, modo, motivo_tipo: "", motivo: "", tipo: EVENTOS[k]?.[0]?.[0] || "outro", descricao: "", numero: "", chave: "", pdf: null, xml: null, lido: null });
+  const salvarAcao = async () => {
+    setOcupado(true);
+    try {
+      const a = acao; const corpo = a.modo === "subst" ? { motivo_tipo: a.motivo_tipo, motivo: a.motivo, numero: a.numero || undefined, chave: a.chave || undefined } : { tipo: a.tipo, descricao: a.descricao };
+      if (a.pdf) corpo.pdf = { nome: a.pdf.name, mime: mimeDe(a.pdf), base64: await lerBase64(a.pdf) };
+      if (a.xml) corpo.xml = { nome: a.xml.name, base64: await lerBase64(a.xml) };
+      const r0 = await apiService.post(`/tarefas/${tarefa.id}/fiscal/${a.k}/${a.id}/${a.modo === "subst" ? "substituir" : "evento"}`, corpo);
+      onOk?.(a.modo === "subst" ? `🔁 Documento substituído${r0?.ats?.length ? ` — AT atualizada (${r0.ats.join(", ")})` : ""}` : "📎 Evento registrado — vai junto para a AT");
+      setAcao(null); await onAtualizou?.();
+    } catch (er) { onErro?.(er); } finally { setOcupado(false); }
+  };
+  const xmlAcao = async (k, arq) => { if (!arq) return setAcao((a) => ({ ...a, xml: null, lido: null })); const txt = await new Promise((ok) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result || "")); fr.onerror = () => ok(""); fr.readAsText(arq); }); const r0 = lerXmlFiscal(k, txt);
+    setAcao((a) => (r0.erro ? { ...a, xml: null, lido: { erro: r0.erro } } : { ...a, xml: arq, numero: r0.numero || a.numero, chave: r0.chave || a.chave, lido: { resumo: r0.resumo } })); };
+  const arqAcao = (rot, campo, accept, fn) => <label style={{ ...s.btn(false), display: "inline-flex", alignItems: "center", gap: 6, padding: "6px 12px", fontSize: 12, cursor: "pointer", color: acao?.[campo] ? C.accent : C.text }}>{acao?.[campo] ? `✓ ${acao[campo].name}` : rot}
+    <input type="file" aria-label={rot} accept={accept} style={{ display: "none" }} onChange={(ev) => { const x = ev.target.files?.[0] || null; ev.target.value = ""; if (fn) fn(x); else setAcao((a) => ({ ...a, [campo]: x })); }} /></label>;
+  const extra = (k, nome, e) => <>
+    {(e.eventos || []).map((ev) => <div key={ev.id} style={{ fontSize: 12, padding: "4px 0 0 48px", color: C.textSub }}>↳ 📎 {({ cce: "Carta de correção (CC-e)", inclusao_condutor: "Inclusão de condutor", outro: "Evento" })[ev.tipo] || "Evento"}{ev.descricao ? ` — ${ev.descricao}` : ""} <span style={{ color: C.accent, cursor: "pointer" }} onClick={() => abrirAnexo(ev.pdf_anexo)}>📄 PDF</span> <span style={{ color: C.muted, fontSize: 11 }}>{ev.por || "—"} · {quando(ev.em)}</span></div>)}
+    {(e.versoes || []).length > 0 && <div style={{ fontSize: 12, padding: "4px 0 0 48px" }}><span style={{ color: C.muted, cursor: "pointer" }} onClick={() => setVerVersoes(verVersoes === e.id ? null : e.id)}>🕘 {e.versoes.length} versão(ões) anterior(es) {verVersoes === e.id ? "▴" : "▾"}</span>
+      {verVersoes === e.id && e.versoes.slice().reverse().map((v) => <div key={v.versao} style={{ color: C.textSub, padding: "3px 0 0 12px" }}>v{v.versao} · {v.numero ? `nº ${v.numero}` : ""}{v.chave ? ` · chave ${curta(v.chave)}` : ""}{v.pdf_anexo ? <span style={{ color: C.accent, cursor: "pointer", marginLeft: 6 }} onClick={() => abrirAnexo(v.pdf_anexo)}>📄 PDF</span> : null} · substituída em {quando(v.substituida_em)} por {v.substituida_por || "—"} — {({ arquivo_errado: "arquivo errado", reemitido: "cancelado e reemitido", outro: "outro" })[v.motivo_tipo] || ""}{v.motivo ? `: ${v.motivo}` : ""}</div>)}</div>}
+    {acao?.id === e.id && <div style={{ margin: "8px 0 2px 32px", padding: "10px 12px", border: `1px solid ${C.accent}55`, borderRadius: 8, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+      {acao.modo === "subst" ? <>
+        <b style={{ fontSize: 12.5, flexBasis: "100%" }}>🔁 Substituir {nome}{e.numero ? ` nº ${e.numero}` : ""} — a versão atual fica guardada; a AT recebe a nova</b>
+        <select aria-label="Motivo da substituição" value={acao.motivo_tipo} onChange={(ev) => setAcao({ ...acao, motivo_tipo: ev.target.value })} style={{ ...s.input, width: 300, marginBottom: 0 }}><option value="">Motivo *</option>{MOTIVOS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+        <input aria-label="Detalhe do motivo" value={acao.motivo} onChange={(ev) => setAcao({ ...acao, motivo: ev.target.value })} placeholder={acao.motivo_tipo === "outro" ? "Explique (mín. 10 caracteres) *" : "Detalhe (opcional)"} style={{ ...s.input, flex: 1, minWidth: 200, marginBottom: 0 }} />
+        {k === "averbacao" ? <input aria-label="Novo número" value={acao.numero} onChange={(ev) => setAcao({ ...acao, numero: ev.target.value })} placeholder="Novo nº da averbação *" style={{ ...s.input, width: 200, marginBottom: 0 }} /> : <>
+          {arqAcao("🧩 XML novo", "xml", ".xml,text/xml,application/xml", (x) => xmlAcao(k, x))}{arqAcao("📄 PDF novo *", "pdf", ".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png")}</>}
+        {acao.lido && <div style={{ flexBasis: "100%", fontSize: 12, color: acao.lido.erro ? C.danger : C.success }}>{acao.lido.erro ? `⚠️ ${acao.lido.erro}` : `✓ XML lido: ${acao.lido.resumo}`}</div>}
+      </> : <>
+        <b style={{ fontSize: 12.5, flexBasis: "100%" }}>＋ Evento / correção no {nome}{e.numero ? ` nº ${e.numero}` : ""} — o documento original continua valendo</b>
+        <select aria-label="Tipo do evento" value={acao.tipo} onChange={(ev) => setAcao({ ...acao, tipo: ev.target.value })} style={{ ...s.input, width: 240, marginBottom: 0 }}>{(EVENTOS[k] || []).map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select>
+        <input aria-label="Descrição do evento" value={acao.descricao} onChange={(ev) => setAcao({ ...acao, descricao: ev.target.value })} placeholder={acao.tipo === "outro" ? "Descreva *" : "O que foi corrigido (opcional)"} style={{ ...s.input, flex: 1, minWidth: 200, marginBottom: 0 }} />
+        {arqAcao("📄 PDF do evento *", "pdf", ".pdf,.jpg,.jpeg,.png,application/pdf,image/jpeg,image/png")}
+      </>}
+      <button type="button" onClick={() => setAcao(null)} style={{ ...s.btn(false), color: C.text, padding: "6px 12px", fontSize: 12, cursor: "pointer" }}>Voltar</button>
+      <button type="button" disabled={ocupado || (acao.modo === "subst" ? (!acao.motivo_tipo || (k === "averbacao" ? !acao.numero.trim() : !acao.pdf)) : !acao.pdf)} onClick={salvarAcao} style={{ ...s.btn(true), padding: "6px 14px", fontSize: 12, cursor: "pointer" }}>{ocupado ? "Enviando…" : acao.modo === "subst" ? "🔁 Substituir" : "Registrar evento"}</button>
+    </div>}
+  </>;
   const encerrar = async (p) => {
     setOcupado(true);
     try { const v = enc[p.at_id] || {}; const corpo = { at_id: p.at_id, numero: v.numero || undefined }; if (v.pdf) corpo.pdf = { nome: v.pdf.name, mime: mimeDe(v.pdf), base64: await lerBase64(v.pdf) };
@@ -93,7 +137,7 @@ export default function ChecklistFiscal({ C, s, tarefa, onAtualizou, onErro, onO
           <span style={{ fontSize: 11.5, color: C.muted, flex: 1, minWidth: 180 }}>{dica}</span>
           {!encerrada && <button type="button" onClick={() => abrir(k)} style={{ ...s.btn(ehProx), padding: "5px 12px", fontSize: 12, cursor: "pointer" }}>{abrindo === k ? "Fechar" : ents.length ? "＋ Outro" : "＋ Registrar"}</button>}
         </div>
-        {ents.map((e) => <div key={e.id} style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 12.5, padding: "6px 0 0 32px", flexWrap: "wrap" }}>
+        {ents.map((e) => <div key={e.id}><div style={{ display: "flex", gap: 10, alignItems: "center", fontSize: 12.5, padding: "6px 0 0 32px", flexWrap: "wrap" }}>
           <span style={{ fontWeight: 600 }}>{e.numero ? `nº ${e.numero}` : nome}</span>
           {e.chave && <span title={e.chave} style={{ fontFamily: "ui-monospace, monospace", color: C.textSub }}>chave {curta(e.chave)}</span>}
           {e.pdf_anexo && <span style={{ color: C.accent, cursor: "pointer" }} onClick={() => abrirAnexo(e.pdf_anexo)}>📄 PDF</span>}
@@ -107,7 +151,10 @@ export default function ChecklistFiscal({ C, s, tarefa, onAtualizou, onErro, onO
           {e.dados?.peso != null && k === "nfe" && <span style={{ color: C.textSub }}>{Number(e.dados.peso).toLocaleString("pt-BR")} kg</span>}
           <span style={{ color: C.muted, fontSize: 11 }}>{e.por || "—"} · {quando(e.em)}</span>
           {!encerrada && !travado.length && e.origem !== "at" && <button type="button" aria-label={`Remover ${nome}`} disabled={ocupado} onClick={() => remover(k, e)} style={{ background: "transparent", border: "none", color: C.danger, cursor: "pointer", fontSize: 12 }}>🗑</button>}
-        </div>)}
+        {!encerrada && e.origem !== "at" && <button type="button" onClick={() => abrirAcao(k, e, "subst")} title="Trocar por outro arquivo — a versão anterior fica guardada" style={{ background: "transparent", border: "none", color: C.accent, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>🔁 Substituir</button>}
+          {!encerrada && e.origem !== "at" && k !== "averbacao" && <button type="button" onClick={() => abrirAcao(k, e, "evento")} title="CC-e, inclusão de condutor… (o documento original continua valendo)" style={{ background: "transparent", border: "none", color: C.accent, cursor: "pointer", fontSize: 12, fontWeight: 600 }}>＋ Evento / correção</button>}
+          {(e.versao || 1) > 1 && <span style={{ ...s.tag(C.accent) }}>v{e.versao}</span>}
+        </div>{extra(k, nome, e)}</div>)}
         {abrindo === k && <div style={{ padding: "10px 0 2px 32px", display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
           {k !== "averbacao" && arquivo("🧩 XML (preenche sozinho)", "xml", ".xml,text/xml,application/xml", (x) => escolherXml(k, x))}
           <input aria-label={`Número ${nome}`} value={f.numero} onChange={(e) => setF({ ...f, numero: e.target.value })} placeholder={k === "averbacao" ? "Nº da averbação *" : "Nº (opcional se tiver o XML)"} style={{ ...s.input, width: 190, marginBottom: 0 }} />

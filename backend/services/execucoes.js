@@ -583,7 +583,7 @@ async function paginaMotorista(supabase, ex) {
   const docs = avaliarDocs(await carregarDocs(supabase, ex.tenant_id), { motorista_id: ex.motorista_id, motorista_nome: ex.motorista_nome, conjunto: ex.conjunto || [], inicio: ex.inicio_previsto, fim: ex.fim_previsto });
   const kit = [];
   for (const d of docs) kit.push({ grupo: 'cadastro', rotulo: `${d.rotulo} — ${d.dono}`, status: d.status, vence_em: d.vence_em, url: await assinar(d.path), nome: d.arquivo_nome || null });
-  for (const a of ex.anexos || []) kit.push({ grupo: 'fiscal', rotulo: ANEXOS[a.tipo] || a.tipo, status: 'ok', url: await assinar(a.path), nome: a.nome, mime: a.mime });
+  for (const a of ex.anexos || []) kit.push({ grupo: 'fiscal', rotulo: ANEXOS[a.tipo] || a.tipo, status: 'ok', url: await assinar(a.path), nome: a.atualizado_em ? `${a.nome} · 🔁 versão atualizada em ${dataHora(a.atualizado_em)} — use esta` : a.nome, mime: a.mime, atualizado_em: a.atualizado_em || null }); // 18g.2.4
   const pvM = await q(supabase.from('pedidos_venda').select('*').eq('id', ex.pv_id)).catch(() => []);
   const exR = comRef(ex, pvM);
   return { numero: ex.numero, ref: exR.ref, status: ex.status, status_nome: STATUS[ex.status], cliente_nome: ex.cliente_nome, pv_numero: ex.pv_numero, grupo_titulo: ex.grupo_titulo,

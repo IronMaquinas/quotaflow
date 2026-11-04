@@ -9,6 +9,7 @@
 //   POST   /api/tarefas/:id/comentario          { texto }
 //   POST   /api/tarefas/:id/anexos              { nome, mime, base64 } evidência · GET /:id/anexos/:anexo (link) · DELETE /:id/anexos/:anexo
 //   18g.1 🧾 tarefa fiscal (origem 'fiscal'): POST /:id/fiscal/dispensar { motivo } · POST /:id/fiscal/:item { numero, chave, pdf:{nome,mime,base64}, xml:{nome,base64} }
+//   18g.2.4: POST /:id/fiscal/:item/:entrada/substituir { motivo_tipo, motivo, numero, chave, pdf, xml } · POST /:id/fiscal/:item/:entrada/evento { tipo, descricao, pdf }
 //   18g.2: POST /:id/fiscal/mdfe/:entrada/programar (AT em rascunho a partir do MDF-e) · POST /:id/fiscal/encerramento { at_id, numero, pdf } (🏁 encerrar MDF-e)
 //         (item = nfe | cte | averbacao | mdfe) · 18g.1.1: { entrada, pdf } completa com o PDF a entrada salva só com o XML · DELETE /:id/fiscal/:item/:entrada · GET / sincroniza antes (cria/atualiza a tarefa de cada trecho)
 //   18b.2: tarefa que nasceu de outra tela (ex.: 📣 prospecção) só se encerra lá — 409 (não desloga)
@@ -38,6 +39,8 @@ router.post("/:id/fiscal/mdfe/:entrada/programar", tenantMiddleware, responder(a
   if (!perfis.some((p) => ["admin", "gestor", "operacao", "fiscal"].includes(p))) return { status: 409, erro: "Sem permissão para programar AT" };
   return TF.programarDoMdfe(supabase, req.tenantId, { ...(await quem(req)), perfis }, req.params.id, req.params.entrada);
 }));
+router.post("/:id/fiscal/:item/:entrada/substituir", tenantMiddleware, responder(async (req) => TF.substituirDoc(supabase, req.tenantId, { ...(await quem(req)), perfis: Array.isArray(req.perfis) && req.perfis.length ? req.perfis : [req.userPerfil].filter(Boolean) }, req.params.id, req.params.item, req.params.entrada, req.body || {}))); // 18g.2.4
+router.post("/:id/fiscal/:item/:entrada/evento", tenantMiddleware, responder(async (req) => TF.eventoDoc(supabase, req.tenantId, await quem(req), req.params.id, req.params.item, req.params.entrada, req.body || {}))); // 18g.2.4
 router.post("/:id/fiscal/dispensar", tenantMiddleware, responder(async (req) => TF.dispensar(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
 router.post("/:id/fiscal/:item", tenantMiddleware, responder(async (req) => TF.registrarDoc(supabase, req.tenantId, await quem(req), req.params.id, req.params.item, req.body || {})));
 router.delete("/:id/fiscal/:item/:entrada", tenantMiddleware, responder(async (req) => TF.removerDoc(supabase, req.tenantId, await quem(req), req.params.id, req.params.item, req.params.entrada)));
