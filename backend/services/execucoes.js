@@ -377,9 +377,12 @@ async function mudarStatus(supabase, tenantId, quem, id, { acao, motivo } = {}) 
 }
 
 // ─── anexos (NF-e, CT-e, MDF-e) ─────────────────────────────────────────────
-async function anexar(supabase, tenantId, quem, id, { tipo, nome, mime, base64 } = {}) {
+async function anexar(supabase, tenantId, quem, id, { tipo, nome, mime, base64, adicional } = {}) {
   const ex = await exDoTenant(supabase, tenantId, id); if (!ex) return { status: 404, erro: 'AT não encontrada' };
   if (!ANEXOS[tipo]) return { status: 400, erro: 'Tipo de anexo inválido (NF-e, CT-e, MDF-e ou outro)' };
+  { const ja = ativosDoTipo(ex, tipo); // 18g.2.7: um MDF-e por AT; NF-e/CT-e a mais só confirmando que é adicional
+    if (tipo === 'mdfe' && ja.length) return { status: 409, erro: 'Esta AT já tem MDF-e (um MDF-e = um veículo). Para trocar, use 🔁 Substituir; se for outro veículo, é outra AT.' };
+    if (['nfe', 'cte'].includes(tipo) && ja.length && adicional !== true) return { status: 409, codigo: 'ja_existe', erro: `Já existe ${ANEXOS[tipo]} nesta AT — é um documento adicional da mesma carga ou você quer substituir o atual?` }; }
   if (!MIME[mime]) return { status: 400, erro: 'Arquivo: PDF, XML, JPG ou PNG' };
   const buf = Buffer.from(String(base64 || ''), 'base64'); if (!buf.length) return { status: 400, erro: 'Arquivo vazio' };
   if (buf.length > LIMITE) return { status: 400, erro: 'Arquivo maior que 10 MB' };
@@ -408,6 +411,23 @@ async function removerAnexo(supabase, tenantId, quem, id, anexoId) {
   try { await supabase.storage.from(BUCKET).remove([a.path]); } catch { /* não bloqueia */ }
   const { data, error } = await supabase.from('execucoes').update({ anexos: (ex.anexos || []).filter((x) => x.id !== anexoId), atualizado_em: new Date().toISOString() }).eq('id', ex.id).eq('tenant_id', tenantId).select();
   if (error) throw new Error(error.message);
+  return { execucao: data[0] };
+}
+
+// 18g.2.7: documentos fiscais "ativos" da AT (sem eventos e sem os retirados por engano)
+const ativosDoTipo = (ex, tipo) => (ex.anexos || []).filter((a) => a.tipo === tipo && !a.evento && !a.retirado);
+/** retirar documento anexado por engano (fica guardado, com motivo; some da AT e do link do motorista) */
+async function retirarAnexo(supabase, tenantId, quem, id, anexoId, { motivo } = {}) {
+  const ex = await exDoTenant(supabase, tenantId, id); if (!ex) return { status: 404, erro: 'AT não encontrada' };
+  const a = (ex.anexos || []).find((x) => x.id === anexoId); if (!a) return { status: 404, erro: 'Anexo não encontrado' };
+  if (a.tarefa_anexo) return { status: 409, erro: `Este documento vem da ${a.tarefa_numero || 'tarefa fiscal'} — use 🔁 Substituir` };
+  if (a.retirado) return { status: 409, erro: 'Já foi retirado' };
+  const m = texto(motivo, 400); if (m.length < 10) return { status: 400, erro: 'Explique por que foi anexado por engano (mínimo 10 caracteres)' };
+  const trava = regraSituacao(ex, quem); if (trava) return trava;
+  const agora = new Date().toISOString();
+  const { data, error } = await supabase.from('execucoes').update({ anexos: (ex.anexos || []).map((x) => (x.id === a.id ? { ...x, retirado: { em: agora, por: nomeDe(quem), motivo: m } } : x)), atualizado_em: agora }).eq('id', ex.id).eq('tenant_id', tenantId).select();
+  if (error) throw new Error(error.message);
+  await registrar(supabase, tenantId, { usuarioNome: nomeDe(quem) }, ex, `⊘ ${ANEXOS[a.tipo]} "${a.nome}" retirado da ${ex.numero} (anexado por engano): ${m}`).catch(() => null);
   return { execucao: data[0] };
 }
 
@@ -463,7 +483,7 @@ async function eventoAnexo(supabase, tenantId, quem, id, anexoId, body = {}) {
 
 // ─── leitura ────────────────────────────────────────────────────────────────
 const enfeitar = (e) => ({ ...e, fluxo_resumo: e.status === 'rascunho' ? null : FV().resumo(e.fluxo || []), link_motorista: e.status !== 'rascunho' ? linkMotorista(e.token) : null, status_nome: STATUS[e.status] || e.status, tipo_nome: TIPOS[e.tipo] || e.tipo, fim_efetivo: fimEfetivo(e), qtd_itens: (e.itens || []).length,
-  anexos_tipos: [...new Set((e.anexos || []).map((a) => a.tipo))], atrasada: e.status === 'programada' && !!e.inicio_previsto && e.inicio_previsto < new Date().toISOString() });
+  anexos_tipos: [...new Set((e.anexos || []).filter((a) => !a.retirado).map((a) => a.tipo))], mdfe_ativos: (e.anexos || []).filter((a) => a.tipo === 'mdfe' && !a.evento && !a.retirado).length, /* 18g.2.7 */ atrasada: e.status === 'programada' && !!e.inicio_previsto && e.inicio_previsto < new Date().toISOString() });
 async function listar(supabase, tenantId, { status, de, ate } = {}) {
   const pvs = await q(supabase.from('pedidos_venda').select('*').eq('tenant_id', tenantId)).catch(() => []);
   let l = (await q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId))).map(enfeitar).map((e) => comRef(e, pvs));
@@ -634,7 +654,7 @@ async function paginaMotorista(supabase, ex) {
   const docs = avaliarDocs(await carregarDocs(supabase, ex.tenant_id), { motorista_id: ex.motorista_id, motorista_nome: ex.motorista_nome, conjunto: ex.conjunto || [], inicio: ex.inicio_previsto, fim: ex.fim_previsto });
   const kit = [];
   for (const d of docs) kit.push({ grupo: 'cadastro', rotulo: `${d.rotulo} — ${d.dono}`, status: d.status, vence_em: d.vence_em, url: await assinar(d.path), nome: d.arquivo_nome || null });
-  for (const a of ex.anexos || []) kit.push({ grupo: 'fiscal', rotulo: ANEXOS[a.tipo] || a.tipo, status: 'ok', url: await assinar(a.path), nome: a.atualizado_em ? `${a.nome} · 🔁 versão atualizada em ${dataHora(a.atualizado_em)} — use esta` : a.nome, mime: a.mime, atualizado_em: a.atualizado_em || null }); // 18g.2.4
+  for (const a of (ex.anexos || []).filter((x) => !x.retirado)) kit.push({ /* 18g.2.7: retirado por engano não vai para o motorista */ grupo: 'fiscal', rotulo: ANEXOS[a.tipo] || a.tipo, status: 'ok', url: await assinar(a.path), nome: a.atualizado_em ? `${a.nome} · 🔁 versão atualizada em ${dataHora(a.atualizado_em)} — use esta` : a.nome, mime: a.mime, atualizado_em: a.atualizado_em || null }); // 18g.2.4
   const pvM = await q(supabase.from('pedidos_venda').select('*').eq('id', ex.pv_id)).catch(() => []);
   const exR = comRef(ex, pvM);
   return { numero: ex.numero, ref: exR.ref, status: ex.status, status_nome: STATUS[ex.status], cliente_nome: ex.cliente_nome, pv_numero: ex.pv_numero, grupo_titulo: ex.grupo_titulo,
@@ -646,4 +666,4 @@ async function paginaMotorista(supabase, ex) {
     motorista_id: ex.motorista_id ?? null };
 }
 
-module.exports = { substituirAnexo, eventoAnexo, relatorioViagem, provavelCondutor, minhasViagens, refDe: (e, pvs) => comRef(e, pvs).ref, sincronizarPV, registrar, porToken, paginaMotorista, linkMotorista, docsDoConjunto, linkDocCadastro, descartar, carregarDocs, avaliarDocs, checar, trechosComATs, TIPOS, STATUS, ANEXOS, base, criar, editar, mudarStatus, anexar, linkAnexo, removerAnexo, listar, detalhe, doPV, agenda, documento, conflitos, _definirSelos };
+module.exports = { retirarAnexo, substituirAnexo, eventoAnexo, relatorioViagem, provavelCondutor, minhasViagens, refDe: (e, pvs) => comRef(e, pvs).ref, sincronizarPV, registrar, porToken, paginaMotorista, linkMotorista, docsDoConjunto, linkDocCadastro, descartar, carregarDocs, avaliarDocs, checar, trechosComATs, TIPOS, STATUS, ANEXOS, base, criar, editar, mudarStatus, anexar, linkAnexo, removerAnexo, listar, detalhe, doPV, agenda, documento, conflitos, _definirSelos };

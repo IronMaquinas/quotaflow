@@ -33,6 +33,7 @@ export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onEr
   const [modal, setModal] = useState(null); // { tipo: cancelar|editar|anexo }
   const [ver, setVer] = useState(null);
   const [acaoDoc, setAcaoDoc] = useState(null); // 18g.2.5: { modo, anexo }
+  const [confirmaAdd, setConfirmaAdd] = useState(null); // 18g.2.7: { tipo, arq } — já existe um desse tipo
   const FISCAL_V = ["nfe", "cte", "mdfe"]; // 18g.2.6: documento fiscal da AT (venha de onde vier) — substituir com versão, sem ✕ (só no rascunho)
   const [liberando, setLiberando] = useState(null); // 16e: { id, motivo }
   const [base, setBase] = useState(null);
@@ -53,13 +54,13 @@ export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onEr
   const copiarLink = async () => { try { await navigator.clipboard.writeText(e.link_motorista); onOk("📲 Link copiado — cole no WhatsApp do motorista."); } catch { onErro(`Copie o link: ${e.link_motorista}`); } };
   const textoZap = () => `Olá${e.motorista_nome ? `, ${e.motorista_nome.split(" ")[0]}` : ""}! Sua viagem ${e.numero}: ${e.origem || "—"} ➜ ${e.destino || "—"}, coleta ${dataHora(e.inicio_previsto)}. Rota e documentos: ${e.link_motorista}`;
   const removerAnexo = async (a) => { setOcupado(true); try { await apiService.delete(`/programacao/execucoes/${e.id}/anexos/${a.id}`); await carregar(); } catch (er) { onErro(er.message); } finally { setOcupado(false); } };
-  const enviarAnexo = async (tipo, arq) => {
+  const enviarAnexo = async (tipo, arq, adicional = false) => {
     if (!arq) return; if (arq.size > 10 * 1024 * 1024) return onErro("Arquivo maior que 10 MB");
     const mime = arq.type || (/\.xml$/i.test(arq.name) ? "application/xml" : "");
     setOcupado(true);
     try {
       const base64 = await new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1]); r.onerror = ko; r.readAsDataURL(arq); });
-      await apiService.post(`/programacao/execucoes/${e.id}/anexos`, { tipo, nome: arq.name, mime, base64 }); onOk(`${arq.name} anexado.`); setModal(null); await carregar();
+      await apiService.post(`/programacao/execucoes/${e.id}/anexos`, { tipo, nome: arq.name, mime, base64, adicional }); onOk(`${arq.name} anexado.`); setModal(null); setConfirmaAdd(null); await carregar();
     } catch (er) { onErro(er.message); } finally { setOcupado(false); }
   };
   const bt = (c, cheio = true) => ({ ...s.btn(true, c), cursor: "pointer", padding: "7px 12px", fontSize: 12, ...(cheio ? {} : { background: "transparent", color: c }) });
@@ -139,15 +140,21 @@ export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onEr
                 <a href={e.link_motorista} target="_blank" rel="noreferrer" style={{ fontSize: 12, color: C.accent, alignSelf: "center" }}>ver como o motorista ↗</a></div>
             </div>}
             <div style={{ ...s.label, marginTop: 14 }}>DOCUMENTOS FISCAIS</div>
-            {(e.anexos || []).map((a) => <div key={a.id} style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12.5, padding: "4px 0", borderBottom: `1px solid ${C.border}` }}>
+            {e.mdfe_ativos > 1 && <div style={{ fontSize: 12, color: C.danger, margin: "4px 0" }}>⚠️ {e.mdfe_ativos} MDF-e nesta AT — uma AT tem um MDF-e (um veículo). Substitua o certo (🔁) e retire o anexado por engano (⊘).</div>}
+            {(e.anexos || []).map((a) => a.retirado ? <div key={a.id} title={`Retirado por ${a.retirado.por || "—"} em ${dataHora(a.retirado.em)}: ${a.retirado.motivo}`} style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12, padding: "4px 0", borderBottom: `1px solid ${C.border}`, color: C.muted }}><span style={s.tag(C.muted)}>{d.anexos_tipos?.[a.tipo] || a.tipo}</span><span style={{ textDecoration: "line-through", flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.nome}</span><span>⊘ retirado</span></div> : <div key={a.id} style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12.5, padding: "4px 0", borderBottom: `1px solid ${C.border}` }}>
               <span style={s.tag(C.accent)}>{d.anexos_tipos?.[a.tipo] || a.tipo}</span><button type="button" className="qf-clicavel" onClick={() => abrirAnexo(a)} style={{ background: "none", border: "none", color: C.text, padding: 0, fontSize: 12.5, flex: 1, textAlign: "left", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.nome}</button>
               {(a.tarefa_id || (FISCAL_V.includes(a.tipo) && e.status !== "rascunho")) ? <>{!a.evento && !["concluida", "cancelada"].includes(e.status) && <button type="button" title="Substituir (motivo obrigatório; a versão anterior fica guardada)" aria-label={`Substituir ${a.nome}`} onClick={() => setAcaoDoc({ modo: "subst", anexo: a })} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 13 }}>🔁</button>}
                 {e.status !== "cancelada" && <button type="button" title="＋ Evento / correção (CC-e, inclusão de condutor…)" aria-label={`Evento ${a.nome}`} onClick={() => setAcaoDoc({ modo: "evento", anexo: a })} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 13 }}>＋</button>}
+                {!a.tarefa_id && !a.evento && !["concluida", "cancelada"].includes(e.status) && <button type="button" title="Retirar — anexado por engano (fica guardado, com motivo)" aria-label={`Retirar ${a.nome}`} onClick={() => setAcaoDoc({ modo: "retirar", anexo: a })} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 13 }}>⊘</button>}
                 {a.versao > 1 && <span style={s.tag(C.accent)}>v{a.versao}</span>}</>
                 : e.status !== "concluida" && <button type="button" title="Remover" onClick={() => removerAnexo(a)} style={{ background: "none", border: "none", color: C.danger, cursor: "pointer" }}>✕</button>}</div>)}
             {!(e.anexos || []).length && <div style={{ fontSize: 12, color: C.muted }}>Nenhum ainda.</div>}
-            {e.status !== "concluida" && e.status !== "cancelada" && <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 8 }}>{Object.entries(d.anexos_tipos || {}).map(([k, l]) => (
-              <label key={k} style={{ ...s.tag(C.accent), cursor: "pointer", padding: "4px 8px" }}>＋ {l}<input type="file" accept=".pdf,.xml,.jpg,.jpeg,.png" style={{ display: "none" }} disabled={ocupado} onChange={(x) => { enviarAnexo(k, x.target.files?.[0]); x.target.value = ""; }} /></label>))}</div>}
+            {e.status !== "concluida" && e.status !== "cancelada" && <div style={{ display: "flex", gap: 4, flexWrap: "wrap", marginTop: 8 }}>{Object.entries(d.anexos_tipos || {}).filter(([k]) => k !== "mdfe" || !(e.mdfe_ativos > 0)).map(([k, l]) => ( // 18g.2.7: um MDF-e por AT
+              <label key={k} style={{ ...s.tag(C.accent), cursor: "pointer", padding: "4px 8px" }}>＋ {l}<input type="file" aria-label={`Anexar ${l}`} accept=".pdf,.xml,.jpg,.jpeg,.png" style={{ display: "none" }} disabled={ocupado} onChange={(x) => { const arq = x.target.files?.[0]; x.target.value = ""; if (!arq) return; if (["nfe", "cte"].includes(k) && (e.anexos || []).some((a) => a.tipo === k && !a.evento && !a.retirado)) setConfirmaAdd({ tipo: k, arq }); else enviarAnexo(k, arq); }} /></label>))}</div>}
+            {confirmaAdd && <div role="dialog" style={{ marginTop: 8, padding: "10px 12px", border: `1px solid ${C.warn}88`, borderRadius: 8, fontSize: 12.5 }}>Já existe {d.anexos_tipos?.[confirmaAdd.tipo]} nesta AT. <b>{confirmaAdd.arq.name}</b> é um documento <b>adicional</b> da mesma carga, ou você quer <b>substituir</b> o atual?
+              <div style={{ display: "flex", gap: 6, marginTop: 8, flexWrap: "wrap" }}><button type="button" onClick={() => setConfirmaAdd(null)} style={{ ...s.btn(false), color: C.text, padding: "4px 10px", fontSize: 12, cursor: "pointer" }}>Cancelar</button>
+                <button type="button" onClick={() => { const a = (e.anexos || []).find((x) => x.tipo === confirmaAdd.tipo && !x.evento && !x.retirado); setAcaoDoc({ modo: "subst", anexo: a, pdfInicial: confirmaAdd.arq }); setConfirmaAdd(null); }} style={{ ...s.btn(true), padding: "4px 10px", fontSize: 12, cursor: "pointer" }}>🔁 Substituir o atual</button>
+                <button type="button" disabled={ocupado} onClick={() => enviarAnexo(confirmaAdd.tipo, confirmaAdd.arq, true)} style={{ ...s.btn(false), color: C.text, padding: "4px 10px", fontSize: 12, cursor: "pointer" }}>＋ É adicional</button></div></div>}
             <div style={{ fontSize: 11, color: C.muted, marginTop: 14 }}>Programada por {e.criado_por_nome || "—"} em {dataHora(e.criado_em)}{e.iniciada_em ? ` · iniciada ${dataHora(e.iniciada_em)}` : ""}{e.concluida_em ? ` · concluída ${dataHora(e.concluida_em)}` : ""}</div>
           </div>
         </div>
@@ -162,7 +169,7 @@ export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onEr
         <div style={{ display: "flex", gap: 10, marginTop: 14 }}><button type="button" onClick={() => setModal(null)} style={{ ...s.btn(false), cursor: "pointer", flex: 1, color: C.text }}>Voltar</button>
           <button type="button" disabled={ocupado || modal.motivo.trim().length < 10} onClick={() => acao("cancelar", { motivo: modal.motivo }, `${e.numero} cancelada.`)} style={{ ...s.btn(modal.motivo.trim().length >= 10, C.danger), flex: 1 }}>Cancelar AT</button></div>
       </>, () => setModal(null), 460, 340)}
-      {acaoDoc && <AcaoDocFiscal C={C} s={s} modo={acaoDoc.modo} at={e} anexo={acaoDoc.anexo} onFechar={() => setAcaoDoc(null)} onFeito={async (msg) => { setAcaoDoc(null); onOk(msg); await carregar(); onMudou?.(); }} />}
+      {acaoDoc && <AcaoDocFiscal C={C} s={s} modo={acaoDoc.modo} at={e} anexo={acaoDoc.anexo} pdfInicial={acaoDoc.pdfInicial || null} onFechar={() => setAcaoDoc(null)} onFeito={async (msg) => { setAcaoDoc(null); onOk(msg); await carregar(); onMudou?.(); }} />}
     </div>
   );
 }

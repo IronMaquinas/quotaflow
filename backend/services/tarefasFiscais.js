@@ -220,10 +220,15 @@ async function espelhar(supabase, tenantId, t, ats, quem) {
   if (JSON.stringify(pend.map((x) => x.at_id).sort()) !== pendAntes) { ck = { ...ck, encerramento: { entradas: jsonArr(ck.encerramento?.entradas), pendentes: pend } }; mudouT = true; }
   // AT → tarefa
   for (const at of ats) for (const a of jsonArr(at.anexos)) {
-    const k = Object.keys(ANEXO_AT).find((x) => ANEXO_AT[x] === a.tipo); if (!k || a.tarefa_anexo || a.evento) continue; // 18g.2.6: evento não vira documento
+    const k = Object.keys(ANEXO_AT).find((x) => ANEXO_AT[x] === a.tipo); if (!k || a.tarefa_anexo || a.evento || a.retirado) continue; // 18g.2.6: evento não vira documento · 18g.2.7: retirado também não
     const ref = `${at.id}:${a.id}`; if (jsonArr(ck[k]?.entradas).some((e) => e.at_anexo === ref)) continue;
     ck = { ...ck, [k]: { entradas: [...jsonArr(ck[k]?.entradas), { id: crypto.randomBytes(5).toString('hex'), at_anexo: ref, at_id: String(at.id), at_numero: at.numero, nome: a.nome, por: a.por || null, em: a.em || new Date().toISOString(), origem: 'at' }] } };
     mudouT = true;
+  }
+  // 18g.2.7: documento "da AT" que foi retirado por engano sai do checklist da tarefa
+  for (const k of Object.keys(ANEXO_AT)) {
+    const antes = jsonArr(ck[k]?.entradas); const fica = antes.filter((e) => { if (e.origem !== 'at' || !e.at_anexo) return true; const [aid, anx] = String(e.at_anexo).split(':'); const at0 = ats.find((x) => String(x.id) === aid); const a0 = at0 && jsonArr(at0.anexos).find((x) => x.id === anx); return !(a0 && a0.retirado); });
+    if (fica.length !== antes.length) { ck = { ...ck, [k]: { entradas: fica } }; mudouT = true; }
   }
   // tarefa → AT
   for (const at of ats) {

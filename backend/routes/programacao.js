@@ -14,6 +14,7 @@
 //   16e: POST /execucoes/:id/fluxo/:etapa/liberar { motivo } (gestor/admin) · POST /pvs/:id/at e PUT aceitam { fluxo: [...] }
 //   16c: POST /docs { motorista_id, cavalo_id, implementos, inicio, fim } · GET /documentos/:id · DELETE /execucoes/:id (rascunho)
 //        POST /pvs/:id/at e PUT /execucoes/:id aceitam { rascunho: true } (salva sem validar) e liberacao_docs_justificativa
+//   18g.2.7: POST /execucoes/:id/anexos { …, adicional } (um MDF-e por AT; NF-e/CT-e a mais confirmando) · POST /execucoes/:id/anexos/:anexo/retirar { motivo }
 //   18g.2.5: POST /execucoes/:id/anexos/:anexo/substituir · /evento · POST /execucoes/:id/mdfe/inclusao-condutor { pdf, descricao }
 //   18g.1: GET /pedidos traz em cada trecho o selo 🧾 fiscal { numero, feitos, total, status, prazo, atrasada } (e sincroniza as tarefas fiscais)
 //   18f.1: GET /utilizacao?de&ate     📊 utilização (passado) × alocação (futuro) — receita só para admin/gestor
@@ -72,6 +73,7 @@ router.delete('/execucoes/:id/anexos/:anexo', responder(async (req) => E.remover
 const quemTF = async (req) => { const qq = await quem(req); return { id: qq.usuarioId, nome: qq.usuarioNome, perfis: qq.perfis }; };
 router.post('/execucoes/:id/anexos/:anexo/substituir', responder(async (req) => TF.substituirPelaAT(supabase, req.tenantId, await quemTF(req), req.params.id, req.params.anexo, req.body || {})));
 router.post('/execucoes/:id/anexos/:anexo/evento', responder(async (req) => TF.eventoPelaAT(supabase, req.tenantId, await quemTF(req), req.params.id, req.params.anexo, req.body || {})));
+router.post('/execucoes/:id/anexos/:anexo/retirar', responder(async (req) => E.retirarAnexo(supabase, req.tenantId, await quemTF(req), req.params.id, req.params.anexo, req.body || {}))); // 18g.2.7: anexado por engano
 router.post('/execucoes/:id/mdfe/inclusao-condutor', responder(async (req) => TF.inclusaoCondutor(supabase, req.tenantId, await quemTF(req), req.params.id, req.body || {})));
 router.get('/execucoes/:id/relatorio', responder((req) => E.relatorioViagem(supabase, req.tenantId, req.params.id))); // 18e: relatório completo da viagem
 router.get('/execucoes/:id/documento', responder((req) => E.documento(supabase, req.tenantId, req.params.id)));
