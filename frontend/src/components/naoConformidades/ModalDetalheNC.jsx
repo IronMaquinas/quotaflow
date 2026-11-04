@@ -12,6 +12,7 @@ import apiService from "../../services/apiService";
 import ModalPrompt from "../shared/ModalPrompt";
 import ModalGerarPdfNC from "./ModalGerarPdfNC";
 import { linhasMarca, desenharMarca, alturaMarca, pegarGps } from "../../utils/marcaFoto"; // 18c
+import { SeletorPessoa } from "../shared/CampoPessoa"; // 18g.2c: escolher pessoa digitando
 const marcaNC = async (ref = null) => ({ oque: "Não conformidade", ref: ref || null, quem: // 18c.1: ref = NC, item, lote, NF… (rastreabilidade)
    (() => { try { return JSON.parse(localStorage.getItem("usuario") || "null")?.nome || null; } catch { return null; } })(), gps: await pegarGps(2500) });
 
@@ -1668,24 +1669,13 @@ export default function ModalDetalheNC({
 
                 <div style={{ marginBottom: 14 }}>
                   <label style={s.label}>RESPONSÁVEL (opcional)</label>
-                  <select value={direcionando.responsavel_id}
-                    onChange={e => {
-                      const id = e.target.value;
+                  <SeletorPessoa C={C} s={s} rotulo="Responsável da NC" vazio="Deixar em aberto pra área assumir"
+                    opcoes={usuariosElegiveis.map(u => ({ id: u.id, nome: u.nome, detalhe: u.perfil || null }))}
+                    valor={direcionando.responsavel_id}
+                    onChange={id => {
                       const u = usuariosElegiveis.find(x => String(x.id) === String(id));
-                      setDirecionando(d => ({
-                        ...d,
-                        responsavel_id: id,
-                        responsavel_nome: u?.nome || "",
-                      }));
-                    }}
-                    style={{ ...s.input, appearance: "none" }}>
-                    <option value="">— Deixar em aberto pra área assumir —</option>
-                    {usuariosElegiveis.map(u => (
-                      <option key={u.id} value={u.id}>
-                        {u.nome} · {u.perfil}
-                      </option>
-                    ))}
-                  </select>
+                      setDirecionando(d => ({ ...d, responsavel_id: id, responsavel_nome: u?.nome || "" }));
+                    }} />
                 </div>
 
                 <div>

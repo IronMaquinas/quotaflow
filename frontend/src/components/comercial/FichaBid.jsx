@@ -12,6 +12,7 @@ import CampoMoeda from "../shared/CampoMoeda";
 import CampoTelefone from "../shared/CampoTelefone";
 import { abrirBid, prepararJanela } from "../../utils/gerarBid";
 import EnviarBid from "./EnviarBid"; // 15b
+import { SeletorPessoa } from "../shared/CampoPessoa"; // 18g.2c: escolher pessoa digitando
 
 export const FASES = [["elaboracao", "Elaboração", "#64748b"], ["aguardando_cliente", "Aguardando o cliente", "#3b82f6"], ["revisao_solicitada", "Revisão solicitada", "#f59e0b"], ["aguardando_aceite", "Aguardando aceite", "#a78bfa"], ["aceito", "Aceito", "#22c55e"], ["perdido", "Perdido", "#ef4444"]];
 export const COR_FASE = Object.fromEntries(FASES.map(([k, , c]) => [k, c]));
@@ -286,7 +287,7 @@ export default function FichaBid({ C, s, id, onFechar, onMudou, onErro, onOk, on
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>{lbl("CONTATO NO CLIENTE", inp("contato_nome"))}{lbl("E-MAIL", inp("contato_email", { type: "email" }))}
                 {lbl("TELEFONE", <CampoTelefone value={f.contato_telefone || ""} onChange={(v) => set("contato_telefone", v || "")} C={C} />)}</div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-                {lbl("RESPONSÁVEL", <select value={f.responsavel_id || ""} onChange={(e) => interno("responsavel_id", e.target.value)} style={s.input}>{!f.responsavel_id && <option value="">—</option>}{resp.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}</select>)}
+                {lbl("RESPONSÁVEL", <SeletorPessoa C={C} s={s} rotulo="Responsável do BID" vazio={null} opcoes={resp.map((u) => ({ id: u.id, nome: u.nome }))} valor={f.responsavel_id || ""} onChange={(id) => interno("responsavel_id", id)} />)}
                 {lbl("DECISÃO ESPERADA EM (USO INTERNO — PREVISÃO DE RECEITA)", <input type="date" value={f.previsao_fechamento || ""} onChange={(e) => interno("previsao_fechamento", e.target.value)} style={s.input} />)}</div>
               <div style={{ ...s.label, marginTop: 16 }}>ASSINATURA DO DOCUMENTO</div>
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>

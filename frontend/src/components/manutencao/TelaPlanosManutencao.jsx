@@ -7,6 +7,7 @@
 // Aberta pelo botão "🔁 Planos" do Calendário.
 import { useState, useEffect } from "react";
 import apiService from "../../services/apiService";
+import { SeletorPessoa } from "../shared/CampoPessoa"; // 18g.2c: escolher pessoa digitando
 
 const UNIDADE = { dias: ["dia", "dias"], semanas: ["semana", "semanas"], meses: ["mês", "meses"] };
 const CATEGORIA = { preventiva: "Preventiva", preditiva: "Preditiva", corretiva: "Corretiva" };
@@ -262,10 +263,7 @@ export default function TelaPlanosManutencao({ C, s, equipamentos = [], onVoltar
                 </select>, "1 1 120px")}
               </div>
               <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-                {campo("RESPONSÁVEL (AS OS GERADAS HERDAM)", <select value={form.responsavel_id} onChange={set("responsavel_id")} style={s.input}>
-                  <option value="">Sem responsável</option>
-                  {usuarios.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
-                </select>, "1 1 240px")}
+                {campo("RESPONSÁVEL (AS OS GERADAS HERDAM)", <SeletorPessoa C={C} s={s} rotulo="Responsável" vazio="Sem responsável" opcoes={usuarios.map((u) => ({ id: u.id, nome: u.nome, detalhe: u.email || null }))} valor={form.responsavel_id} onChange={(id) => set("responsavel_id")({ target: { value: id } })} />, "1 1 240px")}
                 {campo("SE CAIR EM FOLGA OU FERIADO", <select value={form.regra_dia_util} onChange={set("regra_dia_util")} style={s.input}>
                   {Object.entries(REGRA_DIA_UTIL).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
                 </select>, "1 1 240px")}

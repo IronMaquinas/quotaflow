@@ -5,6 +5,7 @@
 import { useState, useEffect, useMemo } from "react";
 import apiService from "../../services/apiService";
 import { prepararArquivo } from "../../utils/comprimirImagem"; // 14c.1: foto comprimida antes de enviar
+import { SeletorPessoa } from "../shared/CampoPessoa"; // 18g.2c: escolher pessoa digitando
 
 const ST_COR = { recebida: "#f59e0b", defesa_apresentada: "#3b82f6", em_recurso: "#a855f7", paga: "#22c55e", cancelada: "#64748b" };
 const dataBR = (s) => (s ? String(s).slice(0, 10).split("-").reverse().join("/") : "—");
@@ -225,8 +226,7 @@ export default function TelaAutuacoes({ C, s, onAbrirNC }) {
             {campo("VEÍCULO (OPCIONAL)", <select value={form.equipamento_id} onChange={(e) => setForm({ ...form, equipamento_id: e.target.value })} style={s.input}>
               <option value="">—</option>{d.equipamentos.map((e) => <option key={e.id} value={e.id}>{[e.tag, e.nome].filter(Boolean).join(" — ")}</option>)}</select>, "1 1 180px")}
           </div>
-          {campo("QUEM MONITORA (CRIA TAREFA NO ✅ PLANO)", <select value={form.responsavel_id} onChange={(e) => setForm({ ...form, responsavel_id: e.target.value })} style={s.input}>
-            <option value="">Ninguém</option>{d.usuarios.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}</select>)}
+          {campo("QUEM MONITORA (CRIA TAREFA NO ✅ PLANO)", <SeletorPessoa C={C} s={s} rotulo="Quem monitora" vazio="Ninguém" opcoes={d.usuarios.map((u) => ({ id: u.id, nome: u.nome, detalhe: u.email || null }))} valor={form.responsavel_id} onChange={(id) => setForm({ ...form, responsavel_id: id })} />)}
           {campo("AUTO DE INFRAÇÃO (PDF OU FOTO, ATÉ 10 MB)", <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={async (e) => { const arq = await prepararArquivo(e.target.files?.[0]); setForm((v0) => ({ ...v0, arquivo: arq })); }} style={{ ...s.input, padding: 7 }} />)}
           {campo("OBSERVAÇÕES", <textarea rows={2} value={form.obs} onChange={(e) => setForm({ ...form, obs: e.target.value })} style={{ ...s.input, resize: "vertical" }} />)}
         </div>

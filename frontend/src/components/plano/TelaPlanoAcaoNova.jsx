@@ -127,7 +127,6 @@ export default function TelaPlanoAcaoNova({ onVoltar, C, s, ambienteInicial = 't
     <div style={{ padding: '22px 24px', overflowY: 'auto', height: '100%' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18, flexWrap: 'wrap', gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          {onVoltar && <button onClick={onVoltar} style={{ background: 'transparent', border: `1px solid ${C.border}`, borderRadius: 7, padding: '7px 14px', color: C.muted, fontSize: 12, cursor: 'pointer', fontFamily: 'inherit' }}>← Voltar</button>}
           <div>
             <div style={{ fontSize: 11, color: C.muted, letterSpacing: '0.1em', marginBottom: 4 }}>GESTÃO DE AÇÕES</div>
             <div style={{ fontSize: 22, fontWeight: 700, color: C.text }}>Plano de Ação</div>

@@ -8,6 +8,7 @@ import apiService from "../../services/apiService";
 import AssinaturaTela from "../shared/AssinaturaTela";
 import { abrirTermo, prepararJanela } from "../../utils/gerarTermoDesconto";
 import { prepararArquivo } from "../../utils/comprimirImagem"; // 14c.1: foto comprimida antes de enviar
+import { SeletorPessoa } from "../shared/CampoPessoa"; // 18g.2c: escolher pessoa digitando
 
 const ST_COR = { recebida: "#f59e0b", condutor_indicado: "#3b82f6", em_recurso: "#a855f7", paga: "#22c55e", descontada: "#14b8a6", cancelada: "#64748b" };
 const dataBR = (s) => (s ? String(s).slice(0, 10).split("-").reverse().join("/") : "—");
@@ -270,8 +271,7 @@ export default function TelaMultas({ C, s, modal, campo, colabs = [], onAviso, o
             {campo("PRAZO P/ INDICAR CONDUTOR", <input type="date" value={form.prazo_indicacao} onChange={(e) => setForm({ ...form, prazo_indicacao: e.target.value, prazo_manual: true })} style={s.input} />, "1 1 160px")}
             {campo("VENCIMENTO", <input type="date" value={form.vencimento} onChange={(e) => setForm({ ...form, vencimento: e.target.value })} style={s.input} />, "1 1 140px")}
           </div>
-          {campo("QUEM MONITORA (CRIA TAREFA NO ✅ PLANO)", <select value={form.responsavel_id} onChange={(e) => setForm({ ...form, responsavel_id: e.target.value })} style={s.input}>
-            <option value="">Ninguém</option>{d.usuarios.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}</select>)}
+          {campo("QUEM MONITORA (CRIA TAREFA NO ✅ PLANO)", <SeletorPessoa C={C} s={s} rotulo="Quem monitora" vazio="Ninguém" opcoes={d.usuarios.map((u) => ({ id: u.id, nome: u.nome, detalhe: u.email || null }))} valor={form.responsavel_id} onChange={(id) => setForm({ ...form, responsavel_id: id })} />)}
           {campo("NOTIFICAÇÃO (PDF OU FOTO, ATÉ 10 MB)", <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={async (e) => { const arq = await prepararArquivo(e.target.files?.[0]); setForm((v0) => ({ ...v0, arquivo: arq })); }} style={{ ...s.input, padding: 7 }} />)}
           {campo("OBSERVAÇÕES", <textarea rows={2} value={form.obs} onChange={(e) => setForm({ ...form, obs: e.target.value })} style={{ ...s.input, resize: "vertical" }} />)}
         </div>

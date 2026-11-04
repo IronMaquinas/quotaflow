@@ -15,6 +15,7 @@ import TelaMultas from "./TelaMultas"; // etapa 12g
 import TelaDisciplinar from "./TelaDisciplinar"; // etapa 12h
 import EditorCompetencias, { limparCompetencias } from "../shared/EditorCompetencias"; // etapa 12e.3
 import { prepararArquivo } from "../../utils/comprimirImagem"; // 14c.1: foto comprimida antes de enviar
+import { SeletorPessoa } from "../shared/CampoPessoa"; // 18g.2c: escolher pessoa digitando
 
 const ALVO = { colaborador: "Pessoa", equipamento: "Equipamento", empresa: "Empresa" };
 const SITUACAO_DOC = {
@@ -899,8 +900,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
             {campo("VENCE EM", <input type="date" value={formDoc.vence_em} min={formDoc.emitido_em || undefined} onChange={(e) => setFormDoc({ ...formDoc, vence_em: e.target.value, vence_em_manual: true })} style={s.input} />, "1 1 150px")}
           </div>
           {formDoc.emitido_em && formDoc.vence_em && formDoc.vence_em < formDoc.emitido_em && <div style={{ fontSize: 12, color: C.danger }}>O vencimento não pode ser antes da emissão.</div>}
-          {campo("RESPONSÁVEL POR RENOVAR (RECEBE O AVISO)", <select value={formDoc.responsavel_id} onChange={(e) => setFormDoc({ ...formDoc, responsavel_id: e.target.value })} style={s.input}>
-            <option value="">Ninguém específico (avisa admin e gestor)</option>{(config.usuarios || []).map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}</select>)}
+          {campo("RESPONSÁVEL POR RENOVAR (RECEBE O AVISO)", <SeletorPessoa C={C} s={s} rotulo="Responsável por renovar" vazio="Ninguém específico (avisa admin e gestor)" opcoes={(config.usuarios || []).map((u) => ({ id: u.id, nome: u.nome, detalhe: u.email || null }))} valor={formDoc.responsavel_id} onChange={(id) => setFormDoc({ ...formDoc, responsavel_id: id })} />)}
           {campo(formDoc.arquivo_atual ? `ARQUIVO (ATUAL: ${formDoc.arquivo_atual} — ESCOLHA OUTRO PARA TROCAR)` : "ARQUIVO (PDF OU FOTO, ATÉ 10 MB)",
             <input type="file" accept="application/pdf,image/jpeg,image/png,image/webp" onChange={async (e) => { const arq = await prepararArquivo(e.target.files?.[0]); setFormDoc((v0) => ({ ...v0, arquivo: arq })); }} style={{ ...s.input, padding: 7 }} />)}
           {campo("OBSERVAÇÕES", <textarea rows={2} value={formDoc.obs} onChange={(e) => setFormDoc({ ...formDoc, obs: e.target.value })} style={{ ...s.input, resize: "vertical" }} />)}

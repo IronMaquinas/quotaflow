@@ -86,11 +86,11 @@ const ESPERADO = {
   'front:TelaCalendarioManutencao.jsx': '8d9921e2e15255472f0c62687c5f37b0', // etapa 14b.2
   'front:TelaOrdemServico.jsx': 'df80c9f9787e8f542e9558aa1b53da8b', // etapa 14a
   'services/planosManutencao.js': 'e32588acaefd47c5cb93bbe0d70ab799', // etapa 12b.4
-  'front:TelaPlanosManutencao.jsx': '5fd8c2a3a8c6fdfb599fb98fd9ccabff', // etapa 12b.3 + texto do botão alterado pelo Marcony (18/10)
+  'front:TelaPlanosManutencao.jsx': '4e19850209fa1924953706a7afde7995', // etapa 18g.2c
   'front:ModalTransferirOS.jsx': '8e7c1bf0d6fc9a4f88bdd9087d22cb37', // etapa 12b.3 (novo)
   'routes/pessoas.js': 'd9227445ccfc9c085b8aa4c7f5550243', // etapa 17b
   'services/documentos.js': 'e4e3f50ffd6ade91d5c2a51a0b115900', // etapa 12e.3
-  'front:TelaPessoas.jsx': '7380e3b38768781c2fef02c624c9e201', // etapa 14c.1
+  'front:TelaPessoas.jsx': '07f2dc2f969973efc6ee862ffdec9c71', // etapa 18g.2c
   // etapa 12c.1
   'services/avisosVencimento.js': 'fec2b28a7081f59510ef21b728a6c341', // etapa 14e
   'services/funcoes.js': '9873a5e1a74e7604ab6b624d1d7cc901', // etapa 12e.3.1
@@ -133,7 +133,7 @@ const ESPERADO = {
   'front:gerarDossie.js': 'bfc589f3755b697c4e7f05525589f525', // etapa 14c.2
   'services/multas.js': '93a0367bbbdc004bb59250915ceeebfd', // etapa 18g
   'migrations/036_multas.sql': 'b89f5e90964aa538404cccc85e2d4484', // etapa 12g (novo)
-  'front:TelaMultas.jsx': '442e9a627432ff03600c30f375e8e176', // etapa 17b
+  'front:TelaMultas.jsx': 'b37d7d3a6f2c063445bd7a7a45150a6d', // etapa 18g.2c
   'front:gerarTermoDesconto.js': '5847f394eae27eef19c87b6371be1f2e', // etapa 14c.2
   'services/disciplinar.js': '07c6440a61f339446412ec7dc91c8e8b', // etapa 12h.2
   'migrations/037_disciplinar.sql': '57507e1c5a097a8dfec9a7084ad81445', // etapa 12h (novo)
@@ -143,7 +143,7 @@ const ESPERADO = {
   'services/autuacoes.js': '75e6f2a339a906db707a238406bd571d', // etapa 18g
   'routes/autuacoes.js': 'bf16699ee770476707473186a882b353', // etapa 12i (novo)
   'migrations/039_autuacoes.sql': '22fd55f61f36a8e9daf3c22ea794cc6f', // etapa 12i (novo)
-  'front:TelaAutuacoes.jsx': '950f7b2d5e24f583eaf04c5bf023e2f5', // etapa 14c.1
+  'front:TelaAutuacoes.jsx': '0cabebaeb4efbff1a017e27f111410c5', // etapa 18g.2c
   'front:TelaNaoConformidades.jsx': 'eeaf572c39ce97d4bf77f7985c84867d', // etapa 12i.1
   'services/inspecoes.js': '3a0b0f74f10f39e6b2d2acf0831b6aca', // etapa 18c.3
   'routes/inspecoes.js': '2957a18a385cfc150fad54cdf817b4ce', // etapa 14b.2
@@ -206,9 +206,9 @@ const ESPERADO = {
   'migrations/051_comercial_bid.sql': '65c3c268119eadac6a0ecda34b72197c', // etapa 15a (novo)
   'routes/comercial.js': 'a98f3431775c6bf9c88a1c8ed701fe1e', // etapa 18b.6
   'services/bids.js': 'edb8d962c560305d4b5e50b15e937802', // etapa 18b.9
-  'front:FichaBid.jsx': '5888208621bb3937eed0849db08e636c', // etapa 18b.3
+  'front:FichaBid.jsx': 'ead3154d12c210f1c1657a8e6edd9746', // etapa 18g.2c
   'front:ModelosBid.jsx': 'fce825c9584b3ff4a2a1040d575de24c', // etapa 15a (novo)
-  'front:TelaComercial.jsx': '3284f344a98dc6fa74db904fd20a3067', // etapa 18b.9
+  'front:TelaComercial.jsx': '7a11feb187d663f1f516fe91c81485d6', // etapa 18g.2c
   'front:gerarBid.js': '22e048e4f81d260222995d4607127c72', // etapa 16d
   'migrations/052_bid_cliente.sql': 'a8b6f934576474b54a7246fda86d3eda', // etapa 15b (novo)
   'routes/bidLink.js': 'e566a5246b48e24430a997fda8d32e27', // etapa 15b (novo)
@@ -229,7 +229,7 @@ const ESPERADO = {
   'front:MesaProgramacao.jsx': '97d46eaba6599cd273647346b0efd2c9', // etapa 18g.1
   'migrations/056_at_rascunho_link_motorista.sql': '4e9a9185cbb0a1f9770e1fe666fc77f3', // etapa 16c (novo)
   'routes/atLink.js': 'f392ea4dff57d96bc2209bfefdb1707f', // etapa 16e
-  'front:EditorAT.jsx': 'b3c118508530dabe34d219a4b04a782a', // etapa 18a.1
+  'front:EditorAT.jsx': 'fcb77d8397281457f4e5e07774e59422', // etapa 18g.2c
   'front:VerArquivo.jsx': 'f429078383f02f0c072637250e7a1fea', // etapa 16c (novo)
   'front:TelaATPublica.jsx': 'd75104b93496b768a984da4065138955', // etapa 18c
   'services/fluxoViagem.js': '1eeeb43378e4fd6f975840ae73b71bc5', // etapa 16e.4
@@ -240,17 +240,17 @@ const ESPERADO = {
   'front:TelaMinhasViagens.jsx': '522b50f6a1971283d451e6d23bc41f2f', // etapa 17a (novo)
   'services/calendarioComercial.js': 'e774e648d01c8fa01792605c8113cb4c', // etapa 18b.6
   'migrations/059_calendario_comercial.sql': '93acdb034cb90c4907b6071eb35a75e9', // etapa 18a (novo)
-  'front:CalendarioComercial.jsx': '968db358b0f04495c17214dbe02e46d8', // etapa 18b.6
+  'front:CalendarioComercial.jsx': 'f03618691545d994545ed6a80583944e', // etapa 18g.2c
   'migrations/060_prospeccao_evento.sql': 'f52ed7775d71d71c9ce65f0f57982098', // etapa 18b (novo)
-  'front:PainelProspeccao.jsx': '5f4be776f9ad6a0dc3af4855b1c903a5', // etapa 18b.6
+  'front:PainelProspeccao.jsx': 'b6b4bfe7c50fc16f692cc5251bae8658', // etapa 18g.2c
   'routes/tarefas.js': 'e25ee79c9439bd7c0f90e44167b2355f', // etapa 18g.2a
   'migrations/061_prospeccao_oportunidades.sql': '528a098239312cff4b7b389d4325b2f3', // etapa 18b.2 (novo)
-  'front:TelaPlanoAcaoNova.jsx': 'e7abc7406e2425c56f1a4a24cd5f46e1', // etapa 18g.2a
+  'front:TelaPlanoAcaoNova.jsx': '26765598a3fe812a49f277907540841b', // etapa 18g.2c
   'front:ConcluirTarefa.jsx': 'de3f60dc997a047cc1a29cd2a20ac92d', // etapa 18b.3 (novo)
   'front:DetalheExecutivo.jsx': '7fe748dd4a963a04f71d264bb189318f', // etapa 18b.9 (novo)
   'front:marcaFoto.js': '61fc663e418ff25ac21fd67a04915f5f', // etapa 18c.3
   'front:ModalNovaNC.jsx': '4e6f0f8a0f0708ea862b475bca5df49d', // etapa 18c.3
-  'front:ModalDetalheNC.jsx': 'cd3f1c3005dce6eecbc6dd71082cdaed', // etapa 18c.1
+  'front:ModalDetalheNC.jsx': '1ae23a3fc072448443f4d8cf9c87a190', // etapa 18g.2c
   'front:ModalNaoConformidade.jsx': '244c331b28157bb6c2f14f4736d461e6', // etapa 18c.1
   'front:FiltroPeriodo.jsx': '06b873f17ff380024b38e507bdca6724', // etapa 18c.4 (novo)
   'migrations/062_medicao_locacao.sql': '5a4d7ea7f3180195a19e4121183a446e', // etapa 18d (novo)
@@ -274,14 +274,24 @@ const ESPERADO = {
   'front:ConfigFiscal.jsx': 'b4ceec47991a295f38f32992348ddcf8', // etapa 18g.1 (novo)
   'front:lerXmlFiscal.js': '8d657863784b4e6c468b29bd8152e53f', // etapa 18g.1.1 (novo)
   'migrations/067_tarefa_responsavel.sql': '3e718fa4290311abef8fdb5b2e68eb6b', // etapa 18g.2a (novo)
-  'front:CampoPessoa.jsx': '1c278788c380caebc3b295b46bdab587', // etapa 18g.2a (novo)
+  'front:CampoPessoa.jsx': 'efa3cd5aee2eeadae0805e7d4b6e8daa', // etapa 18g.2c
+  'front:gerarRelatorioTarefas.js': '483dd597e30b11635886ba51406d36cf', // etapa 18g.2b (novo)
 };
 
-// Antes de copiar a etapa 18g.2a — base: 18g.1.1
+// Antes de copiar a etapa 18g.2c — base: 18g.2b
 const ANTES = {
-  'services/tarefas.js': '341c99cd7377dcfa97813abf90a13bfd',
-  'routes/tarefas.js': 'a2299697d80ce92d6d71ce2231ef1462',
-  'front:TelaPlanoAcaoNova.jsx': '0987d2abe5a72fdb02a4523d67a09323',
+  'front:CampoPessoa.jsx': '0f05695e3d815e0f2dab6b05132cb61f',
+  'front:TelaPlanoAcaoNova.jsx': '7cc6fbf7be4d7456834fb3fa72dda25e',
+  'front:TelaPessoas.jsx': '7380e3b38768781c2fef02c624c9e201',
+  'front:TelaMultas.jsx': '442e9a627432ff03600c30f375e8e176',
+  'front:TelaPlanosManutencao.jsx': '5fd8c2a3a8c6fdfb599fb98fd9ccabff',
+  'front:EditorAT.jsx': 'b3c118508530dabe34d219a4b04a782a',
+  'front:PainelProspeccao.jsx': '5f4be776f9ad6a0dc3af4855b1c903a5',
+  'front:CalendarioComercial.jsx': '968db358b0f04495c17214dbe02e46d8',
+  'front:FichaBid.jsx': '5888208621bb3937eed0849db08e636c',
+  'front:TelaComercial.jsx': '3284f344a98dc6fa74db904fd20a3067',
+  'front:ModalDetalheNC.jsx': 'cd3f1c3005dce6eecbc6dd71082cdaed',
+  'front:TelaAutuacoes.jsx': '950f7b2d5e24f583eaf04c5bf023e2f5',
 };
 
 const RAIZ = process.cwd();
@@ -319,7 +329,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18g.2a)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18g.2c)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
@@ -373,7 +383,7 @@ if (!modoAntes) {
       const rastreado = execFileSync('git', ['ls-files', n], { cwd: RAIZ, stdio: 'pipe' }).toString().trim();
       if (!rastreado) console.log(`\n⚠️  ${n} ainda não está no git (git add ${n})`);
     }
-    for (const nome of ['SeletorAtuacao.jsx', 'TelaAceitarConvite.jsx', 'TelaPainelFornecedor.jsx', 'AvisoPlanoTenant.jsx', 'CampoTelefone.jsx', 'TelaConfirmarEmail.jsx', 'ConsolePlataforma.jsx', 'TelaCalendarioManutencao.jsx', 'TelaPlanosManutencao.jsx', 'ModalTransferirOS.jsx', 'TelaPessoas.jsx', 'BibliotecaTreinamentos.jsx', 'EditorConteudoTreinamento.jsx', 'AreaTreinamentoColaborador.jsx', 'TelaMeusTreinamentos.jsx', 'AcessoColaborador.jsx', 'TextoAula.jsx', 'TelaProvaPublica.jsx', 'gerarCertificado.js', 'FichaCompetencias.jsx', 'EditorCompetencias.jsx', 'PainelDossie.jsx', 'gerarDossie.js', 'TelaMultas.jsx', 'gerarTermoDesconto.js', 'TelaDisciplinar.jsx', 'gerarMedidaDisciplinar.js', 'TelaAutuacoes.jsx', 'TelaInspecoes.jsx', 'ExecutarInspecao.jsx', 'EditorModeloInspecao.jsx', 'Esquemas.jsx', 'BibliotecaInspecoes.jsx', 'filaInspecoes.js', 'gerarRelatorioInspecao.js', 'TelaInspecaoPublica.jsx', 'RotinasLocacao.jsx', 'gerarRelatorioCumprimento.js', 'TelaContratos.jsx', 'TelaLocatario.jsx', 'Clientes.jsx', 'LogoEmpresa.jsx', 'logoEmpresa.js', 'comprimirImagem.js', 'ModelosContrato.jsx', 'gerarContrato.js', 'BibliotecaContratos.jsx', 'CampoMoeda.jsx', 'DadosEmpresa.jsx', 'CompletarPerfil.jsx', 'CnpjsPlataforma.jsx', 'ModalJustificativaCnpj.jsx', 'TelaMonitorCnpj.jsx', 'FichaBid.jsx', 'ModelosBid.jsx', 'TelaComercial.jsx', 'gerarBid.js', 'TelaBidPublica.jsx', 'EnviarBid.jsx', 'FichaPedido.jsx', 'gerarAT.js', 'TelaProgramacao.jsx', 'FichaAT.jsx', 'MesaProgramacao.jsx', 'EditorAT.jsx', 'VerArquivo.jsx', 'TelaATPublica.jsx', 'EditorFluxo.jsx', 'TelaMinhasViagens.jsx', 'CalendarioComercial.jsx', 'PainelProspeccao.jsx', 'ConcluirTarefa.jsx', 'DetalheExecutivo.jsx', 'marcaFoto.js', 'FiltroPeriodo.jsx', 'MedicaoModal.jsx', 'gerarMedicao.js', 'AbaMedicoes.jsx', 'gerarRelatorioViagem.js', 'DiasFrota.jsx', 'PainelUtilizacao.jsx', 'gerarRelatorioUtilizacao.js', 'ChecklistFiscal.jsx', 'ConfigFiscal.jsx', 'lerXmlFiscal.js', 'CampoPessoa.jsx']) {
+    for (const nome of ['SeletorAtuacao.jsx', 'TelaAceitarConvite.jsx', 'TelaPainelFornecedor.jsx', 'AvisoPlanoTenant.jsx', 'CampoTelefone.jsx', 'TelaConfirmarEmail.jsx', 'ConsolePlataforma.jsx', 'TelaCalendarioManutencao.jsx', 'TelaPlanosManutencao.jsx', 'ModalTransferirOS.jsx', 'TelaPessoas.jsx', 'BibliotecaTreinamentos.jsx', 'EditorConteudoTreinamento.jsx', 'AreaTreinamentoColaborador.jsx', 'TelaMeusTreinamentos.jsx', 'AcessoColaborador.jsx', 'TextoAula.jsx', 'TelaProvaPublica.jsx', 'gerarCertificado.js', 'FichaCompetencias.jsx', 'EditorCompetencias.jsx', 'PainelDossie.jsx', 'gerarDossie.js', 'TelaMultas.jsx', 'gerarTermoDesconto.js', 'TelaDisciplinar.jsx', 'gerarMedidaDisciplinar.js', 'TelaAutuacoes.jsx', 'TelaInspecoes.jsx', 'ExecutarInspecao.jsx', 'EditorModeloInspecao.jsx', 'Esquemas.jsx', 'BibliotecaInspecoes.jsx', 'filaInspecoes.js', 'gerarRelatorioInspecao.js', 'TelaInspecaoPublica.jsx', 'RotinasLocacao.jsx', 'gerarRelatorioCumprimento.js', 'TelaContratos.jsx', 'TelaLocatario.jsx', 'Clientes.jsx', 'LogoEmpresa.jsx', 'logoEmpresa.js', 'comprimirImagem.js', 'ModelosContrato.jsx', 'gerarContrato.js', 'BibliotecaContratos.jsx', 'CampoMoeda.jsx', 'DadosEmpresa.jsx', 'CompletarPerfil.jsx', 'CnpjsPlataforma.jsx', 'ModalJustificativaCnpj.jsx', 'TelaMonitorCnpj.jsx', 'FichaBid.jsx', 'ModelosBid.jsx', 'TelaComercial.jsx', 'gerarBid.js', 'TelaBidPublica.jsx', 'EnviarBid.jsx', 'FichaPedido.jsx', 'gerarAT.js', 'TelaProgramacao.jsx', 'FichaAT.jsx', 'MesaProgramacao.jsx', 'EditorAT.jsx', 'VerArquivo.jsx', 'TelaATPublica.jsx', 'EditorFluxo.jsx', 'TelaMinhasViagens.jsx', 'CalendarioComercial.jsx', 'PainelProspeccao.jsx', 'ConcluirTarefa.jsx', 'DetalheExecutivo.jsx', 'marcaFoto.js', 'FiltroPeriodo.jsx', 'MedicaoModal.jsx', 'gerarMedicao.js', 'AbaMedicoes.jsx', 'gerarRelatorioViagem.js', 'DiasFrota.jsx', 'PainelUtilizacao.jsx', 'gerarRelatorioUtilizacao.js', 'ChecklistFiscal.jsx', 'ConfigFiscal.jsx', 'lerXmlFiscal.js', 'CampoPessoa.jsx', 'gerarRelatorioTarefas.js']) {
       const arq = acharNoFrontend(nome)[0];
       if (!arq) continue;
       const rastreado = execFileSync('git', ['ls-files', arq], { cwd: RAIZ, stdio: 'pipe' }).toString().trim();

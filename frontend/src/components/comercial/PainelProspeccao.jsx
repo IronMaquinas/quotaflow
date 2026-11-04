@@ -9,6 +9,7 @@
 //          👤 delegar (cliente ou evento) cria tarefa no ✅ Plano que se encerra sozinha aqui.
 import { useState, useEffect } from "react";
 import apiService from "../../services/apiService";
+import { SeletorPessoa } from "../shared/CampoPessoa"; // 18g.2c: escolher pessoa digitando
 
 const dBR = (d) => String(d || "").slice(0, 10).split("-").reverse().join("/");
 const quando = (iso) => (iso ? new Date(iso).toLocaleDateString("pt-BR", { timeZone: "America/Sao_Paulo" }) : "");
@@ -60,7 +61,7 @@ export default function PainelProspeccao({ C, s, eventoId, onFechar, onNovoBid, 
     </> : <>
       <div style={{ fontSize: 14, marginBottom: 6 }}>👤 Delegar {cliente ? <b>{cliente.nome}</b> : <>a prospecção de <b>{ev.nome}</b> (todos os clientes)</>} — vira tarefa no ✅ Plano e se encerra sozinha {cliente ? "com o BID ou o cancelamento" : "quando todos tiverem BID ou forem cancelados"}</div>
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-        <select value={op.responsavel_id || ""} onChange={(e) => setOp({ ...op, responsavel_id: e.target.value })} style={{ ...s.input, flex: "1 1 200px" }}><option value="">— para quem —</option>{(d.responsaveis || []).map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}</select>
+        <div style={{ flex: "1 1 200px" }}><SeletorPessoa C={C} s={s} rotulo="Para quem" vazio={null} placeholder="Para quem — digite o nome…" opcoes={(d.responsaveis || []).map((u) => ({ id: u.id, nome: u.nome }))} valor={op.responsavel_id || ""} onChange={(id) => setOp({ ...op, responsavel_id: id })} /></div>
         <input type="date" value={op.prazo || ""} max={ev.fim || undefined} onChange={(e) => setOp({ ...op, prazo: e.target.value })} title="Prazo (vazio = véspera do evento)" style={{ ...s.input, flex: "0 1 170px" }} />
       </div>
       <input value={op.observacao || ""} onChange={(e) => setOp({ ...op, observacao: e.target.value })} placeholder="Observação (opcional). Ex.: cliente grande — falar com o diretor" style={{ ...s.input, marginTop: 6, fontSize: 14 }} />

@@ -17,6 +17,7 @@ import PainelProspeccao from "./PainelProspeccao"; // 18b
 import ConcluirTarefa from "./ConcluirTarefa"; // 18b.3
 import DetalheExecutivo from "./DetalheExecutivo"; // 18b.9
 import { AbaClientes, CampoDocumento, NotaReceita, CamposCliente, vazioCliente, mascaraDoc } from "../contratos/Clientes";
+import { SeletorPessoa } from "../shared/CampoPessoa"; // 18g.2c: escolher pessoa digitando
 
 const semAcento = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 const dBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "");
@@ -118,7 +119,7 @@ function NovoBid({ C, s, clienteInicial, eventoId, onCriado, onCancelar, onErro 
     </div>
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
       <label style={{ flex: "2 1 220px" }}><span style={s.label}>TÍTULO DA PROPOSTA</span><input value={f.titulo} onChange={(e) => setF({ ...f, titulo: e.target.value })} placeholder="Ex.: Transporte de 2 retroescavadeiras ES → MT" style={s.input} /></label>
-      <label style={{ flex: "1 1 160px" }}><span style={s.label}>RESPONSÁVEL</span><select value={f.responsavel_id} onChange={(e) => setF({ ...f, responsavel_id: e.target.value })} style={s.input}><option value="">eu</option>{resp.map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}</select></label>
+      <label style={{ flex: "1 1 160px" }}><span style={s.label}>RESPONSÁVEL</span><SeletorPessoa C={C} s={s} rotulo="Responsável" vazio="eu" placeholder="eu (ou digite outro nome)" opcoes={resp.map((u) => ({ id: u.id, nome: u.nome }))} valor={f.responsavel_id} onChange={(id) => setF({ ...f, responsavel_id: id })} /></label>
       <label style={{ flex: "1 1 150px" }} title="Quando você espera que o cliente decida (aceite ou recuse) — entra na previsão de receita do Funil"><span style={s.label}>DECISÃO ESPERADA EM</span><input type="date" value={f.previsao_fechamento} onChange={(e) => setF({ ...f, previsao_fechamento: e.target.value })} style={s.input} /></label>
     </div>
     <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
