@@ -167,8 +167,8 @@ const ESPERADO = {
   'routes/contratos.js': '4a20ce8943e43d01c09f249c13c316f5', // etapa 18d.5
   'routes/locatario.js': '13dbda62771ad074d3373c3b4da11510', // etapa 18h
   'migrations/043_contratos_locatario.sql': 'f25735b281aa176b4c31c3cc2bf283ed', // etapa 14b.3 (novo)
-  'front:TelaContratos.jsx': '62efd37dee6a66718246b3e828a736d7', // etapa 18h.3
-  'front:TelaLocatario.jsx': '1544f036fd2cd339cbc9600fcdfa5c0b', // etapa 18h
+  'front:TelaContratos.jsx': '23a043141f87157fb60b36623747b284', // etapa 18h.3.1
+  'front:TelaLocatario.jsx': 'c95db05730907cd25acfa16913d8d340', // etapa 18h.3.1
   'services/clientes.js': '9714283f0013553dc96a48b75b6734cf', // etapa 14b.3.1 (novo)
   'migrations/044_clientes.sql': '446d1a52049aea19938d36cc2b01653d', // etapa 14b.3.1 (novo)
   'front:Clientes.jsx': '8dff871d3b22f31e8f33a65c2f1260a7', // etapa 15a
@@ -225,12 +225,12 @@ const ESPERADO = {
   'routes/programacao.js': '98c064abc94e08bd5556d578748a8235', // etapa 18g.2.7
   'front:gerarAT.js': 'd05187877f31e92708abba3c7f338ce3', // etapa 16e.1
   'front:TelaProgramacao.jsx': '4412d157e3d7d579b7c36891e4fe7353', // etapa 18g.2.1
-  'front:FichaAT.jsx': '719358972121fe02a76be749f169c260', // etapa 18h
+  'front:FichaAT.jsx': 'fe4bc4e65a971e4e80de588a0badb4d8', // etapa 18h.3.1
   'front:MesaProgramacao.jsx': '3ee851df585bea973a6fa97fb1699e5d', // etapa 18g.2.2
   'migrations/056_at_rascunho_link_motorista.sql': '4e9a9185cbb0a1f9770e1fe666fc77f3', // etapa 16c (novo)
   'routes/atLink.js': 'f392ea4dff57d96bc2209bfefdb1707f', // etapa 16e
   'front:EditorAT.jsx': 'fcb77d8397281457f4e5e07774e59422', // etapa 18g.2c
-  'front:VerArquivo.jsx': 'f429078383f02f0c072637250e7a1fea', // etapa 16c (novo)
+  'front:VerArquivo.jsx': 'e08481e2c6791738b46dcdefb68dbc18', // etapa 18h.3.1
   'front:TelaATPublica.jsx': 'd75104b93496b768a984da4065138955', // etapa 18c
   'services/fluxoViagem.js': '236b345499c70a8a68d37aab686790f0', // etapa 18g.2d
   'migrations/057_fluxo_viagem.sql': '42cdc0800d3c622f541639bada16b252', // etapa 16e (novo)
@@ -281,19 +281,19 @@ const ESPERADO = {
   'routes/ocorrencias.js': 'e9308a77ae9bd0e7a086d9d6efadbbfc', // etapa 18h (novo)
   'migrations/068_ocorrencias.sql': '4fff8fd8dccd6dd91dbb2f145bd19a22', // etapa 18h (novo)
   'front:RegistrarOcorrencia.jsx': 'c722d9a24625de062e63ee4c898abeef', // etapa 18h.3
-  'front:PainelOcorrencias.jsx': '969295d14f7a3080250a8c84570121c6', // etapa 18h.3
+  'front:PainelOcorrencias.jsx': 'a16c0e89f7808072c1623071f49371b9', // etapa 18h.3.1
   'front:gerarDossieOcorrencia.js': '6de903379c0d2c860d45ba43d767149b', // etapa 18h.3
   'front:useCatalogo.js': '0cd8f09dcbe1e98d67908d2937743a8b', // etapa 18h.2
   'front:areaRestrita.js': '48e89b41e5e1c3b82d92b1bf996576e0', // etapa 18h.2 (novo)
 };
 
-// Antes de copiar a etapa 18h.3 — base: 18h.2
+// Antes de copiar a etapa 18h.3.1 — base: 18h.3
 const ANTES = {
-  'services/ocorrencias.js': '6e17aeb437005e57ba633a41811efd77',
-  'front:TelaContratos.jsx': 'ce12de57f468b8226bbecf4911c97473',
-  'front:PainelOcorrencias.jsx': 'dcca113d734991c7d42c4a12e49de345',
-  'front:RegistrarOcorrencia.jsx': 'ebeed6fb9c0cb9c597d8937f28656784',
-  'front:gerarDossieOcorrencia.js': '9e4c419699b2692a43e0572a68f64120',
+  'front:TelaContratos.jsx': '62efd37dee6a66718246b3e828a736d7',
+  'front:TelaLocatario.jsx': '1544f036fd2cd339cbc9600fcdfa5c0b',
+  'front:PainelOcorrencias.jsx': '969295d14f7a3080250a8c84570121c6',
+  'front:FichaAT.jsx': '719358972121fe02a76be749f169c260',
+  'front:VerArquivo.jsx': 'f429078383f02f0c072637250e7a1fea',
 };
 
 const RAIZ = process.cwd();
@@ -331,7 +331,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18h.3)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18h.3.1)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

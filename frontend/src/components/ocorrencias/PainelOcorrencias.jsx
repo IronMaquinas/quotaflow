@@ -6,6 +6,7 @@ import { useState, useEffect, useCallback } from "react";
 import apiService from "../../services/apiService";
 import RegistrarOcorrencia, { TIPOS_OC, enviarArquivos } from "./RegistrarOcorrencia";
 import { abrirDossie, prepararJanela } from "../../utils/gerarDossieOcorrencia";
+import VerArquivo from "../programacao/VerArquivo"; // 18h.4: arquivo abre sobre a tela, padrão do sistema
 
 const STATUS = { registrada: "Registrada", em_analise: "Em análise", em_atendimento: "Em atendimento", encerrada: "Encerrada" };
 const RESP = { a_definir: "A definir", cliente: "Cliente", locadora: "Locadora", seguro: "Seguro" };
@@ -15,7 +16,7 @@ export const corStatusOc = (C, st) => ({ registrada: C.danger, em_analise: "#f59
 export default function PainelOcorrencias({ C, s, modo = "empresa", usuario = null, filtro = {}, podeEditar = false, abrirId = null, onAberto, onErro, onOk, semBotaoNovo = false, at = null, onMudou = null }) {
   const base = modo === "cliente" ? "/locatario/ocorrencias" : "/ocorrencias";
   const [lista, setLista] = useState(null); const [semMig, setSemMig] = useState(false);
-  const [ver, setVer] = useState("abertas"); const [aberta, setAberta] = useState(null); const [novo, setNovo] = useState(false); const [contratos, setContratos] = useState(null);
+  const [ver, setVer] = useState("abertas"); const [aberta, setAberta] = useState(null); const [falhasIni, setFalhasIni] = useState(null); const [novo, setNovo] = useState(false); const [contratos, setContratos] = useState(null);
   const carregar = useCallback(async () => {
     try { const r = await apiService.get(base, { ...filtro, ...(ver === "abertas" ? { status: "abertas" } : {}) }); setLista(r.ocorrencias || []); setSemMig(!!r.sem_migration); onMudou?.(); }
     catch (e) { onErro?.(e.message); setLista([]); }
@@ -49,14 +50,15 @@ export default function PainelOcorrencias({ C, s, modo = "empresa", usuario = nu
       </div>)}</div>}
     {novo && <RegistrarOcorrencia C={C} s={s} modo={modo === "cliente" ? "cliente" : "empresa"} at={at} contratos={modo === "cliente" ? null : contratos} usuario={usuario}
       inicial={filtro.contrato_id ? { contrato_id: String(filtro.contrato_id) } : {}} onFechar={() => setNovo(false)}
-      onCriada={(oc, falhas) => { setNovo(false); onOk?.(`⚠️ ${oc.numero} registrada — o comercial foi avisado${falhas?.length ? `. Não subiram: ${falhas.join("; ")}` : ""}`); carregar(); setAberta(oc.id); }} />}
-    {aberta && <DetalheOcorrencia C={C} s={s} modo={modo} id={aberta} usuario={usuario} podeEditar={podeEditar} onFechar={() => { setAberta(null); carregar(); }} onErro={onErro} />}
+      onCriada={(oc, falhas) => { setNovo(false); if (falhas?.length) onErro?.(`⚠️ ${oc.numero} registrada, mas ${falhas.length} arquivo(s) não subiram — abra a ocorrência e use ＋ Fotos / ＋ BO.`); else onOk?.(`⚠️ ${oc.numero} registrada — ${modo === "cliente" ? "a locadora" : "o comercial"} foi avisado(a)`); carregar(); setFalhasIni(falhas?.length ? falhas : null); setAberta(oc.id); }} />}
+    {aberta && <DetalheOcorrencia C={C} s={s} modo={modo} id={aberta} usuario={usuario} podeEditar={podeEditar} falhasIni={falhasIni} onFechar={() => { setAberta(null); setFalhasIni(null); carregar(); }} onErro={onErro} />}
   </div>;
 }
 
-export function DetalheOcorrencia({ C, s, modo = "empresa", id, usuario = null, podeEditar = false, onFechar, onErro }) {
+export function DetalheOcorrencia({ C, s, modo = "empresa", id, usuario = null, podeEditar = false, falhasIni = null, onFechar, onErro }) {
   const base = modo === "cliente" ? "/locatario/ocorrencias" : "/ocorrencias";
-  const [d, setD] = useState(null); const [msg, setMsg] = useState(""); const [ocupado, setOcupado] = useState(false); const [erro, setErro] = useState(null);
+  const [d, setD] = useState(null); const [msg, setMsg] = useState(""); const [ocupado, setOcupado] = useState(false); const [erro, setErro] = useState(falhasIni?.length ? `Não subiram: ${falhasIni.join("; ")}. Tente de novo com ＋ Fotos / ＋ BO.` : null);
+  const [foto, setFoto] = useState(null); const [arq, setArq] = useState(null); // 18h.4: foto e BO abrem sobre a tela
   const [confirmar, setConfirmar] = useState(null); const [motivo, setMotivo] = useState("");
   const carregar = useCallback(async () => { try { setD(await apiService.get(`${base}/${id}`)); } catch (e) { setErro(e.message); } }, [base, id]);
   useEffect(() => { carregar(); }, [carregar]);
@@ -111,9 +113,9 @@ export function DetalheOcorrencia({ C, s, modo = "empresa", id, usuario = null, 
         </div>
         <div style={{ marginTop: 14, fontWeight: 600, fontSize: 13 }}>📷 Fotos ({(o.fotos || []).length}) e documentos</div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 6 }}>
-          {(o.fotos || []).map((f) => <a key={f.id} href={f.url || "#"} target="_blank" rel="noreferrer" title={`${f.legenda || f.nome} · ${f.lado === "cliente" ? "cliente" : "empresa"} · ${dh(f.em)}`}>
-            {f.url ? <img src={f.url} alt={f.legenda || f.nome} style={{ width: 96, height: 96, objectFit: "cover", borderRadius: 6, border: `1px solid ${C.border}` }} /> : <span style={{ fontSize: 12 }}>{f.nome}</span>}</a>)}
-          {(o.anexos || []).map((a) => <a key={a.id} href={a.url || "#"} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, color: C.accent, alignSelf: "center" }}>{a.tipo === "bo" ? "📄 BO" : "📎"} {a.nome}</a>)}
+          {(o.fotos || []).map((f) => f.url ? <img key={f.id} src={f.url} alt={f.legenda || f.nome} title={`${f.legenda || f.nome} · ${f.lado === "cliente" ? "cliente" : "empresa"} · ${dh(f.em)}`} onClick={() => setFoto(f)}
+              style={{ width: 96, height: 96, objectFit: "cover", borderRadius: 6, border: `1px solid ${f.antiga ? "#d97706" : C.border}`, cursor: "zoom-in" }} /> : <span key={f.id} style={{ fontSize: 12 }}>{f.nome}</span>)}
+          {(o.anexos || []).map((a) => <button key={a.id} type="button" onClick={() => a.url && setArq({ url: a.url, nome: a.nome, mime: a.mime })} style={{ background: "none", border: "none", padding: 0, fontSize: 12.5, color: C.accent, alignSelf: "center", cursor: "pointer" }}>{a.tipo === "bo" ? "📄 BO" : "📎"} {a.nome}</button>)}
         </div>
         {!fechada && <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
           <label style={{ ...s.btn(false), padding: "6px 12px", fontSize: 12.5, color: C.text, cursor: "pointer" }}>＋ Fotos<input type="file" aria-label="Mais fotos" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => { const fs = Array.from(e.target.files || []); e.target.value = ""; if (fs.length) subir("foto", fs); }} /></label>
@@ -134,6 +136,11 @@ export function DetalheOcorrencia({ C, s, modo = "empresa", id, usuario = null, 
           <ul style={{ paddingLeft: 18 }}>{o.historico.map((h, i) => <li key={i}>{dh(h.em)} · {h.por || "—"} · {h.acao}{h.de ? ` ${h.de} →` : ""}{h.para ? ` ${h.para}` : ""}{h.texto ? ` — ${h.texto}` : ""}</li>)}</ul></details>}
         {erro && <div style={{ color: C.danger, fontSize: 12.5, marginTop: 8 }}>{erro}</div>}
       </>}
+      {foto && <div onClick={() => setFoto(null)} style={{ position: "fixed", inset: 0, background: "#000000e6", zIndex: 440, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 16, cursor: "zoom-out" }}>
+        <img src={foto.url} alt="" style={{ maxWidth: "100%", maxHeight: "85vh", objectFit: "contain", borderRadius: 6 }} />
+        <div style={{ color: "#e2e8f0", fontSize: 13, marginTop: 10 }}>{[foto.legenda || foto.nome, foto.lado === "cliente" ? "cliente" : "empresa", dh(foto.em)].filter(Boolean).join(" · ")}{foto.antiga ? " · ⚠ foto antiga / da galeria" : ""}</div>
+      </div>}
+      {arq && <VerArquivo C={C} s={s} arquivo={arq} z={440} onFechar={() => setArq(null)} />}
     </div>
   </div>;
 }

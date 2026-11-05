@@ -15,13 +15,13 @@ const formatarXml = (x) => {
   }).join("\n");
 };
 
-export default function VerArquivo({ C, s, arquivo, onFechar }) {
+export default function VerArquivo({ C, s, arquivo, onFechar, z = 420 }) { // 18h.4: z — abre por cima de outro modal
   const { url, nome, mime } = arquivo || {};
   const tipo = tipoDe(mime, nome, url);
   const [xml, setXml] = useState(null);
   useEffect(() => { if (tipo === "xml" && url) fetch(url).then((r) => r.text()).then((t) => setXml(formatarXml(t))).catch(() => setXml("Não deu para ler o XML aqui — use “Abrir em nova aba”.")); }, [url, tipo]);
   return (
-    <div style={{ position: "fixed", inset: 0, background: "#000000b0", zIndex: 420, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }} onClick={onFechar}>
+    <div style={{ position: "fixed", inset: 0, background: "#000000b0", zIndex: z, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }} onClick={onFechar}>
       <div onClick={(e) => e.stopPropagation()} style={{ ...s.card, width: 960, maxWidth: "100%", height: "90vh", padding: 0, display: "flex", flexDirection: "column", overflow: "hidden" }}>
         <div style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 14px", borderBottom: `1px solid ${C.border}` }}>
           <b style={{ flex: 1, fontSize: 13.5, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap", color: C.text }}>👁 {nome || "Arquivo"}</b>

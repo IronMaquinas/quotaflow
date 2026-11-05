@@ -171,7 +171,7 @@ export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onEr
       {modal?.tipo === "editar" && base && <EditorAT C={C} s={s} pv={{ id: e.pv_id, numero: e.pv_numero, colunas: (e.colunas || []).filter((c) => c.chave !== "data_prevista") }} trecho={{ id: e.grupo_id, titulo: e.grupo_titulo }} atual={e} base={base} podeLiberar={podeLiberar}
         onErro={onErro} onFechar={() => setModal(null)} onSalvo={async (msg) => { setModal(null); onOk(msg); await carregar(); onMudou?.(); }} />}
       {ver && <VerArquivo C={C} s={s} arquivo={ver} onFechar={() => setVer(null)} />}
-      {novaOc && <RegistrarOcorrencia C={C} s={s} modo="empresa" at={e} onFechar={() => setNovaOc(false)} onCriada={(oc, falhas) => { setNovaOc(false); setRecOc((n) => n + 1); onOk(`⚠️ ${oc.numero} registrada — o comercial foi avisado${falhas?.length ? `. Não subiram: ${falhas.join("; ")}` : ""}`); }} />}{/* 18h */}
+      {novaOc && <RegistrarOcorrencia C={C} s={s} modo="empresa" at={e} onFechar={() => setNovaOc(false)} onCriada={(oc, falhas) => { setNovaOc(false); setRecOc((n) => n + 1); if (falhas?.length) onErro(`⚠️ ${oc.numero} registrada, mas ${falhas.length} arquivo(s) não subiram — abra a ocorrência e use ＋ Fotos / ＋ BO.`); else onOk(`⚠️ ${oc.numero} registrada — o comercial foi avisado`); }} />}{/* 18h */}
       {modal?.tipo === "cancelar" && casca(s, <>
         <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Cancelar a {e.numero}?</div>
         <div style={{ fontSize: 13, color: C.textSub, marginBottom: 8 }}>Os itens do trecho voltam para "a programar" no pedido {e.pv_numero}. O motivo fica registrado.</div>

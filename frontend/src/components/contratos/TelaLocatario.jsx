@@ -37,6 +37,9 @@ export default function TelaLocatario({ C, s, usuario }) {
   const [aba, setAba] = useState(() => (/medicoes/.test(window.location.hash) ? "medicoes" : /ocorrencias/.test(window.location.hash) ? "ocorrencias" : "contratos"));
   const [ocDaInspecao, setOcDaInspecao] = useState(null); // 18h: atalho da inspeção com itens não OK
   const [med, setMed] = useState(null); const [medAberta, setMedAberta] = useState(null);
+  const [ocAbertas, setOcAbertas] = useState(0); // 18h.4: contador na aba ⚠️ Ocorrências (igual ao da empresa)
+  const carregarOc = async () => { try { setOcAbertas(((await apiService.get("/locatario/ocorrencias", { status: "abertas" })).ocorrencias || []).length); } catch { setOcAbertas(0); } };
+  useEffect(() => { carregarOc(); }, [aba]); // eslint-disable-line
   const carregarMed = async () => { try { setMed(await apiService.get("/locatario/medicoes")); } catch { setMed({ contratos: [] }); } };
   useEffect(() => { carregarMed(); }, []);
   const ok = (t) => setAviso({ tipo: "ok", texto: t });
@@ -82,9 +85,9 @@ export default function TelaLocatario({ C, s, usuario }) {
           </div>))}
       </div>}
 
-      {(med?.contratos?.length > 0 || d?.contratos?.length > 0) && <div style={{ display: "flex", gap: 6, marginBottom: 12, borderBottom: `1px solid ${C.border}`, flexWrap: "wrap" }}>{/* 18d · 18h */}
-        {[["contratos", "📑 Contratos e inspeções"], ...(med?.contratos?.length > 0 ? [["medicoes", `📏 Medições${med.contratos.some((c) => c.medicoes.some((x) => x.status === "enviada")) ? " •" : ""}`]] : []), ["ocorrencias", "⚠️ Ocorrências"]].map(([k, l]) =>
-          <button key={k} type="button" onClick={() => setAba(k)} style={{ background: "transparent", border: "none", borderBottom: `2px solid ${aba === k ? C.accent : "transparent"}`, color: aba === k ? C.text : C.textSub, padding: "8px 12px", fontSize: 14, cursor: "pointer", fontWeight: aba === k ? 700 : 400 }}>{l}</button>)}
+      {(med?.contratos?.length > 0 || d?.contratos?.length > 0) && <div style={{ display: "flex", gap: 6, marginBottom: 12, borderBottom: `1px solid ${C.border}`, overflowX: "auto" }}>{/* 18d · 18h · 18h.4: uma linha (rola no celular) */}
+        {[["contratos", "📑 Contratos e inspeções"], ...(med?.contratos?.length > 0 ? [["medicoes", `📏 Medições${med.contratos.some((c) => c.medicoes.some((x) => x.status === "enviada")) ? " •" : ""}`]] : []), ["ocorrencias", <>⚠️ Ocorrências{ocAbertas > 0 && <span style={{ marginLeft: 6, background: C.danger, color: "#fff", borderRadius: 10, padding: "0 7px", fontSize: 11.5, fontWeight: 700 }}>{ocAbertas}</span>}</>]].map(([k, l]) =>
+          <button key={k} type="button" onClick={() => setAba(k)} style={{ whiteSpace: "nowrap", flexShrink: 0, background: "transparent", border: "none", borderBottom: `2px solid ${aba === k ? C.accent : "transparent"}`, color: aba === k ? C.text : C.textSub, padding: "8px 12px", fontSize: 14, cursor: "pointer", fontWeight: aba === k ? 700 : 400 }}>{l}</button>)}
       </div>}
       {aba === "medicoes" && med?.contratos?.length > 0 && med.contratos.map((c) => <div key={c.id} style={card}>{/* 18d.2: medições enviadas pela locadora */}
         <div style={{ fontWeight: 700, fontSize: 16 }}>📑 {c.numero}</div>
@@ -95,7 +98,7 @@ export default function TelaLocatario({ C, s, usuario }) {
           <span style={s.tag(corStatusMedicao(x.status))}>{x.status_nome}</span><span style={{ color: C.accent }}>abrir ›</span></div>)}
       </div>)}
       {medAberta && <MedicaoModal C={C} s={s} medicaoId={medAberta} base="/locatario" modo="locatario" onFechar={() => setMedAberta(null)} onMudou={carregarMed} onErro={err} onOk={ok} />}
-      {aba === "ocorrencias" && <PainelOcorrencias C={C} s={s} modo="cliente" usuario={usuario} onErro={err} onOk={ok} />}{/* 18h */}
+      {aba === "ocorrencias" && <PainelOcorrencias C={C} s={s} modo="cliente" usuario={usuario} onErro={err} onOk={ok} onMudou={carregarOc} />}{/* 18h */}
       {(aba === "medicoes" && med?.contratos?.length > 0) || aba === "ocorrencias" ? null : !d ? <div style={{ color: C.muted }}>Carregando…</div> : d.contratos.length === 0 ? (
         <div style={{ ...card, color: C.textSub }}>Nenhum contrato de locação ativo no seu acesso. Fale com a locadora.</div>
       ) : d.contratos.map((c) => (
@@ -147,7 +150,7 @@ export default function TelaLocatario({ C, s, usuario }) {
         </div>
       )}
       {ocDaInspecao && <RegistrarOcorrencia C={C} s={s} modo="cliente" usuario={usuario} inicial={ocDaInspecao} onFechar={() => setOcDaInspecao(null)}
-        onCriada={(oc, falhas) => { setOcDaInspecao(null); setAba("ocorrencias"); ok(`⚠️ ${oc.numero} registrada — a locadora foi avisada${falhas?.length ? `. Não subiram: ${falhas.join("; ")}` : ""}`); }} />}
+        onCriada={(oc, falhas) => { setOcDaInspecao(null); setAba("ocorrencias"); if (falhas?.length) err(`⚠️ ${oc.numero} registrada, mas ${falhas.length} arquivo(s) não subiram — abra a ocorrência e use ＋ Fotos / ＋ BO.`); else ok(`⚠️ ${oc.numero} registrada — a locadora foi avisada`); }} />}
       {doc && (
         <div style={{ position: "fixed", inset: 0, background: "#00000090", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 300, padding: 12, overflowY: "auto" }}>
           <div style={{ ...s.card, width: 860, maxWidth: "100%", padding: "14px 14px", margin: "auto 0" }}>
