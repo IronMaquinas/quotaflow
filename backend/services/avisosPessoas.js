@@ -11,7 +11,7 @@
 //   • insp_atrasada — 14b.2: rotina de inspeção atrasada (empresa ou locatário), uma vez por vencimento
 //   • trein_faltou — turma encerrada com quem não fez/não assinou → reagendar (uma vez por turma; só para o GESTOR — 12e.2d)
 // Cada marco sai uma vez (tabela avisos_enviados). Se o servidor ficou dias fora, manda só o mais urgente.
-// Destinatários: admin e gestor (o responsável do documento continua só nos avisos de documento).
+// Destinatários: gestor — 18h.4a: admin não recebe e-mail de rotina (o responsável do documento continua só nos avisos de documento).
 // Sem as migrations 028/029, devolve lista vazia (nunca quebra o e-mail dos documentos).
 
 const E = require('./epi');

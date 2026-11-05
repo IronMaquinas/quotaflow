@@ -582,11 +582,11 @@ const escH = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/<
 const frontendURL = () => String(process.env.FRONTEND_URL || 'http://localhost:5173').replace(/^FRONTEND_URL=/, '').replace(/\/+$/, '');
 let enviarEmail = async (para, assunto, html) => require('./emailService').enviarEmailFornecedor(para, assunto, html);
 function _definirEnvio(fn) { enviarEmail = fn; }
-/** e-mails dos gestores/admin (e do perfil fiscal, se pedir) ativos */
+/** e-mails dos gestores (e do perfil fiscal, se pedir) ativos — admin não recebe rotina */
 async function destinatariosFiscais(supabase, tenantId, { fiscal = true } = {}) {
   const us = (await q(supabase.from('usuarios').select('*').eq('tenant_id', tenantId)).catch(() => [])).filter((u) => u.ativo !== false && u.ativo !== 0);
   const ups = us.length ? await q(supabase.from('usuario_perfis').select('*').in('usuario_id', us.map((u) => u.id))).catch(() => []) : [];
-  const alvo = fiscal ? ['admin', 'gestor', 'fiscal'] : ['admin', 'gestor'];
+  const alvo = fiscal ? ['gestor', 'fiscal'] : ['gestor']; // 18h.4a: e-mail de rotina nunca vai para o admin
   const ok = us.filter((u) => [u.perfil, ...ups.filter((p) => String(p.usuario_id) === String(u.id)).map((p) => p.perfil_codigo)].some((p) => alvo.includes(p)));
   return [...new Set(ok.map((u) => String(u.email || '').toLowerCase()).filter((e) => EMAIL_OK.test(e)))];
 }

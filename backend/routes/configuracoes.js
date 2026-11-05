@@ -351,6 +351,10 @@ const quemE = async (req) => { try { const u = await DB.selectOne('usuarios', { 
 const FROTA = require('../services/frotaCalendario');
 // Etapa 18g.1: 🧾 antecedência da tarefa fiscal (dias úteis antes do trecho) — GET/PUT /api/configuracoes/fiscal { antecedencia_dias } (admin, gestor; sem permissão = 409)
 const TFISC = require('../services/tarefasFiscais');
+// Etapa 18h.4a: ⚠️ quem recebe as ocorrências (por origem: locação / transporte) — GET/PUT /api/configuracoes/ocorrencias (alterar: admin, gestor; sem permissão = 409)
+const OCORR = require('../services/ocorrencias');
+router.get('/ocorrencias', tenantMiddleware, respLogo((req) => OCORR.opcoesConfig(supabase, req.tenantId)));
+router.put('/ocorrencias', tenantMiddleware, respLogo((req) => (podeLogo(req) ? OCORR.salvarConfig(supabase, req.tenantId, req.body || {}) : { status: 409, erro: 'Só admin ou gestor alteram quem recebe as ocorrências' })));
 router.get('/fiscal', tenantMiddleware, respLogo(async (req) => { const c = await TFISC.config(supabase, req.tenantId); return { antecedencia_dias: c.antecedencia, migrou: c.migrou }; }));
 router.put('/fiscal', tenantMiddleware, respLogo((req) => (podeLogo(req) ? TFISC.salvarConfig(supabase, req.tenantId, req.body || {}) : { status: 409, erro: 'Só admin ou gestor alteram a antecedência fiscal' })));
 router.get('/frota-dias', tenantMiddleware, respLogo((req) => FROTA.obter(supabase, req.tenantId)));

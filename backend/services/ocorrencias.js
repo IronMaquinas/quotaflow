@@ -1,13 +1,14 @@
 // backend/services/ocorrencias.js — etapa 18h
 //
-// ⚠️ Ocorrência / sinistro unificado — SIN-AAAA-NNNN (migration 068, número pelo trigger, imutável).
+// ⚠️ Ocorrência / sinistro unificado — INC-LC-AAAA-NNNN (locação) · INC-TR-AAAA-NNNN (transporte) (migrations 068/069, número pelo trigger, imutável).
 //   Duas portas, um registro:
 //     • pela AT (transporte): contexto = motorista, conjunto, carga, documentos (NF-e/CT-e/MDF-e/averbação), última posição do fluxo
 //     • pelo contrato de locação: o LOCATÁRIO (ou a empresa) escolhe um equipamento locado; contexto = contrato, equipamento
 //       (tag/modelo/série), local da obra e a última inspeção com o resultado
 //   O contexto é um retrato do momento (não muda se a AT/contrato mudarem depois).
 //   "Equipamento parado" só AVISA — o comercial decide (nada é descontado sozinho; a medição só mostra os dias parados).
-//   Ao registrar: e-mail ao comercial (admin/gestor/comercial) + tarefa TSK-MT ligada ao SIN.
+//   Ao registrar: e-mail para quem está em ⚙️ Configurações → ⚠️ Ocorrências (padrão: locação → Comercial · transporte → Operação; admin nunca)
+//   + tarefa (padrão TSK-CM na locação, TSK-MT no transporte) com o 1º responsável escolhido, ligada à ocorrência.
 //   Status: registrada → em_analise → em_atendimento → encerrada · Responsabilidade: cliente / locadora / seguro / a_definir
 //   Conversa com o cliente (mensagens) e fotos/BO dos dois lados enquanto não encerrada.
 const crypto = require('crypto');
@@ -76,12 +77,59 @@ const escH = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/<
 const frontendURL = () => String(process.env.FRONTEND_URL || 'http://localhost:5173').replace(/^FRONTEND_URL=/, '').replace(/\/+$/, '');
 let enviarEmail = async (para, assunto, html) => require('./emailService').enviarEmailFornecedor(para, assunto, html);
 function _definirEnvio(fn) { enviarEmail = fn; }
-async function destinatarios(supabase, tenantId) {
+// ─── 18h.4a: quem recebe (⚙️ Configurações → ⚠️ Ocorrências), por origem ────
+//   lc = locação (contrato) · tr = transporte (AT). Perfis, pessoas do cadastro e/ou funções; tipo da tarefa.
+//   REGRA DO SaaS: e-mail de rotina NUNCA vai para o perfil admin (admin cuida do sistema — pode ser alguém de TI).
+//   Pessoa escolhida pelo nome recebe mesmo que também seja admin (foi escolhida de propósito).
+const PERFIS_OC = { gestor: 'Gestor', comercial: 'Comercial', operacao: 'Operação', qualidade: 'Qualidade', comprador: 'Comprador', financeiro: 'Financeiro', fiscal: 'Fiscal' };
+const TIPOS_TAREFA_OC = ['MT', 'CM', 'GN', 'NC'];
+const CONFIG_PADRAO = { lc: { perfis: ['comercial'], pessoas: [], funcoes: [], tipo_tarefa: 'CM' }, tr: { perfis: ['operacao'], pessoas: [], funcoes: [], tipo_tarefa: 'MT' } };
+const siglaDe = (origem) => (origem === 'at' ? 'tr' : 'lc');
+function limparCfg(c = {}, base = CONFIG_PADRAO.lc) {
+  const arr = (v, max = 30) => (Array.isArray(v) ? [...new Set(v.map((x) => String(x || '').trim()).filter(Boolean))].slice(0, max) : null);
+  return { perfis: (arr(c.perfis) ?? base.perfis).filter((p) => PERFIS_OC[p]), pessoas: (arr(c.pessoas) ?? base.pessoas).filter((p) => /^[cu]:[\w-]{1,60}$/.test(p)),
+    funcoes: (arr(c.funcoes) ?? base.funcoes).map((f) => f.slice(0, 80)), tipo_tarefa: TIPOS_TAREFA_OC.includes(String(c.tipo_tarefa || '').toUpperCase()) ? String(c.tipo_tarefa).toUpperCase() : base.tipo_tarefa };
+}
+async function config(supabase, tenantId) {
+  const t = (await q(supabase.from('tenants').select('*').eq('id', tenantId)).catch(() => []))[0] || {};
+  const salvo = t.ocorrencias_config && typeof t.ocorrencias_config === 'object' ? t.ocorrencias_config : {};
+  return { lc: limparCfg(salvo.lc, CONFIG_PADRAO.lc), tr: limparCfg(salvo.tr, CONFIG_PADRAO.tr), migrou: 'ocorrencias_config' in t };
+}
+async function salvarConfig(supabase, tenantId, body = {}) {
+  const atual = await config(supabase, tenantId); if (!atual.migrou) return { status: 409, erro: 'Falta rodar a migration 069 no Supabase.' };
+  const novo = { lc: limparCfg(body.lc || atual.lc, atual.lc), tr: limparCfg(body.tr || atual.tr, atual.tr) };
+  const { error } = await supabase.from('tenants').update({ ocorrencias_config: novo }).eq('id', tenantId); if (error) throw new Error(error.message);
+  return opcoesConfig(supabase, tenantId);
+}
+/** tela de configuração: config + perfis/pessoas/funções disponíveis + quem receberia hoje */
+async function opcoesConfig(supabase, tenantId) {
+  const cfg = await config(supabase, tenantId);
+  const ps = await require('./tarefas').pessoas(supabase, tenantId);
+  const funcoes = [...new Set((await q(supabase.from('funcoes').select('*').eq('tenant_id', tenantId)).catch(() => [])).filter((f) => f.ativo !== false).map((f) => f.nome).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  const previa = {}; for (const k of ['lc', 'tr']) previa[k] = (await destinatarios(supabase, tenantId, k === 'tr' ? 'at' : 'contrato', cfg)).map((x) => x.email);
+  return { ...cfg, perfis_disponiveis: PERFIS_OC, tipos_tarefa: TIPOS_TAREFA_OC, funcoes, pessoas: ps.map((p) => ({ ref: p.ref, nome: p.nome, funcao: p.funcao, email: p.email, login: p.login })), previa };
+}
+/** e-mails (e quem) que recebem a ocorrência desta origem */
+async function destinatarios(supabase, tenantId, origem = 'contrato', cfg0 = null) {
+  const cfg = (cfg0 || await config(supabase, tenantId))[siglaDe(origem)];
   const us = (await q(supabase.from('usuarios').select('*').eq('tenant_id', tenantId)).catch(() => [])).filter((u) => u.ativo !== false && u.ativo !== 0);
   const ups = us.length ? await q(supabase.from('usuario_perfis').select('*').in('usuario_id', us.map((u) => u.id))).catch(() => []) : [];
-  const alvo = ['admin', 'gestor', 'comercial'];
-  const ok = us.filter((u) => [u.perfil, ...ups.filter((p) => String(p.usuario_id) === String(u.id)).map((p) => p.perfil_codigo)].some((p) => alvo.includes(p)));
-  return [...new Set(ok.map((u) => String(u.email || '').toLowerCase()).filter((e) => EMAIL_OK.test(e)))];
+  const perfisU = (u) => [u.perfil, ...ups.filter((p) => String(p.usuario_id) === String(u.id)).map((p) => p.perfil_codigo)].filter(Boolean);
+  const out = new Map(); const add = (email, nome, porque) => { const e = String(email || '').trim().toLowerCase(); if (EMAIL_OK.test(e) && !out.has(e)) out.set(e, { email: e, nome: nome || null, porque }); };
+  for (const u of us) { const pf = perfisU(u); const hit = cfg.perfis.find((p) => pf.includes(p)); if (hit) add(u.email, u.nome, `perfil ${PERFIS_OC[hit]}`); } // admin nunca entra por perfil
+  if (cfg.pessoas.length || cfg.funcoes.length) {
+    const cs = await q(supabase.from('colaboradores').select('*').eq('tenant_id', tenantId)).catch(() => []);
+    for (const ref of cfg.pessoas) {
+      const [k, id] = ref.split(':');
+      if (k === 'u') { const u = us.find((x) => String(x.id) === id); if (u) add(u.email, u.nome, 'escolhido(a)'); }
+      else { const c = cs.find((x) => String(x.id) === id && x.situacao !== 'desligado'); const u = c && c.usuario_id != null ? us.find((x) => String(x.id) === String(c.usuario_id)) : null; if (c) add(u?.email || c.email, c.nome, 'escolhido(a)'); }
+    }
+    const fs = cfg.funcoes.map((f) => f.toLowerCase());
+    for (const c of cs.filter((x) => x.situacao === 'ativo' && fs.includes(String(x.funcao?.nome || x.funcao || '').toLowerCase()))) {
+      const u = c.usuario_id != null ? us.find((x) => String(x.id) === String(c.usuario_id)) : null; add(u?.email || c.email, c.nome, `função ${c.funcao?.nome || c.funcao}`);
+    }
+  }
+  return [...out.values()];
 }
 function resumoTxt(o) {
   const c = o.contexto || {};
@@ -140,7 +188,7 @@ async function avisar(supabase, tenantId, o) {
   const assunto = `⚠️ ${o.numero || 'Ocorrência'} — ${TIPOS[o.tipo]}${o.parado ? ' · EQUIPAMENTO PARADO' : ''} · ${o.contexto?.contrato?.cliente || o.contexto?.at?.cliente || ''}`.replace(/ · $/, '');
   const html = htmlAviso(o, emp, await contatosDa(supabase, tenantId, o));
   let n = 0;
-  for (const para of await destinatarios(supabase, tenantId)) { try { await enviarEmail(para, assunto, html); n++; } catch (e) { console.error('⚠️ [ocorrencias] e-mail não enviado:', para, e?.message || e); } }
+  for (const { email: para } of await destinatarios(supabase, tenantId, o.origem)) { try { await enviarEmail(para, assunto, html); n++; } catch (e) { console.error('⚠️ [ocorrencias] e-mail não enviado:', para, e?.message || e); } }
   return n;
 }
 
@@ -188,9 +236,9 @@ async function criar(supabase, tenantId, quem, body = {}, { locatarioId = null }
   catch (e) { if (sem068(e)) return ERRO_068; throw e; }
   // TSK-MT ligada ao SIN
   try {
-    const T = require('./tarefas');
+    const T = require('./tarefas'); const cfg = (await config(supabase, tenantId))[siglaDe(origem)];
     const prazo = new Date(Date.now() + (linha.parado ? 1 : 3) * 86400000).toISOString().slice(0, 10);
-    const t = await T.criar(supabase, tenantId, { id: quem.usuarioId || null, nome: quem.usuarioNome || 'QuotaFlow' }, { tipo: 'MT', titulo: `${o.numero || 'Ocorrência'} — ${TIPOS[tipo]} · ${resumoTxt(o).slice(0, 120)}`,
+    const t = await T.criar(supabase, tenantId, { id: quem.usuarioId || null, nome: quem.usuarioNome || 'QuotaFlow' }, { tipo: cfg.tipo_tarefa || 'MT', ...(cfg.pessoas[0] ? { responsavel_ref: cfg.pessoas[0] } : {}), titulo: `${o.numero || 'Ocorrência'} — ${TIPOS[tipo]} · ${resumoTxt(o).slice(0, 120)}`,
       detalhe: `${descricao}${linha.parado ? '\n\n⛔ Informado como PARADO.' : ''}`, prioridade: linha.parado || ['acidente', 'furto'].includes(tipo) ? 'alta' : 'media', prazo,
       vinculos: [{ tipo: 'ocorrencia', id: String(o.id), numero: o.numero || null },
         ...(o.execucao_id ? [{ tipo: 'at', id: String(o.execucao_id), numero: o.contexto?.at?.numero || null }] : []),
@@ -324,4 +372,4 @@ async function paradasDoContrato(supabase, tenantId, contratoId, inicio, fim) {
   }).filter((x) => x.dias > 0);
 }
 
-module.exports = { TIPOS, STATUS, RESP, criar, listar, detalhe, atualizar, mensagem, anexar, opcoesLocatario, paradasDoContrato, contextoAT, contextoContrato, _definirEnvio };
+module.exports = { config, salvarConfig, opcoesConfig, destinatarios, TIPOS, STATUS, RESP, criar, listar, detalhe, atualizar, mensagem, anexar, opcoesLocatario, paradasDoContrato, contextoAT, contextoContrato, _definirEnvio };

@@ -54,7 +54,7 @@ export function gerarHtmlDossie(o, { empresa = {}, interno = true } = {}) {
     ${anexos ? `<h2>Boletim de ocorrência e documentos</h2><ul>${anexos}</ul>` : ""}
     ${msgs ? `<h2>Conversa com o cliente</h2><table>${msgs}</table>` : ""}
     ${hist ? `<h2>Histórico</h2><table>${hist}</table>` : ""}
-    <div style="font-size:9px;color:#888;margin-top:8mm">Registro do QuotaFlow. As fotos levam a tarja de rastreabilidade (o quê, SIN, data/hora, GPS, quem). Os links dos arquivos valem por 1 hora a partir da emissão.</div>
+    <div style="font-size:9px;color:#888;margin-top:8mm">Registro do QuotaFlow. As fotos levam a tarja de rastreabilidade (o quê, nº da ocorrência, data/hora, GPS, quem). Os links dos arquivos valem por 1 hora a partir da emissão.</div>
     <div class="nao-imprimir" style="margin-top:14px;text-align:center"><button onclick="window.print()" style="padding:8px 18px;font-size:13px">🖨 Imprimir / Salvar em PDF</button></div>
   </div></body></html>`;
 }

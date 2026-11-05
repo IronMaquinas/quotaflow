@@ -5,7 +5,7 @@
 //   • Marcos: faltando 30, 15 e 5 dias, e uma vez quando vence.
 //     Cada marco de cada documento é avisado no máximo UMA vez (tabela documento_avisos).
 //     Se o servidor ficou dias fora, manda só o marco mais urgente (não manda 30+15+5 juntos).
-//   • Destinatários: usuários ativos admin ou gestor do tenant + o responsável do documento.
+//   • Destinatários: usuários ativos gestor do tenant + o responsável do documento (18h.4a: admin não recebe e-mail de rotina).
 //   • Um e-mail por pessoa por dia, com a lista de documentos. Sem novidade = sem e-mail.
 //   • Documento substituído (renovado) e colaborador desligado não entram.
 //   • 12d.3: o mesmo e-mail traz também troca de EPI, CA de EPI e documento exigido não cadastrado
@@ -20,7 +20,7 @@ const { enviarEmailCotacao } = require('./emailService');
 const { listarDocumentos } = require('./documentos');
 const AP = require('./avisosPessoas'); // etapa 12d.3
 
-const PERFIS_AVISO = ['admin', 'gestor'];
+const PERFIS_AVISO = ['gestor']; // 18h.4a: e-mail de rotina nunca vai para o admin (cuida do sistema — pode ser alguém de TI)
 const PAUSA_ENTRE_ENVIOS_MS = 600; // Resend: ~2 requisições/segundo
 const esperar = (ms) => new Promise((r) => setTimeout(r, ms));
 const esc = (t) => String(t == null ? '' : t)

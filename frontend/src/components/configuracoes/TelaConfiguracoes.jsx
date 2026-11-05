@@ -16,6 +16,7 @@ import LogoEmpresa from "./LogoEmpresa"; // etapa 14c
 import DadosEmpresa from "./DadosEmpresa"; // etapa 14d.4
 import DiasFrota from "./DiasFrota"; // etapa 18f
 import ConfigFiscal from "./ConfigFiscal"; // etapa 18g.1
+import ConfigOcorrencias from "./ConfigOcorrencias"; // etapa 18h.4a
 
 // ─────────────────────────────────────────────────────────────────────────
 // HELPERS de conversão minuto ↔ HH:MM
@@ -90,7 +91,7 @@ export default function TelaConfiguracoes({ C, s, abaInicial }) {
       {abaAtiva === "feriados" && <SecaoFeriados C={C} s={s} onErro={setErro} />}
       {abaAtiva === "custos" && <SecaoCustosOperacionais C={C} s={s} onErro={setErro} />}
       {abaAtiva === "comunicacoes" && <SecaoComunicacoes C={C} s={s} onErro={setErro} />}
-      {abaAtiva === "empresa" && <><DadosEmpresa C={C} s={s} onErro={setErro} /><SecaoEmpresa C={C} s={s} onErro={setErro} /><LogoEmpresa C={C} s={s} onErro={setErro} /><ConfigFiscal C={C} s={s} onErro={setErro} /></>}
+      {abaAtiva === "empresa" && <><DadosEmpresa C={C} s={s} onErro={setErro} /><SecaoEmpresa C={C} s={s} onErro={setErro} /><LogoEmpresa C={C} s={s} onErro={setErro} /><ConfigFiscal C={C} s={s} onErro={setErro} /><ConfigOcorrencias C={C} s={s} onErro={setErro} /></>}
     </div>
   );
 }

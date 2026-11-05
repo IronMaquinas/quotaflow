@@ -63,7 +63,7 @@ export default function RegistrarOcorrencia({ C, s, modo = "cliente", at = null,
     const vagas = 20 - fotos.length; if (vagas <= 0) return setErro("Limite de 20 fotos.");
     setErro(null);
     for (const file of imgs.slice(0, vagas)) {
-      try { const x = await fotoComTarja(file, { oque: "Ocorrência", ref: "SIN a gerar", quem: usuario?.nome || null, gps });
+      try { const x = await fotoComTarja(file, { oque: "Ocorrência", ref: "INC a gerar", quem: usuario?.nome || null, gps });
         setFotos((v) => [...v, { file, url: x.dataUri, legenda: "", kb: Math.round((x.base64.length * 3) / 4 / 1024) }].slice(0, 20)); }
       catch (e) { setErro(`${file.name}: ${e.message}`); }
     }
@@ -106,7 +106,7 @@ export default function RegistrarOcorrencia({ C, s, modo = "cliente", at = null,
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", margin: "6px 0 8px" }}>
         <label style={{ ...s.btn(false), padding: "7px 12px", fontSize: 12.5, cursor: "pointer", color: C.text }}>📷 Fotos<input ref={ref} type="file" aria-label="Fotos" accept="image/*" multiple capture="environment" style={{ display: "none" }} onChange={(e) => { const fs = Array.from(e.target.files || []); e.target.value = ""; addFotos(fs); }} /></label>
         <label style={{ ...s.btn(false), padding: "7px 12px", fontSize: 12.5, cursor: "pointer", color: bo ? C.accent : C.text }}>{bo ? `✓ ${bo.name}` : "📄 Boletim de ocorrência (BO)"}<input type="file" aria-label="Boletim de ocorrência" accept=".pdf,image/*" style={{ display: "none" }} onChange={(e) => { setBo(e.target.files?.[0] || null); e.target.value = ""; }} /></label>
-        <span style={{ fontSize: 11.5, color: C.muted }}>{fotos.length}/20 · fotos comprimidas, com a tarja de rastreabilidade embaixo (o nº do SIN entra ao registrar)</span>
+        <span style={{ fontSize: 11.5, color: C.muted }}>{fotos.length}/20 · fotos comprimidas, com a tarja de rastreabilidade embaixo (o nº da ocorrência entra ao registrar)</span>
       </div>
       {fotos.length > 0 && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
         {fotos.map((x, i) => <div key={x.url} style={{ position: "relative", width: 92 }}>

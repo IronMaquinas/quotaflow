@@ -48,7 +48,7 @@ const ESPERADO = {
   'services/convitesFornecedor.js': 'e3d3837cb171b57e7d5200d9971df968', // etapa 11a.3
   'routes/spot.js': 'ee346546f49efb3552b0d4048513f26b', // etapa 11a
   'services/matchSpot.js': 'fe4275090b82bd1efd52498d2176a90c', // etapa 7
-  'routes/configuracoes.js': '369e5ebba188ca83571f631f74dacc8a', // etapa 18g.1
+  'routes/configuracoes.js': 'b0ca12b466ab2532788fe7d0ebc04099', // etapa 18h.4a
   'routes/fornecedor.js': '9e06852242b8bf79c6384c46b8ee7bb5', // etapa 14e
   'routes/recomendacoes.js': '05628793a30bc9cc5905c137c90fdb9c', // etapa 18g.2d
   'services/recomendacoesEmail.js': '7bc5475ccffb4fd2fcec53be78e64123', // etapa 10c
@@ -65,7 +65,7 @@ const ESPERADO = {
   'front:TelaPainelFornecedor.jsx': 'e9742a3e808ba27df5d5f29a393b8da6', // etapa 10c
   'front:TelaAceitarConvite.jsx': '8aefac39a8a1f4f94c17d2d26f8d53c0', // etapa 11a.3
   'front:main.jsx': '66a29b53c33b5e8fd81feda7b99209a4', // etapa 16c
-  'front:TelaConfiguracoes.jsx': '2b3cd868a39ff5c254253899b0b7b2a5', // etapa 18g.1
+  'front:TelaConfiguracoes.jsx': '1720b82c4cec9ceae6885118e71a2a8d', // etapa 18h.4a
   'services/acessoSpot.js': '6ecce4d16d6b123c6ce93c1223b32f01', // etapa 10c (novo)
   'services/receitaCnpj.js': 'b0e2a678127403d5608723c21ec61b78', // etapa 14d.5
   'services/cadastroPublico.js': '1359e67ff1f2438a964eee7223cf2ed1', // etapa 14d.5
@@ -90,9 +90,9 @@ const ESPERADO = {
   'front:ModalTransferirOS.jsx': '8e7c1bf0d6fc9a4f88bdd9087d22cb37', // etapa 12b.3 (novo)
   'routes/pessoas.js': 'd9227445ccfc9c085b8aa4c7f5550243', // etapa 17b
   'services/documentos.js': 'e4e3f50ffd6ade91d5c2a51a0b115900', // etapa 12e.3
-  'front:TelaPessoas.jsx': '07f2dc2f969973efc6ee862ffdec9c71', // etapa 18g.2c
+  'front:TelaPessoas.jsx': '567dbb265e4443165281521971665fd5', // etapa 18h.4a
   // etapa 12c.1
-  'services/avisosVencimento.js': 'fec2b28a7081f59510ef21b728a6c341', // etapa 14e
+  'services/avisosVencimento.js': '47c06d15f8ccf69c3c43a32a5006f786', // etapa 18h.4a
   'services/funcoes.js': '9873a5e1a74e7604ab6b624d1d7cc901', // etapa 12e.3.1
   'front:BibliotecaFuncoes.jsx': '9f5e1d8aba9b2e729cc4d546b4678712', // etapa 12e.3.1
   'services/epi.js': '9b0dccea86e23c7d5f3af1132159f0ee', // etapa 12d.1b
@@ -104,7 +104,7 @@ const ESPERADO = {
   'front:AssinaturaTela.jsx': 'db713a14a03390f9072d06f1de697b90', // etapa 12d.2 (novo)
   'front:gerarFichaEpi.js': '1926fe16c45ad648ef986f6bbb97a824', // etapa 14c.2
   'services/historicoFuncoes.js': 'e8460900c6f40ee55328c3aac638dffe', // etapa 12d.3 (novo)
-  'services/avisosPessoas.js': '0b4702081b9c1e8dfb96d8bb5140e9a1', // etapa 14b.2
+  'services/avisosPessoas.js': '9b17e5d802b522f446a395376e21c86d', // etapa 18h.4a
   'services/treinamentos.js': '7ce6b7d886e7b2036d5820f2113ba71a', // etapa 12e.2d
   'front:TelaTreinamentos.jsx': '255c8ddca330a11ec39653b4718c6b44', // etapa 14c.2
   'front:gerarListaPresenca.js': '35770dafbe33aca8992c169d93745e9e', // etapa 14c.1
@@ -269,7 +269,7 @@ const ESPERADO = {
   'migrations/065_tarefas_rastreabilidade.sql': '3902af0a80d08839d542bd2a65e99d87', // etapa 18g (novo)
   'services/tarefas.js': '6dc6b2f79f93f15fafda2fc93fe0de5c', // etapa 18h
   'migrations/066_fiscal_transporte.sql': 'eeef7d2fb80ae6ad0ec6069a3342e0ff', // etapa 18g.1 (novo)
-  'services/tarefasFiscais.js': '348da42ae52a6337ae1a0df41b2882d2', // etapa 18g.2d
+  'services/tarefasFiscais.js': '90048e5365d5e1642991100314ab2c69', // etapa 18h.4a
   'front:ChecklistFiscal.jsx': '1634e6d08490a83f1c0c86c983eb69ae', // etapa 18g.2.4
   'front:ConfigFiscal.jsx': 'b4ceec47991a295f38f32992348ddcf8', // etapa 18g.1 (novo)
   'front:lerXmlFiscal.js': '8d657863784b4e6c468b29bd8152e53f', // etapa 18g.1.1 (novo)
@@ -277,23 +277,29 @@ const ESPERADO = {
   'front:CampoPessoa.jsx': 'efa3cd5aee2eeadae0805e7d4b6e8daa', // etapa 18g.2c
   'front:gerarRelatorioTarefas.js': '483dd597e30b11635886ba51406d36cf', // etapa 18g.2b (novo)
   'front:AcaoDocFiscal.jsx': 'eed319fa1d63b104146db0b8eabcd7ed', // etapa 18g.2.7
-  'services/ocorrencias.js': 'c1247bdac83659cccee50a1f8b9007d4', // etapa 18h.3.2
+  'services/ocorrencias.js': 'd9ceb48eda4c60add6ef7c6e52da57e7', // etapa 18h.4a
   'routes/ocorrencias.js': 'e9308a77ae9bd0e7a086d9d6efadbbfc', // etapa 18h (novo)
   'migrations/068_ocorrencias.sql': '4fff8fd8dccd6dd91dbb2f145bd19a22', // etapa 18h (novo)
-  'front:RegistrarOcorrencia.jsx': 'c722d9a24625de062e63ee4c898abeef', // etapa 18h.3
+  'front:RegistrarOcorrencia.jsx': 'b59b650ed622b93b8d191900a8dc86b2', // etapa 18h.4a
   'front:PainelOcorrencias.jsx': 'b1ed7825032d281524f2af4b659bda2c', // etapa 18h.3.2
-  'front:gerarDossieOcorrencia.js': '6de903379c0d2c860d45ba43d767149b', // etapa 18h.3
+  'front:gerarDossieOcorrencia.js': '971cc44cce9e61fd856940907f7c7fce', // etapa 18h.4a
   'front:useCatalogo.js': '0cd8f09dcbe1e98d67908d2937743a8b', // etapa 18h.2
   'front:areaRestrita.js': '48e89b41e5e1c3b82d92b1bf996576e0', // etapa 18h.2 (novo)
+  'migrations/069_ocorrencias_inc_config.sql': '021d999ba5637b4bb5404593c3e62259', // etapa 18h.4a (novo)
+  'front:ConfigOcorrencias.jsx': '67b2278ce309bd03808bc30c5a94b840', // etapa 18h.4a (novo)
 };
 
-// Antes de copiar a etapa 18h.3.2 — base: 18h.3.1
+// Antes de copiar a etapa 18h.4a — base: 18h.3.2
 const ANTES = {
-  'services/ocorrencias.js': 'e776f6fd403c08bb453ac3d34795e01f',
-  'front:TelaPlanoAcaoNova.jsx': '05c6e1d101abc2f3dbb59940eff30cf0',
-  'front:App.jsx': 'e7692f3b43cd98c89b47c9ccd9372678',
-  'front:TelaContratos.jsx': '23a043141f87157fb60b36623747b284',
-  'front:PainelOcorrencias.jsx': 'a16c0e89f7808072c1623071f49371b9',
+  'services/ocorrencias.js': 'c1247bdac83659cccee50a1f8b9007d4',
+  'services/avisosVencimento.js': 'fec2b28a7081f59510ef21b728a6c341',
+  'services/avisosPessoas.js': '0b4702081b9c1e8dfb96d8bb5140e9a1',
+  'services/tarefasFiscais.js': '348da42ae52a6337ae1a0df41b2882d2',
+  'routes/configuracoes.js': '369e5ebba188ca83571f631f74dacc8a',
+  'front:TelaConfiguracoes.jsx': '2b3cd868a39ff5c254253899b0b7b2a5',
+  'front:TelaPessoas.jsx': '07f2dc2f969973efc6ee862ffdec9c71',
+  'front:RegistrarOcorrencia.jsx': 'c722d9a24625de062e63ee4c898abeef',
+  'front:gerarDossieOcorrencia.js': '6de903379c0d2c860d45ba43d767149b',
 };
 
 const RAIZ = process.cwd();
@@ -331,7 +337,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18h.3.2)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18h.4a)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
@@ -379,13 +385,13 @@ for (const [chave, esperado] of Object.entries(LISTA)) {
 
 if (!modoAntes) {
   // Arquivos novos precisam entrar no commit
-  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js', 'services/matchSpot.js', 'services/recomendacoesEmail.js', 'routes/recomendacoes.js', 'services/convitesFornecedor.js', 'services/acessoSpot.js', 'services/receitaCnpj.js', 'services/cadastroPublico.js', 'services/emailConfirmacao.js', 'routes/plataforma.js', 'services/plataformaConsole.js', 'middleware/plataformaMiddleware.js', 'scripts/criarAdmin.js', 'routes/manutencao.js', 'services/calendarioManutencao.js', 'services/planosManutencao.js', 'migrations/019_planos_manutencao.sql', 'migrations/020_plano_termino.sql', 'migrations/021_plano_responsavel_dia_util.sql', 'routes/pessoas.js', 'services/documentos.js', 'migrations/022_colaboradores_documentos.sql', 'services/avisosVencimento.js', 'migrations/023_documento_avisos.sql', 'services/funcoes.js', 'migrations/024_funcoes.sql', 'migrations/025_funcoes_detalhes.sql', 'services/epi.js', 'migrations/026_epi_itens.sql', 'migrations/027_epi_catalogo_tamanhos.sql', 'services/epiEntregas.js', 'services/conformidade.js', 'migrations/028_epi_entregas.sql', 'services/historicoFuncoes.js', 'services/avisosPessoas.js', 'migrations/029_historico_funcoes_avisos.sql', 'services/treinamentos.js', 'migrations/030_treinamentos.sql', 'migrations/031_treinamentos_conteudo_horas.sql', 'services/provaOnline.js', 'routes/meusTreinamentos.js', 'routes/provaPublica.js', 'migrations/032_prova_online_colaborador.sql', 'services/competencias.js', 'migrations/033_competencias.sql', 'migrations/034_competencias_nivel.sql', 'services/dossie.js', 'migrations/035_dossie.sql', 'services/multas.js', 'migrations/036_multas.sql', 'services/disciplinar.js', 'migrations/037_disciplinar.sql', 'migrations/038_disciplinar_ciencia.sql', 'services/autuacoes.js', 'routes/autuacoes.js', 'migrations/039_autuacoes.sql', 'services/inspecoes.js', 'routes/inspecoes.js', 'migrations/040_inspecoes.sql', 'routes/inspecaoLink.js', 'migrations/041_inspecoes_tipos_links.sql', 'services/rotinasInspecao.js', 'migrations/042_inspecoes_rotinas_locacao.sql', 'services/contratosLocacao.js', 'routes/contratos.js', 'routes/locatario.js', 'migrations/043_contratos_locatario.sql', 'services/clientes.js', 'migrations/044_clientes.sql', 'services/logoEmpresa.js', 'migrations/045_logo_empresa.sql', 'services/contratoModelos.js', 'migrations/046_modelos_contrato.sql', 'migrations/047_contrato_representante.sql', 'migrations/048_dados_empresa.sql', 'services/perfilEmpresa.js', 'migrations/049_perfil_empresa_cnpj.sql', 'migrations/050_monitor_cnpj.sql', 'services/monitorCnpj.js', 'routes/monitorCnpj.js', 'migrations/051_comercial_bid.sql', 'routes/comercial.js', 'services/bids.js', 'migrations/052_bid_cliente.sql', 'routes/bidLink.js', 'services/bidsCliente.js', 'migrations/053_pedidos_venda.sql', 'services/pedidosVenda.js', 'migrations/054_tarefa_atribuida.sql', 'scripts/previaEmailsBid.js', 'migrations/055_execucoes_at.sql', 'services/execucoes.js', 'routes/programacao.js', 'migrations/056_at_rascunho_link_motorista.sql', 'routes/atLink.js', 'services/fluxoViagem.js', 'migrations/057_fluxo_viagem.sql', 'migrations/058_base_frota.sql', 'routes/minhasViagens.js', 'services/calendarioComercial.js', 'migrations/059_calendario_comercial.sql', 'migrations/060_prospeccao_evento.sql', 'migrations/061_prospeccao_oportunidades.sql', 'services/medicoes.js', 'migrations/062_medicao_locacao.sql', 'migrations/063_medicao_vencimento.sql', 'services/frotaCalendario.js', 'migrations/064_frota_dias_operacao.sql', 'services/utilizacaoFrota.js', 'migrations/065_tarefas_rastreabilidade.sql', 'services/tarefas.js', 'migrations/066_fiscal_transporte.sql', 'services/tarefasFiscais.js', 'migrations/067_tarefa_responsavel.sql', 'services/ocorrencias.js', 'routes/ocorrencias.js', 'migrations/068_ocorrencias.sql'];
+  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js', 'services/matchSpot.js', 'services/recomendacoesEmail.js', 'routes/recomendacoes.js', 'services/convitesFornecedor.js', 'services/acessoSpot.js', 'services/receitaCnpj.js', 'services/cadastroPublico.js', 'services/emailConfirmacao.js', 'routes/plataforma.js', 'services/plataformaConsole.js', 'middleware/plataformaMiddleware.js', 'scripts/criarAdmin.js', 'routes/manutencao.js', 'services/calendarioManutencao.js', 'services/planosManutencao.js', 'migrations/019_planos_manutencao.sql', 'migrations/020_plano_termino.sql', 'migrations/021_plano_responsavel_dia_util.sql', 'routes/pessoas.js', 'services/documentos.js', 'migrations/022_colaboradores_documentos.sql', 'services/avisosVencimento.js', 'migrations/023_documento_avisos.sql', 'services/funcoes.js', 'migrations/024_funcoes.sql', 'migrations/025_funcoes_detalhes.sql', 'services/epi.js', 'migrations/026_epi_itens.sql', 'migrations/027_epi_catalogo_tamanhos.sql', 'services/epiEntregas.js', 'services/conformidade.js', 'migrations/028_epi_entregas.sql', 'services/historicoFuncoes.js', 'services/avisosPessoas.js', 'migrations/029_historico_funcoes_avisos.sql', 'services/treinamentos.js', 'migrations/030_treinamentos.sql', 'migrations/031_treinamentos_conteudo_horas.sql', 'services/provaOnline.js', 'routes/meusTreinamentos.js', 'routes/provaPublica.js', 'migrations/032_prova_online_colaborador.sql', 'services/competencias.js', 'migrations/033_competencias.sql', 'migrations/034_competencias_nivel.sql', 'services/dossie.js', 'migrations/035_dossie.sql', 'services/multas.js', 'migrations/036_multas.sql', 'services/disciplinar.js', 'migrations/037_disciplinar.sql', 'migrations/038_disciplinar_ciencia.sql', 'services/autuacoes.js', 'routes/autuacoes.js', 'migrations/039_autuacoes.sql', 'services/inspecoes.js', 'routes/inspecoes.js', 'migrations/040_inspecoes.sql', 'routes/inspecaoLink.js', 'migrations/041_inspecoes_tipos_links.sql', 'services/rotinasInspecao.js', 'migrations/042_inspecoes_rotinas_locacao.sql', 'services/contratosLocacao.js', 'routes/contratos.js', 'routes/locatario.js', 'migrations/043_contratos_locatario.sql', 'services/clientes.js', 'migrations/044_clientes.sql', 'services/logoEmpresa.js', 'migrations/045_logo_empresa.sql', 'services/contratoModelos.js', 'migrations/046_modelos_contrato.sql', 'migrations/047_contrato_representante.sql', 'migrations/048_dados_empresa.sql', 'services/perfilEmpresa.js', 'migrations/049_perfil_empresa_cnpj.sql', 'migrations/050_monitor_cnpj.sql', 'services/monitorCnpj.js', 'routes/monitorCnpj.js', 'migrations/051_comercial_bid.sql', 'routes/comercial.js', 'services/bids.js', 'migrations/052_bid_cliente.sql', 'routes/bidLink.js', 'services/bidsCliente.js', 'migrations/053_pedidos_venda.sql', 'services/pedidosVenda.js', 'migrations/054_tarefa_atribuida.sql', 'scripts/previaEmailsBid.js', 'migrations/055_execucoes_at.sql', 'services/execucoes.js', 'routes/programacao.js', 'migrations/056_at_rascunho_link_motorista.sql', 'routes/atLink.js', 'services/fluxoViagem.js', 'migrations/057_fluxo_viagem.sql', 'migrations/058_base_frota.sql', 'routes/minhasViagens.js', 'services/calendarioComercial.js', 'migrations/059_calendario_comercial.sql', 'migrations/060_prospeccao_evento.sql', 'migrations/061_prospeccao_oportunidades.sql', 'services/medicoes.js', 'migrations/062_medicao_locacao.sql', 'migrations/063_medicao_vencimento.sql', 'services/frotaCalendario.js', 'migrations/064_frota_dias_operacao.sql', 'services/utilizacaoFrota.js', 'migrations/065_tarefas_rastreabilidade.sql', 'services/tarefas.js', 'migrations/066_fiscal_transporte.sql', 'services/tarefasFiscais.js', 'migrations/067_tarefa_responsavel.sql', 'services/ocorrencias.js', 'routes/ocorrencias.js', 'migrations/068_ocorrencias.sql', 'migrations/069_ocorrencias_inc_config.sql'];
   try {
     for (const n of novos) {
       const rastreado = execFileSync('git', ['ls-files', n], { cwd: RAIZ, stdio: 'pipe' }).toString().trim();
       if (!rastreado) console.log(`\n⚠️  ${n} ainda não está no git (git add ${n})`);
     }
-    for (const nome of ['SeletorAtuacao.jsx', 'TelaAceitarConvite.jsx', 'TelaPainelFornecedor.jsx', 'AvisoPlanoTenant.jsx', 'CampoTelefone.jsx', 'TelaConfirmarEmail.jsx', 'ConsolePlataforma.jsx', 'TelaCalendarioManutencao.jsx', 'TelaPlanosManutencao.jsx', 'ModalTransferirOS.jsx', 'TelaPessoas.jsx', 'BibliotecaTreinamentos.jsx', 'EditorConteudoTreinamento.jsx', 'AreaTreinamentoColaborador.jsx', 'TelaMeusTreinamentos.jsx', 'AcessoColaborador.jsx', 'TextoAula.jsx', 'TelaProvaPublica.jsx', 'gerarCertificado.js', 'FichaCompetencias.jsx', 'EditorCompetencias.jsx', 'PainelDossie.jsx', 'gerarDossie.js', 'TelaMultas.jsx', 'gerarTermoDesconto.js', 'TelaDisciplinar.jsx', 'gerarMedidaDisciplinar.js', 'TelaAutuacoes.jsx', 'TelaInspecoes.jsx', 'ExecutarInspecao.jsx', 'EditorModeloInspecao.jsx', 'Esquemas.jsx', 'BibliotecaInspecoes.jsx', 'filaInspecoes.js', 'gerarRelatorioInspecao.js', 'TelaInspecaoPublica.jsx', 'RotinasLocacao.jsx', 'gerarRelatorioCumprimento.js', 'TelaContratos.jsx', 'TelaLocatario.jsx', 'Clientes.jsx', 'LogoEmpresa.jsx', 'logoEmpresa.js', 'comprimirImagem.js', 'ModelosContrato.jsx', 'gerarContrato.js', 'BibliotecaContratos.jsx', 'CampoMoeda.jsx', 'DadosEmpresa.jsx', 'CompletarPerfil.jsx', 'CnpjsPlataforma.jsx', 'ModalJustificativaCnpj.jsx', 'TelaMonitorCnpj.jsx', 'FichaBid.jsx', 'ModelosBid.jsx', 'TelaComercial.jsx', 'gerarBid.js', 'TelaBidPublica.jsx', 'EnviarBid.jsx', 'FichaPedido.jsx', 'gerarAT.js', 'TelaProgramacao.jsx', 'FichaAT.jsx', 'MesaProgramacao.jsx', 'EditorAT.jsx', 'VerArquivo.jsx', 'TelaATPublica.jsx', 'EditorFluxo.jsx', 'TelaMinhasViagens.jsx', 'CalendarioComercial.jsx', 'PainelProspeccao.jsx', 'ConcluirTarefa.jsx', 'DetalheExecutivo.jsx', 'marcaFoto.js', 'FiltroPeriodo.jsx', 'MedicaoModal.jsx', 'gerarMedicao.js', 'AbaMedicoes.jsx', 'gerarRelatorioViagem.js', 'DiasFrota.jsx', 'PainelUtilizacao.jsx', 'gerarRelatorioUtilizacao.js', 'ChecklistFiscal.jsx', 'ConfigFiscal.jsx', 'lerXmlFiscal.js', 'CampoPessoa.jsx', 'gerarRelatorioTarefas.js', 'AcaoDocFiscal.jsx', 'RegistrarOcorrencia.jsx', 'PainelOcorrencias.jsx', 'gerarDossieOcorrencia.js', 'areaRestrita.js']) {
+    for (const nome of ['SeletorAtuacao.jsx', 'TelaAceitarConvite.jsx', 'TelaPainelFornecedor.jsx', 'AvisoPlanoTenant.jsx', 'CampoTelefone.jsx', 'TelaConfirmarEmail.jsx', 'ConsolePlataforma.jsx', 'TelaCalendarioManutencao.jsx', 'TelaPlanosManutencao.jsx', 'ModalTransferirOS.jsx', 'TelaPessoas.jsx', 'BibliotecaTreinamentos.jsx', 'EditorConteudoTreinamento.jsx', 'AreaTreinamentoColaborador.jsx', 'TelaMeusTreinamentos.jsx', 'AcessoColaborador.jsx', 'TextoAula.jsx', 'TelaProvaPublica.jsx', 'gerarCertificado.js', 'FichaCompetencias.jsx', 'EditorCompetencias.jsx', 'PainelDossie.jsx', 'gerarDossie.js', 'TelaMultas.jsx', 'gerarTermoDesconto.js', 'TelaDisciplinar.jsx', 'gerarMedidaDisciplinar.js', 'TelaAutuacoes.jsx', 'TelaInspecoes.jsx', 'ExecutarInspecao.jsx', 'EditorModeloInspecao.jsx', 'Esquemas.jsx', 'BibliotecaInspecoes.jsx', 'filaInspecoes.js', 'gerarRelatorioInspecao.js', 'TelaInspecaoPublica.jsx', 'RotinasLocacao.jsx', 'gerarRelatorioCumprimento.js', 'TelaContratos.jsx', 'TelaLocatario.jsx', 'Clientes.jsx', 'LogoEmpresa.jsx', 'logoEmpresa.js', 'comprimirImagem.js', 'ModelosContrato.jsx', 'gerarContrato.js', 'BibliotecaContratos.jsx', 'CampoMoeda.jsx', 'DadosEmpresa.jsx', 'CompletarPerfil.jsx', 'CnpjsPlataforma.jsx', 'ModalJustificativaCnpj.jsx', 'TelaMonitorCnpj.jsx', 'FichaBid.jsx', 'ModelosBid.jsx', 'TelaComercial.jsx', 'gerarBid.js', 'TelaBidPublica.jsx', 'EnviarBid.jsx', 'FichaPedido.jsx', 'gerarAT.js', 'TelaProgramacao.jsx', 'FichaAT.jsx', 'MesaProgramacao.jsx', 'EditorAT.jsx', 'VerArquivo.jsx', 'TelaATPublica.jsx', 'EditorFluxo.jsx', 'TelaMinhasViagens.jsx', 'CalendarioComercial.jsx', 'PainelProspeccao.jsx', 'ConcluirTarefa.jsx', 'DetalheExecutivo.jsx', 'marcaFoto.js', 'FiltroPeriodo.jsx', 'MedicaoModal.jsx', 'gerarMedicao.js', 'AbaMedicoes.jsx', 'gerarRelatorioViagem.js', 'DiasFrota.jsx', 'PainelUtilizacao.jsx', 'gerarRelatorioUtilizacao.js', 'ChecklistFiscal.jsx', 'ConfigFiscal.jsx', 'lerXmlFiscal.js', 'CampoPessoa.jsx', 'gerarRelatorioTarefas.js', 'AcaoDocFiscal.jsx', 'RegistrarOcorrencia.jsx', 'PainelOcorrencias.jsx', 'gerarDossieOcorrencia.js', 'areaRestrita.js', 'ConfigOcorrencias.jsx']) {
       const arq = acharNoFrontend(nome)[0];
       if (!arq) continue;
       const rastreado = execFileSync('git', ['ls-files', arq], { cwd: RAIZ, stdio: 'pipe' }).toString().trim();
