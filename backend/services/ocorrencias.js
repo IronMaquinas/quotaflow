@@ -88,16 +88,16 @@ const siglaDe = (origem) => (origem === 'at' ? 'tr' : 'lc');
 function limparCfg(c = {}, base = CONFIG_PADRAO.lc) {
   const arr = (v, max = 30) => (Array.isArray(v) ? [...new Set(v.map((x) => String(x || '').trim()).filter(Boolean))].slice(0, max) : null);
   return { perfis: (arr(c.perfis) ?? base.perfis).filter((p) => PERFIS_OC[p]), pessoas: (arr(c.pessoas) ?? base.pessoas).filter((p) => /^[cu]:[\w-]{1,60}$/.test(p)),
-    funcoes: (arr(c.funcoes) ?? base.funcoes).map((f) => f.slice(0, 80)), tipo_tarefa: TIPOS_TAREFA_OC.includes(String(c.tipo_tarefa || '').toUpperCase()) ? String(c.tipo_tarefa).toUpperCase() : base.tipo_tarefa };
+    funcoes: (arr(c.funcoes) ?? base.funcoes).map((f) => f.slice(0, 80)), tipo_tarefa: base.tipo_tarefa }; // 18h.4b: tipo da tarefa fixo pela origem (locação → TSK-CM, transporte → TSK-MT)
 }
 async function config(supabase, tenantId) {
   const t = (await q(supabase.from('tenants').select('*').eq('id', tenantId)).catch(() => []))[0] || {};
   const salvo = t.ocorrencias_config && typeof t.ocorrencias_config === 'object' ? t.ocorrencias_config : {};
-  return { lc: limparCfg(salvo.lc, CONFIG_PADRAO.lc), tr: limparCfg(salvo.tr, CONFIG_PADRAO.tr), migrou: 'ocorrencias_config' in t };
+  return { lc: { ...limparCfg(salvo.lc, CONFIG_PADRAO.lc), tipo_tarefa: CONFIG_PADRAO.lc.tipo_tarefa }, tr: { ...limparCfg(salvo.tr, CONFIG_PADRAO.tr), tipo_tarefa: CONFIG_PADRAO.tr.tipo_tarefa }, migrou: 'ocorrencias_config' in t };
 }
 async function salvarConfig(supabase, tenantId, body = {}) {
   const atual = await config(supabase, tenantId); if (!atual.migrou) return { status: 409, erro: 'Falta rodar a migration 069 no Supabase.' };
-  const novo = { lc: limparCfg(body.lc || atual.lc, atual.lc), tr: limparCfg(body.tr || atual.tr, atual.tr) };
+  const novo = { lc: limparCfg(body.lc || atual.lc, { ...atual.lc, tipo_tarefa: CONFIG_PADRAO.lc.tipo_tarefa }), tr: limparCfg(body.tr || atual.tr, { ...atual.tr, tipo_tarefa: CONFIG_PADRAO.tr.tipo_tarefa }) };
   const { error } = await supabase.from('tenants').update({ ocorrencias_config: novo }).eq('id', tenantId); if (error) throw new Error(error.message);
   return opcoesConfig(supabase, tenantId);
 }
@@ -106,8 +106,12 @@ async function opcoesConfig(supabase, tenantId) {
   const cfg = await config(supabase, tenantId);
   const ps = await require('./tarefas').pessoas(supabase, tenantId);
   const funcoes = [...new Set((await q(supabase.from('funcoes').select('*').eq('tenant_id', tenantId)).catch(() => [])).filter((f) => f.ativo !== false).map((f) => f.nome).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  const previa = {}; for (const k of ['lc', 'tr']) previa[k] = (await destinatarios(supabase, tenantId, k === 'tr' ? 'at' : 'contrato', cfg)).map((x) => x.email);
-  return { ...cfg, perfis_disponiveis: PERFIS_OC, tipos_tarefa: TIPOS_TAREFA_OC, funcoes, pessoas: ps.map((p) => ({ ref: p.ref, nome: p.nome, funcao: p.funcao, email: p.email, login: p.login })), previa };
+  const previa = {}; for (const k of ['lc', 'tr']) previa[k] = await destinatarios(supabase, tenantId, k === 'tr' ? 'at' : 'contrato', cfg); // 18h.4b: { email, nome, porque }
+  // 18h.4b: a tela calcula "quem vai receber" ao vivo (antes de salvar) com estes dados
+  const us = (await q(supabase.from('usuarios').select('*').eq('tenant_id', tenantId)).catch(() => [])).filter((u) => u.ativo !== false && u.ativo !== 0);
+  const ups = us.length ? await q(supabase.from('usuario_perfis').select('*').in('usuario_id', us.map((u) => u.id))).catch(() => []) : [];
+  const usuarios = us.map((u) => ({ nome: u.nome || u.email, email: String(u.email || '').toLowerCase() || null, perfis: [...new Set([u.perfil, ...ups.filter((x) => String(x.usuario_id) === String(u.id)).map((x) => x.perfil_codigo)].filter(Boolean))] })).filter((u) => u.email && !u.perfis.every((p) => ['locatario', 'fornecedor'].includes(p)));
+  return { ...cfg, perfis_disponiveis: PERFIS_OC, funcoes, usuarios, pessoas: ps.map((p) => ({ ref: p.ref, nome: p.nome, funcao: p.funcao, email: p.email, login: p.login, afastado: !!p.afastado })), previa };
 }
 /** e-mails (e quem) que recebem a ocorrência desta origem */
 async function destinatarios(supabase, tenantId, origem = 'contrato', cfg0 = null) {

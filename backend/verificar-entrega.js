@@ -277,7 +277,7 @@ const ESPERADO = {
   'front:CampoPessoa.jsx': 'efa3cd5aee2eeadae0805e7d4b6e8daa', // etapa 18g.2c
   'front:gerarRelatorioTarefas.js': '483dd597e30b11635886ba51406d36cf', // etapa 18g.2b (novo)
   'front:AcaoDocFiscal.jsx': 'eed319fa1d63b104146db0b8eabcd7ed', // etapa 18g.2.7
-  'services/ocorrencias.js': 'd9ceb48eda4c60add6ef7c6e52da57e7', // etapa 18h.4a
+  'services/ocorrencias.js': 'e71ff37a01b7e21a2c25a2c45a7121f3', // etapa 18h.4b
   'routes/ocorrencias.js': 'e9308a77ae9bd0e7a086d9d6efadbbfc', // etapa 18h (novo)
   'migrations/068_ocorrencias.sql': '4fff8fd8dccd6dd91dbb2f145bd19a22', // etapa 18h (novo)
   'front:RegistrarOcorrencia.jsx': 'b59b650ed622b93b8d191900a8dc86b2', // etapa 18h.4a
@@ -286,20 +286,13 @@ const ESPERADO = {
   'front:useCatalogo.js': '0cd8f09dcbe1e98d67908d2937743a8b', // etapa 18h.2
   'front:areaRestrita.js': '48e89b41e5e1c3b82d92b1bf996576e0', // etapa 18h.2 (novo)
   'migrations/069_ocorrencias_inc_config.sql': '021d999ba5637b4bb5404593c3e62259', // etapa 18h.4a (novo)
-  'front:ConfigOcorrencias.jsx': '67b2278ce309bd03808bc30c5a94b840', // etapa 18h.4a (novo)
+  'front:ConfigOcorrencias.jsx': 'e2f628418948592e63b8122860b52354', // etapa 18h.4b
 };
 
-// Antes de copiar a etapa 18h.4a — base: 18h.3.2
+// Antes de copiar a etapa 18h.4b — base: 18h.4a
 const ANTES = {
-  'services/ocorrencias.js': 'c1247bdac83659cccee50a1f8b9007d4',
-  'services/avisosVencimento.js': 'fec2b28a7081f59510ef21b728a6c341',
-  'services/avisosPessoas.js': '0b4702081b9c1e8dfb96d8bb5140e9a1',
-  'services/tarefasFiscais.js': '348da42ae52a6337ae1a0df41b2882d2',
-  'routes/configuracoes.js': '369e5ebba188ca83571f631f74dacc8a',
-  'front:TelaConfiguracoes.jsx': '2b3cd868a39ff5c254253899b0b7b2a5',
-  'front:TelaPessoas.jsx': '07f2dc2f969973efc6ee862ffdec9c71',
-  'front:RegistrarOcorrencia.jsx': 'c722d9a24625de062e63ee4c898abeef',
-  'front:gerarDossieOcorrencia.js': '6de903379c0d2c860d45ba43d767149b',
+  'services/ocorrencias.js': 'd9ceb48eda4c60add6ef7c6e52da57e7',
+  'front:ConfigOcorrencias.jsx': '67b2278ce309bd03808bc30c5a94b840',
 };
 
 const RAIZ = process.cwd();
@@ -337,7 +330,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18h.4a)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18h.4b)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
