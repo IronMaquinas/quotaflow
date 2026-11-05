@@ -221,10 +221,12 @@ export default function App() {
   const setNota = (chave, texto) => setNotasPeriodo(prev=>({...prev,[chave]:texto}));
 
   // Buscar pendências assim que o usuário logar
+  // 18h.2: locatário e colaborador (sozinhos) não acessam o estoque — o 403 desta chamada derrubava a sessão e o login entrava em loop
   useEffect(() => {
-    if (usuario) {
-      buscarTotalPendencias();
-    }
+    if (!usuario) return;
+    const ps = Array.isArray(usuario.perfis) && usuario.perfis.length ? usuario.perfis : [usuario.perfil].filter(Boolean);
+    if (ps.length && ps.every((p) => ["locatario", "colaborador"].includes(p))) return;
+    buscarTotalPendencias();
   }, [usuario]);
 
   // M4.6: rotas por hash — portal, esqueci senha, reset senha.
@@ -246,8 +248,7 @@ export default function App() {
   }
 
   const login = (user) => {
-    setUsuario(user);
-    buscarTotalPendencias(); 
+    setUsuario(user); // 18h.2: o contador de pendências vem pelo useEffect (que pula locatário/colaborador)
   
     // Salvar dados no localStorage
     localStorage.setItem('usuario', JSON.stringify(user));
@@ -256,6 +257,10 @@ export default function App() {
       apiService.setToken(user.access_token);
     }
     
+    // 18h.2: locatário/colaborador (sozinhos) têm tela própria — não carregam os dados do sistema (403 → loop de login)
+    { const ps = Array.isArray(user.perfis) && user.perfis.length ? user.perfis : [user.perfil].filter(Boolean);
+      if (ps.length && ps.every((x) => ["locatario", "colaborador"].includes(x))) return; }
+
     // 🔥 SE FOR FORNECEDOR, REDIRECIONA PARA O PORTAL E NÃO CARREGA DADOS DE COMPRADOR
     if (user.perfil === 'fornecedor' || user.fornecedor_id) {
       window.location.hash = '#/portal'; // Redireciona para o portal

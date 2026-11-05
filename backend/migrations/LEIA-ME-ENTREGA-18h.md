@@ -1,6 +1,8 @@
-# Entrega 18h + 18h.1 — ⚠️ Ocorrência / sinistro unificado (SIN-AAAA-NNNN)
+# Entrega 18h + 18h.1 + 18h.2 — ⚠️ Ocorrência / sinistro unificado (SIN-AAAA-NNNN)
 
-> **18h.1:** fotos corrigidas — ao escolher, aparece a miniatura já comprimida e com a tarja, clique amplia, ✕ pergunta "Remover a foto?". Este zip substitui o da 18h (traz tudo).
+> **18h.1:** fotos corrigidas — ao escolher, aparece a miniatura já comprimida e com a tarja, clique amplia, ✕ pergunta "Remover a foto?". 
+> **18h.2:** login do cliente (locatário) não entra mais em loop — `frontend/src/App.jsx`, `frontend/src/hooks/useCatalogo.js`, `frontend/src/utils/areaRestrita.js` (novo).
+> Este zip substitui os anteriores da 18h (traz tudo).
 
 **Migration 068** — rodar `backend/migrations/068_ocorrencias.sql` no SQL Editor do Supabase (idempotente, pode rodar 2×) **antes** de subir o backend.
 

@@ -1,4 +1,5 @@
 import { useState, useCallback, useEffect } from "react";
+import { soAreaRestrita } from "../utils/areaRestrita";
 import apiService from "../services/apiService";
 
 export function useCatalogo() {
@@ -43,6 +44,7 @@ export function useCatalogo() {
   }, []);
 
   useEffect(() => {
+    if (soAreaRestrita()) return; // 18h.2: locatário/colaborador não acessam o catálogo (403 → loop de login)
     listar();
     carregarCategorias();
     carregarMarcas();
