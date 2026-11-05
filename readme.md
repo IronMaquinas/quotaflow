@@ -961,6 +961,7 @@ npm run dev
     - Contador da aba ⚠️ Ocorrências **no padrão do de Medições** (só o número, vermelho — sem o ⛔, que quebrava o layout) e **também na tela do cliente**. Abas de 📑 Contratos e da tela do cliente numa linha só, rolando para o lado no celular (não quebram mais).
     - Fotos e BO da ocorrência **abrem sobre a tela do sistema** (foto ampliada com legenda; PDF/imagem no 👁 `VerArquivo`), não mais em nova aba do navegador — padrão do SaaS. Foto antiga/da galeria com borda laranja na miniatura.
     - Se alguma foto/BO não subir ao registrar, o aviso agora é de **erro** (vermelho) e o detalhe da ocorrência abre mostrando quais arquivos faltaram, para reenviar com ＋ Fotos / ＋ BO (antes vinha misturado na mensagem de sucesso).
+  - **18h.3.2 (05/11):** **a TSK-MT conversa com a ocorrência** (Marcony): o vínculo **SIN** na tarefa agora é link — abre 📑 Contratos → ⚠️ Ocorrências já no detalhe do SIN; e a tarefa **acompanha a situação**: encerrada → **concluída**, em análise/atendimento → **em andamento**, reaberta → volta para em andamento (registrado no histórico da tarefa "pela SIN-…"; cancelada não mexe; voltar para "registrada" não desfaz a tarefa já iniciada). **Conversa quase em tempo real:** com o SIN aberto, a tela relê a cada 15 s (só com a aba do navegador visível) — a mensagem do outro lado aparece sem recarregar.
   - **SaaS genérico:** `tipo_execucao` no modelo de BID/PV (transporte → AT; locação → contrato de locação existente; serviço → AS; venda → entrega). Nesta etapa só transporte gera execução.
   - Rotas `/api/programacao` (`GET /base`, `/execucoes`, `/agenda`, `/pedidos`, `/pvs/:id`; `POST /pvs/:id/at`; `GET|PUT /execucoes/:id`; `POST /execucoes/:id/status`; anexos `POST|GET|DELETE /execucoes/:id/anexos[/:anexo]`; `GET /execucoes/:id/documento`) e `GET /api/comercial/pvs/:id/execucoes` (leitura). Travas respondem 409. Migration 055.
   - Rotas: `/api/comercial/bids/:id/revisao` (GET), `/enviar`, `/reenviar`, `/revisao/iniciar`, `/revisao/descartar`, `/aceite-externo`; `POST /bids/:id/fase` só aceita `perdido` e `reabrir`. Público: `/api/bid-link/:token` (GET, `/responder`, `/codigo`, `/aceitar`) — 40 chamadas por link + IP por hora. Migration 052. **Próxima: 15c** — Pedido de Venda (PV) a partir do BID aceito. **Futuro:** perfil **cliente** com login (mesmo padrão do locatário) — ver `claude/desenho-bid-15b.md`.
@@ -1470,6 +1471,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 | **18g.3** | **Ficha do CT-e** (copiar por campo, PDF, CSV) + apólices em ⚙️ |
 | ~~18h~~ ✅ | entregue em 04/11 — ⚠️ ocorrência / sinistro unificado SIN-AAAA-NNNN (migration 068) |
 | **18h.4** | **📊 Indicadores das ocorrências** — total por período/tipo/responsabilidade, tempo médio de resolução, dias parados, **disponibilidade por equipamento e contrato** (dias contratados − parados por responsabilidade da locadora; o que o cliente paga na locação é disponibilidade — exemplo do Marcony: a internet cobrada cheia mesmo com 2 dias fora), perda de receita estimada (só admin/gestor), ranking de equipamentos/clientes, relatório A4 + CSV por equipamento e contrato |
+| **💬 Chat na demanda spot** | pedido do Marcony (05/11): levar o modelo de conversa da ocorrência (SIN) para a **demanda spot** — mensagens entre comprador e fornecedor dentro da demanda, lado a lado, com histórico. **Tempo real de verdade** (Supabase Realtime ou WebSocket, sem precisar recarregar), que depois pode substituir também a releitura a cada 15 s da ocorrência |
 | **🧭 Menu lateral na tela do cliente (locatário)** | pedido do Marcony (05/11): trocar as abas superiores (📑 Contratos e inspeções · 📏 Medições · ⚠️ Ocorrências) pelo **menu lateral esquerdo, padrão do SaaS** (no celular, menu recolhível), com os contadores no item do menu |
 | **🔢 Numeração das ocorrências por origem** | em decisão (05/11): `SIN-AAAA-NNNN` → código com a origem (ex.: `…-LC-` locação / `…-TR-` transporte, como as TSK) e, pensando na escala global, prefixo neutro de idioma (ex.: `INC`, incidente) em vez de `SIN` — decidir antes de clientes reais (o número é imutável) |
 | **💰 Valor gerado (savings)** | ideia de 02/11 (consultora de precificação, exemplo Tractian): medir o **estado atual** do cliente na entrada e mostrar os **ganhos reais** com o QuotaFlow — savings calculados pelos dados (compras, multas, manutenção, comercial, horas poupadas) + savings informados pelo cliente, ROI × assinatura e contador agregado para marketing. Desenho em `claude/desenho-valor-gerado.md` |
@@ -1488,7 +1490,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 05/11/2026 (etapa 18h.3.1)
+**Última atualização deste documento:** 05/11/2026 (etapa 18h.3.2)
 
 --------------------------------------------------------------------------------
 

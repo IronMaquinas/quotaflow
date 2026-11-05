@@ -179,6 +179,8 @@ export default function App() {
   const [abrirAT, setAbrirAT] = useState(null); // 17b: multa → "abrir AT-…" na 🚛 Programação
   const [abrirContrato, setAbrirContrato] = useState(null); // 18b.7: Cliente 360° → 📑 contrato
   useEffect(() => { const f = (ev) => { setAbrirContrato({ id: ev.detail, em: Date.now() }); setTela("contratos"); }; window.addEventListener("qf-abrir-contrato", f); return () => window.removeEventListener("qf-abrir-contrato", f); }, []);
+  const [abrirOcorrencia, setAbrirOcorrencia] = useState(null); // 18h.3.2: tarefa TSK-MT → ⚠️ ocorrência (SIN)
+  useEffect(() => { const f = (ev) => { if (ev.detail == null) return; setAbrirOcorrencia({ id: ev.detail, em: Date.now() }); setTela("contratos"); }; window.addEventListener("qf-abrir-ocorrencia", f); return () => window.removeEventListener("qf-abrir-ocorrencia", f); }, []);
   const [abrirProsp, setAbrirProsp] = useState(null); // 18b.2: tarefa do ✅ Plano → 📣 prospecção no Comercial
   useEffect(() => { const f = (ev) => { setAbrirProsp({ id: ev.detail, em: Date.now() }); setTela("comercial"); }; window.addEventListener("qf-abrir-prospeccao", f); return () => window.removeEventListener("qf-abrir-prospeccao", f); }, []);
   useEffect(() => { const f = (ev) => { setAbrirAT({ id: ev.detail, em: Date.now() }); setTela("programacao"); }; window.addEventListener("qf-abrir-at", f); return () => window.removeEventListener("qf-abrir-at", f); }, []); // eslint-disable-line
@@ -803,7 +805,7 @@ const perfil = PERFIS[usuario.perfil] || {
 
         {temAcesso(tela) && tela === "contratos" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
-            <TelaContratos C={C} s={s} abrirContrato={abrirContrato} onAbrirInspecoes={temAcesso("inspecoes") ? () => setTela("inspecoes") : null} />
+            <TelaContratos C={C} s={s} abrirContrato={abrirContrato} abrirOcorrencia={abrirOcorrencia} onAbrirInspecoes={temAcesso("inspecoes") ? () => setTela("inspecoes") : null} />
           </div>)}
 
         {temAcesso(tela) && tela === "inspecoes" && (

@@ -62,6 +62,8 @@ export function DetalheOcorrencia({ C, s, modo = "empresa", id, usuario = null, 
   const [confirmar, setConfirmar] = useState(null); const [motivo, setMotivo] = useState("");
   const carregar = useCallback(async () => { try { setD(await apiService.get(`${base}/${id}`)); } catch (e) { setErro(e.message); } }, [base, id]);
   useEffect(() => { carregar(); }, [carregar]);
+  // 18h.3.2: conversa quase em tempo real — relê a cada 15 s com a ocorrência aberta (e a aba do navegador visível)
+  useEffect(() => { const t = setInterval(() => { if (!document.hidden) apiService.get(`${base}/${id}`).then((r) => setD((v) => (JSON.stringify(v?.ocorrencia?.mensagens) === JSON.stringify(r?.ocorrencia?.mensagens) && v?.ocorrencia?.status === r?.ocorrencia?.status ? v : r))).catch(() => {}); }, 15000); return () => clearInterval(t); }, [base, id]);
   const o = d?.ocorrencia; const c = o?.contexto || {}; const fechada = o?.status === "encerrada";
   const acao = async (fn) => { setOcupado(true); setErro(null); try { await fn(); await carregar(); } catch (e) { setErro(e.message); } finally { setOcupado(false); } };
   const mudar = (corpo) => acao(async () => { await apiService.put(`${base}/${id}`, corpo); setConfirmar(null); setMotivo(""); });

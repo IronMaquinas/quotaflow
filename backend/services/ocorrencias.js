@@ -242,6 +242,17 @@ async function gravar(supabase, tenantId, o, upd) {
   const { data, error } = await supabase.from('ocorrencias').update({ ...upd, atualizado_em: new Date().toISOString() }).eq('id', o.id).eq('tenant_id', tenantId).select();
   if (error) throw new Error(error.message); return data[0];
 }
+/** 18h.3.2: a TSK-MT acompanha a ocorrência — encerrada → concluída · em análise/atendimento → em andamento · registrada → pendente (cancelada fica como está) */
+const STATUS_TAREFA = { registrada: 'pendente', em_analise: 'em_andamento', em_atendimento: 'em_andamento', encerrada: 'concluida' };
+async function sincronizarTarefa(supabase, tenantId, tarefaId, status, quem, numero) {
+  try {
+    const T = require('./tarefas'); const alvo = STATUS_TAREFA[status];
+    const t = (await q(supabase.from('tarefas').select('*').eq('tenant_id', tenantId).eq('id', tarefaId)))[0];
+    if (!t || !alvo || t.status === alvo || t.status === 'cancelada') return;
+    if (alvo === 'pendente' && t.status === 'em_andamento') return; // voltou para "registrada": não desfaz o trabalho já iniciado
+    await T.atualizar(supabase, tenantId, { id: quem.usuarioId || null, nome: `${quem.usuarioNome || 'QuotaFlow'} (pela ${numero})` }, tarefaId, { status: alvo });
+  } catch (e) { console.error('⚠️ [ocorrencias] tarefa não sincronizada:', e?.message || e); }
+}
 /** empresa: status e responsabilidade */
 async function atualizar(supabase, tenantId, quem, id, body = {}) {
   const o = await doTenant(supabase, tenantId, id); if (!o) return { status: 404, erro: 'Ocorrência não encontrada' };
@@ -260,7 +271,10 @@ async function atualizar(supabase, tenantId, quem, id, body = {}) {
   if (!hist.length) return { ocorrencia: await enfeitar(supabase, tenantId, o) };
   upd.historico = [...jsonArr(o.historico), ...hist];
   const n = await gravar(supabase, tenantId, o, upd);
-  if (o.tarefa_id != null) require('./tarefas').registrar(supabase, tenantId, o.tarefa_id, { nome: quem.usuarioNome || null }, 'comentario', { texto: `${o.numero}: ${hist.map((h) => `${h.acao} → ${h.para}`).join(' · ')}` });
+  if (o.tarefa_id != null) {
+    await require('./tarefas').registrar(supabase, tenantId, o.tarefa_id, { nome: quem.usuarioNome || null }, 'comentario', { texto: `${o.numero}: ${hist.map((h) => `${h.acao} → ${h.para}`).join(' · ')}` });
+    if (upd.status) await sincronizarTarefa(supabase, tenantId, o.tarefa_id, upd.status, quem, o.numero);
+  }
   return { ocorrencia: await enfeitar(supabase, tenantId, n) };
 }
 async function mensagem(supabase, tenantId, quem, id, body = {}, { locatarioId = null } = {}) {

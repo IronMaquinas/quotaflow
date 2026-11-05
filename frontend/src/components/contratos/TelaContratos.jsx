@@ -21,7 +21,7 @@ export const FASE = { elaboracao: ["📝 EM ELABORAÇÃO", "#64748b"], aguardand
 const faseDe = (c) => c.fase || (c.status === "ativo" ? "elaboracao" : "encerrado");
 const vazio = () => ({ cliente: "", cliente_doc: "", local: "", contato_nome: "", contato_email: "", contato_telefone: "", inicio: hoje(), fim_previsto: "", obs: "" });
 
-export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato }) {
+export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, abrirOcorrencia = null }) {
   const [d, setD] = useState(null);
   const [painel, setPainel] = useState(null); // equipamentos e modelos (para adicionar ao contrato)
   const [semMigration, setSemMigration] = useState(false);
@@ -64,6 +64,8 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato })
   const [ocAbertas, setOcAbertas] = useState({ n: 0, paradas: 0 });
   const carregarOc = async () => { try { const l = (await apiService.get("/ocorrencias", { status: "abertas" })).ocorrencias || []; setOcAbertas({ n: l.length, paradas: l.filter((o) => o.parado).length }); } catch { setOcAbertas({ n: 0, paradas: 0 }); } };
   useEffect(() => { carregarOc(); }, [aba]); // eslint-disable-line
+  const [ocAbrir, setOcAbrir] = useState(null); // 18h.3.2: veio da tarefa TSK-MT
+  useEffect(() => { if (abrirOcorrencia?.id != null) { setFiltroOc(null); setAba("ocorrencias"); setOcAbrir(abrirOcorrencia.id); } }, [abrirOcorrencia]);
   const paraEnviar = pendMed.filter((x) => ["aberta", "devolvida"].includes(x.status)).length; // 18d.5: contador da aba
 
   const modelos = (painel?.modelos || []).filter((m) => m.ativo !== false);
@@ -95,7 +97,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato })
       {aba === "clientes" && <AbaClientes C={C} s={s} editar={editar} onErro={err} onOk={ok} abrirId={clienteAbrir} onAberto={() => setClienteAbrir(null)} />}
       {aba === "modelos" && <AbaModelos C={C} s={s} editar={editar} onErro={err} onOk={ok} />}
       {aba === "ocorrencias" && <>{filtroOc && <div style={{ fontSize: 12.5, color: C.textSub, marginBottom: 8 }}>Contrato {filtroOc.numero} · <button type="button" onClick={() => setFiltroOc(null)} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", padding: 0, fontSize: 12.5 }}>ver todos</button></div>}
-        <PainelOcorrencias C={C} s={s} modo="empresa" podeEditar={editar} filtro={filtroOc ? { contrato_id: filtroOc.id } : {}} onErro={err} onOk={ok} onMudou={carregarOc} /></>}{/* 18h */}
+        <PainelOcorrencias C={C} s={s} modo="empresa" podeEditar={editar} filtro={filtroOc ? { contrato_id: filtroOc.id } : {}} onErro={err} onOk={ok} onMudou={carregarOc} abrirId={ocAbrir} onAberto={() => setOcAbrir(null)} /></>}{/* 18h */}
       {aba === "medicoes" && <AbaMedicoes C={C} s={s} editar={editar} filtroContrato={filtroMed} onFiltroUsado={() => setFiltroMed(null)} onMudou={carregarPend} onErro={err} onOk={ok} />}{/* 18d.5 */}
       {aba === "contratos" && <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
         {[["abertos", "Abertos"], ["elaboracao", "📝 Em elaboração"], ["aguardando_aceite", "⏳ Aguardando aceite"], ["andamento", "✅ Em andamento"], ["encerrado", "🏁 Encerrados"], ["todos", "Todos"]].map(([k, l]) => <button key={k} type="button" onClick={() => setFiltro(k)} style={{ ...s.btn(filtro === k, C.accent), cursor: "pointer", padding: "5px 12px", fontSize: 12, color: filtro === k ? "#fff" : C.text }}>{l}</button>)}
