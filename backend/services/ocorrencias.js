@@ -368,4 +368,70 @@ async function paradasDoContrato(supabase, tenantId, contratoId, inicio, fim) {
   }).filter((x) => x.dias > 0);
 }
 
-module.exports = { config, salvarConfig, opcoesConfig, destinatarios, TIPOS, STATUS, RESP, criar, listar, detalhe, atualizar, mensagem, anexar, opcoesLocatario, paradasDoContrato, contextoAT, contextoContrato, _definirEnvio };
+// ─── 18h.4: 📊 indicadores (período) — ocorrências, resolução, dias parados e DISPONIBILIDADE ─────────────
+//   Na locação o cliente paga por disponibilidade: disponibilidade = (dias contratados − dias parados que NÃO são
+//   responsabilidade do cliente) ÷ dias contratados, por equipamento e por contrato. Parada por responsabilidade do cliente
+//   (mau uso) não conta contra a locadora. Receita (valor mensal da locação ÷ 30 por dia) só para gestor/admin.
+//   Tudo é estimativa para gestão — nada é descontado sozinho.
+const DIA = 86400000;
+const iniDia = (d) => Date.parse(`${String(d).slice(0, 10)}T00:00:00-03:00`);
+const fimDia = (d) => Date.parse(`${String(d).slice(0, 10)}T23:59:59.999-03:00`);
+const diasSobre = (a0, a1, b0, b1) => { const de = Math.max(a0, b0); const ate = Math.min(a1, b1); return ate > de ? Math.ceil((ate - de) / DIA) : 0; };
+const r1 = (n) => Math.round(n * 10) / 10; const r2 = (n) => Math.round(n * 100) / 100;
+async function indicadores(supabase, tenantId, { de = null, ate = null, perfis = null, receita = false } = {}) {
+  let todas; try { todas = await q(supabase.from('ocorrencias').select('*').eq('tenant_id', tenantId)); } catch (e) { if (sem068(e)) return { sem_migration: true }; throw e; }
+  const cfg = perfis ? await config(supabase, tenantId) : null;
+  if (perfis) todas = todas.filter((o) => podeOrigem(perfis, cfg, o.origem));
+  const agora = Date.now(); const hojeTxt = new Date(agora - 3 * 3600000).toISOString().slice(0, 10);
+  const P0 = de ? iniDia(de) : Math.min(agora, ...todas.map((o) => Date.parse(o.ocorrido_em))); const P1 = ate ? Math.min(fimDia(ate), agora) : agora;
+  const fimOc = (o) => (o.encerrado_em ? Date.parse(o.encerrado_em) : agora);
+  const doPeriodo = todas.filter((o) => { const t = Date.parse(o.ocorrido_em); return t >= P0 && t <= P1; });
+  const conta = (lista, chave, nomes) => Object.entries(lista.reduce((m, o) => ((m[o[chave]] = (m[o[chave]] || 0) + 1), m), {})).map(([k, n]) => ({ k, nome: nomes[k] || k, n })).sort((a, b) => b.n - a.n);
+  const enc = doPeriodo.filter((o) => o.encerrado_em);
+  const horas = enc.map((o) => (Date.parse(o.encerrado_em) - Date.parse(o.ocorrido_em)) / 3600000).filter((h) => h >= 0);
+  const abertasAntigas = todas.filter((o) => o.status !== 'encerrada').map((o) => ({ id: o.id, numero: o.numero, tipo: TIPOS[o.tipo], status: STATUS[o.status], dias: Math.floor((agora - Date.parse(o.ocorrido_em)) / DIA), parado: !!o.parado, resumo: resumoTxt(o) }))
+    .sort((a, b) => b.dias - a.dias).slice(0, 5);
+  // dias parados no período (qualquer ocorrência parada que cruza o período, mesmo aberta antes)
+  const paradas = todas.filter((o) => o.parado).map((o) => ({ o, dias: diasSobre(Date.parse(o.ocorrido_em), fimOc(o), P0, P1) })).filter((x) => x.dias > 0);
+  // disponibilidade (locação)
+  const locs = (await q(supabase.from('equipamento_locacoes').select('*').eq('tenant_id', tenantId)).catch(() => [])).filter((l) => l.contrato_id != null && l.inicio);
+  const eqs = new Map((await q(supabase.from('equipamentos').select('*').eq('tenant_id', tenantId)).catch(() => [])).map((e) => [String(e.id), e]));
+  const cts = new Map((await q(supabase.from('locacao_contratos').select('*').eq('tenant_id', tenantId)).catch(() => [])).map((c) => [String(c.id), c]));
+  const porEq = new Map(); const porCt = new Map();
+  for (const l of locs) {
+    const L0 = iniDia(l.inicio); const L1 = l.fim_real ? fimDia(l.fim_real) : (l.status === 'ativa' ? agora : (l.fim_previsto ? fimDia(l.fim_previsto) : agora));
+    const contratados = diasSobre(L0, L1, P0, P1); if (!contratados) continue;
+    let indisp = 0; let doCliente = 0;
+    for (const { o } of paradas.filter((x) => x.o.origem === 'contrato' && String(x.o.contrato_id) === String(l.contrato_id) && String(x.o.equipamento_id) === String(l.equipamento_id))) {
+      const d = diasSobre(Date.parse(o.ocorrido_em), fimOc(o), Math.max(P0, L0), Math.min(P1, L1)); if (o.responsabilidade === 'cliente') doCliente += d; else indisp += d;
+    }
+    indisp = Math.min(indisp, contratados); doCliente = Math.min(doCliente, contratados - indisp);
+    const diaria = l.valor_mensal != null ? Number(l.valor_mensal) / 30 : null;
+    const e = eqs.get(String(l.equipamento_id)) || {}; const c = cts.get(String(l.contrato_id)) || {};
+    const somar = (mapa, chave, base) => { const x = mapa.get(chave) || { ...base, contratados: 0, indisponiveis: 0, do_cliente: 0, perda: 0, cobravel: 0, sem_valor: false, ocorrencias: 0 };
+      x.contratados += contratados; x.indisponiveis += indisp; x.do_cliente += doCliente;
+      if (diaria == null) { if (indisp || doCliente) x.sem_valor = true; } else { x.perda += indisp * diaria; x.cobravel += doCliente * diaria; } mapa.set(chave, x); };
+    somar(porEq, String(l.equipamento_id), { equipamento_id: l.equipamento_id, tag: e.tag || null, nome: e.nome || null });
+    somar(porCt, String(l.contrato_id), { contrato_id: l.contrato_id, numero: c.numero || null, cliente: c.cliente || null });
+  }
+  for (const o of doPeriodo.filter((x) => x.origem === 'contrato')) { const a = porEq.get(String(o.equipamento_id)); if (a) a.ocorrencias++; const b = porCt.get(String(o.contrato_id)); if (b) b.ocorrencias++; }
+  const fechar = (x) => ({ ...x, disponibilidade: x.contratados ? r1(((x.contratados - x.indisponiveis) / x.contratados) * 100) : null, ...(receita ? { perda: r2(x.perda), cobravel: r2(x.cobravel) } : { perda: undefined, cobravel: undefined }) });
+  const equipamentos = [...porEq.values()].map(fechar).sort((a, b) => (a.disponibilidade ?? 101) - (b.disponibilidade ?? 101) || b.ocorrencias - a.ocorrencias);
+  const contratos = [...porCt.values()].map(fechar).sort((a, b) => (a.disponibilidade ?? 101) - (b.disponibilidade ?? 101) || b.ocorrencias - a.ocorrencias);
+  const tot = equipamentos.reduce((m, x) => ({ contratados: m.contratados + x.contratados, indisponiveis: m.indisponiveis + x.indisponiveis, do_cliente: m.do_cliente + x.do_cliente, perda: m.perda + (x.perda || 0), cobravel: m.cobravel + (x.cobravel || 0) }), { contratados: 0, indisponiveis: 0, do_cliente: 0, perda: 0, cobravel: 0 });
+  // clientes (todas as origens): ocorrências e quantas são de responsabilidade do cliente
+  const cli = new Map(); for (const o of doPeriodo) { const nome = o.contexto?.contrato?.cliente || o.contexto?.at?.cliente || '—'; const x = cli.get(nome) || { cliente: nome, ocorrencias: 0, do_cliente: 0, dias_parados: 0 }; x.ocorrencias++; if (o.responsabilidade === 'cliente') x.do_cliente++; cli.set(nome, x); }
+  for (const { o, dias } of paradas) { const nome = o.contexto?.contrato?.cliente || o.contexto?.at?.cliente || '—'; const x = cli.get(nome) || { cliente: nome, ocorrencias: 0, do_cliente: 0, dias_parados: 0 }; x.dias_parados += dias; cli.set(nome, x); }
+  return {
+    periodo: { de: de || new Date(P0 - 3 * 3600000).toISOString().slice(0, 10), ate: ate || hojeTxt }, receita: !!receita,
+    resumo: { total: doPeriodo.length, abertas: todas.filter((o) => o.status !== 'encerrada').length, encerradas_no_periodo: enc.length, paradas_agora: todas.filter((o) => o.parado && o.status !== 'encerrada').length,
+      resolucao_media_dias: horas.length ? r1(horas.reduce((a, b) => a + b, 0) / horas.length / 24) : null, resolucao_max_dias: horas.length ? r1(Math.max(...horas) / 24) : null,
+      dias_parados: paradas.reduce((a, x) => a + x.dias, 0),
+      disponibilidade: tot.contratados ? r1(((tot.contratados - tot.indisponiveis) / tot.contratados) * 100) : null, dias_contratados: tot.contratados, dias_indisponiveis: tot.indisponiveis, dias_parados_cliente: tot.do_cliente,
+      ...(receita ? { perda_estimada: r2(tot.perda), cobravel_cliente: r2(tot.cobravel) } : {}) },
+    por_tipo: conta(doPeriodo, 'tipo', TIPOS), por_responsabilidade: conta(doPeriodo, 'responsabilidade', RESP), por_origem: conta(doPeriodo, 'origem', { contrato: 'Locação', at: 'Transporte' }),
+    abertas_mais_antigas: abertasAntigas, equipamentos, contratos, clientes: [...cli.values()].sort((a, b) => b.ocorrencias - a.ocorrencias || b.dias_parados - a.dias_parados).slice(0, 10),
+  };
+}
+
+module.exports = { indicadores, config, salvarConfig, opcoesConfig, destinatarios, TIPOS, STATUS, RESP, criar, listar, detalhe, atualizar, mensagem, anexar, opcoesLocatario, paradasDoContrato, contextoAT, contextoContrato, _definirEnvio };

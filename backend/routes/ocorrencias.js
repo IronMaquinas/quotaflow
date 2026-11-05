@@ -5,6 +5,7 @@
 //   GET  /:id                                                 detalhe (fotos com link assinado, conversa, histórico, contexto)
 //   POST /                                                    { origem:'at'|'contrato', execucao_id | contrato_id+equipamento_id, tipo, parado, ocorrido_em, local, gps, descricao, inspecao_id }
 //   PUT  /:id                                                 { status, responsabilidade, parado, motivo } — gestor/admin ou perfil com acesso à origem (18h.4c)
+//   GET  /indicadores?de=&ate=                                 18h.4 — 📊 total, resolução, dias parados, disponibilidade por equipamento/contrato, perda estimada (só gestor/admin)
 //   POST /:id/mensagens { texto } · POST /:id/anexos { tipo:'foto'|'bo'|'documento', nome, mime, base64, legenda, gps }
 // Bloqueio de regra → 409 (403 derruba a sessão no front).
 const express = require('express');
@@ -22,6 +23,7 @@ const responder = (fn) => async (req, res) => {
 router.use((req, res, next) => (perfisDe(req).some((p) => VER.includes(p)) ? next() : res.status(403).json({ erro: 'Sem acesso às ocorrências' })));
 
 router.get('/', responder((req) => OC.listar(supabase, req.tenantId, req.query || {}, { perfis: perfisDe(req) }))); // 18h.4c: só as origens que o perfil acessa
+router.get('/indicadores', responder((req) => OC.indicadores(supabase, req.tenantId, { de: req.query.de || null, ate: req.query.ate || null, perfis: perfisDe(req), receita: perfisDe(req).some((p) => ['admin', 'gestor'].includes(p)) }))); // 18h.4: receita só gestor/admin
 router.get('/:id', responder((req) => OC.detalhe(supabase, req.tenantId, req.params.id, { perfis: perfisDe(req) })));
 router.post('/', responder(async (req) => OC.criar(supabase, req.tenantId, await quem(req), req.body || {})));
 router.put('/:id', responder(async (req) => OC.atualizar(supabase, req.tenantId, await quem(req), req.params.id, req.body || {}))); // 18h.4c: gestor/admin ou perfil com acesso à origem (⚙️ Configurações)

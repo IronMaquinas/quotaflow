@@ -6,7 +6,8 @@ import { useState, useEffect, useCallback } from "react";
 import apiService from "../../services/apiService";
 import RegistrarOcorrencia, { TIPOS_OC, enviarArquivos } from "./RegistrarOcorrencia";
 import { abrirDossie, prepararJanela } from "../../utils/gerarDossieOcorrencia";
-import VerArquivo from "../programacao/VerArquivo"; // 18h.4: arquivo abre sobre a tela, padrão do sistema
+import VerArquivo from "../programacao/VerArquivo";
+import IndicadoresOcorrencias from "./IndicadoresOcorrencias"; // 18h.4 // 18h.4: arquivo abre sobre a tela, padrão do sistema
 
 const STATUS = { registrada: "Registrada", em_analise: "Em análise", em_atendimento: "Em atendimento", encerrada: "Encerrada" };
 const RESP = { a_definir: "A definir", cliente: "Cliente", locadora: "Locadora", seguro: "Seguro" };
@@ -18,6 +19,7 @@ export default function PainelOcorrencias({ C, s, modo = "empresa", usuario = nu
   const [lista, setLista] = useState(null); const [semMig, setSemMig] = useState(false);
   const [ver, setVer] = useState("abertas"); const [aberta, setAberta] = useState(null); const [falhasIni, setFalhasIni] = useState(null); const [novo, setNovo] = useState(false); const [contratos, setContratos] = useState(null);
   const carregar = useCallback(async () => {
+    if (ver === "indicadores") return;
     try { const r = await apiService.get(base, { ...filtro, ...(ver === "abertas" ? { status: "abertas" } : {}) }); setLista(r.ocorrencias || []); setSemMig(!!r.sem_migration); onMudou?.(); }
     catch (e) { onErro?.(e.message); setLista([]); }
   }, [base, ver, filtro.contrato_id, filtro.execucao_id]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -33,12 +35,12 @@ export default function PainelOcorrencias({ C, s, modo = "empresa", usuario = nu
   };
   return <div>
     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 10 }}>
-      {[["abertas", "Em aberto"], ["todas", "Todas"]].map(([k, l]) => <button key={k} type="button" onClick={() => setVer(k)} style={{ ...s.btn(ver === k), padding: "6px 12px", fontSize: 12.5, cursor: "pointer" }}>{l}</button>)}
+      {[["abertas", "Em aberto"], ["todas", "Todas"], ...(modo === "empresa" && !filtro.contrato_id && !filtro.execucao_id ? [["indicadores", "📊 Indicadores"]] : [])].map(([k, l]) => <button key={k} type="button" onClick={() => setVer(k)} style={{ ...s.btn(ver === k), padding: "6px 12px", fontSize: 12.5, cursor: "pointer" }}>{l}</button>)}
       <span style={{ flex: 1 }} />
-      {!semBotaoNovo && <button type="button" onClick={abrirNovo} style={{ ...s.btn(true), padding: "7px 14px", fontSize: 13, cursor: "pointer" }}>⚠️ Registrar ocorrência</button>}
+      {!semBotaoNovo && ver !== "indicadores" && <button type="button" onClick={abrirNovo} style={{ ...s.btn(true), padding: "7px 14px", fontSize: 13, cursor: "pointer" }}>⚠️ Registrar ocorrência</button>}
     </div>
     {semMig && <div style={{ ...s.card, padding: 12, fontSize: 13, color: C.danger, marginBottom: 10 }}>Falta rodar a migration 068 (ocorrências) no Supabase.</div>}
-    {lista === null ? <div style={{ color: C.muted, fontSize: 13 }}>Carregando…</div> : lista.length === 0 ? <div style={{ ...s.card, padding: 16, fontSize: 13, color: C.muted }}>{ver === "abertas" ? "Nenhuma ocorrência em aberto." : "Nenhuma ocorrência registrada."}</div>
+    {ver === "indicadores" ? <IndicadoresOcorrencias C={C} s={s} onErro={onErro} onAbrir={(id) => setAberta(id)} /> : lista === null ? <div style={{ color: C.muted, fontSize: 13 }}>Carregando…</div> : lista.length === 0 ? <div style={{ ...s.card, padding: 16, fontSize: 13, color: C.muted }}>{ver === "abertas" ? "Nenhuma ocorrência em aberto." : "Nenhuma ocorrência registrada."}</div>
       : <div style={{ display: "grid", gap: 8 }}>{lista.map((o) => <div key={o.id} role="button" tabIndex={0} className="qf-clicavel" onClick={() => setAberta(o.id)} onKeyDown={(e) => e.key === "Enter" && setAberta(o.id)}
         style={{ ...s.card, padding: "10px 14px", cursor: "pointer", borderLeft: `4px solid ${corStatusOc(C, o.status)}` }}>
         <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}>
