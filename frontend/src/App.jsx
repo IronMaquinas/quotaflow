@@ -29,7 +29,7 @@ import TelaAprovacaoRetirada from './components/estoque/TelaAprovacaoRetirada';
 import TelaRecebimento from './components/estoque/TelaRecebimento';
 import TelaOrdemServico from './components/estoque/TelaOrdemServico';
 import TelaConfiguracoes from './components/configuracoes/TelaConfiguracoes';
-import CompletarPerfil from './components/configuracoes/CompletarPerfil'; // 14d.5
+import BemVindo from './components/configuracoes/BemVindo'; // 18i: 👋 roteiro inicial (substitui o "Complete o perfil" da 14d.5)
 import TelaMonitorCnpj from './components/compliance/TelaMonitorCnpj'; // 14e
 import TelaNaoConformidades from "./components/naoConformidades/TelaNaoConformidades";
 import TelaInspecoes from "./components/inspecoes/TelaInspecoes"; // etapa 14a
@@ -179,6 +179,13 @@ export default function App() {
   const [abrirAT, setAbrirAT] = useState(null); // 17b: multa → "abrir AT-…" na 🚛 Programação
   const [abrirContrato, setAbrirContrato] = useState(null); // 18b.7: Cliente 360° → 📑 contrato
   useEffect(() => { const f = (ev) => { setAbrirContrato({ id: ev.detail, em: Date.now() }); setTela("contratos"); }; window.addEventListener("qf-abrir-contrato", f); return () => window.removeEventListener("qf-abrir-contrato", f); }, []);
+  // 18i: 👋 roteiro inicial → abre a tela (e a aba das Configurações) do passo; sem acesso à tela, avisa em vez de abrir em branco
+  const temAcessoRef = useRef(() => true);
+  const [avisoRoteiro, setAvisoRoteiro] = useState(null);
+  useEffect(() => { const f = (ev) => { const p = ev.detail || {}; if (!p.tela) return;
+      if (!temAcessoRef.current(p.tela)) { setAvisoRoteiro(`"${p.titulo || p.tela}" fica numa tela que só o Administrador abre — peça a ele.`); setTimeout(() => setAvisoRoteiro(null), 6000); return; }
+      if (p.tela === "configuracoes") setConfigAba(p.aba || null); setTela(p.tela); };
+    window.addEventListener("qf-navegar", f); return () => window.removeEventListener("qf-navegar", f); }, []);
   const [abrirOcorrencia, setAbrirOcorrencia] = useState(null); // 18h.3.2: tarefa TSK-MT → ⚠️ ocorrência (SIN)
   useEffect(() => { const f = (ev) => { if (ev.detail == null) return; setAbrirOcorrencia({ id: ev.detail, em: Date.now() }); setTela("contratos"); }; window.addEventListener("qf-abrir-ocorrencia", f); return () => window.removeEventListener("qf-abrir-ocorrencia", f); }, []);
   const [abrirProsp, setAbrirProsp] = useState(null); // 18b.2: tarefa do ✅ Plano → 📣 prospecção no Comercial
@@ -332,6 +339,8 @@ export default function App() {
     const resultado = !PERMISSOES[t] || (usuario && PERMISSOES[t].some(p => perfisUsuario.includes(p)));
     return resultado;
   };
+  temAcessoRef.current = temAcesso; // 18i: o listener do roteiro usa a versão atual
+
 
   // Navegar com verificação
   const navegar = (t) => { 
@@ -564,7 +573,8 @@ const perfil = PERFIS[usuario.perfil] || {
         {tela==="home"&&(
           <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:40,overflowY:"auto"}}>
             <div style={{maxWidth:600,width:"100%",textAlign:"center"}}>
-              {temAcesso("configuracoes") && <CompletarPerfil C={C} s={s} onAbrir={(aba)=>{setConfigAba(aba);navegar("configuracoes");}} />}
+              {temAcesso("configuracoes") && <BemVindo C={C} s={s} onAbrir={(p)=>window.dispatchEvent(new CustomEvent("qf-navegar",{detail:p}))} />}
+              {avisoRoteiro && <div style={{...s.card,padding:"10px 14px",marginBottom:12,fontSize:13,color:C.warn||"#f59e0b",textAlign:"left"}}>{avisoRoteiro}</div>}
               <div style={{fontSize:52,marginBottom:16}}>{perfil.icon}</div>
               <div style={{fontSize:26,fontWeight:700,color:C.text,marginBottom:8}}>Olá, {usuario.nome.split(" ")[0]}!</div>
               <div style={{fontSize:14,color:C.muted,marginBottom:32}}>Você está logado como <strong style={{color:perfil.c}}>{perfil.l}</strong></div>

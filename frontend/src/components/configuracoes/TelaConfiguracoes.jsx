@@ -17,6 +17,7 @@ import DadosEmpresa from "./DadosEmpresa"; // etapa 14d.4
 import DiasFrota from "./DiasFrota"; // etapa 18f
 import ConfigFiscal from "./ConfigFiscal"; // etapa 18g.1
 import ConfigOcorrencias from "./ConfigOcorrencias"; // etapa 18h.4a
+import BemVindo from "./BemVindo"; // etapa 18i
 
 // ─────────────────────────────────────────────────────────────────────────
 // HELPERS de conversão minuto ↔ HH:MM
@@ -45,7 +46,7 @@ export default function TelaConfiguracoes({ C, s, abaInicial }) {
           CONFIGURAÇÕES
         </div>
         <div style={{ fontSize: 22, fontWeight: 700, color: C.text }}>
-          {{ jornada: "Jornada de trabalho", feriados: "Feriados", custos: "Custos operacionais", comunicacoes: "Comunicações", empresa: "Empresa" }[abaAtiva]}
+          {{ jornada: "Jornada de trabalho", feriados: "Feriados", custos: "Custos operacionais", comunicacoes: "Comunicações", empresa: "Empresa", roteiro: "Roteiro inicial" }[abaAtiva]}
         </div>
       </div>
 
@@ -57,6 +58,7 @@ export default function TelaConfiguracoes({ C, s, abaInicial }) {
           { id: "custos", label: "💼 Custos operacionais" },
           { id: "comunicacoes", label: "📨 Comunicações" },
           { id: "empresa", label: "🏢 Empresa" },
+          { id: "roteiro", label: "👋 Roteiro inicial" },
         ].map(tab => (
           <button key={tab.id}
             onClick={() => { setAbaAtiva(tab.id); setErro(null); }}
@@ -88,6 +90,7 @@ export default function TelaConfiguracoes({ C, s, abaInicial }) {
       )}
 
       {abaAtiva === "jornada" && <><SecaoJornada C={C} s={s} onErro={setErro} /><DiasFrota C={C} s={s} onErro={setErro} /></>}
+      {abaAtiva === "roteiro" && <BemVindo C={C} s={s} modo="pagina" onAbrir={(p) => { if (p.tela === "configuracoes") { setAbaAtiva(p.aba || "jornada"); setErro(null); } else window.dispatchEvent(new CustomEvent("qf-navegar", { detail: p })); }} />}{/* 18i */}
       {abaAtiva === "feriados" && <SecaoFeriados C={C} s={s} onErro={setErro} />}
       {abaAtiva === "custos" && <SecaoCustosOperacionais C={C} s={s} onErro={setErro} />}
       {abaAtiva === "comunicacoes" && <SecaoComunicacoes C={C} s={s} onErro={setErro} />}

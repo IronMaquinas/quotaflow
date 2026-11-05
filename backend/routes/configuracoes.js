@@ -353,6 +353,10 @@ const FROTA = require('../services/frotaCalendario');
 const TFISC = require('../services/tarefasFiscais');
 // Etapa 18h.4a: ⚠️ quem recebe as ocorrências (por origem: locação / transporte) — GET/PUT /api/configuracoes/ocorrencias (alterar: admin, gestor; sem permissão = 409)
 const OCORR = require('../services/ocorrencias');
+// Etapa 18i: 👋 roteiro inicial (Bem-vindo) — GET/PUT /api/configuracoes/roteiro { tipos?, dispensar?: { id, valor } } (alterar: admin, gestor)
+const ROTEIRO = require('../services/roteiroInicial');
+router.get('/roteiro', tenantMiddleware, respLogo((req) => ROTEIRO.montar(supabase, req.tenantId)));
+router.put('/roteiro', tenantMiddleware, respLogo((req) => (podeLogo(req) ? ROTEIRO.salvar(supabase, req.tenantId, req.body || {}) : { status: 409, erro: 'Só admin ou gestor alteram o roteiro' })));
 router.get('/ocorrencias', tenantMiddleware, respLogo((req) => OCORR.opcoesConfig(supabase, req.tenantId)));
 router.put('/ocorrencias', tenantMiddleware, respLogo((req) => (podeLogo(req) ? OCORR.salvarConfig(supabase, req.tenantId, req.body || {}) : { status: 409, erro: 'Só admin ou gestor alteram quem recebe as ocorrências' })));
 router.get('/fiscal', tenantMiddleware, respLogo(async (req) => { const c = await TFISC.config(supabase, req.tenantId); return { antecedencia_dias: c.antecedencia, migrou: c.migrou }; }));
