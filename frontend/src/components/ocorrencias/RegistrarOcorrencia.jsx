@@ -20,10 +20,10 @@ export function fotoComTarja(file, marca, lado = 1600, qualidade = 0.75) {
       const img = new Image(); img.onerror = () => erro(new Error("Arquivo não é uma imagem válida"));
       img.onload = () => {
         let { width: w, height: h } = img; const k = Math.min(1, lado / Math.max(w, h)); w = Math.round(w * k); h = Math.round(h * k);
-        const lm = marca ? linhasMarca({ ...marca, arquivoEm: file.lastModified }).linhas : null;
+        const mk = marca ? linhasMarca({ ...marca, arquivoEm: file.lastModified }) : null; const lm = mk ? mk.linhas : null;
         const cv = document.createElement("canvas"); cv.width = w; cv.height = h + (lm ? alturaMarca(w, h, lm) : 0);
         const ctx = cv.getContext("2d"); ctx.drawImage(img, 0, 0, w, h); if (lm) desenharMarca(ctx, w, h, lm);
-        const uri = cv.toDataURL("image/jpeg", qualidade); ok({ mime: "image/jpeg", base64: uri.split(",")[1] || "", dataUri: uri });
+        const uri = cv.toDataURL("image/jpeg", qualidade); ok({ mime: "image/jpeg", base64: uri.split(",")[1] || "", dataUri: uri, antiga: !!mk?.antiga });
       };
       img.src = ev.target.result;
     };
@@ -35,7 +35,7 @@ export async function enviarArquivos(base, oc, { fotos = [], bo = null, quem = n
   const falhas = [];
   for (const f of fotos) {
     try { const x = await fotoComTarja(f.file, { oque: `Ocorrência ${f.legenda ? `· ${f.legenda}` : ""}`.trim(), ref: oc.numero, quem, gps });
-      await apiService.post(`${base}/${oc.id}/anexos`, { tipo: "foto", nome: f.file.name, legenda: f.legenda || null, gps, ...x }); }
+      const { dataUri: _d, ...envio } = x; await apiService.post(`${base}/${oc.id}/anexos`, { tipo: "foto", nome: f.file.name, legenda: f.legenda || null, gps, ...envio }); }
     catch (e) { falhas.push(`${f.file.name}: ${e.message}`); }
   }
   if (bo) { try { await apiService.post(`${base}/${oc.id}/anexos`, { tipo: "bo", nome: bo.name, mime: bo.type || (/\.pdf$/i.test(bo.name) ? "application/pdf" : "image/jpeg"), base64: await lerBase64(bo) }); } catch (e) { falhas.push(`BO: ${e.message}`); } }

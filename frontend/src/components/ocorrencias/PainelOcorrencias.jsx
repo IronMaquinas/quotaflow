@@ -12,12 +12,12 @@ const RESP = { a_definir: "A definir", cliente: "Cliente", locadora: "Locadora",
 const dh = (d) => (d ? new Date(d).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "—");
 export const corStatusOc = (C, st) => ({ registrada: C.danger, em_analise: "#f59e0b", em_atendimento: C.accent, encerrada: C.success }[st] || C.muted);
 
-export default function PainelOcorrencias({ C, s, modo = "empresa", usuario = null, filtro = {}, podeEditar = false, abrirId = null, onAberto, onErro, onOk, semBotaoNovo = false, at = null }) {
+export default function PainelOcorrencias({ C, s, modo = "empresa", usuario = null, filtro = {}, podeEditar = false, abrirId = null, onAberto, onErro, onOk, semBotaoNovo = false, at = null, onMudou = null }) {
   const base = modo === "cliente" ? "/locatario/ocorrencias" : "/ocorrencias";
   const [lista, setLista] = useState(null); const [semMig, setSemMig] = useState(false);
   const [ver, setVer] = useState("abertas"); const [aberta, setAberta] = useState(null); const [novo, setNovo] = useState(false); const [contratos, setContratos] = useState(null);
   const carregar = useCallback(async () => {
-    try { const r = await apiService.get(base, { ...filtro, ...(ver === "abertas" ? { status: "abertas" } : {}) }); setLista(r.ocorrencias || []); setSemMig(!!r.sem_migration); }
+    try { const r = await apiService.get(base, { ...filtro, ...(ver === "abertas" ? { status: "abertas" } : {}) }); setLista(r.ocorrencias || []); setSemMig(!!r.sem_migration); onMudou?.(); }
     catch (e) { onErro?.(e.message); setLista([]); }
   }, [base, ver, filtro.contrato_id, filtro.execucao_id]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { carregar(); }, [carregar]);

@@ -60,6 +60,10 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato })
   const aberto = (d?.contratos || []).find((c) => c.id === abertoId) || null;
   const carregarPend = async () => { try { setPendMed((await apiService.get("/contratos/medicoes/pendencias")).pendencias || []); } catch { setPendMed([]); } };
   useEffect(() => { carregarPend(); }, []); // eslint-disable-line
+  // 18h.3: contador de ocorrências em aberto na aba (paradas em destaque)
+  const [ocAbertas, setOcAbertas] = useState({ n: 0, paradas: 0 });
+  const carregarOc = async () => { try { const l = (await apiService.get("/ocorrencias", { status: "abertas" })).ocorrencias || []; setOcAbertas({ n: l.length, paradas: l.filter((o) => o.parado).length }); } catch { setOcAbertas({ n: 0, paradas: 0 }); } };
+  useEffect(() => { carregarOc(); }, [aba]); // eslint-disable-line
   const paraEnviar = pendMed.filter((x) => ["aberta", "devolvida"].includes(x.status)).length; // 18d.5: contador da aba
 
   const modelos = (painel?.modelos || []).filter((m) => m.ativo !== false);
@@ -86,12 +90,12 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato })
       </div>
       {aviso && <div style={{ ...s.card, padding: "10px 14px", marginBottom: 12, fontSize: 13, borderColor: aviso.tipo === "erro" ? C.danger : C.success, color: aviso.tipo === "erro" ? C.danger : C.success }}>{aviso.texto}</div>}
       <div style={{ display: "flex", gap: 6, marginBottom: 12, borderBottom: `1px solid ${C.border}` }}>
-        {[["contratos", "📑 Contratos"], ["medicoes", <>📏 Medições{paraEnviar > 0 && <span style={{ marginLeft: 6, background: C.danger, color: "#fff", borderRadius: 10, padding: "0 7px", fontSize: 11.5, fontWeight: 700 }}>{paraEnviar}</span>}</>], ["ocorrencias", "⚠️ Ocorrências"], ["clientes", "👥 Clientes"], ["modelos", "📄 Modelos de contrato"]].map(([k, l]) => <button key={k} type="button" onClick={() => { setAba(k); if (k === "ocorrencias") setFiltroOc(null); }} style={{ background: "transparent", border: "none", borderBottom: `2px solid ${aba === k ? C.accent : "transparent"}`, padding: "8px 12px", color: aba === k ? C.text : C.muted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>)}
+        {[["contratos", "📑 Contratos"], ["medicoes", <>📏 Medições{paraEnviar > 0 && <span style={{ marginLeft: 6, background: C.danger, color: "#fff", borderRadius: 10, padding: "0 7px", fontSize: 11.5, fontWeight: 700 }}>{paraEnviar}</span>}</>], ["ocorrencias", <>⚠️ Ocorrências{ocAbertas.n > 0 && <span title={ocAbertas.paradas ? `${ocAbertas.n} em aberto · ${ocAbertas.paradas} com equipamento parado` : `${ocAbertas.n} em aberto`} style={{ marginLeft: 6, background: ocAbertas.paradas ? C.danger : C.warn || "#f59e0b", color: "#fff", borderRadius: 10, padding: "0 7px", fontSize: 11.5, fontWeight: 700 }}>{ocAbertas.n}{ocAbertas.paradas ? " ⛔" : ""}</span>}</>], ["clientes", "👥 Clientes"], ["modelos", "📄 Modelos de contrato"]].map(([k, l]) => <button key={k} type="button" onClick={() => { setAba(k); if (k === "ocorrencias") setFiltroOc(null); }} style={{ background: "transparent", border: "none", borderBottom: `2px solid ${aba === k ? C.accent : "transparent"}`, padding: "8px 12px", color: aba === k ? C.text : C.muted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>)}
       </div>
       {aba === "clientes" && <AbaClientes C={C} s={s} editar={editar} onErro={err} onOk={ok} abrirId={clienteAbrir} onAberto={() => setClienteAbrir(null)} />}
       {aba === "modelos" && <AbaModelos C={C} s={s} editar={editar} onErro={err} onOk={ok} />}
       {aba === "ocorrencias" && <>{filtroOc && <div style={{ fontSize: 12.5, color: C.textSub, marginBottom: 8 }}>Contrato {filtroOc.numero} · <button type="button" onClick={() => setFiltroOc(null)} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", padding: 0, fontSize: 12.5 }}>ver todos</button></div>}
-        <PainelOcorrencias C={C} s={s} modo="empresa" podeEditar={editar} filtro={filtroOc ? { contrato_id: filtroOc.id } : {}} onErro={err} onOk={ok} /></>}{/* 18h */}
+        <PainelOcorrencias C={C} s={s} modo="empresa" podeEditar={editar} filtro={filtroOc ? { contrato_id: filtroOc.id } : {}} onErro={err} onOk={ok} onMudou={carregarOc} /></>}{/* 18h */}
       {aba === "medicoes" && <AbaMedicoes C={C} s={s} editar={editar} filtroContrato={filtroMed} onFiltroUsado={() => setFiltroMed(null)} onMudou={carregarPend} onErro={err} onOk={ok} />}{/* 18d.5 */}
       {aba === "contratos" && <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
         {[["abertos", "Abertos"], ["elaboracao", "📝 Em elaboração"], ["aguardando_aceite", "⏳ Aguardando aceite"], ["andamento", "✅ Em andamento"], ["encerrado", "🏁 Encerrados"], ["todos", "Todos"]].map(([k, l]) => <button key={k} type="button" onClick={() => setFiltro(k)} style={{ ...s.btn(filtro === k, C.accent), cursor: "pointer", padding: "5px 12px", fontSize: 12, color: filtro === k ? "#fff" : C.text }}>{l}</button>)}

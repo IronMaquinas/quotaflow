@@ -89,14 +89,56 @@ function resumoTxt(o) {
     : `Contrato ${c.contrato?.numero || ''} · ${c.contrato?.cliente || ''} · ${[c.equipamento?.tag, c.equipamento?.nome].filter(Boolean).join(' — ')}`;
   return alvo;
 }
+// 18h.3: o e-mail já traz quem ligar — telefone/WhatsApp de quem registrou e do contato do cliente, endereço e mapa — sem abrir o sistema
+const digitos = (t) => String(t || '').replace(/\D/g, '');
+const foneBR = (t) => { const d = digitos(t); return !d ? null : d.length <= 11 ? `55${d}` : d; };
+const foneTxt = (t) => { const d = digitos(t).replace(/^55(?=\d{10,11}$)/, ''); return d.length === 11 ? `(${d.slice(0, 2)}) ${d.slice(2, 7)}-${d.slice(7)}` : d.length === 10 ? `(${d.slice(0, 2)}) ${d.slice(2, 6)}-${d.slice(6)}` : String(t || ''); };
+const docTxt = (v) => { const d = digitos(v); return d.length === 14 ? d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5') : d.length === 11 ? d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4') : (v || ''); };
+async function contatosDa(supabase, tenantId, o) {
+  const out = { pessoas: [], cliente: null };
+  const reg = o.registrado_por_id != null ? (await q(supabase.from('usuarios').select('*').eq('tenant_id', tenantId).eq('id', o.registrado_por_id)).catch(() => []))[0] : null;
+  out.pessoas.push({ papel: o.registrado_por_tipo === 'locatario' ? 'Quem registrou (cliente)' : 'Quem registrou', nome: o.registrado_por_nome || reg?.nome || null, telefone: reg?.telefone || null, email: reg?.email || null });
+  if (o.contrato_id != null) {
+    const c = (await q(supabase.from('locacao_contratos').select('*').eq('tenant_id', tenantId).eq('id', o.contrato_id)).catch(() => []))[0];
+    const cli = c?.cliente_id != null ? (await q(supabase.from('clientes').select('*').eq('tenant_id', tenantId).eq('id', c.cliente_id)).catch(() => []))[0] : null;
+    if (c && (c.contato_nome || c.contato_telefone || c.contato_email) && !(c.contato_email && reg?.email && String(c.contato_email).toLowerCase() === String(reg.email).toLowerCase() && !c.contato_telefone))
+      out.pessoas.push({ papel: 'Contato do contrato', nome: c.contato_nome || null, telefone: c.contato_telefone || cli?.contato_telefone || null, email: c.contato_email || null });
+    if (c) out.cliente = { nome: c.cliente || cli?.nome || null, razao_social: cli?.razao_social || null, documento: c.cliente_doc || cli?.documento || null,
+      endereco: cli ? [[cli.endereco, cli.numero].filter(Boolean).join(', '), cli.bairro, [cli.cidade, cli.uf].filter(Boolean).join('/')].filter(Boolean).join(' · ') : null, obra: c.local || null };
+  }
+  if (o.execucao_id != null && o.contexto?.motorista?.id) {
+    const m = (await q(supabase.from('colaboradores').select('*').eq('tenant_id', tenantId).eq('id', o.contexto.motorista.id)).catch(() => []))[0];
+    out.pessoas.push({ papel: 'Motorista', nome: o.contexto.motorista.nome || m?.nome || null, telefone: m?.telefone || m?.celular || null, email: null });
+    out.cliente = { nome: o.contexto.at?.cliente || null };
+  }
+  return out;
+}
+function htmlAviso(o, emp, ct) {
+  const btn = (href, txt, cor) => `<a href="${escH(href)}" style="display:inline-block;background:${cor};color:#fff;text-decoration:none;padding:7px 12px;border-radius:6px;font-weight:700;font-size:13px;margin:2px 6px 2px 0">${txt}</a>`;
+  const zap = (f) => `https://wa.me/${f}?text=${encodeURIComponent(`Olá! Aqui é da ${emp.nome_fantasia || emp.nome || 'locadora'}, sobre a ocorrência ${o.numero || ''} (${TIPOS[o.tipo]}).`)}`;
+  const pessoa = (p) => `<tr><td style="padding:6px 0;border-top:1px solid #e5e5e5;vertical-align:top"><div style="font-size:11px;color:#666">${escH(p.papel)}</div><b>${escH(p.nome || '—')}</b>${p.telefone ? ` · ${escH(foneTxt(p.telefone))}` : ''}${p.email ? ` · <a href="mailto:${escH(p.email)}">${escH(p.email)}</a>` : ''}
+    ${p.telefone ? `<div style="margin-top:4px">${btn(`tel:+${foneBR(p.telefone)}`, '📞 Ligar', '#2563eb')}${btn(zap(foneBR(p.telefone)), '💬 WhatsApp', '#16a34a')}</div>` : ''}</td></tr>`;
+  const c = o.contexto || {}; const cli = ct.cliente || {};
+  const linha = (k, v) => (v ? `<tr><td style="color:#666;padding:2px 10px 2px 0;white-space:nowrap;vertical-align:top">${escH(k)}</td><td style="padding:2px 0">${escH(v)}</td></tr>` : '');
+  const mapa = o.gps ? `https://www.google.com/maps?q=${o.gps.lat},${o.gps.lng}` : null;
+  const dhBR = (d) => (d ? new Date(d).toLocaleString('pt-BR', { timeZone: 'America/Sao_Paulo', dateStyle: 'short', timeStyle: 'short' }) : '');
+  return `<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;color:#111;font-size:14px;line-height:1.5"><div style="font-weight:700;border-bottom:2px solid #111;padding-bottom:6px;margin-bottom:14px">${escH(emp.nome_fantasia || emp.razao_social || emp.nome || 'QuotaFlow')}</div>
+<p style="margin:0 0 6px"><b>${escH(o.numero || '')}</b> — ${escH(TIPOS[o.tipo])} · ${escH(dhBR(o.ocorrido_em))}</p>
+${o.parado ? '<p style="color:#b91c1c;font-weight:700;margin:0 0 8px">⛔ Informado como PARADO — o comercial decide o que fazer.</p>' : ''}
+<p style="white-space:pre-wrap;background:#f4f4f5;padding:10px;border-radius:6px;margin:8px 0">${escH(o.descricao || '')}</p>
+<div style="font-weight:700;margin-top:14px">📞 Contatos</div><table style="width:100%;border-collapse:collapse">${ct.pessoas.filter((p) => p.nome || p.telefone || p.email).map(pessoa).join('')}</table>
+<div style="font-weight:700;margin-top:14px">${o.origem === 'at' ? '🚛 Viagem' : '🏗 Cliente e equipamento'}</div><table style="border-collapse:collapse;font-size:13px">
+${o.origem === 'at' ? linha('AT', c.at?.numero) + linha('Cliente', cli.nome) + linha('Conjunto', (c.conjunto || []).map((x) => x.placa || x.tag).filter(Boolean).join(' + ')) + linha('Carga', (c.carga || []).map((x) => x.descricao).filter(Boolean).join(', '))
+  : linha('Cliente', [cli.nome, cli.razao_social && cli.razao_social !== cli.nome ? cli.razao_social : null].filter(Boolean).join(' — ')) + linha('CNPJ/CPF', docTxt(cli.documento)) + linha('Endereço', cli.endereco) + linha('Obra', cli.obra) + linha('Contrato', c.contrato?.numero)
+    + linha('Equipamento', [c.equipamento?.tag, c.equipamento?.nome, c.equipamento?.modelo].filter(Boolean).join(' — ')) + linha('Nº de série', c.equipamento?.serie)
+    + linha('Última inspeção', c.ultima_inspecao ? `${c.ultima_inspecao.numero || ''} · ${dhBR(c.ultima_inspecao.em)} · ${c.ultima_inspecao.resultado || ''}` : 'sem inspeção registrada')}
+${o.local && o.local !== cli.obra ? linha('Local', o.local) : ''}</table>${mapa ? `<div style="margin-top:6px">${btn(mapa, '📍 Ver no mapa', '#475569')}</div>` : ''}
+<p style="margin:20px 0"><a href="${frontendURL()}" style="background:#2563eb;color:#fff;text-decoration:none;padding:10px 18px;border-radius:6px;font-weight:700">Abrir a ocorrência</a></p><p style="font-size:11px;color:#666">Fotos e boletim de ocorrência ficam na ocorrência e no dossiê. Aviso automático do QuotaFlow.</p></div>`;
+}
 async function avisar(supabase, tenantId, o) {
   const emp = (await q(supabase.from('tenants').select('*').eq('id', tenantId)).catch(() => []))[0] || {};
-  const assunto = `⚠️ ${o.numero || 'Ocorrência'} — ${TIPOS[o.tipo]}${o.parado ? ' · EQUIPAMENTO PARADO' : ''}`;
-  const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:600px;margin:0 auto;color:#111;font-size:14px;line-height:1.55"><div style="font-weight:700;border-bottom:2px solid #111;padding-bottom:6px;margin-bottom:14px">${escH(emp.nome_fantasia || emp.razao_social || emp.nome || 'QuotaFlow')}</div>
-<p><b>${escH(o.numero || '')}</b> — ${escH(TIPOS[o.tipo])} registrada por ${escH(o.registrado_por_nome || '—')}${o.registrado_por_tipo === 'locatario' ? ' (cliente)' : ''}.</p>
-<p>${escH(resumoTxt(o))}</p>${o.parado ? '<p style="color:#b91c1c;font-weight:700">⛔ Informado como PARADO — o comercial decide o que fazer.</p>' : ''}
-<p style="white-space:pre-wrap;background:#f4f4f5;padding:10px;border-radius:6px">${escH(o.descricao || '')}</p>
-<p style="margin:20px 0"><a href="${frontendURL()}" style="background:#2563eb;color:#fff;text-decoration:none;padding:10px 18px;border-radius:6px;font-weight:700">Abrir a ocorrência</a></p><p style="font-size:11px;color:#666">Aviso automático do QuotaFlow.</p></div>`;
+  const assunto = `⚠️ ${o.numero || 'Ocorrência'} — ${TIPOS[o.tipo]}${o.parado ? ' · EQUIPAMENTO PARADO' : ''} · ${o.contexto?.contrato?.cliente || o.contexto?.at?.cliente || ''}`.replace(/ · $/, '');
+  const html = htmlAviso(o, emp, await contatosDa(supabase, tenantId, o));
   let n = 0;
   for (const para of await destinatarios(supabase, tenantId)) { try { await enviarEmail(para, assunto, html); n++; } catch (e) { console.error('⚠️ [ocorrencias] e-mail não enviado:', para, e?.message || e); } }
   return n;
@@ -192,7 +234,7 @@ async function detalhe(supabase, tenantId, id, { locatarioId = null } = {}) {
   const o = locatarioId ? await doLocatario(supabase, tenantId, locatarioId, id) : await doTenant(supabase, tenantId, id).catch((e) => { if (sem068(e)) return null; throw e; });
   if (!o) return { status: 404, erro: 'Ocorrência não encontrada' };
   const emp = (await q(supabase.from('tenants').select('*').eq('id', tenantId)).catch(() => []))[0] || {};
-  return { ocorrencia: await enfeitar(supabase, tenantId, o, { cliente: !!locatarioId, urls: true }), empresa: { nome: emp.nome_fantasia || emp.nome || emp.razao_social || '', cnpj: emp.cnpj || null } };
+  return { ocorrencia: await enfeitar(supabase, tenantId, o, { cliente: !!locatarioId, urls: true }), empresa: { nome: emp.nome_fantasia || emp.nome || emp.razao_social || '', razao_social: emp.razao_social || null, cnpj: emp.cnpj || null } };
 }
 
 // ─── ações ───────────────────────────────────────────────────────────────────
@@ -243,7 +285,7 @@ async function anexar(supabase, tenantId, quem, id, body = {}, { locatarioId = n
   const { error: eu } = await supabase.storage.from(BUCKET).upload(path, buf, { contentType: body.mime, upsert: false });
   if (eu) throw new Error(`Falha ao subir o arquivo: ${eu.message}`);
   const a = { id: aid, tipo, nome: texto(body.nome, 160) || (tipo === 'bo' ? 'Boletim de ocorrência' : `foto.${MIME[body.mime]}`), legenda: texto(body.legenda, 200), path, mime: body.mime, tamanho: buf.length,
-    em: new Date().toISOString(), por: quem.usuarioNome || null, lado: locatarioId ? 'cliente' : 'empresa', gps: body.gps || null };
+    em: new Date().toISOString(), por: quem.usuarioNome || null, lado: locatarioId ? 'cliente' : 'empresa', gps: body.gps || null, ...(tipo === 'foto' && body.antiga === true ? { antiga: true } : {}) }; // 18h.3: foto antiga / da galeria (a tarja já avisa)
   const upd = tipo === 'foto' ? { fotos: [...jsonArr(o.fotos), a] } : { anexos: [...jsonArr(o.anexos), a] };
   const n = await gravar(supabase, tenantId, o, upd);
   return { ocorrencia: await enfeitar(supabase, tenantId, n, { cliente: !!locatarioId }), anexo: { id: aid, tipo } };
