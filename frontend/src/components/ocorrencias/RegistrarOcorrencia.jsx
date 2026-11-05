@@ -23,7 +23,7 @@ export function fotoComTarja(file, marca, lado = 1600, qualidade = 0.75) {
         const lm = marca ? linhasMarca({ ...marca, arquivoEm: file.lastModified }).linhas : null;
         const cv = document.createElement("canvas"); cv.width = w; cv.height = h + (lm ? alturaMarca(w, h, lm) : 0);
         const ctx = cv.getContext("2d"); ctx.drawImage(img, 0, 0, w, h); if (lm) desenharMarca(ctx, w, h, lm);
-        ok({ mime: "image/jpeg", base64: (cv.toDataURL("image/jpeg", qualidade).split(",")[1] || "") });
+        const uri = cv.toDataURL("image/jpeg", qualidade); ok({ mime: "image/jpeg", base64: uri.split(",")[1] || "", dataUri: uri });
       };
       img.src = ev.target.result;
     };
@@ -48,6 +48,7 @@ export default function RegistrarOcorrencia({ C, s, modo = "cliente", at = null,
   const [f, setF] = useState({ contrato_id: inicial.contrato_id || "", equipamento_id: inicial.equipamento_id || "", tipo: inicial.tipo || "", parado: false, ocorrido_em: agoraLocal(), local: "", descricao: inicial.descricao || "", inspecao_id: inicial.inspecao_id || null });
   const [fotos, setFotos] = useState([]); const [bo, setBo] = useState(null);
   const [gps, setGps] = useState(null); const [ocupado, setOcupado] = useState(false); const [erro, setErro] = useState(null);
+  const [verFoto, setVerFoto] = useState(null); const [remover, setRemover] = useState(null); // 18h.1: ampliar · confirmar remoção
   const ref = useRef(null);
   useEffect(() => { if (!at && !ops && modo === "cliente") apiService.get("/locatario/ocorrencias/opcoes").then((r) => setOps(r.contratos || [])).catch((e) => setErro(e.message)); }, [at, ops, modo]);
   useEffect(() => { try { navigator.geolocation?.getCurrentPosition((p) => setGps({ lat: p.coords.latitude, lng: p.coords.longitude, precisao: p.coords.accuracy }), () => {}, { timeout: 8000, maximumAge: 120000 }); } catch { /* sem GPS */ } }, []);
@@ -55,7 +56,18 @@ export default function RegistrarOcorrencia({ C, s, modo = "cliente", at = null,
   const contrato = (ops || []).find((c) => String(c.id) === String(f.contrato_id));
   const equip = contrato?.equipamentos?.find((e) => String(e.equipamento_id) === String(f.equipamento_id));
   const pode = !!f.tipo && f.descricao.trim().length >= 5 && (at || (contrato && equip)) && !ocupado;
-  const addFotos = (lista) => setFotos((v) => [...v, ...Array.from(lista || []).filter((x) => /^image\//.test(x.type)).map((file) => ({ file, url: URL.createObjectURL(file), legenda: "" }))].slice(0, 20));
+  // 18h.1: copia os arquivos NA HORA (o input é limpo logo depois) e gera a prévia já comprimida e com a tarja ("SIN a gerar" → o nº real entra no envio)
+  const addFotos = async (lista) => {
+    const arqs = Array.from(lista || []); const imgs = arqs.filter((x) => /^image\//.test(x.type) || /\.(jpe?g|png|heic|webp)$/i.test(x.name));
+    if (arqs.length && !imgs.length) return setErro("Escolha um arquivo de imagem (JPG ou PNG).");
+    const vagas = 20 - fotos.length; if (vagas <= 0) return setErro("Limite de 20 fotos.");
+    setErro(null);
+    for (const file of imgs.slice(0, vagas)) {
+      try { const x = await fotoComTarja(file, { oque: "Ocorrência", ref: "SIN a gerar", quem: usuario?.nome || null, gps });
+        setFotos((v) => [...v, { file, url: x.dataUri, legenda: "", kb: Math.round((x.base64.length * 3) / 4 / 1024) }].slice(0, 20)); }
+      catch (e) { setErro(`${file.name}: ${e.message}`); }
+    }
+  };
   const salvar = async () => {
     setOcupado(true); setErro(null);
     try {
@@ -92,17 +104,27 @@ export default function RegistrarOcorrencia({ C, s, modo = "cliente", at = null,
       <div style={{ fontSize: 11.5, color: C.muted, marginTop: -4, marginBottom: 10 }}>{gps ? `📍 GPS ${gps.lat.toFixed(5)}, ${gps.lng.toFixed(5)}` : "📍 sem GPS (permita a localização para registrar o ponto)"}</div>
       <label><span style={lbl}>Descrição *</span><textarea aria-label="Descrição" value={f.descricao} onChange={(e) => setF({ ...f, descricao: e.target.value })} rows={4} placeholder="O que aconteceu, como, quem estava, o que já foi feito" style={{ ...s.input, width: "100%", resize: "vertical" }} /></label>
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", margin: "6px 0 8px" }}>
-        <label style={{ ...s.btn(false), padding: "7px 12px", fontSize: 12.5, cursor: "pointer", color: C.text }}>📷 Fotos<input ref={ref} type="file" aria-label="Fotos" accept="image/*" multiple capture="environment" style={{ display: "none" }} onChange={(e) => { addFotos(e.target.files); e.target.value = ""; }} /></label>
+        <label style={{ ...s.btn(false), padding: "7px 12px", fontSize: 12.5, cursor: "pointer", color: C.text }}>📷 Fotos<input ref={ref} type="file" aria-label="Fotos" accept="image/*" multiple capture="environment" style={{ display: "none" }} onChange={(e) => { const fs = Array.from(e.target.files || []); e.target.value = ""; addFotos(fs); }} /></label>
         <label style={{ ...s.btn(false), padding: "7px 12px", fontSize: 12.5, cursor: "pointer", color: bo ? C.accent : C.text }}>{bo ? `✓ ${bo.name}` : "📄 Boletim de ocorrência (BO)"}<input type="file" aria-label="Boletim de ocorrência" accept=".pdf,image/*" style={{ display: "none" }} onChange={(e) => { setBo(e.target.files?.[0] || null); e.target.value = ""; }} /></label>
-        <span style={{ fontSize: 11.5, color: C.muted }}>{fotos.length}/20 · a tarja com o nº do SIN entra embaixo de cada foto</span>
+        <span style={{ fontSize: 11.5, color: C.muted }}>{fotos.length}/20 · fotos comprimidas, com a tarja de rastreabilidade embaixo (o nº do SIN entra ao registrar)</span>
       </div>
       {fotos.length > 0 && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 8 }}>
         {fotos.map((x, i) => <div key={x.url} style={{ position: "relative", width: 92 }}>
-          <img src={x.url} alt={`foto ${i + 1}`} style={{ width: 92, height: 92, objectFit: "cover", borderRadius: 6, border: `1px solid ${C.border}` }} />
-          <button type="button" aria-label={`Tirar foto ${i + 1}`} onClick={() => setFotos((v) => v.filter((_, j) => j !== i))} style={{ position: "absolute", top: 2, right: 2, background: C.danger, color: "#fff", border: "none", borderRadius: 10, width: 20, height: 20, cursor: "pointer", fontSize: 11 }}>×</button>
+          <img src={x.url} alt={`foto ${i + 1}`} title="Clique para ampliar" onClick={() => setVerFoto(x)} style={{ width: 92, height: 92, objectFit: "cover", objectPosition: "bottom", borderRadius: 6, border: `1px solid ${C.border}`, cursor: "zoom-in" }} />
+          <div style={{ fontSize: 10, color: C.muted, textAlign: "center" }}>{x.kb} KB</div>
+          <button type="button" aria-label={`Tirar foto ${i + 1}`} onClick={() => setRemover(i)} style={{ position: "absolute", top: 2, right: 2, background: C.danger, color: "#fff", border: "none", borderRadius: 10, width: 20, height: 20, cursor: "pointer", fontSize: 11 }}>×</button>
           <input aria-label={`Legenda da foto ${i + 1}`} value={x.legenda} onChange={(e) => setFotos((v) => v.map((y, j) => (j === i ? { ...y, legenda: e.target.value } : y)))} placeholder="legenda" style={{ ...s.input, width: 92, fontSize: 11, padding: "3px 5px", marginTop: 3, marginBottom: 0 }} />
         </div>)}
       </div>}
+      {verFoto && <div onClick={() => setVerFoto(null)} style={{ position: "fixed", inset: 0, background: "#000000d0", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 440, padding: 16, cursor: "zoom-out" }}>
+        <img src={verFoto.url} alt="foto ampliada" style={{ maxWidth: "100%", maxHeight: "90vh", borderRadius: 6 }} /></div>}
+      {remover != null && <div onClick={(x) => x.stopPropagation()} style={{ position: "fixed", inset: 0, background: "#00000090", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 440, padding: 16 }}>
+        <div role="dialog" aria-label="Remover foto" style={{ ...s.card, width: 360, maxWidth: "100%", padding: 18 }}>
+          <div style={{ fontSize: 14, marginBottom: 12 }}>Remover a foto {remover + 1}?</div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
+            <button type="button" onClick={() => setRemover(null)} style={{ ...s.btn(false), color: C.text, padding: "6px 14px", cursor: "pointer" }}>Cancelar</button>
+            <button type="button" onClick={() => { setFotos((v) => v.filter((_, j) => j !== remover)); setRemover(null); }} style={{ ...s.btn(true, C.danger), padding: "6px 14px", cursor: "pointer" }}>Remover</button>
+          </div></div></div>}
       {erro && <div style={{ color: C.danger, fontSize: 12.5, marginTop: 8 }}>{erro}</div>}
       <div style={{ display: "flex", gap: 10, justifyContent: "flex-end", marginTop: 14 }}>
         <button type="button" onClick={onFechar} style={{ ...s.btn(false), color: C.text, padding: "8px 16px", cursor: "pointer" }}>Cancelar</button>

@@ -116,8 +116,8 @@ export function DetalheOcorrencia({ C, s, modo = "empresa", id, usuario = null, 
           {(o.anexos || []).map((a) => <a key={a.id} href={a.url || "#"} target="_blank" rel="noreferrer" style={{ fontSize: 12.5, color: C.accent, alignSelf: "center" }}>{a.tipo === "bo" ? "📄 BO" : "📎"} {a.nome}</a>)}
         </div>
         {!fechada && <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
-          <label style={{ ...s.btn(false), padding: "6px 12px", fontSize: 12.5, color: C.text, cursor: "pointer" }}>＋ Fotos<input type="file" aria-label="Mais fotos" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => { const fs = e.target.files; if (fs?.length) subir("foto", fs); e.target.value = ""; }} /></label>
-          <label style={{ ...s.btn(false), padding: "6px 12px", fontSize: 12.5, color: C.text, cursor: "pointer" }}>＋ BO / documento<input type="file" aria-label="Mais documento" accept=".pdf,image/*" style={{ display: "none" }} onChange={(e) => { const fs = e.target.files; if (fs?.length) subir("bo", fs); e.target.value = ""; }} /></label>
+          <label style={{ ...s.btn(false), padding: "6px 12px", fontSize: 12.5, color: C.text, cursor: "pointer" }}>＋ Fotos<input type="file" aria-label="Mais fotos" accept="image/*" multiple style={{ display: "none" }} onChange={(e) => { const fs = Array.from(e.target.files || []); e.target.value = ""; if (fs.length) subir("foto", fs); }} /></label>
+          <label style={{ ...s.btn(false), padding: "6px 12px", fontSize: 12.5, color: C.text, cursor: "pointer" }}>＋ BO / documento<input type="file" aria-label="Mais documento" accept=".pdf,image/*" style={{ display: "none" }} onChange={(e) => { const fs = Array.from(e.target.files || []); e.target.value = ""; if (fs.length) subir("bo", fs); }} /></label>
         </div>}
         <div style={{ marginTop: 14, fontWeight: 600, fontSize: 13 }}>💬 Conversa {modo === "empresa" ? "com o cliente" : "com a locadora"}</div>
         <div style={{ display: "grid", gap: 6, marginTop: 6, maxHeight: 240, overflowY: "auto" }}>

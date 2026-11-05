@@ -280,21 +280,15 @@ const ESPERADO = {
   'services/ocorrencias.js': '6e17aeb437005e57ba633a41811efd77', // etapa 18h (novo)
   'routes/ocorrencias.js': 'e9308a77ae9bd0e7a086d9d6efadbbfc', // etapa 18h (novo)
   'migrations/068_ocorrencias.sql': '4fff8fd8dccd6dd91dbb2f145bd19a22', // etapa 18h (novo)
-  'front:RegistrarOcorrencia.jsx': '149c9df8b5e215507211afab81550e28', // etapa 18h (novo)
-  'front:PainelOcorrencias.jsx': '125caee8428b0e9b8fdccd893548e608', // etapa 18h (novo)
+  'front:RegistrarOcorrencia.jsx': 'ebeed6fb9c0cb9c597d8937f28656784', // etapa 18h.1
+  'front:PainelOcorrencias.jsx': 'dcca113d734991c7d42c4a12e49de345', // etapa 18h.1
   'front:gerarDossieOcorrencia.js': '9e4c419699b2692a43e0572a68f64120', // etapa 18h (novo)
 };
 
-// Antes de copiar a etapa 18h — base: 18g.2d
+// Antes de copiar a etapa 18h.1 — base: 18h
 const ANTES = {
-  'routes/locatario.js': '4f4db87228a3c597ae47ae4836d028d1',
-  'server.js': 'f62559d9867d79ffde480ee90a4b9256',
-  'services/medicoes.js': '6f4a66c7198e2f5ebffa7253770fa1f2',
-  'services/tarefas.js': '9d43b74825db840e65054fbc7fb96fa7',
-  'front:MedicaoModal.jsx': 'ebbe2ac8261c9c5c7a911c60d2b1ca62',
-  'front:TelaContratos.jsx': 'fda70559d43dc11cc887bf30dfc43007',
-  'front:TelaLocatario.jsx': 'd90788a7cac34c8b6660a692a3a9c9dd',
-  'front:FichaAT.jsx': '8fe62995eb39307f4f4e3c0aef5f0f2c',
+  'front:RegistrarOcorrencia.jsx': '149c9df8b5e215507211afab81550e28',
+  'front:PainelOcorrencias.jsx': '125caee8428b0e9b8fdccd893548e608',
 };
 
 const RAIZ = process.cwd();
@@ -332,7 +326,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18h)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18h.1)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

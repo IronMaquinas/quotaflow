@@ -951,6 +951,7 @@ npm run dev
     - **Detalhe:** situação (registrada → em análise → em atendimento → encerrada; **encerrar e reabrir pedem confirmação no modal do app, reabrir com motivo**), responsabilidade (cliente · locadora · seguro · a definir), ⛔ parado (liga/desliga), fotos, BO, **💬 conversa com o cliente**, 🕘 histórico (a tarefa TSK-MT também registra as mudanças) e **📄 Dossiê** (imprimir/PDF; o do cliente sai sem o histórico interno). Encerrada não recebe mensagem nem arquivo (409).
     - **Medição:** a medição do ciclo mostra **"⚠️ Equipamento parado no ciclo"** com os dias por equipamento, o SIN e a responsabilidade — **só informa, nada é descontado sozinho; o comercial decide** (decisão do Marcony, 03/11).
     - Quem altera: admin, gestor, comercial, operação (os outros perfis com acesso só veem → 409). Rotas `/api/ocorrencias` (`GET /`, `GET /:id`, `POST /`, `PUT /:id`, `POST /:id/mensagens`, `POST /:id/anexos`) e `/api/locatario/ocorrencias` (`GET /`, `GET /opcoes`, `GET /:id`, `POST /`, `POST /:id/mensagens`, `POST /:id/anexos` — escopo sempre pelo usuário logado). Arquivos: `services/ocorrencias.js`, `routes/ocorrencias.js`, `components/ocorrencias/RegistrarOcorrencia.jsx` e `PainelOcorrencias.jsx`, `utils/gerarDossieOcorrencia.js`.
+  - **18h.1 (04/11):** 📷 **fotos da ocorrência corrigidas** (Marcony): ao escolher a foto nada aparecia (o campo era limpo antes de ler o arquivo). Agora a foto entra na hora **já comprimida e com a tarja de rastreabilidade** ("SIN a gerar" na prévia → o nº real do SIN entra no envio), com **miniatura, tamanho em KB, clique para ampliar e ✕ com a pergunta "Remover a foto?"** no modal do app. Mesmo ajuste nos botões ＋ Fotos / ＋ BO do detalhe.
   - **SaaS genérico:** `tipo_execucao` no modelo de BID/PV (transporte → AT; locação → contrato de locação existente; serviço → AS; venda → entrega). Nesta etapa só transporte gera execução.
   - Rotas `/api/programacao` (`GET /base`, `/execucoes`, `/agenda`, `/pedidos`, `/pvs/:id`; `POST /pvs/:id/at`; `GET|PUT /execucoes/:id`; `POST /execucoes/:id/status`; anexos `POST|GET|DELETE /execucoes/:id/anexos[/:anexo]`; `GET /execucoes/:id/documento`) e `GET /api/comercial/pvs/:id/execucoes` (leitura). Travas respondem 409. Migration 055.
   - Rotas: `/api/comercial/bids/:id/revisao` (GET), `/enviar`, `/reenviar`, `/revisao/iniciar`, `/revisao/descartar`, `/aceite-externo`; `POST /bids/:id/fase` só aceita `perdido` e `reabrir`. Público: `/api/bid-link/:token` (GET, `/responder`, `/codigo`, `/aceitar`) — 40 chamadas por link + IP por hora. Migration 052. **Próxima: 15c** — Pedido de Venda (PV) a partir do BID aceito. **Futuro:** perfil **cliente** com login (mesmo padrão do locatário) — ver `claude/desenho-bid-15b.md`.
@@ -1475,7 +1476,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 04/11/2026 (etapa 18h)
+**Última atualização deste documento:** 04/11/2026 (etapa 18h.1)
 
 --------------------------------------------------------------------------------
 
