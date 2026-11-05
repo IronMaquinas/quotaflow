@@ -86,6 +86,10 @@ export default function MedicaoModal({ C, s, medicaoId, base = "/contratos", mod
           {(m.itens || []).map((i) => { const x = pe[String(i.equipamento_id)]; if (!x || (!x.previstas && !x.feitas)) return null;
             return <div key={i.locacao_id} style={{ fontSize: 13, color: C.textSub, padding: "2px 0" }}><b style={{ color: C.text }}>{i.tag}</b>: {x.no_prazo}/{x.previstas} no prazo · {x.feitas} feita(s){x.reprovadas ? ` · ${x.reprovadas} reprovada(s)` : ""}</div>; })}
         </div>
+        {!cliente && (d.paradas || []).length > 0 && <div style={{ ...s.card, background: C.bg, padding: "10px 12px", marginTop: 10, borderColor: C.danger }}>{/* 18h: só informa — o comercial decide */}
+          <div style={{ ...s.label, marginBottom: 6 }}>⚠️ EQUIPAMENTO PARADO NO CICLO (OCORRÊNCIAS) — nada é descontado sozinho</div>
+          {d.paradas.map((p) => <div key={p.id} style={{ fontSize: 13, padding: "2px 0" }}><b>{p.equipamento}</b>: {p.dias} dia(s) · {p.numero} · {p.tipo} · {p.status} · responsabilidade: {p.responsabilidade}</div>)}
+        </div>}
         <div style={{ fontSize: 12.5, color: C.muted, marginTop: 8 }}>{m.preenchido_por ? `Revisado por ${m.preenchido_por} em ${dataHora(m.preenchido_em)}. ` : ""}{m.enviado_por ? `Enviado por ${m.enviado_por} em ${dataHora(m.enviado_em)}. ` : ""}{m.aprovado_por ? `Aprovado por ${m.aprovado_por} em ${dataHora(m.aprovado_em)}.` : ""}</div>
 
         {contestando && <div style={{ ...s.card, background: C.bg, padding: 10, marginTop: 10 }}>

@@ -8,13 +8,13 @@ const TIPOS = {
   TR: { nome: 'Transporte', icone: '🚚' }, NC: { nome: 'Não conformidade', icone: '⚠️' }, AU: { nome: 'Auditoria', icone: '🔎' },
   MT: { nome: 'Manutenção', icone: '🔧' }, CM: { nome: 'Comercial', icone: '📈' }, HR: { nome: 'Pessoas', icone: '👥' }, GN: { nome: 'Geral', icone: '📌' },
 };
-const TIPO_DA_ORIGEM = { prospeccao: 'CM', multa: 'HR', autuacao: 'NC', fiscal: 'TR', nc: 'NC' }; // igual à qf_tarefa_tipo_da_origem (065)
+const TIPO_DA_ORIGEM = { prospeccao: 'CM', multa: 'HR', autuacao: 'NC', fiscal: 'TR', nc: 'NC', ocorrencia: 'MT' }; // igual à qf_tarefa_tipo_da_origem (065)
 const ORIGEM_NOME = { prospeccao: '📈 Comercial → 📣 Prospecção (encerra quando o BID for criado ou o comercial cancelar)',
   fiscal: '🧾 Documentos (conclui sozinha com NF-e, CT-e, averbação e MDF-e ✓; para cancelar use "Dispensar" com a justificativa)' }; // 18g.1
 const TF = () => require('./tarefasFiscais'); // 18g.1
 const STATUS = { pendente: 'Pendente', em_andamento: 'Em andamento', concluida: 'Concluída', cancelada: 'Cancelada' };
 const PRIORIDADE = { alta: 'Alta', media: 'Média', baixa: 'Baixa' };
-const VINCULOS = { bid: 'BID', pv: 'Pedido', trecho: 'Trecho', at: 'AT', nc: 'NC', prospeccao: 'Prospecção', contrato: 'Contrato', inspecao: 'Inspeção', multa: 'Multa', autuacao: 'Autuação', tarefa: 'Tarefa' };
+const VINCULOS = { bid: 'BID', pv: 'Pedido', trecho: 'Trecho', at: 'AT', nc: 'NC', prospeccao: 'Prospecção', contrato: 'Contrato', inspecao: 'Inspeção', multa: 'Multa', autuacao: 'Autuação', tarefa: 'Tarefa', ocorrencia: 'Ocorrência (SIN)' };
 const CAMPOS = ['titulo', 'detalhe', 'responsavel', 'prazo', 'prioridade', 'status', 'tipo'];
 const ROTULO = { titulo: 'título', detalhe: 'descrição', responsavel: 'responsável', prazo: 'prazo', prioridade: 'prioridade', status: 'situação', tipo: 'tipo' };
 const BUCKET = 'documentos';

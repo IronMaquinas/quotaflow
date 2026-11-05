@@ -13,6 +13,8 @@ import { abrirRelatorioViagem } from "../../utils/gerarRelatorioViagem"; // 18e
 import { valorCelula } from "../../utils/gerarBid";
 import EditorAT from "./EditorAT";
 import VerArquivo, { ChipDoc, TXT_DOC } from "./VerArquivo";
+import RegistrarOcorrencia from "../ocorrencias/RegistrarOcorrencia"; // 18h
+import PainelOcorrencias from "../ocorrencias/PainelOcorrencias"; // 18h
 import AcaoDocFiscal from "./AcaoDocFiscal"; // 18g.2.5: substituir / evento / inclusão de condutor pela AT
 
 export const COR_STATUS = { programada: "#3b82f6", em_execucao: "#f59e0b", concluida: "#22c55e", cancelada: "#ef4444" };
@@ -32,6 +34,7 @@ export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onEr
   const [ocupado, setOcupado] = useState(false);
   const [modal, setModal] = useState(null); // { tipo: cancelar|editar|anexo }
   const [ver, setVer] = useState(null);
+  const [novaOc, setNovaOc] = useState(false); const [recOc, setRecOc] = useState(0); // 18h: registrar ocorrência · recarregar a lista
   const [acaoDoc, setAcaoDoc] = useState(null); // 18g.2.5: { modo, anexo }
   const [confirmaAdd, setConfirmaAdd] = useState(null); // 18g.2.7: { tipo, arq } — já existe um desse tipo
   const FISCAL_V = ["nfe", "cte", "mdfe"]; // 18g.2.6: documento fiscal da AT (venha de onde vier) — substituir com versão, sem ✕ (só no rascunho)
@@ -81,6 +84,7 @@ export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onEr
           {e.status !== "rascunho" && <button type="button" onClick={relatorio} title="AT + fluxo (hora, GPS, quem) + inspeções com fotos + documentos — para o cliente e como evidência" style={bt(C.accent, false)}>📑 Relatório da viagem</button>}
           {e.status === "programada" && <button type="button" onClick={editar} style={bt(C.textSub, false)}>✏ Editar</button>}
           {e.status === "rascunho" && onEditarRascunho && <button type="button" onClick={() => onEditarRascunho(e.id)} style={bt(C.accent)}>✏ Continuar programação</button>} {/* 18g.2.1 */}
+          {!["rascunho", "cancelada"].includes(e.status) && <button type="button" onClick={() => setNovaOc(true)} title="Avaria, pane, acidente, furto/roubo — motorista, conjunto, carga e documentos entram sozinhos" style={bt(C.danger, false)}>⚠️ Ocorrência</button>}{/* 18h */}
           <div style={{ flex: 1 }} />
           {temFluxo && ["programada", "em_execucao"].includes(e.status) && <span style={{ fontSize: 12, color: C.muted, alignSelf: "center" }}>🧭 O motorista conduz a viagem pelo 📲 link — começa e termina sozinha</span>}
           {!temFluxo && e.status === "programada" && <button type="button" disabled={ocupado} onClick={() => acao("iniciar", {}, `${e.numero} em execução.`)} style={bt(C.warn)}>▶ Iniciar</button>}
@@ -158,6 +162,8 @@ export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onEr
                 <button type="button" disabled={ocupado} onClick={() => enviarAnexo(confirmaAdd.tipo, confirmaAdd.arq, true)} style={{ ...s.btn(false), color: C.text, padding: "4px 10px", fontSize: 12, cursor: "pointer" }}>＋ É adicional</button></div></div>}
             {(e.historico_docs || []).length > 0 && <details style={{ marginTop: 8, fontSize: 12 }}><summary style={{ cursor: "pointer", color: C.textSub }}>📜 Histórico dos documentos ({e.historico_docs.length})</summary> {/* 18g.2.8 · 18g.2.9: abaixo dos botões de anexar */}
               {e.historico_docs.map((h, i) => <div key={i} style={{ padding: "5px 0", borderBottom: `1px solid ${C.border}` }}><div style={{ color: C.muted, fontSize: 11 }}>{dataHora(h.em)} · {h.por || "—"} · {h.doc}</div><div style={{ color: C.text }}>{h.texto}</div></div>)}</details>}
+            {!["rascunho", "cancelada"].includes(e.status) && <div style={{ marginTop: 14 }}><div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>⚠️ Ocorrências desta AT</div>{/* 18h */}
+              <PainelOcorrencias key={`oc-${recOc}`} C={C} s={s} modo="empresa" podeEditar filtro={{ execucao_id: e.id }} at={e} semBotaoNovo onErro={onErro} onOk={onOk} /></div>}
             <div style={{ fontSize: 11, color: C.muted, marginTop: 14 }}>Programada por {e.criado_por_nome || "—"} em {dataHora(e.criado_em)}{e.iniciada_em ? ` · iniciada ${dataHora(e.iniciada_em)}` : ""}{e.concluida_em ? ` · concluída ${dataHora(e.concluida_em)}` : ""}</div>
           </div>
         </div>
@@ -165,6 +171,7 @@ export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onEr
       {modal?.tipo === "editar" && base && <EditorAT C={C} s={s} pv={{ id: e.pv_id, numero: e.pv_numero, colunas: (e.colunas || []).filter((c) => c.chave !== "data_prevista") }} trecho={{ id: e.grupo_id, titulo: e.grupo_titulo }} atual={e} base={base} podeLiberar={podeLiberar}
         onErro={onErro} onFechar={() => setModal(null)} onSalvo={async (msg) => { setModal(null); onOk(msg); await carregar(); onMudou?.(); }} />}
       {ver && <VerArquivo C={C} s={s} arquivo={ver} onFechar={() => setVer(null)} />}
+      {novaOc && <RegistrarOcorrencia C={C} s={s} modo="empresa" at={e} onFechar={() => setNovaOc(false)} onCriada={(oc, falhas) => { setNovaOc(false); setRecOc((n) => n + 1); onOk(`⚠️ ${oc.numero} registrada — o comercial foi avisado${falhas?.length ? `. Não subiram: ${falhas.join("; ")}` : ""}`); }} />}{/* 18h */}
       {modal?.tipo === "cancelar" && casca(s, <>
         <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 8 }}>Cancelar a {e.numero}?</div>
         <div style={{ fontSize: 13, color: C.textSub, marginBottom: 8 }}>Os itens do trecho voltam para "a programar" no pedido {e.pv_numero}. O motivo fica registrado.</div>

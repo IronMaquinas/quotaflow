@@ -116,6 +116,7 @@ async function detalhe(supabase, tenantId, medicaoId, { cliente = false } = {}) 
   return { medicao: { ...m, status_nome: (cliente ? STATUS_NOME_CLIENTE : STATUS_NOME)[m.status] || STATUS_NOME[m.status], rotulo: cicloDe(c.medicao_dia_inicio, m.inicio).rotulo, ...resumo(m) },
     contrato: { id: c.id, numero: c.numero, cliente: c.cliente, local: c.local, medicao_locatario: !!c.medicao_locatario, medicao_vencimento_dia: c.medicao_vencimento_dia ?? null },
     informativo: info,
+    paradas: await require('./ocorrencias').paradasDoContrato(supabase, tenantId, c.id, m.inicio, m.fim).catch(() => []), // 18h: só informa — o comercial decide
     empresa: { nome: emp.nome_fantasia || emp.nome || emp.razao_social || '', razao_social: emp.razao_social || null, cnpj: emp.cnpj || null } };
 }
 

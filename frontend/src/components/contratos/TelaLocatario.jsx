@@ -15,6 +15,8 @@ import { gerarHtmlContrato, abrirContrato, prepararJanela as janelaContrato } fr
 import { dadosEmpresa } from "../../utils/logoEmpresa";
 import AssinaturaTela from "../shared/AssinaturaTela";
 import MedicaoModal, { corStatusMedicao } from "./MedicaoModal"; // 18d
+import PainelOcorrencias from "../ocorrencias/PainelOcorrencias"; // 18h
+import RegistrarOcorrencia from "../ocorrencias/RegistrarOcorrencia"; // 18h
 
 const RES = { aprovado: ["✓ Aprovado", "#22c55e"], ressalvas: ["⚠ Ressalvas", "#f59e0b"], reprovado: ["⛔ Reprovado", "#ef4444"] };
 const dataBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
@@ -32,7 +34,8 @@ export default function TelaLocatario({ C, s, usuario }) {
   const [ass, setAss] = useState(null);
   const [aceitando, setAceitando] = useState(false);
   // 18d: 📏 medições (só contratos com "Medição pelo locatário")
-  const [aba, setAba] = useState(() => (/medicoes/.test(window.location.hash) ? "medicoes" : "contratos"));
+  const [aba, setAba] = useState(() => (/medicoes/.test(window.location.hash) ? "medicoes" : /ocorrencias/.test(window.location.hash) ? "ocorrencias" : "contratos"));
+  const [ocDaInspecao, setOcDaInspecao] = useState(null); // 18h: atalho da inspeção com itens não OK
   const [med, setMed] = useState(null); const [medAberta, setMedAberta] = useState(null);
   const carregarMed = async () => { try { setMed(await apiService.get("/locatario/medicoes")); } catch { setMed({ contratos: [] }); } };
   useEffect(() => { carregarMed(); }, []);
@@ -79,8 +82,8 @@ export default function TelaLocatario({ C, s, usuario }) {
           </div>))}
       </div>}
 
-      {med?.contratos?.length > 0 && <div style={{ display: "flex", gap: 6, marginBottom: 12, borderBottom: `1px solid ${C.border}` }}>{/* 18d */}
-        {[["contratos", "📑 Contratos e inspeções"], ["medicoes", `📏 Medições${med.contratos.some((c) => c.medicoes.some((x) => x.status === "enviada")) ? " •" : ""}`]].map(([k, l]) =>
+      {(med?.contratos?.length > 0 || d?.contratos?.length > 0) && <div style={{ display: "flex", gap: 6, marginBottom: 12, borderBottom: `1px solid ${C.border}`, flexWrap: "wrap" }}>{/* 18d · 18h */}
+        {[["contratos", "📑 Contratos e inspeções"], ...(med?.contratos?.length > 0 ? [["medicoes", `📏 Medições${med.contratos.some((c) => c.medicoes.some((x) => x.status === "enviada")) ? " •" : ""}`]] : []), ["ocorrencias", "⚠️ Ocorrências"]].map(([k, l]) =>
           <button key={k} type="button" onClick={() => setAba(k)} style={{ background: "transparent", border: "none", borderBottom: `2px solid ${aba === k ? C.accent : "transparent"}`, color: aba === k ? C.text : C.textSub, padding: "8px 12px", fontSize: 14, cursor: "pointer", fontWeight: aba === k ? 700 : 400 }}>{l}</button>)}
       </div>}
       {aba === "medicoes" && med?.contratos?.length > 0 && med.contratos.map((c) => <div key={c.id} style={card}>{/* 18d.2: medições enviadas pela locadora */}
@@ -92,7 +95,8 @@ export default function TelaLocatario({ C, s, usuario }) {
           <span style={s.tag(corStatusMedicao(x.status))}>{x.status_nome}</span><span style={{ color: C.accent }}>abrir ›</span></div>)}
       </div>)}
       {medAberta && <MedicaoModal C={C} s={s} medicaoId={medAberta} base="/locatario" modo="locatario" onFechar={() => setMedAberta(null)} onMudou={carregarMed} onErro={err} onOk={ok} />}
-      {aba === "medicoes" && med?.contratos?.length > 0 ? null : !d ? <div style={{ color: C.muted }}>Carregando…</div> : d.contratos.length === 0 ? (
+      {aba === "ocorrencias" && <PainelOcorrencias C={C} s={s} modo="cliente" usuario={usuario} onErro={err} onOk={ok} />}{/* 18h */}
+      {(aba === "medicoes" && med?.contratos?.length > 0) || aba === "ocorrencias" ? null : !d ? <div style={{ color: C.muted }}>Carregando…</div> : d.contratos.length === 0 ? (
         <div style={{ ...card, color: C.textSub }}>Nenhum contrato de locação ativo no seu acesso. Fale com a locadora.</div>
       ) : d.contratos.map((c) => (
         <div key={c.id} style={card}>
@@ -134,9 +138,16 @@ export default function TelaLocatario({ C, s, usuario }) {
           <div onClick={(e) => e.stopPropagation()} style={{ ...s.card, width: 860, maxWidth: "100%", padding: "18px 20px", margin: "auto 0" }}>
             <DetalheInspecao d={ver} C={C} s={s} bt={(cor, cheio = true) => ({ ...s.btn(true, cor), cursor: "pointer", padding: "7px 12px", fontSize: 12, ...(cheio ? {} : { background: "transparent", color: cor }) })}
               onFoto={(url, legenda) => setFoto({ url, legenda })} onRelatorio={() => { const w = prepararJanela(); try { abrirRelatorioInspecao(ver, w); } catch (e) { err(e.message); } }} onFechar={() => setVer(null)} />
+            {(ver.inspecao?.respostas || []).some((x) => x.status === "nok") && <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>{/* 18h: atalho */}
+              <button type="button" onClick={() => { const i = ver.inspecao; const c = (d?.contratos || []).find((k) => k.equipamentos.some((e) => String(e.equipamento_id) === String(i.equipamento_id)));
+                if (!c) return err("Este equipamento não está mais num contrato ativo seu.");
+                setOcDaInspecao({ contrato_id: String(c.id), equipamento_id: String(i.equipamento_id), inspecao_id: i.id, tipo: "avaria", descricao: `Itens não OK na inspeção ${i.numero || ""}: ${(i.respostas || []).filter((x) => x.status === "nok").map((x) => x.rotulo + (x.obs ? ` (${x.obs})` : "")).join("; ")}` }); setVer(null); }}
+                style={{ ...s.btn(true, C.danger), cursor: "pointer", padding: "8px 14px", fontSize: 13 }}>⚠️ Registrar ocorrência destes itens</button></div>}
           </div>
         </div>
       )}
+      {ocDaInspecao && <RegistrarOcorrencia C={C} s={s} modo="cliente" usuario={usuario} inicial={ocDaInspecao} onFechar={() => setOcDaInspecao(null)}
+        onCriada={(oc, falhas) => { setOcDaInspecao(null); setAba("ocorrencias"); ok(`⚠️ ${oc.numero} registrada — a locadora foi avisada${falhas?.length ? `. Não subiram: ${falhas.join("; ")}` : ""}`); }} />}
       {doc && (
         <div style={{ position: "fixed", inset: 0, background: "#00000090", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 300, padding: 12, overflowY: "auto" }}>
           <div style={{ ...s.card, width: 860, maxWidth: "100%", padding: "14px 14px", margin: "auto 0" }}>
