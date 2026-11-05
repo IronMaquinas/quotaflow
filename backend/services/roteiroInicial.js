@@ -1,10 +1,10 @@
 // backend/services/roteiroInicial.js — etapa 18i: 👋 Bem-vindo ao sistema
 //
-// Roteiro das configurações mínimas para o sistema funcionar conforme o TIPO DO NEGÓCIO da empresa
-// (tenants.tipos_negocio: transporte · locacao · compras — um ou mais; migration 070).
+// Roteiro das configurações mínimas para o sistema funcionar com os MÓDULOS do plano da empresa (18j — services/modulos.js;
+// antes, 18i, era por "tipo de negócio": tenants.tipos_negocio ficou sem uso). Quem tem só Suprimentos vê só os passos de Suprimentos.
 // Cada passo é conferido pelos próprios dados (nada a marcar à mão): ✓ feito / pendente, obrigatório ou recomendado,
-// o porquê e a tela certa. Passo que não se aplica pode ser dispensado (tenants.roteiro_config.dispensados).
-// Absorve o "Complete o perfil da empresa" (14d.5) — os itens de lá viraram os primeiros passos.
+// o porquê e a tela certa. Passo recomendado que não se aplica pode ser dispensado (tenants.roteiro_config.dispensados).
+// Absorve o "Complete o perfil da empresa" (14d.5).
 const PE = () => require('./perfilEmpresa');
 
 const TIPOS = {
@@ -20,8 +20,7 @@ async function tenantDe(supabase, tenantId) { return (await qq(supabase.from('te
 
 async function montar(supabase, tenantId) {
   const t = await tenantDe(supabase, tenantId) || {};
-  const migrou = 'tipos_negocio' in t;
-  const tipos = (Array.isArray(t.tipos_negocio) ? t.tipos_negocio : []).filter((x) => TIPOS[x]);
+  const migrou = 'roteiro_config' in t;
   const dispensados = new Set(Array.isArray(t.roteiro_config?.dispensados) ? t.roteiro_config.dispensados.map(String) : []);
   const da = (tab) => qq(supabase.from(tab).select('*').eq('tenant_id', tenantId));
   const [perfil, us, cols, eqs, jorn, fer] = await Promise.all([PE().status(supabase, tenantId).catch(() => ({ itens: [] })), da('usuarios'), da('colaboradores'), da('equipamentos'), da('tenant_jornadas'), da('tenant_feriados')]);
@@ -34,52 +33,51 @@ async function montar(supabase, tenantId) {
   const motoristas = colsAtivos.filter((c) => /motorist/i.test(String(c.funcao?.nome || c.funcao || '')));
   const pe = (id) => perfil.itens?.find((i) => i.id === id) || {};
   const ocCfg = t.ocorrencias_config || {};
+  // 18j: os passos vêm dos MÓDULOS ligados (plano contratado), não mais de uma pergunta
+  const MOD = require('./modulos'); const modAtivos = MOD.ativosDe(t); const liga = (m) => modAtivos.includes(m);
+  const areaDe = (m) => (m ? MOD.MODULOS.find((x) => x.id === m)?.area || 'empresa' : 'empresa');
   const passos = [];
-  const P = (grupo, id, titulo, porque, ok, { obrigatorio = true, tela = 'configuracoes', aba = null, falta = null } = {}) => passos.push({ grupo, id, titulo, porque, ok: !!ok, obrigatorio, tela, aba, falta, dispensado: !ok && dispensados.has(id) });
-
-  // ── todos
-  P('empresa', 'dados', 'Dados cadastrais da empresa', 'Razão social, CNPJ, endereço e telefone vão nos contratos, BIDs, relatórios e e-mails.', pe('dados').ok, { aba: 'empresa', falta: pe('dados').falta?.length ? pe('dados').falta.join(', ') : null });
-  P('empresa', 'logo', 'Logomarca', 'Aparece no topo dos documentos (contrato, dossiê, relatórios).', pe('logo').ok, { aba: 'empresa', obrigatorio: false });
-  P('empresa', 'regiao', 'Estado da operação', 'Define onde o Canal Spot procura fornecedores perto de você.', pe('regiao').ok, { aba: 'empresa', obrigatorio: false });
-  P('empresa', 'usuarios', 'Usuários da equipe com perfil', 'O Administrador cuida do sistema; a rotina (aprovar, receber avisos, ser responsável por tarefas) precisa de gestor, comercial, operação… Cadastre ao menos um.', comRotina.length > 0, { tela: 'usuarios' });
-  P('empresa', 'jornada', 'Jornada de trabalho', 'Base para prazos, programação e horas da equipe.', pe('jornada').ok ?? jorn.length > 0, { aba: 'jornada' });
-  P('empresa', 'feriados', 'Feriados', 'Prazos em dias úteis (documentos fiscais, tarefas) pulam os feriados cadastrados.', fer.length > 0, { aba: 'feriados', obrigatorio: false });
-  P('empresa', 'pessoas', 'Colaboradores (👷 Pessoas)', 'Quem pode ser responsável por tarefas, motorista, inspetor… mesmo sem login.', colsAtivos.length > 0, { tela: 'pessoas', obrigatorio: false });
-  const precisaEquip = tipos.includes('transporte') || tipos.includes('locacao');
-  if (precisaEquip) P(tipos.includes('transporte') ? 'transporte' : 'locacao', 'equipamentos', tipos.includes('transporte') && tipos.includes('locacao') ? 'Frota e equipamentos' : tipos.includes('locacao') ? 'Equipamentos para locação' : 'Frota (cavalos, carretas, pranchas)', 'Sem equipamento cadastrado não dá para programar AT nem colocar em contrato.', eqs.length > 0, { tela: 'equipamentos' });
-
-  // ── transporte
-  if (tipos.includes('transporte')) {
-    P('transporte', 'motoristas', 'Motoristas', 'Colaboradores com a função "Motorista" aparecem para escolher na AT (com CNH e documentos conferidos).', motoristas.length > 0, { tela: 'pessoas' });
-    P('transporte', 'bid_modelo', 'Modelo de BID', 'O BID é a proposta ao cliente; aprovado, vira pedido e AT. Crie (ou importe) o seu modelo.', (await da('bid_modelos')).length > 0, { tela: 'comercial' });
-    P('transporte', 'dias_frota', 'Dias de trabalho da frota', 'Quais dias a frota roda — base da utilização e da alocação.', t.frota_dias_semana != null, { aba: 'jornada', obrigatorio: false });
-    P('transporte', 'fiscal', 'Quem cuida dos documentos fiscais', 'NF-e, CT-e, averbação e MDF-e de cada trecho viram tarefa para o perfil Fiscal (ou o gestor).', tem('fiscal'), { tela: 'usuarios', obrigatorio: false });
-    P('transporte', 'oc_tr', 'Quem é avisado das ocorrências de transporte', 'Avaria, pane ou acidente na viagem: quem recebe o e-mail e fica responsável pela tarefa.', (ocCfg.tr?.pessoas || []).length > 0, { aba: 'empresa', obrigatorio: false });
-  }
-  // ── locação
-  if (tipos.includes('locacao')) {
-    P('locacao', 'clientes', 'Clientes', 'O contrato de locação nasce de um cliente cadastrado (CNPJ/CPF, contato).', (await da('clientes')).length > 0, { tela: 'contratos', obrigatorio: false });
-    P('locacao', 'modelo_contrato', 'Modelo de contrato', 'O texto do contrato com as suas cláusulas — o cliente lê e aceita pelo sistema.', (await da('contrato_modelos')).length > 0, { tela: 'contratos' });
-    P('locacao', 'modelo_inspecao', 'Modelo de inspeção', 'Checklist da entrega, da devolução e das rotinas do equipamento (pode importar da biblioteca).', (await da('inspecao_modelos')).length > 0, { tela: 'inspecoes' });
-    P('locacao', 'oc_lc', 'Quem é avisado das ocorrências de locação', 'Quando o cliente registra avaria ou pane: quem recebe o e-mail e fica responsável pela tarefa.', (ocCfg.lc?.pessoas || []).length > 0, { aba: 'empresa', obrigatorio: false });
-  }
-  // ── compras
-  if (tipos.includes('compras')) {
-    P('compras', 'fornecedores', 'Fornecedores', 'Seus fornecedores locais (os da plataforma já aparecem). Cotação vai para eles.', (await da('fornecedores')).length > 0, { tela: 'fornecedores', obrigatorio: false });
-    P('compras', 'itens', 'Itens de consumo do estoque', 'Peças e materiais com estoque mínimo — base da recompra.', (await da('itens_consumo')).length > 0, { tela: 'estoque', obrigatorio: false });
-    P('compras', 'comprador', 'Quem compra', 'Usuário com perfil Comprador recebe as requisições e envia as cotações.', tem('comprador'), { tela: 'usuarios', obrigatorio: false });
-  }
+  const P = (modulo, id, titulo, porque, ok, { obrigatorio = true, tela = 'configuracoes', aba = null, falta = null } = {}) => {
+    if (modulo && !(Array.isArray(modulo) ? modulo.every(liga) : liga(modulo))) return;
+    passos.push({ grupo: areaDe(Array.isArray(modulo) ? modulo[modulo.length - 1] : modulo), id, titulo, porque, ok: !!ok, obrigatorio, tela, aba, falta, dispensado: !ok && dispensados.has(id) });
+  };
+  // ── base (todo plano)
+  P(null, 'dados', 'Dados cadastrais da empresa', 'Razão social, CNPJ, endereço e telefone vão nos documentos, relatórios e e-mails.', pe('dados').ok, { aba: 'empresa', falta: pe('dados').falta?.length ? pe('dados').falta.join(', ') : null });
+  P(null, 'usuarios', 'Usuários da equipe com perfil', 'O Administrador cuida do sistema; a rotina (aprovar, receber avisos, ser responsável por tarefas) precisa de gestor, comprador, operação… Cadastre ao menos um.', comRotina.length > 0, { tela: 'usuarios' });
+  P(null, 'logo', 'Logomarca', 'Aparece no topo dos documentos e relatórios.', pe('logo').ok, { aba: 'empresa', obrigatorio: false });
+  P('cotacoes_spot', 'regiao', 'Estado da operação', 'Define onde o Canal Spot procura fornecedores perto de você.', pe('regiao').ok, { aba: 'empresa', obrigatorio: false });
+  // ── pessoas
+  P('jornada', 'jornada', 'Jornada de trabalho', 'Base para prazos, programação e horas da equipe.', pe('jornada').ok ?? jorn.length > 0, { aba: 'jornada' });
+  P('jornada', 'feriados', 'Feriados', 'Prazos em dias úteis pulam os feriados cadastrados.', fer.length > 0, { aba: 'feriados', obrigatorio: false });
+  P('colaboradores', 'pessoas', 'Colaboradores (👷 Pessoas)', 'Quem pode ser responsável por tarefas, motorista, inspetor… mesmo sem login.', colsAtivos.length > 0, { tela: 'pessoas', obrigatorio: liga('treinamentos') || liga('epi') });
+  // ── operações
+  P('frota_equipamentos', 'equipamentos', liga('transporte') ? 'Frota e equipamentos' : 'Equipamentos', 'Sem equipamento cadastrado não dá para programar AT, inspecionar nem colocar em contrato.', eqs.length > 0, { tela: 'equipamentos' });
+  P('transporte', 'motoristas', 'Motoristas', 'Colaboradores com a função "Motorista" aparecem para escolher na AT (com CNH e documentos conferidos).', motoristas.length > 0, { tela: 'pessoas' });
+  P('transporte', 'dias_frota', 'Dias de trabalho da frota', 'Quais dias a frota roda — base da utilização e da alocação.', t.frota_dias_semana != null, { aba: 'jornada', obrigatorio: false });
+  P('fiscal', 'fiscal', 'Quem cuida dos documentos fiscais', 'NF-e, CT-e, averbação e MDF-e de cada trecho viram tarefa para o perfil Fiscal (ou o gestor).', tem('fiscal'), { tela: 'usuarios', obrigatorio: false });
+  P(['transporte', 'ocorrencias'], 'oc_tr', 'Quem é avisado das ocorrências de transporte', 'Avaria, pane ou acidente na viagem: quem recebe o e-mail e fica responsável pela tarefa.', (ocCfg.tr?.pessoas || []).length > 0, { aba: 'empresa', obrigatorio: false });
+  // ── comercial
+  P('crm_bid', 'bid_modelo', 'Modelo de BID', 'O BID é a proposta ao cliente; aprovado, vira pedido (e AT, no transporte). Crie ou importe o seu modelo.', (await da('bid_modelos')).length > 0, { tela: 'comercial' });
+  P('contratos_locacao', 'clientes', 'Clientes', 'O contrato de locação nasce de um cliente cadastrado (CNPJ/CPF, contato).', (await da('clientes')).length > 0, { tela: 'contratos', obrigatorio: false });
+  P('contratos_locacao', 'modelo_contrato', 'Modelo de contrato', 'O texto do contrato com as suas cláusulas — o cliente lê e aceita pelo sistema.', (await da('contrato_modelos')).length > 0, { tela: 'contratos' });
+  P(['contratos_locacao', 'ocorrencias'], 'oc_lc', 'Quem é avisado das ocorrências de locação', 'Quando o cliente registra avaria ou pane: quem recebe o e-mail e fica responsável pela tarefa.', (ocCfg.lc?.pessoas || []).length > 0, { aba: 'empresa', obrigatorio: false });
+  // ── qualidade
+  P('inspecoes', 'modelo_inspecao', 'Modelo de inspeção', 'O checklist das inspeções (pode importar da biblioteca).', (await da('inspecao_modelos')).length > 0, { tela: 'inspecoes' });
+  // ── suprimentos
+  P('fornecedores', 'fornecedores', 'Fornecedores', 'Seus fornecedores locais (os da plataforma já aparecem). Cotação vai para eles.', (await da('fornecedores')).length > 0, { tela: 'fornecedores', obrigatorio: false });
+  P('estoque', 'itens', 'Itens de consumo do estoque', 'Peças e materiais com estoque mínimo — base da recompra.', (await da('itens_consumo')).length > 0, { tela: 'estoque', obrigatorio: false });
+  P('compras', 'comprador', 'Quem compra', 'Usuário com perfil Comprador recebe as requisições e envia as cotações.', tem('comprador'), { tela: 'usuarios', obrigatorio: false });
   const contam = passos.filter((p) => !p.dispensado);
   const obrig = contam.filter((p) => p.obrigatorio);
-  return { migrou, tipos, tipos_disponiveis: TIPOS, escolheu: tipos.length > 0, passos,
+  return { migrou, plano_nome: t.plano_nome || (Array.isArray(t.modulos) ? 'Plano personalizado' : 'Completo'), passos,
     feitos: contam.filter((p) => p.ok).length, total: contam.length,
     obrigatorios: { feitos: obrig.filter((p) => p.ok).length, total: obrig.length },
-    completo: tipos.length > 0 && contam.every((p) => p.ok) };
+    completo: contam.every((p) => p.ok) };
 }
 
 async function salvar(supabase, tenantId, body = {}) {
   const t = await tenantDe(supabase, tenantId); if (!t) return { status: 404, erro: 'Empresa não encontrada' };
-  if (!('tipos_negocio' in t)) return { status: 409, erro: 'Falta rodar a migration 070 no Supabase.' };
+  if (!('roteiro_config' in t)) return { status: 409, erro: 'Falta rodar a migration 070 no Supabase.' };
   const upd = {};
   if (Array.isArray(body.tipos)) { const v = [...new Set(body.tipos.map(String))].filter((x) => TIPOS[x]); if (!v.length) return { status: 400, erro: 'Escolha ao menos um tipo de negócio' }; upd.tipos_negocio = v; }
   if (body.dispensar && body.dispensar.id) {

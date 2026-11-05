@@ -92,6 +92,14 @@ router.post('/transportadoras/:id/recusar', responder((req) => C.recusarTranspor
 // 14d.5: troca de CNPJ só pela plataforma, com motivo (o gatilho do banco grava em tenant_alteracoes) + histórico da empresa
 const PERFIL = require('../services/perfilEmpresa');
 router.post('/transportadoras/:id/cnpj', responder(async (req) => { const r = await PERFIL.alterarCnpjPlataforma(supabase, req.params.id, req.plataformaAdmin, req.body || {}); if (!r.erro) await C.registrar(req.plataformaAdmin, 'cnpj_alterar', 'tenant', req.params.id, { antes: r.antes, depois: r.depois, motivo: String(req.body?.motivo || '').slice(0, 500) }).catch(() => {}); return r; }));
+// 18j: 🧩 módulos e planos-modelo
+const MOD = require('../services/modulos');
+router.get('/modulos', responder(() => MOD.catalogo()));
+router.get('/planos', responder(() => MOD.listarPlanos(supabase)));
+router.post('/planos', responder(async (req) => { const r = await MOD.salvarPlano(supabase, null, req.body || {}); if (!r.erro) await C.registrar(req.plataformaAdmin, 'plano_criado', 'plano', r.plano.id, { nome: r.plano.nome }); return r; }));
+router.put('/planos/:id', responder(async (req) => { const r = await MOD.salvarPlano(supabase, req.params.id, req.body || {}); if (!r.erro) await C.registrar(req.plataformaAdmin, 'plano_editado', 'plano', req.params.id, { nome: r.plano.nome }); return r; }));
+router.delete('/planos/:id', responder(async (req) => { const r = await MOD.excluirPlano(supabase, req.params.id); await C.registrar(req.plataformaAdmin, 'plano_excluido', 'plano', req.params.id); return r; }));
+router.put('/transportadoras/:id/modulos', responder(async (req) => { const r = await MOD.definirDaEmpresa(supabase, req.params.id, req.body || {}); if (!r.erro) await C.registrar(req.plataformaAdmin, 'modulos_alterados', 'tenant', req.params.id, { plano: r.plano_nome, de: r.antes, para: r.ativos }); return r; }));
 router.get('/transportadoras/:id/alteracoes', responder((req) => PERFIL.alteracoes(supabase, req.params.id)));
 // 14e: 🛡 CNPJs — fornecedores da plataforma irregulares, tenants com processo, revisão (revisar / suspender / reativar)
 const MCNPJ = require('../services/monitorCnpj');

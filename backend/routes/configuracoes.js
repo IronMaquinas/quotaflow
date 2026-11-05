@@ -355,6 +355,9 @@ const TFISC = require('../services/tarefasFiscais');
 const OCORR = require('../services/ocorrencias');
 // Etapa 18i: 👋 roteiro inicial (Bem-vindo) — GET/PUT /api/configuracoes/roteiro { tipos?, dispensar?: { id, valor } } (alterar: admin, gestor)
 const ROTEIRO = require('../services/roteiroInicial');
+// Etapa 18j: 🧩 módulos ligados da empresa (menu, tela inicial, ⭐ Meu plano) — GET /api/configuracoes/modulos (qualquer usuário logado)
+const MODS = require('../services/modulos');
+router.get('/modulos', tenantMiddleware, respLogo((req) => MODS.daEmpresa(supabase, req.tenantId)));
 router.get('/roteiro', tenantMiddleware, respLogo((req) => ROTEIRO.montar(supabase, req.tenantId)));
 router.put('/roteiro', tenantMiddleware, respLogo((req) => (podeLogo(req) ? ROTEIRO.salvar(supabase, req.tenantId, req.body || {}) : { status: 409, erro: 'Só admin ou gestor alteram o roteiro' })));
 router.get('/ocorrencias', tenantMiddleware, respLogo((req) => OCORR.opcoesConfig(supabase, req.tenantId)));

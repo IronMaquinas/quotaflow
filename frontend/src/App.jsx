@@ -29,7 +29,9 @@ import TelaAprovacaoRetirada from './components/estoque/TelaAprovacaoRetirada';
 import TelaRecebimento from './components/estoque/TelaRecebimento';
 import TelaOrdemServico from './components/estoque/TelaOrdemServico';
 import TelaConfiguracoes from './components/configuracoes/TelaConfiguracoes';
-import BemVindo from './components/configuracoes/BemVindo'; // 18i: 👋 roteiro inicial (substitui o "Complete o perfil" da 14d.5)
+import BemVindo from './components/configuracoes/BemVindo';
+import MeuPlano from './components/configuracoes/MeuPlano'; // 18j: ⭐ módulos do plano
+import { soAreaRestrita } from './utils/areaRestrita'; // 18i: 👋 roteiro inicial (substitui o "Complete o perfil" da 14d.5)
 import TelaMonitorCnpj from './components/compliance/TelaMonitorCnpj'; // 14e
 import TelaNaoConformidades from "./components/naoConformidades/TelaNaoConformidades";
 import TelaInspecoes from "./components/inspecoes/TelaInspecoes"; // etapa 14a
@@ -181,6 +183,8 @@ export default function App() {
   useEffect(() => { const f = (ev) => { setAbrirContrato({ id: ev.detail, em: Date.now() }); setTela("contratos"); }; window.addEventListener("qf-abrir-contrato", f); return () => window.removeEventListener("qf-abrir-contrato", f); }, []);
   // 18i: 👋 roteiro inicial → abre a tela (e a aba das Configurações) do passo; sem acesso à tela, avisa em vez de abrir em branco
   const temAcessoRef = useRef(() => true);
+  // 18j: 🧩 módulos do plano da empresa — tela de módulo desligado some do menu e da tela inicial (null = tudo ligado / ainda carregando)
+  const [modsEmpresa, setModsEmpresa] = useState(null);
   const [avisoRoteiro, setAvisoRoteiro] = useState(null);
   useEffect(() => { const f = (ev) => { const p = ev.detail || {}; if (!p.tela) return;
       if (!temAcessoRef.current(p.tela)) { setAvisoRoteiro(`"${p.titulo || p.tela}" fica numa tela que só o Administrador abre — peça a ele.`); setTimeout(() => setAvisoRoteiro(null), 6000); return; }
@@ -195,6 +199,10 @@ export default function App() {
   useEffect(() => { const f = (ev) => { if (!ev.detail) return; setAbrirTarefa({ numero: ev.detail, em: Date.now() }); setTela("plano"); }; window.addEventListener("qf-abrir-tarefa", f); return () => window.removeEventListener("qf-abrir-tarefa", f); }, []); // eslint-disable-line
   const [abaColaborador, setAbaColaborador] = useState("viagens"); // 14b.1: tela do colaborador · 17a: começa em 🚛 Minhas viagens
   useEffect(() => { if (usuario?.id) carregarLogoEmpresa(); }, [usuario?.id]); // 14c: logo da empresa nos documentos
+  useEffect(() => { // 18j
+    if (!usuario?.id || soAreaRestrita(Array.isArray(usuario.perfis) && usuario.perfis.length ? usuario.perfis : [usuario.perfil].filter(Boolean)) || usuario.perfil === "fornecedor") { setModsEmpresa(null); return; }
+    apiService.get("/configuracoes/modulos").then((r) => setModsEmpresa(r?.telas ? { telas: new Set(r.telas), mapeadas: new Set(r.telas_mapeadas || []) } : null)).catch(() => setModsEmpresa(null));
+  }, [usuario?.id]);
   // 14c.2: "é clicável" — mãozinha + realce ao passar o mouse (className="qf-clicavel")
   useEffect(() => {
     if (document.getElementById("qf-estilos")) return;
@@ -330,6 +338,8 @@ export default function App() {
   };
 
   // Verificar permissão
+  // 18j: a tela pertence a um módulo desligado? (tela fora do catálogo continua liberada)
+  const telaDoPlano = (t) => !modsEmpresa || !modsEmpresa.mapeadas.has(t) || modsEmpresa.telas.has(t);
   const temAcesso = (t) => {
     // M4.5: aceita perfis múltiplos. Se o usuário tem QUALQUER perfil que dá
     // acesso à tela, libera. Cai pro `usuario.perfil` (legado) se `perfis` vazio.
@@ -337,7 +347,7 @@ export default function App() {
       ? usuario.perfis
       : [usuario?.perfil].filter(Boolean);
     const resultado = !PERMISSOES[t] || (usuario && PERMISSOES[t].some(p => perfisUsuario.includes(p)));
-    return resultado;
+    return resultado && telaDoPlano(t);
   };
   temAcessoRef.current = temAcesso; // 18i: o listener do roteiro usa a versão atual
 
@@ -446,13 +456,14 @@ const perfil = PERFIS[usuario.perfil] || {
     {id:"usuarios",      l:"👥 Usuários",             perfis:["admin"]},
     {id:"nao_conformidades", l:"⚠️ Não Conformidades", perfis:["admin","gestor","operacao","qualidade"]},
     {id:"configuracoes", l:"⚙️ Configurações",        perfis:["admin","gestor"]},
+    {id:"meu_plano",     l:"⭐ Meu plano",             perfis:["admin","gestor"]}, // 18j
   ].filter(n => {
     // M4.5: multi-perfil. `usuario.perfis` é array (do backend). Cai pro
     // `usuario.perfil` (singular) quando não vier — compat com login antigo.
     const perfisUsuario = Array.isArray(usuario?.perfis) && usuario.perfis.length > 0
       ? usuario.perfis
       : [usuario?.perfil].filter(Boolean);
-    return n.perfis.some(p => perfisUsuario.includes(p));
+    return n.perfis.some(p => perfisUsuario.includes(p)) && telaDoPlano(n.id); // 18j: só os módulos do plano
   });
 
   return(
@@ -571,8 +582,8 @@ const perfil = PERFIS[usuario.perfil] || {
       <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>        
         <AvisoPlanoTenant />
         {tela==="home"&&(
-          <div style={{flex:1,display:"flex",alignItems:"center",justifyContent:"center",padding:40,overflowY:"auto"}}>
-            <div style={{maxWidth:600,width:"100%",textAlign:"center"}}>
+          <div style={{flex:1,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"40px 40px 48px",overflowY:"auto"}}>{/* 18j: no topo — centralizado na vertical cortava o cartão de boas-vindas */}
+            <div style={{maxWidth:600,width:"100%",textAlign:"center",margin:"auto 0"}}>
               {temAcesso("configuracoes") && <BemVindo C={C} s={s} onAbrir={(p)=>window.dispatchEvent(new CustomEvent("qf-navegar",{detail:p}))} />}
               {avisoRoteiro && <div style={{...s.card,padding:"10px 14px",marginBottom:12,fontSize:13,color:C.warn||"#f59e0b",textAlign:"left"}}>{avisoRoteiro}</div>}
               <div style={{fontSize:52,marginBottom:16}}>{perfil.icon}</div>
@@ -809,6 +820,8 @@ const perfil = PERFIS[usuario.perfil] || {
           <div style={{ flex: 1, overflowY: "auto" }}>
             <TelaConfiguracoes key={configAba||"jornada"} C={C} s={s} abaInicial={configAba} />
           </div>)}
+        {temAcesso(tela) && tela === "meu_plano" && (
+          <div style={{ flex: 1, overflowY: "auto" }}><MeuPlano C={C} s={s} /></div>)}{/* 18j */}
 
         {temAcesso(tela) && tela === "comercial" && (<div style={{ flex: 1, overflowY: "auto" }}><TelaComercial C={C} s={s} abrirProspeccao={abrirProsp} podeContratos={temAcesso("contratos")} /></div>)}
         {temAcesso(tela) && tela === "programacao" && (<div style={{ flex: 1, overflowY: "auto" }}><TelaProgramacao C={C} s={s} abrirAT={abrirAT} perfis={usuario?.perfis || [usuario?.perfil].filter(Boolean)} /></div>)}
@@ -2449,6 +2462,7 @@ const PERMISSOES = {
   usuarios:           ["admin"],
   nao_conformidades:  ["admin","gestor","operacao","qualidade"],
   configuracoes:      ["admin","gestor"],
+  meu_plano:          ["admin","gestor"], // 18j
   // legado (compat com dados antigos em teste)
   tecnico_legado:     ["tecnico"],
   fornecedor_legado:  ["fornecedor"],
