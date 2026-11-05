@@ -77,61 +77,49 @@ const escH = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/<
 const frontendURL = () => String(process.env.FRONTEND_URL || 'http://localhost:5173').replace(/^FRONTEND_URL=/, '').replace(/\/+$/, '');
 let enviarEmail = async (para, assunto, html) => require('./emailService').enviarEmailFornecedor(para, assunto, html);
 function _definirEnvio(fn) { enviarEmail = fn; }
-// ─── 18h.4a: quem recebe (⚙️ Configurações → ⚠️ Ocorrências), por origem ────
-//   lc = locação (contrato) · tr = transporte (AT). Perfis, pessoas do cadastro e/ou funções; tipo da tarefa.
-//   REGRA DO SaaS: e-mail de rotina NUNCA vai para o perfil admin (admin cuida do sistema — pode ser alguém de TI).
-//   Pessoa escolhida pelo nome recebe mesmo que também seja admin (foi escolhida de propósito).
-const PERFIS_OC = { gestor: 'Gestor', comercial: 'Comercial', operacao: 'Operação', qualidade: 'Qualidade', comprador: 'Comprador', financeiro: 'Financeiro', fiscal: 'Fiscal' };
-const TIPOS_TAREFA_OC = ['MT', 'CM', 'GN', 'NC'];
-const CONFIG_PADRAO = { lc: { perfis: ['comercial'], pessoas: [], funcoes: [], tipo_tarefa: 'CM' }, tr: { perfis: ['operacao'], pessoas: [], funcoes: [], tipo_tarefa: 'MT' } };
+// ─── 18h.4a/4c: ⚙️ Configurações → ⚠️ Ocorrências, por origem (lc = locação · tr = transporte) ─────
+//   • perfis  = quem tem ACESSO às ocorrências da origem (vê, acompanha, muda situação). Gestor e admin sempre têm. NÃO recebem e-mail.
+//   • pessoas = as ÚNICAS que recebem o e-mail do evento; a 1ª é a responsável pela tarefa. Sem pessoa → ninguém é avisado por e-mail.
+//   (18h.4c: sem "funções" e sem e-mail para o perfil inteiro — não queimar e-mail nem encher a caixa de quem não tem relação com o problema.)
+//   REGRA DO SaaS: e-mail de rotina nunca vai para o perfil admin; pessoa escolhida pelo nome recebe (foi escolhida de propósito).
+const PERFIS_OC = { comercial: 'Comercial', operacao: 'Operação', qualidade: 'Qualidade', comprador: 'Comprador', financeiro: 'Financeiro', fiscal: 'Fiscal' };
+const SEMPRE = ['admin', 'gestor'];
+const CONFIG_PADRAO = { lc: { perfis: ['comercial'], pessoas: [], tipo_tarefa: 'CM' }, tr: { perfis: ['operacao'], pessoas: [], tipo_tarefa: 'MT' } };
 const siglaDe = (origem) => (origem === 'at' ? 'tr' : 'lc');
-function limparCfg(c = {}, base = CONFIG_PADRAO.lc) {
-  const arr = (v, max = 30) => (Array.isArray(v) ? [...new Set(v.map((x) => String(x || '').trim()).filter(Boolean))].slice(0, max) : null);
-  return { perfis: (arr(c.perfis) ?? base.perfis).filter((p) => PERFIS_OC[p]), pessoas: (arr(c.pessoas) ?? base.pessoas).filter((p) => /^[cu]:[\w-]{1,60}$/.test(p)),
-    funcoes: (arr(c.funcoes) ?? base.funcoes).map((f) => f.slice(0, 80)), tipo_tarefa: base.tipo_tarefa }; // 18h.4b: tipo da tarefa fixo pela origem (locação → TSK-CM, transporte → TSK-MT)
+function limparCfg(c = {}, base) {
+  const arr = (v) => (Array.isArray(v) ? [...new Set(v.map((x) => String(x || '').trim()).filter(Boolean))].slice(0, 30) : null);
+  return { perfis: (arr(c.perfis) ?? base.perfis).filter((p) => PERFIS_OC[p]), pessoas: (arr(c.pessoas) ?? base.pessoas).filter((p) => /^[cu]:[\w-]{1,60}$/.test(p)), tipo_tarefa: base.tipo_tarefa };
 }
 async function config(supabase, tenantId) {
   const t = (await q(supabase.from('tenants').select('*').eq('id', tenantId)).catch(() => []))[0] || {};
   const salvo = t.ocorrencias_config && typeof t.ocorrencias_config === 'object' ? t.ocorrencias_config : {};
-  return { lc: { ...limparCfg(salvo.lc, CONFIG_PADRAO.lc), tipo_tarefa: CONFIG_PADRAO.lc.tipo_tarefa }, tr: { ...limparCfg(salvo.tr, CONFIG_PADRAO.tr), tipo_tarefa: CONFIG_PADRAO.tr.tipo_tarefa }, migrou: 'ocorrencias_config' in t };
+  return { lc: limparCfg(salvo.lc, CONFIG_PADRAO.lc), tr: limparCfg(salvo.tr, CONFIG_PADRAO.tr), migrou: 'ocorrencias_config' in t };
 }
 async function salvarConfig(supabase, tenantId, body = {}) {
   const atual = await config(supabase, tenantId); if (!atual.migrou) return { status: 409, erro: 'Falta rodar a migration 069 no Supabase.' };
-  const novo = { lc: limparCfg(body.lc || atual.lc, { ...atual.lc, tipo_tarefa: CONFIG_PADRAO.lc.tipo_tarefa }), tr: limparCfg(body.tr || atual.tr, { ...atual.tr, tipo_tarefa: CONFIG_PADRAO.tr.tipo_tarefa }) };
+  const novo = { lc: limparCfg(body.lc || atual.lc, atual.lc), tr: limparCfg(body.tr || atual.tr, atual.tr) };
   const { error } = await supabase.from('tenants').update({ ocorrencias_config: novo }).eq('id', tenantId); if (error) throw new Error(error.message);
   return opcoesConfig(supabase, tenantId);
 }
-/** tela de configuração: config + perfis/pessoas/funções disponíveis + quem receberia hoje */
 async function opcoesConfig(supabase, tenantId) {
   const cfg = await config(supabase, tenantId);
   const ps = await require('./tarefas').pessoas(supabase, tenantId);
-  const funcoes = [...new Set((await q(supabase.from('funcoes').select('*').eq('tenant_id', tenantId)).catch(() => [])).filter((f) => f.ativo !== false).map((f) => f.nome).filter(Boolean))].sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  const previa = {}; for (const k of ['lc', 'tr']) previa[k] = await destinatarios(supabase, tenantId, k === 'tr' ? 'at' : 'contrato', cfg); // 18h.4b: { email, nome, porque }
-  // 18h.4b: a tela calcula "quem vai receber" ao vivo (antes de salvar) com estes dados
-  const us = (await q(supabase.from('usuarios').select('*').eq('tenant_id', tenantId)).catch(() => [])).filter((u) => u.ativo !== false && u.ativo !== 0);
-  const ups = us.length ? await q(supabase.from('usuario_perfis').select('*').in('usuario_id', us.map((u) => u.id))).catch(() => []) : [];
-  const usuarios = us.map((u) => ({ nome: u.nome || u.email, email: String(u.email || '').toLowerCase() || null, perfis: [...new Set([u.perfil, ...ups.filter((x) => String(x.usuario_id) === String(u.id)).map((x) => x.perfil_codigo)].filter(Boolean))] })).filter((u) => u.email && !u.perfis.every((p) => ['locatario', 'fornecedor'].includes(p)));
-  return { ...cfg, perfis_disponiveis: PERFIS_OC, funcoes, usuarios, pessoas: ps.map((p) => ({ ref: p.ref, nome: p.nome, funcao: p.funcao, email: p.email, login: p.login, afastado: !!p.afastado })), previa };
+  return { ...cfg, perfis_disponiveis: PERFIS_OC, pessoas: ps.map((p) => ({ ref: p.ref, nome: p.nome, funcao: p.funcao, email: p.email, login: p.login })) };
 }
-/** e-mails (e quem) que recebem a ocorrência desta origem */
+/** acesso: gestor/admin sempre; os demais pelo perfil marcado na origem */
+const podeOrigem = (perfis, cfg, origem) => (perfis || []).some((p) => SEMPRE.includes(p) || cfg[siglaDe(origem)].perfis.includes(p));
+/** e-mails: só as pessoas escolhidas da origem */
 async function destinatarios(supabase, tenantId, origem = 'contrato', cfg0 = null) {
   const cfg = (cfg0 || await config(supabase, tenantId))[siglaDe(origem)];
+  if (!cfg.pessoas.length) return [];
   const us = (await q(supabase.from('usuarios').select('*').eq('tenant_id', tenantId)).catch(() => [])).filter((u) => u.ativo !== false && u.ativo !== 0);
-  const ups = us.length ? await q(supabase.from('usuario_perfis').select('*').in('usuario_id', us.map((u) => u.id))).catch(() => []) : [];
-  const perfisU = (u) => [u.perfil, ...ups.filter((p) => String(p.usuario_id) === String(u.id)).map((p) => p.perfil_codigo)].filter(Boolean);
-  const out = new Map(); const add = (email, nome, porque) => { const e = String(email || '').trim().toLowerCase(); if (EMAIL_OK.test(e) && !out.has(e)) out.set(e, { email: e, nome: nome || null, porque }); };
-  for (const u of us) { const pf = perfisU(u); const hit = cfg.perfis.find((p) => pf.includes(p)); if (hit) add(u.email, u.nome, `perfil ${PERFIS_OC[hit]}`); } // admin nunca entra por perfil
-  if (cfg.pessoas.length || cfg.funcoes.length) {
-    const cs = await q(supabase.from('colaboradores').select('*').eq('tenant_id', tenantId)).catch(() => []);
-    for (const ref of cfg.pessoas) {
-      const [k, id] = ref.split(':');
-      if (k === 'u') { const u = us.find((x) => String(x.id) === id); if (u) add(u.email, u.nome, 'escolhido(a)'); }
-      else { const c = cs.find((x) => String(x.id) === id && x.situacao !== 'desligado'); const u = c && c.usuario_id != null ? us.find((x) => String(x.id) === String(c.usuario_id)) : null; if (c) add(u?.email || c.email, c.nome, 'escolhido(a)'); }
-    }
-    const fs = cfg.funcoes.map((f) => f.toLowerCase());
-    for (const c of cs.filter((x) => x.situacao === 'ativo' && fs.includes(String(x.funcao?.nome || x.funcao || '').toLowerCase()))) {
-      const u = c.usuario_id != null ? us.find((x) => String(x.id) === String(c.usuario_id)) : null; add(u?.email || c.email, c.nome, `função ${c.funcao?.nome || c.funcao}`);
-    }
+  const cs = await q(supabase.from('colaboradores').select('*').eq('tenant_id', tenantId)).catch(() => []);
+  const out = new Map();
+  for (const ref of cfg.pessoas) {
+    const [k, id] = ref.split(':'); let email = null; let nome = null;
+    if (k === 'u') { const u = us.find((x) => String(x.id) === id); email = u?.email; nome = u?.nome; }
+    else { const c = cs.find((x) => String(x.id) === id && x.situacao !== 'desligado'); const u = c && c.usuario_id != null ? us.find((x) => String(x.id) === String(c.usuario_id)) : null; email = u?.email || c?.email; nome = c?.nome; }
+    const e = String(email || '').trim().toLowerCase(); if (EMAIL_OK.test(e) && !out.has(e)) out.set(e, { email: e, nome });
   }
   return [...out.values()];
 }
@@ -271,9 +259,10 @@ async function enfeitar(supabase, tenantId, o, { cliente = false, urls = false }
     dias_parado, tarefa: tarefa || (o.tarefa_numero ? { numero: o.tarefa_numero } : null), resumo: resumoTxt(o),
     fotos: await limpar(o.fotos), anexos: await limpar(o.anexos), mensagens: jsonArr(o.mensagens) };
 }
-async function listar(supabase, tenantId, filtros = {}, { locatarioId = null } = {}) {
+async function listar(supabase, tenantId, filtros = {}, { locatarioId = null, perfis = null } = {}) {
   let lista;
   try { lista = await q(supabase.from('ocorrencias').select('*').eq('tenant_id', tenantId)); } catch (e) { if (sem068(e)) return { ocorrencias: [], sem_migration: true }; throw e; }
+  if (!locatarioId && perfis) { const cfg = await config(supabase, tenantId); lista = lista.filter((o) => podeOrigem(perfis, cfg, o.origem)); } // 18h.4c: acesso pelo perfil da origem
   if (locatarioId) { const esc = await CT().escopoLocatario(supabase, tenantId, locatarioId); const ids = new Set(esc.contratos.map((c) => String(c.id))); lista = lista.filter((o) => o.origem === 'contrato' && ids.has(String(o.contrato_id))); }
   if (filtros.contrato_id) lista = lista.filter((o) => String(o.contrato_id) === String(filtros.contrato_id));
   if (filtros.execucao_id) lista = lista.filter((o) => String(o.execucao_id) === String(filtros.execucao_id));
@@ -282,9 +271,10 @@ async function listar(supabase, tenantId, filtros = {}, { locatarioId = null } =
   lista.sort((a, b) => String(b.ocorrido_em).localeCompare(String(a.ocorrido_em)));
   return { ocorrencias: await Promise.all(lista.map((o) => enfeitar(supabase, tenantId, o, { cliente: !!locatarioId }))), tipos: TIPOS, status: STATUS, responsabilidades: RESP };
 }
-async function detalhe(supabase, tenantId, id, { locatarioId = null } = {}) {
+async function detalhe(supabase, tenantId, id, { locatarioId = null, perfis = null } = {}) {
   const o = locatarioId ? await doLocatario(supabase, tenantId, locatarioId, id) : await doTenant(supabase, tenantId, id).catch((e) => { if (sem068(e)) return null; throw e; });
   if (!o) return { status: 404, erro: 'Ocorrência não encontrada' };
+  if (!locatarioId && perfis && !podeOrigem(perfis, await config(supabase, tenantId), o.origem)) return { status: 409, erro: 'Seu perfil não tem acesso a esta ocorrência (⚙️ Configurações → ⚠️ Ocorrências)' };
   const emp = (await q(supabase.from('tenants').select('*').eq('id', tenantId)).catch(() => []))[0] || {};
   return { ocorrencia: await enfeitar(supabase, tenantId, o, { cliente: !!locatarioId, urls: true }), empresa: { nome: emp.nome_fantasia || emp.nome || emp.razao_social || '', razao_social: emp.razao_social || null, cnpj: emp.cnpj || null } };
 }
@@ -308,6 +298,7 @@ async function sincronizarTarefa(supabase, tenantId, tarefaId, status, quem, num
 /** empresa: status e responsabilidade */
 async function atualizar(supabase, tenantId, quem, id, body = {}) {
   const o = await doTenant(supabase, tenantId, id); if (!o) return { status: 404, erro: 'Ocorrência não encontrada' };
+  if (quem.perfis && !podeOrigem(quem.perfis, await config(supabase, tenantId), o.origem)) return { status: 409, erro: 'Seu perfil não altera esta ocorrência (⚙️ Configurações → ⚠️ Ocorrências)' };
   const upd = {}; const hist = [];
   if ('status' in body && body.status !== o.status) {
     if (!STATUS[body.status]) return { status: 400, erro: 'Situação inválida' };
@@ -331,6 +322,7 @@ async function atualizar(supabase, tenantId, quem, id, body = {}) {
 }
 async function mensagem(supabase, tenantId, quem, id, body = {}, { locatarioId = null } = {}) {
   const o = locatarioId ? await doLocatario(supabase, tenantId, locatarioId, id) : await doTenant(supabase, tenantId, id); if (!o) return { status: 404, erro: 'Ocorrência não encontrada' };
+  if (!locatarioId && quem.perfis && !podeOrigem(quem.perfis, await config(supabase, tenantId), o.origem)) return { status: 409, erro: 'Seu perfil não tem acesso a esta ocorrência' };
   const t = texto(body.texto, 2000); if (!t) return { status: 400, erro: 'Escreva a mensagem' };
   if (o.status === 'encerrada') return { status: 409, erro: 'Ocorrência encerrada — não recebe mais mensagens' };
   const msg = { id: crypto.randomBytes(5).toString('hex'), em: new Date().toISOString(), por: quem.usuarioNome || null, lado: locatarioId ? 'cliente' : 'empresa', texto: t };

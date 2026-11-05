@@ -968,6 +968,7 @@ npm run dev
     - **Admin nunca recebe e-mail de rotina** (regra do SaaS, ver "📐 Padrões do SaaS"): saiu do aviso de ocorrência, do aviso fiscal (gestor + fiscal) e do aviso de vencimento de documentos/EPI/treinamento (gestor). O perfil Administrador nem aparece na lista de perfis de aviso.
     - **Numeração INC-LC-2026-0001 / INC-TR-2026-0001** no lugar de SIN-2026-0001 — INC (incidente) se lê igual em PT/EN/ES e a origem fica no código, como nas tarefas. As de teste foram renumeradas pela migration.
   - **18h.4b (05/11):** a tela **⚠️ Ocorrências — quem recebe** ficou clara (dúvidas do Marcony): (1) **"= Vão receber o e-mail"** calculado **ao vivo**, cada nome com o **motivo** ("por perfil Operação", "função Mecânico", "escolhida (responsável)") — para tirar alguém, desmarca o que o incluiu; aviso de "alterações não salvas". (2) **Saiu o "Tarefa criada"**: o tipo da tarefa é **fixo pela origem** — INC-LC → **TSK-CM**, INC-TR → **TSK-MT** (mostrado no título de cada bloco). (3) Texto explica que **perfis + pessoas + funções somam** (basta um) e que sem pessoa a tarefa fica sem responsável.
+  - **18h.4c (05/11):** **acesso ≠ notificação** — modelo simples para o MVP (decisão do Marcony): em ⚙️ Configurações → ⚠️ Ocorrências, por origem: **👁 Perfis com acesso** — veem, acompanham e mudam a situação das ocorrências daquela origem (gestor e admin sempre), **não recebem e-mail**; **📧 Quem é avisado por e-mail** — **só as pessoas escolhidas** recebem, a 1ª é a responsável pela tarefa (sem pessoa: ninguém é avisado e a tarefa fica sem responsável — a tela avisa). **Saiu "funções"** (no futuro, se fizer sentido, funções dentro de cada perfil). Lista/detalhe/conversa/alteração da empresa passam a respeitar o acesso por origem (409 sem acesso). Padrão: locação → acesso Comercial; transporte → acesso Operação; ninguém avisado até escolher as pessoas.
   - **SaaS genérico:** `tipo_execucao` no modelo de BID/PV (transporte → AT; locação → contrato de locação existente; serviço → AS; venda → entrega). Nesta etapa só transporte gera execução.
   - Rotas `/api/programacao` (`GET /base`, `/execucoes`, `/agenda`, `/pedidos`, `/pvs/:id`; `POST /pvs/:id/at`; `GET|PUT /execucoes/:id`; `POST /execucoes/:id/status`; anexos `POST|GET|DELETE /execucoes/:id/anexos[/:anexo]`; `GET /execucoes/:id/documento`) e `GET /api/comercial/pvs/:id/execucoes` (leitura). Travas respondem 409. Migration 055.
   - Rotas: `/api/comercial/bids/:id/revisao` (GET), `/enviar`, `/reenviar`, `/revisao/iniciar`, `/revisao/descartar`, `/aceite-externo`; `POST /bids/:id/fase` só aceita `perdido` e `reabrir`. Público: `/api/bid-link/:token` (GET, `/responder`, `/codigo`, `/aceitar`) — 40 chamadas por link + IP por hora. Migration 052. **Próxima: 15c** — Pedido de Venda (PV) a partir do BID aceito. **Futuro:** perfil **cliente** com login (mesmo padrão do locatário) — ver `claude/desenho-bid-15b.md`.
@@ -1505,7 +1506,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 05/11/2026 (etapa 18h.4b)
+**Última atualização deste documento:** 05/11/2026 (etapa 18h.4c)
 
 --------------------------------------------------------------------------------
 

@@ -277,8 +277,8 @@ const ESPERADO = {
   'front:CampoPessoa.jsx': 'efa3cd5aee2eeadae0805e7d4b6e8daa', // etapa 18g.2c
   'front:gerarRelatorioTarefas.js': '483dd597e30b11635886ba51406d36cf', // etapa 18g.2b (novo)
   'front:AcaoDocFiscal.jsx': 'eed319fa1d63b104146db0b8eabcd7ed', // etapa 18g.2.7
-  'services/ocorrencias.js': 'e71ff37a01b7e21a2c25a2c45a7121f3', // etapa 18h.4b
-  'routes/ocorrencias.js': 'e9308a77ae9bd0e7a086d9d6efadbbfc', // etapa 18h (novo)
+  'services/ocorrencias.js': '5c23cbc1f277aafdf845e6dbdb5ee67b', // etapa 18h.4c
+  'routes/ocorrencias.js': '2a64400bbb28bb48d20f8d0c8d6c27a0', // etapa 18h.4c
   'migrations/068_ocorrencias.sql': '4fff8fd8dccd6dd91dbb2f145bd19a22', // etapa 18h (novo)
   'front:RegistrarOcorrencia.jsx': 'b59b650ed622b93b8d191900a8dc86b2', // etapa 18h.4a
   'front:PainelOcorrencias.jsx': 'b1ed7825032d281524f2af4b659bda2c', // etapa 18h.3.2
@@ -286,13 +286,14 @@ const ESPERADO = {
   'front:useCatalogo.js': '0cd8f09dcbe1e98d67908d2937743a8b', // etapa 18h.2
   'front:areaRestrita.js': '48e89b41e5e1c3b82d92b1bf996576e0', // etapa 18h.2 (novo)
   'migrations/069_ocorrencias_inc_config.sql': '021d999ba5637b4bb5404593c3e62259', // etapa 18h.4a (novo)
-  'front:ConfigOcorrencias.jsx': 'e2f628418948592e63b8122860b52354', // etapa 18h.4b
+  'front:ConfigOcorrencias.jsx': 'e799bac0e58a978808d6041d9e3ed50a', // etapa 18h.4c
 };
 
-// Antes de copiar a etapa 18h.4b — base: 18h.4a
+// Antes de copiar a etapa 18h.4c — base: 18h.4b
 const ANTES = {
-  'services/ocorrencias.js': 'd9ceb48eda4c60add6ef7c6e52da57e7',
-  'front:ConfigOcorrencias.jsx': '67b2278ce309bd03808bc30c5a94b840',
+  'services/ocorrencias.js': 'e71ff37a01b7e21a2c25a2c45a7121f3',
+  'routes/ocorrencias.js': 'e9308a77ae9bd0e7a086d9d6efadbbfc',
+  'front:ConfigOcorrencias.jsx': 'e2f628418948592e63b8122860b52354',
 };
 
 const RAIZ = process.cwd();
@@ -330,7 +331,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18h.4b)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18h.4c)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
