@@ -31,6 +31,8 @@ import TelaOrdemServico from './components/estoque/TelaOrdemServico';
 import TelaConfiguracoes from './components/configuracoes/TelaConfiguracoes';
 import BemVindo from './components/configuracoes/BemVindo';
 import MeuPlano from './components/configuracoes/MeuPlano'; // 18j: ⭐ módulos do plano
+import SinoNotificacoes from './components/shared/SinoNotificacoes'; // 18n: 🔔
+import { pedirAbrirDemanda } from './components/spot/ChatSpot';
 import { soAreaRestrita } from './utils/areaRestrita';
 import { definirModulosSessao } from './utils/modulosSessao'; // 18k // 18i: 👋 roteiro inicial (substitui o "Complete o perfil" da 14d.5)
 import TelaMonitorCnpj from './components/compliance/TelaMonitorCnpj'; // 14e
@@ -585,6 +587,7 @@ const perfil = PERFIS[usuario.perfil] || {
       {/* Conteúdo */}
       <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>        
         <AvisoPlanoTenant />
+        {usuario?.id && usuario.perfil !== "fornecedor" && <SinoNotificacoes C={C} base="/notificacoes" onAbrir={(l)=>{ if (l.tela==="spot") { setTela("spot"); pedirAbrirDemanda(l); } }} />}
         {tela==="home"&&(
           <div style={{flex:1,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"40px 40px 48px",overflowY:"auto"}}>{/* 18j: no topo — centralizado na vertical cortava o cartão de boas-vindas */}
             <div style={{maxWidth:600,width:"100%",textAlign:"center",margin:"auto 0"}}>

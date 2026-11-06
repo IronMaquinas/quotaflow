@@ -56,3 +56,30 @@ export default function ChatSpot({ C, s, url, lado, titulo, subtitulo, onFechar,
     </div>
   </div>;
 }
+
+// 18n: estado da conversa (do ponto de vista de quem vê) — o mesmo nos dois lados
+//   nova: tem mensagem do outro lado sem ler · aguardando: a última é minha, < 24 h · sem_resposta: a última é minha, ≥ 24 h
+//   ativa: os dois escreveram e a última é dos últimos 3 dias · parada: houve conversa, mas parou
+export const ESTADO_CONVERSA = {
+  nova: { emoji: "🔵", cor: "#3b82f6", rotulo: (e, n) => `${n} nova${n > 1 ? "s" : ""}` },
+  aguardando: { emoji: "⏳", cor: "#f59e0b", rotulo: (e) => `Aguardando resposta${e.horas >= 1 ? ` há ${e.horas} h` : ""}${e.ultima_lida ? " · leu" : " · não leu"}` },
+  sem_resposta: { emoji: "🔴", cor: "#ef4444", rotulo: (e) => `Sem resposta há ${e.horas >= 48 ? `${Math.floor(e.horas / 24)} dias` : `${e.horas} h`}${e.ultima_lida ? " · leu e não respondeu" : " · não leu"}` },
+  ativa: { emoji: "💬", cor: "#22c55e", rotulo: () => "Conversa ativa" },
+  parada: { emoji: "💬", cor: "#64748b", rotulo: () => "Conversa parada" },
+};
+export function SeloConversa({ estado, naoLidas = 0, compacto = false }) {
+  const k = naoLidas > 0 ? "nova" : estado?.estado; const e = ESTADO_CONVERSA[k]; if (!e) return null;
+  return <span title="Situação da conversa" style={{ display: "inline-flex", alignItems: "center", gap: 4, fontSize: compacto ? 11 : 11.5, fontWeight: 700, color: e.cor, whiteSpace: "nowrap" }}>{e.emoji} {e.rotulo(estado || {}, naoLidas)}</span>;
+}
+/** resumo de várias conversas (card da demanda do comprador) */
+export function resumoConversas(interesses = []) {
+  const c = { nova: 0, aguardando: 0, sem_resposta: 0, ativa: 0 };
+  for (const i of interesses) { if (i.desistiu_em) continue; const k = i.chat_nao_lidas > 0 ? "nova" : i.chat_estado?.estado; if (k in c) c[k] += k === "nova" ? i.chat_nao_lidas : 1; }
+  return [c.nova && `🔵 ${c.nova} mensagem(ns) nova(s)`, c.sem_resposta && `🔴 ${c.sem_resposta} sem resposta +24 h`, c.aguardando && `⏳ ${c.aguardando} aguardando`, c.ativa && `💬 ${c.ativa} conversa(s) ativa(s)`].filter(Boolean);
+}
+
+// 18n: abrir uma demanda (e a conversa) vindo do 🔔 — guarda o pedido até a tela do Spot carregar as demandas
+let pedidoAbrir = null;
+export function pedirAbrirDemanda(link) { pedidoAbrir = link ? { ...link, em: Date.now() } : null; window.dispatchEvent(new CustomEvent("qf-abrir-demanda-spot")); }
+export function pegarPedidoAbrir() { const p = pedidoAbrir; return p && Date.now() - p.em < 60000 ? p : null; }
+export function limparPedidoAbrir() { pedidoAbrir = null; }

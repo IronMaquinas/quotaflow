@@ -1,4 +1,4 @@
-import ChatSpot from './ChatSpot'; // 18l: 💬 conversa com o fornecedor
+import ChatSpot, { SeloConversa, resumoConversas, pegarPedidoAbrir, limparPedidoAbrir } from './ChatSpot'; // 18l: 💬 conversa com o fornecedor · 18n: estado
 import { useState, useEffect } from 'react';
 import apiService from '../../services/apiService';
 import SeletorAtuacao, { useOpcoesAtuacao, nomeAtuacao } from '../shared/SeletorAtuacao';
@@ -127,6 +127,14 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
   const [aviso, setAviso] = useState(null); // 18m: mensagens na própria tela (no lugar do alert do navegador)
   const [confirmar, setConfirmar] = useState(null); // 18m: { titulo, texto, botao, acao } — confirmação no modal do app
   const avisar = (t) => { setAviso(String(t)); setTimeout(() => setAviso(null), 7000); };
+  // 18n: veio do 🔔 — abre a demanda e a conversa quando as demandas estiverem carregadas
+  const [pedidoN, setPedidoN] = useState(0);
+  useEffect(() => { const f = () => setPedidoN((n) => n + 1); window.addEventListener('qf-abrir-demanda-spot', f); return () => window.removeEventListener('qf-abrir-demanda-spot', f); }, []);
+  useEffect(() => {
+    const p = pegarPedidoAbrir(); if (!p || !demandas?.length) return;
+    const d = demandas.find((x) => String(x.id) === String(p.demanda_id)); if (!d) return;
+    limparPedidoAbrir(); setModal(d.id); const i = (d.interesses || []).find((x) => String(x.id) === String(p.interesse_id)); if (i) setChat({ d, i });
+  }, [demandas, pedidoN]); // eslint-disable-line react-hooks/exhaustive-deps
   const [modal, setModal] = useState(null); // <- FALTAVA: null | 'nova' | id da demanda
   const [form, setForm] = useState({ ...FORM_VAZIO });
   const { opcoes: opcoesAtuacao } = useOpcoesAtuacao();
@@ -441,7 +449,7 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
                         🏢 {d.interesses.map(i => i.fornecedor_nome).join(', ')}
                       </div>
                     )}
-                    {(() => { const n = (d.interesses || []).reduce((t, i) => t + (i.chat_nao_lidas || 0), 0); return n > 0 && <div style={{ fontSize: 11, color: C.accent, marginTop: 3, fontWeight: 700 }}>💬 {n} mensagem(ns) nova(s) de fornecedor</div>; })()}{/* 18l */}
+                    {(() => { const r = resumoConversas(d.interesses); return r.length > 0 && <div style={{ fontSize: 11, color: C.textSub, marginTop: 3, fontWeight: 600 }}>{r.join(' · ')}</div>; })()}{/* 18l · 18n: estado das conversas */}
                   </div>
                 </div>
               </div>
@@ -698,6 +706,7 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
                                   style={{ padding: '5px 10px', borderRadius: 5, border: `1px solid ${C.accent}`, background: i.chat_nao_lidas ? C.accent : 'transparent', color: i.chat_nao_lidas ? '#fff' : C.accent, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
                                   💬 Conversar{i.chat_nao_lidas ? ` (${i.chat_nao_lidas} nova${i.chat_nao_lidas > 1 ? 's' : ''})` : i.chat_total ? ` (${i.chat_total})` : ''}
                                 </button>
+                                {i.chat_estado && !i.chat_nao_lidas && <div style={{ width: '100%', textAlign: 'right' }}><SeloConversa estado={i.chat_estado} compacto /></div>}{/* 18n */}
                                 {i.fornecedor_email && (
                                   <a href={`mailto:${i.fornecedor_email}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpoEmail)}`}
                                      onClick={e => e.stopPropagation()}

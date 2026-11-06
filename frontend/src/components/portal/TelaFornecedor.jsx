@@ -10,6 +10,8 @@ import TelaMeusDadosFornecedor from '../fornecedores/TelaMeusDadosFornecedor';
 import TelaFornecedorSpot, { temLinkSpotPendente } from './TelaFornecedorSpot';
 import TelaPainelFornecedor from './TelaPainelFornecedor';
 import apiService from '../../services/apiService';
+import SinoNotificacoes from '../shared/SinoNotificacoes'; // 18n
+import { pedirAbrirDemanda } from '../spot/ChatSpot';
 
 // Canal Spot é exclusivo para fornecedor verificado (global) — etapa 10c.
 // O backend recusa as rotas do Spot para fornecedor local; aqui só explicamos.
@@ -136,6 +138,7 @@ export default function TelaFornecedor() {
     <div style={{ fontFamily: "'DM Sans','Segoe UI',sans-serif", background: C.bg, height: '100vh', color: C.text, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@300;400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
 
+      {usuario && <SinoNotificacoes C={C} base="/notificacoes-fornecedor" onAbrir={(l) => { if (l.tela === 'oportunidades') { setTela('oportunidades'); pedirAbrirDemanda(l); } }} />}
       <div style={{ display: 'flex', height: '100vh', overflow: 'hidden' }}>
         {/* ─── SIDEBAR ─── */}
         <div style={{

@@ -39,6 +39,7 @@ const AREAS = [
   { id: 'inteligencia', nome: '🧠 Inteligência e IA', modulos: [
     { id: 'paineis', nome: 'Painéis e relatórios', desc: 'Relatório gerencial, financeiro, histórico de preços e benchmark de mercado.', telas: ['relatorio', 'financeiro', 'benchmark'] },
     { id: 'agente_ia', nome: 'Agente de IA — saúde da empresa', desc: 'Análise da operação pelo agente de IA e recomendações.', telas: ['inteligencia'] },
+    { id: 'notificacoes_celular', nome: '🔔 Notificações no celular', desc: 'Aviso no celular (Telegram, depois app) só do que importa, com regra contra excesso. Na tela é para todos.', telas: [], futuro: true },
     { id: 'radar_mercado', nome: 'Radar de mercado (relatório diário)', desc: 'Relatório diário com informações do mercado coletadas na web.', telas: [], futuro: true },
   ] },
 ];

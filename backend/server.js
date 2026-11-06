@@ -155,6 +155,8 @@ app.use('/api/comercial', tenantMiddleware, exigirModulo('crm_bid'), require('./
 app.use('/api/programacao', tenantMiddleware, exigirModulo('transporte'), require('./routes/programacao')); // etapa 16a — 🚛 Programação (execuções / AT)
 app.use('/api/bid-link', require('./routes/bidLink')); // etapa 15b — link do cliente para o BID (público, token)
 app.use('/api/at-link', require('./routes/atLink')); // etapa 16c — link do motorista para a AT (público, token)
+app.use('/api/notificacoes', tenantMiddleware, require('./routes/notificacoes').usuario); // etapa 18n: 🔔 Central de Notificações
+app.use('/api/notificacoes-fornecedor', fornecedorMiddleware, require('./routes/notificacoes').fornecedor); // etapa 18n
 app.use('/api/ocorrencias', tenantMiddleware, exigirModulo('ocorrencias'), require('./routes/ocorrencias')); // etapa 18h — ⚠️ ocorrências / sinistros (SIN)
 app.use('/api/locatario', tenantMiddleware, exigirModulo('contratos_locacao'), require('./routes/locatario')); // etapa 14b.3 — área do locatário
 
@@ -255,6 +257,10 @@ app.post("/api/cotacao/:token/responder", async (req, res) => {
 // (Render pago). No Render grátis o servidor dorme: o disparo vem do Supabase
 // (pg_cron chamando POST /api/recomendacoes/resumo-diario).
 if (process.env.CRON_INTERNO === '1') {
+  // etapa 18n: 📱 regra contra excesso das notificações no celular — a cada 5 min (o canal Telegram/app liga depois)
+  cron.schedule('*/5 * * * *', () => {
+    require('./services/notificacoes').avaliarPush(require('./db').supabase).then((r) => { if (r.registradas || r.enviadas) console.log('📱 [notificacoes] celular:', JSON.stringify(r)); }).catch((e) => console.error('⚠️ [notificacoes] regra:', e.message));
+  }, { timezone: 'America/Sao_Paulo' });
   cron.schedule('0 7 * * *', () => {
     console.log('[CRON] Resumo diário de recomendações do Canal Spot...');
     enviarResumoDiario().catch(console.error);

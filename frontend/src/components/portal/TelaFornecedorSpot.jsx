@@ -1,5 +1,5 @@
 // components/portal/TelaFornecedorSpot.jsx
-import ChatSpot from '../spot/ChatSpot'; // 18l: 💬 conversa com o comprador
+import ChatSpot, { SeloConversa, pegarPedidoAbrir, limparPedidoAbrir } from '../spot/ChatSpot'; // 18l: 💬 conversa com o comprador · 18n: estado
 import { useState, useEffect } from 'react';
 import apiService from '../../services/apiService';
 import { useOpcoesAtuacao, nomeAtuacao } from '../shared/SeletorAtuacao';
@@ -182,6 +182,14 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
     catch (e) { setDesistir((x) => ({ ...x, enviando: false })); avisar('Erro: ' + e.message); }
   };
   const [demandas, setDemandas] = useState([]);
+  // 18n: veio do 🔔 — abre a demanda e a conversa com o comprador
+  const [pedidoN, setPedidoN] = useState(0);
+  useEffect(() => { const f = () => setPedidoN((n) => n + 1); window.addEventListener('qf-abrir-demanda-spot', f); return () => window.removeEventListener('qf-abrir-demanda-spot', f); }, []);
+  useEffect(() => {
+    const p = pegarPedidoAbrir(); if (!p || !demandas?.length) return;
+    const d = demandas.find((x) => String(x.id) === String(p.demanda_id)); if (!d) return;
+    limparPedidoAbrir(); setDetalhe(d); if (d.meu_interesse) setChat(d);
+  }, [demandas, pedidoN]); // eslint-disable-line react-hooks/exhaustive-deps
   const { opcoes: opcoesAtuacao } = useOpcoesAtuacao(); // nomes de segmento/sistema/oferta (etapa 4)
   const [loading, setLoading] = useState(true);
   const [erro, setErro] = useState(null);
@@ -579,7 +587,7 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
                     <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11 }}>
                       <span style={{ color: C.muted }}>🕐 publicada {tempoAtras(d.criado_em)}</span>
                       {d.meu_interesse ? (
-                        <span style={{ color: d.meu_interesse.chat_nao_lidas ? C.accent : C.muted, fontWeight: d.meu_interesse.chat_nao_lidas ? 700 : 400 }}>{d.meu_interesse.chat_nao_lidas ? `💬 ${d.meu_interesse.chat_nao_lidas} mensagem(ns) nova(s)` : `✓ respondida ${tempoAtras(d.meu_interesse.criado_em)}`}</span>
+                        (d.meu_interesse.chat_nao_lidas || d.meu_interesse.chat_estado ? <SeloConversa estado={d.meu_interesse.chat_estado} naoLidas={d.meu_interesse.chat_nao_lidas} /> : <span style={{ color: C.muted }}>✓ respondida {tempoAtras(d.meu_interesse.criado_em)}</span>)
                       ) : d.visto_por_mim ? (
                         <span style={{ color: C.muted }}>👁 Você visualizou</span>
                       ) : (
@@ -772,6 +780,7 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
                     <button type="button" onClick={() => setChat(d)} style={{ marginTop: 10, padding: '7px 14px', borderRadius: 6, border: `1px solid ${C.accent}`, background: mi.chat_nao_lidas ? C.accent : 'transparent', color: mi.chat_nao_lidas ? '#fff' : C.accent, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                       💬 Conversar com o comprador{mi.chat_nao_lidas ? ` (${mi.chat_nao_lidas} nova${mi.chat_nao_lidas > 1 ? 's' : ''})` : mi.chat_total ? ` (${mi.chat_total})` : ''}
                     </button>{/* 18l */}
+                    {mi.chat_estado && !mi.chat_nao_lidas && <span style={{ marginLeft: 10 }}><SeloConversa estado={mi.chat_estado} compacto /></span>}{/* 18n */}
                     {!encerrada && mi.status !== 'escolhido' && <button type="button" onClick={() => setDesistir({ d, motivo: '' })} title="Não vai mais atender: a demanda sai das suas listas" style={{ marginTop: 10, marginLeft: 8, padding: '7px 14px', borderRadius: 6, border: `1px solid ${C.border}`, background: 'transparent', color: C.muted, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>🚪 Desistir da demanda</button>}{/* 18m */}
                     {!encerrada && (
                       <div style={{ fontSize: 11, marginTop: 8, color: sit === 'sem_retorno' ? '#ef4444' : C.muted }}>

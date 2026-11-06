@@ -110,6 +110,7 @@ router.get('/demandas', tenantMiddleware, async (req, res) => {
             status: i.status,
             criado_em: i.criado_em,
             chat_nao_lidas: chat.naoLidas?.[String(i.id)] || 0, chat_total: chat.total?.[String(i.id)] || 0, // 18l
+            chat_estado: chat.estado?.[String(i.id)] || null, // 18n: nova · aguardando · sem_resposta · ativa · parada
             desistiu_em: i.desistiu_em || null, desistencia_motivo: i.desistencia_motivo || null, // 18m
           };
         }).sort((a, b) => {
@@ -380,6 +381,7 @@ router.get('/fornecedor/demandas', fornecedorMiddleware, exigirAcessoSpot, async
           observacao_fornecedor: mi.observacao_fornecedor,
           criado_em: mi.criado_em,
           chat_nao_lidas: chatF.naoLidas?.[String(mi.id)] || 0, chat_total: chatF.total?.[String(mi.id)] || 0, // 18l
+          chat_estado: chatF.estado?.[String(mi.id)] || null, // 18n
         } : null,
         visto_por_mim: visPorMim[d.id] || null,
         // { pontos, faixa: combina_muito | combina | pode_interessar, motivos: [{tipo, texto}] } ou null
