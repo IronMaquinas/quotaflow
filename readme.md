@@ -997,6 +997,7 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18n.3 (06/11):** 🔔 **quanto tempo a notificação fica**: clicou → fica **lida** (apagadinha, como histórico), não some. **Lidas saem da lista 30 dias depois da leitura; não lidas ficam até 90 dias.** A lista abre com ~5 visíveis e rola para o resto (até as 30 mais recentes), com o topo fixo. A tela já esconde o que passou do prazo; a **limpeza** apaga do banco todo dia às 3h (`cron` dentro do `CRON_INTERNO`; sem ele só esconde). Contador vermelho no 🔔 = não lidas; sem número = nada novo.
   - **18o (06/11):** **🧭 menu lateral na tela do cliente (locatário)** — pedido do Marcony. As abas de cima viraram o **menu lateral esquerdo, padrão do SaaS**: 📑 Contratos e inspeções · 📏 Medições · ⚠️ Ocorrências, com o **contador no item** (estilo Medições: só o número, em vermelho — medições esperando aprovação e ocorrências abertas). **No celular** (tela < 760 px) o menu recolhe: botão **☰** com o item atual e a soma dos contadores dos outros; toca e o menu abre por cima. Itens seguem os módulos ligados (medição, ocorrências).
   - **18n.2 (06/11):** selo da conversa diz **quem** leu: "⏳ Aguardando resposta há 1 h · lida pelo fornecedor" (no portal, "· lida pelo comprador"); sem ler: "· ainda não lida pelo fornecedor".
   - **18n.1 (06/11):** ajuste de layout do Canal Spot (comprador): o resumo das conversas saiu da esquerda e foi para a **direita do card**, ao lado da situação, como no portal, com texto que deixa claro que é o chat ("⏳ 1 conversa aguardando resposta", "💬 2 conversas ativas", "🔵 3 mensagens novas no chat"). No modal da demanda, o selo da conversa saiu do meio dos botões (desalinhava) e ganhou uma **faixa própria abaixo de cada fornecedor** ("💬 Conversa: ⏳ Aguardando resposta há 1 h · leu"). Também corrige o `verificar-entrega.js` (faltavam os arquivos do frontend da 18n).
@@ -1570,7 +1571,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18o)
+**Última atualização deste documento:** 06/11/2026 (etapa 18n.3)
 
 --------------------------------------------------------------------------------
 

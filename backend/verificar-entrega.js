@@ -53,7 +53,7 @@ const ESPERADO = {
   'routes/recomendacoes.js': '05628793a30bc9cc5905c137c90fdb9c', // etapa 18g.2d
   'services/recomendacoesEmail.js': '7bc5475ccffb4fd2fcec53be78e64123', // etapa 10c
   'services/emailService.js': '2daf0e597ff370e006585f919c63b525', // etapa 9
-  'server.js': '6020c8c1147b6216ded8fb44e2771b94', // etapa 18n
+  'server.js': 'a354bd80958bb524424511ed4b1c172e', // etapa 18n.3
   'routes/atuacao.js': 'cc196661189e2714bcfad96e5c1e8ad9',
   'services/atuacao.js': '8509ac0206906a7f93384350e77132bf',
   'front:SeletorAtuacao.jsx': '17afaaf69d6e4cf0c105490267d188a7',
@@ -303,19 +303,17 @@ const ESPERADO = {
   'front:ChatSpot.jsx': 'e7d7e07011cb29dd543772f7972655ea', // etapa 18o
   'services/prazoSpot.js': 'bfae1226bd1b3e1d35c8d2fdf3a49cbe', // etapa 18m (novo)
   'migrations/073_spot_prazo_desistencia.sql': '0d74c587787c32c46f5322740528e558', // etapa 18m (novo)
-  'services/notificacoes.js': 'acf92d8912df1668b6ee42bee78d7f81', // etapa 18n
+  'services/notificacoes.js': '80c5dbe4b2a03a5625f8b00fd14192a4', // etapa 18n.3
   'routes/notificacoes.js': '3fb019e9d7bfa0b8380cb2c238c226f7', // etapa 18n
   'migrations/074_notificacoes.sql': '4faa8c8e3f35621354aaf24218844adc', // etapa 18n
-  'front:SinoNotificacoes.jsx': '4bb050933a0388b41e9e0f838108136d', // etapa 18n (novo)
+  'front:SinoNotificacoes.jsx': '6a4cb9e19227c570ada76c138d16d74e', // etapa 18n.3
 };
 
-// Antes de copiar a etapa 18o — base: 3a1d4b0
+// Antes de copiar a etapa 18n.3 — base: a4364a8
 const ANTES = {
-  'front:TelaCanalSpot.jsx': '009b75a6581bd6d97d06b62f52d87a6b',
-  'front:ChatSpot.jsx': 'e7d7e07011cb29dd543772f7972655ea',
-  'front:TelaFornecedorSpot.jsx': '30f4ceb3cac74e9f05a7b68f561a77c4',
-  'front:TelaLocatario.jsx': 'a5c77e2cf5f013d1eff4e50307a59e3f',
-  'front:App.jsx': '367542c6d6f805628ca45711b79dfaaf',
+  'server.js': '6020c8c1147b6216ded8fb44e2771b94',
+  'services/notificacoes.js': 'acf92d8912df1668b6ee42bee78d7f81',
+  'front:SinoNotificacoes.jsx': '4bb050933a0388b41e9e0f838108136d',
 };
 
 const RAIZ = process.cwd();
@@ -353,7 +351,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18o)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18n.3)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

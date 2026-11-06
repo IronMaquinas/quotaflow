@@ -16,6 +16,9 @@
 const { EventEmitter } = require('events');
 const avisos = new EventEmitter(); avisos.setMaxListeners(0);
 const ESPERA_MS = 25000;
+// 18n.3: quanto tempo fica na lista — lidas 30 dias (conta da leitura), não lidas 90 dias
+const GUARDA = { lidas_dias: 30, nao_lidas_dias: 90 };
+const noPrazo = (n, agora = Date.now()) => (n.lida_em ? agora - Date.parse(n.lida_em) < GUARDA.lidas_dias * 864e5 : agora - Date.parse(n.criado_em) < GUARDA.nao_lidas_dias * 864e5);
 const REGRA = { primeira_min: 10, demais_min: 60, online_min: 5, silencio_ini: 22, silencio_fim: 7, limite_dia: 5 };
 const sem074 = (e) => /notificacoes|does not exist|schema cache/i.test(String(e?.message || e));
 async function q(p) { const { data, error } = await p; if (error) throw new Error(error.message); return data || []; }
@@ -48,7 +51,7 @@ async function criar(supabase, dest, { tenantId = null, tipo, titulo, texto = nu
 }
 
 const publica = (n) => ({ id: n.id, tipo: n.tipo, titulo: n.titulo, texto: n.texto, link: n.link || {}, quantidade: n.quantidade || 1, lida: !!n.lida_em, em: n.atualizado_em || n.criado_em });
-async function daPessoa(supabase, dest) { return q(supabase.from('notificacoes').select('*').eq('destinatario_tipo', dest.tipo).eq('destinatario_id', String(dest.id))); }
+async function daPessoa(supabase, dest) { return (await q(supabase.from('notificacoes').select('*').eq('destinatario_tipo', dest.tipo).eq('destinatario_id', String(dest.id)))).filter((n) => noPrazo(n)); } // 18n.3: fora do prazo some na hora (a limpeza apaga de madrugada)
 
 /** lista para o 🔔 — com esperar, segura até chegar algo novo (desde = maior "versão" que a tela já tem) */
 async function listar(supabase, dest, { desde = 0, esperar = false, limite = 30 } = {}) {
@@ -100,4 +103,14 @@ async function avaliarPush(supabase, agora = Date.now()) {
   return res;
 }
 
-module.exports = { REGRA, criar, listar, marcarLida, avaliarPush, online, marcarVisto, _definirCanal, _avisos: avisos };
+/** 18n.3: 🧹 limpeza diária (cron 3h) — apaga lidas há +30 dias e não lidas há +90 dias */
+async function limpar(supabase, agora = Date.now()) {
+  try {
+    const lidas = await supabase.from('notificacoes').delete().not('lida_em', 'is', null).lt('lida_em', new Date(agora - GUARDA.lidas_dias * 864e5).toISOString()).select();
+    const velhas = await supabase.from('notificacoes').delete().is('lida_em', null).lt('criado_em', new Date(agora - GUARDA.nao_lidas_dias * 864e5).toISOString()).select();
+    if (lidas.error || velhas.error) throw new Error((lidas.error || velhas.error).message);
+    return { apagadas: (lidas.data || []).length + (velhas.data || []).length };
+  } catch (e) { if (sem074(e)) return { apagadas: 0 }; throw e; }
+}
+
+module.exports = { GUARDA, limpar, REGRA, criar, listar, marcarLida, avaliarPush, online, marcarVisto, _definirCanal, _avisos: avisos };

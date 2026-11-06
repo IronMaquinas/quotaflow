@@ -39,12 +39,12 @@ export default function SinoNotificacoes({ C, base = "/notificacoes", onAbrir })
     </button>
     {aberto && <>
       <div onClick={() => setAberto(false)} style={{ position: "fixed", inset: 0, zIndex: 899 }} />
-      <div role="dialog" aria-label="Notificações" style={{ position: "fixed", top: 58, right: 16, zIndex: 901, width: 360, maxWidth: "calc(100vw - 32px)", maxHeight: "70vh", overflowY: "auto", background: C.surface || "#111722", border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: "0 12px 32px #000a", color: C.text, fontFamily: "inherit" }}>
-        <div style={{ display: "flex", alignItems: "center", padding: "10px 14px", borderBottom: `1px solid ${C.border}` }}>
-          <b style={{ flex: 1, fontSize: 14 }}>🔔 Notificações</b>
+      <div role="dialog" aria-label="Notificações" style={{ position: "fixed", top: 58, right: 16, zIndex: 901, width: 360, maxWidth: "calc(100vw - 32px)", maxHeight: "min(70vh, 360px)", overflowY: "auto", background: C.surface || "#111722", border: `1px solid ${C.border}`, borderRadius: 10, boxShadow: "0 12px 32px #000a", color: C.text, fontFamily: "inherit" }}>
+        <div style={{ display: "flex", alignItems: "center", padding: "10px 14px", borderBottom: `1px solid ${C.border}`, position: "sticky", top: 0, background: C.surface || "#111722", zIndex: 1 }}>
+          <b style={{ flex: 1, fontSize: 14 }}>🔔 Notificações</b>{/* 18n.3: topo fixo ao rolar */}
           {nao > 0 && <button type="button" onClick={todasLidas} style={{ background: "none", border: "none", color: C.accent, fontSize: 12, cursor: "pointer" }}>marcar todas como lidas</button>}
         </div>
-        {lista.length === 0 ? <div style={{ padding: 20, fontSize: 13, color: C.muted, textAlign: "center" }}>Nenhuma notificação.</div>
+        {lista.length === 0 ? <div style={{ padding: 20, fontSize: 13, color: C.muted, textAlign: "center" }}>Nenhuma notificação.<br /><span style={{ fontSize: 11.5 }}>As lidas ficam aqui por 30 dias.</span></div>
           : lista.map((n) => <div key={n.id} role="button" tabIndex={0} onClick={() => abrir(n)} onKeyDown={(e) => e.key === "Enter" && abrir(n)}
             style={{ padding: "10px 14px", borderBottom: `1px solid ${C.border}`, cursor: "pointer", background: n.lida ? "transparent" : `${C.accent}14`, display: "flex", gap: 8 }}>
             {!n.lida && <span style={{ width: 8, height: 8, borderRadius: 4, background: C.accent, marginTop: 6, flexShrink: 0 }} />}
