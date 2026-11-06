@@ -11,6 +11,8 @@ const { contextoDoFornecedor, pontuarDemanda, normalizarUF, ufDoTenant } = requi
 
 const { enviarAlertaImediato } = require('../services/recomendacoesEmail'); // e-mail Pro (etapa 8)
 const { exigirAcessoSpot } = require('../services/acessoSpot'); // só fornecedor verificado (global) vê o Spot (etapa 10c)
+const CHAT = require('../services/chatSpot'); // 💬 conversa comprador ↔ fornecedor (etapa 18l)
+const { supabase } = require('../db');
 
 const URGENCIAS = ['baixa', 'media', 'alta'];
 
@@ -55,6 +57,7 @@ router.get('/demandas', tenantMiddleware, async (req, res) => {
   try {
     const demandas = await DB.select('demandas_spot', {}, req.tenantId);
     const interesses = await DB.select('interesses_spot', {}, req.tenantId);
+    const chat = await CHAT.naoLidas(supabase, { tenantId: req.tenantId }, 'comprador').catch(() => ({})); // 18l
 
     const visualizacoes = await DB.select('demandas_spot_visualizacoes', {});
     const visPorDemanda = {};
@@ -102,6 +105,7 @@ router.get('/demandas', tenantMiddleware, async (req, res) => {
             observacao_fornecedor: i.observacao_fornecedor,
             status: i.status,
             criado_em: i.criado_em,
+            chat_nao_lidas: chat.naoLidas?.[String(i.id)] || 0, chat_total: chat.total?.[String(i.id)] || 0, // 18l
           };
         }).sort((a, b) => {
           // quem informou valor vem primeiro, menor valor primeiro
@@ -318,6 +322,7 @@ router.get('/fornecedor/demandas', fornecedorMiddleware, exigirAcessoSpot, async
       if (d.foto_path) fotosMap[d.foto_path] = await StorageSpot.gerarSignedUrl(d.foto_path);
     }
 
+    const chatF = await CHAT.naoLidas(supabase, { fornecedorId: req.fornecedorId }, 'fornecedor').catch(() => ({})); // 18l
     res.json(demandas.map(d => {
       // Campos internos do comprador que o fornecedor não deve ver
       const { fornecedor_vencedor_id, encerramento_observacao, ...publico } = d;
@@ -334,6 +339,7 @@ router.get('/fornecedor/demandas', fornecedorMiddleware, exigirAcessoSpot, async
           valor_estimado: mi.valor_estimado,
           observacao_fornecedor: mi.observacao_fornecedor,
           criado_em: mi.criado_em,
+          chat_nao_lidas: chatF.naoLidas?.[String(mi.id)] || 0, chat_total: chatF.total?.[String(mi.id)] || 0, // 18l
         } : null,
         visto_por_mim: visPorMim[d.id] || null,
         // { pontos, faixa: combina_muito | combina | pode_interessar, motivos: [{tipo, texto}] } ou null
@@ -426,6 +432,14 @@ router.get('/config', tenantMiddleware, async (req, res) => {
     res.status(500).json({ erro: err.message });
   }
 });
+
+// ─── 💬 CONVERSA (etapa 18l) — uma por interesse; GET com ?desde=<id>&esperar=1 segura até chegar mensagem nova (~25 s)
+const responderChat = (fn) => async (req, res) => { try { const r = await fn(req); if (r && r.erro) return res.status(r.status || 400).json({ erro: r.erro }); res.json(r); } catch (err) { console.error('❌ [spot chat]', err.message); res.status(500).json({ erro: 'Erro interno' }); } };
+const nomeUsuario = async (tabela, id) => { try { const u = await DB.selectOne(tabela, { id }); return u?.nome || u?.email || null; } catch { return null; } };
+router.get('/demandas/:id/interesses/:iid/mensagens', tenantMiddleware, responderChat((req) => CHAT.listar(supabase, { interesseId: req.params.iid, demandaId: req.params.id, tenantId: req.tenantId }, 'comprador', { desde: Number(req.query.desde) || 0, esperar: req.query.esperar === '1' })));
+router.post('/demandas/:id/interesses/:iid/mensagens', tenantMiddleware, responderChat(async (req) => CHAT.enviar(supabase, { interesseId: req.params.iid, demandaId: req.params.id, tenantId: req.tenantId }, 'comprador', await nomeUsuario('usuarios', req.userId), req.body || {})));
+router.get('/fornecedor/interesses/:iid/mensagens', fornecedorMiddleware, exigirAcessoSpot, responderChat((req) => CHAT.listar(supabase, { interesseId: req.params.iid, fornecedorId: req.fornecedorId }, 'fornecedor', { desde: Number(req.query.desde) || 0, esperar: req.query.esperar === '1' })));
+router.post('/fornecedor/interesses/:iid/mensagens', fornecedorMiddleware, exigirAcessoSpot, responderChat(async (req) => CHAT.enviar(supabase, { interesseId: req.params.iid, fornecedorId: req.fornecedorId }, 'fornecedor', await nomeUsuario('fornecedor_usuarios', req.userId), req.body || {})));
 
 router.post('/fornecedor/interesse', fornecedorMiddleware, exigirAcessoSpot, async (req, res) => {
   try {

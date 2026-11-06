@@ -1,4 +1,5 @@
 // components/portal/TelaFornecedorSpot.jsx
+import ChatSpot from '../spot/ChatSpot'; // 18l: 💬 conversa com o comprador
 import { useState, useEffect } from 'react';
 import apiService from '../../services/apiService';
 import { useOpcoesAtuacao, nomeAtuacao } from '../shared/SeletorAtuacao';
@@ -171,6 +172,7 @@ function MotivosMatch({ match, C }) {
 }
 
 export default function TelaFornecedorSpot({ C, s, usuario }) {
+  const [chat, setChat] = useState(null); // 18l: demanda com a conversa aberta
   const [demandas, setDemandas] = useState([]);
   const { opcoes: opcoesAtuacao } = useOpcoesAtuacao(); // nomes de segmento/sistema/oferta (etapa 4)
   const [loading, setLoading] = useState(true);
@@ -569,7 +571,7 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
                     <div style={{ marginTop: 10, display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 11 }}>
                       <span style={{ color: C.muted }}>🕐 publicada {tempoAtras(d.criado_em)}</span>
                       {d.meu_interesse ? (
-                        <span style={{ color: C.muted }}>✓ respondida {tempoAtras(d.meu_interesse.criado_em)}</span>
+                        <span style={{ color: d.meu_interesse.chat_nao_lidas ? C.accent : C.muted, fontWeight: d.meu_interesse.chat_nao_lidas ? 700 : 400 }}>{d.meu_interesse.chat_nao_lidas ? `💬 ${d.meu_interesse.chat_nao_lidas} mensagem(ns) nova(s)` : `✓ respondida ${tempoAtras(d.meu_interesse.criado_em)}`}</span>
                       ) : d.visto_por_mim ? (
                         <span style={{ color: C.muted }}>👁 Você visualizou</span>
                       ) : (
@@ -759,6 +761,9 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
                     {mi.observacao_fornecedor && (
                       <div style={{ fontSize: 11, color: C.textSub, marginTop: 4 }}>📝 {mi.observacao_fornecedor}</div>
                     )}
+                    <button type="button" onClick={() => setChat(d)} style={{ marginTop: 10, padding: '7px 14px', borderRadius: 6, border: `1px solid ${C.accent}`, background: mi.chat_nao_lidas ? C.accent : 'transparent', color: mi.chat_nao_lidas ? '#fff' : C.accent, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
+                      💬 Conversar com o comprador{mi.chat_nao_lidas ? ` (${mi.chat_nao_lidas} nova${mi.chat_nao_lidas > 1 ? 's' : ''})` : mi.chat_total ? ` (${mi.chat_total})` : ''}
+                    </button>{/* 18l */}
                     {!encerrada && (
                       <div style={{ fontSize: 11, marginTop: 8, color: sit === 'sem_retorno' ? '#ef4444' : C.muted }}>
                         {sit === 'sem_retorno'
@@ -811,6 +816,9 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
         );
       })()}
 
+      {chat && chat.meu_interesse && <ChatSpot C={C} s={s} lado="fornecedor" url={`/spot/fornecedor/interesses/${chat.meu_interesse.id}/mensagens`}
+        titulo={chat.empresa_nome || 'Comprador'} subtitulo={`${chat.numero || `DSP-${String(chat.id).padStart(4, '0')}`} · ${chat.componente}`}
+        onFechar={() => { setChat(null); carregar(); }} />}{/* 18l */}
       {fotoAmpliada && detalhe && (
         <div
           onClick={() => setFotoAmpliada(null)}

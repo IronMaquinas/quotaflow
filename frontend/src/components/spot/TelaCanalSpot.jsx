@@ -1,3 +1,4 @@
+import ChatSpot from './ChatSpot'; // 18l: 💬 conversa com o fornecedor
 import { useState, useEffect } from 'react';
 import apiService from '../../services/apiService';
 import SeletorAtuacao, { useOpcoesAtuacao, nomeAtuacao } from '../shared/SeletorAtuacao';
@@ -120,6 +121,7 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
   const [encerrando, setEncerrando] = useState(null);
   const [salvandoStatus, setSalvandoStatus] = useState(false);
   const [fotoAmpliada, setFotoAmpliada] = useState(null);
+  const [chat, setChat] = useState(null); // 18l: { d, i } conversa aberta
   const [modal, setModal] = useState(null); // <- FALTAVA: null | 'nova' | id da demanda
   const [form, setForm] = useState({ ...FORM_VAZIO });
   const { opcoes: opcoesAtuacao } = useOpcoesAtuacao();
@@ -427,6 +429,7 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
                         🏢 {d.interesses.map(i => i.fornecedor_nome).join(', ')}
                       </div>
                     )}
+                    {(() => { const n = (d.interesses || []).reduce((t, i) => t + (i.chat_nao_lidas || 0), 0); return n > 0 && <div style={{ fontSize: 11, color: C.accent, marginTop: 3, fontWeight: 700 }}>💬 {n} mensagem(ns) nova(s) de fornecedor</div>; })()}{/* 18l */}
                   </div>
                 </div>
               </div>
@@ -635,7 +638,7 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
                               {fmtD(i.criado_em)}
                             </div>
                           </div>
-                          {(i.fornecedor_email || i.fornecedor_telefone || i.fornecedor_whatsapp) && (() => {
+                          {(() => { // 18l: 💬 Conversar sempre; ✉️/WhatsApp quando há contato
                             const numDem = d.numero || `DSP-${String(d.id).padStart(4, '0')}`;
                             const assunto = `${numDem} · ${d.componente}`;
                             const corpoEmail = [
@@ -666,7 +669,12 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
                               `Quantidade: ${d.quantidade} unidade(s)`,
                             ].filter(v => v !== null).join('\n');
                             return (
-                              <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                              <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                                <button type="button" onClick={e => { e.stopPropagation(); setChat({ d, i }); }}
+                                  title="Conversar com o fornecedor aqui no sistema"
+                                  style={{ padding: '5px 10px', borderRadius: 5, border: `1px solid ${C.accent}`, background: i.chat_nao_lidas ? C.accent : 'transparent', color: i.chat_nao_lidas ? '#fff' : C.accent, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
+                                  💬 Conversar{i.chat_nao_lidas ? ` (${i.chat_nao_lidas} nova${i.chat_nao_lidas > 1 ? 's' : ''})` : i.chat_total ? ` (${i.chat_total})` : ''}
+                                </button>
                                 {i.fornecedor_email && (
                                   <a href={`mailto:${i.fornecedor_email}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpoEmail)}`}
                                      onClick={e => e.stopPropagation()}
@@ -830,6 +838,9 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
         );
       })()}
 
+      {chat && <ChatSpot C={C} s={s} lado="comprador" url={`/spot/demandas/${chat.d.id}/interesses/${chat.i.id}/mensagens`}
+        titulo={chat.i.fornecedor_nome} subtitulo={`${chat.d.numero || `DSP-${String(chat.d.id).padStart(4, '0')}`} · ${chat.d.componente}`}
+        onFechar={() => { setChat(null); carregarDemandas(); }} />}{/* 18l */}
       {fotoAmpliada && (
         <div
           onClick={() => setFotoAmpliada(null)}
