@@ -59,8 +59,8 @@ const ESPERADO = {
   'front:SeletorAtuacao.jsx': '17afaaf69d6e4cf0c105490267d188a7',
   'front:TelaMeusDadosFornecedor.jsx': '1e8cc8a63de4debf1530042e511732f9', // etapa 14e
   'front:TelaFornecedoresNova.jsx': '28396f3bc910190ecc80873b54edc47d', // etapa 10c
-  'front:TelaCanalSpot.jsx': 'f554ecde76d39086249e2d69ed536db4', // etapa 18n.1
-  'front:TelaFornecedorSpot.jsx': '67fa08d8f6ff368bea9a0dd142a21387', // etapa 18n
+  'front:TelaCanalSpot.jsx': '009b75a6581bd6d97d06b62f52d87a6b', // etapa 18o
+  'front:TelaFornecedorSpot.jsx': '30f4ceb3cac74e9f05a7b68f561a77c4', // etapa 18o
   'front:TelaFornecedor.jsx': 'aad0c16df9e56fcf0b2ee29df7058e46', // etapa 18n
   'front:TelaPainelFornecedor.jsx': 'e9742a3e808ba27df5d5f29a393b8da6', // etapa 10c
   'front:TelaAceitarConvite.jsx': '8aefac39a8a1f4f94c17d2d26f8d53c0', // etapa 11a.3
@@ -69,7 +69,7 @@ const ESPERADO = {
   'services/acessoSpot.js': '6ecce4d16d6b123c6ce93c1223b32f01', // etapa 10c (novo)
   'services/receitaCnpj.js': 'b0e2a678127403d5608723c21ec61b78', // etapa 14d.5
   'services/cadastroPublico.js': '1359e67ff1f2438a964eee7223cf2ed1', // etapa 14d.5
-  'front:App.jsx': '367542c6d6f805628ca45711b79dfaaf', // etapa 18n
+  'front:App.jsx': '5a73a6d66000b426d91d3ba0f81747bb', // etapa 18o
   'front:TelaLogin.jsx': 'bfa1fccbdab99820be2ac14c0e91b2fe', // etapa 14b.1
   'front:TelaSignup.jsx': '345dceefb937b38e74cfef44cfc33ef3', // etapa 11a.3
   'front:AvisoPlanoTenant.jsx': '5795f00c1bc656d0525fd29b6793a96c', // etapa 11a.3
@@ -168,7 +168,7 @@ const ESPERADO = {
   'routes/locatario.js': 'ab3eb4feeb426d72c79daadcdd530dc6', // etapa 18k
   'migrations/043_contratos_locatario.sql': 'f25735b281aa176b4c31c3cc2bf283ed', // etapa 14b.3 (novo)
   'front:TelaContratos.jsx': '8ca010c69c85b79755aba455b1e956df', // etapa 18k
-  'front:TelaLocatario.jsx': 'a5c77e2cf5f013d1eff4e50307a59e3f', // etapa 18k
+  'front:TelaLocatario.jsx': 'b6dc7d43a2e8ab86aedd4e638e832537', // etapa 18o
   'services/clientes.js': '9714283f0013553dc96a48b75b6734cf', // etapa 14b.3.1 (novo)
   'migrations/044_clientes.sql': '446d1a52049aea19938d36cc2b01653d', // etapa 14b.3.1 (novo)
   'front:Clientes.jsx': '8dff871d3b22f31e8f33a65c2f1260a7', // etapa 15a
@@ -300,7 +300,7 @@ const ESPERADO = {
   'front:modulosSessao.js': 'dd5835e99e9dda8effdfc3fb91b7622d', // etapa 18k (novo)
   'services/chatSpot.js': 'a3a3fde106d769e8d796387dad9beb69', // etapa 18n
   'migrations/072_spot_mensagens.sql': '4d73d999f88fda8d641ebe231392bb62', // etapa 18l (novo)
-  'front:ChatSpot.jsx': 'f508d5aa197b6b4aaf41efd6f370ae0c', // etapa 18n.1
+  'front:ChatSpot.jsx': 'e7d7e07011cb29dd543772f7972655ea', // etapa 18o
   'services/prazoSpot.js': 'bfae1226bd1b3e1d35c8d2fdf3a49cbe', // etapa 18m (novo)
   'migrations/073_spot_prazo_desistencia.sql': '0d74c587787c32c46f5322740528e558', // etapa 18m (novo)
   'services/notificacoes.js': 'acf92d8912df1668b6ee42bee78d7f81', // etapa 18n
@@ -309,10 +309,13 @@ const ESPERADO = {
   'front:SinoNotificacoes.jsx': '4bb050933a0388b41e9e0f838108136d', // etapa 18n (novo)
 };
 
-// Antes de copiar a etapa 18n.1 — base: f26a0cc
+// Antes de copiar a etapa 18o — base: 3a1d4b0
 const ANTES = {
-  'front:TelaCanalSpot.jsx': '39d0927725989b5864da5567982771fb',
-  'front:ChatSpot.jsx': 'aaec58e9959d45f9e6dfb3658ac4a61b',
+  'front:TelaCanalSpot.jsx': '009b75a6581bd6d97d06b62f52d87a6b',
+  'front:ChatSpot.jsx': 'e7d7e07011cb29dd543772f7972655ea',
+  'front:TelaFornecedorSpot.jsx': '30f4ceb3cac74e9f05a7b68f561a77c4',
+  'front:TelaLocatario.jsx': 'a5c77e2cf5f013d1eff4e50307a59e3f',
+  'front:App.jsx': '367542c6d6f805628ca45711b79dfaaf',
 };
 
 const RAIZ = process.cwd();
@@ -350,7 +353,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18n.1)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18o)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

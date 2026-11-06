@@ -405,7 +405,7 @@ const perfil = PERFIS[usuario.perfil] || {
         <button onClick={() => setMeuPerfilAberto(true)} title="Meu perfil e senha" style={{ background: "transparent", border: "none", fontSize: 12, color: C.textSub, cursor: "pointer", fontFamily: "inherit" }}>👤 {usuario.nome}</button>
         <button onClick={logout} style={{ background: "transparent", border: `1px solid ${C.border}`, borderRadius: 6, padding: "6px 12px", color: C.muted, fontSize: 12, cursor: "pointer", fontFamily: "inherit" }}>Sair</button>
       </div>
-      <div style={{ flex: 1, overflowY: "auto" }}><TelaLocatario C={C} s={s} usuario={usuario} /></div>
+      <div style={{ flex: 1, minHeight: 0, overflow: "hidden" }}><TelaLocatario C={C} s={s} usuario={usuario} /></div>
       {meuPerfilAberto && <ModalMeuPerfil usuario={usuario} onFechar={() => setMeuPerfilAberto(false)} onAtualizado={(u) => { const novo = { ...usuario, ...u }; setUsuario(novo); localStorage.setItem("usuario", JSON.stringify(novo)); }} />}
     </div>
   );

@@ -725,7 +725,7 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
                               </div>
                             );
                           })()}
-                          {i.chat_estado && !i.chat_nao_lidas && <div style={{ flexBasis: '100%', borderTop: `1px solid ${C.border}`, paddingTop: 7, marginTop: -2, fontSize: 11.5, color: C.muted, display: 'flex', alignItems: 'center', gap: 6 }}>💬 Conversa: <SeloConversa estado={i.chat_estado} compacto /></div>}{/* 18n.1: faixa própria, sem desalinhar os botões */}
+                          {i.chat_estado && !i.chat_nao_lidas && <div style={{ flexBasis: '100%', borderTop: `1px solid ${C.border}`, paddingTop: 7, marginTop: -2, fontSize: 11.5, color: C.muted, display: 'flex', alignItems: 'center', gap: 6 }}>💬 Conversa: <SeloConversa outro="fornecedor" estado={i.chat_estado} compacto /></div>}{/* 18n.1: faixa própria, sem desalinhar os botões */}
                         </div>
                       );
                     })}

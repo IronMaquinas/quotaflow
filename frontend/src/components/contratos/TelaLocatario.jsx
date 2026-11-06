@@ -39,6 +39,9 @@ export default function TelaLocatario({ C, s, usuario }) {
   const [ocDaInspecao, setOcDaInspecao] = useState(null); // 18h: atalho da inspeção com itens não OK
   const [med, setMed] = useState(null); const [medAberta, setMedAberta] = useState(null);
   const [, redesenhar] = useState(0); useEffect(() => aoMudarModulos(() => redesenhar((n) => n + 1)), []); // 18k: módulos chegaram
+  const [menuAberto, setMenuAberto] = useState(false); // 18o: ☰ no celular
+  const [estreito, setEstreito] = useState(() => typeof window !== "undefined" && window.innerWidth < 760);
+  useEffect(() => { const f = () => setEstreito(window.innerWidth < 760); window.addEventListener("resize", f); return () => window.removeEventListener("resize", f); }, []);
   const [ocAbertas, setOcAbertas] = useState(0); // 18h.4: contador na aba ⚠️ Ocorrências (igual ao da empresa)
   const carregarOc = async () => { if (!moduloAtivo("ocorrencias")) return; try { setOcAbertas(((await apiService.get("/locatario/ocorrencias", { status: "abertas" })).ocorrencias || []).length); } catch { setOcAbertas(0); } };
   useEffect(() => { carregarOc(); }, [aba]); // eslint-disable-line
@@ -73,8 +76,28 @@ export default function TelaLocatario({ C, s, usuario }) {
     onConcluida={async (r) => { setExec(null); ok(r.offline ? "Sem internet: a inspeção ficou guardada neste aparelho e será enviada quando a conexão voltar." : r.bloqueou ? "⛔ Inspeção enviada — NÃO use o equipamento até a locadora liberar." : `✓ Inspeção ${r.numero || ""} enviada.`); await carregar(); }} />;
 
   const card = { ...s.card, padding: 14, marginBottom: 10 };
+  const nMed = (med?.contratos || []).reduce((n, c) => n + c.medicoes.filter((x) => x.status === "enviada").length, 0); // 18o: medições esperando o cliente
+  const badge = (n) => n > 0 && <span style={{ marginLeft: "auto", background: C.danger, color: "#fff", borderRadius: 10, padding: "0 7px", fontSize: 11.5, fontWeight: 700 }}>{n}</span>;
+  const itens = [["contratos", "📑", "Contratos e inspeções", 0],
+    ...(med?.contratos?.length > 0 && moduloAtivo("medicao") ? [["medicoes", "📏", "Medições", nMed]] : []),
+    ...(moduloAtivo("ocorrencias") ? [["ocorrencias", "⚠️", "Ocorrências", ocAbertas]] : [])];
+  const temMenu = med?.contratos?.length > 0 || d?.contratos?.length > 0;
+  const atual = itens.find((x) => x[0] === aba) || itens[0];
+  const ir = (k) => { setAba(k); setMenuAberto(false); };
+  const menu = <nav aria-label="Menu do cliente" style={{ display: "flex", flexDirection: "column", gap: 2, padding: "12px 8px" }}>
+    {itens.map(([k, ic, nome, n]) => <button key={k} type="button" onClick={() => ir(k)} aria-current={aba === k ? "page" : undefined}
+      style={{ display: "flex", alignItems: "center", gap: 10, width: "100%", textAlign: "left", background: aba === k ? `${C.accent}22` : "transparent", border: "none", borderLeft: `3px solid ${aba === k ? C.accent : "transparent"}`, borderRadius: 6, padding: "9px 12px", color: aba === k ? C.text : C.textSub, fontSize: 13.5, fontWeight: aba === k ? 700 : 500, cursor: "pointer", fontFamily: "inherit" }}>
+      <span style={{ width: 20, textAlign: "center" }}>{ic}</span><span>{nome}</span>{badge(n)}</button>)}
+  </nav>;
   return (
+    <div style={{ display: "flex", height: "100%", minHeight: 0 }}>
+      {temMenu && !estreito && <aside style={{ width: 230, flexShrink: 0, borderRight: `1px solid ${C.border}`, background: C.surface || C.card, overflowY: "auto" }}>{menu}</aside>}
+      {temMenu && estreito && menuAberto && <div onClick={() => setMenuAberto(false)} style={{ position: "fixed", inset: 0, background: "#00000088", zIndex: 300 }}>
+        <aside onClick={(e) => e.stopPropagation()} style={{ width: 250, height: "100%", background: C.surface || C.card, borderRight: `1px solid ${C.border}`, boxShadow: "4px 0 20px #0008" }}>{menu}</aside></div>}
+      <div style={{ flex: 1, minWidth: 0, overflowY: "auto" }}>
     <div style={{ padding: "16px 14px", maxWidth: 900, margin: "0 auto" }}>
+      {temMenu && estreito && <button type="button" onClick={() => setMenuAberto(true)} aria-label="Abrir menu" style={{ display: "flex", alignItems: "center", gap: 8, width: "100%", marginBottom: 12, background: C.surface || C.card, border: `1px solid ${C.border}`, borderRadius: 8, padding: "9px 12px", color: C.text, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>
+        ☰ <span>{atual[1]} {atual[2]}</span>{badge(itens.filter((x) => x[0] !== aba).reduce((n, x) => n + x[3], 0))}</button>}
       {aviso && <div style={{ ...s.card, padding: "10px 14px", marginBottom: 12, fontSize: 13, borderColor: aviso.tipo === "erro" ? C.danger : C.success, color: aviso.tipo === "erro" ? C.danger : C.success }}>{aviso.texto}</div>}
       {locais.length > 0 && <div style={{ ...card, borderColor: C.warn }}>
         <div style={{ fontSize: 13, fontWeight: 700, color: C.warn, marginBottom: 6 }}>💾 Guardadas neste aparelho</div>
@@ -87,10 +110,7 @@ export default function TelaLocatario({ C, s, usuario }) {
           </div>))}
       </div>}
 
-      {(med?.contratos?.length > 0 || d?.contratos?.length > 0) && <div style={{ display: "flex", gap: 6, marginBottom: 12, borderBottom: `1px solid ${C.border}`, overflowX: "auto" }}>{/* 18d · 18h · 18h.4: uma linha (rola no celular) */}
-        {[["contratos", "📑 Contratos e inspeções"], ...(med?.contratos?.length > 0 && moduloAtivo("medicao") ? [["medicoes", `📏 Medições${med.contratos.some((c) => c.medicoes.some((x) => x.status === "enviada")) ? " •" : ""}`]] : []), ...(moduloAtivo("ocorrencias") ? [["ocorrencias", <>⚠️ Ocorrências{ocAbertas > 0 && <span style={{ marginLeft: 6, background: C.danger, color: "#fff", borderRadius: 10, padding: "0 7px", fontSize: 11.5, fontWeight: 700 }}>{ocAbertas}</span>}</>]] : [])].map(([k, l]) =>
-          <button key={k} type="button" onClick={() => setAba(k)} style={{ whiteSpace: "nowrap", flexShrink: 0, background: "transparent", border: "none", borderBottom: `2px solid ${aba === k ? C.accent : "transparent"}`, color: aba === k ? C.text : C.textSub, padding: "8px 12px", fontSize: 14, cursor: "pointer", fontWeight: aba === k ? 700 : 400 }}>{l}</button>)}
-      </div>}
+      {/* 18o: menu lateral (padrão do SaaS) no lugar das abas — no celular vira ☰ recolhível */}
       {aba === "medicoes" && med?.contratos?.length > 0 && med.contratos.map((c) => <div key={c.id} style={card}>{/* 18d.2: medições enviadas pela locadora */}
         <div style={{ fontWeight: 700, fontSize: 16 }}>📑 {c.numero}</div>
         <div style={{ fontSize: 12.5, color: C.textSub, marginBottom: 6 }}>{c.cliente} — confira a medição de cada mês e aprove, ou comente o que não estiver de acordo.</div>
@@ -172,6 +192,8 @@ export default function TelaLocatario({ C, s, usuario }) {
           <img src={foto.url} alt="" style={{ maxWidth: "100%", maxHeight: "85vh", objectFit: "contain", borderRadius: 6 }} />
           <div style={{ color: "#e2e8f0", fontSize: 13, marginTop: 10 }}>{foto.legenda}</div>
         </div>)}
+    </div>
+      </div>
     </div>
   );
 }
