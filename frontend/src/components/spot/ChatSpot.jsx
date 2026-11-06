@@ -75,7 +75,8 @@ export function SeloConversa({ estado, naoLidas = 0, compacto = false }) {
 export function resumoConversas(interesses = []) {
   const c = { nova: 0, aguardando: 0, sem_resposta: 0, ativa: 0 };
   for (const i of interesses) { if (i.desistiu_em) continue; const k = i.chat_nao_lidas > 0 ? "nova" : i.chat_estado?.estado; if (k in c) c[k] += k === "nova" ? i.chat_nao_lidas : 1; }
-  return [c.nova && `🔵 ${c.nova} mensagem(ns) nova(s)`, c.sem_resposta && `🔴 ${c.sem_resposta} sem resposta +24 h`, c.aguardando && `⏳ ${c.aguardando} aguardando`, c.ativa && `💬 ${c.ativa} conversa(s) ativa(s)`].filter(Boolean);
+  const conv = (n) => `${n} conversa${n > 1 ? 's' : ''}`; // 18n.1: deixa claro que é o 💬 chat
+  return [c.nova && `🔵 ${c.nova} mensage${c.nova > 1 ? 'ns novas' : 'm nova'} no chat`, c.sem_resposta && `🔴 ${conv(c.sem_resposta)} sem resposta +24 h`, c.aguardando && `⏳ ${conv(c.aguardando)} aguardando resposta`, c.ativa && `💬 ${conv(c.ativa)} ativa${c.ativa > 1 ? 's' : ''}`].filter(Boolean);
 }
 
 // 18n: abrir uma demanda (e a conversa) vindo do 🔔 — guarda o pedido até a tela do Spot carregar as demandas

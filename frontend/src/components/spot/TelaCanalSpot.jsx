@@ -449,11 +449,11 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
                         🏢 {d.interesses.map(i => i.fornecedor_nome).join(', ')}
                       </div>
                     )}
-                    {(() => { const r = resumoConversas(d.interesses); return r.length > 0 && <div style={{ fontSize: 11, color: C.textSub, marginTop: 3, fontWeight: 600 }}>{r.join(' · ')}</div>; })()}{/* 18l · 18n: estado das conversas */}
                   </div>
                 </div>
               </div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                {resumoConversas(d.interesses).map((r) => <span key={r} title="Situação das conversas (💬) com os fornecedores" style={{ fontSize: 12, fontWeight: 600, color: C.textSub, whiteSpace: 'nowrap' }}>{r}</span>)}{/* 18n.1: à direita, como no portal */}
                 <TagSituacao situacao={sit} s={s} />
                 <span style={{ fontSize: 12, color: d.total_interesses > 0 ? C.success : C.muted, fontWeight: d.total_interesses > 0 ? 600 : 400 }}>
                   {d.total_interesses > 0 ? `${d.total_interesses} interesse(s)` : 'Sem interesses'}
@@ -636,7 +636,7 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
                           {i.valor_estimado != null && <span> · tinha proposto R$ {Number(i.valor_estimado).toFixed(2).replace('.', ',')}</span>}
                         </div>);
                       return (
-                        <div key={i.id} style={{ background: C.bg, border: ehMenor ? '1px solid #22c55e55' : `1px solid ${C.border}`, borderRadius: 6, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
+                        <div key={i.id} style={{ background: C.bg, border: ehMenor ? '1px solid #22c55e55' : `1px solid ${C.border}`, borderRadius: 6, padding: '10px 14px', display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                           <div style={{ flex: 1, minWidth: 0 }}>
                             <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
                               <span style={{ fontSize: 13, fontWeight: 600, color: C.text }}>🏢 {i.fornecedor_nome}</span>
@@ -706,7 +706,6 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
                                   style={{ padding: '5px 10px', borderRadius: 5, border: `1px solid ${C.accent}`, background: i.chat_nao_lidas ? C.accent : 'transparent', color: i.chat_nao_lidas ? '#fff' : C.accent, fontSize: 11, fontWeight: 700, cursor: 'pointer' }}>
                                   💬 Conversar{i.chat_nao_lidas ? ` (${i.chat_nao_lidas} nova${i.chat_nao_lidas > 1 ? 's' : ''})` : i.chat_total ? ` (${i.chat_total})` : ''}
                                 </button>
-                                {i.chat_estado && !i.chat_nao_lidas && <div style={{ width: '100%', textAlign: 'right' }}><SeloConversa estado={i.chat_estado} compacto /></div>}{/* 18n */}
                                 {i.fornecedor_email && (
                                   <a href={`mailto:${i.fornecedor_email}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpoEmail)}`}
                                      onClick={e => e.stopPropagation()}
@@ -726,6 +725,7 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
                               </div>
                             );
                           })()}
+                          {i.chat_estado && !i.chat_nao_lidas && <div style={{ flexBasis: '100%', borderTop: `1px solid ${C.border}`, paddingTop: 7, marginTop: -2, fontSize: 11.5, color: C.muted, display: 'flex', alignItems: 'center', gap: 6 }}>💬 Conversa: <SeloConversa estado={i.chat_estado} compacto /></div>}{/* 18n.1: faixa própria, sem desalinhar os botões */}
                         </div>
                       );
                     })}

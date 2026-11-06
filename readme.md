@@ -997,6 +997,7 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18n.1 (06/11):** ajuste de layout do Canal Spot (comprador): o resumo das conversas saiu da esquerda e foi para a **direita do card**, ao lado da situação, como no portal, com texto que deixa claro que é o chat ("⏳ 1 conversa aguardando resposta", "💬 2 conversas ativas", "🔵 3 mensagens novas no chat"). No modal da demanda, o selo da conversa saiu do meio dos botões (desalinhava) e ganhou uma **faixa própria abaixo de cada fornecedor** ("💬 Conversa: ⏳ Aguardando resposta há 1 h · leu"). Também corrige o `verificar-entrega.js` (faltavam os arquivos do frontend da 18n).
   - **18n (06/11):** **🔔 Central de Notificações + situação da conversa spot** (ideia do Marcony: saber quem não respondeu e avisar sem incomodar). Migration 074.
     - **Selo da conversa** nos dois lados (comprador e portal do fornecedor): 🔵 N novas · ⏳ Aguardando resposta há X h (· leu / · não leu) · 🔴 Sem resposta há +24 h · 💬 Conversa ativa (os dois escreveram, últimos 3 dias) · 💬 Conversa parada. O card da demanda do comprador mostra o resumo ("🔴 2 sem resposta +24 h · 💬 1 ativa").
     - **🔔 no canto superior direito** (sistema e portal do fornecedor, todos os planos): contador, lista com histórico, "marcar todas como lidas", **aviso rápido no canto** quando chega algo ("💬 Peças Serra respondeu sobre DSP-0004"). Clicar abre a demanda e a conversa. Tempo real por espera longa. Mensagens seguidas do mesmo assunto **agrupam** ("3 mensagens"); abrir a conversa marca o 🔔 dela como lido.
@@ -1567,7 +1568,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18n)
+**Última atualização deste documento:** 06/11/2026 (etapa 18n.1)
 
 --------------------------------------------------------------------------------
 
