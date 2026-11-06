@@ -16,6 +16,9 @@ const { supabase } = require('../db');
 
 const URGENCIAS = ['baixa', 'media', 'alta'];
 
+// Etapa 18m: ⏳ prazo da demanda na rede — aberta há 30 dias sem decisão sai do Spot dos fornecedores (regra em services/prazoSpot.js)
+const { prazoDemanda } = require('../services/prazoSpot');
+
 // Etapa 11a: tenant criado pelo "Criar conta" fica 'pendente' até a plataforma
 // aprovar; enquanto isso usa o sistema, mas não publica no Canal Spot.
 // Tenants antigos (sem a coluna preenchida) contam como aprovados.
@@ -86,7 +89,8 @@ router.get('/demandas', tenantMiddleware, async (req, res) => {
       return {
         ...d,
         foto_url: d.foto_path ? (fotosMap[d.foto_path] || null) : null,
-        total_interesses: meus.length,
+        ...prazoDemanda(d), // 18m
+        total_interesses: meus.filter(i => !i.desistiu_em).length,
         total_visualizacoes: visPorDemanda[d.id] || 0,
         visualizada: !!d.visualizada_em,
         visualizada_em: d.visualizada_em || null,
@@ -106,8 +110,10 @@ router.get('/demandas', tenantMiddleware, async (req, res) => {
             status: i.status,
             criado_em: i.criado_em,
             chat_nao_lidas: chat.naoLidas?.[String(i.id)] || 0, chat_total: chat.total?.[String(i.id)] || 0, // 18l
+            desistiu_em: i.desistiu_em || null, desistencia_motivo: i.desistencia_motivo || null, // 18m
           };
         }).sort((a, b) => {
+          if (!!a.desistiu_em !== !!b.desistiu_em) return a.desistiu_em ? 1 : -1; // 18m: quem desistiu vai para o fim
           // quem informou valor vem primeiro, menor valor primeiro
           const va = a.valor_estimado != null ? Number(a.valor_estimado) : Infinity;
           const vb = b.valor_estimado != null ? Number(b.valor_estimado) : Infinity;
@@ -221,6 +227,7 @@ router.post('/demandas/:id/reabrir', tenantMiddleware, async (req, res) => {
 
     await DB.update('demandas_spot', id, {
       status: 'aberta',
+      renovada_em: new Date().toISOString(), // 18m: reabrir conta um prazo novo de 30 dias
       encerrada_em: null,
       encerramento_motivo: null,
       fornecedor_vencedor_id: null,
@@ -240,7 +247,39 @@ router.post('/demandas/:id/reabrir', tenantMiddleware, async (req, res) => {
   }
 });
 
+// POST /spot/demandas/:id/renovar — 18m: o comprador ainda precisa da peça → mais 30 dias na rede
+router.post('/demandas/:id/renovar', tenantMiddleware, async (req, res) => {
+  try {
+    const id = Number(req.params.id);
+    const demanda = await DB.selectOne('demandas_spot', { id }, req.tenantId);
+    if (!demanda) return res.status(404).json({ erro: 'Demanda não encontrada' });
+    if (demanda.status === 'encerrada') return res.status(409).json({ erro: 'Demanda encerrada — use "Reabrir demanda"' });
+    await DB.update('demandas_spot', id, { renovada_em: new Date().toISOString() }, req.tenantId);
+    res.json({ ok: true, ...prazoDemanda({ ...demanda, renovada_em: new Date().toISOString() }) });
+  } catch (err) {
+    if (/renovada_em/.test(err.message)) return res.status(409).json({ erro: 'Falta rodar a migration 073 no Supabase.' });
+    console.error('❌ POST /spot/demandas/:id/renovar:', err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
 // ─── FORNECEDOR ───────────────────────────────────────────────
+
+// POST /spot/fornecedor/interesses/:iid/desistir — 18m: o fornecedor desiste; a demanda sai das listas dele
+router.post('/fornecedor/interesses/:iid/desistir', fornecedorMiddleware, exigirAcessoSpot, async (req, res) => {
+  try {
+    const it = await DB.selectOne('interesses_spot', { id: req.params.iid });
+    if (!it || String(it.fornecedor_id) !== String(req.fornecedorId)) return res.status(404).json({ erro: 'Interesse não encontrado' });
+    if (it.status === 'escolhido') return res.status(409).json({ erro: 'O comprador já escolheu a sua proposta — combine com ele pela conversa' });
+    if (it.desistiu_em) return res.json({ ok: true });
+    await DB.update('interesses_spot', it.id, { desistiu_em: new Date().toISOString(), desistencia_motivo: String(req.body?.motivo || '').trim().slice(0, 300) || null });
+    res.json({ ok: true });
+  } catch (err) {
+    if (/desistiu_em|desistencia_motivo/.test(err.message)) return res.status(409).json({ erro: 'Falta rodar a migration 073 no Supabase.' });
+    console.error('❌ POST /spot/fornecedor/interesses/:iid/desistir:', err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
 // Todas exigem fornecedor VERIFICADO (global) — ver services/acessoSpot.js.
 // Local recebe 403 { codigo: 'spot_requer_verificacao' }.
 
@@ -290,7 +329,8 @@ router.get('/fornecedor/demandas', fornecedorMiddleware, exigirAcessoSpot, async
     const DIA_MS = 24 * 60 * 60 * 1000;
     const agora = Date.now();
     const demandas = (todas || []).filter(d => {
-      if (d.status !== 'encerrada') return true;
+      if (meuPorDemanda[d.id]?.desistiu_em) return false;          // 18m: desistiu → sai da lista dele
+      if (d.status !== 'encerrada') return !prazoDemanda(d, agora).expirada_rede; // 18m: 30 dias sem decisão → sai da rede
       const mi = meuPorDemanda[d.id];
       if (!mi) return false;
       const dias = mi.status === 'escolhido' ? 90 : 30;

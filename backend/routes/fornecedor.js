@@ -73,7 +73,7 @@ router.get('/painel', fornecedorMiddleware, async (req, res) => {
       DB.select('nao_conformidades', { fornecedor_id: fid }),
       DB.select('interesses_spot', { fornecedor_id: fid }),
       DB.select('demandas_spot_visualizacoes', { fornecedor_id: fid }),
-      DB.select('demandas_spot', { status: 'aberta' }),
+      DB.select('demandas_spot', { status: 'aberta' }).then((l) => (l || []).filter((d) => require('../services/prazoSpot').ativaNaRede(d))), // 18m: expirada não conta
       DB.selectOne('fornecedores', { id: fid }),
     ]);
 

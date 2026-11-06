@@ -394,6 +394,7 @@ Ver seção 5 para o fluxo completo.
 - **070 (18i)** — 👋 `tenants.tipos_negocio` (text[]: transporte · locacao · compras) e `tenants.roteiro_config` (jsonb: `dispensados`) para o roteiro inicial. Idempotente.
 - **071 (18j)** — 🧩 `tenants.modulos` (text[]; **NULL = tudo ligado**, empresas que já existem), `tenants.plano_nome` e tabela `plataforma_planos` (planos-modelo do Console: nome, descrição, módulos; RLS ligado, só service role). Idempotente.
 - **072 (18l)** — 💬 tabela `spot_mensagens` (uma linha por mensagem: `interesse_id`, `demanda_id`, `tenant_id`, `fornecedor_id`, `lado` comprador/fornecedor, `autor_nome`, `texto`, `lida_em`, `criado_em`; id crescente para a espera longa). Ids pelo `pg_attribute`; RLS ligado (só o backend). Idempotente.
+- **073 (18m)** — ⏳ `demandas_spot.renovada_em` (o prazo de 30 dias na rede conta da renovação ou da publicação) e `interesses_spot.desistiu_em` / `desistencia_motivo` (fornecedor desistiu). Idempotente.
 - **058 (16e.3)** — `tenants (+) base_endereco` (📍 pátio / base da frota — onde o conjunto é liberado; pode ser diferente do endereço fiscal). Idempotente.
 - **057 (16e)** — `execucoes (+) fluxo` (etapas da viagem em ordem: marcações e inspeções, com status, hora, GPS, inspeção feita e liberação do gestor) e `inspecoes (+) execucao_id, etapa_id` (a inspeção feita no fluxo aponta para a AT). Idempotente.
 - **056 (16c)** — `execucoes.status (+) 'rascunho'` (cavalo pode ficar vazio no rascunho), `execucoes (+) token, link_visto_em` (📲 link do motorista) e `liberacao_docs` (CNH/CRLV vencido na data da viagem liberado pelo gestor). Idempotente.
@@ -995,6 +996,11 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18m (06/11):** **⏳ prazo da demanda spot e 🚪 desistir** (ideias do Marcony — demanda parada não polui a tela de ninguém). Migration 073.
+    - **Prazo de 30 dias na rede:** demanda **aberta há 30 dias sem decisão sai do Spot de todos os fornecedores** (lista e painel do portal). Conta da publicação ou da última **renovação/reabertura**. Para o comprador ela vira **⏳ Expirada** (nova situação e filtro "Expiradas"), com aviso no detalhe e o botão **🔄 Renovar +30 dias** (ainda precisa da peça) ao lado do ⚫ Encerrar; nos 5 dias antes de expirar aparece o aviso "sai do Spot em N dia(s)". Reabrir uma encerrada também conta 30 dias novos. Regra única em `services/prazoSpot.js`.
+    - **Desistir (fornecedor):** na resposta dele, **🚪 Desistir da demanda** — confirmação no modal do app, motivo opcional ("sem retorno", "peça vendida"…). A demanda **sai das listas de quem desistiu** (os outros continuam vendo); o comprador vê o interesse **apagado no fim da lista, com a data e o motivo**, fora do ranking de menor valor, da contagem e da escolha do vencedor ao encerrar. Proposta já escolhida não desiste (409 — combinar pela conversa).
+    - **Rodapé da demanda** (comprador) alinhado: ⚫ Encerrar / 🔄 Renovar à esquerda, ✏ Editar · ➕ Nova a partir desta · Fechar à direita, sem esticar. **Sem alert/confirm do navegador** nas telas do Spot (comprador e portal): avisos na própria tela e confirmação no modal do app (padrão do SaaS) — inclusive o "Reabrir demanda".
+    - Rotas: `POST /api/spot/demandas/:id/renovar` e `POST /api/spot/fornecedor/interesses/:iid/desistir`.
   - **SaaS genérico:** `tipo_execucao` no modelo de BID/PV (transporte → AT; locação → contrato de locação existente; serviço → AS; venda → entrega). Nesta etapa só transporte gera execução.
   - Rotas `/api/programacao` (`GET /base`, `/execucoes`, `/agenda`, `/pedidos`, `/pvs/:id`; `POST /pvs/:id/at`; `GET|PUT /execucoes/:id`; `POST /execucoes/:id/status`; anexos `POST|GET|DELETE /execucoes/:id/anexos[/:anexo]`; `GET /execucoes/:id/documento`) e `GET /api/comercial/pvs/:id/execucoes` (leitura). Travas respondem 409. Migration 055.
   - Rotas: `/api/comercial/bids/:id/revisao` (GET), `/enviar`, `/reenviar`, `/revisao/iniciar`, `/revisao/descartar`, `/aceite-externo`; `POST /bids/:id/fase` só aceita `perdido` e `reabrir`. Público: `/api/bid-link/:token` (GET, `/responder`, `/codigo`, `/aceitar`) — 40 chamadas por link + IP por hora. Migration 052. **Próxima: 15c** — Pedido de Venda (PV) a partir do BID aceito. **Futuro:** perfil **cliente** com login (mesmo padrão do locatário) — ver `claude/desenho-bid-15b.md`.
@@ -1554,7 +1560,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18l)
+**Última atualização deste documento:** 06/11/2026 (etapa 18m)
 
 --------------------------------------------------------------------------------
 

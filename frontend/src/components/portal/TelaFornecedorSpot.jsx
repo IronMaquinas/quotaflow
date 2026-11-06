@@ -173,6 +173,14 @@ function MotivosMatch({ match, C }) {
 
 export default function TelaFornecedorSpot({ C, s, usuario }) {
   const [chat, setChat] = useState(null); // 18l: demanda com a conversa aberta
+  const [desistir, setDesistir] = useState(null); // 18m: { d, motivo, enviando } — confirmação no modal do app
+  const [aviso, setAviso] = useState(null); // 18m: mensagens na própria tela (no lugar do alert do navegador)
+  const avisar = (t) => { setAviso(String(t)); setTimeout(() => setAviso(null), 7000); };
+  const confirmarDesistir = async () => {
+    setDesistir((x) => ({ ...x, enviando: true }));
+    try { await apiService.post(`/spot/fornecedor/interesses/${desistir.d.meu_interesse.id}/desistir`, { motivo: desistir.motivo }); setDesistir(null); setDetalhe(null); carregar(); avisar('Você desistiu da demanda — ela saiu das suas listas.'); }
+    catch (e) { setDesistir((x) => ({ ...x, enviando: false })); avisar('Erro: ' + e.message); }
+  };
   const [demandas, setDemandas] = useState([]);
   const { opcoes: opcoesAtuacao } = useOpcoesAtuacao(); // nomes de segmento/sistema/oferta (etapa 4)
   const [loading, setLoading] = useState(true);
@@ -276,7 +284,7 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
       setDetalhe(null);
       carregar();
     } catch (e) {
-      alert('Erro: ' + e.message);
+      avisar('Erro: ' + e.message);
     } finally {
       setEnviando(false);
     }
@@ -764,10 +772,11 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
                     <button type="button" onClick={() => setChat(d)} style={{ marginTop: 10, padding: '7px 14px', borderRadius: 6, border: `1px solid ${C.accent}`, background: mi.chat_nao_lidas ? C.accent : 'transparent', color: mi.chat_nao_lidas ? '#fff' : C.accent, fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>
                       💬 Conversar com o comprador{mi.chat_nao_lidas ? ` (${mi.chat_nao_lidas} nova${mi.chat_nao_lidas > 1 ? 's' : ''})` : mi.chat_total ? ` (${mi.chat_total})` : ''}
                     </button>{/* 18l */}
+                    {!encerrada && mi.status !== 'escolhido' && <button type="button" onClick={() => setDesistir({ d, motivo: '' })} title="Não vai mais atender: a demanda sai das suas listas" style={{ marginTop: 10, marginLeft: 8, padding: '7px 14px', borderRadius: 6, border: `1px solid ${C.border}`, background: 'transparent', color: C.muted, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>🚪 Desistir da demanda</button>}{/* 18m */}
                     {!encerrada && (
                       <div style={{ fontSize: 11, marginTop: 8, color: sit === 'sem_retorno' ? '#ef4444' : C.muted }}>
                         {sit === 'sem_retorno'
-                          ? 'Há mais de 7 dias sem decisão do comprador. Vale a pena chamá-lo pelos botões acima.'
+                          ? 'Há mais de 7 dias sem decisão do comprador. Chame-o pela conversa ou pelos botões acima — ou desista, se não vale mais. Com 30 dias sem decisão a demanda sai do Spot sozinha.'
                           : 'Aguardando a decisão do comprador.'}
                       </div>
                     )}
@@ -816,6 +825,17 @@ export default function TelaFornecedorSpot({ C, s, usuario }) {
         );
       })()}
 
+      {desistir && <div style={{ position: 'fixed', inset: 0, background: '#00000099', zIndex: 1150, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div role="dialog" aria-modal="true" aria-label="Desistir da demanda" style={{ ...s.card, width: 440, maxWidth: '100%', padding: 20 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>Desistir da demanda {desistir.d.numero || ''}?</div>
+          <div style={{ fontSize: 13, color: C.textSub, marginBottom: 12 }}>Ela sai das suas listas e a sua proposta deixa de contar para o comprador (ele vê que você desistiu). Não dá para desfazer.</div>
+          <label style={{ fontSize: 12, color: C.muted, display: 'block', marginBottom: 4 }}>Motivo (opcional — o comprador vê)</label>
+          <input aria-label="Motivo" value={desistir.motivo} onChange={(e) => setDesistir((x) => ({ ...x, motivo: e.target.value }))} placeholder="Ex.: sem retorno, peça vendida, prazo não atende" style={{ ...s.input, width: '100%', boxSizing: 'border-box', marginBottom: 16 }} />
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button type="button" onClick={() => setDesistir(null)} style={{ ...s.btn(false), padding: '8px 16px' }}>Cancelar</button>
+            <button type="button" disabled={desistir.enviando} onClick={confirmarDesistir} style={{ ...s.btn(true, '#ef4444'), padding: '8px 16px' }}>{desistir.enviando ? 'Enviando…' : '🚪 Desistir'}</button>
+          </div></div></div>}{/* 18m */}
+      {aviso && <div role="status" onClick={() => setAviso(null)} style={{ position: 'fixed', left: '50%', bottom: 24, transform: 'translateX(-50%)', zIndex: 1200, ...s.card, padding: '10px 16px', fontSize: 13, maxWidth: '90vw', boxShadow: '0 8px 24px #0008', cursor: 'pointer' }}>{aviso}</div>}
       {chat && chat.meu_interesse && <ChatSpot C={C} s={s} lado="fornecedor" url={`/spot/fornecedor/interesses/${chat.meu_interesse.id}/mensagens`}
         titulo={chat.empresa_nome || 'Comprador'} subtitulo={`${chat.numero || `DSP-${String(chat.id).padStart(4, '0')}`} · ${chat.componente}`}
         onFechar={() => { setChat(null); carregar(); }} />}{/* 18l */}

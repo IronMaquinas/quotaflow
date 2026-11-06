@@ -50,11 +50,13 @@ const SITUACOES = {
   com_resposta:          { label: 'Com resposta',            curto: 'Com resposta',      cor: '#22c55e', emoji: '🟢' },
   sem_resposta_atrasada: { label: 'Sem resposta há +7 dias', curto: 'Sem resposta +7d',  cor: '#ef4444', emoji: '🔴' },
   com_resposta_antiga:   { label: 'Com resposta há +7 dias', curto: 'Com resposta +7d',  cor: '#a855f7', emoji: '🟣' },
+  expirada:              { label: 'Expirada (30 dias sem decisão)', curto: 'Expiradas', cor: '#64748b', emoji: '⏳' }, // 18m
   encerrada:             { label: 'Encerrada',               curto: 'Encerradas',        cor: '#000000', emoji: '⚫' },
 };
 
 function situacaoDemanda(d) {
   if (d.status === 'encerrada') return 'encerrada';
+  if (d.expirada_rede) return 'expirada'; // 18m: 30 dias sem decisão — saiu do Spot dos fornecedores
   const temResposta = (d.total_interesses || 0) > 0;
   const passouUmaSemana = d.criado_em && (Date.now() - new Date(d.criado_em).getTime()) > UMA_SEMANA_MS;
   if (temResposta) return passouUmaSemana ? 'com_resposta_antiga' : 'com_resposta';
@@ -122,6 +124,9 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
   const [salvandoStatus, setSalvandoStatus] = useState(false);
   const [fotoAmpliada, setFotoAmpliada] = useState(null);
   const [chat, setChat] = useState(null); // 18l: { d, i } conversa aberta
+  const [aviso, setAviso] = useState(null); // 18m: mensagens na própria tela (no lugar do alert do navegador)
+  const [confirmar, setConfirmar] = useState(null); // 18m: { titulo, texto, botao, acao } — confirmação no modal do app
+  const avisar = (t) => { setAviso(String(t)); setTimeout(() => setAviso(null), 7000); };
   const [modal, setModal] = useState(null); // <- FALTAVA: null | 'nova' | id da demanda
   const [form, setForm] = useState({ ...FORM_VAZIO });
   const { opcoes: opcoesAtuacao } = useOpcoesAtuacao();
@@ -140,7 +145,7 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
 
   // Nova demanda: em branco, ou "a partir desta" (mesmo equipamento, outra peça)
   const abrirNova = (base = null) => {
-    if (bloqueioPublicar) { alert(bloqueioPublicar); return; }
+    if (bloqueioPublicar) { avisar(bloqueioPublicar); return; }
     setForm(base
       ? {
           ...FORM_VAZIO,
@@ -173,7 +178,7 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
       setModal(editandoId); // volta para o detalhe
       setEditandoId(null);
     } catch (err) {
-      alert('Erro ao salvar: ' + err.message);
+      avisar('Erro ao salvar: ' + err.message);
     } finally {
       setSalvandoForm(false);
     }
@@ -243,23 +248,30 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
       setEncerrando(null);
       await carregarDemandas();
     } catch (e) {
-      alert('Erro ao encerrar demanda: ' + e.message);
+      avisar('Erro ao encerrar demanda: ' + e.message);
     } finally {
       setSalvandoStatus(false);
     }
   };
 
-  const reabrirDemanda = async (demandaId) => {
-    if (!window.confirm('Reabrir esta demanda? Ela volta a aparecer para os fornecedores.')) return;
+  const reabrirDemanda = (demandaId) => setConfirmar({ titulo: 'Reabrir esta demanda?', texto: 'Ela volta a aparecer para os fornecedores, com um prazo novo de 30 dias.', botao: '↩️ Reabrir', acao: () => reabrirDemandaJa(demandaId) });
+  const reabrirDemandaJa = async (demandaId) => {
     setSalvandoStatus(true);
     try {
       await apiService.post(`/spot/demandas/${demandaId}/reabrir`, {});
       await carregarDemandas();
     } catch (e) {
-      alert('Erro ao reabrir demanda: ' + e.message);
+      avisar('Erro ao reabrir demanda: ' + e.message);
     } finally {
       setSalvandoStatus(false);
     }
+  };
+
+  // 18m: renovar — ainda precisa da peça → mais 30 dias no Spot dos fornecedores
+  const renovarDemanda = async (demandaId) => {
+    setSalvandoStatus(true);
+    try { await apiService.post(`/spot/demandas/${demandaId}/renovar`, {}); await carregarDemandas(); avisar('🔄 Demanda renovada — mais 30 dias no Spot dos fornecedores.'); }
+    catch (e) { avisar('Erro ao renovar: ' + e.message); } finally { setSalvandoStatus(false); }
   };
 
   const placeholderBusca = 'Buscar por número, item, part number ou equipamento...';
@@ -268,11 +280,11 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
   const enviarFotoDemanda = async (demandaId, arquivo) => {
     if (!arquivo) return;
     if (!arquivo.type.startsWith('image/')) {
-      alert('Selecione um arquivo de imagem.');
+      avisar('Selecione um arquivo de imagem.');
       return;
     }
     if (arquivo.size > LIMITE_ORIGINAL_MB * 1024 * 1024) {
-      alert(`Imagem maior que ${LIMITE_ORIGINAL_MB} MB. Escolha uma menor.`);
+      avisar(`Imagem maior que ${LIMITE_ORIGINAL_MB} MB. Escolha uma menor.`);
       return;
     }
     setEnviandoFoto(true);
@@ -283,7 +295,7 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
       await apiService.upload(`/spot/demandas/${demandaId}/foto`, fd);
       await carregarDemandas(); // recarrega para trazer a foto_url nova
     } catch (e) {
-      alert('Falha ao enviar a foto: ' + e.message);
+      avisar('Falha ao enviar a foto: ' + e.message);
     } finally {
       setEnviandoFoto(false);
     }
@@ -316,7 +328,7 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
         try {
           await apiService.upload(`/spot/demandas/${demandaId}/foto`, fd);
         } catch (e) {
-          alert('Demanda criada, mas falhou o upload da foto: ' + e.message);
+          avisar('Demanda criada, mas falhou o upload da foto: ' + e.message);
         }
       }
 
@@ -326,7 +338,7 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
       setFotoPreview(null);
       carregarDemandas();
     } catch (err) {
-      alert('Erro ao criar demanda: ' + err.message);
+      avisar('Erro ao criar demanda: ' + err.message);
     }
   };
 
@@ -461,7 +473,7 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
       {modal && modal !== 'nova' && modal !== 'editar' && (() => {
         const d = demandas.find(x => x.id === modal);
         if (!d) return null;
-        const valores = (d.interesses || [])
+        const valores = (d.interesses || []).filter(i => !i.desistiu_em) // 18m: quem desistiu não entra no menor valor
           .map(i => i.valor_estimado != null ? Number(i.valor_estimado) : null)
           .filter(v => v != null);
         const menorValor = valores.length > 1 ? Math.min(...valores) : null;
@@ -592,8 +604,14 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
                   </div>
                 </div>
 
+                {sit !== 'encerrada' && (d.expirada_rede || d.dias_para_expirar <= 5) && ( // 18m
+                  <div style={{ fontSize: 12.5, padding: '9px 12px', borderRadius: 6, marginBottom: 12, border: `1px solid ${d.expirada_rede ? '#64748b' : '#f59e0b'}`, color: d.expirada_rede ? C.textSub : '#f59e0b', background: d.expirada_rede ? '#64748b1a' : '#f59e0b14' }}>
+                    {d.expirada_rede ? <>⏳ <b>Expirada para os fornecedores</b> — 30 dias sem decisão, ela saiu do Spot deles. Ainda precisa? <b>🔄 Renovar +30 dias</b>. Já resolveu? <b>⚫ Encerrar</b> (e conte quem venceu).</>
+                      : <>⏳ Sai do Spot dos fornecedores em <b>{d.dias_para_expirar} dia(s)</b> (30 dias sem decisão). Renove se ainda precisar.</>}
+                  </div>
+                )}
                 <div style={{ fontSize: 11, color: C.muted, letterSpacing: '0.08em', marginBottom: 10 }}>
-                  FORNECEDORES INTERESSADOS ({d.interesses?.length || 0})
+                  FORNECEDORES INTERESSADOS ({(d.interesses || []).filter(i => !i.desistiu_em).length})
                 </div>
 
                 {(!d.interesses || d.interesses.length === 0) ? (
@@ -603,7 +621,12 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
                 ) : (
                   <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
                     {d.interesses.map(i => {
-                      const ehMenor = menorValor != null && i.valor_estimado != null && Number(i.valor_estimado) === menorValor;
+                      const ehMenor = !i.desistiu_em && menorValor != null && i.valor_estimado != null && Number(i.valor_estimado) === menorValor;
+                      if (i.desistiu_em) return ( // 18m: o fornecedor desistiu — fica registrado, apagado e fora do ranking
+                        <div key={i.id} style={{ background: C.bg, border: `1px dashed ${C.border}`, borderRadius: 6, padding: '8px 14px', opacity: 0.6, fontSize: 12, color: C.muted }}>
+                          🏢 <b style={{ color: C.textSub }}>{i.fornecedor_nome}</b> desistiu em {new Date(i.desistiu_em).toLocaleDateString('pt-BR')}{i.desistencia_motivo ? ` — "${i.desistencia_motivo}"` : ''}
+                          {i.valor_estimado != null && <span> · tinha proposto R$ {Number(i.valor_estimado).toFixed(2).replace('.', ',')}</span>}
+                        </div>);
                       return (
                         <div key={i.id} style={{ background: C.bg, border: ehMenor ? '1px solid #22c55e55' : `1px solid ${C.border}`, borderRadius: 6, padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 12 }}>
                           <div style={{ flex: 1, minWidth: 0 }}>
@@ -703,12 +726,13 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
               {/* fim do corpo */}
 
               {/* Rodapé */}
-              <div style={{ padding: '14px 22px', borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', gap: 10 }}>
+              <div style={{ padding: '14px 22px', borderTop: `1px solid ${C.border}`, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 10, flexWrap: 'wrap' }}>{/* 18m: alinhado, sem esticar */}
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                 {sit === 'encerrada' ? (
                   <button
                     onClick={() => reabrirDemanda(d.id)}
                     disabled={salvandoStatus}
-                    style={{ ...s.btn(false), padding: '8px 18px' }}
+                    style={{ ...s.btn(false), padding: '8px 18px', whiteSpace: 'nowrap', flexShrink: 0 }}
                   >
                     ↩️ Reabrir demanda
                   </button>
@@ -716,21 +740,26 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
                   <button
                     onClick={() => setEncerrando({ demandaId: d.id, motivo: '', fornecedor_vencedor_id: null, observacao: '' })}
                     disabled={salvandoStatus}
-                    style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid #555', background: '#000', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}
+                    style={{ padding: '8px 18px', borderRadius: 6, border: '1px solid #555', background: '#000', color: '#fff', fontSize: 12, fontWeight: 600, cursor: 'pointer', whiteSpace: 'nowrap', flexShrink: 0, alignSelf: 'center' }}
                   >
                     ⚫ Encerrar demanda
                   </button>
                 )}
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end' }}>
+                {sit !== 'encerrada' && (d.expirada_rede || d.dias_para_expirar <= 5) && (
+                  <button onClick={() => renovarDemanda(d.id)} disabled={salvandoStatus} title="Ainda precisa da peça? Mais 30 dias no Spot dos fornecedores"
+                    style={{ ...s.btn(true), padding: '8px 14px', whiteSpace: 'nowrap', flexShrink: 0 }}>🔄 Renovar +30 dias</button>
+                )}{/* 18m */}
+                </div>
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', justifyContent: 'flex-end', alignItems: 'center', marginLeft: 'auto' }}>
                   {sit !== 'encerrada' && (
-                    <button onClick={() => abrirEdicao(d)} style={{ ...s.btn(false), padding: '8px 14px' }} title="Alterar os dados desta demanda">
+                    <button onClick={() => abrirEdicao(d)} style={{ ...s.btn(false), padding: '8px 14px', whiteSpace: 'nowrap' }} title="Alterar os dados desta demanda">
                       ✏ Editar
                     </button>
                   )}
-                  <button onClick={() => abrirNova(d)} style={{ ...s.btn(false), padding: '8px 14px' }} title="Outra peça do mesmo equipamento: abre o formulário já preenchido">
+                  <button onClick={() => abrirNova(d)} style={{ ...s.btn(false), padding: '8px 14px', whiteSpace: 'nowrap' }} title="Outra peça do mesmo equipamento: abre o formulário já preenchido">
                     ➕ Nova a partir desta
                   </button>
-                  <button onClick={() => setModal(null)} style={{ ...s.btn(false), padding: '8px 18px' }}>Fechar</button>
+                  <button onClick={() => setModal(null)} style={{ ...s.btn(false), padding: '8px 18px', whiteSpace: 'nowrap' }}>Fechar</button>
                 </div>
               </div>
             </div>
@@ -742,7 +771,7 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
       {encerrando && (() => {
         const d = demandas.find(x => x.id === encerrando.demandaId);
         if (!d) return null;
-        const interessados = d.interesses || [];
+        const interessados = (d.interesses || []).filter(i => !i.desistiu_em); // 18m
         const podeConfirmar = encerrando.motivo && (encerrando.motivo !== 'comprado_canal' || encerrando.fornecedor_vencedor_id);
         const atualizar = (campos) => setEncerrando(e => ({ ...e, ...campos }));
         // Uma opção clicável (cartão). Um clique já define o desfecho.
@@ -838,6 +867,15 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
         );
       })()}
 
+      {aviso && <div role="status" onClick={() => setAviso(null)} style={{ position: 'fixed', left: '50%', bottom: 24, transform: 'translateX(-50%)', zIndex: 1200, ...s.card, padding: '10px 16px', fontSize: 13, maxWidth: '90vw', boxShadow: '0 8px 24px #0008', cursor: 'pointer' }}>{aviso}</div>}{/* 18m */}
+      {confirmar && <div style={{ position: 'fixed', inset: 0, background: '#00000099', zIndex: 1150, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>
+        <div role="dialog" aria-modal="true" style={{ ...s.card, width: 420, maxWidth: '100%', padding: 20 }}>
+          <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 6 }}>{confirmar.titulo}</div>
+          <div style={{ fontSize: 13, color: C.textSub, marginBottom: 16 }}>{confirmar.texto}</div>
+          <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
+            <button type="button" onClick={() => setConfirmar(null)} style={{ ...s.btn(false), padding: '8px 16px' }}>Cancelar</button>
+            <button type="button" onClick={() => { const f = confirmar.acao; setConfirmar(null); f(); }} style={{ ...s.btn(true), padding: '8px 16px' }}>{confirmar.botao || 'Confirmar'}</button>
+          </div></div></div>}{/* 18m: confirmação no modal do app */}
       {chat && <ChatSpot C={C} s={s} lado="comprador" url={`/spot/demandas/${chat.d.id}/interesses/${chat.i.id}/mensagens`}
         titulo={chat.i.fornecedor_nome} subtitulo={`${chat.d.numero || `DSP-${String(chat.d.id).padStart(4, '0')}`} · ${chat.d.componente}`}
         onFechar={() => { setChat(null); carregarDemandas(); }} />}{/* 18l */}
@@ -928,7 +966,7 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
                     e.target.value = '';
                     if (!f) return;
                     if (f.size > LIMITE_ORIGINAL_MB * 1024 * 1024) {
-                      alert(`Imagem maior que ${LIMITE_ORIGINAL_MB} MB. Escolha uma menor.`);
+                      avisar(`Imagem maior que ${LIMITE_ORIGINAL_MB} MB. Escolha uma menor.`);
                       return;
                     }
                     try {
@@ -936,7 +974,7 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
                       setFotoArquivo(comprimida);
                       setFotoPreview(URL.createObjectURL(comprimida));
                     } catch (err) {
-                      alert(err.message);
+                      avisar(err.message);
                     }
                   }}
                   style={{ ...s.input, padding: 6 }}
