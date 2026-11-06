@@ -6,6 +6,7 @@
 //   18g.2.6: NF-e/CT-e/MDF-e anexados direto na AT também: 🔁 / ＋ (sem ✕ fora do rascunho); "Outro" continua com ✕
 //   18g.2.5: documento que veio da tarefa fiscal → 🔁 substituir / ＋ evento aqui mesmo; divergência de motorista → ＋ inclusão de condutor
 //   FichaAT  — detalhe: rota, itens (sem valores), motorista, conjunto, anexos NF-e/CT-e/MDF-e, ▶ iniciar · ✓ concluir · ✕ cancelar · ↺ reabrir, 📄 PDF
+import { moduloAtivo } from "../../utils/modulosSessao"; // 18k
 import { useState, useEffect } from "react";
 import apiService from "../../services/apiService";
 import { abrirAT } from "../../utils/gerarAT";
@@ -84,7 +85,7 @@ export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onEr
           {e.status !== "rascunho" && <button type="button" onClick={relatorio} title="AT + fluxo (hora, GPS, quem) + inspeções com fotos + documentos — para o cliente e como evidência" style={bt(C.accent, false)}>📑 Relatório da viagem</button>}
           {e.status === "programada" && <button type="button" onClick={editar} style={bt(C.textSub, false)}>✏ Editar</button>}
           {e.status === "rascunho" && onEditarRascunho && <button type="button" onClick={() => onEditarRascunho(e.id)} style={bt(C.accent)}>✏ Continuar programação</button>} {/* 18g.2.1 */}
-          {!["rascunho", "cancelada"].includes(e.status) && <button type="button" onClick={() => setNovaOc(true)} title="Avaria, pane, acidente, furto/roubo — motorista, conjunto, carga e documentos entram sozinhos" style={bt(C.danger, false)}>⚠️ Ocorrência</button>}{/* 18h */}
+          {!["rascunho", "cancelada"].includes(e.status) && moduloAtivo("ocorrencias") && <button type="button" onClick={() => setNovaOc(true)} title="Avaria, pane, acidente, furto/roubo — motorista, conjunto, carga e documentos entram sozinhos" style={bt(C.danger, false)}>⚠️ Ocorrência</button>}{/* 18h */}
           <div style={{ flex: 1 }} />
           {temFluxo && ["programada", "em_execucao"].includes(e.status) && <span style={{ fontSize: 12, color: C.muted, alignSelf: "center" }}>🧭 O motorista conduz a viagem pelo 📲 link — começa e termina sozinha</span>}
           {!temFluxo && e.status === "programada" && <button type="button" disabled={ocupado} onClick={() => acao("iniciar", {}, `${e.numero} em execução.`)} style={bt(C.warn)}>▶ Iniciar</button>}
@@ -162,7 +163,7 @@ export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onEr
                 <button type="button" disabled={ocupado} onClick={() => enviarAnexo(confirmaAdd.tipo, confirmaAdd.arq, true)} style={{ ...s.btn(false), color: C.text, padding: "4px 10px", fontSize: 12, cursor: "pointer" }}>＋ É adicional</button></div></div>}
             {(e.historico_docs || []).length > 0 && <details style={{ marginTop: 8, fontSize: 12 }}><summary style={{ cursor: "pointer", color: C.textSub }}>📜 Histórico dos documentos ({e.historico_docs.length})</summary> {/* 18g.2.8 · 18g.2.9: abaixo dos botões de anexar */}
               {e.historico_docs.map((h, i) => <div key={i} style={{ padding: "5px 0", borderBottom: `1px solid ${C.border}` }}><div style={{ color: C.muted, fontSize: 11 }}>{dataHora(h.em)} · {h.por || "—"} · {h.doc}</div><div style={{ color: C.text }}>{h.texto}</div></div>)}</details>}
-            {!["rascunho", "cancelada"].includes(e.status) && <div style={{ marginTop: 14 }}><div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>⚠️ Ocorrências desta AT</div>{/* 18h */}
+            {!["rascunho", "cancelada"].includes(e.status) && moduloAtivo("ocorrencias") && <div style={{ marginTop: 14 }}><div style={{ fontWeight: 600, fontSize: 13, marginBottom: 6 }}>⚠️ Ocorrências desta AT</div>{/* 18h */}
               <PainelOcorrencias key={`oc-${recOc}`} C={C} s={s} modo="empresa" podeEditar filtro={{ execucao_id: e.id }} at={e} semBotaoNovo onErro={onErro} onOk={onOk} /></div>}
             <div style={{ fontSize: 11, color: C.muted, marginTop: 14 }}>Programada por {e.criado_por_nome || "—"} em {dataHora(e.criado_em)}{e.iniciada_em ? ` · iniciada ${dataHora(e.iniciada_em)}` : ""}{e.concluida_em ? ` · concluída ${dataHora(e.concluida_em)}` : ""}</div>
           </div>

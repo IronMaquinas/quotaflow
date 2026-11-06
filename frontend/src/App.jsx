@@ -31,7 +31,8 @@ import TelaOrdemServico from './components/estoque/TelaOrdemServico';
 import TelaConfiguracoes from './components/configuracoes/TelaConfiguracoes';
 import BemVindo from './components/configuracoes/BemVindo';
 import MeuPlano from './components/configuracoes/MeuPlano'; // 18j: ⭐ módulos do plano
-import { soAreaRestrita } from './utils/areaRestrita'; // 18i: 👋 roteiro inicial (substitui o "Complete o perfil" da 14d.5)
+import { soAreaRestrita } from './utils/areaRestrita';
+import { definirModulosSessao } from './utils/modulosSessao'; // 18k // 18i: 👋 roteiro inicial (substitui o "Complete o perfil" da 14d.5)
 import TelaMonitorCnpj from './components/compliance/TelaMonitorCnpj'; // 14e
 import TelaNaoConformidades from "./components/naoConformidades/TelaNaoConformidades";
 import TelaInspecoes from "./components/inspecoes/TelaInspecoes"; // etapa 14a
@@ -200,8 +201,11 @@ export default function App() {
   const [abaColaborador, setAbaColaborador] = useState("viagens"); // 14b.1: tela do colaborador · 17a: começa em 🚛 Minhas viagens
   useEffect(() => { if (usuario?.id) carregarLogoEmpresa(); }, [usuario?.id]); // 14c: logo da empresa nos documentos
   useEffect(() => { // 18j
-    if (!usuario?.id || soAreaRestrita(Array.isArray(usuario.perfis) && usuario.perfis.length ? usuario.perfis : [usuario.perfil].filter(Boolean)) || usuario.perfil === "fornecedor") { setModsEmpresa(null); return; }
-    apiService.get("/configuracoes/modulos").then((r) => setModsEmpresa(r?.telas ? { telas: new Set(r.telas), mapeadas: new Set(r.telas_mapeadas || []) } : null)).catch(() => setModsEmpresa(null));
+    const ps = usuario?.id ? (Array.isArray(usuario.perfis) && usuario.perfis.length ? usuario.perfis : [usuario.perfil].filter(Boolean)) : [];
+    if (!usuario?.id || usuario.perfil === "fornecedor") { setModsEmpresa(null); definirModulosSessao(null); return; }
+    if (soAreaRestrita(ps)) { // 18k: locatário/colaborador — só os módulos (para esconder abas), pela rota que eles podem chamar
+      setModsEmpresa(null); if (ps.includes("locatario")) apiService.get("/locatario/modulos").then((r) => definirModulosSessao(r?.ativos)).catch(() => definirModulosSessao(null)); return; }
+    apiService.get("/configuracoes/modulos").then((r) => { setModsEmpresa(r?.telas ? { telas: new Set(r.telas), mapeadas: new Set(r.telas_mapeadas || []) } : null); definirModulosSessao(r?.ativos); }).catch(() => { setModsEmpresa(null); definirModulosSessao(null); });
   }, [usuario?.id]);
   // 14c.2: "é clicável" — mãozinha + realce ao passar o mouse (className="qf-clicavel")
   useEffect(() => {

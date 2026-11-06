@@ -988,6 +988,7 @@ npm run dev
     - **Para a empresa:** o **menu e a tela inicial mostram só as telas dos módulos ligados** (tela fora do catálogo continua liberada); **⭐ Meu plano** (admin/gestor) mostra por área o que está ✓ ativo e o que está 🔒 disponível, com **Fale conosco** (e-mail da variável `PLATAFORMA_CONTATO_EMAIL` do backend — sem ela, "fale com o seu consultor"). O **👋 roteiro inicial** deixou de perguntar o "tipo do negócio": os passos vêm dos módulos (só Suprimentos → 5 passos; nada de jornada, frota ou ocorrências) e ganhou a nota **"Não se preocupe: tudo pode ser ajustado depois em ⚙️ Configurações"**.
     - Tela inicial: o conteúdo começa no topo com margem (antes, centralizado na vertical, o cartão de boas-vindas encostava no topo).
     - **Ainda não:** o bloqueio das rotas da API por módulo (hoje o módulo desligado some da tela, mas a API responde), abas internas por módulo (ex.: EPI dentro de 👷 Pessoas), preço por módulo e contratação pelo próprio cliente.
+  - **18k (05/11):** **🧩 bloqueio dos módulos no backend** — módulo não contratado agora é barrado também na API (antes só sumia da tela). `middleware/exigirModulo.js` nas rotas de cada módulo (`/api/comercial` → CRM/BID · `/api/programacao` e `/api/minhas-viagens` → Programação · `/api/contratos` e `/api/locatario` → Contratos · `/api/ocorrencias` · `/api/inspecoes` · `/api/nao-conformidades` e `/api/autuacoes` · `/api/manutencao` · `/api/meus-treinamentos` · `/api/monitor-cnpj` · `/api/ordens-venda` · `/api/estoque/{itens,movimentacoes,recompra,configuracoes,enderecos}`); responde **409** "O módulo … não está no plano da empresa. Veja ⭐ Meu plano." (nunca 403). Rotas compartilhadas aceitam **qualquer um** dos módulos que as usam (ex.: a OS da Manutenção lê inspeções, NC e itens do estoque; o EPI usa as movimentações; o Recebimento usa as ordens) e o cadastro de 👷 Pessoas fica com **leitura liberada** (outras telas escolhem pessoas nele), escrita só com o módulo. Empresa com tudo ligado passa sempre; cache de 30 s por empresa, limpo na hora em que o Console muda os módulos. Dentro das telas, abas de módulo desligado também somem (`utils/modulosSessao.js`): ⚠️ Ocorrências e 📏 Medições em 📑 Contratos e na tela do cliente, ⚠️ Ocorrência na ficha da AT, 📍 Locar/Encerrar locação nas Inspeções. Links públicos já enviados (BID, AT, inspeção de terceiros, prova) continuam funcionando.
   - **SaaS genérico:** `tipo_execucao` no modelo de BID/PV (transporte → AT; locação → contrato de locação existente; serviço → AS; venda → entrega). Nesta etapa só transporte gera execução.
   - Rotas `/api/programacao` (`GET /base`, `/execucoes`, `/agenda`, `/pedidos`, `/pvs/:id`; `POST /pvs/:id/at`; `GET|PUT /execucoes/:id`; `POST /execucoes/:id/status`; anexos `POST|GET|DELETE /execucoes/:id/anexos[/:anexo]`; `GET /execucoes/:id/documento`) e `GET /api/comercial/pvs/:id/execucoes` (leitura). Travas respondem 409. Migration 055.
   - Rotas: `/api/comercial/bids/:id/revisao` (GET), `/enviar`, `/reenviar`, `/revisao/iniciar`, `/revisao/descartar`, `/aceite-externo`; `POST /bids/:id/fase` só aceita `perdido` e `reabrir`. Público: `/api/bid-link/:token` (GET, `/responder`, `/codigo`, `/aceitar`) — 40 chamadas por link + IP por hora. Migration 052. **Próxima: 15c** — Pedido de Venda (PV) a partir do BID aceito. **Futuro:** perfil **cliente** com login (mesmo padrão do locatário) — ver `claude/desenho-bid-15b.md`.
@@ -1027,6 +1028,25 @@ npm run dev
 - Reativação da aba "Manual" de `TelaCotacoesNovaComAbas.jsx`
 
 ---
+
+## 💳 Planos e assinaturas — o caminho para um SaaS profissional
+*(registrado em 05/11/2026 a pedido do Marcony — o que já existe e o que falta, em ordem sugerida)*
+
+**Já existe (18j/18k):** catálogo de áreas → módulos com dependências · planos-modelo no Console · plano por empresa (modelo ou personalizado, "Tudo ligado") · menu, tela inicial, roteiro e API respeitando os módulos · ⭐ Meu plano com o que está ativo e o que está 🔒 disponível · toda mudança registrada nas ações do Console.
+
+**Falta, em ordem:**
+1. **Preço nos planos** — mensal e anual; **métrica de cobrança** definida por plano: por empresa, por usuário ou **por veículo/equipamento** (a precificação por veículo conversada para a Dinamarca: ~50 DKK/veículo no lançamento, 100–150 DKK maduro); preço avulso por módulo para o "Fale conosco".
+2. **Assinatura por empresa** (Console) — plano contratado, **valor negociado / desconto**, ciclo, **data de início**, **próxima renovação**, situação (🧪 teste · ✅ ativa · ⚠️ inadimplente · ⏸ suspensa · ✖ cancelada) e **histórico de troca de plano** com datas e valores.
+3. **Período de teste (trial)** — prazo, avisos antes de acabar e o que acontece no fim (pede o plano; dados preservados).
+4. **Painel financeiro no Console** — receita mensal recorrente (MRR), clientes por plano/módulo, vencimentos do mês, inadimplência, cancelamentos (churn), ticket médio.
+5. **Página de planos e cadastro com escolha** — Bronze/Prata/Ouro (ou os nomes que você definir) com o que cada um tem, "Quero este" ou **"Fale conosco para planos customizados"**; o cadastro já nasce com o plano escolhido (em teste).
+6. **Cobrança automática** — gateway brasileiro (ex.: Asaas, Iugu, Pagar.me) com boleto, Pix e cartão recorrente; o retorno do pagamento (webhook) atualiza a situação sozinho; faturas e recibos para o cliente baixar em ⭐ Meu plano.
+7. **Nota fiscal de serviço (NFS-e)** da mensalidade, emitida automaticamente.
+8. **Régua de inadimplência** — e-mails antes e depois do vencimento; suspensão gradual (aviso → só leitura → bloqueio) e volta automática ao pagar.
+9. **Mudar de plano no meio do ciclo** (proporcional), cancelamento com **exportação dos dados** e prazo de guarda antes de apagar.
+10. **Limites por plano e uso** — usuários, equipamentos, armazenamento, e-mails/mês; ⭐ Meu plano mostra o uso e avisa perto do limite.
+11. **Termos de uso, política de privacidade e contrato de tratamento de dados** (LGPD — e GDPR para a Europa), com aceite registrado no cadastro.
+12. **Internacional (Dinamarca)** — moeda (DKK/EUR), idioma (inglês/dinamarquês), imposto sobre venda (moms/VAT) e gateway que aceite cartão europeu.
 
 ## ⚠️ Armadilhas Conhecidas do Backend
 
@@ -1508,7 +1528,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 | ~~18h.4~~ ✅ | entregue em 05/11 — 📊 indicadores das ocorrências e **disponibilidade** por equipamento e contrato, perda estimada (só gestor/admin), relatório A4 + CSV |
 | ~~👋 Bem-vindo ao sistema~~ ✅ 18i | entregue em 05/11 — roteiro das configurações mínimas por tipo de negócio (transporte · locação · compras), passos conferidos pelos dados, obrigatório/recomendado, "não se aplica" (migration 070) |
 | ~~🧩 Áreas, módulos e planos~~ ✅ 18j | entregue em 05/11 — catálogo de módulos com dependências, planos-modelo e plano personalizado no Console, menu/tela inicial/roteiro pelos módulos, ⭐ Meu plano (migration 071) |
-| **🧩 Módulos — próximos passos** | bloquear as rotas da API de módulo desligado (409 com "módulo não contratado"), abas internas por módulo (EPI, multas, treinamentos dentro de 👷 Pessoas; ocorrências e medição dentro de 📑 Contratos), preço por módulo, contratação pelo cliente, rótulos por segmento ("Equipamentos/ativos" fora do transporte) |
+| **🧩 Módulos — próximos passos** | ~~bloquear as rotas da API~~ ✅ 18k · abas internas de 👷 Pessoas por módulo (EPI, multas, treinamentos), rótulos por segmento ("Equipamentos/ativos" fora do transporte), Canal Spot e Cotações também no bloqueio da API (rotas com autenticação própria) |
 | **💬 Chat na demanda spot** | pedido do Marcony (05/11): levar o modelo de conversa da ocorrência (SIN) para a **demanda spot** — mensagens entre comprador e fornecedor dentro da demanda, lado a lado, com histórico. **Tempo real de verdade** (Supabase Realtime ou WebSocket, sem precisar recarregar), que depois pode substituir também a releitura a cada 15 s da ocorrência |
 | **🧭 Menu lateral na tela do cliente (locatário)** | pedido do Marcony (05/11): trocar as abas superiores (📑 Contratos e inspeções · 📏 Medições · ⚠️ Ocorrências) pelo **menu lateral esquerdo, padrão do SaaS** (no celular, menu recolhível), com os contadores no item do menu |
 | **💰 Valor gerado (savings)** | ideia de 02/11 (consultora de precificação, exemplo Tractian): medir o **estado atual** do cliente na entrada e mostrar os **ganhos reais** com o QuotaFlow — savings calculados pelos dados (compras, multas, manutenção, comercial, horas poupadas) + savings informados pelo cliente, ROI × assinatura e contador agregado para marketing. Desenho em `claude/desenho-valor-gerado.md` |
@@ -1527,7 +1547,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 05/11/2026 (etapa 18j)
+**Última atualização deste documento:** 05/11/2026 (etapa 18k)
 
 --------------------------------------------------------------------------------
 

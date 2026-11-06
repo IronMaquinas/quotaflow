@@ -4,6 +4,7 @@
 //   • inspeções feitas nos equipamentos do contrato (dele e da empresa: entrega, rotinas) → detalhe e relatório
 // A inspeção usa o mesmo app (ExecutarInspecao), inclusive sem internet (fila no aparelho).
 // Todo o escopo é aplicado no servidor pelo usuário logado (/api/locatario).
+import { moduloAtivo, aoMudarModulos } from "../../utils/modulosSessao"; // 18k
 import { useState, useEffect, useCallback } from "react";
 import apiService from "../../services/apiService";
 import ExecutarInspecao from "../inspecoes/ExecutarInspecao";
@@ -37,8 +38,9 @@ export default function TelaLocatario({ C, s, usuario }) {
   const [aba, setAba] = useState(() => (/medicoes/.test(window.location.hash) ? "medicoes" : /ocorrencias/.test(window.location.hash) ? "ocorrencias" : "contratos"));
   const [ocDaInspecao, setOcDaInspecao] = useState(null); // 18h: atalho da inspeção com itens não OK
   const [med, setMed] = useState(null); const [medAberta, setMedAberta] = useState(null);
+  const [, redesenhar] = useState(0); useEffect(() => aoMudarModulos(() => redesenhar((n) => n + 1)), []); // 18k: módulos chegaram
   const [ocAbertas, setOcAbertas] = useState(0); // 18h.4: contador na aba ⚠️ Ocorrências (igual ao da empresa)
-  const carregarOc = async () => { try { setOcAbertas(((await apiService.get("/locatario/ocorrencias", { status: "abertas" })).ocorrencias || []).length); } catch { setOcAbertas(0); } };
+  const carregarOc = async () => { if (!moduloAtivo("ocorrencias")) return; try { setOcAbertas(((await apiService.get("/locatario/ocorrencias", { status: "abertas" })).ocorrencias || []).length); } catch { setOcAbertas(0); } };
   useEffect(() => { carregarOc(); }, [aba]); // eslint-disable-line
   const carregarMed = async () => { try { setMed(await apiService.get("/locatario/medicoes")); } catch { setMed({ contratos: [] }); } };
   useEffect(() => { carregarMed(); }, []);
@@ -86,7 +88,7 @@ export default function TelaLocatario({ C, s, usuario }) {
       </div>}
 
       {(med?.contratos?.length > 0 || d?.contratos?.length > 0) && <div style={{ display: "flex", gap: 6, marginBottom: 12, borderBottom: `1px solid ${C.border}`, overflowX: "auto" }}>{/* 18d · 18h · 18h.4: uma linha (rola no celular) */}
-        {[["contratos", "📑 Contratos e inspeções"], ...(med?.contratos?.length > 0 ? [["medicoes", `📏 Medições${med.contratos.some((c) => c.medicoes.some((x) => x.status === "enviada")) ? " •" : ""}`]] : []), ["ocorrencias", <>⚠️ Ocorrências{ocAbertas > 0 && <span style={{ marginLeft: 6, background: C.danger, color: "#fff", borderRadius: 10, padding: "0 7px", fontSize: 11.5, fontWeight: 700 }}>{ocAbertas}</span>}</>]].map(([k, l]) =>
+        {[["contratos", "📑 Contratos e inspeções"], ...(med?.contratos?.length > 0 && moduloAtivo("medicao") ? [["medicoes", `📏 Medições${med.contratos.some((c) => c.medicoes.some((x) => x.status === "enviada")) ? " •" : ""}`]] : []), ...(moduloAtivo("ocorrencias") ? [["ocorrencias", <>⚠️ Ocorrências{ocAbertas > 0 && <span style={{ marginLeft: 6, background: C.danger, color: "#fff", borderRadius: 10, padding: "0 7px", fontSize: 11.5, fontWeight: 700 }}>{ocAbertas}</span>}</>]] : [])].map(([k, l]) =>
           <button key={k} type="button" onClick={() => setAba(k)} style={{ whiteSpace: "nowrap", flexShrink: 0, background: "transparent", border: "none", borderBottom: `2px solid ${aba === k ? C.accent : "transparent"}`, color: aba === k ? C.text : C.textSub, padding: "8px 12px", fontSize: 14, cursor: "pointer", fontWeight: aba === k ? 700 : 400 }}>{l}</button>)}
       </div>}
       {aba === "medicoes" && med?.contratos?.length > 0 && med.contratos.map((c) => <div key={c.id} style={card}>{/* 18d.2: medições enviadas pela locadora */}

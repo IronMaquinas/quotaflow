@@ -104,6 +104,7 @@ async function definirDaEmpresa(supabase, tenantId, body = {}) {
     : { modulos: resolver(body.modulos), plano_nome: String(body.plano_nome || '').trim().slice(0, 80) || null };
   if (upd.modulos && !upd.modulos.length) return { status: 400, erro: 'Escolha ao menos um módulo' };
   const r = await supabase.from('tenants').update(upd).eq('id', tenantId).select(); if (r.error) throw new Error(r.error.message);
+  try { require('../middleware/exigirModulo').limparCache(tenantId); } catch { /* ok */ } // 18k: vale na hora
   return { antes: ativosDe(t), ...(await daEmpresa(supabase, tenantId)) };
 }
 

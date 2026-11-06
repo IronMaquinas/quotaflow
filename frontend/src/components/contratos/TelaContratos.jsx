@@ -3,6 +3,7 @@
 // (em dia / atrasada), as inspeções de entrega/devolução e os ACESSOS do locatário (perfil "Locatário": e-mail + senha
 // temporária — ele entra no QuotaFlow e vê só os contratos dele). Encerrar o contrato devolve os equipamentos e oferece
 // pausar os acessos que ficaram sem contrato ativo. Ver: admin, gestor, operação, comprador, qualidade · alterar: admin, gestor.
+import { moduloAtivo } from "../../utils/modulosSessao"; // 18k
 import { useState, useEffect, useMemo } from "react";
 import apiService from "../../services/apiService";
 import { corEstado, txtEstado } from "../inspecoes/RotinasLocacao";
@@ -62,7 +63,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
   useEffect(() => { carregarPend(); }, []); // eslint-disable-line
   // 18h.3: contador de ocorrências em aberto na aba (paradas em destaque)
   const [ocAbertas, setOcAbertas] = useState({ n: 0, paradas: 0 });
-  const carregarOc = async () => { try { const l = (await apiService.get("/ocorrencias", { status: "abertas" })).ocorrencias || []; setOcAbertas({ n: l.length, paradas: l.filter((o) => o.parado).length }); } catch { setOcAbertas({ n: 0, paradas: 0 }); } };
+  const carregarOc = async () => { if (!moduloAtivo("ocorrencias")) return; try { const l = (await apiService.get("/ocorrencias", { status: "abertas" })).ocorrencias || []; setOcAbertas({ n: l.length, paradas: l.filter((o) => o.parado).length }); } catch { setOcAbertas({ n: 0, paradas: 0 }); } };
   useEffect(() => { carregarOc(); }, [aba]); // eslint-disable-line
   const [ocAbrir, setOcAbrir] = useState(null); // 18h.3.2: veio da tarefa TSK-MT
   useEffect(() => { if (abrirOcorrencia?.id != null) { setFiltroOc(null); setAba("ocorrencias"); setOcAbrir(abrirOcorrencia.id); } }, [abrirOcorrencia]);
@@ -92,7 +93,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
       </div>
       {aviso && <div style={{ ...s.card, padding: "10px 14px", marginBottom: 12, fontSize: 13, borderColor: aviso.tipo === "erro" ? C.danger : C.success, color: aviso.tipo === "erro" ? C.danger : C.success }}>{aviso.texto}</div>}
       <div style={{ display: "flex", gap: 6, marginBottom: 12, borderBottom: `1px solid ${C.border}`, overflowX: "auto" }}>{/* 18h.4: abas numa linha (rola no celular) */}
-        {[["contratos", "📑 Contratos"], ["medicoes", <>📏 Medições{paraEnviar > 0 && <span style={{ marginLeft: 6, background: C.danger, color: "#fff", borderRadius: 10, padding: "0 7px", fontSize: 11.5, fontWeight: 700 }}>{paraEnviar}</span>}</>], ["ocorrencias", <>⚠️ Ocorrências{ocAbertas.n > 0 && <span title={ocAbertas.paradas ? `${ocAbertas.n} em aberto · ${ocAbertas.paradas} com equipamento parado` : `${ocAbertas.n} em aberto`} style={{ marginLeft: 6, background: C.danger, color: "#fff", borderRadius: 10, padding: "0 7px", fontSize: 11.5, fontWeight: 700 }}>{ocAbertas.n}</span>}</>], ["clientes", "👥 Clientes"], ["modelos", "📄 Modelos de contrato"]].map(([k, l]) => <button key={k} type="button" onClick={() => { setAba(k); if (k === "ocorrencias") setFiltroOc(null); }} style={{ whiteSpace: "nowrap", flexShrink: 0, background: "transparent", border: "none", borderBottom: `2px solid ${aba === k ? C.accent : "transparent"}`, padding: "8px 12px", color: aba === k ? C.text : C.muted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>)}
+        {[["contratos", "📑 Contratos"], ...(moduloAtivo("medicao") ? [["medicoes", <>📏 Medições{paraEnviar > 0 && <span style={{ marginLeft: 6, background: C.danger, color: "#fff", borderRadius: 10, padding: "0 7px", fontSize: 11.5, fontWeight: 700 }}>{paraEnviar}</span>}</>]] : []), ...(moduloAtivo("ocorrencias") ? [["ocorrencias", <>⚠️ Ocorrências{ocAbertas.n > 0 && <span title={ocAbertas.paradas ? `${ocAbertas.n} em aberto · ${ocAbertas.paradas} com equipamento parado` : `${ocAbertas.n} em aberto`} style={{ marginLeft: 6, background: C.danger, color: "#fff", borderRadius: 10, padding: "0 7px", fontSize: 11.5, fontWeight: 700 }}>{ocAbertas.n}</span>}</>]] : []), ["clientes", "👥 Clientes"], ["modelos", "📄 Modelos de contrato"]].map(([k, l]) => <button key={k} type="button" onClick={() => { setAba(k); if (k === "ocorrencias") setFiltroOc(null); }} style={{ whiteSpace: "nowrap", flexShrink: 0, background: "transparent", border: "none", borderBottom: `2px solid ${aba === k ? C.accent : "transparent"}`, padding: "8px 12px", color: aba === k ? C.text : C.muted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>)}
       </div>
       {aba === "clientes" && <AbaClientes C={C} s={s} editar={editar} onErro={err} onOk={ok} abrirId={clienteAbrir} onAberto={() => setClienteAbrir(null)} />}
       {aba === "modelos" && <AbaModelos C={C} s={s} editar={editar} onErro={err} onOk={ok} />}

@@ -36,6 +36,7 @@ router.get('/medicoes/:id', responder(async (req) => MD.acaoLocatario(supabase, 
 router.post('/medicoes/:id/aprovar', responder(async (req) => MD.acaoLocatario(supabase, req.tenantId, await eu(req), 'aprovar', { medicaoId: req.params.id })));
 router.post('/medicoes/:id/contestar', responder(async (req) => MD.acaoLocatario(supabase, req.tenantId, await eu(req), 'contestar', { medicaoId: req.params.id, body: req.body || {} })));
 const quemLoc = async (req) => { const u = await eu(req); return { usuarioId: req.userId, usuarioNome: u.nome || req.userEmail || null, lado: 'cliente' }; };
+router.get('/modulos', responder(async (req) => ({ ativos: (await require('../services/modulos').daEmpresa(supabase, req.tenantId)).ativos }))); // 18k: a tela do cliente esconde abas de módulo não contratado
 router.get('/ocorrencias', responder((req) => OC.listar(supabase, req.tenantId, req.query || {}, { locatarioId: req.userId })));
 router.get('/ocorrencias/opcoes', responder((req) => OC.opcoesLocatario(supabase, req.tenantId, req.userId)));
 router.get('/ocorrencias/:id', responder((req) => OC.detalhe(supabase, req.tenantId, req.params.id, { locatarioId: req.userId })));

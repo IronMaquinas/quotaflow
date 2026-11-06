@@ -72,6 +72,7 @@ app.use((req, res, next) => {
 });
 
 // ── Rotas ────────────────────────────────────
+const { exigirModulo } = require('./middleware/exigirModulo'); // etapa 18k: 🧩 módulo não contratado → 409
 app.use("/api/auth",         authRoutes);
 app.use("/api/cotacoes",     cotacoesRoutes);
 app.use("/api/catalogo",     tenantMiddleware, catalogoRoutes);
@@ -82,23 +83,23 @@ app.use("/api/usuarios",     tenantMiddleware, usuariosRoutes);
 app.use('/api/equipamentos', tenantMiddleware, equipamentosRouter);
 app.use('/api/tarefas',      tenantMiddleware, tarefasRoutes);
 app.use('/api', require('./routes/portalFornecedor'));
-app.use('/api/ordens-venda', tenantMiddleware, ordensVendaRoutes);
+app.use('/api/ordens-venda', tenantMiddleware, exigirModulo(['compras', 'estoque']), ordensVendaRoutes);
 app.use('/api/fornecedor', fornecedorRoutes); // Fornecedor anunciante com perfil de fornecedor exclusivo
 app.use('/api/fornecedor', fornecedorProdutosRouter); // Upload/listagem de produtos do fornecedor (mesmo domínio de fornecedorRoutes)
 app.use('/api/fornecedor/nao-conformidades', fornecedorNCRoutes);
 app.use('/api/busca-fornecedores', tenantMiddleware, buscaFornecedoresRouter);
 app.use('/api/catalogo', tenantMiddleware, catalogoBuscaRouter);
-app.use('/api/estoque/itens', tenantMiddleware, itensConsumoRoutes);
-app.use('/api/estoque/movimentacoes', tenantMiddleware, movimentacoesRoutes);
-app.use('/api/estoque/recompra', tenantMiddleware, recompraRoutes);
-app.use('/api/estoque/configuracoes', tenantMiddleware, configEstoqueRoutes);
+app.use('/api/estoque/itens', tenantMiddleware, exigirModulo(['estoque', 'compras', 'manutencao']), itensConsumoRoutes);
+app.use('/api/estoque/movimentacoes', tenantMiddleware, exigirModulo(['estoque', 'compras', 'epi']), movimentacoesRoutes);
+app.use('/api/estoque/recompra', tenantMiddleware, exigirModulo('estoque'), recompraRoutes);
+app.use('/api/estoque/configuracoes', tenantMiddleware, exigirModulo('estoque'), configEstoqueRoutes);
 app.use('/api/estoque/solicitacoes', tenantMiddleware, solicitacoesRoutes);
 // M4.4-etapa-6c: catálogo de endereços (CRUD)
-app.use('/api/estoque/enderecos', tenantMiddleware, enderecosRoutes);
+app.use('/api/estoque/enderecos', tenantMiddleware, exigirModulo('estoque'), enderecosRoutes);
 app.use('/api/estoque', solicitacoesRoutes);
 app.use('/api/estoque/ordem-servico', tenantMiddleware, ordemServicoRoutes);
 app.use('/api/estoque', tenantMiddleware, reservasRoutes);
-app.use('/api/nao-conformidades', tenantMiddleware, naoConformidadesRoutes);
+app.use('/api/nao-conformidades', tenantMiddleware, exigirModulo(['nao_conformidades', 'manutencao']), naoConformidadesRoutes);
 app.use('/api/configuracoes', tenantMiddleware, configuracoesRoutes);
 
 // Etapa 10c: esta rota era PÚBLICA (sem login) e listava todas as demandas abertas
@@ -140,22 +141,22 @@ app.use('/api/atuacao', require('./routes/atuacao'));
 // Sem middleware: resumo-diario exige x-cron-secret; descadastro usa token do e-mail
 app.use('/api/recomendacoes', recomendacoesRoutes);
 app.use('/api/plataforma', require('./routes/plataforma')); // Console da Plataforma (etapa 11b) — autenticação própria
-app.use('/api/manutencao', tenantMiddleware, require('./routes/manutencao')); // Calendário de manutenção (etapa 12a) — só leitura
-app.use('/api/pessoas', tenantMiddleware, require('./routes/pessoas')); // Colaboradores e documentos com vencimento (etapa 12c)
-app.use('/api/meus-treinamentos', tenantMiddleware, require('./routes/meusTreinamentos'));
-app.use('/api/minhas-viagens', tenantMiddleware, require('./routes/minhasViagens')); // etapa 17a — 🚛 motorista logado // etapa 12e.2b — colaborador logado
+app.use('/api/manutencao', tenantMiddleware, exigirModulo('manutencao'), require('./routes/manutencao')); // Calendário de manutenção (etapa 12a) — só leitura
+app.use('/api/pessoas', tenantMiddleware, exigirModulo('colaboradores', { somenteEscrita: true }), require('./routes/pessoas')); // Colaboradores e documentos com vencimento (etapa 12c)
+app.use('/api/meus-treinamentos', tenantMiddleware, exigirModulo('treinamentos'), require('./routes/meusTreinamentos'));
+app.use('/api/minhas-viagens', tenantMiddleware, exigirModulo('transporte'), require('./routes/minhasViagens')); // etapa 17a — 🚛 motorista logado // etapa 12e.2b — colaborador logado
 app.use('/api/prova', require('./routes/provaPublica')); // etapa 12e.2b — link externo da prova (público, CPF + nascimento)
-app.use('/api/autuacoes', tenantMiddleware, require('./routes/autuacoes')); // etapa 12i — autuações da empresa (requisito legal)
-app.use('/api/inspecoes', tenantMiddleware, require('./routes/inspecoes')); // etapa 14a — inspeções de equipamento
+app.use('/api/autuacoes', tenantMiddleware, exigirModulo('nao_conformidades'), require('./routes/autuacoes')); // etapa 12i — autuações da empresa (requisito legal)
+app.use('/api/inspecoes', tenantMiddleware, exigirModulo(['inspecoes', 'contratos_locacao', 'manutencao']), require('./routes/inspecoes')); // etapa 14a — inspeções de equipamento
 app.use('/api/inspecao-link', require('./routes/inspecaoLink')); // etapa 14b.1 — inspeção de terceiros (link público)
-app.use('/api/contratos', tenantMiddleware, require('./routes/contratos')); // etapa 14b.3 — contratos de locação (empresa)
-app.use('/api/monitor-cnpj', tenantMiddleware, require('./routes/monitorCnpj')); // etapa 14e — 🛡 Monitor de CNPJs
-app.use('/api/comercial', tenantMiddleware, require('./routes/comercial')); // etapa 15a — 📈 Comercial (mini-CRM + BID)
-app.use('/api/programacao', tenantMiddleware, require('./routes/programacao')); // etapa 16a — 🚛 Programação (execuções / AT)
+app.use('/api/contratos', tenantMiddleware, exigirModulo('contratos_locacao'), require('./routes/contratos')); // etapa 14b.3 — contratos de locação (empresa)
+app.use('/api/monitor-cnpj', tenantMiddleware, exigirModulo('fornecedores'), require('./routes/monitorCnpj')); // etapa 14e — 🛡 Monitor de CNPJs
+app.use('/api/comercial', tenantMiddleware, exigirModulo('crm_bid'), require('./routes/comercial')); // etapa 15a — 📈 Comercial (mini-CRM + BID)
+app.use('/api/programacao', tenantMiddleware, exigirModulo('transporte'), require('./routes/programacao')); // etapa 16a — 🚛 Programação (execuções / AT)
 app.use('/api/bid-link', require('./routes/bidLink')); // etapa 15b — link do cliente para o BID (público, token)
 app.use('/api/at-link', require('./routes/atLink')); // etapa 16c — link do motorista para a AT (público, token)
-app.use('/api/ocorrencias', tenantMiddleware, require('./routes/ocorrencias')); // etapa 18h — ⚠️ ocorrências / sinistros (SIN)
-app.use('/api/locatario', tenantMiddleware, require('./routes/locatario')); // etapa 14b.3 — área do locatário
+app.use('/api/ocorrencias', tenantMiddleware, exigirModulo('ocorrencias'), require('./routes/ocorrencias')); // etapa 18h — ⚠️ ocorrências / sinistros (SIN)
+app.use('/api/locatario', tenantMiddleware, exigirModulo('contratos_locacao'), require('./routes/locatario')); // etapa 14b.3 — área do locatário
 
 // Rota de saúde (Railway usa para verificar se o servidor está rodando)
 app.get("/health", (req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));

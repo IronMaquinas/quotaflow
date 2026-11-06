@@ -6,6 +6,7 @@
 // Inspeções feitas sem internet ficam no aparelho e são enviadas sozinhas quando a conexão volta.
 // 14b.1: número INSP-AAAA-NNNN, tipo do modelo, "🔧 resolvido na hora", 🔗 links de inspeção de terceiros e o modo
 //   colaborador ("Minhas inspeções" na tela própria do colaborador — sem modelos, liberação nem OS).
+import { moduloAtivo } from "../../utils/modulosSessao"; // 18k
 import { useState, useEffect, useMemo, useCallback } from "react";
 import apiService from "../../services/apiService";
 import ExecutarInspecao from "./ExecutarInspecao";
@@ -201,7 +202,7 @@ export default function TelaInspecoes({ C, s, onAbrirOS, onIrParaOS, embutida = 
                 <button type="button" onClick={() => inspecionar(e)} style={bt(C.accent)}>🔍 Inspecionar</button>
                 {e.bloqueado && !colab && <button type="button" onClick={() => (e.bloqueio_inspecao_id ? abrir(e.bloqueio_inspecao_id) : abrirLiberar(e))} style={bt(C.success)}>🔓 Resolver bloqueio</button>}
                 {editar && <button type="button" onClick={() => setModalEq({ tipo: "rotinas", e })} style={bt(C.accent, false)}>⏰ Rotinas{(e.rotinas || []).length ? ` (${e.rotinas.length})` : ""}</button>}
-                {editar && (e.situacao === "locado" ? <button type="button" onClick={() => setModalEq({ tipo: "encerrar", e })} style={bt(C.success, false)}>🏠 Encerrar locação</button>
+                {editar && moduloAtivo("contratos_locacao") && (e.situacao === "locado" ? <button type="button" onClick={() => setModalEq({ tipo: "encerrar", e })} style={bt(C.success, false)}>🏠 Encerrar locação</button>
                   : <button type="button" onClick={() => setModalEq({ tipo: "locar", e })} style={bt(C.warn, false)}>📍 Locar</button>)}
                 {e.total > 0 && !colab && <button type="button" onClick={() => { setFiltroEq(String(e.id)); setAba("hist"); }} style={bt(C.textSub, false)}>Histórico ({e.total})</button>}
               </div>
