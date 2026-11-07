@@ -271,18 +271,34 @@ async function listar(supabase, tenantId, filtros = {}, { locatarioId = null, pe
   lista.sort((a, b) => String(b.ocorrido_em).localeCompare(String(a.ocorrido_em)));
   return { ocorrencias: await Promise.all(lista.map((o) => enfeitar(supabase, tenantId, o, { cliente: !!locatarioId }))), tipos: TIPOS, status: STATUS, responsabilidades: RESP };
 }
-async function detalhe(supabase, tenantId, id, { locatarioId = null, perfis = null } = {}) {
+// 18p: 💬 tempo real por espera longa (como a conversa do Spot) — a tela pergunta "mudou algo depois de X?" e o servidor
+//   segura até gravar algo na ocorrência (mensagem, foto, status) ou ~25 s. Substitui o "reler a cada 15 s".
+const avisosOc = new (require('events').EventEmitter)(); avisosOc.setMaxListeners(0);
+const ESPERA_OC_MS = 25000;
+async function detalhe(supabase, tenantId, id, opts = {}) {
+  const { desde = null, esperar = false } = opts;
+  if (esperar && desde) {
+    const atual = await (opts.locatarioId ? doLocatario(supabase, tenantId, opts.locatarioId, id) : doTenant(supabase, tenantId, id)).catch(() => null);
+    if (atual && String(atual.atualizado_em || '') <= String(desde)) {
+      await new Promise((ok) => { const k = `oc:${atual.id}`; const tm = setTimeout(fim, ESPERA_OC_MS); function fim() { clearTimeout(tm); avisosOc.removeListener(k, fim); ok(); } avisosOc.once(k, fim); });
+      const depois = await (opts.locatarioId ? doLocatario(supabase, tenantId, opts.locatarioId, id) : doTenant(supabase, tenantId, id)).catch(() => null);
+      if (depois && String(depois.atualizado_em || '') <= String(desde)) return { sem_mudanca: true, versao: depois.atualizado_em || null };
+    }
+  }
+  return detalheAgora(supabase, tenantId, id, opts);
+}
+async function detalheAgora(supabase, tenantId, id, { locatarioId = null, perfis = null } = {}) {
   const o = locatarioId ? await doLocatario(supabase, tenantId, locatarioId, id) : await doTenant(supabase, tenantId, id).catch((e) => { if (sem068(e)) return null; throw e; });
   if (!o) return { status: 404, erro: 'Ocorrência não encontrada' };
   if (!locatarioId && perfis && !podeOrigem(perfis, await config(supabase, tenantId), o.origem)) return { status: 409, erro: 'Seu perfil não tem acesso a esta ocorrência (⚙️ Configurações → ⚠️ Ocorrências)' };
   const emp = (await q(supabase.from('tenants').select('*').eq('id', tenantId)).catch(() => []))[0] || {};
-  return { ocorrencia: await enfeitar(supabase, tenantId, o, { cliente: !!locatarioId, urls: true }), empresa: { nome: emp.nome_fantasia || emp.nome || emp.razao_social || '', razao_social: emp.razao_social || null, cnpj: emp.cnpj || null } };
+  return { versao: o.atualizado_em || null, ocorrencia: await enfeitar(supabase, tenantId, o, { cliente: !!locatarioId, urls: true }), empresa: { nome: emp.nome_fantasia || emp.nome || emp.razao_social || '', razao_social: emp.razao_social || null, cnpj: emp.cnpj || null } };
 }
 
 // ─── ações ───────────────────────────────────────────────────────────────────
 async function gravar(supabase, tenantId, o, upd) {
   const { data, error } = await supabase.from('ocorrencias').update({ ...upd, atualizado_em: new Date().toISOString() }).eq('id', o.id).eq('tenant_id', tenantId).select();
-  if (error) throw new Error(error.message); return data[0];
+  if (error) throw new Error(error.message); avisosOc.emit(`oc:${o.id}`); return data[0]; // 18p: acorda quem está com a ocorrência aberta
 }
 /** 18h.3.2: a TSK-MT acompanha a ocorrência — encerrada → concluída · em análise/atendimento → em andamento · registrada → pendente (cancelada fica como está) */
 const STATUS_TAREFA = { registrada: 'pendente', em_analise: 'em_andamento', em_atendimento: 'em_andamento', encerrada: 'concluida' };
@@ -434,4 +450,4 @@ async function indicadores(supabase, tenantId, { de = null, ate = null, perfis =
   };
 }
 
-module.exports = { indicadores, config, salvarConfig, opcoesConfig, destinatarios, TIPOS, STATUS, RESP, criar, listar, detalhe, atualizar, mensagem, anexar, opcoesLocatario, paradasDoContrato, contextoAT, contextoContrato, _definirEnvio };
+module.exports = { indicadores, config, salvarConfig, opcoesConfig, destinatarios, TIPOS, STATUS, RESP, criar, listar, detalhe, atualizar, mensagem, anexar, opcoesLocatario, paradasDoContrato, contextoAT, contextoContrato, _definirEnvio, _avisosOc: avisosOc };

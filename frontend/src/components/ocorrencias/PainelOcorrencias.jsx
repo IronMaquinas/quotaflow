@@ -2,7 +2,7 @@
 //   modo "empresa": aba ⚠️ Ocorrências em 📑 Contratos (e lista pela AT) — status, responsabilidade, conversa, fotos, dossiê
 //   modo "cliente": aba do locatário — registra, acompanha, conversa e manda mais fotos/BO
 //   "Parado" só informa: o comercial decide (a medição mostra os dias, nada é descontado sozinho).
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import apiService from "../../services/apiService";
 import RegistrarOcorrencia, { TIPOS_OC, enviarArquivos } from "./RegistrarOcorrencia";
 import { abrirDossie, prepararJanela } from "../../utils/gerarDossieOcorrencia";
@@ -64,8 +64,14 @@ export function DetalheOcorrencia({ C, s, modo = "empresa", id, usuario = null, 
   const [confirmar, setConfirmar] = useState(null); const [motivo, setMotivo] = useState("");
   const carregar = useCallback(async () => { try { setD(await apiService.get(`${base}/${id}`)); } catch (e) { setErro(e.message); } }, [base, id]);
   useEffect(() => { carregar(); }, [carregar]);
-  // 18h.3.2: conversa quase em tempo real — relê a cada 15 s com a ocorrência aberta (e a aba do navegador visível)
-  useEffect(() => { const t = setInterval(() => { if (!document.hidden) apiService.get(`${base}/${id}`).then((r) => setD((v) => (JSON.stringify(v?.ocorrencia?.mensagens) === JSON.stringify(r?.ocorrencia?.mensagens) && v?.ocorrencia?.status === r?.ocorrencia?.status ? v : r))).catch(() => {}); }, 15000); return () => clearInterval(t); }, [base, id]);
+  // 18p: conversa em tempo real por espera longa — o servidor responde assim que algo muda (mensagem, foto, status) ou em ~25 s
+  const versao = useRef(null); useEffect(() => { versao.current = d?.versao || null; }, [d?.versao]);
+  useEffect(() => { let vivo = true; (async () => {
+    while (vivo) {
+      if (!versao.current) { await new Promise((ok) => setTimeout(ok, 1000)); continue; }
+      try { const r = await apiService.get(`${base}/${id}`, { desde: versao.current, esperar: 1 }); if (!vivo) break; if (r && !r.sem_mudanca && r.ocorrencia) { versao.current = r.versao; setD(r); } }
+      catch { await new Promise((ok) => setTimeout(ok, 10000)); } // sem conexão: tenta de novo em 10 s
+    } })(); return () => { vivo = false; }; }, [base, id]);
   const o = d?.ocorrencia; const c = o?.contexto || {}; const fechada = o?.status === "encerrada";
   const acao = async (fn) => { setOcupado(true); setErro(null); try { await fn(); await carregar(); } catch (e) { setErro(e.message); } finally { setOcupado(false); } };
   const mudar = (corpo) => acao(async () => { await apiService.put(`${base}/${id}`, corpo); setConfirmar(null); setMotivo(""); });

@@ -24,7 +24,7 @@ router.use((req, res, next) => (perfisDe(req).some((p) => VER.includes(p)) ? nex
 
 router.get('/', responder((req) => OC.listar(supabase, req.tenantId, req.query || {}, { perfis: perfisDe(req) }))); // 18h.4c: só as origens que o perfil acessa
 router.get('/indicadores', responder((req) => OC.indicadores(supabase, req.tenantId, { de: req.query.de || null, ate: req.query.ate || null, perfis: perfisDe(req), receita: perfisDe(req).some((p) => ['admin', 'gestor'].includes(p)) }))); // 18h.4: receita só gestor/admin
-router.get('/:id', responder((req) => OC.detalhe(supabase, req.tenantId, req.params.id, { perfis: perfisDe(req) })));
+router.get('/:id', responder((req) => OC.detalhe(supabase, req.tenantId, req.params.id, { perfis: perfisDe(req), desde: req.query.desde || null, esperar: req.query.esperar === '1' })));
 router.post('/', responder(async (req) => OC.criar(supabase, req.tenantId, await quem(req), req.body || {})));
 router.put('/:id', responder(async (req) => OC.atualizar(supabase, req.tenantId, await quem(req), req.params.id, req.body || {}))); // 18h.4c: gestor/admin ou perfil com acesso à origem (⚙️ Configurações)
 router.post('/:id/mensagens', responder(async (req) => OC.mensagem(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));

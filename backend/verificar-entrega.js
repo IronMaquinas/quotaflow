@@ -165,7 +165,7 @@ const ESPERADO = {
   'front:gerarRelatorioCumprimento.js': 'd4b916c75f0a4290ccd9c96bf170ed90', // etapa 14c.1
   'services/contratosLocacao.js': 'd5f2a0b6f66e69454a3e13167d87f366', // etapa 18d.2
   'routes/contratos.js': '4a20ce8943e43d01c09f249c13c316f5', // etapa 18d.5
-  'routes/locatario.js': 'ab3eb4feeb426d72c79daadcdd530dc6', // etapa 18k
+  'routes/locatario.js': 'ef7e500d9afdf40a4d5090df88883405', // etapa 18p
   'migrations/043_contratos_locatario.sql': 'f25735b281aa176b4c31c3cc2bf283ed', // etapa 14b.3 (novo)
   'front:TelaContratos.jsx': '8ca010c69c85b79755aba455b1e956df', // etapa 18k
   'front:TelaLocatario.jsx': 'b6dc7d43a2e8ab86aedd4e638e832537', // etapa 18o
@@ -277,11 +277,11 @@ const ESPERADO = {
   'front:CampoPessoa.jsx': 'efa3cd5aee2eeadae0805e7d4b6e8daa', // etapa 18g.2c
   'front:gerarRelatorioTarefas.js': '483dd597e30b11635886ba51406d36cf', // etapa 18g.2b (novo)
   'front:AcaoDocFiscal.jsx': 'eed319fa1d63b104146db0b8eabcd7ed', // etapa 18g.2.7
-  'services/ocorrencias.js': '57ff71c7031c4abae4fcc1a71a8a7209', // etapa 18h.4
-  'routes/ocorrencias.js': 'bb5f29b713ae66614d9486f6af4840a0', // etapa 18h.4
+  'services/ocorrencias.js': '1d87b501e17a9bd72abc175e1335ed43', // etapa 18p
+  'routes/ocorrencias.js': '7a494a88eed51ce7c7965f0bd585c82e', // etapa 18p
   'migrations/068_ocorrencias.sql': '4fff8fd8dccd6dd91dbb2f145bd19a22', // etapa 18h (novo)
   'front:RegistrarOcorrencia.jsx': 'b59b650ed622b93b8d191900a8dc86b2', // etapa 18h.4a
-  'front:PainelOcorrencias.jsx': '0374632eb98c14ee552d02e3494ffa19', // etapa 18h.4
+  'front:PainelOcorrencias.jsx': 'f25dd65f398940c9ecba8f13c98375d8', // etapa 18p
   'front:gerarDossieOcorrencia.js': '971cc44cce9e61fd856940907f7c7fce', // etapa 18h.4a
   'front:useCatalogo.js': '0cd8f09dcbe1e98d67908d2937743a8b', // etapa 18h.2
   'front:areaRestrita.js': '48e89b41e5e1c3b82d92b1bf996576e0', // etapa 18h.2 (novo)
@@ -309,11 +309,12 @@ const ESPERADO = {
   'front:SinoNotificacoes.jsx': '6a4cb9e19227c570ada76c138d16d74e', // etapa 18n.3
 };
 
-// Antes de copiar a etapa 18n.3 — base: a4364a8
+// Antes de copiar a etapa 18p — base: ba2d771
 const ANTES = {
-  'server.js': '6020c8c1147b6216ded8fb44e2771b94',
-  'services/notificacoes.js': 'acf92d8912df1668b6ee42bee78d7f81',
-  'front:SinoNotificacoes.jsx': '4bb050933a0388b41e9e0f838108136d',
+  'services/ocorrencias.js': '57ff71c7031c4abae4fcc1a71a8a7209',
+  'routes/ocorrencias.js': 'bb5f29b713ae66614d9486f6af4840a0',
+  'routes/locatario.js': 'ab3eb4feeb426d72c79daadcdd530dc6',
+  'front:PainelOcorrencias.jsx': '0374632eb98c14ee552d02e3494ffa19',
 };
 
 const RAIZ = process.cwd();
@@ -351,7 +352,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18n.3)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18p)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
