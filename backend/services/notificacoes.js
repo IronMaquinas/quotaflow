@@ -113,4 +113,50 @@ async function limpar(supabase, agora = Date.now()) {
   } catch (e) { if (sem074(e)) return { apagadas: 0 }; throw e; }
 }
 
-module.exports = { GUARDA, limpar, REGRA, criar, listar, marcarLida, avaliarPush, online, marcarVisto, _definirCanal, _avisos: avisos };
+// 18q: ✉️ e-mail quando a conversa fica 4 h SEM LER (uma vez por assunto até ler; nunca 22h–7h; perfil admin não recebe
+//   e-mail de rotina). Quem abre a conversa — ou clica em ✉️ Email / WhatsApp do fornecedor — marca como lida e o e-mail não sai.
+//   email_em/email_status também alimentam o 📊 indicador de atenção (meta 0%).
+const EMAIL = { horas: 4, tipos: ['spot_mensagem'] };
+let enviarEmail = async (para, assunto, html) => require('./emailService').enviarEmailFornecedor(para, assunto, html);
+function _definirEmail(fn) { enviarEmail = fn; }
+async function emailDoDestino(supabase, dest) {
+  if (dest.tipo === 'fornecedor') { const f = (await q(supabase.from('fornecedores').select('*').eq('id', dest.id)).catch(() => []))[0]; return { email: f?.email || null, nome: f?.nome || f?.nome_fantasia || '' }; }
+  const u = (await q(supabase.from('usuarios').select('*').eq('id', dest.id)).catch(() => []))[0] || {};
+  const perfis = Array.isArray(u.perfis) && u.perfis.length ? u.perfis : [u.perfil].filter(Boolean);
+  return { email: u.email || null, nome: u.nome || '', admin: perfis.includes('admin') };
+}
+async function avaliarEmail(supabase, agora = Date.now()) {
+  if (horaBrasilia(agora) >= REGRA.silencio_ini || horaBrasilia(agora) < REGRA.silencio_fim) return { avaliadas: 0, silencio: true };
+  let pend; try { pend = (await q(supabase.from('notificacoes').select('*').is('email_em', null))).filter((n) => !n.lida_em && EMAIL.tipos.includes(n.tipo) && agora - Date.parse(n.criado_em) >= EMAIL.horas * 3600000); }
+  catch (e) { if (sem074(e) || /email_em/.test(e.message)) return { avaliadas: 0, sem_migration: true }; throw e; }
+  const res = { avaliadas: pend.length, enviados: 0, sem_email: 0, admin: 0, falhou: 0 };
+  const base = String(process.env.FRONTEND_URL || '').trim().replace(/\/+$/, '');
+  for (const n of pend) {
+    const dest = { tipo: n.destinatario_tipo, id: n.destinatario_id }; const p = await emailDoDestino(supabase, dest);
+    let st = 'enviado';
+    if (p.admin) st = 'admin'; else if (!p.email) st = 'sem_email';
+    else {
+      const horas = Math.floor((agora - Date.parse(n.criado_em)) / 3600000);
+      const html = `<p>Olá${p.nome ? `, ${p.nome}` : ''}!</p><p><b>${n.titulo}</b>${n.texto ? ` — ${n.texto}` : ''}</p><p>Está sem resposta há ${horas} h${(n.quantidade || 1) > 1 ? ` (${n.quantidade} mensagens)` : ''}.</p>`
+        + (base ? `<p><a href="${base}">Abrir o QuotaFlow</a> e responder pelo 🔔.</p>` : '<p>Abra o QuotaFlow e responda pelo 🔔.</p>') + '<p style="color:#888;font-size:12px">Você recebe este e-mail só quando a conversa fica 4 h sem ler — um por conversa.</p>';
+      try { await enviarEmail(p.email, `⏳ ${n.titulo}`, html); } catch (e) { st = 'falhou'; console.error('⚠️ [notificacoes] e-mail:', e.message); }
+    }
+    await supabase.from('notificacoes').update({ email_em: new Date(agora).toISOString(), email_status: st }).eq('id', n.id);
+    res[st === 'enviado' ? 'enviados' : st]++;
+  }
+  return res;
+}
+/** 📊 indicador de atenção — das respostas que chegaram aos compradores, quantas passaram de 4 h sem ler (meta 0%) */
+async function indicadorAtencao(supabase, tenantId, { dias = 30, agora = Date.now() } = {}) {
+  let ns; try { ns = (await q(supabase.from('notificacoes').select('*').eq('tenant_id', String(tenantId)).eq('tipo', 'spot_mensagem').eq('destinatario_tipo', 'usuario'))).filter((n) => agora - Date.parse(n.criado_em) < dias * 864e5); }
+  catch (e) { if (sem074(e)) return { sem_migration: true, total: 0 }; throw e; }
+  const atrasou = (n) => !!n.email_em || (!n.lida_em && agora - Date.parse(n.criado_em) >= EMAIL.horas * 3600000);
+  const porPessoa = new Map();
+  for (const n of ns) { const p = porPessoa.get(n.destinatario_id) || { usuario_id: n.destinatario_id, total: 0, atrasos: 0 }; p.total++; if (atrasou(n)) p.atrasos++; porPessoa.set(n.destinatario_id, p); }
+  const us = porPessoa.size ? await q(supabase.from('usuarios').select('*').eq('tenant_id', tenantId)).catch(() => []) : [];
+  const pessoas = [...porPessoa.values()].map((p) => ({ ...p, nome: us.find((u) => String(u.id) === String(p.usuario_id))?.nome || '—', pct: Math.round((p.atrasos / p.total) * 100) })).sort((a, b) => b.pct - a.pct);
+  const total = ns.length; const atrasos = ns.filter(atrasou).length;
+  return { dias, horas: EMAIL.horas, total, atrasos, pct: total ? Math.round((atrasos / total) * 100) : 0, meta: 0, pessoas };
+}
+
+module.exports = { EMAIL, avaliarEmail, indicadorAtencao, _definirEmail, GUARDA, limpar, REGRA, criar, listar, marcarLida, avaliarPush, online, marcarVisto, _definirCanal, _avisos: avisos };

@@ -261,6 +261,9 @@ if (process.env.CRON_INTERNO === '1') {
   cron.schedule('*/5 * * * *', () => {
     require('./services/notificacoes').avaliarPush(require('./db').supabase).then((r) => { if (r.registradas || r.enviadas) console.log('📱 [notificacoes] celular:', JSON.stringify(r)); }).catch((e) => console.error('⚠️ [notificacoes] regra:', e.message));
   }, { timezone: 'America/Sao_Paulo' });
+  cron.schedule('*/5 * * * *', () => { // 18q: ✉️ conversa 4 h sem ler → e-mail (uma vez por assunto)
+    require('./services/notificacoes').avaliarEmail(require('./db').supabase).then((r) => { if (r.enviados || r.falhou) console.log('✉️ [notificacoes] e-mail 4 h:', JSON.stringify(r)); }).catch((e) => console.error('⚠️ [notificacoes] e-mail 4 h:', e.message));
+  }, { timezone: 'America/Sao_Paulo' });
   cron.schedule('0 3 * * *', () => { // 18n.3: 🧹 notificações lidas há +30 dias / não lidas há +90 dias
     require('./services/notificacoes').limpar(require('./db').supabase).then((r) => { if (r.apagadas) console.log('🧹 [notificacoes] apagadas:', r.apagadas); }).catch((e) => console.error('⚠️ [notificacoes] limpeza:', e.message));
   }, { timezone: 'America/Sao_Paulo' });

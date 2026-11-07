@@ -116,6 +116,10 @@ function formDaDemanda(d) {
 }
 
 export default function TelaCanalSpot({ C, s, fmtD }) {
+  const [atencao, setAtencao] = useState(null); const [atencaoAberta, setAtencaoAberta] = useState(false); // 18q: 📊 indicador de atenção
+  useEffect(() => { apiService.get('/spot/indicador-atencao').then(setAtencao).catch(() => {}); }, []);
+  // 18q: chamar o fornecedor por ✉️ Email / 💬 WhatsApp também conta como "viu a resposta" — o e-mail de 4 h não sai
+  const lidaPorContato = (i) => { apiService.post('/notificacoes/lidas', { chave: `spot:${i.id}` }).catch(() => {}); };
   const [demandas, setDemandas] = useState([]);
   const [loading, setLoading] = useState(true);
   const [filtroSituacao, setFiltroSituacao] = useState('todas');
@@ -354,10 +358,20 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
 
   return (
     <div style={{ padding: '22px 24px', overflowY: 'auto', height: '100%' }}>
+      {atencaoAberta && atencao && <div onClick={() => setAtencaoAberta(false)} style={{ position: 'fixed', inset: 0, background: '#00000099', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 16 }}>{/* 18q */}
+        <div onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Atenção às respostas" style={{ ...s.card, width: 460, maxWidth: '100%', padding: 20 }}>
+          <div style={{ fontWeight: 700, fontSize: 15, marginBottom: 6 }}>📊 Atenção às respostas dos fornecedores</div>
+          <div style={{ fontSize: 12.5, color: C.textSub, marginBottom: 12, lineHeight: 1.5 }}>Das {atencao.total} resposta(s) que chegaram nos últimos {atencao.dias} dias, <b style={{ color: atencao.pct > 0 ? C.danger : C.success }}>{atencao.pct}%</b> ficaram mais de {atencao.horas} h sem ninguém ler (aí o sistema manda e-mail). <b>Meta: 0%</b> — abrir a conversa ou chamar o fornecedor por ✉️ Email / 💬 WhatsApp conta como atendida.</div>
+          {atencao.pessoas.map((p) => <div key={p.usuario_id} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 13, padding: '6px 0', borderTop: `1px solid ${C.border}` }}><span>{p.nome}</span><span style={{ color: p.pct > 0 ? C.danger : C.success, fontWeight: 700 }}>{p.pct}% <span style={{ color: C.muted, fontWeight: 400 }}>({p.atrasos} de {p.total})</span></span></div>)}
+          <div style={{ textAlign: 'right', marginTop: 12 }}><button type="button" onClick={() => setAtencaoAberta(false)} style={{ ...s.btn(false), padding: '7px 16px' }}>Fechar</button></div>
+        </div></div>}
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 22 }}>
         <div>
           <div style={{ fontSize: 11, color: C.muted, letterSpacing: '0.1em' }}>COMPRAS SPOT</div>
           <div style={{ fontSize: 22, fontWeight: 700, color: C.text }}>Canal Spot</div>
+          {atencao?.total > 0 && <button type="button" onClick={() => setAtencaoAberta(true)} title="Respostas de fornecedores que ficaram mais de 4 h sem ler — meta 0%"
+            style={{ marginTop: 4, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: atencao.pct > 0 ? C.danger : C.success, fontFamily: 'inherit' }}>
+            📊 {atencao.pct}% das respostas ficaram +{atencao.horas} h sem ler ({atencao.dias} dias) · meta 0%</button>}{/* 18q */}
         </div>
         <button onClick={() => abrirNova()} style={{ ...s.btn(!bloqueioPublicar), padding: '9px 18px' }} title={bloqueioPublicar || ''}>{bloqueioPublicar ? '🔒 ' : '+ '}Nova Demanda Spot</button>
       </div>
@@ -708,7 +722,7 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
                                 </button>
                                 {i.fornecedor_email && (
                                   <a href={`mailto:${i.fornecedor_email}?subject=${encodeURIComponent(assunto)}&body=${encodeURIComponent(corpoEmail)}`}
-                                     onClick={e => e.stopPropagation()}
+                                     onClick={e => { e.stopPropagation(); lidaPorContato(i); }}
                                      title={`Enviar email para ${i.fornecedor_email}`}
                                      style={{ padding: '5px 10px', borderRadius: 5, border: `1px solid ${C.border}`, color: C.accent, fontSize: 11, fontWeight: 600, textDecoration: 'none' }}>
                                     ✉️ Email
@@ -716,7 +730,7 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
                                 )}
                                 {(i.fornecedor_whatsapp || i.fornecedor_telefone) && (
                                   <a href={`https://wa.me/${(i.fornecedor_whatsapp || i.fornecedor_telefone).replace(/\D/g, '')}?text=${encodeURIComponent(textoWhats)}`}
-                                     target="_blank" rel="noopener noreferrer"
+                                     target="_blank" rel="noopener noreferrer" onClick={e => { e.stopPropagation(); lidaPorContato(i); }}
                                      title={`WhatsApp: ${i.fornecedor_whatsapp || i.fornecedor_telefone}`}
                                      style={{ padding: '5px 10px', borderRadius: 5, border: `1px solid ${C.border}`, color: C.success, fontSize: 11, fontWeight: 600, textDecoration: 'none' }}>
                                     💬 WhatsApp

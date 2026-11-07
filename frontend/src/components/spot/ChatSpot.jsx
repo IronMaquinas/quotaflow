@@ -4,6 +4,8 @@
 //   (ou em ~25 s, e pergunta de novo). A mensagem do outro lado aparece sozinha, sem recarregar.
 import { useState, useEffect, useRef } from "react";
 import apiService from "../../services/apiService";
+import { prepararArquivo } from "../../utils/comprimirImagem"; // 18q: 📎
+import VerArquivo from "../programacao/VerArquivo";
 
 const hora = (d) => (d ? new Date(d).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "");
 
@@ -11,6 +13,7 @@ export default function ChatSpot({ C, s, url, lado, titulo, subtitulo, onFechar,
   const [msgs, setMsgs] = useState([]); const [txt, setTxt] = useState(""); const [erro, setErro] = useState(null);
   const [encerrada, setEncerrada] = useState(false); const [enviando, setEnviando] = useState(false); const [carregou, setCarregou] = useState(false);
   const ultimo = useRef(0); const vivo = useRef(true); const fim = useRef(null);
+  const arqRef = useRef(null); const [ver, setVer] = useState(null); // 18q: 📎 anexo e visualizador por cima da conversa
   const juntar = (novas) => { if (!novas?.length) return; setMsgs((v) => { const ids = new Set(v.map((m) => m.id)); return [...v, ...novas.filter((m) => !ids.has(m.id))]; }); ultimo.current = Math.max(ultimo.current, ...novas.map((m) => Number(m.id))); };
   useEffect(() => {
     vivo.current = true;
@@ -25,6 +28,16 @@ export default function ChatSpot({ C, s, url, lado, titulo, subtitulo, onFechar,
     return () => { vivo.current = false; };
   }, [url]); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { fim.current?.scrollIntoView({ block: "end" }); }, [msgs.length]);
+  const anexar = async (ev) => { // 18q: copia o arquivo ANTES de limpar o campo (senão a lista some — lição da 18h)
+    const f0 = ev.target.files?.[0]; ev.target.value = ""; if (!f0 || enviando) return;
+    if (!/^(image\/(jpeg|png)|application\/pdf)$/.test(f0.type)) { setErro("Anexo: foto (JPG ou PNG) ou PDF"); return; }
+    setEnviando(true); setErro(null);
+    try {
+      const f = await prepararArquivo(f0); if (f.size > 10 * 1024 * 1024) throw new Error("Arquivo maior que 10 MB");
+      const base64 = await new Promise((ok, ko) => { const r = new FileReader(); r.onload = () => ok(String(r.result).split(",")[1]); r.onerror = ko; r.readAsDataURL(f); });
+      const r = await apiService.post(url, { texto: txt.trim(), anexo: { nome: f.name, mime: f.type, base64 } }); juntar([r.mensagem]); setTxt("");
+    } catch (e) { setErro(e.message); } finally { setEnviando(false); }
+  };
   const enviar = async () => {
     const t = txt.trim(); if (!t || enviando) return;
     setEnviando(true); setErro(null);
@@ -43,17 +56,24 @@ export default function ChatSpot({ C, s, url, lado, titulo, subtitulo, onFechar,
             : msgs.map((m) => { const minha = m.lado === lado;
               return <div key={m.id} style={{ alignSelf: minha ? "flex-end" : "flex-start", maxWidth: "82%", background: minha ? `${C.accent}26` : (C.bg || "#0002"), border: `1px solid ${minha ? `${C.accent}55` : C.border}`, borderRadius: 10, padding: "7px 11px" }}>
                 <div style={{ fontSize: 11, color: C.muted, marginBottom: 2 }}>{m.autor || (m.lado === "comprador" ? "Comprador" : "Fornecedor")} · {hora(m.em)}{minha && m.lida ? " · ✓ lida" : ""}</div>
-                <div style={{ fontSize: 13.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.texto}</div></div>; })}
+                {m.anexo && (m.anexo.url ? (/^image\//.test(m.anexo.mime)
+                  ? <img src={m.anexo.url} alt={m.anexo.nome} onClick={() => setVer(m.anexo)} style={{ display: "block", maxWidth: 220, maxHeight: 180, borderRadius: 6, cursor: "zoom-in", margin: "2px 0 4px" }} />
+                  : <button type="button" onClick={() => setVer(m.anexo)} style={{ display: "flex", alignItems: "center", gap: 6, background: C.bg || "#0002", border: `1px solid ${C.border}`, borderRadius: 6, padding: "6px 10px", color: C.text, fontSize: 12.5, cursor: "pointer", margin: "2px 0 4px", fontFamily: "inherit" }}>📄 {m.anexo.nome}</button>)
+                  : <div style={{ fontSize: 12, color: C.muted }}>📎 {m.anexo.nome}</div>)}{/* 18q */}
+                {m.texto && <div style={{ fontSize: 13.5, whiteSpace: "pre-wrap", wordBreak: "break-word" }}>{m.texto}</div>}</div>; })}
         <div ref={fim} />
       </div>
       {erro && <div style={{ color: C.danger, fontSize: 12.5, padding: "0 16px 6px" }}>{erro}</div>}
       {encerrada ? <div style={{ padding: "12px 16px", borderTop: `1px solid ${C.border}`, fontSize: 12.5, color: C.muted, textAlign: "center" }}>Demanda encerrada — a conversa fica só para consulta.</div>
         : <div style={{ display: "flex", gap: 8, padding: "10px 12px", borderTop: `1px solid ${C.border}` }}>
+          <input ref={arqRef} type="file" accept="image/jpeg,image/png,application/pdf" onChange={anexar} style={{ display: "none" }} />
+          <button type="button" aria-label="Anexar foto ou PDF" title="Anexar foto ou PDF (até 10 MB)" disabled={enviando} onClick={() => arqRef.current?.click()} style={{ background: "transparent", border: `1px solid ${C.border}`, borderRadius: 6, color: C.textSub || C.muted, fontSize: 17, width: 40, cursor: "pointer" }}>📎</button>
           <textarea aria-label="Mensagem" value={txt} rows={1} onChange={(e) => setTxt(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); enviar(); } }} placeholder="Escreva… (Enter envia, Shift+Enter quebra a linha)"
             style={{ ...s.input, flex: 1, marginBottom: 0, resize: "none", minHeight: 38, maxHeight: 120, fontFamily: "inherit" }} />
           <button type="button" disabled={!txt.trim() || enviando} onClick={enviar} style={{ ...s.btn(true), padding: "8px 16px", cursor: txt.trim() ? "pointer" : "default", opacity: txt.trim() ? 1 : 0.6 }}>{enviando ? "…" : "Enviar"}</button>
         </div>}
     </div>
+    {ver && <VerArquivo C={C} s={s} arquivo={ver} z={1200} onFechar={() => setVer(null)} />}
   </div>;
 }
 

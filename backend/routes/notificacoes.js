@@ -10,7 +10,7 @@ function rotas(destDe) {
   const r = express.Router();
   const resp = (fn) => async (req, res) => { try { const x = await fn(req); if (x && x.erro) return res.status(x.status || 400).json({ erro: x.erro }); res.json(x); } catch (e) { console.error('❌ [notificacoes]', e.message); res.status(500).json({ erro: 'Erro interno' }); } };
   r.get('/', resp((req) => N.listar(supabase, destDe(req), { desde: Number(req.query.desde) || 0, esperar: req.query.esperar === '1' })));
-  r.post('/lidas', resp((req) => N.marcarLida(supabase, destDe(req), { todas: true })));
+  r.post('/lidas', resp((req) => N.marcarLida(supabase, destDe(req), req.body?.chave ? { chave: String(req.body.chave) } : { todas: true }))); // 18q: { chave } marca só o assunto
   r.post('/:id/lida', resp((req) => N.marcarLida(supabase, destDe(req), { id: req.params.id })));
   return r;
 }
