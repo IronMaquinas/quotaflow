@@ -59,7 +59,7 @@ const ESPERADO = {
   'front:SeletorAtuacao.jsx': '17afaaf69d6e4cf0c105490267d188a7',
   'front:TelaMeusDadosFornecedor.jsx': '1e8cc8a63de4debf1530042e511732f9', // etapa 14e
   'front:TelaFornecedoresNova.jsx': '28396f3bc910190ecc80873b54edc47d', // etapa 10c
-  'front:TelaCanalSpot.jsx': '8f595da41fa886ee7684a82f7f719fb7', // etapa 18q
+  'front:TelaCanalSpot.jsx': 'a6fb601d191d5e8bc2968fc7534f3784', // etapa 18q.1
   'front:TelaFornecedorSpot.jsx': '30f4ceb3cac74e9f05a7b68f561a77c4', // etapa 18o
   'front:TelaFornecedor.jsx': 'aad0c16df9e56fcf0b2ee29df7058e46', // etapa 18n
   'front:TelaPainelFornecedor.jsx': 'e9742a3e808ba27df5d5f29a393b8da6', // etapa 10c
@@ -310,15 +310,9 @@ const ESPERADO = {
   'migrations/075_spot_anexo_email_atraso.sql': '0336af6de14d6685c42877f241c570f3', // etapa 18q (novo)
 };
 
-// Antes de copiar a etapa 18q — base: 94b596e
+// Antes de copiar a etapa 18q.1 — base: d978d82
 const ANTES = {
-  'server.js': 'a354bd80958bb524424511ed4b1c172e',
-  'services/notificacoes.js': '80c5dbe4b2a03a5625f8b00fd14192a4',
-  'services/chatSpot.js': 'a3a3fde106d769e8d796387dad9beb69',
-  'routes/notificacoes.js': '3fb019e9d7bfa0b8380cb2c238c226f7',
-  'routes/spot.js': '9f4f9f608ef3f794ad27607f49315573',
-  'front:ChatSpot.jsx': 'e7d7e07011cb29dd543772f7972655ea',
-  'front:TelaCanalSpot.jsx': '009b75a6581bd6d97d06b62f52d87a6b',
+  'front:TelaCanalSpot.jsx': '8f595da41fa886ee7684a82f7f719fb7',
 };
 
 const RAIZ = process.cwd();
@@ -356,7 +350,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18q)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18q.1)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

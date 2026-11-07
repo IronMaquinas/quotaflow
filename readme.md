@@ -998,6 +998,7 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18q.1 (06/11):** 📊 o indicador de atenção **aparece sempre** abaixo de "Canal Spot" — sem respostas pelo 💬 no período mostra "nenhuma resposta pelo 💬 nos últimos 30 dias · meta 0%" (antes ficava escondido e parecia que não tinha entrado). Conta só respostas que chegam pelo 💬 depois da 18n (as anteriores não geraram 🔔).
   - **18q (06/11):** **📎 anexo no chat do Spot · ✉️ e-mail se ficar 4 h sem ler · 📊 indicador de atenção** (ideia do Marcony). Migration 075.
     - **📎 Anexo:** botão ao lado da mensagem — foto (JPG/PNG, comprimida) ou PDF até 10 MB, com texto opcional. Foto aparece na conversa e abre **por cima da tela**; PDF abre no visualizador do sistema. Bucket `documentos`, link assinado de 1 h. O 🔔 avisa "📎 Global Peças enviou um arquivo sobre DSP-…".
     - **✉️ E-mail de 4 h:** a mensagem que ficar **4 h sem ninguém ler** gera **um** e-mail para quem deveria ler (comprador ou fornecedor) — um por conversa até ler; nunca 22h–7h (sai às 7h); **perfil admin não recebe** (regra dos e-mails de rotina). Abrir a conversa **ou clicar em ✉️ Email / 💬 WhatsApp** do fornecedor conta como atendida e o e-mail não sai. Cron a cada 5 min (dentro do `CRON_INTERNO`).
@@ -1579,7 +1580,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18q)
+**Última atualização deste documento:** 06/11/2026 (etapa 18q.1)
 
 --------------------------------------------------------------------------------
 

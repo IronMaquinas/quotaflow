@@ -117,7 +117,7 @@ function formDaDemanda(d) {
 
 export default function TelaCanalSpot({ C, s, fmtD }) {
   const [atencao, setAtencao] = useState(null); const [atencaoAberta, setAtencaoAberta] = useState(false); // 18q: 📊 indicador de atenção
-  useEffect(() => { apiService.get('/spot/indicador-atencao').then(setAtencao).catch(() => {}); }, []);
+  useEffect(() => { apiService.get('/spot/indicador-atencao').then(setAtencao).catch((e) => console.warn('[spot] indicador de atenção:', e?.message)); }, []);
   // 18q: chamar o fornecedor por ✉️ Email / 💬 WhatsApp também conta como "viu a resposta" — o e-mail de 4 h não sai
   const lidaPorContato = (i) => { apiService.post('/notificacoes/lidas', { chave: `spot:${i.id}` }).catch(() => {}); };
   const [demandas, setDemandas] = useState([]);
@@ -369,9 +369,10 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
         <div>
           <div style={{ fontSize: 11, color: C.muted, letterSpacing: '0.1em' }}>COMPRAS SPOT</div>
           <div style={{ fontSize: 22, fontWeight: 700, color: C.text }}>Canal Spot</div>
-          {atencao?.total > 0 && <button type="button" onClick={() => setAtencaoAberta(true)} title="Respostas de fornecedores que ficaram mais de 4 h sem ler — meta 0%"
+          {atencao && !atencao.sem_migration && (atencao.total > 0 ? <button type="button" onClick={() => setAtencaoAberta(true)} title="Respostas de fornecedores que ficaram mais de 4 h sem ler — meta 0%"
             style={{ marginTop: 4, background: 'none', border: 'none', padding: 0, cursor: 'pointer', fontSize: 12, fontWeight: 600, color: atencao.pct > 0 ? C.danger : C.success, fontFamily: 'inherit' }}>
-            📊 {atencao.pct}% das respostas ficaram +{atencao.horas} h sem ler ({atencao.dias} dias) · meta 0%</button>}{/* 18q */}
+            📊 {atencao.pct}% das respostas ficaram +{atencao.horas} h sem ler ({atencao.dias} dias) · meta 0%</button>
+            : <div title="Conta as respostas que os fornecedores mandarem pelo 💬 de agora em diante" style={{ marginTop: 4, fontSize: 12, color: C.muted }}>📊 Atenção às respostas: nenhuma resposta pelo 💬 nos últimos {atencao.dias} dias · meta 0%</div>)}{/* 18q.1: aparece sempre */}
         </div>
         <button onClick={() => abrirNova()} style={{ ...s.btn(!bloqueioPublicar), padding: '9px 18px' }} title={bloqueioPublicar || ''}>{bloqueioPublicar ? '🔒 ' : '+ '}Nova Demanda Spot</button>
       </div>
