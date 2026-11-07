@@ -87,6 +87,18 @@ async function resolverResponsavel(supabase, tenantId, body) {
 }
 const semRespIds = (o) => { const { responsavel_usuario_id: _u, responsavel_colaborador_id: _c, ...x } = o; return x; };
 
+// 18r: 🔔 "tarefa para você" — para o usuário responsável (direto ou pelo colaborador ligado a um usuário); nunca para quem atribuiu
+async function avisarResponsavel(supabase, tenantId, quem, tf) {
+  try {
+    let uid = tf.responsavel_usuario_id ?? null;
+    if (uid == null && tf.responsavel_colaborador_id != null) { const { data } = await supabase.from('colaboradores').select('*').eq('id', tf.responsavel_colaborador_id); uid = data?.[0]?.usuario_id ?? null; }
+    if (uid == null) return;
+    await require('./notificacoes').avisarUsuarios(supabase, tenantId, [uid], { tipo: 'tarefa_atribuida', chave: `tarefa:${tf.id}`,
+      titulo: `📋 Tarefa para você: ${tf.numero ? `${tf.numero} · ` : ''}${tf.titulo || ''}`.slice(0, 200), texto: [quem?.nome ? `por ${quem.nome}` : null, tf.prazo ? `prazo ${String(tf.prazo).slice(8, 10)}/${String(tf.prazo).slice(5, 7)}` : null].filter(Boolean).join(' · ') || null,
+      link: { tela: 'plano', tarefa_id: tf.id } }, { exceto: quem?.id ?? null });
+  } catch (e) { console.error('⚠️ [tarefas] 🔔:', e?.message || e); }
+}
+
 async function criar(supabase, tenantId, quem, body = {}) {
   const titulo = texto(body.titulo, 200); if (!titulo) return { status: 400, erro: 'Título é obrigatório' };
   const tipo = body.tipo ? String(body.tipo).toUpperCase() : 'GN';
@@ -106,6 +118,7 @@ async function criar(supabase, tenantId, quem, body = {}) {
     const r = await supabase.from('tarefas').insert([velha]).select(); if (r.error) throw new Error(r.error.message);
     return enfeitar(r.data[0]);
   }
+  if (!body._sem_aviso) await avisarResponsavel(supabase, tenantId, quem, data[0]); // 18r
   return enfeitar(data[0]);
 }
 
@@ -145,6 +158,7 @@ async function atualizar(supabase, tenantId, quem, id, body = {}) {
     if (!Object.keys(velhos).length) return ERRO_065;
     const r = await supabase.from('tarefas').update(velhos).eq('id', t.id).eq('tenant_id', tenantId).select(); if (r.error) throw new Error(r.error.message); return enfeitar(r.data[0]);
   } throw new Error(error.message); }
+  if ('responsavel_usuario_id' in upd || 'responsavel_colaborador_id' in upd) await avisarResponsavel(supabase, tenantId, quem, data[0]); // 18r: trocou o responsável
   return enfeitar(data[0]);
 }
 

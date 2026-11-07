@@ -159,4 +159,24 @@ async function indicadorAtencao(supabase, tenantId, { dias = 30, agora = Date.no
   return { dias, horas: EMAIL.horas, total, atrasos, pct: total ? Math.round((atrasos / total) * 100) : 0, meta: 0, pessoas };
 }
 
-module.exports = { EMAIL, avaliarEmail, indicadorAtencao, _definirEmail, GUARDA, limpar, REGRA, criar, listar, marcarLida, avaliarPush, online, marcarVisto, _definirCanal, _avisos: avisos };
+// ─── 18r: eventos do sistema no 🔔 ─────────────────────────────────────────────
+//   avisarUsuarios(ids) / avisarPerfis(perfis): cria o aviso na tela para cada pessoa (nunca para quem fez a ação).
+//   Só na tela (e, no futuro, no celular pela regra contra excesso) — e-mails de rotina continuam como já eram.
+async function avisarUsuarios(supabase, tenantId, ids, aviso, { exceto = null } = {}) {
+  const feitos = new Set(); let n = 0;
+  for (const id of ids || []) {
+    const k = String(id ?? ''); if (!k || feitos.has(k) || (exceto != null && k === String(exceto))) continue; feitos.add(k);
+    if (await criar(supabase, { tipo: 'usuario', id: k }, { tenantId, ...aviso })) n++;
+  }
+  return n;
+}
+async function usuariosComPerfis(supabase, tenantId, perfis) {
+  const us = (await q(supabase.from('usuarios').select('*').eq('tenant_id', tenantId)).catch(() => [])).filter((u) => u.ativo !== false && u.ativo !== 0);
+  let extra = []; try { if (us.length) extra = await q(supabase.from('usuario_perfis').select('*').in('usuario_id', us.map((u) => u.id))); } catch { /* sem a tabela */ }
+  return us.filter((u) => perfis.includes(u.perfil) || (Array.isArray(u.perfis) && u.perfis.some((p) => perfis.includes(p))) || extra.some((x) => String(x.usuario_id) === String(u.id) && perfis.includes(x.perfil_codigo)));
+}
+async function avisarPerfis(supabase, tenantId, perfis, aviso, opts = {}) {
+  return avisarUsuarios(supabase, tenantId, (await usuariosComPerfis(supabase, tenantId, perfis)).map((u) => u.id), aviso, opts);
+}
+
+module.exports = { avisarUsuarios, avisarPerfis, usuariosComPerfis, EMAIL, avaliarEmail, indicadorAtencao, _definirEmail, GUARDA, limpar, REGRA, criar, listar, marcarLida, avaliarPush, online, marcarVisto, _definirCanal, _avisos: avisos };

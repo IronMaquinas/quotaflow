@@ -117,9 +117,11 @@ async function destinatarios(supabase, tenantId, origem = 'contrato', cfg0 = nul
   const out = new Map();
   for (const ref of cfg.pessoas) {
     const [k, id] = ref.split(':'); let email = null; let nome = null;
-    if (k === 'u') { const u = us.find((x) => String(x.id) === id); email = u?.email; nome = u?.nome; }
-    else { const c = cs.find((x) => String(x.id) === id && x.situacao !== 'desligado'); const u = c && c.usuario_id != null ? us.find((x) => String(x.id) === String(c.usuario_id)) : null; email = u?.email || c?.email; nome = c?.nome; }
-    const e = String(email || '').trim().toLowerCase(); if (EMAIL_OK.test(e) && !out.has(e)) out.set(e, { email: e, nome });
+    let uid = null; // 18r: id do usuário para o 🔔
+    if (k === 'u') { const u = us.find((x) => String(x.id) === id); email = u?.email; nome = u?.nome; uid = u?.id ?? null; }
+    else { const c = cs.find((x) => String(x.id) === id && x.situacao !== 'desligado'); const u = c && c.usuario_id != null ? us.find((x) => String(x.id) === String(c.usuario_id)) : null; email = u?.email || c?.email; nome = c?.nome; uid = u?.id ?? null; }
+    const e = String(email || '').trim().toLowerCase(); if (EMAIL_OK.test(e) && !out.has(e)) out.set(e, { email: e, nome, usuario_id: uid });
+    else if (!EMAIL_OK.test(e) && uid != null && !out.has(`u:${uid}`)) out.set(`u:${uid}`, { email: null, nome, usuario_id: uid }); // 18r: sem e-mail, mas tem 🔔
   }
   return [...out.values()];
 }
@@ -180,7 +182,13 @@ async function avisar(supabase, tenantId, o) {
   const assunto = `⚠️ ${o.numero || 'Ocorrência'} — ${TIPOS[o.tipo]}${o.parado ? ' · EQUIPAMENTO PARADO' : ''} · ${o.contexto?.contrato?.cliente || o.contexto?.at?.cliente || ''}`.replace(/ · $/, '');
   const html = htmlAviso(o, emp, await contatosDa(supabase, tenantId, o));
   let n = 0;
-  for (const { email: para } of await destinatarios(supabase, tenantId, o.origem)) { try { await enviarEmail(para, assunto, html); n++; } catch (e) { console.error('⚠️ [ocorrencias] e-mail não enviado:', para, e?.message || e); } }
+  const dest = await destinatarios(supabase, tenantId, o.origem);
+  for (const { email: para } of dest.filter((x) => x.email)) { try { await enviarEmail(para, assunto, html); n++; } catch (e) { console.error('⚠️ [ocorrencias] e-mail não enviado:', para, e?.message || e); } }
+  try { // 18r: 🔔 na tela para as mesmas pessoas (menos quem registrou)
+    await require('./notificacoes').avisarUsuarios(supabase, tenantId, dest.map((x) => x.usuario_id), { tipo: 'ocorrencia_nova', chave: `oc:${o.id}`,
+      titulo: `⚠️ Nova ocorrência ${o.numero || ''} — ${TIPOS[o.tipo] || ''}${o.parado ? ' · PARADO' : ''}`.trim(), texto: [o.contexto?.equipamento?.descricao || o.contexto?.at?.numero, o.contexto?.contrato?.cliente || o.contexto?.at?.cliente].filter(Boolean).join(' · ') || null,
+      link: { tela: 'contratos', ocorrencia_id: o.id } }, { exceto: o._quem_id ?? null });
+  } catch (e) { console.error('⚠️ [ocorrencias] 🔔:', e?.message || e); }
   return n;
 }
 
@@ -230,7 +238,7 @@ async function criar(supabase, tenantId, quem, body = {}, { locatarioId = null }
   try {
     const T = require('./tarefas'); const cfg = (await config(supabase, tenantId))[siglaDe(origem)];
     const prazo = new Date(Date.now() + (linha.parado ? 1 : 3) * 86400000).toISOString().slice(0, 10);
-    const t = await T.criar(supabase, tenantId, { id: quem.usuarioId || null, nome: quem.usuarioNome || 'QuotaFlow' }, { tipo: cfg.tipo_tarefa || 'MT', ...(cfg.pessoas[0] ? { responsavel_ref: cfg.pessoas[0] } : {}), titulo: `${o.numero || 'Ocorrência'} — ${TIPOS[tipo]} · ${resumoTxt(o).slice(0, 120)}`,
+    const t = await T.criar(supabase, tenantId, { id: quem.usuarioId || null, nome: quem.usuarioNome || 'QuotaFlow' }, { _sem_aviso: true, tipo: cfg.tipo_tarefa || 'MT', ...(cfg.pessoas[0] ? { responsavel_ref: cfg.pessoas[0] } : {}), titulo: `${o.numero || 'Ocorrência'} — ${TIPOS[tipo]} · ${resumoTxt(o).slice(0, 120)}`,
       detalhe: `${descricao}${linha.parado ? '\n\n⛔ Informado como PARADO.' : ''}`, prioridade: linha.parado || ['acidente', 'furto'].includes(tipo) ? 'alta' : 'media', prazo,
       vinculos: [{ tipo: 'ocorrencia', id: String(o.id), numero: o.numero || null },
         ...(o.execucao_id ? [{ tipo: 'at', id: String(o.execucao_id), numero: o.contexto?.at?.numero || null }] : []),
@@ -242,6 +250,7 @@ async function criar(supabase, tenantId, quem, body = {}, { locatarioId = null }
       o.tarefa_numero = t.numero || null;
     }
   } catch (e) { console.error('⚠️ [ocorrencias] tarefa não criada:', e?.message || e); }
+  o._quem_id = quem.usuarioId ?? null; // 18r: quem registrou não recebe o próprio 🔔
   try { o.emails = await avisar(supabase, tenantId, o); } catch (e) { console.error('⚠️ [ocorrencias] aviso:', e?.message || e); }
   return { ocorrencia: await enfeitar(supabase, tenantId, o, { cliente: !!locatarioId }) };
 }

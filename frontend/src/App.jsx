@@ -587,7 +587,7 @@ const perfil = PERFIS[usuario.perfil] || {
       {/* Conteúdo */}
       <div style={{flex:1,overflow:"hidden",display:"flex",flexDirection:"column"}}>        
         <AvisoPlanoTenant />
-        {usuario?.id && usuario.perfil !== "fornecedor" && <SinoNotificacoes C={C} base="/notificacoes" onAbrir={(l)=>{ if (l.tela==="spot") { setTela("spot"); pedirAbrirDemanda(l); } }} />}
+        {usuario?.id && usuario.perfil !== "fornecedor" && <SinoNotificacoes C={C} base="/notificacoes" onAbrir={(l)=>{ if (l.tela==="spot") { setTela("spot"); pedirAbrirDemanda(l); } else if (l.ocorrencia_id != null) window.dispatchEvent(new CustomEvent("qf-abrir-ocorrencia", { detail: l.ocorrencia_id })); else if (l.tela && temAcesso(l.tela)) setTela(l.tela); }} />}
         {tela==="home"&&(
           <div style={{flex:1,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"40px 40px 48px",overflowY:"auto"}}>{/* 18j: no topo — centralizado na vertical cortava o cartão de boas-vindas */}
             <div style={{maxWidth:600,width:"100%",textAlign:"center",margin:"auto 0"}}>

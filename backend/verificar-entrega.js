@@ -69,7 +69,7 @@ const ESPERADO = {
   'services/acessoSpot.js': '6ecce4d16d6b123c6ce93c1223b32f01', // etapa 10c (novo)
   'services/receitaCnpj.js': 'b0e2a678127403d5608723c21ec61b78', // etapa 14d.5
   'services/cadastroPublico.js': '1359e67ff1f2438a964eee7223cf2ed1', // etapa 14d.5
-  'front:App.jsx': '5a73a6d66000b426d91d3ba0f81747bb', // etapa 18o
+  'front:App.jsx': '8f93519a0ce4df08e893968addccebbf', // etapa 18r
   'front:TelaLogin.jsx': 'bfa1fccbdab99820be2ac14c0e91b2fe', // etapa 14b.1
   'front:TelaSignup.jsx': '345dceefb937b38e74cfef44cfc33ef3', // etapa 11a.3
   'front:AvisoPlanoTenant.jsx': '5795f00c1bc656d0525fd29b6793a96c', // etapa 11a.3
@@ -92,7 +92,7 @@ const ESPERADO = {
   'services/documentos.js': 'e4e3f50ffd6ade91d5c2a51a0b115900', // etapa 12e.3
   'front:TelaPessoas.jsx': '567dbb265e4443165281521971665fd5', // etapa 18h.4a
   // etapa 12c.1
-  'services/avisosVencimento.js': '47c06d15f8ccf69c3c43a32a5006f786', // etapa 18h.4a
+  'services/avisosVencimento.js': 'a65ae274c03f03e8a94a5b8f5fa9de9e', // etapa 18r
   'services/funcoes.js': '9873a5e1a74e7604ab6b624d1d7cc901', // etapa 12e.3.1
   'front:BibliotecaFuncoes.jsx': '9f5e1d8aba9b2e729cc4d546b4678712', // etapa 12e.3.1
   'services/epi.js': '9b0dccea86e23c7d5f3af1132159f0ee', // etapa 12d.1b
@@ -254,7 +254,7 @@ const ESPERADO = {
   'front:ModalNaoConformidade.jsx': '244c331b28157bb6c2f14f4736d461e6', // etapa 18c.1
   'front:FiltroPeriodo.jsx': '06b873f17ff380024b38e507bdca6724', // etapa 18c.4 (novo)
   'migrations/062_medicao_locacao.sql': '5a4d7ea7f3180195a19e4121183a446e', // etapa 18d (novo)
-  'services/medicoes.js': '8401919a7187a20b5770002efffcd429', // etapa 18h
+  'services/medicoes.js': '829777143120b2109c86a27c19f2e897', // etapa 18r
   'front:MedicaoModal.jsx': '9576e4586e1d165de1ba5d0d696f238a', // etapa 18h
   'front:gerarMedicao.js': '24dbe95cf8751b58aa142b487cc777ed', // etapa 18d.2
   'migrations/063_medicao_vencimento.sql': '0b27bacd7a6a0b6d77c01a8039f5192d', // etapa 18d.2 (novo)
@@ -267,7 +267,7 @@ const ESPERADO = {
   'front:PainelUtilizacao.jsx': '716912b094bd87943b04d6aa0761de53', // etapa 18f.1 (novo)
   'front:gerarRelatorioUtilizacao.js': '5b0a4286653da51ac7dff27328610083', // etapa 18f.1 (novo)
   'migrations/065_tarefas_rastreabilidade.sql': '3902af0a80d08839d542bd2a65e99d87', // etapa 18g (novo)
-  'services/tarefas.js': '6dc6b2f79f93f15fafda2fc93fe0de5c', // etapa 18h
+  'services/tarefas.js': '824658d386f15d106af37a1b02983791', // etapa 18r
   'migrations/066_fiscal_transporte.sql': 'eeef7d2fb80ae6ad0ec6069a3342e0ff', // etapa 18g.1 (novo)
   'services/tarefasFiscais.js': '90048e5365d5e1642991100314ab2c69', // etapa 18h.4a
   'front:ChecklistFiscal.jsx': '1634e6d08490a83f1c0c86c983eb69ae', // etapa 18g.2.4
@@ -277,7 +277,7 @@ const ESPERADO = {
   'front:CampoPessoa.jsx': 'efa3cd5aee2eeadae0805e7d4b6e8daa', // etapa 18g.2c
   'front:gerarRelatorioTarefas.js': '483dd597e30b11635886ba51406d36cf', // etapa 18g.2b (novo)
   'front:AcaoDocFiscal.jsx': 'eed319fa1d63b104146db0b8eabcd7ed', // etapa 18g.2.7
-  'services/ocorrencias.js': '1d87b501e17a9bd72abc175e1335ed43', // etapa 18p
+  'services/ocorrencias.js': 'ebb41cbc522bb93e6265257ea60a711e', // etapa 18r
   'routes/ocorrencias.js': '7a494a88eed51ce7c7965f0bd585c82e', // etapa 18p
   'migrations/068_ocorrencias.sql': '4fff8fd8dccd6dd91dbb2f145bd19a22', // etapa 18h (novo)
   'front:RegistrarOcorrencia.jsx': 'b59b650ed622b93b8d191900a8dc86b2', // etapa 18h.4a
@@ -303,16 +303,22 @@ const ESPERADO = {
   'front:ChatSpot.jsx': 'cadbb98a817e634cc30a8279600646d5', // etapa 18q
   'services/prazoSpot.js': 'bfae1226bd1b3e1d35c8d2fdf3a49cbe', // etapa 18m (novo)
   'migrations/073_spot_prazo_desistencia.sql': '0d74c587787c32c46f5322740528e558', // etapa 18m (novo)
-  'services/notificacoes.js': 'cae536adbd533f9fe739d947d10b5e6e', // etapa 18q
+  'services/notificacoes.js': '188edb3739205f091810c98b99ecfbf2', // etapa 18r
   'routes/notificacoes.js': '23872d24531cb409c21a700f66e07bdc', // etapa 18q
   'migrations/074_notificacoes.sql': '4faa8c8e3f35621354aaf24218844adc', // etapa 18n
   'front:SinoNotificacoes.jsx': '6a4cb9e19227c570ada76c138d16d74e', // etapa 18n.3
   'migrations/075_spot_anexo_email_atraso.sql': '0336af6de14d6685c42877f241c570f3', // etapa 18q (novo)
+  'routes/estoque/solicitacoes.js': 'bdd2f13ec863ed5d61626255ded1a1dc', // etapa 18r (novo)
 };
 
-// Antes de copiar a etapa 18q.1 — base: d978d82
+// Antes de copiar a etapa 18r — base: 0190502
 const ANTES = {
-  'front:TelaCanalSpot.jsx': '8f595da41fa886ee7684a82f7f719fb7',
+  'services/notificacoes.js': 'cae536adbd533f9fe739d947d10b5e6e',
+  'services/ocorrencias.js': '1d87b501e17a9bd72abc175e1335ed43',
+  'services/tarefas.js': '6dc6b2f79f93f15fafda2fc93fe0de5c',
+  'services/medicoes.js': '8401919a7187a20b5770002efffcd429',
+  'services/avisosVencimento.js': '47c06d15f8ccf69c3c43a32a5006f786',
+  'front:App.jsx': '5a73a6d66000b426d91d3ba0f81747bb',
 };
 
 const RAIZ = process.cwd();
@@ -350,7 +356,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18q.1)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18r)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

@@ -231,7 +231,15 @@ async function contestar(supabase, tenantId, quem, m, body = {}) {
   const geral = texto(body.motivo, 1000);
   if (!geral && !itens.some((i) => i.comentario_cliente)) return { status: 400, erro: 'Comente na linha do item (ou no campo geral) o que não está de acordo' };
   const resumoTxt = [geral, ...itens.filter((i) => i.comentario_cliente).map((i) => `${i.tag}: ${i.comentario_cliente}`)].filter(Boolean).join(' · ');
-  return mudar(supabase, tenantId, m, { itens, status: 'devolvida', devolvido_motivo: resumoTxt.slice(0, 1000) }, evento('contestada pelo cliente', quem.usuarioNome, resumoTxt.slice(0, 500)));
+  const r = await mudar(supabase, tenantId, m, { itens, status: 'devolvida', devolvido_motivo: resumoTxt.slice(0, 1000) }, evento('contestada pelo cliente', quem.usuarioNome, resumoTxt.slice(0, 500)));
+  try { // 18r: 🔔 para quem enviou a medição (pelo nome) e para os gestores
+    const N = require('./notificacoes'); const c = (await q(supabase.from('locacao_contratos').select('*').eq('id', m.contrato_id)).catch(() => []))[0] || {};
+    const gs = await N.usuariosComPerfis(supabase, tenantId, ['gestor']);
+    const quemEnviou = m.enviado_por ? (await q(supabase.from('usuarios').select('*').eq('tenant_id', tenantId)).catch(() => [])).filter((u) => u.nome === m.enviado_por) : [];
+    await N.avisarUsuarios(supabase, tenantId, [...quemEnviou, ...gs].map((u) => u.id), { tipo: 'medicao_contestada', chave: `medicao:${m.id}`,
+      titulo: `📏 Medição contestada pelo cliente — ${c.numero || 'contrato'}${c.cliente ? ` · ${c.cliente}` : ''}`, texto: resumoTxt.slice(0, 140) || null, link: { tela: 'contratos', contrato_id: m.contrato_id, medicao_id: m.id } });
+  } catch (e) { console.error('⚠️ [medicoes] 🔔:', e?.message || e); }
+  return r;
 }
 
 // ─── visão da empresa (rotas) ───────────────────────────────────────────────

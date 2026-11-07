@@ -135,7 +135,7 @@ async function enviarAvisosVencimento({ agora = new Date(), enviar = enviarEmail
       const caixa = new Map(); // email -> { nome, docs, extras }
       const por = (u, d) => {
         const k = String(u.email).trim().toLowerCase();
-        if (!caixa.has(k)) caixa.set(k, { email: u.email, nome: u.nome, docs: [], extras: [] });
+        if (!caixa.has(k)) caixa.set(k, { email: u.email, nome: u.nome, id: u.id, docs: [], extras: [] });
         const c = caixa.get(k);
         if (!c.docs.some((x) => String(x.id) === String(d.id))) c.docs.push(d);
       };
@@ -168,6 +168,8 @@ async function enviarAvisosVencimento({ agora = new Date(), enviar = enviarEmail
         try {
           await enviar(c.email, assunto, montarEmail(c.nome, c.docs, c.extras));
           r.emails++;
+          if (c.id != null && c.docs.length) await require('./notificacoes').avisarUsuarios(supabase, tenantId, [c.id], { tipo: 'documento_vencendo', chave: `docs:${new Date(agora).toISOString().slice(0, 10)}`, // 18r: 🔔
+            titulo: assunto.slice(0, 200), texto: c.docs.slice(0, 3).map((d) => `${d.tipo_nome || 'Documento'} — ${d.alvo_nome || ''}`).join(' · ').slice(0, 200) || null, link: { tela: 'pessoas' } }).catch(() => {});
           for (const d of c.docs) okDocs.add(String(d.id));
           if (c.extras.length) extrasEnviados++;
         } catch (e) {

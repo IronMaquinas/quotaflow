@@ -998,6 +998,12 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18r (07/11):** **🔔 mais eventos na Central de Notificações** (só na tela; e-mails continuam como eram). Cada aviso **abre a tela do assunto**:
+    - **⚠️ Ocorrência nova** → as mesmas pessoas que recebem o e-mail da ocorrência (⚙️ Configurações → Ocorrências), menos quem registrou. Abre a ocorrência. A tarefa criada junto não gera um 2º aviso.
+    - **✅ Aprovação pendente** (solicitação de retirada) → admin e gestor, menos quem pediu. Abre ✅ Aprovações.
+    - **📋 Tarefa para você** → o responsável (usuário, ou colaborador ligado a um usuário) ao criar a tarefa ou trocar o responsável; nunca quem atribuiu. Abre ✅ Plano.
+    - **📏 Medição contestada pelo cliente** → quem enviou a medição e os gestores. Abre 📑 Contratos.
+    - **📄 Documentos vencendo** → o mesmo público do e-mail diário, um aviso por pessoa por dia. Abre 👷 Pessoas.
   - **18q.1 (06/11):** 📊 o indicador de atenção **aparece sempre** abaixo de "Canal Spot" — sem respostas pelo 💬 no período mostra "nenhuma resposta pelo 💬 nos últimos 30 dias · meta 0%" (antes ficava escondido e parecia que não tinha entrado). Conta só respostas que chegam pelo 💬 depois da 18n (as anteriores não geraram 🔔).
   - **18q (06/11):** **📎 anexo no chat do Spot · ✉️ e-mail se ficar 4 h sem ler · 📊 indicador de atenção** (ideia do Marcony). Migration 075.
     - **📎 Anexo:** botão ao lado da mensagem — foto (JPG/PNG, comprimida) ou PDF até 10 MB, com texto opcional. Foto aparece na conversa e abre **por cima da tela**; PDF abre no visualizador do sistema. Bucket `documentos`, link assinado de 1 h. O 🔔 avisa "📎 Global Peças enviou um arquivo sobre DSP-…".
@@ -1559,7 +1565,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 | ~~👋 Bem-vindo ao sistema~~ ✅ 18i | entregue em 05/11 — roteiro das configurações mínimas por tipo de negócio (transporte · locação · compras), passos conferidos pelos dados, obrigatório/recomendado, "não se aplica" (migration 070) |
 | ~~🧩 Áreas, módulos e planos~~ ✅ 18j | entregue em 05/11 — catálogo de módulos com dependências, planos-modelo e plano personalizado no Console, menu/tela inicial/roteiro pelos módulos, ⭐ Meu plano (migration 071) |
 | **🧩 Módulos — próximos passos** | ~~bloquear as rotas da API~~ ✅ 18k · abas internas de 👷 Pessoas por módulo (EPI, multas, treinamentos), rótulos por segmento ("Equipamentos/ativos" fora do transporte), Canal Spot e Cotações também no bloqueio da API (rotas com autenticação própria) |
-| **🗂 Ordem combinada em 06/11** | 1) 💬 conversas e 🔔 eventos (ocorrência ✅ 18p, anexo no chat do Spot, e-mail se ficar X h sem ler, ocorrência nova / aprovação / tarefa / medição contestada / documento vencendo no 🔔) → 2) 🧩 módulos e planos → 3) 🚛 operação e fiscal → 4) 📏 locação (+ 📦 propriedade do cliente) → 5) 🧠 inteligência e valor → por último 📱 Telegram |
+| **🗂 Ordem combinada em 06/11** | 1) 💬 conversas e 🔔 eventos (ocorrência ✅ 18p, anexo no chat do Spot, e-mail se ficar X h sem ler, ~~ocorrência nova / aprovação / tarefa / medição contestada / documento vencendo no 🔔~~ ✅ 18r) → 2) 🧩 módulos e planos → 3) 🚛 operação e fiscal → 4) 📏 locação (+ 📦 propriedade do cliente) → 5) 🧠 inteligência e valor → por último 📱 Telegram |
 | ~~💬 Chat na demanda spot~~ ✅ 18l | entregue em 06/11 — conversa comprador ↔ fornecedor por interesse, em tempo real (espera longa), não lidas, ✓ lida (migration 072) |
 | **💬 Conversas — próximos passos** | ~~espera longa na conversa da ⚠️ ocorrência~~ ✅ 18p; ~~anexo no Spot e e-mail de 4 h~~ ✅ 18q; anexar foto/arquivo na conversa do Spot; aviso por e-mail de mensagem nova **só se a pessoa ficar X horas sem ler** (para não queimar e-mail); se um dia houver vários servidores, trocar o aviso em memória por Supabase Realtime/Redis |
 | **🧭 Menu lateral na tela do cliente (locatário)** | ✅ **feito na 18o.** pedido do Marcony (05/11): trocar as abas superiores (📑 Contratos e inspeções · 📏 Medições · ⚠️ Ocorrências) pelo **menu lateral esquerdo, padrão do SaaS** (no celular, menu recolhível), com os contadores no item do menu |
@@ -1580,7 +1586,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18q.1)
+**Última atualização deste documento:** 06/11/2026 (etapa 18r)
 
 --------------------------------------------------------------------------------
 
