@@ -281,9 +281,9 @@ router.post('/', tenantMiddleware, async (req, res) => {
     }, tenantId);
 
     res.json({ ok: true, numero_solicitacao: numero, id: novaSolicitacao.id });
-    try { // 18r: 🔔 "aprovação pendente" para quem aprova (admin e gestor) — menos quem pediu
+    try { // 18r/18s: 🔔 "aprovação pendente" para o gestor (admin é do sistema, não recebe rotina) — menos quem pediu
       const { supabase } = require('../../db');
-      await require('../../services/notificacoes').avisarPerfis(supabase, tenantId, ['admin', 'gestor'], { tipo: 'aprovacao_pendente', chave: `ret:${novaSolicitacao?.id ?? numero}`,
+      await require('../../services/notificacoes').avisarPerfis(supabase, tenantId, ['gestor'], { tipo: 'aprovacao_pendente', chave: `ret:${novaSolicitacao?.id ?? numero}`,
         titulo: `✅ Aprovação pendente: ${numero}`, texto: [quantidade ? `${quantidade} un.` : null, motivo ? String(motivo).slice(0, 100) : null].filter(Boolean).join(' · ') || null, link: { tela: 'aprovacoes' } }, { exceto: req.userId });
     } catch (e) { console.error('⚠️ [solicitacoes] 🔔:', e?.message || e); }
   } catch (err) {

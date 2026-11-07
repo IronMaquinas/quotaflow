@@ -998,9 +998,13 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18s (07/11):** **🧩 bloqueio na API do Spot e das Cotações + admin fora da rotina.**
+    - **Regra reforçada (Marcony):** o perfil **admin é do sistema, não da rotina** — nunca recebe aviso de rotina, nem 🔔 nem e-mail, mesmo se aparecer numa configuração (ex.: pessoas da ocorrência). Vale para todos os avisos da Central (`avisarUsuarios`). Aprovação pendente agora vai só para o **gestor**.
+    - **Spot:** `/api/spot/demandas…`, `/config` e `/indicador-atencao` exigem o módulo **Cotações e Canal Spot** (409 se desligado). O lado do fornecedor segue pelo acesso dele.
+    - **Cotações (`/api/cotacoes`):** `/chamados` (requisição/OS) com **Compras, Manutenção ou Estoque**; cotação com **Compras ou Cotações**; o que vai **ao fornecedor** (enviar, adicionar fornecedores, reenviar e-mail, renegociar, revalidar) só com **Cotações e Canal Spot**.
   - **18r (07/11):** **🔔 mais eventos na Central de Notificações** (só na tela; e-mails continuam como eram). Cada aviso **abre a tela do assunto**:
     - **⚠️ Ocorrência nova** → as mesmas pessoas que recebem o e-mail da ocorrência (⚙️ Configurações → Ocorrências), menos quem registrou. Abre a ocorrência. A tarefa criada junto não gera um 2º aviso.
-    - **✅ Aprovação pendente** (solicitação de retirada) → admin e gestor, menos quem pediu. Abre ✅ Aprovações.
+    - **✅ Aprovação pendente** (solicitação de retirada) → **gestor** (corrigido na 18s: admin não recebe), menos quem pediu. Abre ✅ Aprovações.
     - **📋 Tarefa para você** → o responsável (usuário, ou colaborador ligado a um usuário) ao criar a tarefa ou trocar o responsável; nunca quem atribuiu. Abre ✅ Plano.
     - **📏 Medição contestada pelo cliente** → quem enviou a medição e os gestores. Abre 📑 Contratos.
     - **📄 Documentos vencendo** → o mesmo público do e-mail diário, um aviso por pessoa por dia. Abre 👷 Pessoas.
@@ -1586,7 +1590,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18r)
+**Última atualização deste documento:** 06/11/2026 (etapa 18s)
 
 --------------------------------------------------------------------------------
 

@@ -162,10 +162,12 @@ async function indicadorAtencao(supabase, tenantId, { dias = 30, agora = Date.no
 // ─── 18r: eventos do sistema no 🔔 ─────────────────────────────────────────────
 //   avisarUsuarios(ids) / avisarPerfis(perfis): cria o aviso na tela para cada pessoa (nunca para quem fez a ação).
 //   Só na tela (e, no futuro, no celular pela regra contra excesso) — e-mails de rotina continuam como já eram.
+//   18s: o perfil ADMIN é do sistema, não da rotina — nunca recebe aviso de rotina (nem 🔔, nem e-mail), mesmo se estiver numa configuração.
 async function avisarUsuarios(supabase, tenantId, ids, aviso, { exceto = null } = {}) {
   const feitos = new Set(); let n = 0;
+  const admins = new Set((await usuariosComPerfis(supabase, tenantId, ['admin']).catch(() => [])).map((u) => String(u.id)));
   for (const id of ids || []) {
-    const k = String(id ?? ''); if (!k || feitos.has(k) || (exceto != null && k === String(exceto))) continue; feitos.add(k);
+    const k = String(id ?? ''); if (!k || feitos.has(k) || admins.has(k) || (exceto != null && k === String(exceto))) continue; feitos.add(k);
     if (await criar(supabase, { tipo: 'usuario', id: k }, { tenantId, ...aviso })) n++;
   }
   return n;

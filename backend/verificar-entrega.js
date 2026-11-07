@@ -53,7 +53,7 @@ const ESPERADO = {
   'routes/recomendacoes.js': '05628793a30bc9cc5905c137c90fdb9c', // etapa 18g.2d
   'services/recomendacoesEmail.js': '7bc5475ccffb4fd2fcec53be78e64123', // etapa 10c
   'services/emailService.js': '2daf0e597ff370e006585f919c63b525', // etapa 9
-  'server.js': '7856440fda9f6039479f9d1cac7b6526', // etapa 18q
+  'server.js': '503d2cfd6e4d2a004f6e6b927726bf26', // etapa 18s
   'routes/atuacao.js': 'cc196661189e2714bcfad96e5c1e8ad9',
   'services/atuacao.js': '8509ac0206906a7f93384350e77132bf',
   'front:SeletorAtuacao.jsx': '17afaaf69d6e4cf0c105490267d188a7',
@@ -303,22 +303,19 @@ const ESPERADO = {
   'front:ChatSpot.jsx': 'cadbb98a817e634cc30a8279600646d5', // etapa 18q
   'services/prazoSpot.js': 'bfae1226bd1b3e1d35c8d2fdf3a49cbe', // etapa 18m (novo)
   'migrations/073_spot_prazo_desistencia.sql': '0d74c587787c32c46f5322740528e558', // etapa 18m (novo)
-  'services/notificacoes.js': '188edb3739205f091810c98b99ecfbf2', // etapa 18r
+  'services/notificacoes.js': '56689ef4358170ad6764b1cc8d975328', // etapa 18s
   'routes/notificacoes.js': '23872d24531cb409c21a700f66e07bdc', // etapa 18q
   'migrations/074_notificacoes.sql': '4faa8c8e3f35621354aaf24218844adc', // etapa 18n
   'front:SinoNotificacoes.jsx': '6a4cb9e19227c570ada76c138d16d74e', // etapa 18n.3
   'migrations/075_spot_anexo_email_atraso.sql': '0336af6de14d6685c42877f241c570f3', // etapa 18q (novo)
-  'routes/estoque/solicitacoes.js': 'bdd2f13ec863ed5d61626255ded1a1dc', // etapa 18r (novo)
+  'routes/estoque/solicitacoes.js': '294095a54e5b95b43d3637605bd99ae4', // etapa 18s
 };
 
-// Antes de copiar a etapa 18r — base: 0190502
+// Antes de copiar a etapa 18s — base: 442f3c2
 const ANTES = {
-  'services/notificacoes.js': 'cae536adbd533f9fe739d947d10b5e6e',
-  'services/ocorrencias.js': '1d87b501e17a9bd72abc175e1335ed43',
-  'services/tarefas.js': '6dc6b2f79f93f15fafda2fc93fe0de5c',
-  'services/medicoes.js': '8401919a7187a20b5770002efffcd429',
-  'services/avisosVencimento.js': '47c06d15f8ccf69c3c43a32a5006f786',
-  'front:App.jsx': '5a73a6d66000b426d91d3ba0f81747bb',
+  'server.js': '7856440fda9f6039479f9d1cac7b6526',
+  'services/notificacoes.js': '188edb3739205f091810c98b99ecfbf2',
+  'routes/estoque/solicitacoes.js': 'bdd2f13ec863ed5d61626255ded1a1dc',
 };
 
 const RAIZ = process.cwd();
@@ -356,7 +353,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18r)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18s)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

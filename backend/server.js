@@ -74,7 +74,11 @@ app.use((req, res, next) => {
 // ── Rotas ────────────────────────────────────
 const { exigirModulo } = require('./middleware/exigirModulo'); // etapa 18k: 🧩 módulo não contratado → 409
 app.use("/api/auth",         authRoutes);
-app.use("/api/cotacoes",     cotacoesRoutes);
+// 18s: 🧩 bloqueio na API — Requisição/OS (/chamados) com Compras, Manutenção ou Estoque; cotação com Compras ou Cotações;
+//   o que vai ao fornecedor (enviar, adicionar, reenviar, renegociar, revalidar) só com "Cotações e Canal Spot".
+const COTACAO_FORNECEDOR = /^\/(enviar|[^/]+\/(fornecedores|adicionar-fornecedores|fornecedor\/[^/]+\/renegociar|fornecedores\/[^/]+\/(reenviar-email|revalidar)))(\/|$)/;
+const modChamados = exigirModulo(['compras', 'manutencao', 'estoque']); const modCotacao = exigirModulo(['compras', 'cotacoes_spot']); const modCotFornecedor = exigirModulo('cotacoes_spot');
+app.use("/api/cotacoes", tenantMiddleware, (req, res, next) => (req.path.startsWith('/chamados') ? modChamados : req.method !== 'GET' && COTACAO_FORNECEDOR.test(req.path) ? modCotFornecedor : modCotacao)(req, res, next), cotacoesRoutes);
 app.use("/api/catalogo",     tenantMiddleware, catalogoRoutes);
 app.use("/api/fornecedores", tenantMiddleware, fornecedoresRoutes); // Fornecedor do Cliente
 app.use("/api/email",        tenantMiddleware, emailRoutes);
@@ -136,7 +140,9 @@ app.get('/api/spot/publicas', fornecedorMiddleware, require('./services/acessoSp
 });
 
 // Rotas protegidas (exigem autenticação)
-app.use('/api/spot', spotRoutes);
+// 18s: 🧩 Canal Spot do comprador só com o módulo "Cotações e Canal Spot" (o lado do fornecedor segue pelo acesso dele)
+const modSpot = exigirModulo('cotacoes_spot');
+app.use('/api/spot', (req, res, next) => (/^\/(demandas|config|indicador-atencao)(\/|$)/.test(req.path) ? tenantMiddleware(req, res, () => modSpot(req, res, next)) : next()), spotRoutes);
 app.use('/api/atuacao', require('./routes/atuacao'));
 // Sem middleware: resumo-diario exige x-cron-secret; descadastro usa token do e-mail
 app.use('/api/recomendacoes', recomendacoesRoutes);
