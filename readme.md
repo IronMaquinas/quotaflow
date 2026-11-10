@@ -998,6 +998,7 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18t (10/11):** **🧩 abas de 👷 Pessoas por módulo** — 🦺 EPI, 🎓 Treinamentos e 🚦 Multas **somem** quando o módulo está desligado (Documentos, Colaboradores, Funções e Disciplinar seguem com "Colaboradores e documentos"). Na API, `/api/pessoas/epi…`, `/multas…` e `/treinamentos…` exigem o próprio módulo (409).
   - **18s (07/11):** **🧩 bloqueio na API do Spot e das Cotações + admin fora da rotina.**
     - **Regra reforçada (Marcony):** o perfil **admin é do sistema, não da rotina** — nunca recebe aviso de rotina, nem 🔔 nem e-mail, mesmo se aparecer numa configuração (ex.: pessoas da ocorrência). Vale para todos os avisos da Central (`avisarUsuarios`). Aprovação pendente agora vai só para o **gestor**.
     - **Spot:** `/api/spot/demandas…`, `/config` e `/indicador-atencao` exigem o módulo **Cotações e Canal Spot** (409 se desligado). O lado do fornecedor segue pelo acesso dele.
@@ -1568,7 +1569,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 | ~~18h.4~~ ✅ | entregue em 05/11 — 📊 indicadores das ocorrências e **disponibilidade** por equipamento e contrato, perda estimada (só gestor/admin), relatório A4 + CSV |
 | ~~👋 Bem-vindo ao sistema~~ ✅ 18i | entregue em 05/11 — roteiro das configurações mínimas por tipo de negócio (transporte · locação · compras), passos conferidos pelos dados, obrigatório/recomendado, "não se aplica" (migration 070) |
 | ~~🧩 Áreas, módulos e planos~~ ✅ 18j | entregue em 05/11 — catálogo de módulos com dependências, planos-modelo e plano personalizado no Console, menu/tela inicial/roteiro pelos módulos, ⭐ Meu plano (migration 071) |
-| **🧩 Módulos — próximos passos** | ~~bloquear as rotas da API~~ ✅ 18k · abas internas de 👷 Pessoas por módulo (EPI, multas, treinamentos), rótulos por segmento ("Equipamentos/ativos" fora do transporte), Canal Spot e Cotações também no bloqueio da API (rotas com autenticação própria) |
+| **🧩 Módulos — próximos passos** | ~~bloquear as rotas da API~~ ✅ 18k · ~~abas internas de 👷 Pessoas por módulo~~ ✅ 18t (EPI, multas, treinamentos), rótulos por segmento ("Equipamentos/ativos" fora do transporte), Canal Spot e Cotações também no bloqueio da API (rotas com autenticação própria) |
 | **🗂 Ordem combinada em 06/11** | 1) 💬 conversas e 🔔 eventos (ocorrência ✅ 18p, anexo no chat do Spot, e-mail se ficar X h sem ler, ~~ocorrência nova / aprovação / tarefa / medição contestada / documento vencendo no 🔔~~ ✅ 18r) → 2) 🧩 módulos e planos → 3) 🚛 operação e fiscal → 4) 📏 locação (+ 📦 propriedade do cliente) → 5) 🧠 inteligência e valor → por último 📱 Telegram |
 | ~~💬 Chat na demanda spot~~ ✅ 18l | entregue em 06/11 — conversa comprador ↔ fornecedor por interesse, em tempo real (espera longa), não lidas, ✓ lida (migration 072) |
 | **💬 Conversas — próximos passos** | ~~espera longa na conversa da ⚠️ ocorrência~~ ✅ 18p; ~~anexo no Spot e e-mail de 4 h~~ ✅ 18q; anexar foto/arquivo na conversa do Spot; aviso por e-mail de mensagem nova **só se a pessoa ficar X horas sem ler** (para não queimar e-mail); se um dia houver vários servidores, trocar o aviso em memória por Supabase Realtime/Redis |
@@ -1590,7 +1591,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18s)
+**Última atualização deste documento:** 06/11/2026 (etapa 18t)
 
 --------------------------------------------------------------------------------
 

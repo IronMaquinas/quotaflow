@@ -5,6 +5,7 @@
 // 🦺 EPI (12d.1 — TelaEpi.jsx; kit de EPI na função) · 🎓 Treinamentos (12e.1 — TelaTreinamentos.jsx).
 // Confirmações sempre no modal do app (nunca window.confirm/alert).
 import { useState, useEffect, useMemo } from "react";
+import { moduloAtivo } from "../../utils/modulosSessao"; // 18t
 import apiService from "../../services/apiService";
 import TelaEpi from "./TelaEpi"; // etapa 12d.1
 import TelaTreinamentos from "./TelaTreinamentos"; // etapa 12e.1
@@ -325,7 +326,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       <h2 style={{ margin: "0 0 4px", fontSize: 20, fontWeight: 700 }}>👷 Pessoas e documentos</h2>
       <div style={{ fontSize: 12, color: C.textSub, marginBottom: 12 }}>Colaboradores (com ou sem login no sistema) e documentos com vencimento de pessoas, equipamentos e da empresa.</div>
       <div style={{ borderBottom: `1px solid ${C.border}`, marginBottom: 18 }}>
-        {tab("documentos", "📄 Documentos")}{tab("colaboradores", "👥 Colaboradores")}{tab("funcoes", "👔 Funções")}{tab("epi", "🦺 EPI")}{tab("treinamentos", "🎓 Treinamentos")}{tab("multas", "🚦 Multas")}{editar && tab("disciplinar", "⚖ Disciplinar")}
+        {tab("documentos", "📄 Documentos")}{tab("colaboradores", "👥 Colaboradores")}{tab("funcoes", "👔 Funções")}{moduloAtivo("epi") && tab("epi", "🦺 EPI")}{moduloAtivo("treinamentos") && tab("treinamentos", "🎓 Treinamentos")}{moduloAtivo("multas") && tab("multas", "🚦 Multas")}{/* 18t: aba some sem o módulo */}{editar && tab("disciplinar", "⚖ Disciplinar")}
       </div>
 
       {aviso && <div style={{ ...s.card, padding: 12, marginBottom: 12, borderColor: C.success, color: C.success }}>✓ {aviso}</div>}
@@ -498,11 +499,11 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
 
       {/* ─── Treinamentos (12e.1) ─── */}
       {aba === "disciplinar" && editar && <TelaDisciplinar C={C} s={s} modal={modal} campo={campo} colabs={colabs} onAviso={setAviso} onErro={setErro} />}
-      {aba === "multas" && <TelaMultas C={C} s={s} modal={modal} campo={campo} colabs={colabs} onAviso={setAviso} onErro={setErro} />}
-      {aba === "treinamentos" && <TelaTreinamentos C={C} s={s} modal={modal} campo={campo} colabs={colabs} onAviso={setAviso} onErro={setErro} onMudou={carregar} />}
+      {aba === "multas" && moduloAtivo("multas") && <TelaMultas C={C} s={s} modal={modal} campo={campo} colabs={colabs} onAviso={setAviso} onErro={setErro} />}
+      {aba === "treinamentos" && moduloAtivo("treinamentos") && <TelaTreinamentos C={C} s={s} modal={modal} campo={campo} colabs={colabs} onAviso={setAviso} onErro={setErro} onMudou={carregar} />}
 
       {/* ─── EPI (12d.1) ─── */}
-      {aba === "epi" && <TelaEpi C={C} s={s} funcoes={funcoes} listas={listas} modal={modal} campo={campo} onAviso={setAviso} onErro={setErro} onFuncoesMudou={carregar} />}
+      {aba === "epi" && moduloAtivo("epi") && <TelaEpi C={C} s={s} funcoes={funcoes} listas={listas} modal={modal} campo={campo} onAviso={setAviso} onErro={setErro} onFuncoesMudou={carregar} />}
 
       {/* ─── modal função ─── */}
       {formFuncao && modal(<>
