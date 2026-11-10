@@ -43,6 +43,15 @@ const AREAS = [
     { id: 'radar_mercado', nome: 'Radar de mercado (relatório diário)', desc: 'Relatório diário com informações do mercado coletadas na web.', telas: [], futuro: true },
   ] },
 ];
+// 18u: 🏷 segmentos de negócio (a empresa pode ter mais de um — ex.: transporte de cargas especiais + locação de máquinas)
+//   NULL no banco = ['transporte']. Mudam os NOMES na tela (não os dados) e sugerem módulos no Console.
+const SEGMENTOS = [
+  { id: 'transporte', nome: '🚛 Transporte', sugere: ['crm_bid', 'frota_equipamentos', 'transporte', 'fiscal', 'ocorrencias', 'manutencao'] },
+  { id: 'locacao', nome: '🏗 Locação de equipamentos', sugere: ['crm_bid', 'frota_equipamentos', 'contratos_locacao', 'medicao', 'ocorrencias', 'inspecoes', 'manutencao'] },
+  { id: 'servicos', nome: '🔧 Manutenção / serviços', sugere: ['frota_equipamentos', 'manutencao', 'inspecoes', 'compras', 'estoque'] },
+  { id: 'outro', nome: '🏢 Outro', sugere: ['compras', 'fornecedores', 'estoque'] },
+];
+const segmentosDe = (t) => { const s = (Array.isArray(t?.segmentos) ? t.segmentos : []).filter((x) => SEGMENTOS.some((g) => g.id === x)); return s.length ? s : ['transporte']; };
 // sempre ligadas (base do sistema)
 const TELAS_BASE = ['home', 'plano', 'usuarios', 'configuracoes', 'portalfornecedor', 'meu_plano'];
 
@@ -75,13 +84,13 @@ async function daEmpresa(supabase, tenantId) {
   const { data } = await supabase.from('tenants').select('*').eq('id', tenantId);
   const t = data?.[0] || {};
   const ativos = ativosDe(t);
-  return { migrou: 'modulos' in t, completo: !Array.isArray(t.modulos), plano_nome: t.plano_nome || (Array.isArray(t.modulos) ? 'Plano personalizado' : 'Completo'),
+  return { segmentos: segmentosDe(t), migrou: 'modulos' in t, completo: !Array.isArray(t.modulos), plano_nome: t.plano_nome || (Array.isArray(t.modulos) ? 'Plano personalizado' : 'Completo'),
     ativos, telas: telasLiberadas(ativos), telas_mapeadas: [...new Set(MODULOS.flatMap((m) => m.telas))], areas: AREAS.map((a) => ({ id: a.id, nome: a.nome, modulos: a.modulos.map((m) => ({ id: m.id, nome: m.nome, desc: m.desc, futuro: !!m.futuro, ativo: ativos.includes(m.id) })) })),
     contato: process.env.PLATAFORMA_CONTATO_EMAIL || null };
 }
 
 // ─── Console da Plataforma ──────────────────────────────────────────────────
-const catalogo = () => ({ areas: AREAS.map((a) => ({ id: a.id, nome: a.nome, modulos: a.modulos.map((m) => ({ id: m.id, nome: m.nome, desc: m.desc, futuro: !!m.futuro, depende: m.depende || [], dependeUm: m.dependeUm || [] })) })), todos: TODOS });
+const catalogo = () => ({ segmentos: SEGMENTOS, areas: AREAS.map((a) => ({ id: a.id, nome: a.nome, modulos: a.modulos.map((m) => ({ id: m.id, nome: m.nome, desc: m.desc, futuro: !!m.futuro, depende: m.depende || [], dependeUm: m.dependeUm || [] })) })), todos: TODOS });
 async function listarPlanos(supabase) {
   const { data, error } = await supabase.from('plataforma_planos').select('*');
   if (error) { if (/plataforma_planos|does not exist|schema cache/i.test(error.message)) return { planos: [], sem_migration: true }; throw new Error(error.message); }
@@ -104,9 +113,14 @@ async function definirDaEmpresa(supabase, tenantId, body = {}) {
   const upd = body.completo === true ? { modulos: null, plano_nome: String(body.plano_nome || '').trim().slice(0, 80) || null }
     : { modulos: resolver(body.modulos), plano_nome: String(body.plano_nome || '').trim().slice(0, 80) || null };
   if (upd.modulos && !upd.modulos.length) return { status: 400, erro: 'Escolha ao menos um módulo' };
+  if (Array.isArray(body.segmentos)) { // 18u
+    if (!('segmentos' in t)) return { status: 409, erro: 'Falta rodar a migration 076 no Supabase (segmentos).' };
+    const sg = [...new Set(body.segmentos.map(String))].filter((x) => SEGMENTOS.some((g) => g.id === x)); if (!sg.length) return { status: 400, erro: 'Escolha ao menos um segmento' };
+    upd.segmentos = sg;
+  }
   const r = await supabase.from('tenants').update(upd).eq('id', tenantId).select(); if (r.error) throw new Error(r.error.message);
   try { require('../middleware/exigirModulo').limparCache(tenantId); } catch { /* ok */ } // 18k: vale na hora
   return { antes: ativosDe(t), ...(await daEmpresa(supabase, tenantId)) };
 }
 
-module.exports = { AREAS, MODULOS, TODOS, TELAS_BASE, resolver, ativosDe, telasLiberadas, daEmpresa, catalogo, listarPlanos, salvarPlano, excluirPlano, definirDaEmpresa };
+module.exports = { SEGMENTOS, segmentosDe, AREAS, MODULOS, TODOS, TELAS_BASE, resolver, ativosDe, telasLiberadas, daEmpresa, catalogo, listarPlanos, salvarPlano, excluirPlano, definirDaEmpresa };

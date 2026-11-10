@@ -88,11 +88,12 @@ export function ModulosEmpresa({ token, chamar, C, input, label, card, btn, tag,
   const [completo, setCompleto] = useState(!Array.isArray(empresa.modulos));
   const [mods, setMods] = useState(Array.isArray(empresa.modulos) ? empresa.modulos : []);
   const [nome, setNome] = useState(empresa.plano_nome || ""); const [ocupado, setOcupado] = useState(false);
+  const [segs, setSegs] = useState(Array.isArray(empresa.segmentos) && empresa.segmentos.length ? empresa.segmentos : ["transporte"]); // 18u
   useEffect(() => { chamar(token, "GET", "/planos").then((r) => setPlanos(r.planos || [])).catch(() => {}); }, [token]); // eslint-disable-line
   useEffect(() => { if (cat && completo && !mods.length) setMods(cat.todos); }, [cat]); // eslint-disable-line
   const salvar = async () => {
     setOcupado(true);
-    try { await chamar(token, "PUT", `/transportadoras/${empresa.id}/modulos`, completo ? { completo: true, plano_nome: nome } : { modulos: mods, plano_nome: nome || "Personalizado" }); onAviso({ tipo: "ok", texto: `Módulos de ${empresa.nome} atualizados — vale no próximo acesso dos usuários` }); onSalvo(); }
+    try { await chamar(token, "PUT", `/transportadoras/${empresa.id}/modulos`, { ...(completo ? { completo: true, plano_nome: nome } : { modulos: mods, plano_nome: nome || "Personalizado" }), segmentos: segs }); onAviso({ tipo: "ok", texto: `Módulos de ${empresa.nome} atualizados — vale no próximo acesso dos usuários` }); onSalvo(); }
     catch (e) { onAviso({ tipo: "erro", texto: e.message }); } finally { setOcupado(false); }
   };
   return <div style={{ position: "fixed", inset: 0, background: "#00000099", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 50, padding: 20, overflowY: "auto" }} onClick={onFechar}>
@@ -100,6 +101,14 @@ export function ModulosEmpresa({ token, chamar, C, input, label, card, btn, tag,
       <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>🧩 Módulos — {empresa.nome}</div>
       <div style={{ fontSize: 12.5, color: C.sub, marginBottom: 12 }}>O que a empresa vê no menu, na tela inicial e no roteiro. Os demais aparecem em ⭐ Meu plano como disponíveis (🔒 Fale conosco).</div>
       {!cat ? <div style={{ color: C.muted }}>Carregando…</div> : <>
+        {(cat.segmentos || []).length > 0 && <div style={{ marginBottom: 12 }}>{/* 18u: 🏷 segmentos — mais de um vale (ex.: transporte + locação) */}
+          <label style={label}>SEGMENTOS DO NEGÓCIO (MUDA OS NOMES NA TELA)</label>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            {cat.segmentos.map((g) => { const on = segs.includes(g.id); return <button key={g.id} type="button" aria-pressed={on} onClick={() => setSegs((v) => (on ? (v.length > 1 ? v.filter((x) => x !== g.id) : v) : [...v, g.id]))}
+              style={{ ...btn(on ? undefined : C.muted, on), padding: "6px 12px", fontSize: 12.5 }}>{g.nome}</button>; })}
+            {!completo && <button type="button" onClick={() => setMods((m) => [...new Set([...m, ...cat.segmentos.filter((g) => segs.includes(g.id)).flatMap((g) => g.sugere)])])}
+              title="Liga os módulos que costumam servir a esses segmentos (você confere antes de salvar)" style={{ background: "none", border: "none", color: C.accent, fontSize: 12.5, cursor: "pointer", textDecoration: "underline" }}>＋ ligar módulos sugeridos</button>}
+          </div></div>}
         <div style={{ display: "flex", gap: 12, alignItems: "center", padding: "10px 12px", border: `1px solid ${C.border}`, borderRadius: 8, marginBottom: 12 }}>
           <div style={{ flex: 1 }}><div style={{ fontSize: 13.5, fontWeight: 700 }}>Tudo ligado</div><div style={{ fontSize: 11.5, color: C.muted }}>Plano completo — recebe os módulos novos automaticamente.</div></div>
           <Toggle C={C} ligado={completo} rotulo="Tudo ligado" onChange={(v) => { setCompleto(v); if (v) setMods(cat.todos); }} />

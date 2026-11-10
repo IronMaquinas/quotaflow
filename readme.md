@@ -397,6 +397,7 @@ Ver seção 5 para o fluxo completo.
 - **073 (18m)** — ⏳ `demandas_spot.renovada_em` (o prazo de 30 dias na rede conta da renovação ou da publicação) e `interesses_spot.desistiu_em` / `desistencia_motivo` (fornecedor desistiu). Idempotente.
 - **074 (18n)** — 🔔 `notificacoes` (destinatário usuário/fornecedor, tipo, título, texto, link, chave do assunto, quantidade, lida_em, push_status/push_motivo/push_em) e `notificacao_preferencias` (o que a pessoa quer receber e por onde). Idempotente.
 - **075 (18q)** — 📎 `spot_mensagens.anexo` (jsonb; `texto` passa a aceitar vazio quando é só arquivo) e `notificacoes.email_em` / `email_status` (e-mail de 4 h sem ler + indicador de atenção). Idempotente.
+- **076 (18u)** — 🏷 `tenants.segmentos` (text[]: transporte · locacao · servicos · outro; NULL = transporte). Idempotente.
 - **058 (16e.3)** — `tenants (+) base_endereco` (📍 pátio / base da frota — onde o conjunto é liberado; pode ser diferente do endereço fiscal). Idempotente.
 - **057 (16e)** — `execucoes (+) fluxo` (etapas da viagem em ordem: marcações e inspeções, com status, hora, GPS, inspeção feita e liberação do gestor) e `inspecoes (+) execucao_id, etapa_id` (a inspeção feita no fluxo aponta para a AT). Idempotente.
 - **056 (16c)** — `execucoes.status (+) 'rascunho'` (cavalo pode ficar vazio no rascunho), `execucoes (+) token, link_visto_em` (📲 link do motorista) e `liberacao_docs` (CNH/CRLV vencido na data da viagem liberado pelo gestor). Idempotente.
@@ -998,6 +999,10 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18u (10/11):** **🏷 segmentos do negócio + plano atualizado sem sair e entrar.** Migration 076.
+    - **Segmentos (mais de um vale)** — 🚛 Transporte · 🏗 Locação de equipamentos · 🔧 Manutenção/serviços · 🏢 Outro. No Console → 🧩 Módulos da empresa, com **"＋ ligar módulos sugeridos"** (você confere antes de salvar). Empresas antigas = Transporte (nada muda). Depois entra também no "Criar conta".
+    - **Nomes na tela seguem o segmento** (só o nome, não os dados): menu ⚙ Equipamentos → **🚛 Frota** (transporte) · **🚛 Frota e equipamentos** (transporte + locação) · **⚙ Equipamentos/ativos** (sem transporte); 🚛 Minhas viagens → **🧰 Minhas atividades** e 🚛 Programação → **📅 Programação** sem transporte. Helper `rotulo()` em `utils/modulosSessao` para estender a outras telas (AT, motorista) conforme o Marcony acompanhar o uso.
+    - **Mudança de plano aparece sozinha:** o sistema relê módulos e segmentos **a cada 5 min e ao voltar para a aba** — aviso "⭐ Seu plano foi atualizado — o menu já mostra as telas novas". Orientação ao cliente: *"as mudanças aparecem em alguns minutos, sem precisar sair"*. (A API já bloqueava/liberava em até 30 s.)
   - **18t.1 (10/11):** ajustes da 18t: as abas de Pessoas **redesenham quando os módulos chegam** (antes a aba EPI aparecia por um instante e, clicada, deixava o erro); o erro de uma aba **não fica nas outras**; aba de módulo desligado volta para 📄 Documentos. **"⭐ Meu plano" virou link** nas mensagens de módulo não contratado (`TextoComPlano` + evento `qf-ir-tela`) — abre a tela direto (admin/gestor).
   - **18t (10/11):** **🧩 abas de 👷 Pessoas por módulo** — 🦺 EPI, 🎓 Treinamentos e 🚦 Multas **somem** quando o módulo está desligado (Documentos, Colaboradores, Funções e Disciplinar seguem com "Colaboradores e documentos"). Na API, `/api/pessoas/epi…`, `/multas…` e `/treinamentos…` exigem o próprio módulo (409).
   - **18s (07/11):** **🧩 bloqueio na API do Spot e das Cotações + admin fora da rotina.**
@@ -1570,7 +1575,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 | ~~18h.4~~ ✅ | entregue em 05/11 — 📊 indicadores das ocorrências e **disponibilidade** por equipamento e contrato, perda estimada (só gestor/admin), relatório A4 + CSV |
 | ~~👋 Bem-vindo ao sistema~~ ✅ 18i | entregue em 05/11 — roteiro das configurações mínimas por tipo de negócio (transporte · locação · compras), passos conferidos pelos dados, obrigatório/recomendado, "não se aplica" (migration 070) |
 | ~~🧩 Áreas, módulos e planos~~ ✅ 18j | entregue em 05/11 — catálogo de módulos com dependências, planos-modelo e plano personalizado no Console, menu/tela inicial/roteiro pelos módulos, ⭐ Meu plano (migration 071) |
-| **🧩 Módulos — próximos passos** | ~~bloquear as rotas da API~~ ✅ 18k · ~~abas internas de 👷 Pessoas por módulo~~ ✅ 18t (EPI, multas, treinamentos), rótulos por segmento ("Equipamentos/ativos" fora do transporte), Canal Spot e Cotações também no bloqueio da API (rotas com autenticação própria) |
+| **🧩 Módulos — próximos passos** | ~~bloquear as rotas da API~~ ✅ 18k · ~~abas internas de 👷 Pessoas por módulo~~ ✅ 18t (EPI, multas, treinamentos), ~~rótulos por segmento~~ ✅ 18u (base; estender AT/motorista conforme o uso), Canal Spot e Cotações também no bloqueio da API (rotas com autenticação própria) |
 | **🗂 Ordem combinada em 06/11** | 1) 💬 conversas e 🔔 eventos (ocorrência ✅ 18p, anexo no chat do Spot, e-mail se ficar X h sem ler, ~~ocorrência nova / aprovação / tarefa / medição contestada / documento vencendo no 🔔~~ ✅ 18r) → 2) 🧩 módulos e planos → 3) 🚛 operação e fiscal → 4) 📏 locação (+ 📦 propriedade do cliente) → 5) 🧠 inteligência e valor → por último 📱 Telegram |
 | ~~💬 Chat na demanda spot~~ ✅ 18l | entregue em 06/11 — conversa comprador ↔ fornecedor por interesse, em tempo real (espera longa), não lidas, ✓ lida (migration 072) |
 | **💬 Conversas — próximos passos** | ~~espera longa na conversa da ⚠️ ocorrência~~ ✅ 18p; ~~anexo no Spot e e-mail de 4 h~~ ✅ 18q; anexar foto/arquivo na conversa do Spot; aviso por e-mail de mensagem nova **só se a pessoa ficar X horas sem ler** (para não queimar e-mail); se um dia houver vários servidores, trocar o aviso em memória por Supabase Realtime/Redis |
@@ -1592,7 +1597,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18t.1)
+**Última atualização deste documento:** 06/11/2026 (etapa 18u)
 
 --------------------------------------------------------------------------------
 

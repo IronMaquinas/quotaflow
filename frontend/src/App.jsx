@@ -34,7 +34,7 @@ import MeuPlano from './components/configuracoes/MeuPlano'; // 18j: ⭐ módulos
 import SinoNotificacoes from './components/shared/SinoNotificacoes'; // 18n: 🔔
 import { pedirAbrirDemanda } from './components/spot/ChatSpot';
 import { soAreaRestrita } from './utils/areaRestrita';
-import { definirModulosSessao } from './utils/modulosSessao'; // 18k // 18i: 👋 roteiro inicial (substitui o "Complete o perfil" da 14d.5)
+import { definirModulosSessao, definirSegmentosSessao, rotulo } from './utils/modulosSessao'; // 18k // 18i: 👋 roteiro inicial (substitui o "Complete o perfil" da 14d.5)
 import TelaMonitorCnpj from './components/compliance/TelaMonitorCnpj'; // 14e
 import TelaNaoConformidades from "./components/naoConformidades/TelaNaoConformidades";
 import TelaInspecoes from "./components/inspecoes/TelaInspecoes"; // etapa 14a
@@ -207,8 +207,21 @@ export default function App() {
     const ps = usuario?.id ? (Array.isArray(usuario.perfis) && usuario.perfis.length ? usuario.perfis : [usuario.perfil].filter(Boolean)) : [];
     if (!usuario?.id || usuario.perfil === "fornecedor") { setModsEmpresa(null); definirModulosSessao(null); return; }
     if (soAreaRestrita(ps)) { // 18k: locatário/colaborador — só os módulos (para esconder abas), pela rota que eles podem chamar
-      setModsEmpresa(null); if (ps.includes("locatario")) apiService.get("/locatario/modulos").then((r) => definirModulosSessao(r?.ativos)).catch(() => definirModulosSessao(null)); return; }
-    apiService.get("/configuracoes/modulos").then((r) => { setModsEmpresa(r?.telas ? { telas: new Set(r.telas), mapeadas: new Set(r.telas_mapeadas || []) } : null); definirModulosSessao(r?.ativos); }).catch(() => { setModsEmpresa(null); definirModulosSessao(null); });
+      setModsEmpresa(null); if (!ps.includes("locatario")) return;
+      const lerL = () => apiService.get("/locatario/modulos").then((r) => definirModulosSessao(r?.ativos)).catch(() => {}); lerL(); // 18u: também relê
+      const tmL = setInterval(lerL, 5 * 60000); const focoL = () => { if (document.visibilityState === "visible") lerL(); }; document.addEventListener("visibilitychange", focoL);
+      return () => { clearInterval(tmL); document.removeEventListener("visibilitychange", focoL); }; }
+    // 18u: relê sozinho a cada 5 min e ao voltar para a aba — mudança de plano aparece sem sair e entrar
+    let assinatura = null; let vivo = true;
+    const ler = () => apiService.get("/configuracoes/modulos").then((r) => {
+      if (!vivo) return; const a = JSON.stringify([r?.ativos || null, r?.segmentos || null]);
+      if (assinatura && a !== assinatura) { setAvisoRoteiro("⭐ Seu plano foi atualizado — o menu já mostra as telas novas."); setTimeout(() => setAvisoRoteiro(null), 7000); }
+      assinatura = a;
+      setModsEmpresa(r?.telas ? { telas: new Set(r.telas), mapeadas: new Set(r.telas_mapeadas || []) } : null); definirModulosSessao(r?.ativos); definirSegmentosSessao(r?.segmentos);
+    }).catch(() => { if (assinatura == null) { setModsEmpresa(null); definirModulosSessao(null); } });
+    ler(); const tm = setInterval(ler, 5 * 60000);
+    const foco = () => { if (document.visibilityState === "visible") ler(); }; document.addEventListener("visibilitychange", foco);
+    return () => { vivo = false; clearInterval(tm); document.removeEventListener("visibilitychange", foco); };
   }, [usuario?.id]);
   // 14c.2: "é clicável" — mãozinha + realce ao passar o mouse (className="qf-clicavel")
   useEffect(() => {
@@ -432,7 +445,7 @@ const perfil = PERFIS[usuario.perfil] || {
   const navItems = [
     {id:"home",          l:"Início",                  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro","comercial","fiscal"]},
     {id:"comercial",     l:"📈 Comercial",            perfis:["admin","gestor","comercial"]}, // etapa 15a
-    {id:"programacao",   l:"🚛 Programação",          perfis:["admin","gestor","operacao"]}, // etapa 16a
+    {id:"programacao",   l:rotulo("programacao"),          perfis:["admin","gestor","operacao"]}, // etapa 16a
     {id:"ordem_servico", l:"🛠️ Ordem de Serviço",    perfis:["admin","gestor","operacao","qualidade"]},
     {id:"calendario",    l:"📅 Calendário",           perfis:["admin","gestor","comprador","operacao"]},
     {id:"recebimento",   l:"📥 Recebimento",         perfis:["admin","gestor","comprador","operacao"]},
@@ -450,11 +463,11 @@ const perfil = PERFIS[usuario.perfil] || {
     {id:"historico",     l:"📉 Histórico Preços",     perfis:["admin","gestor"]},
     {id:"inteligencia",  l:"🧠 Inteligência",         perfis:["admin","gestor"]},
     {id:"benchmark",     l:"📈 Benchmark",            perfis:["admin","gestor"]},
-    {id:"equipamentos",  l:"⚙ Equipamentos",          perfis:["admin","gestor","comprador","operacao"]},
+    {id:"equipamentos",  l:rotulo("frota"),          perfis:["admin","gestor","comprador","operacao"]},
     {id:"inspecoes",     l:"🔍 Inspeções",             perfis:["admin","gestor","comprador","operacao","qualidade"]}, // etapa 14a
     {id:"contratos",     l:"📑 Contratos",             perfis:["admin","gestor","comprador","operacao","qualidade"]}, // etapa 14b.3
     {id:"pessoas",       l:"👷 Pessoas",               perfis:["admin","gestor","qualidade","operacao"]},
-    {id:"minhas_viagens", l:"🚛 Minhas viagens",  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro","comercial"]}, // etapa 17a.1 — motorista com outros perfis
+    {id:"minhas_viagens", l:rotulo("minhas_viagens"),  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro","comercial"]}, // etapa 17a.1 — motorista com outros perfis
     {id:"meus_treinamentos", l:"🎓 Meus treinamentos",  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro","comercial"]}, // etapa 12e.2b
     {id:"fornecedores",  l:"🏭 Fornecedores",         perfis:["admin","gestor","comprador"]},
     {id:"monitor_cnpj",  l:"🛡 Monitor de CNPJs",     perfis:["admin","gestor","comprador"]}, // etapa 14e
