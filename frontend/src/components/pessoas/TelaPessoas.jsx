@@ -5,7 +5,8 @@
 // 🦺 EPI (12d.1 — TelaEpi.jsx; kit de EPI na função) · 🎓 Treinamentos (12e.1 — TelaTreinamentos.jsx).
 // Confirmações sempre no modal do app (nunca window.confirm/alert).
 import { useState, useEffect, useMemo } from "react";
-import { moduloAtivo } from "../../utils/modulosSessao"; // 18t
+import { moduloAtivo, aoMudarModulos } from "../../utils/modulosSessao"; // 18t
+import TextoComPlano from "../shared/TextoComPlano"; // 18t.1
 import apiService from "../../services/apiService";
 import TelaEpi from "./TelaEpi"; // etapa 12d.1
 import TelaTreinamentos from "./TelaTreinamentos"; // etapa 12e.1
@@ -61,6 +62,8 @@ const lerArquivo = (file) => new Promise((ok, falha) => {
 
 export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAbaConsumida }) {
   const [aba, setAba] = useState(abaInicial || "documentos");
+  const [, setVerMod] = useState(0); useEffect(() => aoMudarModulos(() => setVerMod((v) => v + 1)), []); // 18t.1: módulos chegam depois → redesenha as abas
+  useEffect(() => { setErro(""); if (['epi', 'multas', 'treinamentos'].includes(aba) && !moduloAtivo(aba)) setAba("documentos"); }, [aba]); // eslint-disable-line // 18t.1: o erro de uma aba não fica nas outras
   const [config, setConfig] = useState({ tipos: [], usuarios: [], pode_editar: false });
   const [colabs, setColabs] = useState([]);
   const [docs, setDocs] = useState([]);
@@ -330,7 +333,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       </div>
 
       {aviso && <div style={{ ...s.card, padding: 12, marginBottom: 12, borderColor: C.success, color: C.success }}>✓ {aviso}</div>}
-      {erro && <div style={{ ...s.card, padding: 12, marginBottom: 12, borderColor: C.danger, color: C.danger }}>⚠ {erro}</div>}
+      {erro && <div style={{ ...s.card, padding: 12, marginBottom: 12, borderColor: C.danger, color: C.danger }}>⚠ <TextoComPlano texto={erro} C={C} /></div>}
       {carregando && <div style={{ color: C.muted, marginBottom: 12 }}>Carregando…</div>}
 
       {/* ─── DOCUMENTOS ─── */}

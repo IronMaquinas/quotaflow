@@ -178,6 +178,7 @@ export default function App() {
   const [tela,setTela]=useState("home");
   const [configAba,setConfigAba]=useState(null); // 14d.5: aba inicial das Configurações (vinda do "Complete o perfil")
   useEffect(() => { if (tela !== "configuracoes") setConfigAba(null); }, [tela]); // 14d.5
+  useEffect(() => { const f = (e) => { if (e.detail && temAcessoRef.current?.(e.detail)) setTela(e.detail); }; window.addEventListener("qf-ir-tela", f); return () => window.removeEventListener("qf-ir-tela", f); }, []); // 18t.1: link "⭐ Meu plano"
   const [osParaAbrir, setOsParaAbrir] = useState(null);
   const [cotacaoParaAbrir, setCotacaoParaAbrir] = useState(null); // 14e.2
   const [ocParaAbrir, setOcParaAbrir] = useState(null); // 14e.2
