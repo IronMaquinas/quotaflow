@@ -11,6 +11,18 @@
 const SITUACOES = ['teste', 'ativa', 'inadimplente', 'suspensa', 'cancelada'];
 const METRICAS = ['empresa', 'usuario', 'equipamento', 'uso'];
 const MOEDAS = ['BRL', 'USD', 'EUR', 'DKK'];
+// 18w: modalidade (como a Adobe) — mensal: cobra todo mês, sem fim · anual_mensal: compromisso 12 meses, cobra todo mês · anual_prepago: paga o ano
+const MODALIDADES = { mensal: 'Mensal (sem fidelidade)', anual_mensal: 'Anual, pago por mês', anual_prepago: 'Anual pré-pago' };
+const somar = (iso, meses) => { const d = new Date(`${iso}T12:00:00Z`); const dia = d.getUTCDate(); d.setUTCDate(1); d.setUTCMonth(d.getUTCMonth() + meses); const ult = new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth() + 1, 0)).getUTCDate(); d.setUTCDate(Math.min(dia, ult)); return d.toISOString().slice(0, 10); };
+/** datas da modalidade a partir do início: próxima cobrança e fim do compromisso (mensal: sem fim) */
+function datasDa(modalidade, inicio) {
+  if (!inicio) return { proxima_cobranca: null, fim_compromisso: null };
+  if (modalidade === 'anual_prepago') return { proxima_cobranca: somar(inicio, 12), fim_compromisso: somar(inicio, 12) };
+  if (modalidade === 'anual_mensal') return { proxima_cobranca: somar(inicio, 1), fim_compromisso: somar(inicio, 12) };
+  return { proxima_cobranca: somar(inicio, 1), fim_compromisso: null };
+}
+/** preço do plano na modalidade (valor por mês, ou por ano no pré-pago) */
+const precoNa = (plano, modalidade) => (!plano ? null : modalidade === 'anual_prepago' ? plano.preco_anual : modalidade === 'anual_mensal' ? plano.preco_anual_mensal ?? plano.preco_mensal : plano.preco_mensal) ?? null;
 const DIA = 864e5;
 const sem077 = (e) => /tenant_assinatura|preco_mensal|teste_aviso_em|does not exist|schema cache/i.test(String(e?.message || e));
 async function q(p) { const { data, error } = await p; if (error) throw new Error(error.message); return data || []; }
@@ -20,7 +32,7 @@ const data10 = (v) => (v && /^\d{4}-\d{2}-\d{2}/.test(String(v)) ? String(v).sli
 /** campos de preço de um plano-modelo (validados) — usado por modulos.salvarPlano */
 function precoDoPlano(body = {}) {
   const metrica = METRICAS.includes(body.metrica) ? body.metrica : 'empresa';
-  return { preco_mensal: num(body.preco_mensal), preco_anual: num(body.preco_anual), moeda: MOEDAS.includes(body.moeda) ? body.moeda : 'BRL',
+  return { preco_mensal: num(body.preco_mensal), preco_anual: num(body.preco_anual), preco_anual_mensal: num(body.preco_anual_mensal), publico: body.publico !== false, moeda: MOEDAS.includes(body.moeda) ? body.moeda : 'BRL',
     metrica, preco_unidade: metrica === 'empresa' ? null : num(body.preco_unidade), franquia: metrica === 'empresa' || body.franquia === '' || body.franquia == null ? null : Math.max(0, parseInt(body.franquia, 10) || 0) };
 }
 
@@ -38,7 +50,8 @@ async function daEmpresa(supabase, tenantId) {
   catch (e) { if (!sem077(e)) throw e; migrou = false; }
   hist.sort((x, y) => Date.parse(y.em) - Date.parse(x.em));
   const dias = t.plano === 'teste' && t.teste_ate ? Math.ceil((Date.parse(t.teste_ate) - Date.now()) / DIA) : null;
-  return { migrou, assinatura: a, situacao: situacaoDerivada(t, a), teste_ate: t.teste_ate || null, dias_teste: dias, somente_leitura: testeAcabou(t), historico: hist.slice(0, 50) };
+  let pedidos = []; try { pedidos = (await q(supabase.from('tenant_plano_pedidos').select('*').eq('tenant_id', tenantId))).sort((x, y) => Date.parse(y.criado_em) - Date.parse(x.criado_em)); } catch { /* sem a 078 */ }
+  return { pedidos, modalidades: MODALIDADES, migrou, assinatura: a, situacao: situacaoDerivada(t, a), teste_ate: t.teste_ate || null, dias_teste: dias, somente_leitura: testeAcabou(t), historico: hist.slice(0, 50) };
 }
 
 /** Console: salva a assinatura (e, opcional, um novo fim de teste). quem = admin da plataforma */
@@ -47,24 +60,33 @@ async function salvar(supabase, tenantId, body = {}, quem = null) {
   if (!atual.migrou) return { status: 409, erro: 'Falta rodar a migration 077 no Supabase (assinaturas).' };
   const situacao = SITUACOES.includes(body.situacao) ? body.situacao : atual.situacao;
   let plano = null;
-  if (body.plano_id) { plano = (await q(supabase.from('plataforma_planos').select('*').eq('id', body.plano_id)))[0] || null; if (!plano) return { status: 400, erro: 'Plano não encontrado' }; }
-  const ciclo = body.ciclo === 'anual' ? 'anual' : 'mensal';
-  const linha = { tenant_id: tenantId, plano_id: plano?.id ?? null, plano_nome: String(body.plano_nome || plano?.nome || '').trim().slice(0, 80) || null, situacao, ciclo,
-    moeda: MOEDAS.includes(body.moeda) ? body.moeda : plano?.moeda || 'BRL',
-    valor: num(body.valor) ?? (plano ? num(ciclo === 'anual' ? plano.preco_anual : plano.preco_mensal) : null), desconto_pct: num(body.desconto_pct),
-    inicio: data10(body.inicio), proxima_renovacao: data10(body.proxima_renovacao), obs: String(body.obs || '').trim().slice(0, 500) || null, atualizado_em: new Date().toISOString() };
+  const a0 = atual.assinatura || {}; const tem = (k) => Object.prototype.hasOwnProperty.call(body, k); // 18w: o que não vier no corpo fica como está
+  const planoId = tem('plano_id') ? body.plano_id : a0.plano_id;
+  if (planoId) { plano = (await q(supabase.from('plataforma_planos').select('*').eq('id', planoId)))[0] || null; if (!plano && tem('plano_id')) return { status: 400, erro: 'Plano não encontrado' }; }
+  const modalidade = MODALIDADES[body.modalidade] ? body.modalidade : body.ciclo === 'anual' ? 'anual_prepago' : atual.assinatura?.modalidade || 'mensal'; // 18w
+  const ciclo = modalidade === 'anual_prepago' ? 'anual' : 'mensal';
+  const linha = { tenant_id: tenantId, plano_id: plano?.id ?? null, plano_nome: String((tem('plano_nome') ? body.plano_nome : a0.plano_nome) || plano?.nome || '').trim().slice(0, 80) || null, situacao, ciclo,
+    moeda: MOEDAS.includes(body.moeda) ? body.moeda : a0.moeda || plano?.moeda || 'BRL',
+    modalidade, valor: tem('valor') && body.valor !== '' ? num(body.valor) : (!a0.id || String(planoId ?? '') !== String(a0.plano_id ?? '') || modalidade !== (a0.modalidade || 'mensal') ? num(precoNa(plano, modalidade)) ?? num(a0.valor) : num(a0.valor)), desconto_pct: tem('desconto_pct') ? num(body.desconto_pct) : num(a0.desconto_pct),
+    inicio: tem('inicio') ? data10(body.inicio) : data10(a0.inicio), proxima_renovacao: data10(body.proxima_renovacao), obs: (tem('obs') ? String(body.obs || '').trim().slice(0, 500) : a0.obs) || null, atualizado_em: new Date().toISOString() };
   if (linha.desconto_pct != null && (linha.desconto_pct < 0 || linha.desconto_pct > 100)) return { status: 400, erro: 'Desconto entre 0 e 100%' };
   if (situacao === 'ativa' && !linha.inicio) linha.inicio = new Date().toISOString().slice(0, 10);
-  if (situacao === 'ativa' && !linha.proxima_renovacao) { const d = new Date(`${linha.inicio}T12:00:00Z`); if (ciclo === 'anual') d.setUTCFullYear(d.getUTCFullYear() + 1); else d.setUTCMonth(d.getUTCMonth() + 1); linha.proxima_renovacao = d.toISOString().slice(0, 10); }
+  // 18w: datas pela modalidade (se não vierem preenchidas); proxima_renovacao = fim do compromisso (ou próxima cobrança no mensal)
+  const calc = datasDa(modalidade, linha.inicio);
+  linha.proxima_cobranca = (tem('proxima_cobranca') ? data10(body.proxima_cobranca) : data10(a0.proxima_cobranca)) || calc.proxima_cobranca;
+  linha.fim_compromisso = modalidade === 'mensal' ? null : (tem('fim_compromisso') ? data10(body.fim_compromisso) : data10(a0.fim_compromisso)) || calc.fim_compromisso;
+  linha.proxima_renovacao = linha.fim_compromisso || linha.proxima_cobranca;
   const a = atual.assinatura;
-  const r = a ? await supabase.from('tenant_assinaturas').update(linha).eq('id', a.id).select() : await supabase.from('tenant_assinaturas').insert([linha]).select();
+  const gravar = (l) => (a ? supabase.from('tenant_assinaturas').update(l).eq('id', a.id).select() : supabase.from('tenant_assinaturas').insert([l]).select());
+  let r = await gravar(linha);
+  if (r.error && /modalidade|proxima_cobranca|fim_compromisso/.test(r.error.message)) { const { modalidade: _m, proxima_cobranca: _p, fim_compromisso: _f, ...sem } = linha; r = await gravar(sem); } // sem a 078
   if (r.error) throw new Error(r.error.message);
   // o tenant: ativa → sai do teste; volta para teste com nova data → estende
   const updT = {};
   if (situacao === 'ativa' && atual.situacao !== 'ativa') updT.plano = 'assinante';
   if (situacao === 'teste' && data10(body.teste_ate)) { updT.plano = 'teste'; updT.teste_ate = new Date(`${data10(body.teste_ate)}T23:59:59-03:00`).toISOString(); updT.teste_aviso_em = null; }
   if (Object.keys(updT).length) { const u = await supabase.from('tenants').update(updT).eq('id', tenantId); if (u.error && !/teste_aviso_em/.test(u.error.message)) throw new Error(u.error.message); }
-  const campos = ['plano_nome', 'situacao', 'ciclo', 'moeda', 'valor', 'desconto_pct', 'inicio', 'proxima_renovacao'];
+  const campos = ['plano_nome', 'situacao', 'modalidade', 'moeda', 'valor', 'desconto_pct', 'inicio', 'proxima_cobranca', 'fim_compromisso'];
   const mudou = {}; for (const c of campos) { const de = a ? a[c] ?? null : c === 'situacao' ? atual.situacao : null; const para = linha[c] ?? null; if (String(de ?? '') !== String(para ?? '')) mudou[c] = { de, para }; }
   if (updT.teste_ate) mudou.teste_ate = { de: atual.teste_ate, para: updT.teste_ate };
   if (Object.keys(mudou).length) await supabase.from('tenant_assinatura_historico').insert([{ tenant_id: tenantId, evento: a ? 'alterada' : 'criada', detalhe: mudou, quem: quem || null }]);
@@ -72,10 +94,65 @@ async function salvar(supabase, tenantId, body = {}, quem = null) {
   return daEmpresa(supabase, tenantId);
 }
 
+// ─── 18w: o cliente vê a assinatura e escolhe/troca de plano ─────────────────────
+/** ⭐ Meu plano (admin e gestor): assinatura, planos públicos com preço, pedido pendente */
+async function doCliente(supabase, tenantId) {
+  const d = await daEmpresa(supabase, tenantId); if (d.erro) return d;
+  const a = d.assinatura;
+  let planos = []; try { planos = (await q(supabase.from('plataforma_planos').select('*'))).filter((p) => p.publico !== false && (p.preco_mensal != null || p.preco_anual != null || p.preco_anual_mensal != null || p.metrica === 'uso')); } catch { /* ok */ }
+  const MOD = require('./modulos'); const nomes = new Map(MOD.MODULOS.map((m) => [m.id, m.nome]));
+  planos = planos.sort((x, y) => (Number(x.preco_mensal) || 0) - (Number(y.preco_mensal) || 0)).map((p) => ({ id: p.id, nome: p.nome, descricao: p.descricao, moeda: p.moeda || 'BRL', metrica: p.metrica || 'empresa',
+    preco_mensal: p.preco_mensal, preco_anual_mensal: p.preco_anual_mensal, preco_anual: p.preco_anual, preco_unidade: p.preco_unidade, franquia: p.franquia, modulos: MOD.resolver(p.modulos).map((id) => nomes.get(id) || id), atual: a?.plano_id != null && String(a.plano_id) === String(p.id) }));
+  const pend = (d.pedidos || []).find((x) => x.status === 'pendente') || null;
+  return { situacao: d.situacao, teste_ate: d.teste_ate, dias_teste: d.dias_teste, somente_leitura: d.somente_leitura, modalidades: MODALIDADES,
+    assinatura: a ? { plano_nome: a.plano_nome, modalidade: a.modalidade || (a.ciclo === 'anual' ? 'anual_prepago' : 'mensal'), moeda: a.moeda, valor: a.valor, desconto_pct: a.desconto_pct,
+      valor_liquido: a.valor != null ? Math.round(Number(a.valor) * (1 - (Number(a.desconto_pct) || 0) / 100) * 100) / 100 : null, inicio: a.inicio, proxima_cobranca: a.proxima_cobranca || a.proxima_renovacao, fim_compromisso: a.fim_compromisso || null } : null,
+    planos, pedido_pendente: pend ? { id: pend.id, plano_nome: pend.plano_nome, modalidade: pend.modalidade, valor: pend.valor, moeda: pend.moeda, em: pend.criado_em, pedido_por: pend.pedido_por } : null };
+}
+let avisarPlataforma = async (assunto, html) => { const ps = String(process.env.PLATAFORMA_ADMINS || process.env.PLATAFORMA_CONTATO_EMAIL || '').split(/[,;\s]+/).filter((x) => /@/.test(x)); for (const p of ps) await require('./emailService').enviarEmailFornecedor(p, assunto, html).catch(() => {}); };
+function _definirAvisoPlataforma(fn) { avisarPlataforma = fn; }
+/** "Quero este" — pedido pendente (substitui o pendente anterior); a plataforma recebe e-mail e confirma no Console */
+async function pedirPlano(supabase, tenantId, quem = {}, body = {}) {
+  const plano = body.plano_id ? (await q(supabase.from('plataforma_planos').select('*').eq('id', body.plano_id)))[0] : null;
+  const personalizado = !plano && body.personalizado === true;
+  if (!plano && !personalizado) return { status: 400, erro: 'Escolha um plano' };
+  if (plano && plano.publico === false) return { status: 400, erro: 'Plano indisponível' };
+  const modalidade = MODALIDADES[body.modalidade] ? body.modalidade : 'mensal';
+  const t = (await q(supabase.from('tenants').select('*').eq('id', tenantId)))[0] || {};
+  try {
+    for (const x of (await q(supabase.from('tenant_plano_pedidos').select('*').eq('tenant_id', tenantId))).filter((x) => x.status === 'pendente')) await supabase.from('tenant_plano_pedidos').update({ status: 'cancelado', decidido_em: new Date().toISOString(), motivo: 'substituído por outro pedido' }).eq('id', x.id);
+    const linha = { tenant_id: tenantId, plano_id: plano?.id ?? null, plano_nome: plano?.nome || 'Plano personalizado (fale conosco)', modalidade, valor: num(precoNa(plano, modalidade)), moeda: plano?.moeda || 'BRL',
+      obs: String(body.obs || '').trim().slice(0, 500) || null, pedido_por: quem.nome || null, pedido_por_email: quem.email || null };
+    const r = await supabase.from('tenant_plano_pedidos').insert([linha]).select(); if (r.error) throw new Error(r.error.message);
+    const v = linha.valor != null ? `${linha.moeda} ${Number(linha.valor).toFixed(2)}${modalidade === 'anual_prepago' ? '/ano' : '/mês'}` : 'a combinar';
+    await avisarPlataforma(`📝 Pedido de plano — ${t.nome || 'empresa'}: ${linha.plano_nome}`, `<p><b>${t.nome || 'Empresa'}</b> pediu o plano <b>${linha.plano_nome}</b> — ${MODALIDADES[modalidade]} · ${v}.</p><p>Pedido por: ${linha.pedido_por || '—'} (${linha.pedido_por_email || '—'})${linha.obs ? `<br>Obs.: ${linha.obs}` : ''}</p><p>Confirme no Console da Plataforma → 🚚 Transportadoras → 💳 Assinatura…</p>`);
+    return { ok: true, pedido: r.data[0] };
+  } catch (e) { if (sem077(e) || /tenant_plano_pedidos/.test(e.message)) return { status: 409, erro: 'Falta rodar a migration 078 no Supabase.' }; throw e; }
+}
+/** Console: confirma (ativa a assinatura no plano/modalidade e liga os módulos do plano) ou recusa */
+async function decidirPedido(supabase, tenantId, pedidoId, { confirmar, motivo = null } = {}, quem = null) {
+  const p = (await q(supabase.from('tenant_plano_pedidos').select('*').eq('id', pedidoId)))[0];
+  if (!p || String(p.tenant_id) !== String(tenantId)) return { status: 404, erro: 'Pedido não encontrado' };
+  if (p.status !== 'pendente') return { status: 409, erro: 'Este pedido já foi decidido' };
+  if (confirmar) {
+    const hoje = new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
+    const r = await salvar(supabase, tenantId, { situacao: 'ativa', plano_id: p.plano_id, plano_nome: p.plano_nome, modalidade: p.modalidade, moeda: p.moeda, valor: p.valor, inicio: hoje }, quem);
+    if (r.erro) return r;
+    if (p.plano_id) { const pl = (await q(supabase.from('plataforma_planos').select('*').eq('id', p.plano_id)))[0]; if (pl?.modulos?.length) await require('./modulos').definirDaEmpresa(supabase, tenantId, { modulos: pl.modulos, plano_nome: pl.nome }); }
+  }
+  await supabase.from('tenant_plano_pedidos').update({ status: confirmar ? 'confirmado' : 'recusado', decidido_em: new Date().toISOString(), decidido_por: quem, motivo: motivo ? String(motivo).slice(0, 300) : null }).eq('id', p.id);
+  if (p.pedido_por_email) await enviarEmail(p.pedido_por_email, confirmar ? `✅ Plano ${p.plano_nome} confirmado` : `Pedido do plano ${p.plano_nome}`, confirmar
+    ? `<p>Olá${p.pedido_por ? `, ${p.pedido_por}` : ''}!</p><p>O plano <b>${p.plano_nome}</b> (${MODALIDADES[p.modalidade] || p.modalidade}) está ativo. Os módulos do plano já aparecem no menu em alguns minutos — veja em ⭐ Meu plano.</p>`
+    : `<p>Olá${p.pedido_por ? `, ${p.pedido_por}` : ''}!</p><p>Sobre o pedido do plano <b>${p.plano_nome}</b>: ${motivo || 'vamos falar com você para acertar os detalhes.'}</p>`).catch(() => {});
+  return daEmpresa(supabase, tenantId);
+}
+/** Console: pedidos pendentes de todas as empresas (selo na lista) */
+async function pendentes(supabase) { try { return { pedidos: (await q(supabase.from('tenant_plano_pedidos').select('*').eq('status', 'pendente'))) }; } catch { return { pedidos: [] }; } }
+
 // ─── só leitura no fim do teste (middleware) ───────────────────────────────────
 const cache = new Map(); // tenantId → { acabou, em }
 const limparCache = (id) => cache.delete(String(id));
-const LIVRE = /^\/api\/(auth|plataforma|notificacoes|notificacoes-fornecedor|fornecedor|usuarios\/me|configuracoes\/modulos)(\/|$)/;
+const LIVRE = /^\/api\/(auth|plataforma|notificacoes|notificacoes-fornecedor|fornecedor|usuarios\/me|configuracoes\/modulos|configuracoes\/assinatura)(\/|$)/; // 18w: com o teste vencido dá para pedir o plano
 function somenteLeituraNoFimDoTeste(supabaseFn) {
   return async (req, res, next) => {
     if (['GET', 'HEAD', 'OPTIONS'].includes(req.method)) return next();
@@ -111,4 +188,4 @@ async function avisarFimDoTeste(supabase, agora = Date.now()) {
   return res;
 }
 
-module.exports = { SITUACOES, METRICAS, MOEDAS, precoDoPlano, testeAcabou, daEmpresa, salvar, somenteLeituraNoFimDoTeste, avisarFimDoTeste, limparCache, _definirEmail };
+module.exports = { MODALIDADES, datasDa, precoNa, doCliente, pedirPlano, decidirPedido, pendentes, _definirAvisoPlataforma, SITUACOES, METRICAS, MOEDAS, precoDoPlano, testeAcabou, daEmpresa, salvar, somenteLeituraNoFimDoTeste, avisarFimDoTeste, limparCache, _definirEmail };

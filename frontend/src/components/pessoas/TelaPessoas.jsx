@@ -1,3 +1,4 @@
+
 // components/pessoas/TelaPessoas.jsx — etapa 12c · 12d.0
 // Módulo "👷 Pessoas": abas Documentos (pessoa, equipamento e empresa, com vencimento e
 // arquivo anexo) · Colaboradores (com ficha: exigidos pela função × o que tem) ·

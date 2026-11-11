@@ -102,8 +102,9 @@ async function salvarPlano(supabase, id, body = {}) {
   if (!linha.modulos.length) return { status: 400, erro: 'Escolha ao menos um módulo' };
   const gravar = (l) => (id ? supabase.from('plataforma_planos').update(l).eq('id', id).select() : supabase.from('plataforma_planos').insert([l]).select());
   let r = await gravar(linha);
+  if (r.error && /preco_anual_mensal|publico/.test(r.error.message)) { const { preco_anual_mensal, publico, ...sem } = linha; r = await gravar(sem); } // eslint-disable-line no-unused-vars — sem a 078
   if (r.error && /preco_|moeda|metrica|franquia/.test(r.error.message)) { // sem a 077: salva sem preço
-    const { preco_mensal, preco_anual, moeda, metrica, preco_unidade, franquia, ...sem } = linha; r = await gravar(sem); // eslint-disable-line no-unused-vars
+    const { preco_mensal, preco_anual, preco_anual_mensal, publico, moeda, metrica, preco_unidade, franquia, ...sem } = linha; r = await gravar(sem); // eslint-disable-line no-unused-vars
   }
   if (r.error) { if (/duplicate|unique/i.test(r.error.message)) return { status: 409, erro: 'Já existe um plano com esse nome' }; throw new Error(r.error.message); }
   return { plano: r.data[0] };

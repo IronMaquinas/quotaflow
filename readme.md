@@ -399,6 +399,7 @@ Ver seção 5 para o fluxo completo.
 - **075 (18q)** — 📎 `spot_mensagens.anexo` (jsonb; `texto` passa a aceitar vazio quando é só arquivo) e `notificacoes.email_em` / `email_status` (e-mail de 4 h sem ler + indicador de atenção). Idempotente.
 - **076 (18u)** — 🏷 `tenants.segmentos` (text[]: transporte · locacao · servicos · outro; NULL = transporte). Idempotente.
 - **077 (18v)** — 💳 `plataforma_planos` + preço (mensal, anual, moeda, métrica empresa/usuário/equipamento/uso, preço por unidade, franquia); `tenant_assinaturas` (uma por empresa: plano, situação, ciclo, moeda, valor, desconto, início, próxima renovação) e `tenant_assinatura_historico`; `tenants.teste_aviso_em`. Idempotente; tipo do id lido do banco.
+- **078 (18w)** — 💳 modalidade da assinatura (`mensal` · `anual_mensal` · `anual_prepago`), `proxima_cobranca`, `fim_compromisso`; `plataforma_planos.preco_anual_mensal` e `publico`; `tenant_plano_pedidos` (pedido do cliente → confirmado/recusado). Converte as assinaturas da 18v (mensal: próxima cobrança pelo início, sem fim). Idempotente.
 - **058 (16e.3)** — `tenants (+) base_endereco` (📍 pátio / base da frota — onde o conjunto é liberado; pode ser diferente do endereço fiscal). Idempotente.
 - **057 (16e)** — `execucoes (+) fluxo` (etapas da viagem em ordem: marcações e inspeções, com status, hora, GPS, inspeção feita e liberação do gestor) e `inspecoes (+) execucao_id, etapa_id` (a inspeção feita no fluxo aponta para a AT). Idempotente.
 - **056 (16c)** — `execucoes.status (+) 'rascunho'` (cavalo pode ficar vazio no rascunho), `execucoes (+) token, link_visto_em` (📲 link do motorista) e `liberacao_docs` (CNH/CRLV vencido na data da viagem liberado pelo gestor). Idempotente.
@@ -1000,6 +1001,12 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18w (10/11):** **💳 modalidade (como a Adobe) + ⭐ Meu plano do cliente com escolha e troca de plano.** Migration 078.
+    - **Modalidade** no lugar de "ciclo": **Mensal** (cobra todo mês, sem fidelidade, sem data de fim) · **Anual, pago por mês** (compromisso de 12 meses, cobra todo mês, preço menor) · **Anual pré-pago** (paga o ano, maior desconto, renova em 12 meses). Duas datas que o sistema calcula pelo início: **próxima cobrança** e **compromisso até** (vazio no mensal). Plano-modelo com os 3 preços e "aparece para o cliente" (planos internos/negociados ficam escondidos).
+    - **⭐ Meu plano (admin e gestor):** **💳 Minha assinatura** (plano, modalidade, valor com desconto, próxima cobrança, compromisso, situação e dias de teste) + **📦 Planos disponíveis** com seletor de modalidade, módulos de cada plano, **"Quero este" / "Mudar para este"** e **🤝 Plano personalizado → Fale conosco**. Confirmação no modal do app. Funciona também com o teste vencido (só leitura).
+    - **Pedido → Console:** o pedido fica pendente (um por empresa — um novo substitui o anterior) e a plataforma recebe **e-mail** (`PLATAFORMA_ADMINS`). No Console o botão vira **"💳 Assinatura… · 📝 pedido"**; **✓ Confirmar** ativa a assinatura no plano/modalidade (datas calculadas), **liga os módulos do plano** e tira do teste; **Recusar** manda e-mail para quem pediu. Quem pediu recebe e-mail na confirmação.
+    - Salvar a assinatura agora **mantém o que não foi enviado** (trocar só o desconto não apaga o plano). Trocar a modalidade puxa o preço do plano naquela modalidade.
+    - **Ainda manual até o gateway (passo 6):** a cobrança em si. O proporcional no meio do ciclo fica no passo 9.
   - **18v (10/11):** **💳 Assinaturas — passos 1 a 3** (decisões do Marcony). Migration 077.
     - **💲 Preço nos planos-modelo** (Console → 🧩 Planos): mensal, anual, **moeda** (BRL · USD · EUR · DKK — "no fluxo": cada plano/assinatura na sua moeda, sem conversão) e **como cobra** — por empresa (valor fixo) · por usuário · por veículo/equipamento · **por uso (pay-per-use)**, com preço por unidade e quantos vêm incluídos. Dá para montar "Pequeno / Cresce / Grande" ou pay-per-use.
     - **💳 Assinatura por empresa** (Console → 🚚 Transportadoras → 💳 Assinatura…): situação (🧪 teste · ✅ ativa · ⚠️ inadimplente · ⏸ suspensa · ✖ cancelada), plano-modelo ou personalizado, ciclo, valor negociado, desconto % (mostra o valor líquido), início e próxima renovação (ativar sem datas = hoje + 1 ciclo), observação e **📜 histórico** de cada mudança (quem, quando, de → para). Ativar **tira a empresa do teste**; voltar para "Em teste" com nova data **estende o teste**.
@@ -1092,11 +1099,11 @@ npm run dev
 2. ✅ **18v** — **Assinatura por empresa** (Console) — plano contratado, **valor negociado / desconto**, ciclo, **data de início**, **próxima renovação**, situação (🧪 teste · ✅ ativa · ⚠️ inadimplente · ⏸ suspensa · ✖ cancelada) e **histórico de troca de plano** com datas e valores.
 3. ✅ **18v** (14 dias, só leitura no fim) — **Período de teste (trial)** — prazo, avisos antes de acabar e o que acontece no fim (pede o plano; dados preservados).
 4. **Painel financeiro no Console** — receita mensal recorrente (MRR), clientes por plano/módulo, vencimentos do mês, inadimplência, cancelamentos (churn), ticket médio.
-5. **Página de planos e cadastro com escolha** — Bronze/Prata/Ouro (ou os nomes que você definir) com o que cada um tem, "Quero este" ou **"Fale conosco para planos customizados"**; o cadastro já nasce com o plano escolhido (em teste).
+5. ✅ **18w** (⭐ Meu plano com planos e "Quero este"; falta no "Criar conta") — **Página de planos e cadastro com escolha** — Bronze/Prata/Ouro (ou os nomes que você definir) com o que cada um tem, "Quero este" ou **"Fale conosco para planos customizados"**; o cadastro já nasce com o plano escolhido (em teste).
 6. **Cobrança automática** — gateway brasileiro (ex.: Asaas, Iugu, Pagar.me) com boleto, Pix e cartão recorrente; o retorno do pagamento (webhook) atualiza a situação sozinho; faturas e recibos para o cliente baixar em ⭐ Meu plano.
 7. **Nota fiscal de serviço (NFS-e)** da mensalidade, emitida automaticamente.
 8. **Régua de inadimplência** — e-mails antes e depois do vencimento; suspensão gradual (aviso → só leitura → bloqueio) e volta automática ao pagar.
-9. **Mudar de plano no meio do ciclo** (proporcional), cancelamento com **exportação dos dados** e prazo de guarda antes de apagar.
+9. ✅ **18w** (pedido de troca) · falta o proporcional — **Mudar de plano no meio do ciclo** (proporcional), cancelamento com **exportação dos dados** e prazo de guarda antes de apagar.
 10. **Limites por plano e uso** — (+ pedido de 10/11: **custo de armazenamento e e-mails por empresa**) — usuários, equipamentos, armazenamento, e-mails/mês; ⭐ Meu plano mostra o uso e avisa perto do limite.
 11. **Termos de uso, política de privacidade e contrato de tratamento de dados** (LGPD — e GDPR para a Europa), com aceite registrado no cadastro.
 12. **Internacional (Dinamarca)** — moeda (DKK/EUR), idioma (inglês/dinamarquês), imposto sobre venda (moms/VAT) e gateway que aceite cartão europeu.
@@ -1603,7 +1610,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18v)
+**Última atualização deste documento:** 06/11/2026 (etapa 18w)
 
 --------------------------------------------------------------------------------
 

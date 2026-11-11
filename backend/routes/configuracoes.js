@@ -358,6 +358,14 @@ const ROTEIRO = require('../services/roteiroInicial');
 // Etapa 18j: 🧩 módulos ligados da empresa (menu, tela inicial, ⭐ Meu plano) — GET /api/configuracoes/modulos (qualquer usuário logado)
 const MODS = require('../services/modulos');
 router.get('/modulos', tenantMiddleware, respLogo((req) => MODS.daEmpresa(supabase, req.tenantId)));
+// 18w: 💳 Minha assinatura e "Quero este plano" — só admin e gestor (valor é informação sensível)
+const ASS = require('../services/assinaturas');
+const soGestao = (req, res, next) => ((req.perfis || [req.userPerfil]).some((p) => ['admin', 'gestor'].includes(p)) ? next() : res.status(409).json({ erro: 'Só admin ou gestor veem a assinatura' }));
+router.get('/assinatura', tenantMiddleware, soGestao, respLogo((req) => ASS.doCliente(supabase, req.tenantId)));
+router.post('/assinatura/pedido', tenantMiddleware, soGestao, respLogo(async (req) => {
+  const u = (await supabase.from('usuarios').select('*').eq('id', req.userId)).data?.[0] || {};
+  return ASS.pedirPlano(supabase, req.tenantId, { nome: u.nome || null, email: u.email || req.userEmail || null }, req.body || {});
+}));
 router.get('/roteiro', tenantMiddleware, respLogo((req) => ROTEIRO.montar(supabase, req.tenantId)));
 router.put('/roteiro', tenantMiddleware, respLogo((req) => (podeLogo(req) ? ROTEIRO.salvar(supabase, req.tenantId, req.body || {}) : { status: 409, erro: 'Só admin ou gestor alteram o roteiro' })));
 router.get('/ocorrencias', tenantMiddleware, respLogo((req) => OCORR.opcoesConfig(supabase, req.tenantId)));

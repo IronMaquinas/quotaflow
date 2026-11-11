@@ -298,7 +298,7 @@ function Tabela({ colunas, linhas, vazio }) {
 const STATUS_TENANT = { aprovado: ["APROVADA", C.success], pendente: ["AGUARDANDO", C.warn], recusado: ["RECUSADA", C.danger] };
 const TIPO_FORN = { global: ["🏅 VERIFICADO", C.success], local: ["LOCAL", C.muted], candidato: ["AGUARDANDO", C.warn] };
 
-function Lista({ tipo, dados, onCnpj, onModulos, onAssinatura }) {
+function Lista({ tipo, dados, onCnpj, onModulos, onAssinatura, pedidosDe }) {
   const [busca, setBusca] = useState("");
   if (!dados) return <div style={{ color: C.muted }}>Carregando…</div>;
   const termo = semAcento(busca).trim();
@@ -313,7 +313,7 @@ function Lista({ tipo, dados, onCnpj, onModulos, onAssinatura }) {
         { k: "email_admin", t: "E-MAIL" },
         { k: "criado_em", t: "DESDE", r: (l) => fmtData(l.criado_em) },
         { k: "modulos", t: "MÓDULOS", r: (l) => <span title={Array.isArray(l.modulos) ? l.modulos.join(", ") : "tudo ligado"}>{l.plano_nome || (Array.isArray(l.modulos) ? "Personalizado" : "Completo")}<div style={{ color: C.muted }}>{Array.isArray(l.modulos) ? `${l.modulos.length} módulo(s)` : "tudo ligado"}</div></span> }, // 18j
-        ...(onCnpj ? [{ k: "acoes", t: "", r: (l) => <div style={{ display: "flex", gap: 6 }}>{onModulos && <button type="button" onClick={() => onModulos(l)} style={{ ...btn(C.accent, false), padding: "4px 10px", fontSize: 11 }}>🧩 Módulos…</button>}{onAssinatura && <button type="button" onClick={() => onAssinatura(l)} style={{ ...btn(C.accent, false), padding: "4px 10px", fontSize: 11 }}>💳 Assinatura…</button>}<button type="button" onClick={() => onCnpj(l)} style={{ ...btn(C.muted, false), padding: "4px 10px", fontSize: 11 }}>🔒 CNPJ…</button></div> }] : []), // 14d.5 · 18j
+        ...(onCnpj ? [{ k: "acoes", t: "", r: (l) => <div style={{ display: "flex", gap: 6 }}>{onModulos && <button type="button" onClick={() => onModulos(l)} style={{ ...btn(C.accent, false), padding: "4px 10px", fontSize: 11 }}>🧩 Módulos…</button>}{onAssinatura && <button type="button" onClick={() => onAssinatura(l)} style={{ ...btn(pedidosDe?.(l) ? (C.warning || "#f59e0b") : C.accent, false), padding: "4px 10px", fontSize: 11 }}>💳 Assinatura…{pedidosDe?.(l) ? " · 📝 pedido" : ""}</button>}<button type="button" onClick={() => onCnpj(l)} style={{ ...btn(C.muted, false), padding: "4px 10px", fontSize: 11 }}>🔒 CNPJ…</button></div> }] : []), // 14d.5 · 18j
       ]
     : [
         { k: "nome", t: "FORNECEDOR", r: (l) => <><div style={{ fontWeight: 600 }}>{l.nome}</div><div style={{ color: C.muted }}>{fmtCNPJ(l.cnpj)}</div></> },
@@ -360,6 +360,8 @@ export default function ConsolePlataforma() {
   const [trocaCnpj, setTrocaCnpj] = useState(null); // 14d.5: { item, cnpj, motivo, hist }
   const [modsDe, setModsDe] = useState(null); // 18j: empresa com o modal de módulos aberto
   const [assDe, setAssDe] = useState(null); // 18v: 💳 assinatura
+  const [pedidosPlano, setPedidosPlano] = useState([]); // 18w: 📝 pedidos de plano pendentes
+  useEffect(() => { if (token) chamar(token, "GET", "/pedidos-plano").then((r) => setPedidosPlano(r.pedidos || [])).catch(() => {}); }, [token, assDe]); // eslint-disable-line
 
   const sair = useCallback(() => { gravarToken(""); setToken(""); setAdmin(null); }, []);
 
@@ -462,7 +464,7 @@ export default function ConsolePlataforma() {
         )}
         {aba === "visao" && <VisaoGeral dados={visao} />}
         {aba === "aprovacoes" && <Aprovacoes dados={pend} ocupadoId={ocupadoId} onAcao={(a, tipo, item) => { setMotivo(""); setAcao({ acao: a, tipo, item }); }} />}
-        {aba === "transportadoras" && <Lista tipo="tenant" dados={tenants} onCnpj={(t) => setTrocaCnpj({ item: t, cnpj: "", motivo: "", hist: null })} onModulos={setModsDe} onAssinatura={setAssDe} />}
+        {aba === "transportadoras" && <Lista tipo="tenant" dados={tenants} onCnpj={(t) => setTrocaCnpj({ item: t, cnpj: "", motivo: "", hist: null })} onModulos={setModsDe} onAssinatura={setAssDe} pedidosDe={(l) => pedidosPlano.filter((p) => String(p.tenant_id) === String(l.id)).length} />}
         {aba === "planos" && <PlanosPlataforma token={token} chamar={chamar} C={C} input={input} label={label} card={card} btn={btn} tag={tag} onAviso={setAviso} />}{/* 18j */}
         {aba === "fornecedores" && <Lista tipo="fornecedor" dados={forns} />}
         {aba === "funcoes" && <BibliotecaFuncoes token={token} chamar={chamar} C={C} input={input} label={label} card={card} btn={btn} tag={tag} onAviso={setAviso} />}
