@@ -400,6 +400,7 @@ Ver seção 5 para o fluxo completo.
 - **076 (18u)** — 🏷 `tenants.segmentos` (text[]: transporte · locacao · servicos · outro; NULL = transporte). Idempotente.
 - **077 (18v)** — 💳 `plataforma_planos` + preço (mensal, anual, moeda, métrica empresa/usuário/equipamento/uso, preço por unidade, franquia); `tenant_assinaturas` (uma por empresa: plano, situação, ciclo, moeda, valor, desconto, início, próxima renovação) e `tenant_assinatura_historico`; `tenants.teste_aviso_em`. Idempotente; tipo do id lido do banco.
 - **078 (18w)** — 💳 modalidade da assinatura (`mensal` · `anual_mensal` · `anual_prepago`), `proxima_cobranca`, `fim_compromisso`; `plataforma_planos.preco_anual_mensal` e `publico`; `tenant_plano_pedidos` (pedido do cliente → confirmado/recusado). Converte as assinaturas da 18v (mensal: próxima cobrança pelo início, sem fim). Idempotente.
+- **079 (18y)** — 🚛 `pedidos_venda.contrato_id` e `origem` (pedido de transporte do contrato de locação); `locacao_contratos.base_saida`, `valor_mobilizacao`, `valor_desmobilizacao`. Idempotente.
 - **058 (16e.3)** — `tenants (+) base_endereco` (📍 pátio / base da frota — onde o conjunto é liberado; pode ser diferente do endereço fiscal). Idempotente.
 - **057 (16e)** — `execucoes (+) fluxo` (etapas da viagem em ordem: marcações e inspeções, com status, hora, GPS, inspeção feita e liberação do gestor) e `inspecoes (+) execucao_id, etapa_id` (a inspeção feita no fluxo aponta para a AT). Idempotente.
 - **056 (16c)** — `execucoes.status (+) 'rascunho'` (cavalo pode ficar vazio no rascunho), `execucoes (+) token, link_visto_em` (📲 link do motorista) e `liberacao_docs` (CNH/CRLV vencido na data da viagem liberado pelo gestor). Idempotente.
@@ -1001,6 +1002,9 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18y (11/11):** **🚛 contrato de locação → mobilização/desmobilização → AT + 📈 faturamento previsto** (item 16b). Migration 079.
+    - **Na ficha do contrato** (📑 Contratos), seção **🚛 Mobilização e desmobilização**: **＋ Mobilização** (pátio/base → obra) e **＋ Desmobilização** (obra → pátio), com data prevista, valor cobrado (opcional; padrão do contrato) e quais equipamentos vão. Cada movimento vira um **trecho do pedido de transporte do contrato** (um pedido por contrato, `origem='contrato'`, itens = as máquinas com tag/placa) — **a AT é programada em 🚛 Programação pelo fluxo de sempre** (motorista, conjunto, documentos, fluxo da viagem, link do motorista). A ficha mostra cada movimento com a(s) AT(s) e o status, ou "⏳ AT a programar · abrir 🚛 Programação". A base de saída fica guardada no contrato. Só aparece com o módulo Programação e AT.
+    - **📈 Faturamento previsto** (botão na aba 📑 Contratos): por mês (3, 6 ou 12 meses), por contrato e total — valor mensal de cada equipamento **proporcional aos dias** dentro do período (início → devolução / término previsto; sem término conta até o fim da janela). Aponta equipamentos sem valor mensal. Medição por hora/dia e mobilização não entram (vêm com a medição por franquia).
   - **18x (11/11):** **💰 painel financeiro no Console + nome do plano no ⭐ Meu plano.** Sem migration.
     - **Console → 💰 Financeiro** (grupo PLANOS): **receita mensal recorrente (MRR) e anual (ARR) por moeda** — só assinaturas ativas, com desconto, pré-pago contando 1/12 por mês · empresas ativas e ticket médio · em teste · **inadimplência %** (com suspensas e canceladas) · pedidos de plano pendentes · **receita por plano** · **cobranças dos próximos 30 dias** (sem gateway, a próxima cobrança anda sozinha de período em período) · **testes terminando em 7 dias** (oportunidade) · **compromissos anuais terminando em 60 dias** · aviso de empresas **sem assinatura cadastrada** (antigas/cortesia, fora da receita). Clicar na empresa abre a 💳 Assinatura.
     - **⭐ Meu plano:** o cabeçalho mostra o **nome do plano contratado** (ex.: "⭐ Transportadora Bronze") em vez de "Personalizado"; salvar a assinatura também grava o nome na empresa. Texto do 🔒 aponta para os planos disponíveis.
@@ -1571,7 +1575,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 | **15c** | ✅ Pedido de Venda (PV) automático no aceite, status por item, **aditivo pelo link** |
 | **Calendário comercial** | 📅 BIDs/PVs + eventos de mercado com lembrete de prospecção (`claude/desenho-calendario-comercial.md`) |
 | **16a** | ✅ **Programação / AT** (entregue 29/10): itens aceitos → AT com data/hora/local, motorista e conjunto (checagem de conformidade e bloqueio), agenda da frota, camada 🚛 no calendário |
-| **16b** | **Contrato de locação (CL)**: mensalidade, período, mobilização → AT, faturamento mensal previsto |
+| ~~**16b**~~ | ✅ **18y** — **Contrato de locação (CL)**: mobilização/desmobilização → pedido de transporte → AT; faturamento mensal previsto (mensalidade e período já existiam) |
 | **17a** | **App do motorista na AT**: AT no celular → INSP pré-uso → carregamento → em trânsito → descarregamento (gatilhos em cadeia, offline como na 14a), encerramento |
 | **17b** | Rotas e **ETA com jornada** (API de rotas + Lei 13.103), previsto × real, cruzamento com **multas** |
 | ~~Agenda da frota — visões~~ ✅ 16d | 🗓 semana (feito) + **mês** e **ano** (visão macro do gestor) — pedido do Marcony em 30/10 |
@@ -1614,7 +1618,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18x)
+**Última atualização deste documento:** 06/11/2026 (etapa 18y)
 
 --------------------------------------------------------------------------------
 

@@ -269,4 +269,4 @@ async function doCliente(supabase, tenantId, clienteId) {
   try { return (await q(supabase.from('pedidos_venda').select('*').eq('tenant_id', tenantId).eq('cliente_id', clienteId))).map(enfeitar).sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em))); } catch { return []; }
 }
 
-module.exports = { descartarAditivo, STATUS_ITEM, STATUS_PV, statusPV, aoAceitar, criarPV, gerarManual, listar, detalhe, mudarStatusItem, cancelar, criarAditivo, validarAditivo, mudancasAditivo, aplicarAditivo, documento, doCliente, _definirEnvio };
+module.exports = { _proximoNumero: proximoNumero, descartarAditivo, STATUS_ITEM, STATUS_PV, statusPV, aoAceitar, criarPV, gerarManual, listar, detalhe, mudarStatusItem, cancelar, criarAditivo, validarAditivo, mudancasAditivo, aplicarAditivo, documento, doCliente, _definirEnvio };

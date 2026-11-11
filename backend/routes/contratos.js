@@ -64,6 +64,11 @@ router.get('/clientes/consulta/:doc', exigirVer, responder((req) => CL.consultar
 router.post('/clientes', exigirEditar, responder((req) => CL.criar(supabase, req.tenantId, req.body || {})));
 router.put('/clientes/:id', exigirEditar, responder((req) => CL.editar(supabase, req.tenantId, req.params.id, req.body || {})));
 // 18d — 📏 medição (antes das rotas /:id)
+// 18y: 🚛 mobilização → AT · 📈 faturamento previsto
+const MOB = require('../services/mobilizacao');
+router.get('/faturamento-previsto', exigirVer, responder((req) => MOB.faturamentoPrevisto(supabase, req.tenantId, { meses: req.query.meses })));
+router.get('/:id/mobilizacoes', exigirVer, responder((req) => MOB.doContrato(supabase, req.tenantId, req.params.id)));
+router.post('/:id/mobilizacoes', exigirEditar, responder(async (req) => MOB.mobilizar(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
 router.get('/medicoes/painel', exigirVer, responder(async (req) => MD.painelEmpresa(supabase, req.tenantId, await quem(req)))); // 18d.5
 router.get('/medicoes/pendencias', exigirVer, responder(async (req) => MD.pendencias(supabase, req.tenantId, await quem(req))));
 router.get('/medicoes/:mid', exigirVer, responder((req) => MD.detalhe(supabase, req.tenantId, req.params.mid)));

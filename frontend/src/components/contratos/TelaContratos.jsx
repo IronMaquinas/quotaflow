@@ -11,6 +11,7 @@ import { FormNovoContrato, AbaClientes, mascaraDoc } from "./Clientes"; // 14b.3
 import { AbaModelos, DocumentoContrato } from "./ModelosContrato"; // 14d
 import CampoTelefone, { telefoneExibir } from "../shared/CampoTelefone";
 import AbaMedicoes from "./AbaMedicoes"; // 18d.5
+import MobilizacaoContrato, { FaturamentoPrevisto } from "./MobilizacaoContrato"; // 18y
 import PainelOcorrencias from "../ocorrencias/PainelOcorrencias"; // 18h
 
 const FREQ = { diaria: "Diária", semanal: "Semanal", quinzenal: "Quinzenal", mensal: "Mensal" };
@@ -29,6 +30,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
   const [aviso, setAviso] = useState(null);
   const [filtro, setFiltro] = useState("abertos"); // 14d.2: abertos (não encerrados) | fase | todos
   const [aba, setAba] = useState("contratos"); // 14b.3.1: contratos | clientes
+  const [fatPrev, setFatPrev] = useState(false); // 18y
   const [novo, setNovo] = useState(false);     // 14b.3.1: novo contrato (CNPJ primeiro)
   const [dataEq, setDataEq] = useState(null);  // 14d.3: { id (locação), inicio } — mudar a data de saída
   const [clienteAbrir, setClienteAbrir] = useState(null); // 14d.3: abrir o cadastro do cliente a partir do contrato
@@ -95,12 +97,14 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
       <div style={{ display: "flex", gap: 6, marginBottom: 12, borderBottom: `1px solid ${C.border}`, overflowX: "auto" }}>{/* 18h.4: abas numa linha (rola no celular) */}
         {[["contratos", "📑 Contratos"], ...(moduloAtivo("medicao") ? [["medicoes", <>📏 Medições{paraEnviar > 0 && <span style={{ marginLeft: 6, background: C.danger, color: "#fff", borderRadius: 10, padding: "0 7px", fontSize: 11.5, fontWeight: 700 }}>{paraEnviar}</span>}</>]] : []), ...(moduloAtivo("ocorrencias") ? [["ocorrencias", <>⚠️ Ocorrências{ocAbertas.n > 0 && <span title={ocAbertas.paradas ? `${ocAbertas.n} em aberto · ${ocAbertas.paradas} com equipamento parado` : `${ocAbertas.n} em aberto`} style={{ marginLeft: 6, background: C.danger, color: "#fff", borderRadius: 10, padding: "0 7px", fontSize: 11.5, fontWeight: 700 }}>{ocAbertas.n}</span>}</>]] : []), ["clientes", "👥 Clientes"], ["modelos", "📄 Modelos de contrato"]].map(([k, l]) => <button key={k} type="button" onClick={() => { setAba(k); if (k === "ocorrencias") setFiltroOc(null); }} style={{ whiteSpace: "nowrap", flexShrink: 0, background: "transparent", border: "none", borderBottom: `2px solid ${aba === k ? C.accent : "transparent"}`, padding: "8px 12px", color: aba === k ? C.text : C.muted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>)}
       </div>
+      {fatPrev && <FaturamentoPrevisto C={C} s={s} onFechar={() => setFatPrev(false)} onAbrirContrato={(id) => { setFatPrev(false); setAbertoId(id); }} />}
       {aba === "clientes" && <AbaClientes C={C} s={s} editar={editar} onErro={err} onOk={ok} abrirId={clienteAbrir} onAberto={() => setClienteAbrir(null)} />}
       {aba === "modelos" && <AbaModelos C={C} s={s} editar={editar} onErro={err} onOk={ok} />}
       {aba === "ocorrencias" && <>{filtroOc && <div style={{ fontSize: 12.5, color: C.textSub, marginBottom: 8 }}>Contrato {filtroOc.numero} · <button type="button" onClick={() => setFiltroOc(null)} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", padding: 0, fontSize: 12.5 }}>ver todos</button></div>}
         <PainelOcorrencias C={C} s={s} modo="empresa" podeEditar={editar} filtro={filtroOc ? { contrato_id: filtroOc.id } : {}} onErro={err} onOk={ok} onMudou={carregarOc} abrirId={ocAbrir} onAberto={() => setOcAbrir(null)} /></>}{/* 18h */}
       {aba === "medicoes" && <AbaMedicoes C={C} s={s} editar={editar} filtroContrato={filtroMed} onFiltroUsado={() => setFiltroMed(null)} onMudou={carregarPend} onErro={err} onOk={ok} />}{/* 18d.5 */}
       {aba === "contratos" && <div style={{ display: "flex", gap: 6, marginBottom: 12, flexWrap: "wrap" }}>
+        <button type="button" onClick={() => setFatPrev(true)} style={{ ...s.btn(false), padding: "5px 12px", fontSize: 12.5, marginLeft: "auto", order: 99 }}>📈 Faturamento previsto</button>{/* 18y */}
         {[["abertos", "Abertos"], ["elaboracao", "📝 Em elaboração"], ["aguardando_aceite", "⏳ Aguardando aceite"], ["andamento", "✅ Em andamento"], ["encerrado", "🏁 Encerrados"], ["todos", "Todos"]].map(([k, l]) => <button key={k} type="button" onClick={() => setFiltro(k)} style={{ ...s.btn(filtro === k, C.accent), cursor: "pointer", padding: "5px 12px", fontSize: 12, color: filtro === k ? "#fff" : C.text }}>{l}</button>)}
       </div>}
       {aba === "contratos" && paraEnviar > 0 && <div className="qf-clicavel" onClick={() => setAba("medicoes")} style={{ fontSize: 13, color: C.accent, marginBottom: 10, cursor: "pointer" }}>📏 {paraEnviar} medição(ões) para revisar e enviar ›</div>}{/* 18d.5 */}
@@ -145,6 +149,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
         {aberto.cliente_id && editar && <div style={{ marginTop: 8 }}><button type="button" onClick={() => { setClienteAbrir(aberto.cliente_id); setAbertoId(null); setAba("clientes"); }} className="qf-clicavel" style={{ background: "none", border: "none", color: C.textSub, fontSize: 12, textDecoration: "underline", padding: 0 }}>✏ Editar o cadastro do cliente (nome, endereço, contato)</button></div>}
         {aberto.obs && <div style={{ fontSize: 13, marginTop: 8, whiteSpace: "pre-wrap" }}>{aberto.obs}</div>}
 
+        <MobilizacaoContrato C={C} s={s} contrato={aberto} editar={editar} onOk={ok} onErro={err} />{/* 18y */}
         <div style={{ display: "flex", alignItems: "center", marginTop: 16, marginBottom: 6 }}>
           <div style={{ fontWeight: 700, flex: 1 }}>🚜 Equipamentos</div>
           {editar && aberto.status === "ativo" && <button type="button" onClick={() => setAddEq({ equipamento_id: naBase[0]?.id || "", inicio: hoje(), fim_previsto: aberto.fim_previsto ? String(aberto.fim_previsto).slice(0, 10) : "", comRotina: true, modelo_id: modelos.find((m) => m.tipo === "equipamento" && m.frequencia !== "pre_uso")?.id || modelos[0]?.id || "", frequencia: "semanal" })} style={bt(C.accent, false)}>＋ Equipamento</button>}
