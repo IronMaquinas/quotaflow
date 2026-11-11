@@ -34,6 +34,7 @@ router.post("/", tenantMiddleware, responder(async (req) => T.criar(supabase, re
 router.put("/:id", tenantMiddleware, responder(async (req) => T.atualizar(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
 router.delete("/:id", tenantMiddleware, responder((req) => T.excluir(supabase, req.tenantId, req.params.id)));
 router.post("/:id/comentario", tenantMiddleware, responder(async (req) => T.comentar(supabase, req.tenantId, await quem(req), req.params.id, req.body?.texto)));
+router.get("/:id/fiscal/ficha-cte", tenantMiddleware, responder((req) => require("../services/fichaCte").ficha(supabase, req.tenantId, req.params.id))); // 18g.3: 📋 ficha do CT-e
 router.post("/:id/fiscal/mdfe/:entrada/programar", tenantMiddleware, responder(async (req) => { // 18g.2: AT em rascunho a partir do MDF-e
   const perfis = Array.isArray(req.perfis) && req.perfis.length ? req.perfis : [req.userPerfil].filter(Boolean);
   if (!perfis.some((p) => ["admin", "gestor", "operacao", "fiscal"].includes(p))) return { status: 409, erro: "Sem permissão para programar AT" };

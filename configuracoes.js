@@ -1,0 +1,392 @@
+// routes/configuracoes.js
+//
+// Configurações do tenant: jornada de trabalho e feriados.
+// v1: 1 jornada padrão + feriados livres (multi-país).
+// Schema já suporta múltiplas jornadas (turnos) para v2.
+
+const express = require('express');
+const router = express.Router();
+const { DB } = require('../db');
+const tenantMiddleware = require('../middleware/tenantMiddleware');
+const { normalizarUF } = require('../services/matchSpot'); // validação de UF
+
+async function usuarioAtual(req, tenantId) {
+  let nome = null;
+  if (req.userId) {
+    try {
+      const u = await DB.selectOne("usuarios", { id: req.userId }, tenantId);
+      nome = u?.nome || null;
+    } catch (_) {}
+  }
+  return { id: req.userId || null, nome };
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/configuracoes/jornada
+// Devolve a jornada padrão do tenant (ou a primeira ativa).
+// ─────────────────────────────────────────────────────────────────────────
+router.get('/jornada', tenantMiddleware, async (req, res) => {
+  try {
+    const jornadas = await DB.select("tenant_jornadas", {
+      tenant_id: req.tenantId, ativo: true,
+    }, req.tenantId);
+    jornadas.sort((a, b) => (b.padrao ? 1 : 0) - (a.padrao ? 1 : 0));
+    res.json(jornadas[0] || null);
+  } catch (err) {
+    console.error("❌ Erro ao buscar jornada:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/configuracoes/jornada
+// Cria ou atualiza a jornada padrão. Upsert simples — se já existe uma
+// jornada padrão, atualiza; senão cria.
+// ─────────────────────────────────────────────────────────────────────────
+router.post('/jornada', tenantMiddleware, async (req, res) => {
+  try {
+    const {
+      nome, hora_inicio_min, hora_fim_min,
+      possui_intervalo, intervalo_inicio_min, intervalo_fim_min, descontar_intervalo,
+      calcular_extra_auto, tolerancia_extra_min,
+      regra_segunda, regra_terca, regra_quarta, regra_quinta, regra_sexta,
+      regra_sabado, regra_domingo,
+    } = req.body;
+
+    if (hora_inicio_min == null || hora_fim_min == null) {
+      return res.status(400).json({ erro: "hora_inicio_min e hora_fim_min são obrigatórios" });
+    }
+    if (hora_inicio_min >= hora_fim_min) {
+      return res.status(400).json({ erro: "Hora de início deve ser anterior à hora de fim" });
+    }
+    if (possui_intervalo) {
+      if (intervalo_inicio_min == null || intervalo_fim_min == null) {
+        return res.status(400).json({ erro: "Informe início e fim do intervalo" });
+      }
+      if (intervalo_inicio_min >= intervalo_fim_min) {
+        return res.status(400).json({ erro: "Início do intervalo deve ser anterior ao fim" });
+      }
+    }
+
+    const payload = {
+      tenant_id: req.tenantId,
+      nome: nome || "Jornada padrão",
+      padrao: true,
+      hora_inicio_min: parseInt(hora_inicio_min),
+      hora_fim_min: parseInt(hora_fim_min),
+      possui_intervalo: !!possui_intervalo,
+      intervalo_inicio_min: possui_intervalo ? parseInt(intervalo_inicio_min) : null,
+      intervalo_fim_min: possui_intervalo ? parseInt(intervalo_fim_min) : null,
+      descontar_intervalo: !!descontar_intervalo,
+      calcular_extra_auto: calcular_extra_auto !== false,
+      tolerancia_extra_min: parseInt(tolerancia_extra_min) || 0,
+      regra_segunda: regra_segunda || "normal",
+      regra_terca: regra_terca || "normal",
+      regra_quarta: regra_quarta || "normal",
+      regra_quinta: regra_quinta || "normal",
+      regra_sexta: regra_sexta || "normal",
+      regra_sabado: regra_sabado || "normal",
+      regra_domingo: regra_domingo || "excepcional",
+      ativo: true,
+      atualizado_em: new Date().toISOString(),
+    };
+
+    // Upsert: procura jornada padrão existente
+    const existentes = await DB.select("tenant_jornadas", {
+      tenant_id: req.tenantId, padrao: true, ativo: true,
+    }, req.tenantId);
+
+    let resultado;
+    if (existentes.length > 0) {
+      resultado = await DB.update("tenant_jornadas", existentes[0].id, payload, req.tenantId);
+    } else {
+      resultado = await DB.insert("tenant_jornadas", payload, req.tenantId);
+    }
+
+    res.json({ ok: true, jornada: resultado });
+  } catch (err) {
+    console.error("❌ Erro ao salvar jornada:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/configuracoes/feriados?ano=2026
+// Lista feriados do tenant (opcionalmente filtrado por ano).
+// ─────────────────────────────────────────────────────────────────────────
+router.get('/feriados', tenantMiddleware, async (req, res) => {
+  try {
+    const ano = req.query.ano ? parseInt(req.query.ano) : null;
+    let feriados = await DB.select("tenant_feriados", { tenant_id: req.tenantId }, req.tenantId);
+    if (ano) {
+      feriados = feriados.filter(f => new Date(f.data).getFullYear() === ano);
+    }
+    feriados.sort((a, b) => new Date(a.data) - new Date(b.data));
+    res.json(feriados);
+  } catch (err) {
+    console.error("❌ Erro ao listar feriados:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// POST /api/configuracoes/feriados
+// Body: { data: 'YYYY-MM-DD', nome, tipo, pais? }
+// ─────────────────────────────────────────────────────────────────────────
+router.post('/feriados', tenantMiddleware, async (req, res) => {
+  try {
+    const { data, nome, tipo, pais } = req.body;
+    if (!data) return res.status(400).json({ erro: "data é obrigatória (YYYY-MM-DD)" });
+    if (!nome) return res.status(400).json({ erro: "nome é obrigatório" });
+
+    const u = await usuarioAtual(req, req.tenantId);
+    const feriado = await DB.insert("tenant_feriados", {
+      tenant_id: req.tenantId,
+      data,
+      nome: nome.trim(),
+      tipo: tipo || "nacional",
+      pais: pais || null,
+      parcial: false,
+      criado_por: u.id,
+      criado_por_nome: u.nome,
+    }, req.tenantId);
+
+    res.status(201).json({ ok: true, feriado });
+  } catch (err) {
+    console.error("❌ Erro ao criar feriado:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// PUT /api/configuracoes/feriados/:id
+// ─────────────────────────────────────────────────────────────────────────
+router.put('/feriados/:id', tenantMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const { data, nome, tipo, pais } = req.body;
+
+    const feriado = await DB.selectOne("tenant_feriados", { id, tenant_id: req.tenantId }, req.tenantId);
+    if (!feriado) return res.status(404).json({ erro: "Feriado não encontrado" });
+
+    const upd = {};
+    if (data !== undefined) upd.data = data;
+    if (nome !== undefined) upd.nome = nome;
+    if (tipo !== undefined) upd.tipo = tipo;
+    if (pais !== undefined) upd.pais = pais;
+
+    const atualizado = await DB.update("tenant_feriados", id, upd, req.tenantId);
+    res.json({ ok: true, feriado: atualizado });
+  } catch (err) {
+    console.error("❌ Erro ao atualizar feriado:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// DELETE /api/configuracoes/feriados/:id
+// ─────────────────────────────────────────────────────────────────────────
+router.delete('/feriados/:id', tenantMiddleware, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const feriado = await DB.selectOne("tenant_feriados", { id, tenant_id: req.tenantId }, req.tenantId);
+    if (!feriado) return res.status(404).json({ erro: "Feriado não encontrado" });
+    await DB.delete("tenant_feriados", id, req.tenantId);
+    res.json({ ok: true, mensagem: "Feriado removido" });
+  } catch (err) {
+    console.error("❌ Erro ao remover feriado:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/configuracoes/custo-recebimento
+// Devolve o custo médio de recebimento por NF do tenant.
+// 0 = feature desligada no frontend.
+// ─────────────────────────────────────────────────────────────────────────
+router.get('/custo-recebimento', tenantMiddleware, async (req, res) => {
+  try {
+    const tenant = await DB.selectOne('tenants', { id: req.tenantId });
+    const valor = parseFloat(tenant?.custo_recebimento_nf) || 0;
+    res.json({ custo_recebimento_nf: valor });
+  } catch (err) {
+    console.error("❌ Erro ao buscar custo de recebimento:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// PUT /api/configuracoes/custo-recebimento
+// Body: { custo_recebimento_nf: number >= 0 }
+// ─────────────────────────────────────────────────────────────────────────
+router.put('/custo-recebimento', tenantMiddleware, async (req, res) => {
+  try {
+    const raw = req.body?.custo_recebimento_nf;
+    const valor = parseFloat(raw);
+    if (raw == null || isNaN(valor) || valor < 0) {
+      return res.status(400).json({ erro: "Informe um valor numérico ≥ 0" });
+    }
+
+    // A tabela `tenants` é especial: o próprio id é o tenant_id.
+    // Por isso o update vai sem o 4º arg (mesmo padrão do selectOne
+    // usado em server.js e CotacaoService.js para essa tabela).
+    await DB.update('tenants', req.tenantId, { custo_recebimento_nf: valor });
+
+    res.json({ ok: true, custo_recebimento_nf: valor });
+  } catch (err) {
+    console.error("❌ Erro ao salvar custo de recebimento:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/configuracoes/nc-notificacao
+//
+// Lê a política de notificação de NC ao fornecedor:
+//   'aprovacao' (default) → gestor precisa aprovar antes do email
+//   'direta'              → email dispara automaticamente ao criar NC
+// ─────────────────────────────────────────────────────────────────────────
+router.get('/nc-notificacao', tenantMiddleware, async (req, res) => {
+  try {
+    const tenant = await DB.selectOne('tenants', { id: req.tenantId });
+    const policy = tenant?.nc_notificacao_policy || 'aprovacao';
+    res.json({ nc_notificacao_policy: policy });
+  } catch (err) {
+    console.error("❌ Erro ao buscar policy de NC:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// PUT /api/configuracoes/nc-notificacao
+// Body: { nc_notificacao_policy: 'aprovacao' | 'direta' }
+// ─────────────────────────────────────────────────────────────────────────
+router.put('/nc-notificacao', tenantMiddleware, async (req, res) => {
+  try {
+    const policy = req.body?.nc_notificacao_policy;
+    const validas = ['aprovacao', 'direta'];
+    if (!policy || !validas.includes(policy)) {
+      return res.status(400).json({ erro: `nc_notificacao_policy deve ser: ${validas.join(' ou ')}` });
+    }
+
+    // Tabela tenants é especial — o id É o tenant_id. Sem 4º arg.
+    await DB.update('tenants', req.tenantId, { nc_notificacao_policy: policy });
+
+    res.json({ ok: true, nc_notificacao_policy: policy });
+  } catch (err) {
+    console.error("❌ Erro ao salvar policy de NC:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// GET /api/configuracoes/empresa
+// Região (UF) da empresa: padrão do "Estado onde precisa da peça" nas
+// demandas spot e base do critério de estado do Match Score.
+// ─────────────────────────────────────────────────────────────────────────
+router.get('/empresa', tenantMiddleware, async (req, res) => {
+  try {
+    const tenant = await DB.selectOne('tenants', { id: req.tenantId });
+    res.json({ nome: tenant?.nome || null, regiao: normalizarUF(tenant?.regiao) });
+  } catch (err) {
+    console.error("❌ Erro ao buscar dados da empresa:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// PUT /api/configuracoes/empresa
+// Body: { regiao: 'SP' | 'RJ' | ... | null }
+// ─────────────────────────────────────────────────────────────────────────
+router.put('/empresa', tenantMiddleware, async (req, res) => {
+  try {
+    const raw = req.body?.regiao;
+    const regiao = raw ? normalizarUF(raw) : null;
+    if (raw && !regiao) {
+      return res.status(400).json({ erro: "Estado inválido — use a sigla (ex.: SP, RJ)" });
+    }
+    // Tabela tenants é especial — o id É o tenant_id. Sem 4º arg.
+    const antes = (await DB.selectOne('tenants', { id: req.tenantId }))?.regiao || null;
+    await DB.update('tenants', req.tenantId, { regiao });
+    if (String(antes || '') !== String(regiao || '')) { // 14d.5: histórico
+      try { const u = await DB.selectOne('usuarios', { id: req.userId }, req.tenantId); await supabase.from('tenant_alteracoes').insert([{ tenant_id: req.tenantId, campo: 'regiao', antes, depois: regiao, origem: 'empresa', usuario_id: String(req.userId), usuario_nome: u?.nome || null }]); } catch { /* sem a 049 */ }
+    }
+    res.json({ ok: true, regiao });
+  } catch (err) {
+    console.error("❌ Erro ao salvar dados da empresa:", err.message);
+    res.status(500).json({ erro: err.message });
+  }
+});
+
+// ─────────────────────────────────────────────────────────────────────────
+// Etapa 14c: logomarca da empresa (documentos printáveis)
+//   GET    /api/configuracoes/logo   → { logo: dataUrl|null, empresa }
+//   POST   /api/configuracoes/logo   { base64, mime } (admin, gestor) — PNG/JPG/WEBP até 1 MB
+//   DELETE /api/configuracoes/logo   (admin, gestor)
+// Quem só lê (colaborador, locatário) pega a logo em GET /api/usuarios/me/logo.
+// ─────────────────────────────────────────────────────────────────────────
+const LOGO = require('../services/logoEmpresa');
+const { supabase } = require('../db');
+const podeLogo = (req) => (Array.isArray(req.perfis) && req.perfis.length ? req.perfis : [req.userPerfil]).some((p) => ['admin', 'gestor'].includes(p));
+const respLogo = (fn) => async (req, res) => {
+  try { const r = await fn(req); if (r && r.erro) return res.status(r.status || 400).json({ erro: r.erro }); res.json(r); }
+  catch (err) { console.error('❌ [logo]', err.message); res.status(500).json({ erro: 'Erro interno — veja o log do servidor' }); }
+};
+router.get('/logo', tenantMiddleware, respLogo((req) => LOGO.obter(supabase, req.tenantId)));
+router.post('/logo', tenantMiddleware, respLogo((req) => (podeLogo(req) ? LOGO.salvar(supabase, req.tenantId, req.body || {}) : { status: 403, erro: 'Só admin ou gestor' })));
+router.delete('/logo', tenantMiddleware, respLogo((req) => (podeLogo(req) ? LOGO.remover(supabase, req.tenantId) : { status: 403, erro: 'Só admin ou gestor' })));
+
+// Etapa 14d.4 / 14d.5: perfil da empresa (services/perfilEmpresa.js)
+//   GET /api/configuracoes/empresa/dados        → dados cadastrais + cnpj_travado
+//   PUT /api/configuracoes/empresa/dados        (admin, gestor) — CNPJ não muda depois de informado (só pela plataforma)
+//   GET /api/configuracoes/empresa/status       → checklist "Complete o perfil"
+//   GET /api/configuracoes/empresa/alteracoes   → histórico (campo, antes, depois, quem, quando)
+//   GET /api/configuracoes/empresa/receita      → dados da Receita pelo CNPJ da empresa (para conferir; não grava)
+//   GET /api/configuracoes/cep/:cep             → endereço do CEP (BrasilAPI)
+const PERFIL = require('../services/perfilEmpresa');
+const quemE = async (req) => { try { const u = await DB.selectOne('usuarios', { id: req.userId }, req.tenantId); return { id: req.userId, nome: u?.nome || null }; } catch { return { id: req.userId, nome: null }; } };
+// Etapa 18f: 🚛 dias operacionais da frota (services/frotaCalendario.js) — base dos indicadores de utilização
+//   GET /api/configuracoes/frota-dias → { dias_semana: [0..6], descontar_feriados, migrou }
+//   PUT /api/configuracoes/frota-dias (admin, gestor) { dias_semana, descontar_feriados } — sem permissão = 409
+const FROTA = require('../services/frotaCalendario');
+// Etapa 18g.1: 🧾 antecedência da tarefa fiscal (dias úteis antes do trecho) — GET/PUT /api/configuracoes/fiscal { antecedencia_dias } (admin, gestor; sem permissão = 409)
+const TFISC = require('../services/tarefasFiscais');
+// Etapa 18h.4a: ⚠️ quem recebe as ocorrências (por origem: locação / transporte) — GET/PUT /api/configuracoes/ocorrencias (alterar: admin, gestor; sem permissão = 409)
+const OCORR = require('../services/ocorrencias');
+// Etapa 18i: 👋 roteiro inicial (Bem-vindo) — GET/PUT /api/configuracoes/roteiro { tipos?, dispensar?: { id, valor } } (alterar: admin, gestor)
+const ROTEIRO = require('../services/roteiroInicial');
+// Etapa 18j: 🧩 módulos ligados da empresa (menu, tela inicial, ⭐ Meu plano) — GET /api/configuracoes/modulos (qualquer usuário logado)
+const MODS = require('../services/modulos');
+router.get('/modulos', tenantMiddleware, respLogo((req) => MODS.daEmpresa(supabase, req.tenantId)));
+// 18w: 💳 Minha assinatura e "Quero este plano" — só admin e gestor (valor é informação sensível)
+const ASS = require('../services/assinaturas');
+const soGestao = (req, res, next) => ((req.perfis || [req.userPerfil]).some((p) => ['admin', 'gestor'].includes(p)) ? next() : res.status(409).json({ erro: 'Só admin ou gestor veem a assinatura' }));
+router.get('/assinatura', tenantMiddleware, soGestao, respLogo((req) => ASS.doCliente(supabase, req.tenantId)));
+router.post('/assinatura/pedido', tenantMiddleware, soGestao, respLogo(async (req) => {
+  const u = (await supabase.from('usuarios').select('*').eq('id', req.userId)).data?.[0] || {};
+  return ASS.pedirPlano(supabase, req.tenantId, { nome: u.nome || null, email: u.email || req.userEmail || null }, req.body || {});
+}));
+router.get('/roteiro', tenantMiddleware, respLogo((req) => ROTEIRO.montar(supabase, req.tenantId)));
+router.put('/roteiro', tenantMiddleware, respLogo((req) => (podeLogo(req) ? ROTEIRO.salvar(supabase, req.tenantId, req.body || {}) : { status: 409, erro: 'Só admin ou gestor alteram o roteiro' })));
+router.get('/ocorrencias', tenantMiddleware, respLogo((req) => OCORR.opcoesConfig(supabase, req.tenantId)));
+router.put('/ocorrencias', tenantMiddleware, respLogo((req) => (podeLogo(req) ? OCORR.salvarConfig(supabase, req.tenantId, req.body || {}) : { status: 409, erro: 'Só admin ou gestor alteram quem recebe as ocorrências' })));
+// 18g.3: 📋 dados do CT-e + 🛡 apólices (ler: todos; mudar: admin ou gestor)
+const FCTE = require('../services/fichaCte');
+const soGestor = (req, fn) => (podeLogo(req) ? fn() : { status: 409, erro: 'Só admin ou gestor alteram os dados fiscais' });
+router.get('/fiscal-cte', tenantMiddleware, respLogo((req) => FCTE.config(supabase, req.tenantId)));
+router.put('/fiscal-cte', tenantMiddleware, respLogo((req) => soGestor(req, () => FCTE.salvarConfig(supabase, req.tenantId, req.body || {}))));
+router.post('/apolices', tenantMiddleware, respLogo((req) => soGestor(req, () => FCTE.salvarApolice(supabase, req.tenantId, null, req.body || {}))));
+router.put('/apolices/:id', tenantMiddleware, respLogo((req) => soGestor(req, () => FCTE.salvarApolice(supabase, req.tenantId, req.params.id, req.body || {}))));
+router.delete('/apolices/:id', tenantMiddleware, respLogo((req) => soGestor(req, () => FCTE.excluirApolice(supabase, req.tenantId, req.params.id))));
+router.get('/fiscal', tenantMiddleware, respLogo(async (req) => { const c = await TFISC.config(supabase, req.tenantId); return { antecedencia_dias: c.antecedencia, migrou: c.migrou }; }));
+router.put('/fiscal', tenantMiddleware, respLogo((req) => (podeLogo(req) ? TFISC.salvarConfig(supabase, req.tenantId, req.body || {}) : { status: 409, erro: 'Só admin ou gestor alteram a antecedência fiscal' })));
+router.get('/frota-dias', tenantMiddleware, respLogo((req) => FROTA.obter(supabase, req.tenantId)));
+router.put('/frota-dias', tenantMiddleware, respLogo((req) => (podeLogo(req) ? FROTA.salvar(supabase, req.tenantId, req.body || {}) : { status: 409, erro: 'Só admin ou gestor alteram os dias da frota' })));
+router.get('/empresa/dados', tenantMiddleware, respLogo((req) => PERFIL.dados(supabase, req.tenantId)));
+router.put('/empresa/dados', tenantMiddleware, respLogo(async (req) => (podeLogo(req) ? PERFIL.salvar(supabase, req.tenantId, await quemE(req), req.body || {}) : { status: 403, erro: 'Só admin ou gestor' })));
+router.get('/empresa/status', tenantMiddleware, respLogo((req) => PERFIL.status(supabase, req.tenantId)));
+router.get('/empresa/alteracoes', tenantMiddleware, respLogo((req) => PERFIL.alteracoes(supabase, req.tenantId)));
+router.get('/empresa/receita', tenantMiddleware, respLogo((req) => PERFIL.receita(supabase, req.tenantId)));
+router.get('/cep/:cep', tenantMiddleware, respLogo((req) => PERFIL.cep(req.params.cep)));
+
+module.exports = router;

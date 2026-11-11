@@ -401,6 +401,7 @@ Ver seção 5 para o fluxo completo.
 - **077 (18v)** — 💳 `plataforma_planos` + preço (mensal, anual, moeda, métrica empresa/usuário/equipamento/uso, preço por unidade, franquia); `tenant_assinaturas` (uma por empresa: plano, situação, ciclo, moeda, valor, desconto, início, próxima renovação) e `tenant_assinatura_historico`; `tenants.teste_aviso_em`. Idempotente; tipo do id lido do banco.
 - **078 (18w)** — 💳 modalidade da assinatura (`mensal` · `anual_mensal` · `anual_prepago`), `proxima_cobranca`, `fim_compromisso`; `plataforma_planos.preco_anual_mensal` e `publico`; `tenant_plano_pedidos` (pedido do cliente → confirmado/recusado). Converte as assinaturas da 18v (mensal: próxima cobrança pelo início, sem fim). Idempotente.
 - **079 (18y)** — 🚛 `pedidos_venda.contrato_id` e `origem` (pedido de transporte do contrato de locação); `locacao_contratos.base_saida`, `valor_mobilizacao`, `valor_desmobilizacao`. Idempotente.
+- **080 (18g.3)** — 📋 `tenants.fiscal_cte` (jsonb: IE, UF, RNTRC, CFOP dentro/fora do estado, CST, alíquota ICMS, produto e tomador padrão) e `tenant_apolices` (seguradora, CNPJ, nº, ramo, responsável, vigência, ativa). Idempotente.
 - **058 (16e.3)** — `tenants (+) base_endereco` (📍 pátio / base da frota — onde o conjunto é liberado; pode ser diferente do endereço fiscal). Idempotente.
 - **057 (16e)** — `execucoes (+) fluxo` (etapas da viagem em ordem: marcações e inspeções, com status, hora, GPS, inspeção feita e liberação do gestor) e `inspecoes (+) execucao_id, etapa_id` (a inspeção feita no fluxo aponta para a AT). Idempotente.
 - **056 (16c)** — `execucoes.status (+) 'rascunho'` (cavalo pode ficar vazio no rascunho), `execucoes (+) token, link_visto_em` (📲 link do motorista) e `liberacao_docs` (CNH/CRLV vencido na data da viagem liberado pelo gestor). Idempotente.
@@ -1002,6 +1003,10 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18g.3 (11/11):** **📋 Ficha do CT-e + 🛡 apólices em ⚙️.** Migration 080.
+    - **✅ Plano → tarefa fiscal TSK-TR → "📋 Ficha do CT-e"**: tudo o que o emissor pede, já preenchido, com **📋 copiar por campo**, **🖨 PDF** (A4, com a logo) e **⬇ CSV**. Seções: identificação (CFOP dentro/fora do estado pelas UFs, municípios e UFs de início/fim, data) · emitente (Dados da empresa + ⚙️ CT-e: IE, UF, RNTRC) · tomador (cliente do pedido) · **remetente e destinatário das NF-e lidas** (sem NF-e: o tomador) · carga (produto pelos itens, **peso/volumes/valor e chaves das NF-e** — sem NF-e, peso operacional dos itens) · valores e ICMS (frete do trecho, CST, alíquota, valor do ICMS) · seguro (**apólice vigente na data do transporte**, RCTR-C primeiro, e a **averbação** da tarefa) · rodoviário (RNTRC, placas do cavalo e reboques, motorista e AT). Campo sem dado vem "⚠ falta" com a dica de onde completar.
+    - **⚙️ Configurações → 🧾 Documentos fiscais → 📋 Dados do CT-e e 🛡 Apólices**: os dados fixos do CT-e e o cadastro de apólices (seguradora, CNPJ, nº, ramo, responsável pelo seguro, vigência, ativa) — admin/gestor alteram; excluir pede confirmação no modal.
+    - Atende ~80% dos emissores (digitação/cópia). O **XML do CT-e** para importar direto fica para uma próxima etapa; códigos IBGE dos municípios também (o emissor costuma completar pelo nome).
   - **18y.1 (11/11):** **📏 painel de Medições mais claro** (dúvida do Marcony: "R$ 25 mil × R$ 5 mil"). Os dois números medem coisas diferentes e agora dizem isso:
     - **"Valor mensal em locação (mês cheio)"** = soma do valor mensal cheio de cada equipamento locado hoje; **clicável** → lista por contrato/equipamento (desde quando, valor mensal).
     - **"Medição de out/2026"** = medido (aprovadas) e previsto **proporcional aos dias** locados no mês; **clicável** → cálculo por equipamento (período, dias/dias do mês, valor mensal, previsto, situação). Ex.: R$ 25.000 × 7/31 = R$ 5.645,16.
@@ -1595,7 +1600,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 | ~~18g.1~~ ✅ | entregue em 03/11 — 🧾 perfil Fiscal + **tarefa fiscal automática por trecho do PV** (D-2 úteis configurável) com checklist NF-e → CT-e → averbação → MDF-e, upload PDF + leitura do XML, selo na Mesa, alertas (migration 066) |
 | ~~18g.2~~ ✅ | entregue em 04/11 — AT a partir do MDF-e (rascunho), vínculo MDF-e ↔ AT, divergência AT × MDF-e, PDFs no link do motorista, 🏁 encerrar MDF-e |
 | ~~18g.2d~~ ✅ | entregue em 04/11 — alerta na saída da base sem CT-e/MDF-e + e-mail do prazo fiscal vencido |
-| **18g.3** | **Ficha do CT-e** (copiar por campo, PDF, CSV) + apólices em ⚙️ |
+| ~~**18g.3**~~ | ✅ **Ficha do CT-e** (copiar por campo, PDF, CSV) + apólices em ⚙️ — falta o XML do CT-e e IBGE |
 | ~~18h~~ ✅ | entregue em 04/11 — ⚠️ ocorrência / sinistro unificado SIN-AAAA-NNNN (migration 068) |
 | ~~18h.4~~ ✅ | entregue em 05/11 — 📊 indicadores das ocorrências e **disponibilidade** por equipamento e contrato, perda estimada (só gestor/admin), relatório A4 + CSV |
 | ~~👋 Bem-vindo ao sistema~~ ✅ 18i | entregue em 05/11 — roteiro das configurações mínimas por tipo de negócio (transporte · locação · compras), passos conferidos pelos dados, obrigatório/recomendado, "não se aplica" (migration 070) |
@@ -1622,7 +1627,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18y.1)
+**Última atualização deste documento:** 06/11/2026 (etapa 18g.3)
 
 --------------------------------------------------------------------------------
 

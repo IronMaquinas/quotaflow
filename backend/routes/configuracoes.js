@@ -370,6 +370,14 @@ router.get('/roteiro', tenantMiddleware, respLogo((req) => ROTEIRO.montar(supaba
 router.put('/roteiro', tenantMiddleware, respLogo((req) => (podeLogo(req) ? ROTEIRO.salvar(supabase, req.tenantId, req.body || {}) : { status: 409, erro: 'Só admin ou gestor alteram o roteiro' })));
 router.get('/ocorrencias', tenantMiddleware, respLogo((req) => OCORR.opcoesConfig(supabase, req.tenantId)));
 router.put('/ocorrencias', tenantMiddleware, respLogo((req) => (podeLogo(req) ? OCORR.salvarConfig(supabase, req.tenantId, req.body || {}) : { status: 409, erro: 'Só admin ou gestor alteram quem recebe as ocorrências' })));
+// 18g.3: 📋 dados do CT-e + 🛡 apólices (ler: todos; mudar: admin ou gestor)
+const FCTE = require('../services/fichaCte');
+const soGestor = (req, fn) => (podeLogo(req) ? fn() : { status: 409, erro: 'Só admin ou gestor alteram os dados fiscais' });
+router.get('/fiscal-cte', tenantMiddleware, respLogo((req) => FCTE.config(supabase, req.tenantId)));
+router.put('/fiscal-cte', tenantMiddleware, respLogo((req) => soGestor(req, () => FCTE.salvarConfig(supabase, req.tenantId, req.body || {}))));
+router.post('/apolices', tenantMiddleware, respLogo((req) => soGestor(req, () => FCTE.salvarApolice(supabase, req.tenantId, null, req.body || {}))));
+router.put('/apolices/:id', tenantMiddleware, respLogo((req) => soGestor(req, () => FCTE.salvarApolice(supabase, req.tenantId, req.params.id, req.body || {}))));
+router.delete('/apolices/:id', tenantMiddleware, respLogo((req) => soGestor(req, () => FCTE.excluirApolice(supabase, req.tenantId, req.params.id))));
 router.get('/fiscal', tenantMiddleware, respLogo(async (req) => { const c = await TFISC.config(supabase, req.tenantId); return { antecedencia_dias: c.antecedencia, migrou: c.migrou }; }));
 router.put('/fiscal', tenantMiddleware, respLogo((req) => (podeLogo(req) ? TFISC.salvarConfig(supabase, req.tenantId, req.body || {}) : { status: 409, erro: 'Só admin ou gestor alteram a antecedência fiscal' })));
 router.get('/frota-dias', tenantMiddleware, respLogo((req) => FROTA.obter(supabase, req.tenantId)));

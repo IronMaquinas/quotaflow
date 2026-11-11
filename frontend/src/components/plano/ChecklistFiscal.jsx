@@ -7,6 +7,7 @@
 //   O que foi anexado direto na AT aparece aqui ("da AT-…"). Dispensar = cancelar com justificativa (fica no histórico).
 import { useState } from "react";
 import apiService from "../../services/apiService";
+import FichaCte from "./FichaCte"; // 18g.3
 import { lerXmlFiscal } from "../../utils/lerXmlFiscal"; // 18g.1.1: prévia do XML no navegador
 
 export const ITENS_FISCAIS = [
@@ -21,6 +22,7 @@ const curta = (c) => (c ? `…${String(c).slice(-8)}` : "");
 const quando = (d) => (d ? new Date(d).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "");
 
 export default function ChecklistFiscal({ C, s, tarefa, onAtualizou, onErro, onOk }) {
+  const [ficha, setFicha] = useState(false); // 18g.3
   const ck = tarefa.checklist || {}; const r = tarefa.fiscal || { itens: {}, alertas: [], feitos: 0, total: 4 };
   const [abrindo, setAbrindo] = useState(null); // item com o formulário aberto
   const [f, setF] = useState({ numero: "", chave: "", pdf: null, xml: null });
@@ -120,10 +122,12 @@ export default function ChecklistFiscal({ C, s, tarefa, onAtualizou, onErro, onO
     {f[k] ? `✓ ${f[k].name}` : rot}<input type="file" aria-label={rot} accept={accept} style={{ display: "none" }} onChange={(e) => { const x = e.target.files?.[0]; if (aoEscolher) aoEscolher(x || null); else setF((v) => ({ ...v, [k]: x || null })); e.target.value = ""; }} /></label>;
 
   return <div>
+    {ficha && <FichaCte C={C} s={s} tarefaId={tarefa.id} onFechar={() => setFicha(false)} />}
     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
       <div style={{ fontSize: 10, color: C.muted, letterSpacing: "0.08em" }}>DOCUMENTOS FISCAIS · {tarefa.numero || ""}</div>
       <div style={{ flex: 1, height: 6, background: C.border, borderRadius: 3, overflow: "hidden", minWidth: 80 }}><div style={{ width: `${(r.feitos / (r.total || 4)) * 100}%`, height: "100%", background: r.feitos === r.total ? C.success : C.accent }} /></div>
       <b style={{ fontSize: 12.5, color: r.feitos === r.total ? C.success : C.text }}>{r.feitos}/{r.total}</b>
+      <button type="button" onClick={() => setFicha(true)} style={{ ...s.btn(false), padding: "5px 10px", fontSize: 12 }}>📋 Ficha do CT-e</button>{/* 18g.3 */}
     </div>
     {travado.length > 0 && <div style={{ fontSize: 12.5, color: C.textSub, background: `${C.accent}12`, border: `1px solid ${C.accent}44`, borderRadius: 8, padding: "8px 12px", marginBottom: 10 }}>🔒 <b>Documentos travados</b> — já estão na {travado.map((x) => x.numero).join(", ")}. Para trocar um documento, descarte o rascunho ou cancele a AT (com motivo): assim a AT e a tarefa nunca divergem. Dá para acrescentar documento (fica no histórico).</div>}
     {ck.dispensa && <div style={{ fontSize: 12.5, color: C.warn, marginBottom: 10 }}>🚫 Dispensada por {ck.dispensa.por || "—"} em {quando(ck.dispensa.em)}: {ck.dispensa.motivo}</div>}
