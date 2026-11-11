@@ -105,6 +105,7 @@ const ASS = require('../services/assinaturas');
 router.get('/transportadoras/:id/assinatura', responder((req) => ASS.daEmpresa(supabase, req.params.id)));
 router.put('/transportadoras/:id/assinatura', responder(async (req) => { const r = await ASS.salvar(supabase, req.params.id, req.body || {}, req.plataformaAdmin?.email || req.plataformaAdmin?.nome || null); if (!r.erro) await C.registrar(req.plataformaAdmin, 'assinatura_alterada', 'tenant', req.params.id, { situacao: r.situacao, plano: r.assinatura?.plano_nome, valor: r.assinatura?.valor }); return r; }));
 router.get('/pedidos-plano', responder(() => ASS.pendentes(supabase))); // 18w
+router.get('/financeiro', responder(() => ASS.financeiro(supabase))); // 18x: 💰 painel financeiro
 router.post('/transportadoras/:id/pedidos/:pid/:acao', responder(async (req) => { const confirmar = req.params.acao === 'confirmar'; if (!confirmar && req.params.acao !== 'recusar') return { status: 400, erro: 'Ação inválida' };
   const r = await ASS.decidirPedido(supabase, req.params.id, req.params.pid, { confirmar, motivo: req.body?.motivo }, req.plataformaAdmin?.email || req.plataformaAdmin?.nome || null);
   if (!r.erro) await C.registrar(req.plataformaAdmin, confirmar ? 'pedido_plano_confirmado' : 'pedido_plano_recusado', 'tenant', req.params.id, { pedido: req.params.pid }); return r; }));

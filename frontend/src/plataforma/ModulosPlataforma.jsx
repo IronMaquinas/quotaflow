@@ -213,3 +213,36 @@ export function AssinaturaEmpresa({ token, chamar, C, input, label, card, btn, e
     </div>
   </div>;
 }
+
+// ─── 18x: 💰 painel financeiro (Console) ────────────────────────────────────
+export function PainelFinanceiro({ token, chamar, C, card, btn, onEmpresa, atualizar }) {
+  const [d, setD] = useState(null); const [erro, setErro] = useState(null);
+  useEffect(() => { chamar(token, "GET", "/financeiro").then(setD).catch((e) => setErro(e.message)); }, [token, atualizar]); // eslint-disable-line
+  if (erro) return <div style={{ color: C.danger }}>{erro}</div>;
+  if (!d) return <div style={{ color: C.muted }}>Carregando…</div>;
+  if (!d.migrou) return <div style={{ color: C.danger }}>Falta rodar as migrations 077 e 078 no Supabase.</div>;
+  const dt = (v) => (v ? String(v).slice(0, 10).split("-").reverse().join("/") : "—");
+  const kpi = (rot, val, sub, cor) => <div style={{ ...card, padding: "14px 16px", minWidth: 170, flex: "1 1 170px" }}><div style={{ fontSize: 11, color: C.muted, letterSpacing: "0.08em", fontWeight: 600 }}>{rot}</div><div style={{ fontSize: 22, fontWeight: 800, color: cor || C.text, marginTop: 4 }}>{val}</div>{sub && <div style={{ fontSize: 11.5, color: C.sub, marginTop: 2 }}>{sub}</div>}</div>;
+  const s = d.situacoes; const linha = { display: "flex", gap: 10, alignItems: "center", padding: "8px 0", borderTop: `1px solid ${C.border}`, fontSize: 13 };
+  const emp = (id, nome) => <button type="button" onClick={() => onEmpresa?.(id)} style={{ background: "none", border: "none", padding: 0, color: C.accent, cursor: "pointer", font: "inherit", fontWeight: 600, textAlign: "left" }}>{nome}</button>;
+  const bloco = (titulo, vazio, itens) => <div style={{ ...card, padding: "14px 16px", flex: "1 1 340px", minWidth: 0 }}><div style={{ fontWeight: 700, fontSize: 14, marginBottom: 6 }}>{titulo}</div>{itens.length ? itens : <div style={{ fontSize: 12.5, color: C.muted, padding: "6px 0" }}>{vazio}</div>}</div>;
+  return <div>
+    <div style={{ fontSize: 12.5, color: C.sub, marginBottom: 12 }}>Receita recorrente das assinaturas <b>ativas</b> (o pré-pago conta 1/12 por mês; valores com desconto). Sem gateway ainda: a "próxima cobrança" anda sozinha de período em período. Clique na empresa para abrir a 💳 Assinatura.</div>
+    <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+      {(d.mrr.length ? d.mrr : [{ moeda: "BRL", mrr: 0, arr: 0 }]).map((m) => kpi(`RECEITA MENSAL (MRR) · ${m.moeda}`, dinheiro(m.mrr, m.moeda), `${dinheiro(m.arr, m.moeda)} por ano (ARR)`, C.success))}
+      {kpi("EMPRESAS ATIVAS", s.ativa, d.ticket_medio_brl ? `ticket médio ${dinheiro(d.ticket_medio_brl)}/mês` : null)}
+      {kpi("EM TESTE", s.teste, d.testes.length ? `${d.testes.length} terminando em até 7 dias` : null, C.accent)}
+      {kpi("INADIMPLÊNCIA", `${d.inadimplencia_pct}%`, `${s.inadimplente} empresa(s) · ${s.suspensa} suspensa(s) · ${s.cancelada} cancelada(s)`, d.inadimplencia_pct ? C.danger : C.text)}
+      {kpi("PEDIDOS DE PLANO", d.pedidos_pendentes, d.pedidos_pendentes ? "aguardando você em 🚚 Transportadoras" : "nenhum pendente", d.pedidos_pendentes ? (C.warn || "#f59e0b") : C.text)}
+    </div>
+    {s.sem_assinatura > 0 && <div style={{ fontSize: 12.5, color: C.warn || "#f59e0b", marginBottom: 12 }}>⚠ {s.sem_assinatura} empresa(s) usando o sistema sem assinatura cadastrada (antigas ou cortesia) — não entram na receita. Cadastre em 🚚 Transportadoras → 💳 Assinatura….</div>}
+    <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginBottom: 12 }}>
+      {bloco("📊 Receita por plano", "Nenhuma assinatura ativa ainda.", d.por_plano.map((p) => <div key={p.plano + p.moeda} style={linha}><span style={{ flex: 1 }}>{p.plano}</span><span style={{ color: C.sub }}>{p.empresas} empresa(s){p.inadimplentes ? ` · ${p.inadimplentes} inadimplente(s)` : ""}</span><b>{dinheiro(p.mrr, p.moeda)}/mês</b></div>))}
+      {bloco(`📅 Cobranças nos próximos 30 dias${d.cobrancas_total.length ? ` — ${d.cobrancas_total.map((x) => dinheiro(x.valor, x.moeda)).join(" + ")}` : ""}`, "Nenhuma cobrança nos próximos 30 dias.", d.cobrancas.map((c) => <div key={c.tenant_id} style={linha}><span style={{ width: 86, color: c.data === d.hoje ? (C.warn || "#f59e0b") : C.sub }}>{dt(c.data)}</span><span style={{ flex: 1, minWidth: 0 }}>{emp(c.tenant_id, c.empresa)}<span style={{ color: C.muted }}> · {c.plano || "—"}{c.modalidade === "anual_prepago" ? " · anual" : ""}</span></span>{c.situacao === "inadimplente" && <span style={{ color: C.danger, fontSize: 12 }}>⚠️ inadimplente</span>}<b>{dinheiro(c.valor, c.moeda)}</b></div>))}
+    </div>
+    <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+      {bloco("🎁 Testes terminando (até 7 dias) — oportunidade", "Nenhum teste terminando.", d.testes.map((x) => <div key={x.tenant_id} style={linha}><span style={{ flex: 1 }}>{emp(x.tenant_id, x.empresa)}</span><span style={{ color: x.somente_leitura ? C.danger : C.sub }}>{x.somente_leitura ? `terminou em ${dt(x.teste_ate)} · só leitura` : x.dias <= 0 ? "termina hoje" : `faltam ${x.dias} dia(s) · ${dt(x.teste_ate)}`}</span></div>))}
+      {bloco("🔁 Compromissos anuais terminando (60 dias)", "Nenhum compromisso terminando.", d.renovacoes.map((x) => <div key={x.tenant_id} style={linha}><span style={{ flex: 1 }}>{emp(x.tenant_id, x.empresa)}<span style={{ color: C.muted }}> · {x.plano || "—"}</span></span><span style={{ color: C.sub }}>{dt(x.fim_compromisso)}</span></div>))}
+    </div>
+  </div>;
+}

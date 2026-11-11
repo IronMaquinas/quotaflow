@@ -1001,6 +1001,10 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18x (11/11):** **💰 painel financeiro no Console + nome do plano no ⭐ Meu plano.** Sem migration.
+    - **Console → 💰 Financeiro** (grupo PLANOS): **receita mensal recorrente (MRR) e anual (ARR) por moeda** — só assinaturas ativas, com desconto, pré-pago contando 1/12 por mês · empresas ativas e ticket médio · em teste · **inadimplência %** (com suspensas e canceladas) · pedidos de plano pendentes · **receita por plano** · **cobranças dos próximos 30 dias** (sem gateway, a próxima cobrança anda sozinha de período em período) · **testes terminando em 7 dias** (oportunidade) · **compromissos anuais terminando em 60 dias** · aviso de empresas **sem assinatura cadastrada** (antigas/cortesia, fora da receita). Clicar na empresa abre a 💳 Assinatura.
+    - **⭐ Meu plano:** o cabeçalho mostra o **nome do plano contratado** (ex.: "⭐ Transportadora Bronze") em vez de "Personalizado"; salvar a assinatura também grava o nome na empresa. Texto do 🔒 aponta para os planos disponíveis.
+    - **verificar-entrega.js:** ignora **linhas em branco no começo** do arquivo (o editor tinha posto uma no `TelaPessoas.jsx` — o conteúdo era o mesmo da 18t.1).
   - **18w (10/11):** **💳 modalidade (como a Adobe) + ⭐ Meu plano do cliente com escolha e troca de plano.** Migration 078.
     - **Modalidade** no lugar de "ciclo": **Mensal** (cobra todo mês, sem fidelidade, sem data de fim) · **Anual, pago por mês** (compromisso de 12 meses, cobra todo mês, preço menor) · **Anual pré-pago** (paga o ano, maior desconto, renova em 12 meses). Duas datas que o sistema calcula pelo início: **próxima cobrança** e **compromisso até** (vazio no mensal). Plano-modelo com os 3 preços e "aparece para o cliente" (planos internos/negociados ficam escondidos).
     - **⭐ Meu plano (admin e gestor):** **💳 Minha assinatura** (plano, modalidade, valor com desconto, próxima cobrança, compromisso, situação e dias de teste) + **📦 Planos disponíveis** com seletor de modalidade, módulos de cada plano, **"Quero este" / "Mudar para este"** e **🤝 Plano personalizado → Fale conosco**. Confirmação no modal do app. Funciona também com o teste vencido (só leitura).
@@ -1098,7 +1102,7 @@ npm run dev
 1. ✅ **18v** — **Preço nos planos** — mensal e anual; **métrica de cobrança** definida por plano: por empresa, por usuário ou **por veículo/equipamento** (a precificação por veículo conversada para a Dinamarca: ~50 DKK/veículo no lançamento, 100–150 DKK maduro); preço avulso por módulo para o "Fale conosco".
 2. ✅ **18v** — **Assinatura por empresa** (Console) — plano contratado, **valor negociado / desconto**, ciclo, **data de início**, **próxima renovação**, situação (🧪 teste · ✅ ativa · ⚠️ inadimplente · ⏸ suspensa · ✖ cancelada) e **histórico de troca de plano** com datas e valores.
 3. ✅ **18v** (14 dias, só leitura no fim) — **Período de teste (trial)** — prazo, avisos antes de acabar e o que acontece no fim (pede o plano; dados preservados).
-4. **Painel financeiro no Console** — receita mensal recorrente (MRR), clientes por plano/módulo, vencimentos do mês, inadimplência, cancelamentos (churn), ticket médio.
+4. ✅ **18x** — **Painel financeiro no Console** — receita mensal recorrente (MRR), clientes por plano/módulo, vencimentos do mês, inadimplência, cancelamentos (churn), ticket médio.
 5. ✅ **18w** (⭐ Meu plano com planos e "Quero este"; falta no "Criar conta") — **Página de planos e cadastro com escolha** — Bronze/Prata/Ouro (ou os nomes que você definir) com o que cada um tem, "Quero este" ou **"Fale conosco para planos customizados"**; o cadastro já nasce com o plano escolhido (em teste).
 6. **Cobrança automática** — gateway brasileiro (ex.: Asaas, Iugu, Pagar.me) com boleto, Pix e cartão recorrente; o retorno do pagamento (webhook) atualiza a situação sozinho; faturas e recibos para o cliente baixar em ⭐ Meu plano.
 7. **Nota fiscal de serviço (NFS-e)** da mensalidade, emitida automaticamente.
@@ -1610,7 +1614,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18w)
+**Última atualização deste documento:** 06/11/2026 (etapa 18x)
 
 --------------------------------------------------------------------------------
 

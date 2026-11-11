@@ -23,7 +23,7 @@ export default function MeuPlano({ C, s }) {
       <div style={{ fontSize: 22, fontWeight: 700 }}>⭐ {d.plano_nome}</div>
       <div style={{ fontSize: 13, color: C.textSub }}>{ativosN} módulo(s) ativo(s)</div>
     </div>
-    <div style={{ fontSize: 13, color: C.textSub, marginBottom: 18, maxWidth: 720 }}>O QuotaFlow é montado por módulos: você usa só o que precisa e liga outros quando quiser. Os marcados com 🔒 estão disponíveis para contratar.
+    <div style={{ fontSize: 13, color: C.textSub, marginBottom: 18, maxWidth: 720 }}>O QuotaFlow é montado por módulos: você usa só o que precisa e liga outros quando quiser. Os marcados com 🔒 estão em outros planos{ass?.planos?.length ? " — veja os planos disponíveis abaixo" : " — disponíveis para contratar"}.
       {d.contato ? <> Fale com a gente em <a href={`mailto:${d.contato}`} style={{ color: C.accent }}>{d.contato}</a>.</> : " Fale com o seu consultor QuotaFlow."}</div>
     {ass && <Assinatura C={C} s={s} d={ass} contato={d.contato} onPedido={carregarAss} />}{/* 18w */}
     <div style={{ fontSize: 15, fontWeight: 700, margin: "18px 0 10px" }}>🧩 Módulos do seu plano</div>

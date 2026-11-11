@@ -84,7 +84,8 @@ async function daEmpresa(supabase, tenantId) {
   const { data } = await supabase.from('tenants').select('*').eq('id', tenantId);
   const t = data?.[0] || {};
   const ativos = ativosDe(t);
-  return { segmentos: segmentosDe(t), migrou: 'modulos' in t, completo: !Array.isArray(t.modulos), plano_nome: t.plano_nome || (Array.isArray(t.modulos) ? 'Plano personalizado' : 'Completo'),
+  let contratado = null; try { const { data: as } = await supabase.from('tenant_assinaturas').select('*').eq('tenant_id', tenantId); const a = as?.[0]; if (a?.plano_nome && a.situacao !== 'teste') contratado = a.plano_nome; } catch { /* sem a 077 */ } // 18x
+  return { plano_contratado: contratado, segmentos: segmentosDe(t), migrou: 'modulos' in t, completo: !Array.isArray(t.modulos), plano_nome: contratado || t.plano_nome || (Array.isArray(t.modulos) ? 'Plano personalizado' : 'Completo'),
     ativos, telas: telasLiberadas(ativos), telas_mapeadas: [...new Set(MODULOS.flatMap((m) => m.telas))], areas: AREAS.map((a) => ({ id: a.id, nome: a.nome, modulos: a.modulos.map((m) => ({ id: m.id, nome: m.nome, desc: m.desc, futuro: !!m.futuro, ativo: ativos.includes(m.id) })) })),
     contato: process.env.PLATAFORMA_CONTATO_EMAIL || null };
 }

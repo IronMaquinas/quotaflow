@@ -19,7 +19,7 @@
 //
 // Para cada arquivo verifica:
 //   1. existe (arquivos do frontend são procurados pelo nome dentro de ../frontend/src)
-//   2. conteúdo idêntico ao entregue (ignora só quebra de linha final e CRLF do Windows)
+//   2. conteúdo idêntico ao entregue (ignora linhas em branco no começo/fim e CRLF do Windows)
 //   3. sintaxe válida (node --check — só arquivos .js; .jsx o Vite confere)
 //   4. os require de services/fornecedoresVisiveis e services/atuacao apontam para arquivos que existem
 
@@ -76,11 +76,11 @@ const ESPERADO = {
   'services/emailConfirmacao.js': 'e36296d648d6f76f6412d7de0e10c4d8', // etapa 11a.3 (novo)
   'front:CampoTelefone.jsx': 'c0699f00b06c84098af121acd5d8682f', // etapa 14d.4
   'front:TelaConfirmarEmail.jsx': 'dbf759fd98f257a436cfe47874c72d9f', // etapa 11a.3 (novo)
-  'routes/plataforma.js': '62df56bd9c407788b0c829910c8d5aae', // etapa 18w
+  'routes/plataforma.js': '25cf4261bb0d342a67b792f952974457', // etapa 18x
   'services/plataformaConsole.js': '2052fe85951bf51702733b9c9607402d', // etapa 18j
   'middleware/plataformaMiddleware.js': 'bf2424eab233bdf7e0cb6fca9cb953b9', // etapa 11b (novo)
   'scripts/criarAdmin.js': 'd4d85894f6381dc7b31f83466f316024', // etapa 11b (novo)
-  'front:ConsolePlataforma.jsx': '2ed33a1b0d13292055dd9cd3e9ec49d3', // etapa 18w
+  'front:ConsolePlataforma.jsx': 'd9a85b530bb96bda55da011e59997806', // etapa 18x
   'routes/manutencao.js': '615fa12637ae7b454c52b99c054e617b', // etapa 14b.2
   'services/calendarioManutencao.js': 'bbcf04d1bb3b18b8776579d3180274e6', // etapa 12b.2
   'front:TelaCalendarioManutencao.jsx': '8d9921e2e15255472f0c62687c5f37b0', // etapa 14b.2
@@ -292,10 +292,10 @@ const ESPERADO = {
   'services/roteiroInicial.js': 'e18c4cc47b59b963cf51c8fa6ad03f75', // etapa 18j
   'migrations/070_roteiro_inicial.sql': 'ee88701340141118fc400549de31fc3a', // etapa 18i (novo)
   'front:BemVindo.jsx': '89a5cc6d829575da05687e53eab3884b', // etapa 18j
-  'services/modulos.js': 'afd5ffafda6002f799037099ebbd7a6b', // etapa 18w
+  'services/modulos.js': '205ae608113f368619f97e6392d3f6ad', // etapa 18x
   'migrations/071_modulos_planos.sql': '37caa5e9e569dde2fb7ea21d442968c2', // etapa 18j
-  'front:MeuPlano.jsx': '67c64827aad955942746528e961bd5af', // etapa 18w
-  'front:ModulosPlataforma.jsx': 'd0dc7ee0be09fa879d193182c98dc06a', // etapa 18w
+  'front:MeuPlano.jsx': '47b91b4e2b17316e86765a689a5d21a5', // etapa 18x
+  'front:ModulosPlataforma.jsx': '0a78e0e05649ee09107cdb330379ef82', // etapa 18x
   'middleware/exigirModulo.js': '4dff6b4c470b931624e8d02ffc3f79fa', // etapa 18k (novo)
   'front:modulosSessao.js': '5dc46641212cb6f069cb94c447506cbd', // etapa 18u
   'services/chatSpot.js': '94cdc91b0a960af1086abaa48a6c919c', // etapa 18q
@@ -311,26 +311,25 @@ const ESPERADO = {
   'routes/estoque/solicitacoes.js': '294095a54e5b95b43d3637605bd99ae4', // etapa 18s
   'front:TextoComPlano.jsx': '3dd816276451af0a948e63e03a645644', // etapa 18t.1 (novo)
   'migrations/076_tenant_segmentos.sql': '3be00b876ccc87e2b9e7aced3809983f', // etapa 18u (novo)
-  'services/assinaturas.js': '7cae4891477468a4ecd5e6bd27d5bf48', // etapa 18w
+  'services/assinaturas.js': 'e6d9c6444f36737004b1b984e58f02b1', // etapa 18x
   'migrations/077_assinaturas.sql': 'c9e4a1598392f5bdd744e042f471553f', // etapa 18v (novo)
   'migrations/078_assinatura_modalidade_pedidos.sql': 'd7f8abfc9d014eed6b1f243c4e71bc76', // etapa 18w (novo)
 };
 
-// Antes de copiar a etapa 18w — base: 503fe5f
+// Antes de copiar a etapa 18x — base: b2c0b06
 const ANTES = {
-  'services/assinaturas.js': '01960fa9e13cfcf739cb37031e22df97',
-  'services/modulos.js': '18170b02c745db879be30fd104cf248d',
-  'routes/plataforma.js': '24ae0308fa30d769c123f38c7bcae2e4',
-  'routes/configuracoes.js': 'c1d2f845b7250aaa9f576363eb8f3f37',
-  'front:MeuPlano.jsx': '2dbc51aa94ced312990583e5a278b265',
-  'front:ModulosPlataforma.jsx': '772c66bac43d3fccb8cbe3e006d43613',
-  'front:ConsolePlataforma.jsx': '7b807888e82b7a3a3e91a05eecd94ccb',
+  'services/assinaturas.js': '7cae4891477468a4ecd5e6bd27d5bf48',
+  'services/modulos.js': 'afd5ffafda6002f799037099ebbd7a6b',
+  'routes/plataforma.js': '62df56bd9c407788b0c829910c8d5aae',
+  'front:MeuPlano.jsx': '67c64827aad955942746528e961bd5af',
+  'front:ModulosPlataforma.jsx': 'd0dc7ee0be09fa879d193182c98dc06a',
+  'front:ConsolePlataforma.jsx': '2ed33a1b0d13292055dd9cd3e9ec49d3',
 };
 
 const RAIZ = process.cwd();
 const FRONT = path.join(RAIZ, '..', 'frontend', 'src');
 const modoAntes = process.argv.includes('--antes');
-const normalizar = (txt) => txt.replace(/\r\n/g, '\n').replace(/\s+$/, '');
+const normalizar = (txt) => txt.replace(/\r\n/g, '\n').replace(/^(?:[ \t]*\n)+/, '').replace(/\s+$/, ''); // 18x: ignora linhas em branco no começo (editor) e no fim
 const md5 = (txt) => crypto.createHash('md5').update(normalizar(txt)).digest('hex');
 
 if (!fs.existsSync(path.join(RAIZ, 'routes')) || !fs.existsSync(path.join(RAIZ, 'services'))) {
@@ -362,7 +361,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18w)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18x)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

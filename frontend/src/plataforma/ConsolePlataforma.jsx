@@ -13,12 +13,12 @@ import BibliotecaTreinamentos from "./BibliotecaTreinamentos"; // etapa 12e.2a
 import BibliotecaInspecoes from "./BibliotecaInspecoes"; // etapa 14a
 import BibliotecaContratos from "./BibliotecaContratos"; // etapa 14d
 import CnpjsPlataforma from "./CnpjsPlataforma"; // 14e
-import { PlanosPlataforma, ModulosEmpresa, AssinaturaEmpresa } from "./ModulosPlataforma"; // 18j · 18v
+import { PlanosPlataforma, ModulosEmpresa, AssinaturaEmpresa, PainelFinanceiro } from "./ModulosPlataforma"; // 18j · 18v · 18x
 
 const GRUPOS = [ // 14e.1
   ["GERAL", ["visao"]],
   ["CADASTROS", ["aprovacoes", "transportadoras", "fornecedores"]],
-  ["PLANOS", ["planos"]], // 18j
+  ["PLANOS", ["financeiro", "planos"]], // 18j · 18x
   ["COMPLIANCE", ["cnpjs"]],
   ["BIBLIOTECAS", ["funcoes", "epi", "treinamentos", "inspecoes", "contratos"]],
 ];
@@ -420,6 +420,7 @@ export default function ConsolePlataforma() {
     { id: "inspecoes", t: "🔍 Inspeções" },
     { id: "contratos", t: "📄 Contratos" },
     { id: "cnpjs", t: "🛡 CNPJs" }, // 14e
+    { id: "financeiro", t: "💰 Financeiro" }, // 18x
     { id: "planos", t: "🧩 Planos e módulos" }, // 18j
   ];
 
@@ -465,6 +466,7 @@ export default function ConsolePlataforma() {
         {aba === "visao" && <VisaoGeral dados={visao} />}
         {aba === "aprovacoes" && <Aprovacoes dados={pend} ocupadoId={ocupadoId} onAcao={(a, tipo, item) => { setMotivo(""); setAcao({ acao: a, tipo, item }); }} />}
         {aba === "transportadoras" && <Lista tipo="tenant" dados={tenants} onCnpj={(t) => setTrocaCnpj({ item: t, cnpj: "", motivo: "", hist: null })} onModulos={setModsDe} onAssinatura={setAssDe} pedidosDe={(l) => pedidosPlano.filter((p) => String(p.tenant_id) === String(l.id)).length} />}
+        {aba === "financeiro" && <PainelFinanceiro token={token} chamar={chamar} C={C} card={card} btn={btn} atualizar={assDe} onEmpresa={(id) => { const e = (tenants || []).find((x) => String(x.id) === String(id)); if (e) setAssDe(e); }} />}{/* 18x */}
         {aba === "planos" && <PlanosPlataforma token={token} chamar={chamar} C={C} input={input} label={label} card={card} btn={btn} tag={tag} onAviso={setAviso} />}{/* 18j */}
         {aba === "fornecedores" && <Lista tipo="fornecedor" dados={forns} />}
         {aba === "funcoes" && <BibliotecaFuncoes token={token} chamar={chamar} C={C} input={input} label={label} card={card} btn={btn} tag={tag} onAviso={setAviso} />}

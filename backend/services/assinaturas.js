@@ -84,6 +84,7 @@ async function salvar(supabase, tenantId, body = {}, quem = null) {
   // o tenant: ativa → sai do teste; volta para teste com nova data → estende
   const updT = {};
   if (situacao === 'ativa' && atual.situacao !== 'ativa') updT.plano = 'assinante';
+  if (linha.plano_nome && situacao !== 'teste') updT.plano_nome = linha.plano_nome; // 18x: o cabeçalho do ⭐ Meu plano mostra o nome do plano contratado
   if (situacao === 'teste' && data10(body.teste_ate)) { updT.plano = 'teste'; updT.teste_ate = new Date(`${data10(body.teste_ate)}T23:59:59-03:00`).toISOString(); updT.teste_aviso_em = null; }
   if (Object.keys(updT).length) { const u = await supabase.from('tenants').update(updT).eq('id', tenantId); if (u.error && !/teste_aviso_em/.test(u.error.message)) throw new Error(u.error.message); }
   const campos = ['plano_nome', 'situacao', 'modalidade', 'moeda', 'valor', 'desconto_pct', 'inicio', 'proxima_cobranca', 'fim_compromisso'];
@@ -146,6 +147,49 @@ async function decidirPedido(supabase, tenantId, pedidoId, { confirmar, motivo =
     : `<p>Olá${p.pedido_por ? `, ${p.pedido_por}` : ''}!</p><p>Sobre o pedido do plano <b>${p.plano_nome}</b>: ${motivo || 'vamos falar com você para acertar os detalhes.'}</p>`).catch(() => {});
   return daEmpresa(supabase, tenantId);
 }
+// ─── 18x: 💰 painel financeiro do Console ───────────────────────────────────────
+/** próxima cobrança "de verdade": sem gateway, a data gravada pode ter passado — anda de período em período até hoje */
+function proximaEfetiva(a, hoje) {
+  let d = data10(a.proxima_cobranca || a.proxima_renovacao) || (a.inicio ? datasDa(a.modalidade || 'mensal', a.inicio).proxima_cobranca : null); if (!d) return null;
+  const passo = a.modalidade === 'anual_prepago' ? 12 : 1; let i = 0;
+  while (d < hoje && i++ < 240) d = somar(d, passo);
+  return d;
+}
+/** valor líquido por mês (o pré-pago conta 1/12 por mês) */
+const liquido = (a) => (a.valor == null ? 0 : Number(a.valor) * (1 - (Number(a.desconto_pct) || 0) / 100));
+const mensalDe = (a) => (a.modalidade === 'anual_prepago' || (!a.modalidade && a.ciclo === 'anual') ? liquido(a) / 12 : liquido(a));
+async function financeiro(supabase, agora = Date.now()) {
+  const hoje = new Date(agora - 3 * 3600000).toISOString().slice(0, 10); const em = (n) => somar(hoje, 0) && new Date(Date.parse(`${hoje}T12:00:00Z`) + n * DIA).toISOString().slice(0, 10);
+  const ts = await q(supabase.from('tenants').select('*'));
+  let as = []; let planos = []; let peds = []; let migrou = true;
+  try { as = await q(supabase.from('tenant_assinaturas').select('*')); planos = await q(supabase.from('plataforma_planos').select('*')); } catch (e) { if (!sem077(e)) throw e; migrou = false; }
+  try { peds = (await q(supabase.from('tenant_plano_pedidos').select('*').eq('status', 'pendente'))); } catch { /* sem a 078 */ }
+  const porTenant = new Map(as.map((a) => [String(a.tenant_id), a])); const r2 = (v) => Math.round(v * 100) / 100;
+  const situacoes = { teste: 0, ativa: 0, inadimplente: 0, suspensa: 0, cancelada: 0, sem_assinatura: 0 };
+  const mrr = {}; const porPlano = new Map(); const cobrancas = []; const testes = []; const renovacoes = [];
+  for (const t of ts) {
+    const a = porTenant.get(String(t.id));
+    if (!a) { if (t.plano === 'teste') { situacoes.teste++; const dias = t.teste_ate ? Math.ceil((Date.parse(t.teste_ate) - agora) / DIA) : null; if (dias != null && dias <= 7) testes.push({ tenant_id: t.id, empresa: t.nome, teste_ate: t.teste_ate, dias, somente_leitura: testeAcabou(t, agora) }); } else situacoes.sem_assinatura++; continue; }
+    situacoes[a.situacao] = (situacoes[a.situacao] || 0) + 1;
+    if (a.situacao === 'teste') { const dias = t.teste_ate ? Math.ceil((Date.parse(t.teste_ate) - agora) / DIA) : null; if (dias != null && dias <= 7) testes.push({ tenant_id: t.id, empresa: t.nome, teste_ate: t.teste_ate, dias, somente_leitura: testeAcabou(t, agora) }); continue; }
+    if (a.situacao !== 'ativa' && a.situacao !== 'inadimplente') continue;
+    const m = a.moeda || 'BRL'; const vm = mensalDe(a);
+    if (a.situacao === 'ativa') mrr[m] = r2((mrr[m] || 0) + vm);
+    const k = `${a.plano_nome || 'Sem plano'}|${m}`; const pp = porPlano.get(k) || { plano: a.plano_nome || 'Sem plano', moeda: m, empresas: 0, mrr: 0, inadimplentes: 0 };
+    pp.empresas++; if (a.situacao === 'ativa') pp.mrr = r2(pp.mrr + vm); else pp.inadimplentes++; porPlano.set(k, pp);
+    const prox = proximaEfetiva(a, hoje);
+    if (prox && prox <= em(30)) cobrancas.push({ tenant_id: t.id, empresa: t.nome, plano: a.plano_nome, modalidade: a.modalidade || 'mensal', moeda: m, valor: r2(liquido(a)), data: prox, situacao: a.situacao });
+    if (a.fim_compromisso && a.fim_compromisso >= hoje && a.fim_compromisso <= em(60)) renovacoes.push({ tenant_id: t.id, empresa: t.nome, plano: a.plano_nome, modalidade: a.modalidade, fim_compromisso: a.fim_compromisso });
+  }
+  const mrrLista = Object.entries(mrr).map(([moeda, valor]) => ({ moeda, mrr: valor, arr: r2(valor * 12) }));
+  const ativas = situacoes.ativa; const brl = mrr.BRL || 0;
+  return { migrou, hoje, mrr: mrrLista, ticket_medio_brl: ativas ? r2(brl / Math.max(1, as.filter((a) => a.situacao === 'ativa' && (a.moeda || 'BRL') === 'BRL').length)) : 0, situacoes,
+    inadimplencia_pct: ativas + situacoes.inadimplente ? Math.round((situacoes.inadimplente / (ativas + situacoes.inadimplente)) * 100) : 0,
+    por_plano: [...porPlano.values()].sort((a, b) => b.mrr - a.mrr), cobrancas: cobrancas.sort((a, b) => a.data.localeCompare(b.data)),
+    cobrancas_total: Object.entries(cobrancas.reduce((o, c) => ({ ...o, [c.moeda]: r2((o[c.moeda] || 0) + c.valor) }), {})).map(([moeda, valor]) => ({ moeda, valor })),
+    testes: testes.sort((a, b) => a.dias - b.dias), renovacoes: renovacoes.sort((a, b) => a.fim_compromisso.localeCompare(b.fim_compromisso)), pedidos_pendentes: peds.length, planos_publicos: planos.filter((p) => p.publico !== false).length };
+}
+
 /** Console: pedidos pendentes de todas as empresas (selo na lista) */
 async function pendentes(supabase) { try { return { pedidos: (await q(supabase.from('tenant_plano_pedidos').select('*').eq('status', 'pendente'))) }; } catch { return { pedidos: [] }; } }
 
@@ -188,4 +232,4 @@ async function avisarFimDoTeste(supabase, agora = Date.now()) {
   return res;
 }
 
-module.exports = { MODALIDADES, datasDa, precoNa, doCliente, pedirPlano, decidirPedido, pendentes, _definirAvisoPlataforma, SITUACOES, METRICAS, MOEDAS, precoDoPlano, testeAcabou, daEmpresa, salvar, somenteLeituraNoFimDoTeste, avisarFimDoTeste, limparCache, _definirEmail };
+module.exports = { financeiro, proximaEfetiva, MODALIDADES, datasDa, precoNa, doCliente, pedirPlano, decidirPedido, pendentes, _definirAvisoPlataforma, SITUACOES, METRICAS, MOEDAS, precoDoPlano, testeAcabou, daEmpresa, salvar, somenteLeituraNoFimDoTeste, avisarFimDoTeste, limparCache, _definirEmail };
