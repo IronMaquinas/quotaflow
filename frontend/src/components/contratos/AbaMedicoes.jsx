@@ -17,6 +17,7 @@ export default function AbaMedicoes({ C, s, editar, filtroContrato = null, onFil
   const [per, setPer] = useState(() => faixaPeriodo("ano"));
   const [fc, setFc] = useState(filtroContrato ? String(filtroContrato) : ""); const [fcli, setFcli] = useState(""); const [feq, setFeq] = useState("");
   const carregar = async () => { try { setD(await apiService.get("/contratos/medicoes/painel")); } catch (e) { onErro(e.message); } };
+  const [det, setDet] = useState(null); // 18y.1: detalhe dos cartões
   useEffect(() => { carregar(); }, []); // eslint-disable-line
   useEffect(() => { if (filtroContrato) { setFc(String(filtroContrato)); setPer(faixaPeriodo("tudo")); onFiltroUsado?.(); } }, [filtroContrato]); // eslint-disable-line
   const hist = useMemo(() => (d?.historico || []).filter((h) => (!per.de || (h.inicio <= per.ate && h.fim >= per.de)) && (!fc || String(h.contrato_id) === fc) && (!fcli || h.cliente === fcli)
@@ -29,12 +30,13 @@ export default function AbaMedicoes({ C, s, editar, filtroContrato = null, onFil
   const sel = { ...s.input, padding: "6px 8px", fontSize: 13, width: "auto", minWidth: 170 };
   return (
     <div>
+      {det && <DetalheCartao C={C} s={s} tipo={det} r={r} mesRot={`${MES[Number(mm) - 1]}/${ano}`} onFechar={() => setDet(null)} />}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-        {card("VALOR MENSAL EM LOCAÇÃO", compacto(r.valor_mensal), `${r.equipamentos} equipamento(s) locado(s) hoje`, C.success)}
+        {card("VALOR MENSAL EM LOCAÇÃO (MÊS CHEIO)", compacto(r.valor_mensal), `${r.equipamentos} equipamento(s) locado(s) hoje · ver detalhe ›`, C.success, () => setDet("mensal"))}
         {card("CONTRATOS ATIVOS", r.contratos_ativos, r.vencendo ? `${r.vencendo} vencendo em 60 dias` : "nenhum vencendo em 60 dias", r.vencendo ? C.warn : undefined)}
         {card("PARA REVISAR E ENVIAR", r.para_revisar, r.contestadas ? `${r.contestadas} contestada(s) pelo cliente` : "medições prontas", r.contestadas ? C.danger : r.para_revisar ? C.accent : undefined)}
         {card("AGUARDANDO O CLIENTE", r.aguardando, r.aguardando ? compacto(r.aguardando_valor) : "nada pendente", r.aguardando ? C.warn : undefined)}
-        {card(`MEDIDO EM ${MES[Number(mm) - 1].toUpperCase()}/${ano}`, compacto(ma.medido), `${ma.fechadas} de ${ma.total} fechada(s) · previsto ${compacto(ma.previsto)}`)}
+        {card(`MEDIÇÃO DE ${MES[Number(mm) - 1].toUpperCase()}/${ano}`, compacto(ma.medido), `${ma.fechadas} de ${ma.total} fechada(s) · previsto ${compacto(ma.previsto)} (proporcional aos dias) · ver cálculo ›`, undefined, () => setDet("mes"))}
       </div>
       {r.vencendo_lista.length > 0 && <div style={{ fontSize: 12.5, color: C.warn, marginBottom: 10 }}>⏳ Vencendo em 60 dias: {r.vencendo_lista.map((c) => `${c.numero} · ${c.cliente} (${dataBR(c.fim_previsto)})`).join(" · ")}</div>}
 
@@ -68,4 +70,33 @@ export default function AbaMedicoes({ C, s, editar, filtroContrato = null, onFil
       {aberta && <MedicaoModal C={C} s={s} medicaoId={aberta} podeEditar={editar} onFechar={() => setAberta(null)} onMudou={() => { carregar(); onMudou?.(); }} onErro={onErro} onOk={onOk} />}
     </div>
   );
+}
+
+// ─── 18y.1: detalhe dos cartões (o que cada número soma) ─────────────────────
+const brl2 = (v) => (v == null ? "—" : Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
+const dBR = (v) => (v ? String(v).slice(0, 10).split("-").reverse().join("/") : "—");
+function DetalheCartao({ C, s, tipo, r, mesRot, onFechar }) {
+  const mensal = tipo === "mensal"; const lista = mensal ? r.valor_mensal_itens || [] : r.mes_anterior.itens || [];
+  const cel = { padding: "7px 8px", borderTop: `1px solid ${C.border}`, fontSize: 12.5, textAlign: "left", verticalAlign: "top" }; const dir = { ...cel, textAlign: "right", whiteSpace: "nowrap" };
+  const total = lista.reduce((t, i) => t + Number((mensal ? i.valor_mensal : i.valor_recomendado) || 0), 0);
+  return <div onClick={onFechar} style={{ position: "fixed", inset: 0, background: "#00000099", zIndex: 1000, display: "flex", alignItems: "flex-start", justifyContent: "center", padding: 16, overflowY: "auto" }}>
+    <div onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Detalhe" style={{ ...s.card, width: 780, maxWidth: "100%", padding: 20, marginTop: 30 }}>
+      <div style={{ display: "flex", alignItems: "center", marginBottom: 4 }}><div style={{ fontWeight: 700, fontSize: 16, flex: 1 }}>{mensal ? "💰 Valor mensal em locação (mês cheio)" : `📏 Medição de ${mesRot} — cálculo`}</div>
+        <button type="button" onClick={onFechar} aria-label="Fechar" style={{ background: "none", border: "none", color: C.muted, fontSize: 20, cursor: "pointer" }}>✕</button></div>
+      <div style={{ fontSize: 12.5, color: C.textSub, marginBottom: 12, lineHeight: 1.5 }}>{mensal
+        ? "Soma do valor mensal cheio de cada equipamento locado hoje — o que os contratos rendem num mês inteiro. Não é o que vai ser cobrado neste mês (a medição é proporcional aos dias)."
+        : `Previsto = valor mensal × dias locados no mês ÷ dias do mês. Quem entrou no meio do mês entra proporcional. "Medido" só soma as medições aprovadas pelo cliente.`}</div>
+      <div style={{ overflowX: "auto" }}><table style={{ borderCollapse: "collapse", width: "100%", minWidth: 520 }}>
+        <thead><tr>{(mensal ? ["CONTRATO", "EQUIPAMENTO", "DESDE", "VALOR MENSAL"] : ["CONTRATO", "EQUIPAMENTO", "PERÍODO", "DIAS", "VALOR MENSAL", "PREVISTO", "SITUAÇÃO"]).map((h, k) => <th key={h} style={{ ...(k >= (mensal ? 3 : 3) ? dir : cel), borderTop: "none", fontSize: 10.5, color: C.muted, fontWeight: 600 }}>{h}</th>)}</tr></thead>
+        <tbody>
+          {lista.map((i, k) => <tr key={k}>
+            <td style={cel}><b>{i.numero}</b><div style={{ fontSize: 11, color: C.muted }}>{i.cliente}</div></td>
+            <td style={cel}>{i.tag ? `${i.tag} · ` : ""}{i.nome || "—"}</td>
+            {mensal ? <><td style={dir}>{dBR(i.inicio)}</td><td style={dir}>{i.valor_mensal == null ? <span style={{ color: C.warn }}>sem valor</span> : brl2(i.valor_mensal)}</td></>
+              : <><td style={dir}>{dBR(i.de)} → {dBR(i.ate)}</td><td style={dir}>{i.dias}/{i.dias_ciclo}</td><td style={dir}>{brl2(i.valor_mensal)}</td><td style={{ ...dir, fontWeight: 700 }}>{brl2(i.valor_recomendado)}</td><td style={dir}>{i.status_nome}</td></>}
+          </tr>)}
+          {lista.length === 0 && <tr><td colSpan={7} style={{ ...cel, color: C.muted }}>Nada para mostrar.</td></tr>}
+          <tr><td colSpan={mensal ? 3 : 5} style={{ ...cel, fontWeight: 700 }}>Total</td><td style={{ ...dir, fontWeight: 800, color: C.success || "#22c55e" }}>{brl2(total)}</td>{!mensal && <td style={dir} />}</tr>
+        </tbody></table></div>
+    </div></div>;
 }

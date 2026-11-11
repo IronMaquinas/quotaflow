@@ -1002,6 +1002,10 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18y.1 (11/11):** **📏 painel de Medições mais claro** (dúvida do Marcony: "R$ 25 mil × R$ 5 mil"). Os dois números medem coisas diferentes e agora dizem isso:
+    - **"Valor mensal em locação (mês cheio)"** = soma do valor mensal cheio de cada equipamento locado hoje; **clicável** → lista por contrato/equipamento (desde quando, valor mensal).
+    - **"Medição de out/2026"** = medido (aprovadas) e previsto **proporcional aos dias** locados no mês; **clicável** → cálculo por equipamento (período, dias/dias do mês, valor mensal, previsto, situação). Ex.: R$ 25.000 × 7/31 = R$ 5.645,16.
+    - **Medição vazia não abre mais:** contrato sem equipamento no ciclo não gera medição ("R$ 0,00 — pronta para revisar"); a que já existia vazia e em preparação é descartada sozinha.
   - **18y (11/11):** **🚛 contrato de locação → mobilização/desmobilização → AT + 📈 faturamento previsto** (item 16b). Migration 079.
     - **Na ficha do contrato** (📑 Contratos), seção **🚛 Mobilização e desmobilização**: **＋ Mobilização** (pátio/base → obra) e **＋ Desmobilização** (obra → pátio), com data prevista, valor cobrado (opcional; padrão do contrato) e quais equipamentos vão. Cada movimento vira um **trecho do pedido de transporte do contrato** (um pedido por contrato, `origem='contrato'`, itens = as máquinas com tag/placa) — **a AT é programada em 🚛 Programação pelo fluxo de sempre** (motorista, conjunto, documentos, fluxo da viagem, link do motorista). A ficha mostra cada movimento com a(s) AT(s) e o status, ou "⏳ AT a programar · abrir 🚛 Programação". A base de saída fica guardada no contrato. Só aparece com o módulo Programação e AT.
     - **📈 Faturamento previsto** (botão na aba 📑 Contratos): por mês (3, 6 ou 12 meses), por contrato e total — valor mensal de cada equipamento **proporcional aos dias** dentro do período (início → devolução / término previsto; sem término conta até o fim da janela). Aponta equipamentos sem valor mensal. Medição por hora/dia e mobilização não entram (vêm com a medição por franquia).
@@ -1618,7 +1622,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18y)
+**Última atualização deste documento:** 06/11/2026 (etapa 18y.1)
 
 --------------------------------------------------------------------------------
 

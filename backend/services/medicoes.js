@@ -146,6 +146,7 @@ async function abrir(supabase, tenantId, quem, contratoId, inicio) {
   let ja; try { ja = (await q(supabase.from('locacao_medicoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id))).find((m) => m.inicio === x.inicio); } catch (e) { if (sem062(e)) return ERRO_062; throw e; }
   if (ja) return { medicao: ja };
   const itens = await montarItens(supabase, tenantId, c, x);
+  if (!itens.length) return { status: 409, erro: 'Nenhum equipamento locado neste período — não há o que medir', vazia: true }; // 18y.1: não abre medição vazia
   const agora = new Date().toISOString();
   const { data, error } = await supabase.from('locacao_medicoes').insert([{ tenant_id: tenantId, contrato_id: c.id, inicio: x.inicio, fim: x.fim, status: 'aberta', itens, obs: null, informativo: null,
     preenchido_por: null, preenchido_em: null, enviado_por: null, enviado_em: null, aprovado_por: null, aprovado_em: null, devolvido_motivo: null,
@@ -264,6 +265,7 @@ async function pendencias(supabase, tenantId, quem = { usuarioNome: 'QuotaFlow' 
       if (!naJanela(x, hoje) && (!m || m.status === 'aberta')) continue; // 18d.4: ciclo corrente só a partir de D-10
       if (!m) { const r = await abrir(supabase, tenantId, quem, c.id, x.inicio).catch(() => null); m = r?.medicao; if (!m) continue; }
       else m = await sincronizar(supabase, tenantId, m, c).catch(() => m); // 18d.3: equipamento que entrou depois de gerar
+      if (m.status === 'aberta' && !(m.itens || []).length) { try { await supabase.from('locacao_medicoes').delete().eq('id', m.id).eq('tenant_id', tenantId); } catch { /* fica */ } continue; } // 18y.1: ficou vazia (nenhum equipamento no ciclo) → descarta
       if (m.status === 'aprovada') continue;
       out.push({ contrato_id: c.id, numero: c.numero, cliente: c.cliente, ...x, medicao_id: m.id, status: m.status, status_nome: STATUS_NOME[m.status], medicao_locatario: !!c.medicao_locatario, em_andamento: x.fim >= hoje, ...resumo(m) });
     }
@@ -288,12 +290,18 @@ async function painelEmpresa(supabase, tenantId, quem) {
   const tot = (m) => r2((m.itens || []).reduce((t, i) => t + Number(i.valor || 0), 0));
   const em60 = new Date(Date.parse(`${hoje}T12:00:00Z`) + 60 * 86400000).toISOString().slice(0, 10);
   const vencendo = ativos.filter((c) => c.fim_previsto && c.fim_previsto >= hoje && c.fim_previsto <= em60);
+  const eqDe = new Map(eqs.map((e) => [String(e.id), e]));
   const resumo = {
+    // 18y.1: o detalhe de cada número (cartões clicáveis)
+    valor_mensal_itens: locAtivas.map((l) => { const c = porC.get(String(l.contrato_id)) || {}; const e = eqDe.get(String(l.equipamento_id)) || {}; return { contrato_id: c.id, numero: c.numero, cliente: c.cliente, tag: e.tag || null, nome: e.nome || null, inicio: l.inicio, valor_mensal: l.valor_mensal ?? null }; })
+      .sort((a, b) => String(a.numero).localeCompare(String(b.numero)) || String(a.tag).localeCompare(String(b.tag))),
     valor_mensal: r2(locAtivas.reduce((t, l) => t + Number(l.valor_mensal || 0), 0)), equipamentos: locAtivas.length, contratos_ativos: ativos.length,
     para_revisar: pend.pendencias.filter((x) => ['aberta', 'devolvida'].includes(x.status)).length, contestadas: pend.pendencias.filter((x) => x.status === 'devolvida').length,
     aguardando: pend.pendencias.filter((x) => x.status === 'enviada').length, aguardando_valor: r2(pend.pendencias.filter((x) => x.status === 'enviada').reduce((t, x) => t + Number(x.total_cobrar || 0), 0)),
     mes_anterior: { mes: mesAnt, medido: r2(doMesAnt.filter((m) => m.status === 'aprovada').reduce((t, m) => t + tot(m), 0)), previsto: r2(doMesAnt.reduce((t, m) => t + (m.itens || []).reduce((s2, i) => s2 + Number(i.valor_recomendado || 0), 0), 0)),
-      fechadas: doMesAnt.filter((m) => m.status === 'aprovada').length, total: doMesAnt.length },
+      fechadas: doMesAnt.filter((m) => m.status === 'aprovada').length, total: doMesAnt.length,
+      itens: doMesAnt.flatMap((m) => { const c = porC.get(String(m.contrato_id)) || {}; return (m.itens || []).map((i) => ({ medicao_id: m.id, contrato_id: c.id, numero: c.numero, cliente: c.cliente, status: m.status, status_nome: STATUS_NOME[m.status],
+        tag: i.tag || null, nome: i.nome || null, de: i.de, ate: i.ate, dias: i.dias, dias_ciclo: i.dias_ciclo, valor_mensal: i.valor_mensal ?? null, valor_recomendado: i.valor_recomendado ?? null, valor: i.valor ?? null })); }) },
     vencendo: vencendo.length, vencendo_lista: vencendo.map((c) => ({ id: c.id, numero: c.numero, cliente: c.cliente, fim_previsto: c.fim_previsto })).sort((a, b) => a.fim_previsto.localeCompare(b.fim_previsto)),
   };
   const eqNome = new Map(eqs.map((e) => [String(e.id), e]));

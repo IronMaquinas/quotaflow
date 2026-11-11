@@ -254,11 +254,11 @@ const ESPERADO = {
   'front:ModalNaoConformidade.jsx': '244c331b28157bb6c2f14f4736d461e6', // etapa 18c.1
   'front:FiltroPeriodo.jsx': '06b873f17ff380024b38e507bdca6724', // etapa 18c.4 (novo)
   'migrations/062_medicao_locacao.sql': '5a4d7ea7f3180195a19e4121183a446e', // etapa 18d (novo)
-  'services/medicoes.js': '829777143120b2109c86a27c19f2e897', // etapa 18r
+  'services/medicoes.js': 'b0079ae7dc4ea6d1eef53188952098ab', // etapa 18y.1
   'front:MedicaoModal.jsx': '9576e4586e1d165de1ba5d0d696f238a', // etapa 18h
   'front:gerarMedicao.js': '24dbe95cf8751b58aa142b487cc777ed', // etapa 18d.2
   'migrations/063_medicao_vencimento.sql': '0b27bacd7a6a0b6d77c01a8039f5192d', // etapa 18d.2 (novo)
-  'front:AbaMedicoes.jsx': '368b54092f0a25f379ecdaacfebf2d41', // etapa 18d.5 (novo)
+  'front:AbaMedicoes.jsx': '88bfc994bb38ab826a1452a0e6f9f732', // etapa 18y.1
   'front:gerarRelatorioViagem.js': 'd028915abe837d37b94a4082f12d0acd', // etapa 18g.2d
   'services/frotaCalendario.js': 'fd8d5e58894fd55bae016f9cdc362e9b', // etapa 18f.1
   'migrations/064_frota_dias_operacao.sql': 'd96a047b8c22b7d52c0d4a83d1b715ae', // etapa 18f (novo)
@@ -319,11 +319,10 @@ const ESPERADO = {
   'front:MobilizacaoContrato.jsx': '726f6849504e44a0ba89c2c9d7330005', // etapa 18y (novo)
 };
 
-// Antes de copiar a etapa 18y — base: 5817663
+// Antes de copiar a etapa 18y.1 — base: d3f64d9
 const ANTES = {
-  'services/pedidosVenda.js': 'd8257b6ed87d6997dd8a285b0245539f',
-  'routes/contratos.js': '4a20ce8943e43d01c09f249c13c316f5',
-  'front:TelaContratos.jsx': '8ca010c69c85b79755aba455b1e956df',
+  'services/medicoes.js': '829777143120b2109c86a27c19f2e897',
+  'front:AbaMedicoes.jsx': '368b54092f0a25f379ecdaacfebf2d41',
 };
 
 const RAIZ = process.cwd();
@@ -361,7 +360,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18y)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18y.1)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
