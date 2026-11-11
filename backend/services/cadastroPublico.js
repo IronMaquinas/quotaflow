@@ -33,7 +33,7 @@ const {
   EMAIL_VALIDO, soDigitos, normEmail, texto, conferirCnpj, nomeDaReceita, alertasCadastro,
 } = require('./receitaCnpj');
 
-const DIAS_TESTE_PADRAO = 15;
+const DIAS_TESTE_PADRAO = 14; // 18v: 14 dias (decisão do Marcony); a linha 'teste' da tabela planos pode trocar
 // Receita fora do ar no cadastro: segue (a conta já nasce em análise) e avisa o admin
 const ALERTA_SEM_RECEITA = {
   codigo: 'receita_nao_conferida',

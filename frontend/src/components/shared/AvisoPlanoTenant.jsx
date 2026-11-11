@@ -9,6 +9,7 @@
 
 import { useState, useEffect } from "react";
 import apiService from "../../services/apiService";
+import TextoComPlano from "./TextoComPlano"; // 18v
 
 const CHAVE_FECHADO = "qf_aviso_plano_fechado";
 
@@ -50,7 +51,7 @@ export default function AvisoPlanoTenant() {
   const dias = tenant.dias_restantes_teste;
   const mensagens = [];
   if (emTeste && tenant.teste_encerrado) {
-    mensagens.push(<span key="t">⏰ Seu teste grátis terminou em <b>{ate}</b>. Fale com a equipe QuotaFlow para escolher um plano.</span>);
+    mensagens.push(<span key="t">⏰ Seu teste grátis terminou em <b>{ate}</b> — o sistema está <b>só para consulta</b> (seus dados estão guardados). <TextoComPlano texto="Escolha um plano em ⭐ Meu plano." C={{ accent: "#93c5fd" }} /></span>); // 18v
   } else if (emTeste) {
     mensagens.push(
       <span key="t">🎁 Teste grátis — {dias === 1 ? "falta 1 dia" : `faltam ${dias} dias`} (até <b>{ate}</b>).</span>

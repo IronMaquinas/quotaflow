@@ -74,6 +74,8 @@ app.use((req, res, next) => {
 // ── Rotas ────────────────────────────────────
 const { exigirModulo } = require('./middleware/exigirModulo'); // etapa 18k: 🧩 módulo não contratado → 409
 app.use("/api/auth",         authRoutes);
+// 18v: 💳 teste grátis terminou sem contratar → SÓ LEITURA (GET liberado; o resto 409 com "Escolha um plano em ⭐ Meu plano")
+app.use('/api', require('./services/assinaturas').somenteLeituraNoFimDoTeste(() => require('./db').supabase));
 // 18s: 🧩 bloqueio na API — Requisição/OS (/chamados) com Compras, Manutenção ou Estoque; cotação com Compras ou Cotações;
 //   o que vai ao fornecedor (enviar, adicionar, reenviar, renegociar, revalidar) só com "Cotações e Canal Spot".
 const COTACAO_FORNECEDOR = /^\/(enviar|[^/]+\/(fornecedores|adicionar-fornecedores|fornecedor\/[^/]+\/renegociar|fornecedores\/[^/]+\/(reenviar-email|revalidar)))(\/|$)/;
@@ -271,6 +273,9 @@ if (process.env.CRON_INTERNO === '1') {
   }, { timezone: 'America/Sao_Paulo' });
   cron.schedule('*/5 * * * *', () => { // 18q: ✉️ conversa 4 h sem ler → e-mail (uma vez por assunto)
     require('./services/notificacoes').avaliarEmail(require('./db').supabase).then((r) => { if (r.enviados || r.falhou) console.log('✉️ [notificacoes] e-mail 4 h:', JSON.stringify(r)); }).catch((e) => console.error('⚠️ [notificacoes] e-mail 4 h:', e.message));
+  }, { timezone: 'America/Sao_Paulo' });
+  cron.schedule('0 9 * * *', () => { // 18v: 🎁 aviso "faltam 3 dias" do teste grátis
+    require('./services/assinaturas').avisarFimDoTeste(require('./db').supabase).then((r) => { if (r.avisados) console.log('🎁 [assinaturas] avisos de fim de teste:', r.avisados); }).catch((e) => console.error('⚠️ [assinaturas] fim do teste:', e.message));
   }, { timezone: 'America/Sao_Paulo' });
   cron.schedule('0 3 * * *', () => { // 18n.3: 🧹 notificações lidas há +30 dias / não lidas há +90 dias
     require('./services/notificacoes').limpar(require('./db').supabase).then((r) => { if (r.apagadas) console.log('🧹 [notificacoes] apagadas:', r.apagadas); }).catch((e) => console.error('⚠️ [notificacoes] limpeza:', e.message));

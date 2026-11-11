@@ -100,6 +100,10 @@ router.post('/planos', responder(async (req) => { const r = await MOD.salvarPlan
 router.put('/planos/:id', responder(async (req) => { const r = await MOD.salvarPlano(supabase, req.params.id, req.body || {}); if (!r.erro) await C.registrar(req.plataformaAdmin, 'plano_editado', 'plano', req.params.id, { nome: r.plano.nome }); return r; }));
 router.delete('/planos/:id', responder(async (req) => { const r = await MOD.excluirPlano(supabase, req.params.id); await C.registrar(req.plataformaAdmin, 'plano_excluido', 'plano', req.params.id); return r; }));
 router.put('/transportadoras/:id/modulos', responder(async (req) => { const r = await MOD.definirDaEmpresa(supabase, req.params.id, req.body || {}); if (!r.erro) await C.registrar(req.plataformaAdmin, 'modulos_alterados', 'tenant', req.params.id, { plano: r.plano_nome, de: r.antes, para: r.ativos }); return r; }));
+// 18v: 💳 assinatura por empresa
+const ASS = require('../services/assinaturas');
+router.get('/transportadoras/:id/assinatura', responder((req) => ASS.daEmpresa(supabase, req.params.id)));
+router.put('/transportadoras/:id/assinatura', responder(async (req) => { const r = await ASS.salvar(supabase, req.params.id, req.body || {}, req.plataformaAdmin?.email || req.plataformaAdmin?.nome || null); if (!r.erro) await C.registrar(req.plataformaAdmin, 'assinatura_alterada', 'tenant', req.params.id, { situacao: r.situacao, plano: r.assinatura?.plano_nome, valor: r.assinatura?.valor }); return r; }));
 router.get('/transportadoras/:id/alteracoes', responder((req) => PERFIL.alteracoes(supabase, req.params.id)));
 // 14e: 🛡 CNPJs — fornecedores da plataforma irregulares, tenants com processo, revisão (revisar / suspender / reativar)
 const MCNPJ = require('../services/monitorCnpj');

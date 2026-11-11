@@ -98,9 +98,13 @@ async function listarPlanos(supabase) {
 }
 async function salvarPlano(supabase, id, body = {}) {
   const nome = String(body.nome || '').trim().slice(0, 80); if (!nome) return { status: 400, erro: 'Dê um nome ao plano' };
-  const linha = { nome, descricao: String(body.descricao || '').trim().slice(0, 300) || null, modulos: resolver(body.modulos) };
+  const linha = { nome, descricao: String(body.descricao || '').trim().slice(0, 300) || null, modulos: resolver(body.modulos), ...require('./assinaturas').precoDoPlano(body) }; // 18v: preço
   if (!linha.modulos.length) return { status: 400, erro: 'Escolha ao menos um módulo' };
-  const r = id ? await supabase.from('plataforma_planos').update(linha).eq('id', id).select() : await supabase.from('plataforma_planos').insert([linha]).select();
+  const gravar = (l) => (id ? supabase.from('plataforma_planos').update(l).eq('id', id).select() : supabase.from('plataforma_planos').insert([l]).select());
+  let r = await gravar(linha);
+  if (r.error && /preco_|moeda|metrica|franquia/.test(r.error.message)) { // sem a 077: salva sem preço
+    const { preco_mensal, preco_anual, moeda, metrica, preco_unidade, franquia, ...sem } = linha; r = await gravar(sem); // eslint-disable-line no-unused-vars
+  }
   if (r.error) { if (/duplicate|unique/i.test(r.error.message)) return { status: 409, erro: 'Já existe um plano com esse nome' }; throw new Error(r.error.message); }
   return { plano: r.data[0] };
 }

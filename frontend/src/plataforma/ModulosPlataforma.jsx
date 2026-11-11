@@ -64,15 +64,17 @@ export function PlanosPlataforma({ token, chamar, C, input, label, card, btn, ta
     {ed && <div style={{ ...card, padding: 16, marginBottom: 14 }}>
       <label style={label}>NOME</label><input value={ed.nome} onChange={(e) => setEd({ ...ed, nome: e.target.value })} placeholder="ex.: Transportadora completo" style={{ ...input, marginBottom: 10 }} />
       <label style={label}>DESCRIÇÃO (OPCIONAL)</label><input value={ed.descricao || ""} onChange={(e) => setEd({ ...ed, descricao: e.target.value })} style={{ ...input, marginBottom: 12 }} />
+      <PrecoPlano ed={ed} setEd={setEd} C={C} input={input} label={label} />{/* 18v */}
       <label style={label}>MÓDULOS</label><SeletorModulos cat={cat} valor={ed.modulos} onChange={(m) => setEd({ ...ed, modulos: m })} C={C} tag={tag} />
       <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10 }}><button type="button" onClick={() => setEd(null)} style={btn(C.muted, false)}>Cancelar</button><button type="button" disabled={!ed.nome.trim() || !ed.modulos.length} onClick={salvar} style={btn()}>Salvar plano</button></div>
     </div>}
     {d.planos.length === 0 && !ed ? <div style={{ ...card, padding: 16, color: C.muted, fontSize: 13 }}>Nenhum plano-modelo ainda.</div>
       : d.planos.map((p) => <div key={p.id} style={{ ...card, padding: "12px 14px", marginBottom: 8 }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}><b style={{ flex: 1 }}>{p.nome}</b><span style={{ fontSize: 12, color: C.muted }}>{p.modulos.length} módulo(s)</span>
-          <button type="button" onClick={() => setEd({ id: p.id, nome: p.nome, descricao: p.descricao || "", modulos: p.modulos })} style={{ ...btn(C.muted, false), padding: "4px 10px", fontSize: 11 }}>Editar</button>
+          <button type="button" onClick={() => setEd({ id: p.id, nome: p.nome, descricao: p.descricao || "", modulos: p.modulos, preco_mensal: p.preco_mensal ?? "", preco_anual: p.preco_anual ?? "", moeda: p.moeda || "BRL", metrica: p.metrica || "empresa", preco_unidade: p.preco_unidade ?? "", franquia: p.franquia ?? "" })} style={{ ...btn(C.muted, false), padding: "4px 10px", fontSize: 11 }}>Editar</button>
           <button type="button" onClick={() => setConf(p)} style={{ ...btn(C.danger, false), padding: "4px 10px", fontSize: 11 }}>Excluir</button></div>
         {p.descricao && <div style={{ fontSize: 12, color: C.sub }}>{p.descricao}</div>}
+        {resumoPreco(p) && <div style={{ fontSize: 12.5, color: C.success || "#22c55e", fontWeight: 600, marginTop: 2 }}>💲 {resumoPreco(p)}</div>}{/* 18v */}
         <div style={{ fontSize: 12, color: C.muted, marginTop: 4 }}>{p.modulos.map(nomeDe).join(" · ")}</div>
       </div>)}
     {conf && <div style={{ position: "fixed", inset: 0, background: "#00000099", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 60, padding: 20 }}>
@@ -122,6 +124,81 @@ export function ModulosEmpresa({ token, chamar, C, input, label, card, btn, tag,
         <input value={nome} onChange={(e) => setNome(e.target.value)} placeholder={completo ? "Completo" : "Personalizado"} style={{ ...input, marginBottom: 12 }} />
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button type="button" onClick={onFechar} style={btn(C.muted, false)}>Cancelar</button>
           <button type="button" disabled={ocupado || (!completo && !mods.length)} onClick={salvar} style={btn()}>{ocupado ? "Salvando…" : "Salvar módulos"}</button></div>
+      </>}
+    </div>
+  </div>;
+}
+
+// ─── 18v: 💲 preço do plano-modelo ──────────────────────────────────────────
+export const MOEDAS = { BRL: "R$", USD: "US$", EUR: "€", DKK: "kr" };
+export const METRICAS = { empresa: "por empresa (valor fixo)", usuario: "por usuário", equipamento: "por veículo/equipamento", uso: "por uso (pay-per-use)" };
+export const dinheiro = (v, moeda = "BRL") => (v == null || v === "" ? "—" : `${MOEDAS[moeda] || moeda} ${Number(v).toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`);
+export function resumoPreco(p) {
+  if (p.preco_mensal == null && p.preco_anual == null && p.preco_unidade == null) return null;
+  const m = p.moeda || "BRL"; const partes = [];
+  if (p.preco_mensal != null) partes.push(`${dinheiro(p.preco_mensal, m)}/mês`);
+  if (p.preco_anual != null) partes.push(`${dinheiro(p.preco_anual, m)}/ano`);
+  if (p.metrica && p.metrica !== "empresa") partes.push(`+ ${dinheiro(p.preco_unidade, m)} ${METRICAS[p.metrica]?.replace("por ", "por ") || p.metrica}${p.franquia ? ` (acima de ${p.franquia} incluídos)` : ""}`);
+  return partes.join(" · ");
+}
+function PrecoPlano({ ed, setEd, C, input, label }) {
+  const set = (k) => (e) => setEd({ ...ed, [k]: e.target.value });
+  const metrica = ed.metrica || "empresa";
+  return <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 12px", marginBottom: 12 }}>
+    <div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 8 }}>💲 Preço <span style={{ fontWeight: 400, color: C.muted }}>(opcional — aparece no Console; a página de planos vem depois)</span></div>
+    <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(130px, 1fr))", gap: 8 }}>
+      <div><label style={label}>MOEDA</label><select value={ed.moeda || "BRL"} onChange={set("moeda")} style={input}>{Object.keys(MOEDAS).map((k) => <option key={k} value={k}>{k} ({MOEDAS[k]})</option>)}</select></div>
+      <div><label style={label}>MENSAL</label><input type="number" min="0" step="0.01" value={ed.preco_mensal ?? ""} onChange={set("preco_mensal")} style={input} /></div>
+      <div><label style={label}>ANUAL</label><input type="number" min="0" step="0.01" value={ed.preco_anual ?? ""} onChange={set("preco_anual")} style={input} /></div>
+      <div><label style={label}>COBRANÇA</label><select value={metrica} onChange={set("metrica")} style={input}>{Object.entries(METRICAS).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
+      {metrica !== "empresa" && <><div><label style={label}>PREÇO POR UNIDADE</label><input type="number" min="0" step="0.01" value={ed.preco_unidade ?? ""} onChange={set("preco_unidade")} style={input} /></div>
+        <div><label style={label}>INCLUÍDOS NO PLANO</label><input type="number" min="0" step="1" value={ed.franquia ?? ""} onChange={set("franquia")} placeholder="ex.: 10" style={input} /></div></>}
+    </div>
+    <div style={{ fontSize: 11.5, color: C.muted, marginTop: 6 }}>Ex.: "Pequeno" R$ 290/mês por empresa · "Cresce" R$ 590/mês + R$ 29 por veículo acima de 10 · "Pay-per-use" R$ 0 + R$ 4,90 por uso.</div>
+  </div>;
+}
+
+// ─── 18v: 💳 assinatura da empresa (Console) ──────────────────────────────────
+const SITUACAO = { teste: "🧪 Em teste", ativa: "✅ Ativa", inadimplente: "⚠️ Inadimplente", suspensa: "⏸ Suspensa", cancelada: "✖ Cancelada" };
+const NOMES_CAMPO = { plano_nome: "Plano", situacao: "Situação", ciclo: "Ciclo", moeda: "Moeda", valor: "Valor", desconto_pct: "Desconto %", inicio: "Início", proxima_renovacao: "Próxima renovação", teste_ate: "Fim do teste" };
+export function AssinaturaEmpresa({ token, chamar, C, input, label, card, btn, empresa, onFechar, onSalvo, onAviso }) {
+  const [d, setD] = useState(null); const [planos, setPlanos] = useState([]); const [f, setF] = useState(null); const [ocupado, setOcupado] = useState(false);
+  useEffect(() => {
+    chamar(token, "GET", "/planos").then((r) => setPlanos(r.planos || [])).catch(() => {});
+    chamar(token, "GET", `/transportadoras/${empresa.id}/assinatura`).then((r) => { setD(r); const a = r.assinatura || {};
+      setF({ situacao: r.situacao, plano_id: a.plano_id || "", plano_nome: a.plano_nome || empresa.plano_nome || "", ciclo: a.ciclo || "mensal", moeda: a.moeda || "BRL", valor: a.valor ?? "", desconto_pct: a.desconto_pct ?? "",
+        inicio: a.inicio || "", proxima_renovacao: a.proxima_renovacao || "", obs: a.obs || "", teste_ate: r.teste_ate ? String(r.teste_ate).slice(0, 10) : "" }); })
+      .catch((e) => onAviso({ tipo: "erro", texto: e.message }));
+  }, [token, empresa.id]); // eslint-disable-line
+  const set = (k) => (e) => setF({ ...f, [k]: e.target.value });
+  const escolherPlano = (id) => { const p = planos.find((x) => String(x.id) === String(id)); setF({ ...f, plano_id: id, ...(p ? { plano_nome: p.nome, moeda: p.moeda || f.moeda, valor: (f.ciclo === "anual" ? p.preco_anual : p.preco_mensal) ?? f.valor } : {}) }); };
+  const liquido = f && f.valor !== "" ? Number(f.valor) * (1 - (Number(f.desconto_pct) || 0) / 100) : null;
+  const salvar = async () => { setOcupado(true); try { await chamar(token, "PUT", `/transportadoras/${empresa.id}/assinatura`, f); onAviso({ tipo: "ok", texto: `Assinatura de ${empresa.nome} salva` }); onSalvo?.(); } catch (e) { onAviso({ tipo: "erro", texto: e.message }); } finally { setOcupado(false); } };
+  const fmt = (v) => (v == null || v === "" ? "—" : /^\d{4}-\d{2}-\d{2}/.test(String(v)) ? String(v).slice(0, 10).split("-").reverse().join("/") : SITUACAO[v] || String(v));
+  return <div style={{ position: "fixed", inset: 0, background: "#00000099", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: 50, padding: 20, overflowY: "auto" }} onClick={onFechar}>
+    <div onClick={(e) => e.stopPropagation()} style={{ ...card, width: "100%", maxWidth: 640, padding: "20px 22px", marginTop: 20 }}>
+      <div style={{ fontSize: 15, fontWeight: 700, marginBottom: 4 }}>💳 Assinatura — {empresa.nome}</div>
+      {!d || !f ? <div style={{ color: C.muted }}>Carregando…</div> : !d.migrou ? <div style={{ color: C.danger, fontSize: 13 }}>Falta rodar a migration 077 no Supabase.</div> : <>
+        <div style={{ fontSize: 12.5, color: C.sub, marginBottom: 12 }}>{SITUACAO[d.situacao]}{d.situacao === "teste" && d.teste_ate ? ` até ${fmt(String(d.teste_ate).slice(0, 10))}${d.dias_teste != null ? (d.dias_teste > 0 ? ` (faltam ${d.dias_teste} dia(s))` : " — terminou: sistema só leitura") : ""}` : ""}</div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10 }}>
+          <div><label style={label}>SITUAÇÃO</label><select value={f.situacao} onChange={set("situacao")} style={input}>{Object.entries(SITUACAO).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
+          {f.situacao === "teste" && <div><label style={label}>FIM DO TESTE</label><input type="date" value={f.teste_ate} onChange={set("teste_ate")} style={input} /></div>}
+          <div><label style={label}>PLANO-MODELO</label><select value={f.plano_id} onChange={(e) => escolherPlano(e.target.value)} style={input}><option value="">— personalizado —</option>{planos.map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}</select></div>
+          <div><label style={label}>NOME DO PLANO</label><input value={f.plano_nome} onChange={set("plano_nome")} style={input} /></div>
+          <div><label style={label}>CICLO</label><select value={f.ciclo} onChange={set("ciclo")} style={input}><option value="mensal">Mensal</option><option value="anual">Anual</option></select></div>
+          <div><label style={label}>MOEDA</label><select value={f.moeda} onChange={set("moeda")} style={input}>{Object.keys(MOEDAS).map((k) => <option key={k} value={k}>{k}</option>)}</select></div>
+          <div><label style={label}>VALOR NEGOCIADO ({f.ciclo === "anual" ? "ANO" : "MÊS"})</label><input type="number" min="0" step="0.01" value={f.valor} onChange={set("valor")} style={input} /></div>
+          <div><label style={label}>DESCONTO %</label><input type="number" min="0" max="100" step="0.01" value={f.desconto_pct} onChange={set("desconto_pct")} style={input} /></div>
+          <div><label style={label}>INÍCIO</label><input type="date" value={f.inicio} onChange={set("inicio")} style={input} /></div>
+          <div><label style={label}>PRÓXIMA RENOVAÇÃO</label><input type="date" value={f.proxima_renovacao} onChange={set("proxima_renovacao")} style={input} /></div>
+        </div>
+        {liquido != null && <div style={{ fontSize: 13, marginTop: 8 }}>Valor com desconto: <b>{dinheiro(liquido, f.moeda)}</b>/{f.ciclo === "anual" ? "ano" : "mês"}</div>}
+        <label style={{ ...label, marginTop: 10 }}>OBSERVAÇÃO</label><input value={f.obs} onChange={set("obs")} placeholder="ex.: desconto de lançamento por 6 meses" style={{ ...input, marginBottom: 10 }} />
+        <div style={{ fontSize: 11.5, color: C.muted, marginBottom: 12 }}>Ativar tira a empresa do teste (sem início/renovação, o sistema preenche hoje + 1 ciclo). Voltar para "Em teste" com nova data estende o teste.</div>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button type="button" onClick={onFechar} style={btn(C.muted, false)}>Cancelar</button><button type="button" disabled={ocupado} onClick={salvar} style={btn()}>{ocupado ? "Salvando…" : "Salvar assinatura"}</button></div>
+        {d.historico?.length > 0 && <div style={{ marginTop: 16 }}><div style={{ fontSize: 12.5, fontWeight: 700, marginBottom: 6 }}>📜 Histórico</div>
+          {d.historico.map((h) => <div key={h.id} style={{ fontSize: 12, borderTop: `1px solid ${C.border}`, padding: "6px 0", color: C.sub }}>
+            <b style={{ color: C.text }}>{new Date(h.em).toLocaleString("pt-BR", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })}</b>{h.quem ? ` · ${h.quem}` : ""} — {Object.entries(h.detalhe || {}).map(([k, v]) => `${NOMES_CAMPO[k] || k}: ${fmt(v?.de)} → ${fmt(v?.para)}`).join(" · ")}</div>)}</div>}
       </>}
     </div>
   </div>;
