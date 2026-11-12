@@ -32,16 +32,21 @@ export default function ConfigFiscal({ C, s, onErro }) {
 }
 
 // ─── 18g.3: 📋 dados do CT-e + 🛡 apólices (a ficha do CT-e da tarefa fiscal usa daqui) ─────────
-const CAMPOS = [["ie", "Inscrição estadual", "ex.: 0623079040081"], ["uf", "UF da empresa", "MG"], ["rntrc", "RNTRC (ANTT)", "8 dígitos"], ["cfop_estadual", "CFOP dentro do estado", "5353"], ["cfop_interestadual", "CFOP fora do estado", "6353"],
-  ["cst", "CST do ICMS", "00"], ["aliquota_icms", "Alíquota do ICMS (%)", "12"], ["produto_padrao", "Produto predominante padrão", "Máquinas e equipamentos"], ["tomador_padrao", "Tomador padrão", "Remetente"]];
+const CAMPOS = [["ie", "Inscrição estadual", "ex.: 0623079040081"], ["uf", "UF de inscrição da empresa", "ES"], ["rntrc", "RNTRC (ANTT)", "8 dígitos"],
+  ["aliquota_interna", "Alíquota interna do ICMS (%) — sua UF", "17"], ["cst", "CST do ICMS (regime normal)", "00"], ["produto_padrao", "Produto predominante padrão", "Máquinas e equipamentos"], ["tomador_padrao", "Quem costuma ser o tomador", "Remetente"]]; // 18g.4: CFOP/ICMS sugeridos por trecho
+const addAno = (d) => { if (!/^\d{4}-\d{2}-\d{2}$/.test(d || "")) return ""; const x = new Date(`${d}T12:00:00Z`); x.setUTCFullYear(x.getUTCFullYear() + 1); return x.toISOString().slice(0, 10); };
+const mascCnpj = (v) => String(v || "").replace(/\D/g, "").slice(0, 14).replace(/^(\d{2})(\d)/, "$1.$2").replace(/^(\d{2})\.(\d{3})(\d)/, "$1.$2.$3").replace(/\.(\d{3})(\d)/, ".$1/$2").replace(/(\d{4})(\d)/, "$1-$2");
 const vazioApol = { seguradora: "", seguradora_cnpj: "", numero: "", ramo: "RCTR-C", responsavel: "emitente", vigencia_inicio: "", vigencia_fim: "", obs: "" };
 function DadosCte({ C, s, onErro }) {
-  const [d, setD] = useState(null); const [f, setF] = useState({}); const [ok, setOk] = useState(false); const [ap, setAp] = useState(null); const [salv, setSalv] = useState(false); const [excluir, setExcluir] = useState(null);
+  const [d, setD] = useState(null); const [f, setF] = useState({}); const [ok, setOk] = useState(false); const [ap, setAp] = useState(null); const [buscando, setBuscando] = useState(false); const [cnpjMsg, setCnpjMsg] = useState(null); const [salv, setSalv] = useState(false); const [excluir, setExcluir] = useState(null);
   useEffect(() => { apiService.get("/configuracoes/fiscal-cte").then((r) => { setD(r); setF(r.cte || {}); }).catch((e) => onErro?.(e.message)); }, []); // eslint-disable-line
   if (!d) return null;
   const salvar = async () => { setSalv(true); try { const r = await apiService.put("/configuracoes/fiscal-cte", f); setD(r); setF(r.cte || {}); setOk(true); setTimeout(() => setOk(false), 3000); } catch (e) { onErro?.(e.message); } finally { setSalv(false); } };
   const salvarAp = async () => { setSalv(true); try { const r = ap.id ? await apiService.put(`/configuracoes/apolices/${ap.id}`, ap) : await apiService.post("/configuracoes/apolices", ap); setD(r); setAp(null); } catch (e) { onErro?.(e.message); } finally { setSalv(false); } };
   const confirmarExcluir = async () => { try { const r = await apiService.delete(`/configuracoes/apolices/${excluir.id}`); setD(r); } catch (e) { onErro?.(e.message); } finally { setExcluir(null); } };
+  const buscarCnpj = async () => { const dg = String(ap?.seguradora_cnpj || "").replace(/\D/g, ""); if (dg.length !== 14) return; setBuscando(true); setCnpjMsg(null); // 18g.4
+    try { const r = await apiService.get(`/configuracoes/apolices/consulta/${dg}`); if (r.nome) { setAp((a) => ({ ...a, seguradora: r.nome })); setCnpjMsg({ ok: true, texto: `✓ Receita${r.situacao ? ` · ${r.situacao}` : ""}` }); } else setCnpjMsg({ ok: false, texto: "Receita fora do ar agora — digite o nome." }); }
+    catch (e) { setCnpjMsg({ ok: false, texto: e.message }); } finally { setBuscando(false); } };
   const hoje = new Date().toISOString().slice(0, 10); const dBR = (v) => (v ? v.split("-").reverse().join("/") : "—");
   const lab = { fontSize: 11, color: C.muted, display: "block", marginBottom: 4, letterSpacing: "0.05em" };
   return <div style={{ ...s.card, padding: 18, marginTop: 16 }}>
@@ -50,9 +55,12 @@ function DadosCte({ C, s, onErro }) {
     {!d.migrou && <div style={{ fontSize: 12.5, color: C.warn, marginBottom: 10 }}>⚠️ Rode a migration 080 para salvar.</div>}
     <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(190px, 1fr))", gap: "4px 12px" }}>
       {CAMPOS.map(([k, rot, ph]) => <div key={k}><label style={lab}>{rot.toUpperCase()}</label><input value={f[k] || ""} onChange={(e) => setF({ ...f, [k]: e.target.value })} placeholder={ph} style={s.input} /></div>)}
+      <div><label style={lab}>TIPO DE TOMADOR MAIS COMUM (CFOP)</label><select value={f.tipo_tomador || "comercio"} onChange={(e) => setF({ ...f, tipo_tomador: e.target.value })} style={s.input}>{Object.entries(d.tipos_tomador || {}).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
     </div>
-    <div style={{ display: "flex", gap: 10, alignItems: "center" }}><button type="button" onClick={salvar} disabled={salv} style={{ ...s.btn(true), padding: "9px 18px", fontSize: 13 }}>{salv ? "Salvando…" : "Salvar dados do CT-e"}</button>{ok && <span style={{ fontSize: 12.5, color: C.success || "#16a34a" }}>✓ salvo</span>}</div>
-    <div style={{ display: "flex", alignItems: "center", marginTop: 18, marginBottom: 6 }}><b style={{ flex: 1, fontSize: 14 }}>🛡 Apólices de seguro</b><button type="button" onClick={() => setAp({ ...vazioApol })} style={{ ...s.btn(false), padding: "6px 12px", fontSize: 12.5 }}>＋ Apólice</button></div>
+    <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, margin: "2px 0 8px", cursor: "pointer" }}><input type="checkbox" checked={f.simples === true} onChange={(e) => setF({ ...f, simples: e.target.checked })} /> Empresa do <b>Simples Nacional</b> (ICMS do Simples, sem destaque no CT-e)</label>
+    <div style={{ fontSize: 12, color: C.muted, marginBottom: 14, lineHeight: 1.5 }}>🧮 <b>CFOP e ICMS são sugeridos por trecho</b> na Ficha do CT-e (cada trecho é um CT-e): vale onde a prestação começa e termina — mesma UF 5.35x, interestadual 6.35x, começando fora da sua UF 5.932/6.932; ICMS interestadual 12% (7% do S/SE, menos ES, para N/NE/CO/ES). O funcionário confere e pode corrigir na ficha. Valide as regras com o contador — há exceções por estado.</div>
+    <div style={{ display: "flex", gap: 10, alignItems: "center", marginTop: 4 }}><button type="button" onClick={salvar} disabled={salv} style={{ ...s.btn(true), padding: "9px 18px", fontSize: 13 }}>{salv ? "Salvando…" : "Salvar dados do CT-e"}</button>{ok && <span style={{ fontSize: 12.5, color: C.success || "#16a34a" }}>✓ salvo</span>}</div>
+    <div style={{ display: "flex", alignItems: "center", marginTop: 18, marginBottom: 6 }}><b style={{ flex: 1, fontSize: 14 }}>🛡 Apólices de seguro</b><button type="button" onClick={() => { setCnpjMsg(null); setAp({ ...vazioApol }); }} style={{ ...s.btn(false), padding: "6px 12px", fontSize: 12.5 }}>＋ Apólice</button></div>
     {d.apolices.length === 0 ? <div style={{ fontSize: 12.5, color: C.muted }}>Nenhuma apólice. A ficha usa a apólice vigente na data do transporte (RCTR-C primeiro).</div>
       : d.apolices.map((a) => { const vig = a.ativo && (!a.vigencia_inicio || a.vigencia_inicio <= hoje) && (!a.vigencia_fim || a.vigencia_fim >= hoje);
         return <div key={a.id} style={{ display: "flex", alignItems: "center", gap: 10, padding: "8px 0", borderTop: `1px solid ${C.border}`, fontSize: 13, flexWrap: "wrap" }}>
@@ -65,12 +73,15 @@ function DadosCte({ C, s, onErro }) {
       <div onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Apólice" style={{ ...s.card, width: 520, maxWidth: "100%", padding: 20 }}>
         <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 10 }}>🛡 {ap.id ? "Editar apólice" : "Nova apólice"}</div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: "4px 12px" }}>
+          <div style={{ gridColumn: "1 / -1" }}><label style={lab}>CNPJ DA SEGURADORA</label><div style={{ display: "flex", gap: 8 }}>
+            <input value={mascCnpj(ap.seguradora_cnpj)} onChange={(e) => setAp({ ...ap, seguradora_cnpj: e.target.value.replace(/\D/g, "") })} onKeyDown={(e) => { if (e.key === "Enter") buscarCnpj(); }} inputMode="numeric" placeholder="00.000.000/0000-00" style={{ ...s.input, flex: 1 }} autoFocus={!ap.id} />
+            <button type="button" disabled={buscando || String(ap.seguradora_cnpj || "").replace(/\D/g, "").length !== 14} onClick={buscarCnpj} style={{ ...s.btn(String(ap.seguradora_cnpj || "").replace(/\D/g, "").length === 14), padding: "0 14px", height: 40, whiteSpace: "nowrap" }}>{buscando ? "Buscando…" : "🔍 Buscar"}</button></div>
+            {cnpjMsg && <div style={{ fontSize: 11.5, color: cnpjMsg.ok ? (C.success || "#16a34a") : C.warn, marginTop: -6, marginBottom: 8 }}>{cnpjMsg.texto}</div>}</div>
           <div style={{ gridColumn: "1 / -1" }}><label style={lab}>SEGURADORA</label><input value={ap.seguradora} onChange={(e) => setAp({ ...ap, seguradora: e.target.value })} style={s.input} /></div>
-          <div><label style={lab}>CNPJ DA SEGURADORA</label><input value={ap.seguradora_cnpj} onChange={(e) => setAp({ ...ap, seguradora_cnpj: e.target.value })} style={s.input} /></div>
           <div><label style={lab}>Nº DA APÓLICE</label><input value={ap.numero} onChange={(e) => setAp({ ...ap, numero: e.target.value })} style={s.input} /></div>
           <div><label style={lab}>RAMO</label><select value={ap.ramo} onChange={(e) => setAp({ ...ap, ramo: e.target.value })} style={s.input}>{d.ramos.map((r) => <option key={r}>{r}</option>)}</select></div>
           <div><label style={lab}>RESPONSÁVEL PELO SEGURO</label><select value={ap.responsavel} onChange={(e) => setAp({ ...ap, responsavel: e.target.value })} style={s.input}>{Object.entries(d.responsaveis).map(([k, v]) => <option key={k} value={k}>{v}</option>)}</select></div>
-          <div><label style={lab}>VIGÊNCIA — INÍCIO</label><input type="date" value={ap.vigencia_inicio} onChange={(e) => setAp({ ...ap, vigencia_inicio: e.target.value })} style={s.input} /></div>
+          <div><label style={lab}>VIGÊNCIA — INÍCIO</label><input type="date" value={ap.vigencia_inicio} onChange={(e) => { const v = e.target.value; setAp({ ...ap, vigencia_inicio: v, ...(!ap.vigencia_fim || ap.vigencia_fim === addAno(ap.vigencia_inicio) ? { vigencia_fim: addAno(v) } : {}) }); }} style={s.input} /></div>
           <div><label style={lab}>VIGÊNCIA — FIM</label><input type="date" value={ap.vigencia_fim} onChange={(e) => setAp({ ...ap, vigencia_fim: e.target.value })} style={s.input} /></div>
         </div>
         <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13, margin: "4px 0 12px" }}><input type="checkbox" checked={ap.ativo !== false} onChange={(e) => setAp({ ...ap, ativo: e.target.checked })} /> Ativa</label>

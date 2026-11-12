@@ -9,7 +9,30 @@ async function q(p) { const { data, error } = await p; if (error) throw new Erro
 const sem080 = (e) => /fiscal_cte|tenant_apolices|does not exist|schema cache/i.test(String(e?.message || e));
 const RAMOS = ['RCTR-C', 'RC-DC', 'RC-V', 'RCF-DC', 'Outro'];
 const RESP = { emitente: 'Emitente do CT-e (transportadora)', remetente: 'Remetente', expedidor: 'Expedidor', recebedor: 'Recebedor', destinatario: 'Destinatário', tomador: 'Tomador' };
-const CAMPOS_CFG = ['ie', 'uf', 'rntrc', 'cfop_estadual', 'cfop_interestadual', 'cst', 'aliquota_icms', 'produto_padrao', 'tomador_padrao'];
+const CAMPOS_CFG = ['ie', 'uf', 'rntrc', 'tipo_tomador', 'aliquota_interna', 'simples', 'cst', 'produto_padrao', 'tomador_padrao']; // 18g.4: CFOP/ICMS sugeridos por trecho
+// 18g.4: 🧮 sugestão por trecho (cada trecho = um CT-e) — vale onde a prestação COMEÇA e TERMINA, não a base. O funcionário confere.
+//   CFOP: início e fim na mesma UF → 5.35x · UFs diferentes → 6.35x · começa em UF diferente da inscrição da empresa → 5.932/6.932.
+//   x = tipo do tomador: indústria 2 · comércio 3 · prestador de serviço 4 · não contribuinte 7.
+//   ICMS: mesma UF → alíquota interna (⚙️, da UF da empresa) · interestadual → 12%, ou 7% saindo do S/SE (menos ES) para N/NE/CO/ES.
+//   Simples Nacional → ICMS do Simples (sem destaque). Regras com exceções por estado: validar com o contador.
+const TIPO_TOMADOR = { industria: { nome: 'Indústria', d: '2' }, comercio: { nome: 'Comércio', d: '3' }, servico: { nome: 'Prestador de serviço de transporte/comunicação', d: '4' }, nao_contribuinte: { nome: 'Não contribuinte do ICMS', d: '7' } };
+const SUL_SUDESTE = ['PR', 'SC', 'RS', 'SP', 'RJ', 'MG'];
+function sugerirCfop(cfg, ufIni, ufFim) {
+  if (!ufIni || !ufFim) return { cfop: null, regra: 'confira as UFs de início e fim' };
+  const mesma = ufIni === ufFim; const d = (TIPO_TOMADOR[cfg.tipo_tomador] || TIPO_TOMADOR.comercio).d;
+  if (cfg.uf && ufIni !== String(cfg.uf).toUpperCase()) return { cfop: mesma ? '5932' : '6932', regra: `começa em ${ufIni}, fora da UF de inscrição (${String(cfg.uf).toUpperCase()})` };
+  return { cfop: `${mesma ? '5' : '6'}35${d}`, regra: `${mesma ? 'mesma UF' : 'interestadual'} · tomador ${(TIPO_TOMADOR[cfg.tipo_tomador] || TIPO_TOMADOR.comercio).nome.toLowerCase()}` };
+}
+function sugerirAliquota(cfg, ufIni, ufFim) {
+  if (cfg.simples === true || cfg.simples === 'true') return { aliquota: null, simples: true, regra: 'Simples Nacional — ICMS do Simples, sem destaque' };
+  if (!ufIni || !ufFim) return { aliquota: null, regra: 'confira as UFs de início e fim' };
+  if (ufIni === ufFim) {
+    if (cfg.uf && ufIni === String(cfg.uf).toUpperCase() && cfg.aliquota_interna !== '' && cfg.aliquota_interna != null) return { aliquota: Number(String(cfg.aliquota_interna).replace(',', '.')), regra: `alíquota interna de ${ufIni} (⚙️)` };
+    return { aliquota: null, regra: `alíquota interna de ${ufIni} — preencha` };
+  }
+  const sete = SUL_SUDESTE.includes(ufIni) && !SUL_SUDESTE.includes(ufFim);
+  return { aliquota: sete ? 7 : 12, regra: `interestadual ${ufIni}→${ufFim}: ${sete ? '7% (S/SE → N/NE/CO/ES)' : '12%'}` };
+}
 const txt = (v, n = 120) => String(v ?? '').trim().slice(0, n);
 const dig = (v) => String(v || '').replace(/\D/g, '');
 const fmtDoc = (v) => { const d = dig(v); return d.length === 14 ? d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5') : d.length === 11 ? d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4') : v || ''; };
@@ -23,13 +46,13 @@ async function config(supabase, tenantId) {
   const t = (await q(supabase.from('tenants').select('*').eq('id', tenantId)))[0] || {};
   let apolices = []; let migrou = 'fiscal_cte' in t;
   try { apolices = (await q(supabase.from('tenant_apolices').select('*').eq('tenant_id', tenantId))).sort((a, b) => (b.ativo - a.ativo) || String(b.vigencia_fim || '').localeCompare(String(a.vigencia_fim || ''))); } catch (e) { if (!sem080(e)) throw e; migrou = false; }
-  return { migrou, cte: t.fiscal_cte || {}, apolices, ramos: RAMOS, responsaveis: RESP, empresa: { razao_social: t.razao_social || t.nome, cnpj: t.cnpj, cidade: t.cidade } };
+  return { migrou, cte: t.fiscal_cte || {}, apolices, ramos: RAMOS, responsaveis: RESP, tipos_tomador: Object.fromEntries(Object.entries(TIPO_TOMADOR).map(([k, x]) => [k, x.nome])), empresa: { razao_social: t.razao_social || t.nome, cnpj: t.cnpj, cidade: t.cidade } };
 }
 async function salvarConfig(supabase, tenantId, body = {}) {
-  const v = {}; for (const k of CAMPOS_CFG) if (body[k] !== undefined) v[k] = txt(body[k], k === 'produto_padrao' ? 120 : 40);
+  const v = {}; for (const k of CAMPOS_CFG) if (body[k] !== undefined) v[k] = k === 'simples' ? body[k] === true || body[k] === 'true' : txt(body[k], k === 'produto_padrao' ? 120 : 40);
   if (v.uf) v.uf = v.uf.toUpperCase().slice(0, 2);
-  for (const k of ['cfop_estadual', 'cfop_interestadual']) if (v[k] && !/^\d{4}$/.test(v[k])) return { status: 400, erro: 'CFOP tem 4 dígitos (ex.: 5353, 6353)' };
-  if (v.aliquota_icms && Number.isNaN(Number(String(v.aliquota_icms).replace(',', '.')))) return { status: 400, erro: 'Alíquota do ICMS em % (ex.: 12)' };
+  if (v.tipo_tomador && !TIPO_TOMADOR[v.tipo_tomador]) return { status: 400, erro: 'Tipo de tomador inválido' };
+  if (v.aliquota_interna && Number.isNaN(Number(String(v.aliquota_interna).replace(',', '.')))) return { status: 400, erro: 'Alíquota interna do ICMS em % (ex.: 17)' };
   const t = (await q(supabase.from('tenants').select('*').eq('id', tenantId)))[0]; if (!t) return { status: 404, erro: 'Empresa não encontrada' };
   if (!('fiscal_cte' in t)) return { status: 409, erro: 'Falta rodar a migration 080 no Supabase.' };
   const r = await supabase.from('tenants').update({ fiscal_cte: { ...(t.fiscal_cte || {}), ...v } }).eq('id', tenantId); if (r.error) throw new Error(r.error.message);
@@ -85,7 +108,7 @@ async function ficha(supabase, tenantId, tarefaId) {
   const origem = at?.origem || g.coleta || ''; const destino = at?.destino || g.entrega || '';
   const ufIni = remetente?.uf || ufDe(origem); const ufFim = destinatario?.uf || ufDe(destino);
   const mesmoEstado = ufIni && ufFim ? ufIni === ufFim : null;
-  const cfop = mesmoEstado === true ? cfg.cfop_estadual : mesmoEstado === false ? cfg.cfop_interestadual : null;
+  const sCfop = sugerirCfop(cfg, ufIni, ufFim); const sAliq = sugerirAliquota(cfg, ufIni, ufFim); const cfop = sCfop.cfop; // 18g.4
   // carga: NF-e primeiro; senão, os itens da AT/trecho
   const itens = (at?.itens?.length ? at.itens : g.itens || []).filter((i) => i.status !== 'cancelado');
   const produto = itens.map((i) => [i.valores?.veiculo, i.valores?.modelo].filter(Boolean).join(' ')).filter(Boolean).join(' + ') || cfg.produto_padrao || '';
@@ -96,16 +119,16 @@ async function ficha(supabase, tenantId, tarefaId) {
   const valorCarga = nfes.reduce((s, n) => s + (Number(n.valor) || 0), 0) || null;
   // frete: subtotal do trecho, senão a soma dos itens
   const frete = g.subtotal != null && g.subtotal !== '' ? Number(g.subtotal) : itens.reduce((s, i) => s + (Number(i.valor) || 0) * (Number(i.quantidade) || 1), 0) || null;
-  const aliq = cfg.aliquota_icms != null && cfg.aliquota_icms !== '' ? Number(String(cfg.aliquota_icms).replace(',', '.')) : null;
+  const aliq = sAliq.aliquota;
   const icms = frete != null && aliq != null ? Math.round(frete * aliq) / 100 : null;
   const cavalo = (at?.conjunto || []).find((c) => c.papel === 'cavalo'); const impl = (at?.conjunto || []).filter((c) => c.papel !== 'cavalo');
   const enderecoEmp = [emp.endereco, emp.numero, emp.complemento, emp.bairro].filter(Boolean).join(', ');
 
-  const F = (rotulo, valor, { obrig = true, dica = null } = {}) => ({ rotulo, valor: valor == null || valor === '' ? '' : String(valor), falta: obrig && (valor == null || valor === ''), dica });
+  const F = (rotulo, valor, { obrig = true, dica = null, sugerido = false, chave = null } = {}) => ({ rotulo, valor: valor == null || valor === '' ? '' : String(valor), falta: obrig && (valor == null || valor === ''), dica, ...(sugerido ? { sugerido: true, editavel: true } : {}), ...(chave ? { chave } : {}) });
   const parte = (p, obrig = true) => (p ? [F('Nome / razão social', p.nome, { obrig }), F('CNPJ / CPF', fmtDoc(p.doc), { obrig }), F('Inscrição estadual', p.ie, { obrig: false, dica: 'ISENTO se não tiver' }), F('Endereço', p.endereco, { obrig: false }), F('Município', p.municipio, { obrig }), F('UF', p.uf, { obrig }), F('CEP', p.cep, { obrig: false })]
     : [F('Nome / razão social', '', { obrig })]);
   const secoes = [
-    { id: 'ide', titulo: '🧾 Identificação', campos: [F('Tipo do CT-e', 'Normal'), F('Modal', 'Rodoviário'), F('Tipo de serviço', 'Normal'), F('CFOP', cfop, { dica: mesmoEstado == null ? 'confira as UFs de início e fim' : `${mesmoEstado ? 'dentro' : 'fora'} do estado — ⚙️ Configurações → CT-e` }),
+    { id: 'ide', titulo: '🧾 Identificação', campos: [F('Tipo do CT-e', 'Normal'), F('Modal', 'Rodoviário'), F('Tipo de serviço', 'Normal'), F('CFOP', cfop, { dica: `sugerido — confira · ${sCfop.regra}`, sugerido: true, chave: 'cfop' }),
       F('Natureza da operação', 'Prestação de serviço de transporte'), F('Município de início', (nfe1 && remetente?.municipio) || semUf(origem), { dica: nfe1 ? null : `do endereço: ${origem || '—'}` }), F('UF de início', ufIni), F('Município de fim', (nfe1 && destinatario?.municipio) || semUf(destino), { dica: nfe1 ? null : `do endereço: ${destino || '—'}` }), F('UF de fim', ufFim), F('Data prevista', dataTr ? dataTr.split('-').reverse().join('/') : '', { obrig: false })] },
     { id: 'emit', titulo: '🚚 Emitente (sua empresa)', campos: [F('Razão social', emp.razao_social || emp.nome), F('CNPJ', fmtDoc(emp.cnpj)), F('Inscrição estadual', cfg.ie), F('Endereço', enderecoEmp, { obrig: false }), F('Município', emp.cidade), F('UF', cfg.uf), F('CEP', emp.cep, { obrig: false }), F('RNTRC', cfg.rntrc)] },
     { id: 'toma', titulo: '💼 Tomador do serviço', campos: [F('Quem é o tomador', cfg.tomador_padrao || 'Remetente', { obrig: false }), ...parte(tomador)] },
@@ -114,13 +137,15 @@ async function ficha(supabase, tenantId, tarefaId) {
     { id: 'carga', titulo: '📦 Carga', campos: [F('Produto predominante', produto), F('Valor da carga (R$)', valorCarga != null ? brl(valorCarga) : '', { dica: 'soma das NF-e' }), F('Peso bruto (kg)', peso != null ? peso.toLocaleString('pt-BR') : ''), F('Volumes', volumes),
       F('Unidade de medida', 'KG'), ...(nfes.length ? nfes.map((n, k) => F(`Chave NF-e ${k + 1}`, n.chave)) : [F('Chave(s) da NF-e', '', { dica: 'anexe o XML da NF-e na tarefa fiscal' })])] },
     { id: 'valores', titulo: '💲 Valores e ICMS', campos: [F('Valor total da prestação (R$)', frete != null ? brl(frete) : ''), F('Componente: Frete valor (R$)', frete != null ? brl(frete) : ''), F('Valor a receber (R$)', frete != null ? brl(frete) : ''),
-      F('CST do ICMS', cfg.cst), F('Base de cálculo (R$)', frete != null ? brl(frete) : ''), F('Alíquota ICMS (%)', aliq != null ? String(aliq).replace('.', ',') : ''), F('Valor do ICMS (R$)', icms != null ? brl(icms) : '')] },
+      ...(sAliq.simples ? [F('ICMS', 'Simples Nacional (sem destaque do ICMS)', { dica: 'confira com o contador', sugerido: true, chave: 'icms_sn' })]
+        : [F('CST do ICMS', cfg.cst || '00', { dica: 'sugerido — confira', sugerido: true, chave: 'cst' }), F('Base de cálculo (R$)', frete != null ? brl(frete) : '', { sugerido: true, chave: 'base' }),
+          F('Alíquota ICMS (%)', aliq != null ? String(aliq).replace('.', ',') : '', { dica: `sugerido — confira · ${sAliq.regra}`, sugerido: true, chave: 'aliquota' }), F('Valor do ICMS (R$)', icms != null ? brl(icms) : '', { dica: 'base × alíquota', sugerido: true, chave: 'icms' })])] },
     { id: 'seguro', titulo: '🛡 Seguro', campos: [F('Responsável pelo seguro', apol ? RESP[apol.responsavel] : ''), F('Seguradora', apol?.seguradora), F('CNPJ da seguradora', fmtDoc(apol?.seguradora_cnpj), { obrig: false }), F('Nº da apólice', apol?.numero, { dica: apol ? `${apol.ramo}${apol.vigencia_fim ? ` · vigente até ${apol.vigencia_fim.split('-').reverse().join('/')}` : ''}` : 'cadastre em ⚙️ Configurações → Apólices' }),
       F('Nº da averbação', aver.join(', '), { obrig: false, dica: 'vem do passo Averbação da tarefa' })] },
     { id: 'rodo', titulo: '🛣 Rodoviário e veículo', campos: [F('RNTRC', cfg.rntrc), F('Placa do veículo (tração)', cavalo?.placa || cavalo?.tag || '', { obrig: false }), F('Reboque(s)', impl.map((c) => c.placa || c.tag).filter(Boolean).join(', '), { obrig: false }), F('Motorista', at?.motorista_nome || '', { obrig: false }), F('AT', at?.numero || '', { obrig: false })] },
   ];
   const faltam = secoes.flatMap((s) => s.campos.filter((c) => c.falta).map((c) => `${s.titulo.replace(/^\S+\s/, '')}: ${c.rotulo}`));
-  return { tarefa: { id: t.id, numero: t.numero }, pedido: { id: pv.id, numero: pv.numero }, trecho: g.titulo || null, at: at ? { id: at.id, numero: at.numero } : null, nfes: nfes.length, secoes, faltam, migrou: 'fiscal_cte' in emp };
+  return { aviso_tributario: 'CFOP e ICMS são sugestões pela regra geral — há exceções por estado (crédito presumido, substituição tributária). Confira com o contador da empresa.', tarefa: { id: t.id, numero: t.numero }, pedido: { id: pv.id, numero: pv.numero }, trecho: g.titulo || null, at: at ? { id: at.id, numero: at.numero } : null, nfes: nfes.length, secoes, faltam, migrou: 'fiscal_cte' in emp };
 }
 
-module.exports = { RAMOS, RESP, config, salvarConfig, salvarApolice, excluirApolice, apoliceNa, ficha };
+module.exports = { sugerirCfop, sugerirAliquota, TIPO_TOMADOR, RAMOS, RESP, config, salvarConfig, salvarApolice, excluirApolice, apoliceNa, ficha };

@@ -48,7 +48,7 @@ const ESPERADO = {
   'services/convitesFornecedor.js': 'e3d3837cb171b57e7d5200d9971df968', // etapa 11a.3
   'routes/spot.js': 'f63f86d2a7ec88f7bd6a139cce046a2d', // etapa 18q
   'services/matchSpot.js': 'fe4275090b82bd1efd52498d2176a90c', // etapa 7
-  'routes/configuracoes.js': '6e1d42117480872fea4b0ce89d91536f', // etapa 18g.3
+  'routes/configuracoes.js': '73570cdc07dea4449770588984d7fa4f', // etapa 18g.4
   'routes/fornecedor.js': '4e22d1aeeec3383e60b4805ff388dcd3', // etapa 18m
   'routes/recomendacoes.js': '05628793a30bc9cc5905c137c90fdb9c', // etapa 18g.2d
   'services/recomendacoesEmail.js': '7bc5475ccffb4fd2fcec53be78e64123', // etapa 10c
@@ -271,7 +271,7 @@ const ESPERADO = {
   'migrations/066_fiscal_transporte.sql': 'eeef7d2fb80ae6ad0ec6069a3342e0ff', // etapa 18g.1 (novo)
   'services/tarefasFiscais.js': '90048e5365d5e1642991100314ab2c69', // etapa 18h.4a
   'front:ChecklistFiscal.jsx': 'ceba15209159bfee7645801695352d57', // etapa 18g.3
-  'front:ConfigFiscal.jsx': '6abbf9cb6147cfc5958f2424f8a4ae4e', // etapa 18g.3
+  'front:ConfigFiscal.jsx': '9fd57da5d2627b93c19ca338720462fc', // etapa 18g.4
   'front:lerXmlFiscal.js': '8d657863784b4e6c468b29bd8152e53f', // etapa 18g.1.1 (novo)
   'migrations/067_tarefa_responsavel.sql': '3e718fa4290311abef8fdb5b2e68eb6b', // etapa 18g.2a (novo)
   'front:CampoPessoa.jsx': 'efa3cd5aee2eeadae0805e7d4b6e8daa', // etapa 18g.2c
@@ -289,7 +289,7 @@ const ESPERADO = {
   'front:ConfigOcorrencias.jsx': 'e799bac0e58a978808d6041d9e3ed50a', // etapa 18h.4c
   'front:IndicadoresOcorrencias.jsx': '2cf48ec396f6722644bbfa4dfb9ef720', // etapa 18h.4 (novo)
   'front:gerarRelatorioOcorrencias.js': '6bf80339de4eb3c15849b55972de04fa', // etapa 18h.4 (novo)
-  'services/roteiroInicial.js': 'e18c4cc47b59b963cf51c8fa6ad03f75', // etapa 18j
+  'services/roteiroInicial.js': '8f3510585b8c1be7b9da30ec88b654fb', // etapa 18g.4
   'migrations/070_roteiro_inicial.sql': 'ee88701340141118fc400549de31fc3a', // etapa 18i (novo)
   'front:BemVindo.jsx': '89a5cc6d829575da05687e53eab3884b', // etapa 18j
   'services/modulos.js': '205ae608113f368619f97e6392d3f6ad', // etapa 18x
@@ -317,18 +317,19 @@ const ESPERADO = {
   'services/mobilizacao.js': 'f049714a209527dd7e0314f434187b33', // etapa 18y (novo)
   'migrations/079_contrato_mobilizacao.sql': '2b89c516c0627c2f008f6b0a251459a9', // etapa 18y (novo)
   'front:MobilizacaoContrato.jsx': '726f6849504e44a0ba89c2c9d7330005', // etapa 18y (novo)
-  'services/fichaCte.js': 'f1dadcaf546db0d68baec90bc61eb1cd', // etapa 18g.3 (novo)
+  'services/fichaCte.js': '6fccc6692da5c54f8465d1ca9145d551', // etapa 18g.4
   'migrations/080_ficha_cte_apolices.sql': '83836a53e1f1dd89b4db3c73686c0816', // etapa 18g.3 (novo)
-  'front:FichaCte.jsx': 'b80ad38cd37554684c37409bd3c6bf49', // etapa 18g.3 (novo)
+  'front:FichaCte.jsx': '1545e475b3f1293bea31b1d2689b9af8', // etapa 18g.4
   'front:gerarFichaCte.js': '82698d98c06a303fe9be9cd02c20cdc3', // etapa 18g.3 (novo)
 };
 
-// Antes de copiar a etapa 18g.3 — base: 38abfe8
+// Antes de copiar a etapa 18g.4 — base: 3a72be1
 const ANTES = {
-  'routes/configuracoes.js': '5a89ee2d0073404f747515cde84f3d66',
-  'routes/tarefas.js': '71d8b3e3e943a8d85501e81f4c06e23c',
-  'front:ChecklistFiscal.jsx': '1634e6d08490a83f1c0c86c983eb69ae',
-  'front:ConfigFiscal.jsx': 'b4ceec47991a295f38f32992348ddcf8',
+  'services/fichaCte.js': 'f1dadcaf546db0d68baec90bc61eb1cd',
+  'routes/configuracoes.js': '6e1d42117480872fea4b0ce89d91536f',
+  'services/roteiroInicial.js': 'e18c4cc47b59b963cf51c8fa6ad03f75',
+  'front:ConfigFiscal.jsx': '6abbf9cb6147cfc5958f2424f8a4ae4e',
+  'front:FichaCte.jsx': 'b80ad38cd37554684c37409bd3c6bf49',
 };
 
 const RAIZ = process.cwd();
@@ -366,7 +367,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18g.3)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18g.4)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

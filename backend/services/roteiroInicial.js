@@ -54,6 +54,9 @@ async function montar(supabase, tenantId) {
   P('frota_equipamentos', 'equipamentos', liga('transporte') ? 'Frota e equipamentos' : 'Equipamentos', 'Sem equipamento cadastrado não dá para programar AT, inspecionar nem colocar em contrato.', eqs.length > 0, { tela: 'equipamentos' });
   P('transporte', 'motoristas', 'Motoristas', 'Colaboradores com a função "Motorista" aparecem para escolher na AT (com CNH e documentos conferidos).', motoristas.length > 0, { tela: 'pessoas' });
   P('transporte', 'dias_frota', 'Dias de trabalho da frota', 'Quais dias a frota roda — base da utilização e da alocação.', t.frota_dias_semana != null, { aba: 'jornada', obrigatorio: false });
+  { const cte = t.fiscal_cte || {}; let apols = []; if (liga('fiscal')) apols = await qq(supabase.from('tenant_apolices').select('*').eq('tenant_id', tenantId)); // 18g.4
+    P('fiscal', 'dados_cte', 'Dados do CT-e e apólice de seguro', 'A Ficha do CT-e de cada trecho sai pronta: IE, UF, RNTRC, tipo do tomador, alíquota interna (ou Simples) e a apólice vigente (RCTR-C).',
+      !!(cte.ie && cte.uf && cte.rntrc) && apols.some((a) => a.ativo !== false), { obrigatorio: false, aba: 'empresa', falta: [!(cte.ie && cte.uf && cte.rntrc) && 'IE, UF e RNTRC', !apols.some((a) => a.ativo !== false) && 'uma apólice'].filter(Boolean).join(' e ') || null }); }
   P('fiscal', 'fiscal', 'Quem cuida dos documentos fiscais', 'NF-e, CT-e, averbação e MDF-e de cada trecho viram tarefa para o perfil Fiscal (ou o gestor).', tem('fiscal'), { tela: 'usuarios', obrigatorio: false });
   P(['transporte', 'ocorrencias'], 'oc_tr', 'Quem é avisado das ocorrências de transporte', 'Avaria, pane ou acidente na viagem: quem recebe o e-mail e fica responsável pela tarefa.', (ocCfg.tr?.pessoas || []).length > 0, { aba: 'empresa', obrigatorio: false });
   // ── comercial

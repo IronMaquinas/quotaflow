@@ -375,6 +375,13 @@ const FCTE = require('../services/fichaCte');
 const soGestor = (req, fn) => (podeLogo(req) ? fn() : { status: 409, erro: 'Só admin ou gestor alteram os dados fiscais' });
 router.get('/fiscal-cte', tenantMiddleware, respLogo((req) => FCTE.config(supabase, req.tenantId)));
 router.put('/fiscal-cte', tenantMiddleware, respLogo((req) => soGestor(req, () => FCTE.salvarConfig(supabase, req.tenantId, req.body || {}))));
+router.get('/apolices/consulta/:cnpj', tenantMiddleware, respLogo(async (req) => { // 18g.4: nome da seguradora pela Receita
+  const RC = require('../services/receitaCnpj'); const d = RC.soDigitos(req.params.cnpj);
+  if (!RC.cnpjValido(d)) return { status: 400, erro: 'CNPJ inválido' };
+  const r = await RC.consultarReceita(d);
+  if (r.status === 'ok') { const x = RC.resumoReceita ? RC.resumoReceita(r.dados) : r.dados; return { ok: true, nome: x?.razao_social || r.dados?.razao_social || null, situacao: x?.situacao || null }; }
+  return r.status === 'nao_encontrado' ? { status: 404, erro: 'CNPJ não encontrado na Receita' } : { ok: false, sem_receita: true };
+}));
 router.post('/apolices', tenantMiddleware, respLogo((req) => soGestor(req, () => FCTE.salvarApolice(supabase, req.tenantId, null, req.body || {}))));
 router.put('/apolices/:id', tenantMiddleware, respLogo((req) => soGestor(req, () => FCTE.salvarApolice(supabase, req.tenantId, req.params.id, req.body || {}))));
 router.delete('/apolices/:id', tenantMiddleware, respLogo((req) => soGestor(req, () => FCTE.excluirApolice(supabase, req.tenantId, req.params.id))));

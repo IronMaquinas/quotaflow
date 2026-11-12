@@ -1003,6 +1003,12 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18g.4 (11/11):** **🧮 CFOP e ICMS sugeridos por trecho + apólice pelo CNPJ** (dúvida do Marcony: base na Serra/ES fazendo Serra → MG → CE → RJ → Serra). Sem migration.
+    - **Cada trecho é um CT-e** e vale onde a prestação **começa e termina** (não a base): mesma UF **5.35x** · interestadual **6.35x** · começando fora da UF de inscrição **5.932/6.932** — x pelo **tipo do tomador** (indústria 2 · comércio 3 · serviço 4 · não contribuinte 7). ICMS: mesma UF = **alíquota interna** (⚙️, da UF da empresa) · interestadual **12%**, ou **7%** saindo do S/SE (menos ES) para N/NE/CO/ES · **Simples Nacional** = ICMS do Simples, sem destaque.
+    - **Na ficha:** CFOP, CST, base, alíquota e valor do ICMS vêm **sugeridos (✎) e editáveis** — o funcionário confere e corrige ali (alíquota/base recalculam o ICMS); a correção vai para o PDF e o CSV. Aviso: validar as regras com o contador (exceções por estado: crédito presumido, ST).
+    - **⚙️ Dados do CT-e:** saem os 2 campos fixos de CFOP; entram **tipo de tomador mais comum**, **alíquota interna da sua UF** e **Simples Nacional sim/não** (+ explicação das regras). Botão "Salvar" desgrudado do formulário.
+    - **Nova apólice:** **CNPJ primeiro com 🔍 Buscar** (nome da seguradora pela Receita, como no cadastro de clientes); escolher o **início da vigência preenche o fim com +1 ano** (editável).
+    - **👋 Bem-vindo:** passo **"Dados do CT-e e apólice de seguro"** (recomendado) para quem tem o módulo de documentos fiscais do transporte — conferido pelos dados (IE, UF, RNTRC e uma apólice ativa).
   - **18g.3 (11/11):** **📋 Ficha do CT-e + 🛡 apólices em ⚙️.** Migration 080.
     - **✅ Plano → tarefa fiscal TSK-TR → "📋 Ficha do CT-e"**: tudo o que o emissor pede, já preenchido, com **📋 copiar por campo**, **🖨 PDF** (A4, com a logo) e **⬇ CSV**. Seções: identificação (CFOP dentro/fora do estado pelas UFs, municípios e UFs de início/fim, data) · emitente (Dados da empresa + ⚙️ CT-e: IE, UF, RNTRC) · tomador (cliente do pedido) · **remetente e destinatário das NF-e lidas** (sem NF-e: o tomador) · carga (produto pelos itens, **peso/volumes/valor e chaves das NF-e** — sem NF-e, peso operacional dos itens) · valores e ICMS (frete do trecho, CST, alíquota, valor do ICMS) · seguro (**apólice vigente na data do transporte**, RCTR-C primeiro, e a **averbação** da tarefa) · rodoviário (RNTRC, placas do cavalo e reboques, motorista e AT). Campo sem dado vem "⚠ falta" com a dica de onde completar.
     - **⚙️ Configurações → 🧾 Documentos fiscais → 📋 Dados do CT-e e 🛡 Apólices**: os dados fixos do CT-e e o cadastro de apólices (seguradora, CNPJ, nº, ramo, responsável pelo seguro, vigência, ativa) — admin/gestor alteram; excluir pede confirmação no modal.
@@ -1627,7 +1633,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18g.3)
+**Última atualização deste documento:** 06/11/2026 (etapa 18g.4)
 
 --------------------------------------------------------------------------------
 
