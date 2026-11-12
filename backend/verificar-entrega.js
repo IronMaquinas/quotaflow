@@ -245,7 +245,7 @@ const ESPERADO = {
   'front:PainelProspeccao.jsx': 'b6b4bfe7c50fc16f692cc5251bae8658', // etapa 18g.2c
   'routes/tarefas.js': '5a8402766b6244f6ecd1a78d81274354', // etapa 18g.3
   'migrations/061_prospeccao_oportunidades.sql': '528a098239312cff4b7b389d4325b2f3', // etapa 18b.2 (novo)
-  'front:TelaPlanoAcaoNova.jsx': 'fc15a0170e8444793a2709fa36c0af95', // etapa 18g.6
+  'front:TelaPlanoAcaoNova.jsx': '05bb2917eb9aaa99059423d143531272', // etapa 18g.7
   'front:ConcluirTarefa.jsx': 'de3f60dc997a047cc1a29cd2a20ac92d', // etapa 18b.3 (novo)
   'front:DetalheExecutivo.jsx': '7fe748dd4a963a04f71d264bb189318f', // etapa 18b.9 (novo)
   'front:marcaFoto.js': '61fc663e418ff25ac21fd67a04915f5f', // etapa 18c.3
@@ -324,14 +324,9 @@ const ESPERADO = {
   'front:ModalMeuPerfil.jsx': '3ebeaea85df76f80b004a23dffe5844b', // etapa 18g.6
 };
 
-// Antes de copiar a etapa 18g.6 — base: c02e998
+// Antes de copiar a etapa 18g.7 — base: baef721
 const ANTES = {
-  'services/fichaCte.js': 'e013154c4b0b8e6d9eb3ef10413cdd1b',
-  'services/mobilizacao.js': '066445c5978a5eecc82e654502c9c709',
   'front:TelaPlanoAcaoNova.jsx': 'fc15a0170e8444793a2709fa36c0af95',
-  'front:ChecklistFiscal.jsx': '9e9e9863a2bc74886344400973645c82',
-  'front:TelaLogin.jsx': '742946c163f48c3a80f798f6077678c2',
-  'front:ModalMeuPerfil.jsx': '3ebeaea85df76f80b004a23dffe5844b',
 };
 
 const RAIZ = process.cwd();
@@ -369,7 +364,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18g.6)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18g.7)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

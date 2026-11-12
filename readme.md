@@ -1003,6 +1003,7 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18g.7 (12/11):** botão da ficha diz para que serve: **"📋 Ficha do CT-e — emitir agora"** (azul, quando o próximo é o CT-e) · **"📋 Ficha do CT-e (consulta)"** (CT-e já registrado — conferir/reimprimir) · sem complemento antes da NF-e; passar o mouse explica. Aparece também em tarefa concluída (consulta). Roteiro: o **calendário comercial** já estava completo (18a/18b) — marcado como feito; **bloco 3 (🚛 Operação e fiscal) concluído**.
   - **18g.6 (12/11):** **📋 Ficha do CT-e à vista + correções na ficha** (ideia e testes do Marcony). *(Inclui a 18g.5.)*
     - **Cartão da tarefa (✅ Plano):** a **barra de progresso** dos documentos ("2/4 · próximo: CT-e") e o botão **📋 Ficha do CT-e** subiram para o cartão da TSK-TR — aparecem sem abrir a tarefa (o botão fica azul quando o próximo é o CT-e). Saíram de dentro da seção de documentos.
     - **Valor do frete "falta"**: a ficha lia o subtotal num campo que o pedido não usa — agora lê o **valor do trecho** do PV (ou a soma dos itens). A **mobilização do contrato** (18y) também gravava o valor nesse campo errado — corrigido.
@@ -1594,7 +1595,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 | **15a** | ✅ 📈 Comercial (mini-CRM): funil kanban, BID com modelos da biblioteca, itens por trecho, versões com o que mudou, PDF, atividades e tarefas, cliente 360°, perfil comercial, IE e opção fiscal |
 | **15b** | ✅ BID com o cliente: link, ✓✓ visualizado, resposta por item, código + assinatura, previsão de receita (15b.1–15b.4) |
 | **15c** | ✅ Pedido de Venda (PV) automático no aceite, status por item, **aditivo pelo link** |
-| **Calendário comercial** | 📅 BIDs/PVs + eventos de mercado com lembrete de prospecção (`claude/desenho-calendario-comercial.md`) |
+| ~~**Calendário comercial**~~ | ✅ **18a/18b** — 📅 BIDs/PVs + eventos de mercado, prospecção com sugestão de clientes e equipamentos livres (`claude/desenho-calendario-comercial.md`) |
 | **16a** | ✅ **Programação / AT** (entregue 29/10): itens aceitos → AT com data/hora/local, motorista e conjunto (checagem de conformidade e bloqueio), agenda da frota, camada 🚛 no calendário |
 | ~~**16b**~~ | ✅ **18y** — **Contrato de locação (CL)**: mobilização/desmobilização → pedido de transporte → AT; faturamento mensal previsto (mensalidade e período já existiam) |
 | **17a** | **App do motorista na AT**: AT no celular → INSP pré-uso → carregamento → em trânsito → descarregamento (gatilhos em cadeia, offline como na 14a), encerramento |
@@ -1639,7 +1640,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18g.6)
+**Última atualização deste documento:** 06/11/2026 (etapa 18g.7)
 
 --------------------------------------------------------------------------------
 
