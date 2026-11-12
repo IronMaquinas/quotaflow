@@ -10,6 +10,8 @@ import { useState, useEffect } from 'react';
 import { useTarefas } from '../../hooks/useTarefas';
 import apiService from '../../services/apiService';
 import ChecklistFiscal from './ChecklistFiscal'; // 18g.1
+import FichaCte from './FichaCte'; // 18g.6: a ficha abre direto do cartão
+const NOME_DOC = { nfe: 'NF-e', cte: 'CT-e', averbacao: 'averbação', mdfe: 'MDF-e' };
 import CampoPessoa from '../shared/CampoPessoa'; // 18g.2a
 import FiltroPeriodo, { faixaPeriodo } from '../shared/FiltroPeriodo'; // 18g.2b
 import { resumoTarefas, dataBase, abrirRelatorioTarefas, csvTarefas, TIPOS_REL } from '../../utils/gerarRelatorioTarefas'; // 18g.2b
@@ -36,6 +38,7 @@ export default function TelaPlanoAcaoNova({ onVoltar, C, s, ambienteInicial = 't
   const [fResp, setFResp] = useState(''); // 18g.2b
   const [modal, setModal] = useState(null);
   const [aberta, setAberta] = useState(null); // { id, aba }
+  const [fichaDe, setFichaDe] = useState(null); // 18g.6: 📋 Ficha do CT-e aberta do cartão
   const [novoComent, setNovoComent] = useState('');
   const [processando, setProcessando] = useState(false);
   const [form, setForm] = useState(FORM0);
@@ -125,6 +128,7 @@ export default function TelaPlanoAcaoNova({ onVoltar, C, s, ambienteInicial = 't
 
   return (
     <div style={{ padding: '22px 24px', overflowY: 'auto', height: '100%' }}>
+      {fichaDe && <FichaCte C={C} s={s} tarefaId={fichaDe} onFechar={() => setFichaDe(null)} />}{/* 18g.6 */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 18, flexWrap: 'wrap', gap: 12 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <div>
@@ -218,6 +222,12 @@ export default function TelaPlanoAcaoNova({ onVoltar, C, s, ambienteInicial = 't
                     {(t.vinculos || []).map((v, i) => <span key={i} onClick={() => abrirVinculo(v)} title={EVENTO[v.tipo] ? 'Abrir' : undefined}
                       style={{ color: EVENTO[v.tipo] ? C.accent : C.textSub, cursor: EVENTO[v.tipo] ? 'pointer' : 'default', fontFamily: 'ui-monospace, monospace' }}>🔗 {v.numero || `${VINC[v.tipo] || v.tipo} ${v.id}`}</span>)}
                   </div>
+                  {t.fiscal && <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginTop: 10, flexWrap: 'wrap' }}>{/* 18g.6: progresso dos documentos + 📋 Ficha do CT-e à vista (ideia do Marcony) */}
+                    <div onClick={() => setAberta(aba === 'fiscal' ? null : { id: t.id, aba: 'fiscal' })} title="Abrir os documentos fiscais" style={{ flex: 1, minWidth: 140, maxWidth: 420, height: 6, background: C.border, borderRadius: 3, overflow: 'hidden', cursor: 'pointer' }}>
+                      <div style={{ width: `${(t.fiscal.feitos / (t.fiscal.total || 4)) * 100}%`, height: '100%', background: t.fiscal.feitos === t.fiscal.total ? C.success : C.accent }} /></div>
+                    <span style={{ fontSize: 12, fontWeight: 700, color: t.fiscal.feitos === t.fiscal.total ? C.success : C.text }}>{t.fiscal.feitos}/{t.fiscal.total}{t.fiscal.proximo && t.fiscal.proximo !== 'encerramento' ? <span style={{ fontWeight: 500, color: C.textSub }}> · próximo: {NOME_DOC[t.fiscal.proximo] || t.fiscal.proximo}</span> : ''}</span>
+                    {!encerrada && <button type="button" onClick={() => setFichaDe(t.id)} style={{ ...s.btn(t.fiscal.proximo === 'cte'), padding: '5px 12px', fontSize: 12 }}>📋 Ficha do CT-e</button>}
+                  </div>}
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>
                   {t.fiscal && abaBt(t, 'fiscal', `🧾 ${t.fiscal.feitos}/${t.fiscal.total}`)}

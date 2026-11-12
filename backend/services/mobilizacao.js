@@ -47,11 +47,11 @@ async function mobilizar(supabase, tenantId, quem = {}, id, body = {}) {
   catch (e) { if (sem079(e)) return { status: 409, erro: 'Falta rodar a migration 079 no Supabase.' }; throw e; }
   const gid = `mov-${Date.now().toString(36)}`;
   const itens = escolhidos.map((l, k) => { const e = eqs.get(String(l.equipamento_id)) || {}; return { id: `${gid}-${k + 1}`, valores: { veiculo: e.nome || e.tag || 'Equipamento', modelo: [e.tag, e.placa].filter(Boolean).join(' · '), data_prevista: data }, quantidade: 1, valor: null, status: 'a_programar', equipamento_id: l.equipamento_id }; });
-  const grupo = { id: gid, titulo: `${T.emoji} ${T.titulo} — ${c.numero}`, coleta: origem, entrega: destino, data_prevista: data, subtotal: valor, mov_tipo: tipo, itens };
+  const grupo = { id: gid, titulo: `${T.emoji} ${T.titulo} — ${c.numero}`, coleta: origem, entrega: destino, data_prevista: data, valor, mov_tipo: tipo, itens }; // 18g.6: g.valor (o subtotal sai da conta do pedido)
   const agora = new Date().toISOString();
   if (base && base !== c.base_saida) await supabase.from('locacao_contratos').update({ base_saida: base }).eq('id', c.id);
   const numerar = (gs) => require('./bids').numerarItens(gs).grupos;
-  const totalDe = (gs) => gs.reduce((s, g) => s + (Number(g.subtotal) || 0), 0) || null;
+  const totalDe = (gs) => gs.reduce((s, g) => s + (Number(g.valor ?? g.subtotal) || 0), 0) || null;
   if (pv) {
     const grupos = numerar([...(pv.grupos || []), grupo]);
     const r = await supabase.from('pedidos_venda').update({ grupos, valor_total: totalDe(grupos), status: pv.status === 'concluido' ? 'aberto' : pv.status, atualizado_em: agora }).eq('id', pv.id).select(); if (r.error) throw new Error(r.error.message); pv = r.data[0];

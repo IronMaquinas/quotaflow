@@ -1003,6 +1003,11 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18g.6 (12/11):** **📋 Ficha do CT-e à vista + correções na ficha** (ideia e testes do Marcony). *(Inclui a 18g.5.)*
+    - **Cartão da tarefa (✅ Plano):** a **barra de progresso** dos documentos ("2/4 · próximo: CT-e") e o botão **📋 Ficha do CT-e** subiram para o cartão da TSK-TR — aparecem sem abrir a tarefa (o botão fica azul quando o próximo é o CT-e). Saíram de dentro da seção de documentos.
+    - **Valor do frete "falta"**: a ficha lia o subtotal num campo que o pedido não usa — agora lê o **valor do trecho** do PV (ou a soma dos itens). A **mobilização do contrato** (18y) também gravava o valor nesse campo errado — corrigido.
+    - **UF e município** saem do endereço completo ("…, Belo Horizonte - MG, CEP 30510-000" → Belo Horizonte / MG) — antes ficavam sem UF, e CFOP/alíquota não eram sugeridos.
+    - **Chave da NF-e** aparece mesmo quando a NF-e foi registrada sem o XML lido. Destinatário e valor da carga **vêm do XML da NF-e** (a ficha diz isso no lugar do "falta").
   - **18g.5 (11/11):** **📞 telefone do "Meu perfil" sumia** depois de entrar de novo (ex.: após reiniciar o backend). O número era gravado certo no banco, mas a tela de login montava a sessão **sem o telefone**. Agora o login guarda o telefone e o "Meu perfil" busca os dados atuais no servidor (`/auth/me`) ao abrir.
   - **18g.4 (11/11):** **🧮 CFOP e ICMS sugeridos por trecho + apólice pelo CNPJ** (dúvida do Marcony: base na Serra/ES fazendo Serra → MG → CE → RJ → Serra). Sem migration.
     - **Cada trecho é um CT-e** e vale onde a prestação **começa e termina** (não a base): mesma UF **5.35x** · interestadual **6.35x** · começando fora da UF de inscrição **5.932/6.932** — x pelo **tipo do tomador** (indústria 2 · comércio 3 · serviço 4 · não contribuinte 7). ICMS: mesma UF = **alíquota interna** (⚙️, da UF da empresa) · interestadual **12%**, ou **7%** saindo do S/SE (menos ES) para N/NE/CO/ES · **Simples Nacional** = ICMS do Simples, sem destaque.
@@ -1634,7 +1639,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18g.5)
+**Última atualização deste documento:** 06/11/2026 (etapa 18g.6)
 
 --------------------------------------------------------------------------------
 

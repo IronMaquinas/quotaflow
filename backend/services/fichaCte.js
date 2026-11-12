@@ -38,8 +38,11 @@ const dig = (v) => String(v || '').replace(/\D/g, '');
 const fmtDoc = (v) => { const d = dig(v); return d.length === 14 ? d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5') : d.length === 11 ? d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4') : v || ''; };
 const brl = (v) => (v == null ? '' : Number(v).toLocaleString('pt-BR', { minimumFractionDigits: 2, maximumFractionDigits: 2 }));
 const UF_RE = /(?:^|[\s/,-])([A-Z]{2})\s*$/;
-const semUf = (s) => String(s || '').replace(/\s*[/,-]\s*[A-Za-z]{2}\s*$/, '').trim(); // 18g.3: "Contagem/MG" → "Contagem"
-const ufDe = (s) => (String(s || '').toUpperCase().match(UF_RE) || [])[1] || null;
+const UFS = 'AC AL AP AM BA CE DF ES GO MA MT MS MG PA PB PR PE PI RJ RN RS RO RR SC SP SE TO'.split(' ');
+/** 18g.6: a última UF que aparece no endereço — "Belo Horizonte - MG, CEP 30510-000" → MG; "Contagem/MG" → MG */
+const ufDe = (s) => { const achados = [...String(s || '').matchAll(/(?:^|[\s,/(-])([A-Z]{2})(?=$|[\s,.;/)-])/g)].map((m) => m[1]).filter((u) => UFS.includes(u)); return achados.length ? achados[achados.length - 1] : null; };
+/** município: o trecho antes da UF ("..., Belo Horizonte - MG, CEP ..." → Belo Horizonte) */
+const municipioDe = (s) => { const t = String(s || ''); const uf = ufDe(t); if (!uf) return t.trim(); const i = t.lastIndexOf(uf); const antes = t.slice(0, i).replace(/[\s,/-]+$/, ''); const partes = antes.split(/\s*[,–-]\s*/).filter(Boolean); return (partes[partes.length - 1] || antes).trim(); };
 
 // ─── ⚙️ configuração do CT-e e apólices ─────────────────────────────────────
 async function config(supabase, tenantId) {
@@ -95,8 +98,11 @@ async function ficha(supabase, tenantId, tarefaId) {
     .sort((a, b) => String(a.inicio_previsto || '').localeCompare(String(b.inicio_previsto || '')));
   const at = ats[0] || null;
   let apolices = []; try { apolices = await q(supabase.from('tenant_apolices').select('*').eq('tenant_id', tenantId)); } catch { /* sem a 080 */ }
-  const ck = t.checklist || {}; const ents = (k) => (ck[k]?.entradas || []);
-  const nfes = ents('nfe').map((e) => e.dados).filter(Boolean); const nfe1 = nfes[0] || null;
+  const lerJ = (v) => { if (typeof v === 'string') { try { return JSON.parse(v); } catch { return null; } } return v; }; // 18g.6: tolera jsonb gravado como texto
+  const ck = lerJ(t.checklist) || {}; const ents = (k) => { const e = lerJ(ck[k]?.entradas); return Array.isArray(e) ? e : []; };
+  // 18g.6: a chave e o número vêm da própria entrada (registrada com ou sem o XML); o resto (partes, peso, valor) só do XML lido
+  const nfes = ents('nfe').map((e) => { const d = lerJ(e.dados) || {}; return { ...d, chave: d.chave || e.chave || null, numero: d.numero || e.numero || null, _xml: !!e.dados }; }).filter((n) => n.chave || n._xml);
+  const nfe1 = nfes.find((n) => n._xml) || null;
   const aver = ents('averbacao').map((e) => e.numero).filter(Boolean);
   const dataTr = ck.data_trecho || (at?.inicio_previsto ? String(at.inicio_previsto).slice(0, 10) : null) || g.data_prevista || null;
   const apol = apoliceNa(apolices, dataTr);
@@ -118,7 +124,9 @@ async function ficha(supabase, tenantId, tarefaId) {
   const volumes = nfes.reduce((s, n) => s + (Number(n.volumes) || 0), 0) || itens.reduce((s, i) => s + (Number(i.volumes) || Number(i.quantidade) || 1), 0) || null;
   const valorCarga = nfes.reduce((s, n) => s + (Number(n.valor) || 0), 0) || null;
   // frete: subtotal do trecho, senão a soma dos itens
-  const frete = g.subtotal != null && g.subtotal !== '' ? Number(g.subtotal) : itens.reduce((s, i) => s + (Number(i.valor) || 0) * (Number(i.quantidade) || 1), 0) || null;
+  const somaItens = itens.filter((i) => i.valor != null && i.valor !== '').reduce((s, i) => s + Number(i.valor) * (Number(i.quantidade) || 1), 0);
+  const fretePv = [g.valor, g.subtotal].find((v) => v != null && v !== ''); // 18g.6: subtotal digitado do trecho (BID/PV) ou soma dos itens
+  const frete = fretePv != null ? Number(fretePv) : somaItens || null;
   const aliq = sAliq.aliquota;
   const icms = frete != null && aliq != null ? Math.round(frete * aliq) / 100 : null;
   const cavalo = (at?.conjunto || []).find((c) => c.papel === 'cavalo'); const impl = (at?.conjunto || []).filter((c) => c.papel !== 'cavalo');
@@ -129,14 +137,14 @@ async function ficha(supabase, tenantId, tarefaId) {
     : [F('Nome / razão social', '', { obrig })]);
   const secoes = [
     { id: 'ide', titulo: '🧾 Identificação', campos: [F('Tipo do CT-e', 'Normal'), F('Modal', 'Rodoviário'), F('Tipo de serviço', 'Normal'), F('CFOP', cfop, { dica: `sugerido — confira · ${sCfop.regra}`, sugerido: true, chave: 'cfop' }),
-      F('Natureza da operação', 'Prestação de serviço de transporte'), F('Município de início', (nfe1 && remetente?.municipio) || semUf(origem), { dica: nfe1 ? null : `do endereço: ${origem || '—'}` }), F('UF de início', ufIni), F('Município de fim', (nfe1 && destinatario?.municipio) || semUf(destino), { dica: nfe1 ? null : `do endereço: ${destino || '—'}` }), F('UF de fim', ufFim), F('Data prevista', dataTr ? dataTr.split('-').reverse().join('/') : '', { obrig: false })] },
+      F('Natureza da operação', 'Prestação de serviço de transporte'), F('Município de início', (nfe1 && remetente?.municipio) || municipioDe(origem), { dica: nfe1 ? null : `do endereço: ${origem || '—'}` }), F('UF de início', ufIni), F('Município de fim', (nfe1 && destinatario?.municipio) || municipioDe(destino), { dica: nfe1 ? null : `do endereço: ${destino || '—'}` }), F('UF de fim', ufFim), F('Data prevista', dataTr ? dataTr.split('-').reverse().join('/') : '', { obrig: false })] },
     { id: 'emit', titulo: '🚚 Emitente (sua empresa)', campos: [F('Razão social', emp.razao_social || emp.nome), F('CNPJ', fmtDoc(emp.cnpj)), F('Inscrição estadual', cfg.ie), F('Endereço', enderecoEmp, { obrig: false }), F('Município', emp.cidade), F('UF', cfg.uf), F('CEP', emp.cep, { obrig: false }), F('RNTRC', cfg.rntrc)] },
     { id: 'toma', titulo: '💼 Tomador do serviço', campos: [F('Quem é o tomador', cfg.tomador_padrao || 'Remetente', { obrig: false }), ...parte(tomador)] },
     { id: 'rem', titulo: '📤 Remetente', campos: parte(remetente) },
-    { id: 'dest', titulo: '📥 Destinatário', campos: parte(destinatario) },
-    { id: 'carga', titulo: '📦 Carga', campos: [F('Produto predominante', produto), F('Valor da carga (R$)', valorCarga != null ? brl(valorCarga) : '', { dica: 'soma das NF-e' }), F('Peso bruto (kg)', peso != null ? peso.toLocaleString('pt-BR') : ''), F('Volumes', volumes),
-      F('Unidade de medida', 'KG'), ...(nfes.length ? nfes.map((n, k) => F(`Chave NF-e ${k + 1}`, n.chave)) : [F('Chave(s) da NF-e', '', { dica: 'anexe o XML da NF-e na tarefa fiscal' })])] },
-    { id: 'valores', titulo: '💲 Valores e ICMS', campos: [F('Valor total da prestação (R$)', frete != null ? brl(frete) : ''), F('Componente: Frete valor (R$)', frete != null ? brl(frete) : ''), F('Valor a receber (R$)', frete != null ? brl(frete) : ''),
+    { id: 'dest', titulo: '📥 Destinatário', campos: destinatario ? parte(destinatario) : [F('Nome / razão social', '', { dica: 'vem do XML da NF-e (anexe o XML no passo 1)' })] },
+    { id: 'carga', titulo: '📦 Carga', campos: [F('Produto predominante', produto), F('Valor da carga (R$)', valorCarga != null ? brl(valorCarga) : '', { dica: nfe1 ? 'soma das NF-e' : 'vem do XML da NF-e (anexe o XML no passo 1)' }), F('Peso bruto (kg)', peso != null ? peso.toLocaleString('pt-BR') : ''), F('Volumes', volumes),
+      F('Unidade de medida', 'KG'), ...(nfes.length ? nfes.map((n, k) => F(`Chave NF-e ${k + 1}`, n.chave)) : [F('Chave(s) da NF-e', '', { dica: 'registre a NF-e (com o XML) no passo 1 da tarefa' })])] },
+    { id: 'valores', titulo: '💲 Valores e ICMS', campos: [F('Valor total da prestação (R$)', frete != null ? brl(frete) : '', { dica: frete == null ? 'o pedido não tem valor neste trecho — preencha no PV (subtotal do trecho) ou no emissor' : null }), F('Componente: Frete valor (R$)', frete != null ? brl(frete) : ''), F('Valor a receber (R$)', frete != null ? brl(frete) : ''),
       ...(sAliq.simples ? [F('ICMS', 'Simples Nacional (sem destaque do ICMS)', { dica: 'confira com o contador', sugerido: true, chave: 'icms_sn' })]
         : [F('CST do ICMS', cfg.cst || '00', { dica: 'sugerido — confira', sugerido: true, chave: 'cst' }), F('Base de cálculo (R$)', frete != null ? brl(frete) : '', { sugerido: true, chave: 'base' }),
           F('Alíquota ICMS (%)', aliq != null ? String(aliq).replace('.', ',') : '', { dica: `sugerido — confira · ${sAliq.regra}`, sugerido: true, chave: 'aliquota' }), F('Valor do ICMS (R$)', icms != null ? brl(icms) : '', { dica: 'base × alíquota', sugerido: true, chave: 'icms' })])] },

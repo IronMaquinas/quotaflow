@@ -70,7 +70,7 @@ const ESPERADO = {
   'services/receitaCnpj.js': 'b0e2a678127403d5608723c21ec61b78', // etapa 14d.5
   'services/cadastroPublico.js': '750c29b11811b3ae3cdddad46da4fb8a', // etapa 18v
   'front:App.jsx': '61db6f947b890487465945749c0f0f81', // etapa 18u
-  'front:TelaLogin.jsx': 'bfa1fccbdab99820be2ac14c0e91b2fe', // etapa 14b.1
+  'front:TelaLogin.jsx': '742946c163f48c3a80f798f6077678c2', // etapa 18g.6
   'front:TelaSignup.jsx': '345dceefb937b38e74cfef44cfc33ef3', // etapa 11a.3
   'front:AvisoPlanoTenant.jsx': '2a75bbac9eaae456cc5d1b81d1dfbff8', // etapa 18v
   'services/emailConfirmacao.js': 'e36296d648d6f76f6412d7de0e10c4d8', // etapa 11a.3 (novo)
@@ -245,7 +245,7 @@ const ESPERADO = {
   'front:PainelProspeccao.jsx': 'b6b4bfe7c50fc16f692cc5251bae8658', // etapa 18g.2c
   'routes/tarefas.js': '5a8402766b6244f6ecd1a78d81274354', // etapa 18g.3
   'migrations/061_prospeccao_oportunidades.sql': '528a098239312cff4b7b389d4325b2f3', // etapa 18b.2 (novo)
-  'front:TelaPlanoAcaoNova.jsx': '88d158e9b8cf80b6bb9c385ca541d2d9', // etapa 18h.3.2
+  'front:TelaPlanoAcaoNova.jsx': 'fc15a0170e8444793a2709fa36c0af95', // etapa 18g.6
   'front:ConcluirTarefa.jsx': 'de3f60dc997a047cc1a29cd2a20ac92d', // etapa 18b.3 (novo)
   'front:DetalheExecutivo.jsx': '7fe748dd4a963a04f71d264bb189318f', // etapa 18b.9 (novo)
   'front:marcaFoto.js': '61fc663e418ff25ac21fd67a04915f5f', // etapa 18c.3
@@ -270,7 +270,7 @@ const ESPERADO = {
   'services/tarefas.js': '824658d386f15d106af37a1b02983791', // etapa 18r
   'migrations/066_fiscal_transporte.sql': 'eeef7d2fb80ae6ad0ec6069a3342e0ff', // etapa 18g.1 (novo)
   'services/tarefasFiscais.js': '90048e5365d5e1642991100314ab2c69', // etapa 18h.4a
-  'front:ChecklistFiscal.jsx': 'ceba15209159bfee7645801695352d57', // etapa 18g.3
+  'front:ChecklistFiscal.jsx': '9e9e9863a2bc74886344400973645c82', // etapa 18g.6
   'front:ConfigFiscal.jsx': '9fd57da5d2627b93c19ca338720462fc', // etapa 18g.4
   'front:lerXmlFiscal.js': '8d657863784b4e6c468b29bd8152e53f', // etapa 18g.1.1 (novo)
   'migrations/067_tarefa_responsavel.sql': '3e718fa4290311abef8fdb5b2e68eb6b', // etapa 18g.2a (novo)
@@ -314,22 +314,24 @@ const ESPERADO = {
   'services/assinaturas.js': 'e6d9c6444f36737004b1b984e58f02b1', // etapa 18x
   'migrations/077_assinaturas.sql': 'c9e4a1598392f5bdd744e042f471553f', // etapa 18v (novo)
   'migrations/078_assinatura_modalidade_pedidos.sql': 'd7f8abfc9d014eed6b1f243c4e71bc76', // etapa 18w (novo)
-  'services/mobilizacao.js': 'f049714a209527dd7e0314f434187b33', // etapa 18y (novo)
+  'services/mobilizacao.js': '066445c5978a5eecc82e654502c9c709', // etapa 18g.6
   'migrations/079_contrato_mobilizacao.sql': '2b89c516c0627c2f008f6b0a251459a9', // etapa 18y (novo)
   'front:MobilizacaoContrato.jsx': '726f6849504e44a0ba89c2c9d7330005', // etapa 18y (novo)
-  'services/fichaCte.js': '6fccc6692da5c54f8465d1ca9145d551', // etapa 18g.4
+  'services/fichaCte.js': 'e013154c4b0b8e6d9eb3ef10413cdd1b', // etapa 18g.6
   'migrations/080_ficha_cte_apolices.sql': '83836a53e1f1dd89b4db3c73686c0816', // etapa 18g.3 (novo)
   'front:FichaCte.jsx': '1545e475b3f1293bea31b1d2689b9af8', // etapa 18g.4
   'front:gerarFichaCte.js': '82698d98c06a303fe9be9cd02c20cdc3', // etapa 18g.3 (novo)
+  'front:ModalMeuPerfil.jsx': '3ebeaea85df76f80b004a23dffe5844b', // etapa 18g.6
 };
 
-// Antes de copiar a etapa 18g.4 — base: 3a72be1
+// Antes de copiar a etapa 18g.6 — base: c02e998
 const ANTES = {
-  'services/fichaCte.js': 'f1dadcaf546db0d68baec90bc61eb1cd',
-  'routes/configuracoes.js': '6e1d42117480872fea4b0ce89d91536f',
-  'services/roteiroInicial.js': 'e18c4cc47b59b963cf51c8fa6ad03f75',
-  'front:ConfigFiscal.jsx': '6abbf9cb6147cfc5958f2424f8a4ae4e',
-  'front:FichaCte.jsx': 'b80ad38cd37554684c37409bd3c6bf49',
+  'services/fichaCte.js': 'e013154c4b0b8e6d9eb3ef10413cdd1b',
+  'services/mobilizacao.js': '066445c5978a5eecc82e654502c9c709',
+  'front:TelaPlanoAcaoNova.jsx': 'fc15a0170e8444793a2709fa36c0af95',
+  'front:ChecklistFiscal.jsx': '9e9e9863a2bc74886344400973645c82',
+  'front:TelaLogin.jsx': '742946c163f48c3a80f798f6077678c2',
+  'front:ModalMeuPerfil.jsx': '3ebeaea85df76f80b004a23dffe5844b',
 };
 
 const RAIZ = process.cwd();
@@ -367,7 +369,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18g.4)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18g.6)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

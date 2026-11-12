@@ -123,12 +123,7 @@ export default function ChecklistFiscal({ C, s, tarefa, onAtualizou, onErro, onO
 
   return <div>
     {ficha && <FichaCte C={C} s={s} tarefaId={tarefa.id} onFechar={() => setFicha(false)} />}
-    <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 10, flexWrap: "wrap" }}>
-      <div style={{ fontSize: 10, color: C.muted, letterSpacing: "0.08em" }}>DOCUMENTOS FISCAIS · {tarefa.numero || ""}</div>
-      <div style={{ flex: 1, height: 6, background: C.border, borderRadius: 3, overflow: "hidden", minWidth: 80 }}><div style={{ width: `${(r.feitos / (r.total || 4)) * 100}%`, height: "100%", background: r.feitos === r.total ? C.success : C.accent }} /></div>
-      <b style={{ fontSize: 12.5, color: r.feitos === r.total ? C.success : C.text }}>{r.feitos}/{r.total}</b>
-      <button type="button" onClick={() => setFicha(true)} style={{ ...s.btn(false), padding: "5px 10px", fontSize: 12 }}>📋 Ficha do CT-e</button>{/* 18g.3 */}
-    </div>
+    {/* 18g.6: a barra de progresso e a 📋 Ficha do CT-e subiram para o cartão da tarefa (✅ Plano) */}
     {travado.length > 0 && <div style={{ fontSize: 12.5, color: C.textSub, background: `${C.accent}12`, border: `1px solid ${C.accent}44`, borderRadius: 8, padding: "8px 12px", marginBottom: 10 }}>🔒 <b>Documentos travados</b> — já estão na {travado.map((x) => x.numero).join(", ")}. Para trocar um documento, descarte o rascunho ou cancele a AT (com motivo): assim a AT e a tarefa nunca divergem. Dá para acrescentar documento (fica no histórico).</div>}
     {ck.dispensa && <div style={{ fontSize: 12.5, color: C.warn, marginBottom: 10 }}>🚫 Dispensada por {ck.dispensa.por || "—"} em {quando(ck.dispensa.em)}: {ck.dispensa.motivo}</div>}
     {(r.alertas || []).map((a, i) => <div key={i} style={{ fontSize: 12.5, color: C.danger, marginBottom: 6 }}>⚠️ {a}</div>)}
