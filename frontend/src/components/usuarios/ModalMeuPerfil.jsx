@@ -3,7 +3,7 @@
 // M4.7: modal de perfil do próprio usuário. Nome, telefone e troca de senha.
 // O backend usa `req.userId` do JWT — nunca aceita id no body.
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import PhoneInput from 'react-phone-number-input';
 import 'react-phone-number-input/style.css';
 import './phone-input.css';
@@ -21,6 +21,8 @@ export default function ModalMeuPerfil({ usuario, onFechar, onAtualizado }) {
   const [aba, setAba] = useState('dados'); // 'dados' | 'senha'
   const [nome, setNome] = useState(usuario?.nome || '');
   const [telefone, setTelefone] = useState(usuario?.telefone || '');
+  // 18g.5: busca os dados atuais no servidor ao abrir (a sessão pode ter sido criada sem o telefone)
+  useEffect(() => { let vivo = true; apiService.get('/auth/me').then((r) => { const u = r?.usuario; if (!vivo || !u) return; if (u.telefone && !telefone) setTelefone(u.telefone); if (u.telefone !== usuario?.telefone) onAtualizado?.({ telefone: u.telefone || null }); }).catch(() => {}); return () => { vivo = false; }; }, []); // eslint-disable-line
   const [salvando, setSalvando] = useState(false);
   const [erro, setErro] = useState(null);
   const [ok, setOk] = useState(null);

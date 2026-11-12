@@ -111,6 +111,7 @@ export default function TelaLogin({ onLogin, onNavegarPara }) {
         id: data.usuario.id,
         nome: data.usuario.nome,
         email: data.usuario.email,
+        telefone: data.usuario.telefone || null, // 18g.5: o "Meu perfil" reabria sem o telefone depois de entrar de novo
         perfil: data.usuario.perfil || data.usuario.papel || (isFornecedor ? 'fornecedor' : 'comprador'),
         perfis: Array.isArray(data.usuario.perfis) ? data.usuario.perfis : undefined,
         ativo: true,

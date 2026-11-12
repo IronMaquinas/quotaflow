@@ -1003,6 +1003,7 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18g.5 (11/11):** **📞 telefone do "Meu perfil" sumia** depois de entrar de novo (ex.: após reiniciar o backend). O número era gravado certo no banco, mas a tela de login montava a sessão **sem o telefone**. Agora o login guarda o telefone e o "Meu perfil" busca os dados atuais no servidor (`/auth/me`) ao abrir.
   - **18g.4 (11/11):** **🧮 CFOP e ICMS sugeridos por trecho + apólice pelo CNPJ** (dúvida do Marcony: base na Serra/ES fazendo Serra → MG → CE → RJ → Serra). Sem migration.
     - **Cada trecho é um CT-e** e vale onde a prestação **começa e termina** (não a base): mesma UF **5.35x** · interestadual **6.35x** · começando fora da UF de inscrição **5.932/6.932** — x pelo **tipo do tomador** (indústria 2 · comércio 3 · serviço 4 · não contribuinte 7). ICMS: mesma UF = **alíquota interna** (⚙️, da UF da empresa) · interestadual **12%**, ou **7%** saindo do S/SE (menos ES) para N/NE/CO/ES · **Simples Nacional** = ICMS do Simples, sem destaque.
     - **Na ficha:** CFOP, CST, base, alíquota e valor do ICMS vêm **sugeridos (✎) e editáveis** — o funcionário confere e corrige ali (alíquota/base recalculam o ICMS); a correção vai para o PDF e o CSV. Aviso: validar as regras com o contador (exceções por estado: crédito presumido, ST).
@@ -1633,7 +1634,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18g.4)
+**Última atualização deste documento:** 06/11/2026 (etapa 18g.5)
 
 --------------------------------------------------------------------------------
 
