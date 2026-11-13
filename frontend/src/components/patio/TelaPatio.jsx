@@ -102,6 +102,7 @@ export default function TelaPatio({ C, s, usuario }) {
   const fundo = (z, fechar) => ({ onClick: fechar, style: { position: "fixed", inset: 0, background: "#00000099", zIndex: z, display: "flex", alignItems: estreito ? "stretch" : "flex-start", justifyContent: "center", padding: estreito ? 0 : 16, overflowY: "auto" } });
   const caixa = (w) => ({ ...s.card, width: w, maxWidth: "100%", padding: estreito ? "16px 16px 0" : 20, marginTop: estreito ? 0 : 20, ...(estreito ? { borderRadius: 0, minHeight: "100%", border: "none" } : {}) });
   const rodape = { display: "flex", gap: 8, justifyContent: "flex-end", flexWrap: "wrap", ...(estreito ? { position: "sticky", bottom: 0, background: C.card || C.surface || "#111", padding: "12px 0 16px", borderTop: `1px solid ${C.border}`, marginTop: 8 } : { marginTop: 4 }) };
+  const secao = (t, primeira) => <div style={{ gridColumn: "1 / -1", fontWeight: 700, fontSize: 13, color: C.text, margin: primeira ? "0 0 6px" : "12px 0 6px", paddingTop: primeira ? 0 : 10, borderTop: primeira ? "none" : `1px solid ${C.border}` }}>{t}</div>;
   const titulo = (t, fechar) => <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}><div style={{ fontWeight: 700, fontSize: 16, flex: 1 }}>{t}</div>{fechar && <button type="button" onClick={fechar} aria-label="Fechar" style={{ background: "none", border: "none", color: C.muted, fontSize: 22, cursor: "pointer", padding: 4 }}>✕</button>}</div>;
   const campo = (st, setSt, k, rot, props = {}) => <div style={props.full ? { gridColumn: "1 / -1" } : undefined}><label style={lab}>{rot}</label><input value={st[k] || ""} onChange={(e) => setSt({ ...st, [k]: e.target.value })} style={inp} {...(props.type ? { type: props.type } : {})} {...(props.ph ? { placeholder: props.ph } : {})} {...(props.max ? { max: props.max } : {})} {...(props.im ? { inputMode: props.im } : {})} /></div>;
   const kpi = (rot, val, sub, cor, onClick) => <div onClick={onClick} role={onClick ? "button" : undefined} style={{ ...s.card, padding: "12px 16px", flex: estreito ? "1 1 140px" : "1 1 180px", cursor: onClick ? "pointer" : undefined }}><div style={{ fontSize: 11, color: C.muted, letterSpacing: "0.06em" }}>{rot}</div><div style={{ fontSize: 24, fontWeight: 800, color: cor || C.text }}>{val}</div>{sub && <div style={{ fontSize: 12, color: C.textSub }}>{sub}</div>}</div>;
@@ -210,24 +211,29 @@ export default function TelaPatio({ C, s, usuario }) {
       <div onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Entrada no pátio" style={caixa(640)}>
         {titulo("📥 Entrada no pátio — equipamento do cliente", () => !salv && setForm(null))}
         <div style={grid2}>
-          <div style={{ gridColumn: "1 / -1" }}><label style={lab}>NF — CHAVE (44 DÍGITOS)</label>
+          {secao("🧾 Nota fiscal e cliente", true)}
+          <div style={{ gridColumn: "1 / -1" }}><label style={lab}>CHAVE DA NF (CÓDIGO DE BARRAS DA DANFE)</label>
             <div style={{ display: "flex", gap: 8 }}><input value={form.nf_entrada_chave} inputMode="numeric" onChange={(e) => { const v = e.target.value.replace(/\D/g, "").slice(0, 44); setForm({ ...form, nf_entrada_chave: v }); if (v.length === 44) chaveLida(v); else setPreDaNf([]); }} placeholder="leia o código de barras da DANFE" style={{ ...inp, flex: 1, fontFamily: "ui-monospace, monospace" }} />
               <button type="button" onClick={() => setLeitor(true)} style={{ ...btnG(false), whiteSpace: "nowrap", marginBottom: s.input?.marginBottom }}>📷 Ler</button></div>
-            {form.nf_entrada_chave.length === 44 && <div style={{ fontSize: 11.5, color: C.muted, marginTop: -2, marginBottom: 6 }}>NF nº {daChave(form.nf_entrada_chave).numero} · emitida em {daChave(form.nf_entrada_chave).aamm}</div>}
+            {form.nf_entrada_chave.length === 44 ? <div style={{ fontSize: 12, color: C.success, marginTop: -2, marginBottom: 6 }}>✓ NF nº {daChave(form.nf_entrada_chave).numero} · emitida em {daChave(form.nf_entrada_chave).aamm}</div>
+              : !form.sem_chave && <button type="button" onClick={() => setForm({ ...form, sem_chave: true })} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 12, padding: "0 0 6px", marginTop: -2 }}>Sem chave? Informar nº e data da NF</button>}
+            {form.sem_chave && form.nf_entrada_chave.length !== 44 && <div style={grid2}>{campo(form, setForm, "nf_entrada_numero", "Nº DA NF", { im: "numeric" })}{campo(form, setForm, "nf_entrada_data", "DATA DA NF", { type: "date" })}</div>}
             {preDaNf.length > 0 && <div style={{ ...s.card, padding: 10, marginBottom: 8, borderColor: C.warn || "#f59e0b", fontSize: 13 }}>📄 Esta NF tem <b>{preDaNf.length} pré-entrada(s)</b> aguardando chegada — confirme a chegada nela em vez de lançar de novo:
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>{preDaNf.map((b) => <button key={b.id} type="button" onClick={() => { setForm(null); abrir(b.id); }} style={{ ...s.btn(true), padding: "8px 12px", fontSize: 12.5 }}>{b.numero} · {b.descricao}{b.numero_serie ? ` · ${b.numero_serie}` : ""}</button>)}</div></div>}
           </div>
           <div style={{ gridColumn: "1 / -1" }}><label style={lab}>CLIENTE DONO DO EQUIPAMENTO</label>
             <select value={form.cliente_id} onChange={(e) => setForm({ ...form, cliente_id: e.target.value, cliente_nome: e.target.value ? "" : form.cliente_nome })} style={inp}><option value="">— outro (digite abaixo) —</option>{clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}{c.documento ? ` · ${c.documento}` : ""}</option>)}</select>
             {!form.cliente_id && <input value={form.cliente_nome} onChange={(e) => setForm({ ...form, cliente_nome: e.target.value })} placeholder="Nome do cliente (não cadastrado)" style={inp} />}</div>
+          {secao("🚜 Equipamento")}
           {campo(form, setForm, "descricao", "EQUIPAMENTO", { full: true, ph: "ex.: Escavadeira hidráulica" })}
           {campo(form, setForm, "numero_serie", "Nº DE SÉRIE (PLAQUETA)", { ph: "o que está na plaqueta" })}
           {campo(form, setForm, "identificacao", "OUTRA IDENTIFICAÇÃO", { ph: "chassi, PIN, nº do motor…" })}
+          <div style={{ gridColumn: "1 / -1", display: "grid", gridTemplateColumns: estreito ? "1fr 1fr 0.7fr" : "2fr 2fr 1fr", gap: "2px 12px" }}>
+            {campo(form, setForm, "fabricante", "FABRICANTE")}{campo(form, setForm, "modelo", "MODELO")}{campo(form, setForm, "ano", "ANO (OPCIONAL)", { im: "numeric", ph: "ex.: 2024" })}</div>
+          {secao("📍 Chegada")}
           {campo(form, setForm, "local_patio", "LOCAL NO PÁTIO", { ph: "ex.: Galpão 2 · vaga 14" })}{campo(form, setForm, "entrada_em", "DATA DA ENTRADA", { type: "date", max: hoje() })}
+          {campo(form, setForm, "recebido_por", "RECEBIDO POR", { full: true })}
           <FotosPendentes />
-          {campo(form, setForm, "fabricante", "FABRICANTE")}{campo(form, setForm, "modelo", "MODELO")}
-          {campo(form, setForm, "nf_entrada_numero", "NF DE ENTRADA — Nº", { im: "numeric" })}{campo(form, setForm, "nf_entrada_data", "NF — DATA", { type: "date" })}
-          {campo(form, setForm, "recebido_por", "RECEBIDO POR")}{campo(form, setForm, "ano", "ANO", { im: "numeric" })}
           {campo(form, setForm, "obs", "OBSERVAÇÃO (AVARIAS NA CHEGADA, ACESSÓRIOS…)", { full: true })}
         </div>
         <div style={rodape}><button type="button" disabled={salv} onClick={() => setForm(null)} style={btnG(false)}>Cancelar</button>
