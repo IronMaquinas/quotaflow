@@ -22,7 +22,7 @@ export default function TelaPatio({ C, s, usuario }) {
   const [form, setForm] = useState(null); const [clientes, setClientes] = useState([]); const [salv, setSalv] = useState(false);
   const [det, setDet] = useState(null); const [saida, setSaida] = useState(null); const [chegada, setChegada] = useState(null); const [ver, setVer] = useState(null); const [subindo, setSubindo] = useState(false);
   const [xml, setXml] = useState(null); const [leitor, setLeitor] = useState(false); const [preDaNf, setPreDaNf] = useState([]); const [confExcluir, setConfExcluir] = useState(false);
-  const [fotosPend, setFotosPend] = useState([]); // fotos tiradas antes de salvar (entrada/chegada) — sobem com a tarja depois de salvar
+  const [fotosPend, setFotosPend] = useState([]); const [confFoto, setConfFoto] = useState(null); // fotos tiradas antes de salvar (entrada/chegada) — sobem com a tarja depois de salvar
   const [estreito, setEstreito] = useState(() => typeof window !== "undefined" && window.innerWidth < 760);
   useEffect(() => { const f = () => setEstreito(window.innerWidth < 760); window.addEventListener("resize", f); return () => window.removeEventListener("resize", f); }, []);
   const carregar = () => apiService.get("/patio", { status, busca, cliente }).then((r) => { setD(r); setErro(null); }).catch((e) => setErro(e.message));
@@ -30,7 +30,7 @@ export default function TelaPatio({ C, s, usuario }) {
   const ok = (t) => { setMsg(t); setTimeout(() => setMsg(null), 5000); };
   const abrir = (id) => apiService.get(`/patio/${id}`).then((r) => { setDet(r); setConfExcluir(false); }).catch((e) => setErro(e.message));
   const carregarClientes = () => { if (!clientes.length) apiService.get("/patio/clientes").then((r) => setClientes(r.clientes || [])).catch(() => {}); };
-  const limparFotos = () => { fotosPend.forEach((f) => URL.revokeObjectURL(f.url)); setFotosPend([]); };
+  const limparFotos = () => setFotosPend([]);
   const novaEntrada = () => { limparFotos(); setPreDaNf([]); setForm({ ...vazioEntrada(), recebido_por: usuario?.nome || "" }); carregarClientes(); };
   const enviarFotos = async (bem, fase, arquivos) => {
     let r = null;
@@ -63,6 +63,12 @@ export default function TelaPatio({ C, s, usuario }) {
     const lista = Array.from(files || []); if (!lista.length) return; setSubindo(true);
     try { const r = await enviarFotos(det.bem, fase, lista); if (r) setDet(r); } catch (e) { setErro(e.message); } finally { setSubindo(false); }
   };
+  // fotos antes de salvar: já comprimidas e com a tarja (o nº PAT entra ao salvar) — o funcionário confere como vai ficar
+  const marcaPend = () => { const b = chegada && det ? det.bem : null; const serie = (chegada?.numero_serie || form?.numero_serie || "").trim().toUpperCase(); const cli = b ? b.cliente_nome : (form?.cliente_id ? (clientes.find((c) => String(c.id) === String(form.cliente_id))?.nome || "") : (form?.cliente_nome || ""));
+    return { oque: "Entrada pátio", ref: [b ? b.numero : "nova entrada", serie && `série ${serie}`, cli].filter(Boolean).join(" · "), quem: usuario?.nome || "" }; };
+  const addPend = async (l) => { const marca = marcaPend(); const novos = [];
+    for (const file of l) { try { const ft = await fotoComTarja(file, marca); novos.push({ file, url: ft.dataUri }); } catch (e) { setErro(`${file.name}: ${e.message}`); } }
+    setFotosPend((p) => [...p, ...novos].slice(0, 12)); };
   // leitor da chave (câmera ou leitor USB): preenche chave + nº da NF e procura pré-entrada da mesma NF
   const chaveLida = (ch) => {
     const info = daChave(ch); setForm((f) => ({ ...f, nf_entrada_chave: ch, nf_entrada_numero: f.nf_entrada_numero || info?.numero || "" }));
@@ -105,11 +111,11 @@ export default function TelaPatio({ C, s, usuario }) {
   const FotosPendentes = () => <div style={{ gridColumn: "1 / -1", margin: "6px 0 8px" }}>
     <label style={lab}>📷 FOTOS DA CHEGADA (PLAQUETA, AVARIAS, ACESSÓRIOS) — PODE TIRAR AGORA OU DEPOIS</label>
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-      {fotosPend.map((f, i) => <div key={f.url} style={{ position: "relative" }}><img src={f.url} alt={`Foto ${i + 1}`} style={thumb} />
-        <button type="button" aria-label="Tirar esta foto" onClick={() => { URL.revokeObjectURL(f.url); setFotosPend((l) => l.filter((x) => x.url !== f.url)); }} style={{ position: "absolute", top: -6, right: -6, width: 24, height: 24, borderRadius: 12, border: "none", background: C.danger, color: "#fff", cursor: "pointer", fontSize: 12 }}>✕</button></div>)}
-      {botaoFoto(fotosPend.length ? "＋ Mais fotos" : "📷 Tirar / escolher fotos", (l) => setFotosPend((p) => [...p, ...l.slice(0, 12 - p.length).map((file) => ({ file, url: URL.createObjectURL(file) }))]))}
+      {fotosPend.map((f, i) => <div key={f.url} style={{ position: "relative" }}><img src={f.url} alt={`Foto ${i + 1} — toque para ver`} onClick={() => setVer({ url: f.url, nome: `foto-${i + 1}.jpg`, mime: "image/jpeg" })} style={{ ...thumb, cursor: "zoom-in" }} />
+        <button type="button" aria-label="Excluir esta foto" onClick={() => setConfFoto(f)} style={{ position: "absolute", top: -8, right: -8, width: 28, height: 28, borderRadius: 14, border: "none", background: C.danger, color: "#fff", cursor: "pointer", fontSize: 12 }}>✕</button></div>)}
+      {botaoFoto(fotosPend.length ? "＋ Mais fotos" : "📷 Tirar / escolher fotos", addPend)}
     </div>
-    {fotosPend.length > 0 && <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4 }}>Sobem com a tarja de rastreabilidade (nº PAT · série · cliente) assim que salvar.</div>}
+    {fotosPend.length > 0 && <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4 }}>Toque na foto para conferir. Ao salvar, a tarja ganha o nº PAT.</div>}
   </div>;
   const Fotos = ({ fase, lista, podeAdd }) => <div style={{ marginTop: 6 }}>
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
@@ -292,6 +298,14 @@ export default function TelaPatio({ C, s, usuario }) {
           <button type="button" disabled={salv || !saida.retirado_por.trim()} onClick={salvarSaida} style={btnG(true)}>{salv ? "Salvando…" : "Confirmar saída"}</button></div>
       </div></div>}
     {leitor && <div style={{ position: "fixed", inset: 0, zIndex: 1300 }}><LeitorCodigoBarras C={C} s={s} onDetectado={chaveLida} onFechar={() => setLeitor(false)} /></div>}
+    {confFoto && <div onClick={() => setConfFoto(null)} style={{ position: "fixed", inset: 0, background: "#000000aa", zIndex: 1250, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Excluir foto" style={{ ...s.card, width: 380, maxWidth: "100%", padding: 20, textAlign: "center" }}>
+        <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 10 }}>Excluir esta foto?</div>
+        <img src={confFoto.url} alt="Foto a excluir" style={{ maxWidth: "100%", maxHeight: 220, borderRadius: 8, border: `1px solid ${C.border}` }} />
+        <div style={{ fontSize: 12.5, color: C.textSub, margin: "8px 0 14px" }}>Ela ainda não foi salva — se excluir, terá que tirar de novo.</div>
+        <div style={{ display: "flex", gap: 10 }}><button type="button" onClick={() => setConfFoto(null)} style={{ ...btnG(false), flex: 1, padding: "12px 16px" }}>Cancelar</button>
+          <button type="button" onClick={() => { setFotosPend((l) => l.filter((x) => x.url !== confFoto.url)); setConfFoto(null); }} style={{ ...btnG(true), flex: 1, padding: "12px 16px", background: C.danger, borderColor: C.danger }}>Excluir</button></div>
+      </div></div>}
     {ver && <VerArquivo C={C} s={s} arquivo={ver} z={1200} onFechar={() => setVer(null)} />}
   </div>;
 }

@@ -1005,6 +1005,7 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18z.2 (13/11):** 📦 Pátio — fotos tiradas no formulário (antes de salvar) seguem o **padrão de fotos** do sistema: já aparecem **comprimidas e com a tarja** (o nº PAT entra ao salvar), **abrem por cima ao tocar** para conferir, e o ✕ (maior, fácil de acertar no celular) **pede confirmação** em modal (Cancelar | Excluir) — tocar sem querer no ✕ em cima do caminhão não perde a foto.
   - **18z.1 (13/11):** **📦 Pátio — pré-entrada pelo XML, leitor da chave e celular** (pedido do Marcony após testar a 18z). Migration 082.
     - **📄 Pré-entrada pelo XML:** o suporte carrega o XML da NF-e → o sistema cria **uma linha por unidade** (qtd 2 = 2 linhas), tenta achar o **nº de série** (veicProd/chassi, "Nº SÉRIE / S/N / SERIAL / PIN" nas informações do item), ano e motor; sugere o **cliente pelo CNPJ** do destinatário (ou emitente). Tudo editável antes de lançar; série pode ficar em branco. NF já lançada: aviso + "lançar mesmo assim". Fica em **Aguardando chegada** (KPI + filtro).
     - **✅ Confirmar chegada** (equipe do pátio): confere a série **na plaqueta** (avisa se difere da NF), local, data, quem recebeu, observação e fotos → vai para "no pátio". Pré-entrada pode ser excluída (confirmação no app). Saída só depois da chegada.
@@ -1656,7 +1657,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18z.1)
+**Última atualização deste documento:** 06/11/2026 (etapa 18z.2)
 
 --------------------------------------------------------------------------------
 
