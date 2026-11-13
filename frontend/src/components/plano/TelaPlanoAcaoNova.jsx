@@ -227,8 +227,8 @@ export default function TelaPlanoAcaoNova({ onVoltar, C, s, ambienteInicial = 't
                       <div style={{ width: `${(t.fiscal.feitos / (t.fiscal.total || 4)) * 100}%`, height: '100%', background: t.fiscal.feitos === t.fiscal.total ? C.success : C.accent }} /></div>
                     <span style={{ fontSize: 12, fontWeight: 700, color: t.fiscal.feitos === t.fiscal.total ? C.success : C.text }}>{t.fiscal.feitos}/{t.fiscal.total}{t.fiscal.proximo && t.fiscal.proximo !== 'encerramento' ? <span style={{ fontWeight: 500, color: C.textSub }}> · próximo: {NOME_DOC[t.fiscal.proximo] || t.fiscal.proximo}</span> : ''}</span>
                     {(() => { const cteFeito = !!t.fiscal.itens?.cte; const pend = t.fiscal.proximo === 'cte'; // 18g.7: o texto diz para que serve agora
-                      return <button type="button" onClick={() => setFichaDe(t.id)} title={cteFeito ? 'O CT-e deste trecho já foi registrado — a ficha fica para conferir ou reimprimir' : pend ? 'Próximo passo: copie os dados para o emissor e emita o CT-e' : 'Dá para preparar o CT-e já — mas a NF-e (passo 1) completa a ficha'}
-                        style={{ ...s.btn(pend), padding: '5px 12px', fontSize: 12 }}>📋 Ficha do CT-e{cteFeito ? ' (consulta)' : pend ? ' — emitir agora' : ''}</button>; })()}
+                      return <button type="button" onClick={() => setFichaDe(t.id)} title={cteFeito ? 'O CT-e deste trecho já foi registrado — a ficha fica para conferir ou reimprimir' : 'Copie os dados para o seu emissor de CT-e; depois registre o XML do CT-e no passo 2' + (pend ? '' : ' (a NF-e do passo 1 completa a ficha)')}
+                        style={{ ...s.btn(pend), padding: '5px 12px', fontSize: 12 }}>📋 Ficha do CT-e{cteFeito ? ' (consulta)' : ' — dados para emitir'}</button>; })()}
                   </div>}
                 </div>
                 <div style={{ display: 'flex', gap: 6, flexShrink: 0, flexWrap: 'wrap' }}>

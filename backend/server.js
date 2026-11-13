@@ -152,6 +152,7 @@ app.use('/api/plataforma', require('./routes/plataforma')); // Console da Plataf
 app.use('/api/manutencao', tenantMiddleware, exigirModulo('manutencao'), require('./routes/manutencao')); // Calendário de manutenção (etapa 12a) — só leitura
 // 18t: 🧩 abas de Pessoas por módulo — /epi, /multas e /treinamentos exigem o próprio módulo (o resto, Colaboradores, como antes)
 const modPessoas = { epi: exigirModulo('epi'), multas: exigirModulo('multas'), treinamentos: exigirModulo('treinamentos') };
+app.use('/api/patio', tenantMiddleware, exigirModulo('patio_cliente'), require('./routes/patio')); // 18z: 📦 propriedade do cliente
 app.use('/api/pessoas', tenantMiddleware, exigirModulo('colaboradores', { somenteEscrita: true }), (req, res, next) => { const k = (req.path.match(/^\/(epi|multas|treinamentos)(\/|$)/) || [])[1]; return k ? modPessoas[k](req, res, next) : next(); }, require('./routes/pessoas')); // Colaboradores e documentos com vencimento (etapa 12c)
 app.use('/api/meus-treinamentos', tenantMiddleware, exigirModulo('treinamentos'), require('./routes/meusTreinamentos'));
 app.use('/api/minhas-viagens', tenantMiddleware, exigirModulo('transporte'), require('./routes/minhasViagens')); // etapa 17a — 🚛 motorista logado // etapa 12e.2b — colaborador logado

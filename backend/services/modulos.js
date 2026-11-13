@@ -23,6 +23,7 @@ const AREAS = [
     { id: 'transporte', nome: 'Programação e AT', desc: 'AT por trecho, mesa de programação, link e fluxo do motorista, utilização da frota.', telas: ['programacao', 'minhas_viagens'], depende: ['crm_bid', 'frota_equipamentos'] },
     { id: 'manutencao', nome: 'Manutenção (OS e calendário)', desc: 'Ordem de serviço e calendário de manutenção.', telas: ['ordem_servico', 'calendario'], depende: ['frota_equipamentos'] },
     { id: 'fiscal', nome: 'Documentos fiscais do transporte', desc: 'Tarefa por trecho: NF-e, CT-e, averbação e MDF-e, conferência com a AT.', telas: [], depende: ['transporte'] },
+    { id: 'patio_cliente', nome: 'Propriedade do cliente (pátio)', desc: 'Equipamento do cliente guardado no pátio: entrada e saída por nº de série da plaqueta, NF, fotos e saldo por cliente.', telas: ['patio'] }, // 18z
     { id: 'ocorrencias', nome: 'Ocorrências (INC)', desc: 'Avaria, pane, acidente — pela AT ou pelo contrato, com dossiê e indicadores.', telas: [], dependeUm: ['transporte', 'contratos_locacao'] },
   ] },
   { id: 'qualidade', nome: '✅ Qualidade', modulos: [

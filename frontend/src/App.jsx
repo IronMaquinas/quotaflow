@@ -31,6 +31,7 @@ import TelaOrdemServico from './components/estoque/TelaOrdemServico';
 import TelaConfiguracoes from './components/configuracoes/TelaConfiguracoes';
 import BemVindo from './components/configuracoes/BemVindo';
 import MeuPlano from './components/configuracoes/MeuPlano'; // 18j: ⭐ módulos do plano
+import TelaPatio from './components/patio/TelaPatio'; // 18z: 📦 propriedade do cliente
 import SinoNotificacoes from './components/shared/SinoNotificacoes'; // 18n: 🔔
 import { pedirAbrirDemanda } from './components/spot/ChatSpot';
 import { soAreaRestrita } from './utils/areaRestrita';
@@ -454,6 +455,7 @@ const perfil = PERFIS[usuario.perfil] || {
     {id:"spot",          l:"⚡ Canal Spot",            perfis:["admin","gestor","comprador"]},
     {id:"retirada",      l:"📤 Retirada",             perfis:["admin","gestor","comprador","operacao"]},
     {id:"estoque",       l:"📦 Consumíveis",          perfis:["admin","gestor","comprador","operacao"]},
+    {id:"patio",         l:"📦 Propriedade do cliente", perfis:["admin","gestor","comprador","operacao"]}, // 18z
     {id:"historico_estoque", l:"📜 Movimentações",    perfis:["admin","gestor","comprador"]},
     {id:"aprovacoes",    l:"✅ Aprovações",           perfis:["admin","gestor"], badge: totalPendencias > 0 ? totalPendencias : null},
     {id:"ordensvenda",   l:"📄 Ordens de Venda",      perfis:["admin","gestor","comprador"]},
@@ -717,6 +719,7 @@ const perfil = PERFIS[usuario.perfil] || {
           </div>
         )}
 
+        {temAcesso(tela) && tela === "patio" && <div style={{ flex: 1, minHeight: 0 }}><TelaPatio C={C} s={s} usuario={usuario} /></div>}{/* 18z */}
         {temAcesso(tela) && tela === "recebimento" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
             <TelaRecebimento
