@@ -404,6 +404,7 @@ Ver seção 5 para o fluxo completo.
 - **080 (18g.3)** — 📋 `tenants.fiscal_cte` (jsonb: IE, UF, RNTRC, CFOP dentro/fora do estado, CST, alíquota ICMS, produto e tomador padrão) e `tenant_apolices` (seguradora, CNPJ, nº, ramo, responsável, vigência, ativa). Idempotente.
 - **081 (18z)** — 📦 `patio_bens` (propriedade do cliente no pátio: PAT-AAAA-NNNN, cliente, equipamento, **nº de série da plaqueta** — único por empresa enquanto está no pátio, sem diferenciar maiúscula —, NF de entrada, local, quem recebeu, fotos de entrada/saída, saída com quem liberou/retirou, documento, placa, NF de saída e AT). Idempotente.
 - **082 (18z.1)** — 📦 pátio: status `pre_entrada` (lançada pelo XML, aguardando chegada); nº de série e data de entrada podem ficar em branco na pré; colunas emitente da NF, item da NF, chegada prevista, quem lançou; série única entre pré-entradas + no pátio. Idempotente.
+- **083 (18z.5)** — 📦 `patio_bens.area_m2` (área ocupada no pátio, para cobrança por m²·dia). Idempotente.
 - **058 (16e.3)** — `tenants (+) base_endereco` (📍 pátio / base da frota — onde o conjunto é liberado; pode ser diferente do endereço fiscal). Idempotente.
 - **057 (16e)** — `execucoes (+) fluxo` (etapas da viagem em ordem: marcações e inspeções, com status, hora, GPS, inspeção feita e liberação do gestor) e `inspecoes (+) execucao_id, etapa_id` (a inspeção feita no fluxo aponta para a AT). Idempotente.
 - **056 (16c)** — `execucoes.status (+) 'rascunho'` (cavalo pode ficar vazio no rascunho), `execucoes (+) token, link_visto_em` (📲 link do motorista) e `liberacao_docs` (CNH/CRLV vencido na data da viagem liberado pelo gestor). Idempotente.
@@ -1005,6 +1006,12 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18z.5 (13/11):** 📦 **Pátio — comprovante, ficha de movimentação e área (m²).** Migration 083.
+    - **Ficha do equipamento:** bloco **🧾 Nota fiscal de entrada** sempre visível (nº, data, emitente + CNPJ, item, chave completa — ou "Entrada sem nota fiscal informada"); Fabricante · Modelo · Ano numa linha; **Local / área** com ✎ alterar.
+    - **🖨 Comprovante de entrada** (e **de saída**, quando saiu) em PDF A4 no layout padrão: empresa, cliente proprietário, equipamento e série, NF, entrada (data, quem recebeu, local, área, observação), saída (quem liberou/retirou, documento, placa, NF, permanência), fotos, declaração ("bem de terceiro em guarda — não integra o estoque da empresa") e assinaturas.
+    - **📊 aba Movimentação:** cliente (ou todos) + período (padrão: mês atual) → saldo inicial, entradas, saídas, saldo final, **equipamento·dia** e **m²·dia**; lista de movimentos e tabela de permanência por equipamento (clicáveis); **🖨 Ficha (PDF)** e **⬇ CSV**. Diária: conta o dia da entrada e não o da saída (mesmo dia = 1). Base para medição de guarda cobrada por m².
+    - **Área ocupada (m²)** opcional na entrada, na confirmação de chegada e na ficha.
+    - Depois de **Registrar entrada** a ficha não abre mais sozinha (era para tirar as fotos — agora elas são tiradas no próprio formulário).
   - **18z.4 (13/11):** 📦 Pátio — **entrada reorganizada por assunto**: 🧾 Nota fiscal e cliente (só a chave com 📷 Ler; ao ler mostra "✓ NF nº · emitida em MM/AAAA"; o link "Sem chave? Informar nº e data da NF" abre os campos manuais — antes pareciam duas notas) · 🚜 Equipamento (descrição, série, outra identificação, **Fabricante | Modelo | Ano (opcional)** na mesma linha) · 📍 Chegada (local, data, recebido por, fotos, observação).
   - **18z.3 (13/11):** 👁 **Visualizador (VerArquivo) — foto às vezes abria como PDF (fundo branco).** Ele decidia o tipo procurando "pdf"/"xml" no endereço; numa foto ainda não salva o endereço é o próprio conteúdo em base64, que pode conter "pdf" por acaso. Agora em `data:`/`blob:` só o cabeçalho conta. Vale para todas as telas que usam o visualizador.
   - **18z.2 (13/11):** 📦 Pátio — fotos tiradas no formulário (antes de salvar) seguem o **padrão de fotos** do sistema: já aparecem **comprimidas e com a tarja** (o nº PAT entra ao salvar), **abrem por cima ao tocar** para conferir, e o ✕ (maior, fácil de acertar no celular) **pede confirmação** em modal (Cancelar | Excluir) — tocar sem querer no ✕ em cima do caminhão não perde a foto.
@@ -1659,7 +1666,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18z.4)
+**Última atualização deste documento:** 06/11/2026 (etapa 18z.5)
 
 --------------------------------------------------------------------------------
 

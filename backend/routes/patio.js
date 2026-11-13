@@ -13,6 +13,7 @@ const responder = (fn) => async (req, res) => {
 };
 router.get('/', responder((req) => P.listar(supabase, req.tenantId, { status: req.query.status || 'no_patio', busca: req.query.busca, cliente: req.query.cliente })));
 router.get('/clientes', responder(async (req) => ({ clientes: (await require('../services/clientes').listar(supabase, req.tenantId)).map((c) => ({ id: c.id, nome: c.nome, razao_social: c.razao_social || null, documento: c.documento || null })) })));
+router.get('/movimentacao', responder((req) => P.movimentacao(supabase, req.tenantId, { cliente: req.query.cliente || '', de: req.query.de, ate: req.query.ate })));
 router.post('/xml', express.text({ type: '*/*', limit: '5mb' }), responder((req) => P.lerXmlDoTenant(supabase, req.tenantId, typeof req.body === 'string' ? req.body : String(req.body?.xml || ''))));
 router.post('/pre-entradas', responder(async (req) => P.preEntradas(supabase, req.tenantId, await quem(req), req.body || {})));
 router.get('/:id', responder((req) => P.detalhe(supabase, req.tenantId, req.params.id)));

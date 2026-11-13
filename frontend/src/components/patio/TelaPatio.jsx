@@ -7,6 +7,7 @@ import apiService from "../../services/apiService";
 import { fotoComTarja } from "../ocorrencias/RegistrarOcorrencia";
 import VerArquivo from "../programacao/VerArquivo";
 import { LeitorCodigoBarras } from "../LeitorCodigoBarras";
+import { abrirComprovantePatio, abrirMovimentacaoPatio, csvMovimentacaoPatio } from "../../utils/gerarComprovantePatio";
 
 const hoje = () => new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
 const dBR = (v) => (v ? String(v).slice(0, 10).split("-").reverse().join("/") : "—");
@@ -23,6 +24,13 @@ export default function TelaPatio({ C, s, usuario }) {
   const [det, setDet] = useState(null); const [saida, setSaida] = useState(null); const [chegada, setChegada] = useState(null); const [ver, setVer] = useState(null); const [subindo, setSubindo] = useState(false);
   const [xml, setXml] = useState(null); const [leitor, setLeitor] = useState(false); const [preDaNf, setPreDaNf] = useState([]); const [confExcluir, setConfExcluir] = useState(false);
   const [fotosPend, setFotosPend] = useState([]); const [confFoto, setConfFoto] = useState(null); // fotos tiradas antes de salvar (entrada/chegada) — sobem com a tarja depois de salvar
+  const [aba, setAba] = useState("itens"); const [mov, setMov] = useState(null); const [fMov, setFMov] = useState(() => ({ cliente: "", de: `${hoje().slice(0, 7)}-01`, ate: hoje() }));
+  const [edLocal, setEdLocal] = useState(null);
+  const carregarMov = (f = fMov) => apiService.get("/patio/movimentacao", f).then((r) => { setMov(r); setErro(null); }).catch((e) => setErro(e.message));
+  useEffect(() => { if (aba === "mov") carregarMov(); }, [aba, fMov]); // eslint-disable-line
+  const baixarCsv = () => { const blob = new Blob([csvMovimentacaoPatio(mov)], { type: "text/csv;charset=utf-8" }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `movimentacao-patio-${mov.de}-a-${mov.ate}${mov.cliente ? `-${mov.cliente.replace(/\W+/g, "-")}` : ""}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); };
+  const imprimir = (fn) => { try { fn(); } catch (e) { setErro(e.message); } };
+  const salvarLocal = async () => { setSalv(true); try { const r = await apiService.put(`/patio/${det.bem.id}`, edLocal); setDet(r); setEdLocal(null); ok("✓ Atualizado"); carregar(); } catch (e) { setErro(e.message); } finally { setSalv(false); } };
   const [estreito, setEstreito] = useState(() => typeof window !== "undefined" && window.innerWidth < 760);
   useEffect(() => { const f = () => setEstreito(window.innerWidth < 760); window.addEventListener("resize", f); return () => window.removeEventListener("resize", f); }, []);
   const carregar = () => apiService.get("/patio", { status, busca, cliente }).then((r) => { setD(r); setErro(null); }).catch((e) => setErro(e.message));
@@ -46,7 +54,7 @@ export default function TelaPatio({ C, s, usuario }) {
       const r = await apiService.post("/patio", form); const pend = fotosPend.map((f) => f.file);
       setForm(null); carregar();
       if (pend.length) { setSubindo(true); try { await enviarFotos(r.bem, "entrada", pend); } catch (e) { setErro(`Entrada salva, mas falhou alguma foto: ${e.message}`); } finally { setSubindo(false); } }
-      limparFotos(); ok(`✓ ${r.bem.numero} no pátio${pend.length ? ` com ${pend.length} foto(s)` : " — tire as fotos da chegada na ficha"}`); abrir(r.bem.id);
+      limparFotos(); ok(`✓ ${r.bem.numero} no pátio${pend.length ? ` com ${pend.length} foto(s)` : " — dá para tirar as fotos depois, na ficha"}`); 
     } catch (e) { setErro(e.message); } finally { setSalv(false); }
   };
   const salvarSaida = async () => { setSalv(true); try { const r = await apiService.post(`/patio/${det.bem.id}/saida`, saida); setSaida(null); setDet(r); ok(`✓ Saída de ${r.bem.numero} registrada`); carregar(); } catch (e) { setErro(e.message); } finally { setSalv(false); } };
@@ -133,10 +141,39 @@ export default function TelaPatio({ C, s, usuario }) {
       <button type="button" onClick={abrirXml} style={{ ...btnG(false), flex: estreito ? "1 1 45%" : undefined }}>📄 Pré-entrada pelo XML</button>
       <button type="button" onClick={novaEntrada} style={{ ...btnG(true), flex: estreito ? "1 1 45%" : undefined }}>＋ Entrada no pátio</button>
     </div>
-    {!estreito && <div style={{ fontSize: 13, color: C.textSub, marginBottom: 14 }}>Equipamento <b>do cliente</b> guardado no pátio (ex.: chegou do porto e espera a entrega). Não é estoque da empresa — controle pelo <b>nº de série da plaqueta</b>. O suporte lança a <b>pré-entrada pelo XML</b> e o pátio confirma a chegada.</div>}
+    <div style={{ display: "flex", gap: 6, margin: "6px 0 10px" }}>{[["itens", "📦 Equipamentos"], ["mov", "📊 Movimentação"]].map(([k, l]) => <button key={k} type="button" onClick={() => setAba(k)} style={{ ...s.btn(aba === k), padding: estreito ? "10px 14px" : "7px 16px", fontSize: 13 }}>{l}</button>)}</div>
+    {!estreito && aba === "itens" && <div style={{ fontSize: 13, color: C.textSub, marginBottom: 14 }}>Equipamento <b>do cliente</b> guardado no pátio (ex.: chegou do porto e espera a entrega). Não é estoque da empresa — controle pelo <b>nº de série da plaqueta</b>. O suporte lança a <b>pré-entrada pelo XML</b> e o pátio confirma a chegada.</div>}
     {msg && <div style={{ ...s.card, padding: 10, margin: "8px 0 12px", borderColor: C.success, color: C.success, fontSize: 13 }}>{msg}</div>}
     {erro && <div style={{ ...s.card, padding: 10, margin: "8px 0 12px", borderColor: C.danger, color: C.danger, fontSize: 13, display: "flex", gap: 8 }}><span style={{ flex: 1 }}>⚠ {erro}</span><button type="button" onClick={() => setErro(null)} aria-label="Fechar aviso" style={{ background: "none", border: "none", color: C.danger, cursor: "pointer" }}>✕</button></div>}
-    {d?.sem_migration ? <div style={{ color: C.danger }}>Falta rodar as migrations 081 e 082 no Supabase.</div> : !d ? <div style={{ color: C.muted }}>Carregando…</div> : <>
+    {aba === "mov" && <div>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end", marginBottom: 12 }}>
+        <div style={{ flex: "1 1 200px" }}><label style={lab}>CLIENTE</label><select value={fMov.cliente} onChange={(e) => setFMov({ ...fMov, cliente: e.target.value })} style={{ ...inp, marginBottom: 0 }}><option value="">Todos os clientes</option>{(mov?.clientes || []).map((c) => <option key={c} value={c}>{c}</option>)}</select></div>
+        <div style={{ flex: "1 1 140px" }}><label style={lab}>DE</label><input type="date" value={fMov.de} max={fMov.ate} onChange={(e) => e.target.value && setFMov({ ...fMov, de: e.target.value })} style={{ ...inp, marginBottom: 0 }} /></div>
+        <div style={{ flex: "1 1 140px" }}><label style={lab}>ATÉ</label><input type="date" value={fMov.ate} min={fMov.de} onChange={(e) => e.target.value && setFMov({ ...fMov, ate: e.target.value })} style={{ ...inp, marginBottom: 0 }} /></div>
+        <button type="button" disabled={!mov || mov.sem_migration} onClick={() => imprimir(() => abrirMovimentacaoPatio(mov))} style={btnG(false)}>🖨 Ficha (PDF)</button>
+        <button type="button" disabled={!mov || mov.sem_migration} onClick={baixarCsv} style={btnG(false)}>⬇ CSV</button>
+      </div>
+      {!mov ? <div style={{ color: C.muted }}>Carregando…</div> : mov.sem_migration ? <div style={{ color: C.danger }}>Falta rodar as migrations 081 a 083 no Supabase.</div> : <>
+        <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
+          {kpi("SALDO INICIAL", mov.saldo_inicial, `em ${dBR(mov.de)}`)}{kpi("ENTRADAS", mov.entradas, null, C.accent)}{kpi("SAÍDAS", mov.saidas, null, C.success)}{kpi("SALDO FINAL", mov.saldo_final, `em ${dBR(mov.ate)}`)}
+          {kpi("EQUIPAMENTO·DIA", mov.equip_dias.toLocaleString("pt-BR"), "diárias no período")}{kpi("m²·DIA", mov.m2_dia.toLocaleString("pt-BR", { maximumFractionDigits: 2 }), mov.sem_area ? `${mov.sem_area} sem área informada` : "base para cobrança por m²", mov.sem_area ? (C.warn || "#f59e0b") : C.text)}
+        </div>
+        <div style={{ fontWeight: 700, margin: "4px 0 6px" }}>Movimentos no período</div>
+        <div style={{ ...s.card, padding: 0, overflow: "hidden", marginBottom: 14 }}>{mov.movimentos.length === 0 ? <div style={{ padding: 14, color: C.muted, fontSize: 13 }}>Nenhuma entrada ou saída no período.</div>
+          : mov.movimentos.map((x, i) => <div key={i} role="button" tabIndex={0} onClick={() => abrir(x.bem_id)} onKeyDown={(e) => e.key === "Enter" && abrir(x.bem_id)} style={{ display: "flex", gap: 10, alignItems: "center", padding: "9px 14px", borderTop: i ? `1px solid ${C.border}` : "none", cursor: "pointer", fontSize: 13, flexWrap: "wrap" }}>
+            <span style={{ width: 82, color: C.textSub }}>{dBR(x.data)}</span><span style={s.tag(x.tipo === "entrada" ? C.accent : C.success)}>{x.tipo === "entrada" ? "📥 entrada" : "📤 saída"}</span>
+            <span style={{ flex: 1, minWidth: 180 }}><span style={{ fontFamily: "ui-monospace, monospace", color: C.accent, fontSize: 12 }}>{x.numero}</span> · {x.descricao}{x.serie ? ` · ${x.serie}` : ""}{!mov.cliente ? ` · 🏢 ${x.cliente}` : ""}</span>
+            <span style={{ color: C.muted, fontSize: 12 }}>{[x.nf && `NF ${x.nf}`, x.quem].filter(Boolean).join(" · ")}</span></div>)}</div>
+        <div style={{ fontWeight: 700, margin: "4px 0 6px" }}>Permanência no período {mov.cliente ? `— ${mov.cliente}` : ""}</div>
+        <div style={{ ...s.card, padding: 0, overflow: "auto" }}>{mov.itens.length === 0 ? <div style={{ padding: 14, color: C.muted, fontSize: 13 }}>Nenhum equipamento no pátio no período.</div>
+          : <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5, minWidth: 560 }}><thead><tr style={{ color: C.muted, textAlign: "left" }}>{["PAT", ...(mov.cliente ? [] : ["Cliente"]), "Equipamento", "Entrada", "Saída", "Dias", "m²", "m²·dia"].map((h, i) => <th key={h} style={{ padding: "8px 10px", fontWeight: 600, textAlign: i >= (mov.cliente ? 4 : 5) ? "right" : "left" }}>{h}</th>)}</tr></thead>
+            <tbody>{mov.itens.map((i) => <tr key={i.bem_id} onClick={() => abrir(i.bem_id)} style={{ borderTop: `1px solid ${C.border}`, cursor: "pointer" }}><td style={{ padding: "7px 10px", fontFamily: "ui-monospace, monospace", color: C.accent }}>{i.numero}</td>{!mov.cliente && <td style={{ padding: "7px 10px" }}>{i.cliente}</td>}<td style={{ padding: "7px 10px" }}>{i.descricao}</td><td style={{ padding: "7px 10px" }}>{dBR(i.entrada_em)}</td><td style={{ padding: "7px 10px" }}>{i.saida_em ? dBR(i.saida_em) : "no pátio"}</td>
+              <td style={{ padding: "7px 10px", textAlign: "right" }}>{i.dias}</td><td style={{ padding: "7px 10px", textAlign: "right", color: i.area_m2 == null ? (C.warn || "#f59e0b") : undefined }}>{i.area_m2 != null ? i.area_m2.toLocaleString("pt-BR") : "—"}</td><td style={{ padding: "7px 10px", textAlign: "right" }}>{i.m2_dia != null ? i.m2_dia.toLocaleString("pt-BR", { maximumFractionDigits: 2 }) : "—"}</td></tr>)}
+              <tr style={{ borderTop: `2px solid ${C.border}`, fontWeight: 700 }}><td colSpan={mov.cliente ? 4 : 5} style={{ padding: "8px 10px" }}>Total</td><td style={{ padding: "8px 10px", textAlign: "right" }}>{mov.equip_dias}</td><td /><td style={{ padding: "8px 10px", textAlign: "right" }}>{mov.m2_dia.toLocaleString("pt-BR", { maximumFractionDigits: 2 })}</td></tr></tbody></table>}</div>
+        <div style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>Diária: conta o dia da entrada e não conta o dia da saída (entrar e sair no mesmo dia = 1). Para cobrar por m², informe a área ocupada de cada equipamento (na entrada ou em ✎ alterar, na ficha).</div>
+      </>}
+    </div>}
+    {aba === "itens" && (d?.sem_migration ? <div style={{ color: C.danger }}>Falta rodar as migrations 081 e 082 no Supabase.</div> : !d ? <div style={{ color: C.muted }}>Carregando…</div> : <>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", margin: "8px 0 12px" }}>
         {(d.total_pre_entrada || 0) > 0 && kpi("AGUARDANDO CHEGADA", d.total_pre_entrada, d.pre_atrasadas ? `${d.pre_atrasadas} com previsão vencida` : "pré-entradas pelo XML", d.pre_atrasadas ? C.danger : (C.warn || "#f59e0b"), () => setStatus("pre_entrada"))}
         {kpi("NO PÁTIO AGORA", d.total_no_patio, `${d.clientes.length} cliente(s)`, C.accent, () => setStatus("no_patio"))}
@@ -163,7 +200,7 @@ export default function TelaPatio({ C, s, usuario }) {
               <div style={{ color: C.muted, marginTop: 4 }}>{b.status === "pre_entrada" ? `lançada por ${b.pre_por || "—"}` : b.status === "no_patio" ? `entrou ${dBR(b.entrada_em)}` : b.retirado_por}</div></div>
           </div>)}
       </div>
-    </>}
+    </>)}
 
     {/* ── Pré-entrada pelo XML ── */}
     {xml && <div {...fundo(1000, () => !salv && setXml(null))}>
@@ -232,7 +269,7 @@ export default function TelaPatio({ C, s, usuario }) {
             {campo(form, setForm, "fabricante", "FABRICANTE")}{campo(form, setForm, "modelo", "MODELO")}{campo(form, setForm, "ano", "ANO (OPCIONAL)", { im: "numeric", ph: "ex.: 2024" })}</div>
           {secao("📍 Chegada")}
           {campo(form, setForm, "local_patio", "LOCAL NO PÁTIO", { ph: "ex.: Galpão 2 · vaga 14" })}{campo(form, setForm, "entrada_em", "DATA DA ENTRADA", { type: "date", max: hoje() })}
-          {campo(form, setForm, "recebido_por", "RECEBIDO POR", { full: true })}
+          {campo(form, setForm, "recebido_por", "RECEBIDO POR")}{campo(form, setForm, "area_m2", "ÁREA OCUPADA m² (OPCIONAL)", { im: "decimal", ph: "para cobrar por m²" })}
           <FotosPendentes />
           {campo(form, setForm, "obs", "OBSERVAÇÃO (AVARIAS NA CHEGADA, ACESSÓRIOS…)", { full: true })}
         </div>
@@ -251,8 +288,18 @@ export default function TelaPatio({ C, s, usuario }) {
             {b.status === "pre_entrada" && <div style={{ ...s.card, padding: 10, marginTop: 10, borderColor: C.warn || "#f59e0b", fontSize: 13 }}>Pré-entrada lançada por <b>{b.pre_por || "—"}</b>{b.pre_em ? ` em ${dBR(b.pre_em)}` : ""}. Quando a máquina chegar: <b>confira a plaqueta</b>, diga o local e tire as fotos.</div>}
             <div style={{ fontWeight: 700, margin: "14px 0 4px" }}>📥 Entrada</div>
             {linha("Cliente (dono)", b.cliente_nome)}{linha("Nº de série (plaqueta)", b.numero_serie ? <b style={{ fontFamily: "ui-monospace, monospace" }}>{b.numero_serie}</b> : <span style={{ color: C.warn || "#f59e0b" }}>a conferir na chegada</span>)}{linha("Outra identificação", b.identificacao)}
-            {linha("Fabricante / ano", [b.fabricante, b.ano].filter(Boolean).join(" · "))}{linha("NF de entrada", [b.nf_entrada_numero && `nº ${b.nf_entrada_numero}`, b.nf_entrada_data && dBR(b.nf_entrada_data), b.nf_item && `item ${b.nf_item}`, b.nf_emitente_nome, b.nf_entrada_chave && `chave …${b.nf_entrada_chave.slice(-8)}`].filter(Boolean).join(" · "))}
-            {b.entrada_em && linha("Entrou em", `${dBR(b.entrada_em)}${b.recebido_por ? ` · recebido por ${b.recebido_por}` : ""}`)}{linha(b.status === "pre_entrada" ? "Local previsto" : "Local no pátio", b.local_patio)}{linha("Observação", b.obs && <span style={{ whiteSpace: "pre-wrap" }}>{b.obs}</span>)}
+            {linha("Fabricante / modelo / ano", [b.fabricante, b.modelo, b.ano].filter(Boolean).join(" · "))}
+            {b.entrada_em && linha("Entrou em", `${dBR(b.entrada_em)}${b.recebido_por ? ` · recebido por ${b.recebido_por}` : ""}`)}
+            {edLocal ? <div style={{ ...grid2, padding: "6px 0", borderTop: `1px solid ${C.border}` }}>{campo(edLocal, setEdLocal, "local_patio", b.status === "pre_entrada" ? "LOCAL PREVISTO" : "LOCAL NO PÁTIO")}{campo(edLocal, setEdLocal, "area_m2", "ÁREA OCUPADA (m²)", { im: "decimal" })}
+              <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8, justifyContent: "flex-end" }}><button type="button" onClick={() => setEdLocal(null)} style={btnG(false)}>Cancelar</button><button type="button" disabled={salv} onClick={salvarLocal} style={btnG(true)}>Salvar</button></div></div>
+              : linha(b.status === "pre_entrada" ? "Local previsto / área" : "Local no pátio / área", <span>{[b.local_patio || "local não informado", b.area_m2 != null ? `${Number(b.area_m2).toLocaleString("pt-BR")} m²` : "área não informada"].join(" · ")}{b.status !== "saiu" && <button type="button" onClick={() => setEdLocal({ local_patio: b.local_patio || "", area_m2: b.area_m2 != null ? String(b.area_m2).replace(".", ",") : "" })} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 12.5, marginLeft: 6 }}>✎ alterar</button>}</span>)}
+            {linha("Observação", b.obs && <span style={{ whiteSpace: "pre-wrap" }}>{b.obs}</span>)}
+            <div style={{ fontWeight: 700, margin: "14px 0 4px" }}>🧾 Nota fiscal de entrada</div>
+            {b.nf_entrada_numero || b.nf_entrada_chave ? <>{linha("Número / data", [b.nf_entrada_numero ? `nº ${b.nf_entrada_numero}` : null, b.nf_entrada_data ? `emitida em ${dBR(b.nf_entrada_data)}` : null].filter(Boolean).join(" · ") || "—")}
+              {linha("Emitente", [b.nf_emitente_nome, b.nf_emitente_cnpj].filter(Boolean).join(" · "))}{linha("Item da NF", b.nf_item)}
+              {linha("Chave de acesso", b.nf_entrada_chave && <span style={{ fontFamily: "ui-monospace, monospace", fontSize: 12, wordBreak: "break-all" }}>{b.nf_entrada_chave}</span>)}</>
+              : <div style={{ fontSize: 12.5, color: C.muted, padding: "4px 0", borderTop: `1px solid ${C.border}` }}>Entrada sem nota fiscal informada.</div>}
+            <div style={{ fontWeight: 700, margin: "14px 0 4px" }}>📷 Fotos da chegada</div>
             <Fotos fase="entrada" lista={b.fotos_entrada} podeAdd={b.status !== "saiu"} />
             {b.status === "saiu" && <><div style={{ fontWeight: 700, margin: "14px 0 4px" }}>📤 Saída</div>
               {linha("Saiu em", `${dBR(b.saida_em)}${b.liberado_por ? ` · liberado por ${b.liberado_por}` : ""}`)}{linha("Retirado por", [b.retirado_por, b.retirado_documento, b.retirado_placa && `placa ${b.retirado_placa}`].filter(Boolean).join(" · "))}
@@ -264,6 +311,8 @@ export default function TelaPatio({ C, s, usuario }) {
             <div style={{ ...rodape, marginTop: 16 }}>
               {b.status === "pre_entrada" && !confExcluir && <><button type="button" onClick={() => setConfExcluir(true)} style={{ ...btnG(false), color: C.danger }}>🗑 Excluir pré-entrada</button>
                 <button type="button" onClick={() => { limparFotos(); setChegada({ numero_serie: b.numero_serie || "", local_patio: b.local_patio || "", entrada_em: hoje(), recebido_por: usuario?.nome || "", obs_chegada: "" }); }} style={btnG(true)}>✅ Confirmar chegada</button></>}
+              {b.status !== "pre_entrada" && <button type="button" onClick={() => imprimir(() => abrirComprovantePatio(b, "entrada"))} style={btnG(false)}>🖨 Comprovante de entrada</button>}
+              {b.status === "saiu" && <button type="button" onClick={() => imprimir(() => abrirComprovantePatio(b, "saida"))} style={btnG(false)}>🖨 Comprovante de saída</button>}
               {b.status === "no_patio" && <button type="button" onClick={() => setSaida({ ...vazioSaida(), liberado_por: usuario?.nome || "" })} style={btnG(true)}>📤 Registrar saída</button>}
               {b.status === "saiu" && estreito && <button type="button" onClick={() => setDet(null)} style={btnG(false)}>Fechar</button>}
             </div>
@@ -280,7 +329,7 @@ export default function TelaPatio({ C, s, usuario }) {
             {det.bem.numero_serie && chegada.numero_serie.trim() && chegada.numero_serie.trim().toUpperCase() !== det.bem.numero_serie && <div style={{ fontSize: 12, color: C.warn || "#f59e0b", marginTop: -2, marginBottom: 6 }}>⚠ Diferente da NF ({det.bem.numero_serie}) — anote na observação o motivo.</div>}</div>
           {campo(chegada, setChegada, "local_patio", "LOCAL NO PÁTIO", { ph: "ex.: Galpão 2 · vaga 14" })}{campo(chegada, setChegada, "entrada_em", "DATA DA CHEGADA", { type: "date", max: hoje() })}
           <FotosPendentes />
-          {campo(chegada, setChegada, "recebido_por", "RECEBIDO POR")}<div />
+          {campo(chegada, setChegada, "recebido_por", "RECEBIDO POR")}{campo(chegada, setChegada, "area_m2", "ÁREA OCUPADA m² (OPCIONAL)", { im: "decimal", ph: "para cobrar por m²" })}
           {campo(chegada, setChegada, "obs_chegada", "OBSERVAÇÃO DA CHEGADA (AVARIAS, ACESSÓRIOS…)", { full: true })}
         </div>
         <div style={rodape}><button type="button" disabled={salv} onClick={() => setChegada(null)} style={btnG(false)}>Cancelar</button>

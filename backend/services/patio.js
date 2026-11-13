@@ -28,6 +28,7 @@ async function assinar(supabase, fotos) {
   return out;
 }
 const publico = (b, hoje = hojeBR()) => ({ ...b, dias_no_patio: b.entrada_em ? dias(b.entrada_em, b.status === 'saiu' && b.saida_em ? b.saida_em : hoje) : 0 });
+const area = (v) => { if (v === undefined) return undefined; if (v === null || String(v).trim() === '') return null; const n = Number(String(v).replace(',', '.')); return Number.isFinite(n) && n > 0 && n < 100000 ? Math.round(n * 100) / 100 : NaN; };
 const ORD = { pre_entrada: 0, no_patio: 1, saiu: 2 };
 const ativo = (b) => b.status === 'no_patio' || b.status === 'pre_entrada';
 const NOME = { pre_entrada: 'tem pré-entrada aguardando chegada', no_patio: 'já está no pátio' };
@@ -70,7 +71,8 @@ async function entrada(supabase, tenantId, quem = {}, body = {}) {
     const linha = { tenant_id: tenantId, numero: await proximoNumero(supabase, tenantId), cliente_id: cliente?.id ?? null, cliente_nome: clienteNome, descricao, fabricante: txt(body.fabricante, 80) || null, modelo: txt(body.modelo, 80) || null,
       ano: txt(body.ano, 10) || null, numero_serie: serie, identificacao: txt(body.identificacao, 80) || null, nf_entrada_numero: txt(body.nf_entrada_numero, 30) || null, nf_entrada_chave: chave || null,
       nf_entrada_data: data10(body.nf_entrada_data), entrada_em: data10(body.entrada_em) || hojeBR(), recebido_por: txt(body.recebido_por, 80) || quem.nome || null, local_patio: txt(body.local_patio, 80) || null,
-      obs: txt(body.obs, 1000) || null, status: 'no_patio', fotos_entrada: [], fotos_saida: [], nf_emitente_nome: txt(body.nf_emitente_nome, 120) || null, nf_emitente_cnpj: String(body.nf_emitente_cnpj || '').replace(/\D/g, '') || null };
+      obs: txt(body.obs, 1000) || null, status: 'no_patio', fotos_entrada: [], fotos_saida: [], area_m2: area(body.area_m2) ?? null, nf_emitente_nome: txt(body.nf_emitente_nome, 120) || null, nf_emitente_cnpj: String(body.nf_emitente_cnpj || '').replace(/\D/g, '') || null };
+    if (Number.isNaN(linha.area_m2)) return { status: 400, erro: 'Área em m² inválida' };
     if (linha.entrada_em > hojeBR()) return { status: 400, erro: 'A data de entrada não pode ser no futuro' };
     const r = await supabase.from('patio_bens').insert([linha]).select(); if (r.error) { if (/duplicate|unique/i.test(r.error.message)) return { status: 409, erro: `O nº de série ${serie} já está no pátio` }; throw new Error(r.error.message); }
     return { bem: publico(r.data[0]) };
@@ -82,6 +84,7 @@ async function editar(supabase, tenantId, id, body = {}) {
   if (b.status === 'pre_entrada') { if (body.descricao !== undefined && !txt(body.descricao)) return { status: 400, erro: 'Descreva o equipamento' }; if (body.numero_serie !== undefined) { const sr = serieNorm(body.numero_serie); if (sr) { const dup = (await q(supabase.from('patio_bens').select('*').eq('tenant_id', tenantId))).find((x) => x.id !== b.id && ativo(x) && serieNorm(x.numero_serie) === sr); if (dup) return { status: 409, erro: `O nº de série ${sr} ${NOME[dup.status]} (${dup.numero})` }; } } }
   const upd = {}; if (b.status === 'pre_entrada') { if (body.descricao !== undefined) upd.descricao = txt(body.descricao); if (body.numero_serie !== undefined) upd.numero_serie = serieNorm(body.numero_serie) || null; if (body.previsto_em !== undefined) upd.previsto_em = data10(body.previsto_em); }
   for (const k of ['local_patio', 'obs', 'identificacao', 'nf_entrada_numero', 'fabricante', 'modelo', 'ano']) if (body[k] !== undefined) upd[k] = txt(body[k], k === 'obs' ? 1000 : 80) || null;
+  if (body.area_m2 !== undefined) { const a = area(body.area_m2); if (Number.isNaN(a)) return { status: 400, erro: 'Área em m² inválida' }; upd.area_m2 = a; }
   if (!Object.keys(upd).length) return detalhe(supabase, tenantId, id);
   upd.atualizado_em = new Date().toISOString();
   const r = await supabase.from('patio_bens').update(upd).eq('id', b.id).eq('tenant_id', tenantId); if (r.error) throw new Error(r.error.message);
@@ -205,6 +208,7 @@ async function confirmarChegada(supabase, tenantId, quem = {}, id, body = {}) {
   const quando = data10(body.entrada_em) || hojeBR(); if (quando > hojeBR()) return { status: 400, erro: 'A data de entrada não pode ser no futuro' };
   const upd = { status: 'no_patio', numero_serie: serie, entrada_em: quando, recebido_por: txt(body.recebido_por, 80) || quem.nome || null, atualizado_em: new Date().toISOString() };
   for (const k of ['local_patio', 'identificacao', 'fabricante', 'modelo', 'ano']) if (body[k] !== undefined) upd[k] = txt(body[k], 80) || null;
+  if (body.area_m2 !== undefined) { const a = area(body.area_m2); if (Number.isNaN(a)) return { status: 400, erro: 'Área em m² inválida' }; upd.area_m2 = a; }
   if (txt(body.obs_chegada, 1000)) upd.obs = [b.obs, `Na chegada: ${txt(body.obs_chegada, 1000)}`].filter(Boolean).join('\n');
   const r = await supabase.from('patio_bens').update(upd).eq('id', b.id).eq('tenant_id', tenantId); if (r.error) { if (/duplicate|unique/i.test(r.error.message)) return { status: 409, erro: `O nº de série ${serie} já está ativo no pátio` }; throw new Error(r.error.message); }
   return detalhe(supabase, tenantId, id);
@@ -217,4 +221,39 @@ async function cancelarPre(supabase, tenantId, id) {
   return { ok: true, numero: b.numero };
 }
 
-module.exports = { listar, detalhe, entrada, editar, foto, saida, serieNorm, lerXml, lerXmlDoTenant, seriesDoTexto, preEntradas, confirmarChegada, cancelarPre };
+// ── 18z.5: ficha de movimentação — movimentos, saldos e diárias (equipamento·dia e m²·dia) no período ─────────────────────────
+// Diária: conta o dia da entrada e não conta o dia da saída (como hotel); quem entra e sai no mesmo dia conta 1.
+function diasNoPeriodo(b, de, ate) {
+  if (!b.entrada_em) return 0; const ini = b.entrada_em > de ? b.entrada_em : de;
+  let fimExcl; if (b.status === 'saiu' && b.saida_em) fimExcl = b.saida_em === b.entrada_em ? addDia(b.saida_em) : b.saida_em; else fimExcl = addDia(ate);
+  if (fimExcl > addDia(ate)) fimExcl = addDia(ate);
+  return fimExcl > ini ? dias(ini, fimExcl) : 0;
+}
+const addDia = (d) => new Date(Date.parse(`${d}T12:00:00Z`) + 864e5).toISOString().slice(0, 10);
+const noPatioEm = (b, dia) => b.entrada_em && b.entrada_em <= dia && !(b.status === 'saiu' && b.saida_em && b.saida_em <= dia);
+async function movimentacao(supabase, tenantId, { cliente = '', de, ate } = {}) {
+  const h = hojeBR(); ate = data10(ate) || h; de = data10(de) || `${ate.slice(0, 7)}-01`;
+  if (de > ate) return { status: 400, erro: 'A data inicial é depois da final' };
+  let bs; try { bs = await q(supabase.from('patio_bens').select('*').eq('tenant_id', tenantId)); } catch (e) { if (sem081(e)) return { sem_migration: true }; throw e; }
+  const clientes = [...new Set(bs.filter((b) => b.status !== 'pre_entrada').map((b) => b.cliente_nome))].sort();
+  bs = bs.filter((b) => b.status !== 'pre_entrada' && (!cliente || b.cliente_nome === cliente));
+  const movs = [];
+  for (const b of bs) {
+    const base = { bem_id: b.id, numero: b.numero, cliente: b.cliente_nome, descricao: [b.descricao, b.modelo].filter(Boolean).join(' · '), serie: b.numero_serie };
+    if (b.entrada_em >= de && b.entrada_em <= ate) movs.push({ ...base, data: b.entrada_em, tipo: 'entrada', nf: b.nf_entrada_numero || null, quem: b.recebido_por || null });
+    if (b.status === 'saiu' && b.saida_em >= de && b.saida_em <= ate) movs.push({ ...base, data: b.saida_em, tipo: 'saida', nf: b.nf_saida_numero || null, quem: b.retirado_por || null });
+  }
+  movs.sort((a, b) => a.data.localeCompare(b.data) || (a.tipo === b.tipo ? a.numero.localeCompare(b.numero) : a.tipo === 'entrada' ? -1 : 1));
+  const antesDe = (d) => new Date(Date.parse(`${d}T12:00:00Z`) - 864e5).toISOString().slice(0, 10);
+  const saldoIni = bs.filter((b) => noPatioEm(b, antesDe(de)) && !(b.status === 'saiu' && b.saida_em && b.saida_em < de)).length;
+  const itens = bs.map((b) => { const d = diasNoPeriodo(b, de, ate); return d ? { bem_id: b.id, numero: b.numero, cliente: b.cliente_nome, descricao: [b.descricao, b.modelo].filter(Boolean).join(' · '), serie: b.numero_serie,
+    entrada_em: b.entrada_em, saida_em: b.status === 'saiu' ? b.saida_em : null, dias: d, area_m2: b.area_m2 != null ? Number(b.area_m2) : null, m2_dia: b.area_m2 != null ? Math.round(Number(b.area_m2) * d * 100) / 100 : null } : null; })
+    .filter(Boolean).sort((a, b) => a.cliente.localeCompare(b.cliente) || a.entrada_em.localeCompare(b.entrada_em));
+  const porCliente = new Map(); for (const i of itens) { const c = porCliente.get(i.cliente) || { cliente: i.cliente, equipamentos: 0, dias: 0, m2_dia: 0, sem_area: 0 }; c.equipamentos++; c.dias += i.dias; if (i.m2_dia != null) c.m2_dia += i.m2_dia; else c.sem_area++; porCliente.set(i.cliente, c); }
+  const fim = bs.filter((b) => noPatioEm(b, ate)).length;
+  return { de, ate, cliente: cliente || null, clientes, saldo_inicial: saldoIni, entradas: movs.filter((m) => m.tipo === 'entrada').length, saidas: movs.filter((m) => m.tipo === 'saida').length, saldo_final: fim,
+    equip_dias: itens.reduce((s, i) => s + i.dias, 0), m2_dia: Math.round(itens.reduce((s, i) => s + (i.m2_dia || 0), 0) * 100) / 100, sem_area: itens.filter((i) => i.area_m2 == null).length,
+    movimentos: movs, itens, por_cliente: [...porCliente.values()].map((c) => ({ ...c, m2_dia: Math.round(c.m2_dia * 100) / 100 })) };
+}
+
+module.exports = { movimentacao, diasNoPeriodo, listar, detalhe, entrada, editar, foto, saida, serieNorm, lerXml, lerXmlDoTenant, seriesDoTexto, preEntradas, confirmarChegada, cancelarPre };
