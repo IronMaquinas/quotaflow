@@ -230,7 +230,7 @@ const ESPERADO = {
   'migrations/056_at_rascunho_link_motorista.sql': '4e9a9185cbb0a1f9770e1fe666fc77f3', // etapa 16c (novo)
   'routes/atLink.js': 'f392ea4dff57d96bc2209bfefdb1707f', // etapa 16e
   'front:EditorAT.jsx': 'fcb77d8397281457f4e5e07774e59422', // etapa 18g.2c
-  'front:VerArquivo.jsx': 'e08481e2c6791738b46dcdefb68dbc18', // etapa 18h.3.1
+  'front:VerArquivo.jsx': '1b53361cd3ca22d81bdc8cd4e0df852c', // etapa 18z.3
   'front:TelaATPublica.jsx': 'd75104b93496b768a984da4065138955', // etapa 18c
   'services/fluxoViagem.js': '236b345499c70a8a68d37aab686790f0', // etapa 18g.2d
   'migrations/057_fluxo_viagem.sql': '42cdc0800d3c622f541639bada16b252', // etapa 16e (novo)
@@ -325,20 +325,13 @@ const ESPERADO = {
   'services/patio.js': '3bb41f8592d77e38df11f91f08e86b30', // etapa 18z.1
   'routes/patio.js': '434ddc7eb01291ddf3848ae313950876', // etapa 18z.1
   'migrations/081_patio_cliente.sql': '87e9b488918410bef16457f63160a911', // etapa 18z.1
-  'front:TelaPatio.jsx': '180cad10bef484eb5bb79d59c3156adf', // etapa 18z.1
+  'front:TelaPatio.jsx': '2e9309dca469f7fcae7f356d1458f2f0', // etapa 18z.2
   'migrations/082_patio_pre_entrada.sql': 'c7585555fe91ee8573f9f6077540c0dc', // etapa 18z.1 (novo)
 };
 
-// Antes de copiar a etapa 18z.1 — base: 6e11769
+// Antes de copiar a etapa 18z.3 — base: 8699752
 const ANTES = {
-  'server.js': 'c0b009f225cec7dd91cf9f7b0bad8d78',
-  'services/modulos.js': '607b3caa660df402340c31976d1161e5',
-  'services/patio.js': '32ff0178a78c3be28a33200756dec4c6',
-  'routes/patio.js': '2ce531a93fdc86f88eba1b8231d256a3',
-  'migrations/081_patio_cliente.sql': '87e9b488918410bef16457f63160a911',
-  'front:App.jsx': '5d9197dd84e9ce19826baf400e2ae0a4',
-  'front:TelaPlanoAcaoNova.jsx': 'ad31f4649658e6833125d433ff14b559',
-  'front:TelaPatio.jsx': '36a99d61dea1c305fb182e5a49bb5317',
+  'front:VerArquivo.jsx': 'e08481e2c6791738b46dcdefb68dbc18',
 };
 
 const RAIZ = process.cwd();
@@ -376,7 +369,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18z.1)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18z.3)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

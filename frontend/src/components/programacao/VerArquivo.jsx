@@ -5,7 +5,9 @@
 import { useState, useEffect } from "react";
 
 const tipoDe = (mime, nome, url) => {
-  const t = `${mime || ""} ${nome || ""} ${String(url || "").split("?")[0]}`.toLowerCase();
+  // 18z.3: em data:/blob: só vale o cabeçalho — o conteúdo em base64 pode conter "pdf"/"xml" por acaso e virava iframe (fundo branco)
+  const u = String(url || ""); const end = /^data:/i.test(u) ? u.slice(0, u.indexOf(",") > 0 ? u.indexOf(",") : 40) : /^blob:/i.test(u) ? "" : u.split("?")[0];
+  const t = `${mime || ""} ${nome || ""} ${end}`.toLowerCase();
   if (/pdf/.test(t)) return "pdf"; if (/xml/.test(t)) return "xml"; if (/png|jpe?g|image/.test(t)) return "img"; return "outro";
 };
 const formatarXml = (x) => {
