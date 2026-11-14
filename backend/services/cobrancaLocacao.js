@@ -56,7 +56,8 @@ function calcular(p) {
   if (p.horas == null) return { valor_recomendado: null, base: `${baseMes} · franquia ${nf(p.franquia.horas)} h: sem leitura de horímetro — informe as horas`, precisa_horas: true };
   const fr = r1(p.franquia.horas * prop); const exc = r1(Math.max(0, p.horas - fr));
   return { valor_recomendado: r2(mes + exc * p.franquia.excedente), precisa_horas: true, horas_usadas: p.horas,
-    base: `${baseMes} · ${nf(p.horas)} h de ${nf(fr)} h de franquia${exc > 0 ? ` → ${nf(exc)} h excedente × ${brl(p.franquia.excedente)}` : ''}` };
+    // 18zf.3: deixa a conta da franquia explícita (por equipamento, proporcional aos dias no ciclo)
+    base: `${baseMes} · franquia ${nf(p.franquia.horas)} h/mês${prop < 1 ? ` × ${p.dias}/${p.dias_ciclo} dias = ${nf(fr)} h` : ''} · usou ${nf(p.horas)} h${exc > 0 ? ` → ${nf(exc)} h excedente × ${brl(p.franquia.excedente)} = ${brl(r2(exc * p.franquia.excedente))}` : ' (dentro da franquia)'}` };
 }
 
 /** texto do valor no documento do contrato / na tabela */

@@ -22,7 +22,7 @@ export default function MedicaoModal({ C, s, medicaoId, base = "/contratos", mod
   const url = `${base}/medicoes/${medicaoId}`;
   const carregar = async () => {
     try { const r = await apiService.get(url); setD(r);
-      setEd(Object.fromEntries((r.medicao.itens || []).map((i) => [String(i.locacao_id), { valor: i.valor == null ? "" : String(i.valor).replace(".", ","), obs: i.obs || "" }])));
+      setEd(Object.fromEntries((r.medicao.itens || []).map((i) => [String(i.locacao_id), { valor: i.valor == null ? "" : String(i.valor).replace(".", ","), obs: i.obs || "", horas: i.horas_informadas == null ? "" : String(i.horas_informadas).replace(".", ",") }])));
       setComent(Object.fromEntries((r.medicao.itens || []).map((i) => [String(i.locacao_id), i.comentario_cliente || ""]))); setObs(r.medicao.obs || ""); }
     catch (e) { onErro(e.message); onFechar(); }
   };
@@ -32,8 +32,10 @@ export default function MedicaoModal({ C, s, medicaoId, base = "/contratos", mod
   const cliente = modo === "locatario";
   const editavel = !cliente && podeEditar && ["aberta", "devolvida"].includes(m.status);
   const clienteResponde = cliente && m.status === "enviada";
-  const sujo = editavel && ((m.itens || []).some((i) => { const x = ed[String(i.locacao_id)] || {}; return num(x.valor) !== (i.valor ?? null) || String(x.obs || "") !== String(i.obs || ""); }) || obs !== (m.obs || ""));
-  const corpo = () => ({ itens: (m.itens || []).map((i) => ({ locacao_id: i.locacao_id, valor: ed[String(i.locacao_id)]?.valor ?? "", obs: ed[String(i.locacao_id)]?.obs ?? "" })), obs });
+  const sujo = editavel && ((m.itens || []).some((i) => { const x = ed[String(i.locacao_id)] || {}; return num(x.valor) !== (i.valor ?? null) || String(x.obs || "") !== String(i.obs || "") || (i.precisa_horas && String(x.horas ?? "") !== (i.horas_informadas == null ? "" : String(i.horas_informadas).replace(".", ","))); }) || obs !== (m.obs || ""));
+  // 18zf.3: as horas vão junto com valores e observações num envio só (antes cada campo salvava sozinho e os envios se atropelavam)
+  const horasMudou = (i) => { const x = ed[String(i.locacao_id)] || {}; return i.precisa_horas && String(x.horas ?? "") !== (i.horas_informadas == null ? "" : String(i.horas_informadas).replace(".", ",")); };
+  const corpo = () => ({ itens: (m.itens || []).map((i) => ({ locacao_id: i.locacao_id, valor: ed[String(i.locacao_id)]?.valor ?? "", obs: ed[String(i.locacao_id)]?.obs ?? "", ...(horasMudou(i) ? { horas: ed[String(i.locacao_id)]?.horas ?? "" } : {}) })), obs });
   const exec = async (fn, msg) => { setOcupado(true); try { const r = await fn(); if (msg) onOk(msg); await carregar(); onMudou?.(); return r; } catch (e) { onErro(e.message); return null; } finally { setOcupado(false); } };
   const salvarSeSujo = async () => (sujo ? exec(() => apiService.put(url, corpo())) : true);
   const total = (m.itens || []).reduce((t, i) => t + (editavel ? (num(ed[String(i.locacao_id)]?.valor) || 0) : Number(i.valor || 0)), 0);
@@ -69,15 +71,15 @@ export default function MedicaoModal({ C, s, medicaoId, base = "/contratos", mod
                 <td style={{ padding: 6, whiteSpace: "nowrap", color: C.textSub }}>{dataBR(i.de)} a {dataBR(i.ate)}<div style={{ fontSize: 12.5 }}>{String(i.tipo || "").startsWith("armazenagem") ? (i.tipo === "armazenagem" ? `${i.dias} dia(s) no pátio${i.saiu_em ? ` · saiu ${dataBR(i.saiu_em)}` : ""}` : "ciclo inteiro") : (i.cobranca?.modo === "dia" ? `${i.dias} dia(s) locados` : `${i.dias} de ${i.dias_ciclo} dia(s)${i.dias < i.dias_ciclo ? " · proporcional" : ""}`)}</div>
                   {i.precisa_horas && <div style={{ fontSize: 12, marginTop: 4, whiteSpace: "normal" }}>{/* 18zf: horímetro */}
                     {i.horas_auto ? <span>⏱ horímetro {Number(i.horas_auto.de).toLocaleString("pt-BR")} → {Number(i.horas_auto.ate).toLocaleString("pt-BR")} = <b>{Number(i.horas_auto.horas).toLocaleString("pt-BR")} h</b></span> : <span style={{ color: C.warn }}>⏱ sem leitura de horímetro no ciclo</span>}
-                    {editavel ? <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 4 }}><input key={`${k}-${i.horas_informadas ?? ""}`} inputMode="decimal" defaultValue={i.horas_informadas ?? ""} placeholder={i.horas_auto ? "corrigir h" : "horas no ciclo"} aria-label="Horas no ciclo"
-                        onBlur={(e) => { const v = e.target.value.trim(); if (v === String(i.horas_informadas ?? "")) return; const cp = corpo(); exec(() => apiService.put(url, { ...cp, itens: cp.itens.map((y) => (String(y.locacao_id) === k ? { ...y, horas: v } : y)) }), v ? "Horas informadas — valor recalculado" : "Voltou à leitura do horímetro"); }}
+                    {editavel ? <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 4 }}><input inputMode="decimal" value={x.horas ?? ""} disabled={ocupado} placeholder={i.horas_auto ? "corrigir h" : "horas no ciclo"} aria-label="Horas no ciclo" onChange={(e) => setEd({ ...ed, [k]: { ...x, horas: e.target.value } })}
+                        onBlur={() => { if (horasMudou(i)) exec(() => apiService.put(url, corpo()), "Horas salvas — valores recalculados"); }}
                         onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} style={{ ...s.input, width: 100, padding: "4px 6px", fontSize: 13, borderColor: i.valor_recomendado == null ? C.warn : undefined }} /><span style={{ color: C.muted }}>h{i.horas_informadas != null ? " (informadas)" : ""}</span></div>
                       : i.horas_informadas != null && <div style={{ color: C.muted }}>{Number(i.horas_informadas).toLocaleString("pt-BR")} h informadas</div>}
                   </div>}</td>
                 <td style={{ padding: 6, textAlign: "right", whiteSpace: "nowrap" }}>{i.base ? <span style={{ fontSize: 12.5, whiteSpace: "normal", color: i.valor_recomendado == null ? C.warn : C.textSub }}>{i.base}</span> : i.valor_mensal != null ? brl(i.valor_mensal) : <span style={{ color: C.warn }}>sem valor no contrato</span>}</td>
                 {!cliente && <td style={{ padding: 6, textAlign: "right", whiteSpace: "nowrap", color: C.textSub }}>{brl(i.valor_recomendado)}</td>}
                 <td style={{ padding: 6, textAlign: "right" }}>{editavel ? <input inputMode="decimal" value={x.valor ?? ""} onChange={(e) => setEd({ ...ed, [k]: { ...x, valor: e.target.value } })} style={{ ...s.input, padding: "6px 8px", fontSize: 14, textAlign: "right", borderColor: ajustado ? C.warn : undefined }} />
-                  : <b>{brl(i.valor)}</b>}{!cliente && ajustado && <div style={{ fontSize: 11.5, color: C.warn }}>ajustado</div>}</td>
+                  : <b>{brl(i.valor)}</b>}{!cliente && ajustado && <div style={{ fontSize: 11.5, color: C.warn }} title={`Recomendado pelo sistema: ${brl(i.valor_recomendado)}`}>ajustado à mão · recomendado {brl(i.valor_recomendado)}</div>}</td>
                 <td style={{ padding: 6 }}>{editavel ? <input value={x.obs || ""} onChange={(e) => setEd({ ...ed, [k]: { ...x, obs: e.target.value } })} placeholder="opcional" style={{ ...s.input, padding: "6px 8px", fontSize: 13.5 }} /> : <span style={{ color: C.textSub }}>{i.obs || ""}</span>}</td>
                 <td style={{ padding: 6 }}>{clienteResponde ? <input value={coment[k] || ""} onChange={(e) => setComent({ ...coment, [k]: e.target.value })} placeholder="só se não estiver de acordo" style={{ ...s.input, padding: "6px 8px", fontSize: 13.5 }} />
                   : <span style={{ color: i.comentario_cliente ? C.danger : C.muted }}>{i.comentario_cliente || ""}</span>}</td>

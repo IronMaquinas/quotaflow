@@ -255,7 +255,7 @@ const ESPERADO = {
   'front:FiltroPeriodo.jsx': '06b873f17ff380024b38e507bdca6724', // etapa 18c.4 (novo)
   'migrations/062_medicao_locacao.sql': '5a4d7ea7f3180195a19e4121183a446e', // etapa 18d (novo)
   'services/medicoes.js': 'a95cfd27199fb967c9c357b70f7abc03', // etapa 18zf.1
-  'front:MedicaoModal.jsx': '1748c9fd1c1089203584c1b3ee713143', // etapa 18zf.2
+  'front:MedicaoModal.jsx': 'cfc2b31ce226b57bd100bc0abf381941', // etapa 18zf.3
   'front:gerarMedicao.js': '119acc71ee428d0e533453cee6e00448', // etapa 18zf
   'migrations/063_medicao_vencimento.sql': '0b27bacd7a6a0b6d77c01a8039f5192d', // etapa 18d.2 (novo)
   'front:AbaMedicoes.jsx': '88bfc994bb38ab826a1452a0e6f9f732', // etapa 18y.1
@@ -338,13 +338,13 @@ const ESPERADO = {
   'front:ConfirmarExclusao.jsx': '5dc91681d6fcb9724a17f1c75170c31b', // etapa 18ze
   'front:ImagemZoom.jsx': '0a87d5d9acc85d2193cc347bf9798c8a', // etapa 18zf
   'front:ModalDetalheNCFornecedor.jsx': '55abb21fa95396222386ade553cc9b5c', // etapa 18ze
-  'services/cobrancaLocacao.js': '9441039f57cc08d26f11bc71d1084f44', // etapa 18zf (novo)
+  'services/cobrancaLocacao.js': '9b298bb506b4adc458864f77ac4b8355', // etapa 18zf.3
 };
 
-// Antes de copiar a etapa 18zf.2 — base: 133decc
+// Antes de copiar a etapa 18zf.3 — base: 92b2e0a
 const ANTES = {
-  'front:MedicaoModal.jsx': 'd97036c3f7198ca4968f4ff8f186bcbf',
-  'front:ModelosContrato.jsx': 'fc210efe13c02a3c06894cde194b07c2',
+  'front:MedicaoModal.jsx': '1748c9fd1c1089203584c1b3ee713143',
+  'services/cobrancaLocacao.js': '9441039f57cc08d26f11bc71d1084f44',
 };
 
 const RAIZ = process.cwd();
@@ -382,7 +382,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zf.2)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zf.3)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

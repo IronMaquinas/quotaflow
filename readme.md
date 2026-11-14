@@ -1011,6 +1011,7 @@ npm run dev
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
   - **18zf.2 (14/11):** 📏 **Franquia × horímetro mais claro** (o Marcony clicou ↻ Recalcular e "nada acontecia"; não achou o N/A). Medição mostra o aviso "⏱ N equipamento(s) sem leitura de horímetro — o contrato tem franquia de X h/mês… digite as horas ou marque ☐ não se aplica na franquia e ↻ Recalcular"; o **↻ Recalcular diz o resultado** ("Recalculada — 2 equipamento(s) sem valor: aguardando as horas…"); no documento do contrato o botão **N/A** ficou maior e por extenso: **☐ não se aplica**.
+- **18zf.3** — 📏 Medição: horas digitadas em várias linhas não se atropelam mais (as horas vão junto com valores/observações num envio só; Salvar/Fechar também aplicam); "ajustado" mostra o valor recomendado; base da franquia explícita (franquia h/mês × dias/dias do ciclo = h → excedente × R$/h = R$).
   - **18zf.1 (14/11):** 📏 **Medição reaberta mantém os valores** — fechada sem "💾 Salvar" ela não estava marcada como revisada; ao reabrir, a atualização automática recalculava do zero (e, com a franquia nova pedindo horímetro, zerou os valores do CL-2026-0002). Agora reabrir marca como revisada: os valores enviados/aprovados ficam para ajustar; o recomendado acompanha. **Aviso na franquia**: acima de 744 h/mês ("um mês tem no máximo 744 h — confira se não digitou um valor em R$").
   - **18zf (14/11):** 📏⏱ **Cobrança híbrida por equipamento — mensal, diária ou por hora (horímetro)** (bloco 4; decidido com o Marcony: a cliente do MVP cobra por mês/dia, o modelo já atende quem cobra por hora). Sem migration — reaproveita `medicao_unidade` / `medicao_valor` / `medicao_qtd` da 18d e a franquia/hora excedente das condições do contrato. Regra em `services/cobrancaLocacao.js`.
     - **📄 Contrato → "Cobrança e valor por equipamento":** por equipamento, **mensal** (R$/mês), **diária** (R$/dia) ou **por hora** (R$/h + mínimo de h/mês opcional). Ficha mostra "R$ 500,00/dia", "R$ 150,00/hora (mín. 100 h)". Documento: coluna **Valor** com a forma de cobrança; total mensal só quando todos são mensais. `{{tabela_equipamentos}}` acompanha.
@@ -1747,7 +1748,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18zf.2)
+**Última atualização deste documento:** 06/11/2026 (etapa 18zf.3)
 
 --------------------------------------------------------------------------------
 
