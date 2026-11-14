@@ -53,8 +53,11 @@ async function listar(supabase, tenantId, { status = 'no_patio', busca = '', cli
   const ocupacao = await ocupacaoAreas(supabase, tenantId, noPatio);
   // 18za: clientes com equipamento no pátio sem contrato ativo que cobre a guarda → a guarda não está sendo cobrada
   let semContrato = null;
-  try { const cs = (await q(supabase.from('locacao_contratos').select('*').eq('tenant_id', tenantId))).filter((c) => c.status === 'ativo' && c.arm_ativo);
-    const { doClienteContrato } = module.exports; const nomes = new Set(); for (const b of noPatio) if (!cs.some((c) => doClienteContrato(c, b))) nomes.add(b.cliente_nome); semContrato = [...nomes].sort(); } catch { semContrato = null; }
+  try { const cs = await contratosArea(supabase, tenantId);
+    const nomes = new Set(); for (const b of noPatio) if (!cs.some((c) => doClienteContrato(c, b))) nomes.add(b.cliente_nome); semContrato = [...nomes].sort();
+    // 18zb: uso de cada contrato de armazenagem (CA) × área contratada
+    ocupacao.contratos = cs.map((c) => { const u = usoDoContrato(c, noPatio); return { contrato_id: c.id, numero: c.numero, cliente: c.cliente, cliente_id: c.cliente_id ?? null, max_m2: c.arm_area_max_m2 != null ? Number(c.arm_area_max_m2) : null, min_m2: c.arm_minimo_m2 != null ? Number(c.arm_minimo_m2) : null, ...u }; });
+  } catch { semContrato = null; }
   ocupacao.sem_contrato = semContrato;
   return { ocupacao, bens: lista, total_no_patio: noPatio.length, total_pre_entrada: pre.length, pre_atrasadas: pre.filter((b) => b.previsto_em && b.previsto_em < hoje).length, clientes: [...porCliente.values()].map((c) => ({ ...c, dias_mais_antigo: dias(c.mais_antigo, hoje) })).sort((a, b) => b.qtd - a.qtd),
     saidas_30d: bs.filter((b) => b.status === 'saiu' && b.saida_em && dias(b.saida_em, hoje) <= 30).length };
@@ -92,11 +95,11 @@ async function entrada(supabase, tenantId, quem = {}, body = {}) {
     if (Number.isNaN(linha.area_m2)) return { status: 400, erro: 'Área em m² inválida' };
     if (linha.entrada_em > hojeBR()) return { status: 400, erro: 'A data de entrada não pode ser no futuro' };
     const r = await supabase.from('patio_bens').insert([linha]).select(); if (r.error) { if (/duplicate|unique/i.test(r.error.message)) return { status: 409, erro: `O nº de série ${serie} já está no pátio` }; throw new Error(r.error.message); }
-    return { bem: publico(r.data[0]) };
+    const bem = publico(r.data[0]); return { bem, ...(await checarExcesso(supabase, tenantId, quem, bem)) };
   } catch (e) { if (sem081(e)) return { status: 409, erro: 'Falta rodar a migration 081 no Supabase.' }; throw e; }
 }
 
-async function editar(supabase, tenantId, id, body = {}) {
+async function editar(supabase, tenantId, id, body = {}, quem = {}) {
   const b = (await q(supabase.from('patio_bens').select('*').eq('tenant_id', tenantId).eq('id', id)))[0]; if (!b) return { status: 404, erro: 'Equipamento não encontrado' };
   if (b.status === 'pre_entrada') { if (body.descricao !== undefined && !txt(body.descricao)) return { status: 400, erro: 'Descreva o equipamento' }; if (body.numero_serie !== undefined) { const sr = serieNorm(body.numero_serie); if (sr) { const dup = (await q(supabase.from('patio_bens').select('*').eq('tenant_id', tenantId))).find((x) => x.id !== b.id && ativo(x) && serieNorm(x.numero_serie) === sr); if (dup) return { status: 409, erro: `O nº de série ${sr} ${NOME[dup.status]} (${dup.numero})` }; } } }
   const upd = {}; if (b.status === 'pre_entrada') { if (body.descricao !== undefined) upd.descricao = txt(body.descricao); if (body.numero_serie !== undefined) upd.numero_serie = serieNorm(body.numero_serie) || null; if (body.previsto_em !== undefined) upd.previsto_em = data10(body.previsto_em); }
@@ -107,7 +110,8 @@ async function editar(supabase, tenantId, id, body = {}) {
   if (!Object.keys(upd).length) return detalhe(supabase, tenantId, id);
   upd.atualizado_em = new Date().toISOString();
   const r = await supabase.from('patio_bens').update(upd).eq('id', b.id).eq('tenant_id', tenantId); if (r.error) throw new Error(r.error.message);
-  return detalhe(supabase, tenantId, id);
+  const d = await detalhe(supabase, tenantId, id);
+  return upd.area_m2 !== undefined && b.status === 'no_patio' ? { ...d, ...(await checarExcesso(supabase, tenantId, quem, d.bem)) } : d;
 }
 
 async function foto(supabase, tenantId, id, body = {}) {
@@ -231,7 +235,7 @@ async function confirmarChegada(supabase, tenantId, quem = {}, id, body = {}) {
   if (body.area_id !== undefined) { const a = await areaValida(supabase, tenantId, body.area_id); if (Number.isNaN(a)) return { status: 400, erro: 'Área de armazenagem não encontrada' }; upd.area_id = a; }
   if (txt(body.obs_chegada, 1000)) upd.obs = [b.obs, `Na chegada: ${txt(body.obs_chegada, 1000)}`].filter(Boolean).join('\n');
   const r = await supabase.from('patio_bens').update(upd).eq('id', b.id).eq('tenant_id', tenantId); if (r.error) { if (/duplicate|unique/i.test(r.error.message)) return { status: 409, erro: `O nº de série ${serie} já está ativo no pátio` }; throw new Error(r.error.message); }
-  return detalhe(supabase, tenantId, id);
+  const d = await detalhe(supabase, tenantId, id); return { ...d, ...(await checarExcesso(supabase, tenantId, quem, d.bem)) };
 }
 
 async function cancelarPre(supabase, tenantId, id) {
@@ -316,4 +320,26 @@ function doClienteContrato(c, b) {
   if (soDig(c.cliente_doc) && soDig(b.cliente_documento)) return soDig(c.cliente_doc) === soDig(b.cliente_documento);
   return String(c.cliente || '').trim().toUpperCase() === String(b.cliente_nome || '').trim().toUpperCase();
 }
-module.exports = { doClienteContrato, ocupacaoAreas, salvarArea, listarAreas, movimentacao, diasNoPeriodo, listar, detalhe, entrada, editar, foto, saida, serieNorm, lerXml, lerXmlDoTenant, seriesDoTexto, preEntradas, confirmarChegada, cancelarPre };
+// ── 18zb: contrato de armazenagem (CA) × uso no pátio — passou da área máxima → aviso na tela + 🔔 para o gestor ──────────────
+async function contratosArea(supabase, tenantId) {
+  try { return (await q(supabase.from('locacao_contratos').select('*').eq('tenant_id', tenantId))).filter((c) => c.status === 'ativo' && c.tipo === 'armazenagem'); } catch { return []; }
+}
+function usoDoContrato(c, noPatio) {
+  const bs = noPatio.filter((b) => doClienteContrato(c, b));
+  return { equipamentos: bs.length, usado_m2: Math.round(bs.reduce((s, b) => s + (b.area_m2 != null ? Number(b.area_m2) : 0), 0) * 100) / 100, sem_m2: bs.filter((b) => b.area_m2 == null).length };
+}
+async function checarExcesso(supabase, tenantId, quem, bem) {
+  try {
+    if (!bem || bem.status !== 'no_patio') return {};
+    const c = (await contratosArea(supabase, tenantId)).find((x) => doClienteContrato(x, bem)); if (!c || !(Number(c.arm_area_max_m2) > 0)) return {};
+    const noPatio = (await q(supabase.from('patio_bens').select('*').eq('tenant_id', tenantId))).filter((b) => b.status === 'no_patio');
+    const u = usoDoContrato(c, noPatio); const max = Number(c.arm_area_max_m2); if (u.usado_m2 <= max) return {};
+    const f = (n) => Number(n).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+    const aviso = { contrato_id: c.id, numero: c.numero, cliente: c.cliente, usado_m2: u.usado_m2, max_m2: max, excedente_m2: Math.round((u.usado_m2 - max) * 100) / 100 };
+    await require('./notificacoes').avisarPerfis(supabase, tenantId, ['gestor'], { tipo: 'patio_excesso', chave: `patio-excesso:${c.id}`,
+      titulo: `📦 ${c.cliente} passou da área contratada — ${f(u.usado_m2)} de ${f(max)} m²`,
+      texto: `${bem.numero} · ${bem.descricao}${quem?.nome ? ` (entrada por ${quem.nome})` : ''}. Contrato ${c.numero}: excedente de ${f(aviso.excedente_m2)} m², cobrado pelo mesmo preço do m².`, link: { tela: 'patio' } }, { exceto: quem?.id ?? null }).catch(() => 0);
+    return { aviso_excesso: aviso };
+  } catch { return {}; }
+}
+module.exports = { contratosArea, usoDoContrato, checarExcesso, doClienteContrato, ocupacaoAreas, salvarArea, listarAreas, movimentacao, diasNoPeriodo, listar, detalhe, entrada, editar, foto, saida, serieNorm, lerXml, lerXmlDoTenant, seriesDoTexto, preEntradas, confirmarChegada, cancelarPre };

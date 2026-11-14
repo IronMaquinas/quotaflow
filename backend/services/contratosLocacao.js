@@ -29,8 +29,8 @@ async function perfisDe(supabase, u) {
 }
 const soLocatario = (perfis) => perfis.length > 0 && perfis.every((p) => p === 'locatario');
 
-async function proximoNumero(supabase, tenantId) {
-  const pre = `CL-${hojeBR().slice(0, 4)}-`;
+async function proximoNumero(supabase, tenantId, tipo = 'locacao') {
+  const pre = `${tipo === 'armazenagem' ? 'CA' : 'CL'}-${hojeBR().slice(0, 4)}-`; // 18zb: armazenagem tem numeração própria
   const l = (await q(supabase.from('locacao_contratos').select('*').eq('tenant_id', tenantId))).filter((c) => String(c.numero || '').startsWith(pre));
   const max = l.reduce((mx, c) => Math.max(mx, Number(String(c.numero).slice(pre.length)) || 0), 0);
   return `${pre}${String(max + 1).padStart(4, '0')}`;
@@ -53,7 +53,8 @@ function validar(body, parcial = false) {
   if (tem('arm_unidade')) { if (!['m2_mes', 'm2_dia'].includes(body.arm_unidade)) return { erro: 'Unidade da guarda: por m² ao mês ou por m² ao dia' }; out.arm_unidade = body.arm_unidade; }
   if (tem('arm_preco')) { const n = body.arm_preco === '' || body.arm_preco == null ? null : numBR(body.arm_preco); if (n != null && !(Number.isFinite(n) && n > 0)) return { erro: 'Preço do m² inválido' }; out.arm_preco = n; }
   if (tem('arm_minimo_m2')) { const n = body.arm_minimo_m2 === '' || body.arm_minimo_m2 == null ? null : numBR(body.arm_minimo_m2); if (n != null && !(Number.isFinite(n) && n > 0)) return { erro: 'Mínimo contratado (m²) inválido' }; out.arm_minimo_m2 = n; }
-  if (tem('arm_ativo')) { out.arm_ativo = body.arm_ativo === true; if (out.arm_ativo && !(out.arm_preco ?? body._arm_preco_atual)) return { erro: 'Para cobrar a guarda no pátio, informe o preço do m²' }; }
+  if (tem('arm_area_max_m2')) { const n = body.arm_area_max_m2 === '' || body.arm_area_max_m2 == null ? null : numBR(body.arm_area_max_m2); if (n != null && !(Number.isFinite(n) && n > 0)) return { erro: 'Área máxima contratada (m²) inválida' }; out.arm_area_max_m2 = n; }
+  { const mn = out.arm_minimo_m2 !== undefined ? out.arm_minimo_m2 : body._arm_min_atual; const mx = out.arm_area_max_m2 !== undefined ? out.arm_area_max_m2 : body._arm_max_atual; if (mn != null && mx != null && Number(mn) > Number(mx)) return { erro: 'A área mínima é maior que a máxima' }; }
   return { dados: out };
 }
 
@@ -93,21 +94,24 @@ async function criar(supabase, tenantId, quem, body = {}) {
   try { const r = await CL.resolverParaContrato(supabase, tenantId, body); if (r.erro) return r; cli = r.cliente; }
   catch (e) { if (!/clientes|does not exist|schema cache/.test(String(e.message))) throw e; } // sem a 044: segue só com o nome
   if (cli) body = { ...body, cliente: cli.nome, cliente_doc: cli.documento || body.cliente_doc || null, contato_nome: body.contato_nome ?? cli.contato_nome, contato_email: body.contato_email ?? cli.contato_email, contato_telefone: body.contato_telefone ?? cli.contato_telefone };
+  const tipo = body.tipo === 'armazenagem' ? 'armazenagem' : 'locacao'; // 18zb
   const v = validar(body); if (v.erro) return { status: 400, erro: v.erro };
   if (cli) v.dados.cliente_id = cli.id;
+  if (tipo === 'armazenagem') v.dados.tipo = 'armazenagem';
   for (let t = 0; t < 5; t++) {
-    const numero = await proximoNumero(supabase, tenantId);
+    const numero = await proximoNumero(supabase, tenantId, tipo);
     const { data, error } = await supabase.from('locacao_contratos').insert([{ ...v.dados, tenant_id: tenantId, numero, status: 'ativo', criado_por_nome: quem.usuarioNome || null }]).select();
     if (!error) return { contrato: data[0] };
+    if (/tipo/.test(error.message) && tipo === 'armazenagem') return { status: 409, erro: 'Falta rodar a migration 086 no Supabase (contrato de armazenagem).' };
     if (!/locacao_contratos_numero_unico|duplicate/.test(error.message)) throw new Error(error.message);
   }
   throw new Error('Não foi possível numerar o contrato — tente de novo');
 }
 async function editar(supabase, tenantId, id, body = {}) {
   const c = await doTenant(supabase, tenantId, id); if (!c) return { status: 404, erro: 'Contrato não encontrado' };
-  const v = validar({ inicio: c.inicio, ...body, _arm_preco_atual: c.arm_preco }, true); if (v.erro) return { status: 400, erro: v.erro };
+  const v = validar({ inicio: c.inicio, ...body, _arm_min_atual: c.arm_minimo_m2, _arm_max_atual: c.arm_area_max_m2 }, true); if (v.erro) return { status: 400, erro: v.erro };
   const { data, error } = await supabase.from('locacao_contratos').update(v.dados).eq('id', c.id).eq('tenant_id', tenantId).select();
-  if (error) { if (/arm_/.test(error.message)) return { status: 409, erro: 'Falta rodar a migration 085 no Supabase (guarda no pátio no contrato).' }; throw new Error(error.message); }
+  if (error) { if (/arm_|tipo/.test(error.message)) return { status: 409, erro: 'Falta rodar as migrations 085 e 086 no Supabase (contrato de armazenagem).' }; throw new Error(error.message); }
   // 18d: mudou "Checklist pelo locatário" → as rotinas das locações ativas do contrato passam para quem faz agora
   if (v.dados.checklist_locatario !== undefined && v.dados.checklist_locatario !== !!c.checklist_locatario) {
     const ativas = (await q(supabase.from('equipamento_locacoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id))).filter((l) => l.status === 'ativa');
@@ -124,6 +128,7 @@ async function editar(supabase, tenantId, id, body = {}) {
 }
 async function adicionarEquipamento(supabase, tenantId, quem, id, body = {}) {
   const c = await doTenant(supabase, tenantId, id); if (!c || c.status !== 'ativo') return { status: 400, erro: 'Contrato não encontrado ou encerrado' };
+  if (c.tipo === 'armazenagem') return { status: 409, erro: 'Contrato de armazenagem (CA) não tem equipamentos locados — os equipamentos do cliente entram pelo 📦 pátio' };
   const rotina = body.rotina ? { ...body.rotina, responsavel: c.checklist_locatario === false ? 'empresa' : 'locatario' } : null; // 18d: toggle "Checklist pelo locatário" (sem a 062 = locatário, como antes)
   const r = await R.locar(supabase, tenantId, quem, body.equipamento_id, { contrato_id: c.id, inicio: body.inicio || hojeBR(), fim_previsto: body.fim_previsto || null, local: body.local, rotina });
   if (!r.erro && (body.medicao_unidade || body.medicao_qtd != null)) { const l = (await q(supabase.from('equipamento_locacoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id).eq('equipamento_id', body.equipamento_id))).find((x) => x.status === 'ativa'); if (l) { const e = await escopoEquipamento(supabase, tenantId, c.id, body.equipamento_id, body); if (e.erro) return e; } }

@@ -21,7 +21,7 @@ router.post('/xml', express.text({ type: '*/*', limit: '5mb' }), responder((req)
 router.post('/pre-entradas', responder(async (req) => P.preEntradas(supabase, req.tenantId, await quem(req), req.body || {})));
 router.get('/:id', responder((req) => P.detalhe(supabase, req.tenantId, req.params.id)));
 router.post('/', responder(async (req) => P.entrada(supabase, req.tenantId, await quem(req), req.body || {})));
-router.put('/:id', responder((req) => P.editar(supabase, req.tenantId, req.params.id, req.body || {})));
+router.put('/:id', responder(async (req) => P.editar(supabase, req.tenantId, req.params.id, req.body || {}, await quem(req))));
 router.post('/:id/fotos', responder((req) => P.foto(supabase, req.tenantId, req.params.id, req.body || {})));
 router.post('/:id/saida', responder(async (req) => P.saida(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
 router.post('/:id/chegada', responder(async (req) => P.confirmarChegada(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));

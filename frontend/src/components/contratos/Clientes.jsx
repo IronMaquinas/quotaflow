@@ -61,7 +61,7 @@ export function CamposCliente({ C, s, c, setC, comDocumento = false }) {
 }
 
 /** Novo contrato: CNPJ/CPF primeiro. onSalvar(corpo) → POST /contratos */
-export function FormNovoContrato({ C, s, ocupado, onSalvar, onCancelar, onErro }) {
+export function FormNovoContrato({ C, s, ocupado, onSalvar, onCancelar, onErro, tipo = "locacao" }) { // 18zb: tipo armazenagem (CA-)
   const [doc, setDoc] = useState("");
   const [res, setRes] = useState(null);            // resultado da busca
   const [semDoc, setSemDoc] = useState(false);
@@ -75,12 +75,13 @@ export function FormNovoContrato({ C, s, ocupado, onSalvar, onCancelar, onErro }
     else setCli({ ...vazioCliente(), ...Object.fromEntries(Object.entries(r.cliente || {}).map(([a, b]) => [a, b ?? ""])) });
   };
   const salvar = () => {
-    const base = { local: k.local, inicio: k.inicio, fim_previsto: k.fim_previsto || null, obs: k.obs };
+    const base = { tipo, local: k.local, inicio: k.inicio, fim_previsto: k.fim_previsto || null, obs: k.obs };
     if (existente) return onSalvar({ ...base, cliente_id: existente.id, contato_nome: k.contato_nome, contato_email: k.contato_email, contato_telefone: k.contato_telefone });
     return onSalvar({ ...base, ...cli, cliente: cli.nome, cliente_nome: cli.nome, cliente_doc: semDoc ? null : cli.documento || doc });
   };
   return (<>
-    <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>Novo contrato de locação</div>
+    <div style={{ fontSize: 16, fontWeight: 700, marginBottom: tipo === "armazenagem" ? 4 : 12 }}>{tipo === "armazenagem" ? "📦 Novo contrato de armazenagem (CA)" : "Novo contrato de locação"}</div>
+    {tipo === "armazenagem" && <div style={{ fontSize: 12.5, color: C.textSub, marginBottom: 12 }}>Cessão de área no pátio para guardar equipamentos do cliente, cobrada por m². Preço e áreas mínima e máxima você informa depois de criar, em ✎ Editar.</div>}
     {!semDoc && <CampoDocumento C={C} s={s} valor={doc} onValor={(v) => { setDoc(v); setRes(null); }} onResultado={aoBuscar} onErro={onErro} autoFocus />}
     {!res && !semDoc && <button type="button" onClick={() => { setSemDoc(true); setCli(vazioCliente()); }} style={{ background: "none", border: "none", color: C.muted, fontSize: 12, cursor: "pointer", padding: "6px 0" }}>Cliente sem CNPJ/CPF? Preencher na mão ›</button>}
     {existente && <div style={{ ...s.card, padding: 12, marginTop: 10, borderColor: C.success }}>
@@ -92,7 +93,7 @@ export function FormNovoContrato({ C, s, ocupado, onSalvar, onCancelar, onErro }
     {((res && !existente) || semDoc) && <div style={{ marginTop: 10 }}><CamposCliente C={C} s={s} c={cli} setC={setCli} /></div>}
     {pronto && <>
       <div style={{ ...s.label, marginTop: 14 }}>DADOS DESTE CONTRATO</div>
-      <div>{campo(s, "LOCAL / OBRA", inp(s, k, setK, "local", { placeholder: "Obra BR-101, km 230 — Campos/RJ" }), "1 1 100%")}</div>
+      <div>{campo(s, tipo === "armazenagem" ? "PÁTIO / ENDEREÇO" : "LOCAL / OBRA", inp(s, k, setK, "local", { placeholder: tipo === "armazenagem" ? "Pátio Vila Velha — Rod. do Sol, km 5" : "Obra BR-101, km 230 — Campos/RJ" }), "1 1 100%")}</div>
       {existente && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>{campo(s, "CONTATO NESTE CONTRATO", inp(s, k, setK, "contato_nome"))}{campo(s, "E-MAIL", inp(s, k, setK, "contato_email", { type: "email" }))}
         {campo(s, "TELEFONE", <CampoTelefone value={k.contato_telefone || ""} onChange={(v) => setK({ ...k, contato_telefone: v || "" })} C={C} />, "1 1 200px")}</div>}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>{campo(s, "INÍCIO", inp(s, k, setK, "inicio", { type: "date" }))}{campo(s, "FIM PREVISTO (OPCIONAL)", inp(s, k, setK, "fim_previsto", { type: "date" }))}</div>

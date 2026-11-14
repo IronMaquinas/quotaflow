@@ -36,7 +36,7 @@ const CAMPOS = [
   ['tabela_equipamentos', 'Tabela dos equipamentos (tag, descrição, valor mensal)'], ['valor_mensal_total', 'Valor mensal total'], ['qtd_equipamentos', 'Quantidade de equipamentos'],
   ['condicoes.caucao', 'Caução'], ['condicoes.franquia_horas', 'Franquia (horas/mês)'], ['condicoes.hora_excedente', 'Valor da hora excedente'], ['condicoes.reajuste', 'Índice de reajuste'],
   ['condicoes.multa_rescisoria', 'Multa rescisória'], ['condicoes.vencimento_dia', 'Dia de vencimento'], ['condicoes.forma_pagamento', 'Forma de pagamento'], ['condicoes.foro', 'Foro (comarca)'],
-  ['armazenagem.preco', 'Guarda no pátio: preço do m² ("R$ 12,00 por m² ao mês")'], ['armazenagem.minimo', 'Guarda no pátio: mínimo contratado ("200 m² por mês")'],
+  ['armazenagem.preco', 'Armazenagem: preço do m² ("R$ 12,00 por m² ao mês")'], ['armazenagem.minimo', 'Armazenagem: área mínima contratada ("200 m²")'], ['armazenagem.maximo', 'Armazenagem: área máxima contratada ("500 m²")'],
   ['condicoes.observacoes', 'Condições específicas'], ['data_extenso', 'Data por extenso (dia da emissão)'], ['data', 'Data (dd/mm/aaaa)'],
 ];
 const NOMES = new Set(CAMPOS.map((c) => c[0]));
@@ -165,8 +165,9 @@ function montar(corpo, { contrato, emp, cli, tabela }, hoje = hojeBR()) {
     'condicoes.caucao': brl(c.caucao), 'condicoes.franquia_horas': c.franquia_horas != null ? String(c.franquia_horas) : null, 'condicoes.hora_excedente': brl(c.hora_excedente),
     'condicoes.reajuste': c.reajuste, 'condicoes.multa_rescisoria': c.multa_rescisoria_pct != null ? `${String(c.multa_rescisoria_pct).replace('.', ',')}%` : null,
     'condicoes.vencimento_dia': c.vencimento_dia != null ? String(c.vencimento_dia) : null, 'condicoes.forma_pagamento': c.forma_pagamento, 'condicoes.foro': c.foro,
-    'armazenagem.preco': contrato.arm_ativo && contrato.arm_preco != null ? `${Number(contrato.arm_preco).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 4 }).replace(/\u00a0/g, ' ')} por m² ${contrato.arm_unidade === 'm2_dia' ? 'ao dia' : 'ao mês'}` : null,
-    'armazenagem.minimo': contrato.arm_ativo ? (contrato.arm_minimo_m2 ? `${Number(contrato.arm_minimo_m2).toLocaleString('pt-BR')} m² por mês` : 'não há') : null,
+    'armazenagem.preco': contrato.tipo === 'armazenagem' && contrato.arm_preco != null ? `${Number(contrato.arm_preco).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 4 }).replace(/\u00a0/g, ' ')} por m² ${contrato.arm_unidade === 'm2_dia' ? 'ao dia' : 'ao mês'}` : null,
+    'armazenagem.minimo': contrato.tipo === 'armazenagem' ? (contrato.arm_minimo_m2 ? `${Number(contrato.arm_minimo_m2).toLocaleString('pt-BR')} m²` : 'zero (sem mínimo)') : null,
+    'armazenagem.maximo': contrato.tipo === 'armazenagem' && contrato.arm_area_max_m2 ? `${Number(contrato.arm_area_max_m2).toLocaleString('pt-BR')} m²` : null,
     'condicoes.observacoes': c.observacoes || 'Não há.', data_extenso: extenso(hoje), data: dBR(hoje),
   };
   const naMap = { caucao: 'condicoes.caucao', franquia_horas: 'condicoes.franquia_horas', hora_excedente: 'condicoes.hora_excedente', reajuste: 'condicoes.reajuste', multa_rescisoria_pct: 'condicoes.multa_rescisoria',
@@ -184,7 +185,8 @@ function montar(corpo, { contrato, emp, cli, tabela }, hoje = hojeBR()) {
   if (endEmp) corpoUsado = corpoUsado.replace(/(inscrita no CNPJ sob o nº \{\{\s*empresa\.cnpj\s*\}\})\./, `$1, com sede em ${endEmp}.`);
   const texto0 = corpoUsado.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, k) => { const x = v[k]; if (x == null || x === '') { faltando.add(k); return VAZIO; } return x; });
   if (tabela.some((t) => t.valor_mensal == null)) faltando.add('valor mensal de equipamento');
-  if (!tabela.length) faltando.add('equipamentos no contrato');
+  if (!tabela.length && contrato.tipo !== 'armazenagem') faltando.add('equipamentos no contrato'); // 18zb: CA não tem equipamentos
+  if (contrato.tipo === 'armazenagem' && !(Number(contrato.arm_preco) > 0)) faltando.add('preço do m² da armazenagem');
   return { texto: texto0, tabela: tabela.map(({ tag, nome, inicio, fim_previsto, valor_mensal }) => ({ tag, nome, inicio, fim_previsto, valor_mensal })), total, faltando: [...faltando] };
 }
 

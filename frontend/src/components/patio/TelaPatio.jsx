@@ -34,7 +34,7 @@ export default function TelaPatio({ C, s, usuario }) {
   useEffect(() => { if (aba === "mov") carregarMov(); }, [aba, fMov]); // eslint-disable-line
   const baixarCsv = () => { const blob = new Blob([csvMovimentacaoPatio(mov)], { type: "text/csv;charset=utf-8" }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `movimentacao-patio-${mov.de}-a-${mov.ate}${mov.cliente ? `-${mov.cliente.replace(/\W+/g, "-")}` : ""}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); };
   const imprimir = (fn) => { try { fn(); } catch (e) { setErro(e.message); } };
-  const salvarLocal = async () => { setSalv(true); try { const r = await apiService.put(`/patio/${det.bem.id}`, edLocal); setDet(r); setEdLocal(null); ok("✓ Atualizado"); carregar(); } catch (e) { setErro(e.message); } finally { setSalv(false); } };
+  const salvarLocal = async () => { setSalv(true); try { const r = await apiService.put(`/patio/${det.bem.id}`, edLocal); setDet(r); setEdLocal(null); ok(`✓ Atualizado${avisoExcesso(r)}`); carregar(); } catch (e) { setErro(e.message); } finally { setSalv(false); } };
   const [estreito, setEstreito] = useState(() => typeof window !== "undefined" && window.innerWidth < 760);
   useEffect(() => { const f = () => setEstreito(window.innerWidth < 760); window.addEventListener("resize", f); return () => window.removeEventListener("resize", f); }, []);
   const carregar = () => apiService.get("/patio", { status, busca, cliente }).then((r) => { setD(r); setErro(null); }).catch((e) => setErro(e.message));
@@ -58,7 +58,7 @@ export default function TelaPatio({ C, s, usuario }) {
       const r = await apiService.post("/patio", form); const pend = fotosPend.map((f) => f.file);
       setForm(null); carregar();
       if (pend.length) { setSubindo(true); try { await enviarFotos(r.bem, "entrada", pend); } catch (e) { setErro(`Entrada salva, mas falhou alguma foto: ${e.message}`); } finally { setSubindo(false); } }
-      limparFotos(); ok(`✓ ${r.bem.numero} no pátio${pend.length ? ` com ${pend.length} foto(s)` : " — dá para tirar as fotos depois, na ficha"}`); 
+      limparFotos(); ok(`✓ ${r.bem.numero} no pátio${pend.length ? ` com ${pend.length} foto(s)` : " — dá para tirar as fotos depois, na ficha"}${avisoExcesso(r)}`); 
     } catch (e) { setErro(e.message); } finally { setSalv(false); }
   };
   const salvarSaida = async () => { setSalv(true); try { const r = await apiService.post(`/patio/${det.bem.id}/saida`, saida); setSaida(null); setDet(r); ok(`✓ Saída de ${r.bem.numero} registrada`); carregar(); } catch (e) { setErro(e.message); } finally { setSalv(false); } };
@@ -67,7 +67,7 @@ export default function TelaPatio({ C, s, usuario }) {
     try {
       let r = await apiService.post(`/patio/${det.bem.id}/chegada`, chegada); const pend = fotosPend.map((f) => f.file);
       if (pend.length) { setSubindo(true); try { r = (await enviarFotos(r.bem, "entrada", pend)) || r; } catch (e) { setErro(`Chegada confirmada, mas falhou alguma foto: ${e.message}`); } finally { setSubindo(false); } }
-      limparFotos(); setChegada(null); setDet(r); ok(`✓ Chegada de ${r.bem.numero} confirmada — está no pátio`); carregar();
+      limparFotos(); setChegada(null); setDet(r); ok(`✓ Chegada de ${r.bem.numero} confirmada — está no pátio${avisoExcesso(r)}`); carregar();
     } catch (e) { setErro(e.message); } finally { setSalv(false); }
   };
   const excluirPre = async () => { setSalv(true); try { const r = await apiService.delete(`/patio/${det.bem.id}`); setDet(null); ok(`✓ Pré-entrada ${r.numero} excluída`); carregar(); } catch (e) { setErro(e.message); } finally { setSalv(false); setConfExcluir(false); } };
@@ -128,6 +128,16 @@ export default function TelaPatio({ C, s, usuario }) {
   // "Cabe?": quantos m² o pedido do cliente precisa × espaço livre por área
   const numBR = (v) => { let x = String(v || "").trim(); if (x.includes(",")) x = x.replace(/\./g, "").replace(",", "."); else if (/^\d{1,3}(\.\d{3})+$/.test(x)) x = x.replace(/\./g, ""); return Number(x) || 0; };
   const precisa = numBR(cabe.qtd) * numBR(cabe.m2);
+  // 18zb: contrato de armazenagem (CA) do cliente × uso — mostrado na entrada/chegada e no "Cabe?"
+  const contratosCA = d?.ocupacao?.contratos || [];
+  const caDe = (clienteId, nome) => contratosCA.find((c) => (clienteId && c.cliente_id != null ? String(c.cliente_id) === String(clienteId) : String(c.cliente || "").trim().toUpperCase() === String(nome || "").trim().toUpperCase())) || null;
+  const linhaContrato = (clienteId, nome, m2Novo, jaContado = 0) => { if (!clienteId && !String(nome || "").trim()) return null; const c = caDe(clienteId, nome);
+    if (!c) return <div style={{ gridColumn: "1 / -1", fontSize: 12, color: C.warn || "#f59e0b", marginTop: -2, marginBottom: 8 }}>📦 Cliente sem contrato de armazenagem (CA) ativo — a guarda não será cobrada.</div>;
+    const novo = numBR(m2Novo); const total = c.usado_m2 - jaContado + novo; const passa = c.max_m2 != null && total > c.max_m2;
+    return <div style={{ gridColumn: "1 / -1", fontSize: 12.5, marginTop: -2, marginBottom: 8, padding: "6px 10px", borderRadius: 6, border: `1px solid ${passa ? C.danger : C.border}`, color: passa ? C.danger : C.textSub }}>
+      📦 {c.numero}: usa <b>{m2(c.usado_m2)}{c.max_m2 != null ? ` de ${m2(c.max_m2)}` : ""} m²</b>{c.max_m2 == null ? " (sem área máxima)" : ""}{novo > 0 ? <> · com este: <b>{m2(total)} m²</b></> : ""}
+      {passa ? <> — <b>⚠ passa da área máxima em {m2(total - c.max_m2)} m²</b>. Pode registrar; o gestor recebe 🔔 e o excedente é cobrado pelo mesmo preço.</> : ""}</div>; };
+  const avisoExcesso = (r) => r?.aviso_excesso ? ` · ⚠ ${r.aviso_excesso.cliente} passou da área contratada (${m2(r.aviso_excesso.usado_m2)} de ${m2(r.aviso_excesso.max_m2)} m²) — gestor avisado` : "";
   const thumb = { width: estreito ? 84 : 92, height: estreito ? 64 : 70, objectFit: "cover", borderRadius: 6, border: `1px solid ${C.border}` };
   const botaoFoto = (rot, onFiles, desab) => <label style={{ ...btnG(false), cursor: desab ? "wait" : "pointer", display: "inline-flex", alignItems: "center" }}>{rot}<input type="file" accept="image/jpeg,image/png" multiple capture="environment" disabled={desab} onChange={(e) => { const l = Array.from(e.target.files || []); e.target.value = ""; onFiles(l); }} style={{ display: "none" }} /></label>;
   // fotos antes de salvar
@@ -195,7 +205,7 @@ export default function TelaPatio({ C, s, usuario }) {
         {d.clientes[0] && kpi("HÁ MAIS TEMPO", `${d.clientes.reduce((m, c) => Math.max(m, c.dias_mais_antigo), 0)} dias`, d.clientes.slice().sort((a, b) => b.dias_mais_antigo - a.dias_mais_antigo)[0].cliente, d.clientes.some((c) => c.dias_mais_antigo > 90) ? (C.warn || "#f59e0b") : C.text)}
       </div>
       {d.ocupacao?.sem_contrato?.length > 0 && <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", fontSize: 12.5, color: C.warn || "#f59e0b", border: `1px dashed ${C.warn || "#f59e0b"}`, borderRadius: 8, padding: "8px 12px", marginBottom: 12 }}>
-        <span style={{ flex: 1, minWidth: 220 }}>⚠ Guarda <b>sem cobrança</b>: {d.ocupacao.sem_contrato.join(", ")} {d.ocupacao.sem_contrato.length > 1 ? "têm" : "tem"} equipamento no pátio sem contrato ativo com "Cobrar guarda no pátio" ligado.</span>
+        <span style={{ flex: 1, minWidth: 220 }}>⚠ Guarda <b>sem cobrança</b>: {d.ocupacao.sem_contrato.join(", ")} {d.ocupacao.sem_contrato.length > 1 ? "têm" : "tem"} equipamento no pátio sem contrato de armazenagem (CA) ativo.</span>
         <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("qf-ir-tela", { detail: "contratos" }))} style={{ ...s.btn(false), padding: "6px 12px", fontSize: 12 }}>Abrir Contratos</button></div>}
       {d.ocupacao && !d.ocupacao.sem_migration && (areasCad.length === 0
         ? <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", fontSize: 12.5, color: C.warn || "#f59e0b", border: `1px dashed ${C.warn || "#f59e0b"}`, borderRadius: 8, padding: "8px 12px", marginBottom: 12 }}>
@@ -212,15 +222,15 @@ export default function TelaPatio({ C, s, usuario }) {
                 <div style={{ fontSize: 11.5, color: C.muted, marginTop: 3 }}>{m2(a.livre_m2)} m² livres · {a.equipamentos} equip.{a.sem_medida ? <span style={{ color: C.warn || "#f59e0b" }}> · {a.sem_medida} sem m²</span> : ""}</div></div>)}</div>
             {(d.ocupacao.sem_medida > 0 || d.ocupacao.fora_das_areas > 0) && <div style={{ fontSize: 12, color: C.warn || "#f59e0b", marginTop: 8 }}>{[d.ocupacao.sem_medida > 0 && `${d.ocupacao.sem_medida} equipamento(s) no pátio sem m² informado — a ocupação real é maior`, d.ocupacao.fora_das_areas > 0 && `${d.ocupacao.fora_das_areas} fora das áreas cadastradas${d.ocupacao.fora_m2 ? ` (${m2(d.ocupacao.fora_m2)} m²)` : ""}`].filter(Boolean).join(" · ")}</div>}
             <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}`, fontSize: 13 }}>
-              <b>Cabe?</b><input value={cabe.qtd} inputMode="numeric" onChange={(e) => setCabe({ ...cabe, qtd: e.target.value })} aria-label="Quantidade de equipamentos" style={{ ...inp, width: 64, marginBottom: 0 }} /> equipamento(s) de
+              <b>Cabe?</b>{contratosCA.length > 0 && <select value={cabe.ca || ""} onChange={(e) => setCabe({ ...cabe, ca: e.target.value })} aria-label="Cliente com contrato de armazenagem" style={{ ...inp, width: "auto", marginBottom: 0 }}><option value="">qualquer cliente</option>{contratosCA.map((c) => <option key={c.contrato_id} value={c.contrato_id}>{c.cliente} ({c.numero})</option>)}</select>}<input value={cabe.qtd} inputMode="numeric" onChange={(e) => setCabe({ ...cabe, qtd: e.target.value })} aria-label="Quantidade de equipamentos" style={{ ...inp, width: 64, marginBottom: 0 }} /> equipamento(s) de
               <input value={cabe.m2} inputMode="decimal" onChange={(e) => setCabe({ ...cabe, m2: e.target.value })} placeholder="m²" aria-label="m² de cada equipamento" style={{ ...inp, width: 80, marginBottom: 0 }} /> m² cada
               {precisa > 0 && (() => { const cabem = areasCad.filter((a) => a.livre_m2 >= precisa); const ok2 = d.ocupacao.livre_m2 >= precisa;
-                return <span style={{ flexBasis: estreito ? "100%" : undefined, color: cabem.length ? C.success : ok2 ? (C.warn || "#f59e0b") : C.danger }}>= {m2(precisa)} m² → {cabem.length ? `cabe em ${cabem.map((a) => `${a.nome} (sobram ${m2(a.livre_m2 - precisa)} m²)`).join(", ")}` : ok2 ? `não cabe numa área só; somando todas sobram ${m2(d.ocupacao.livre_m2 - precisa)} m²` : `não cabe — faltam ${m2(precisa - d.ocupacao.livre_m2)} m²`}{d.ocupacao.sem_medida ? " (há equipamentos sem m² — confira no pátio)" : ""}</span>; })()}
+                return <span style={{ flexBasis: estreito ? "100%" : undefined, color: cabem.length ? C.success : ok2 ? (C.warn || "#f59e0b") : C.danger }}>= {m2(precisa)} m² → {cabem.length ? `cabe em ${cabem.map((a) => `${a.nome} (sobram ${m2(a.livre_m2 - precisa)} m²)`).join(", ")}` : ok2 ? `não cabe numa área só; somando todas sobram ${m2(d.ocupacao.livre_m2 - precisa)} m²` : `não cabe — faltam ${m2(precisa - d.ocupacao.livre_m2)} m²`}{d.ocupacao.sem_medida ? " (há equipamentos sem m² — confira no pátio)" : ""}{(() => { const k = contratosCA.find((c) => String(c.contrato_id) === String(cabe.ca)); if (!k || k.max_m2 == null) return ""; const sobra = k.max_m2 - k.usado_m2 - precisa; return sobra >= 0 ? ` · contrato ${k.numero}: cabe no máximo contratado (sobram ${m2(sobra)} m²)` : ` · contrato ${k.numero}: ⚠ passa do máximo contratado em ${m2(-sobra)} m²`; })()}</span>; })()}
             </div>
           </div>)}
       {d.clientes.length > 0 && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
         <span style={{ fontSize: 12, color: C.muted, alignSelf: "center" }}>Saldo por cliente:</span>
-        {d.clientes.map((c) => <button key={c.cliente} type="button" aria-pressed={cliente === c.cliente} onClick={() => setCliente(cliente === c.cliente ? "" : c.cliente)} style={{ ...s.btn(cliente === c.cliente), padding: "6px 10px", fontSize: 12 }}>{c.cliente} · {c.qtd}</button>)}
+        {d.clientes.map((c) => <button key={c.cliente} type="button" aria-pressed={cliente === c.cliente} onClick={() => setCliente(cliente === c.cliente ? "" : c.cliente)} style={{ ...s.btn(cliente === c.cliente), padding: "6px 10px", fontSize: 12 }}>{c.cliente} · {c.qtd}{(() => { const k = caDe(null, c.cliente); return k?.max_m2 != null ? ` · ${m2(k.usado_m2)}/${m2(k.max_m2)} m²` : ""; })()}</button>)}
       </div>}
       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
         {[["pre_entrada", `Aguardando chegada${d.total_pre_entrada ? ` (${d.total_pre_entrada})` : ""}`], ["no_patio", "No pátio"], ["saiu", "Saíram"], ["todos", "Todos"]].map(([k, l]) => <button key={k} type="button" onClick={() => setStatus(k)} style={{ ...s.btn(status === k), padding: estreito ? "9px 12px" : "6px 14px", fontSize: 12.5 }}>{l}</button>)}
@@ -299,6 +309,7 @@ export default function TelaPatio({ C, s, usuario }) {
           <div style={{ gridColumn: "1 / -1" }}><label style={lab}>CLIENTE DONO DO EQUIPAMENTO</label>
             <select value={form.cliente_id} onChange={(e) => setForm({ ...form, cliente_id: e.target.value, cliente_nome: e.target.value ? "" : form.cliente_nome })} style={inp}><option value="">— outro (digite abaixo) —</option>{clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}{c.documento ? ` · ${c.documento}` : ""}</option>)}</select>
             {!form.cliente_id && <div style={{ display: "grid", gridTemplateColumns: estreito ? "1fr" : "2fr 1fr", gap: "0 12px" }}><input value={form.cliente_nome} onChange={(e) => setForm({ ...form, cliente_nome: e.target.value })} placeholder="Nome do cliente (não cadastrado)" style={inp} /><input value={form.cliente_documento || ""} inputMode="numeric" onChange={(e) => setForm({ ...form, cliente_documento: e.target.value })} placeholder="CNPJ / CPF do cliente" style={inp} /></div>}</div>
+          {linhaContrato(form.cliente_id, form.cliente_id ? clientes.find((c) => String(c.id) === String(form.cliente_id))?.nome : form.cliente_nome, form.area_m2)}
           {secao("🚜 Equipamento")}
           {campo(form, setForm, "descricao", "EQUIPAMENTO", { full: true, ph: "ex.: Escavadeira hidráulica" })}
           {campo(form, setForm, "numero_serie", "Nº DE SÉRIE (PLAQUETA)", { ph: "o que está na plaqueta" })}
@@ -368,6 +379,7 @@ export default function TelaPatio({ C, s, usuario }) {
           {selArea(chegada, setChegada)}{campo(chegada, setChegada, "local_patio", "VAGA / POSIÇÃO", { ph: "ex.: vaga 14, fila B" })}{campo(chegada, setChegada, "entrada_em", "DATA DA CHEGADA", { type: "date", max: hoje() })}
           <FotosPendentes />
           {campo(chegada, setChegada, "recebido_por", "RECEBIDO POR")}{campo(chegada, setChegada, "area_m2", "ÁREA OCUPADA m² (OPCIONAL)", { im: "decimal", ph: "para cobrar por m²" })}
+          {linhaContrato(det.bem.cliente_id, det.bem.cliente_nome, chegada.area_m2)}
           {campo(chegada, setChegada, "obs_chegada", "OBSERVAÇÃO DA CHEGADA (AVARIAS, ACESSÓRIOS…)", { full: true })}
         </div>
         <div style={rodape}><button type="button" disabled={salv} onClick={() => setChegada(null)} style={btnG(false)}>Cancelar</button>

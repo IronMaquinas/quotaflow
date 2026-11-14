@@ -188,7 +188,7 @@ export function DocumentoContrato({ C, s, contrato: k, editar, onErro: onErroPai
           {ativos.map((e) => <div key={e.locacao_id} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}><span style={{ flex: 1, fontSize: 13 }}>{e.tag} — {e.nome}</span>
             <CampoMoeda value={f.valores[e.locacao_id]} onChange={(v) => setF({ ...f, valores: { ...f.valores, [e.locacao_id]: v } })} disabled={!editar || k.status !== "ativo"} style={{ ...s.input, width: 160 }} /></div>)}</div>}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
-          {campo(s, rotNA("CAUÇÃO", "caucao"), moeda("caucao"))}{campo(s, rotNA("FRANQUIA (H/MÊS POR EQUIP.)", "franquia_horas"), inp("franquia_horas", { inputMode: "numeric" }))}{campo(s, rotNA("HORA EXCEDENTE", "hora_excedente"), moeda("hora_excedente"))}
+          {campo(s, rotNA("CAUÇÃO", "caucao"), moeda("caucao"))}{k.tipo !== "armazenagem" && <>{campo(s, rotNA("FRANQUIA (H/MÊS POR EQUIP.)", "franquia_horas"), inp("franquia_horas", { inputMode: "numeric" }))}{campo(s, rotNA("HORA EXCEDENTE", "hora_excedente"), moeda("hora_excedente"))}</>}{/* 18zb: armazenagem não tem franquia de horas */}
         </div>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
           {campo(s, rotNA("REAJUSTE (ÍNDICE)", "reajuste"), inp("reajuste"))}{campo(s, rotNA("MULTA RESCISÓRIA (%)", "multa_rescisoria_pct"), inp("multa_rescisoria_pct", { inputMode: "decimal" }))}{campo(s, rotNA("VENCIMENTO (DIA)", "vencimento_dia"), inp("vencimento_dia", { inputMode: "numeric" }))}

@@ -13,7 +13,6 @@ import CampoTelefone, { telefoneExibir } from "../shared/CampoTelefone";
 import AbaMedicoes from "./AbaMedicoes"; // 18d.5
 import MobilizacaoContrato, { FaturamentoPrevisto } from "./MobilizacaoContrato"; // 18y
 import PainelOcorrencias from "../ocorrencias/PainelOcorrencias"; // 18h
-import { Toggle } from "../../plataforma/ModulosPlataforma"; // 18za
 import GuardaContrato from "./GuardaContrato"; // 18za.1
 import CampoMoeda from "../shared/CampoMoeda";
 
@@ -28,6 +27,7 @@ const vazio = () => ({ cliente: "", cliente_doc: "", local: "", contato_nome: ""
 
 export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, abrirOcorrencia = null }) {
   const [d, setD] = useState(null);
+  const [refArm, setRefArm] = useState(undefined); // 18zb: preço de tabela das áreas do pátio (sugestão no contrato CA)
   const [painel, setPainel] = useState(null); // equipamentos e modelos (para adicionar ao contrato)
   const [semMigration, setSemMigration] = useState(false);
   const [aviso, setAviso] = useState(null);
@@ -40,6 +40,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
   const [busca, setBusca] = useState("");
   const [abertoId, setAbertoId] = useState(null);
   const [form, setForm] = useState(null);       // novo / editar contrato
+  useEffect(() => { if (form?.tipo === "armazenagem" && refArm === undefined) apiService.get("/patio/areas").then((r) => { const ps = (r.areas || []).map((x) => x.preco_ref_m2_mes).filter((x) => x != null); setRefArm(ps.length ? Math.max(...ps) : null); }).catch(() => setRefArm(null)); }, [form?.tipo]); // eslint-disable-line
   // 18d: 📏 medição
   const [filtroOc, setFiltroOc] = useState(null);     // 18h: aba Ocorrências filtrada por contrato
   const [filtroMed, setFiltroMed] = useState(null);   // 18d.5: abrir a aba Medições já filtrada por um contrato
@@ -94,7 +95,8 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
       <div style={{ display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
         <div style={{ fontSize: 20, fontWeight: 700, flex: 1 }}>📑 Contratos de locação</div>
         <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="🔍 Cliente, nº, equipamento…" style={{ ...s.input, width: 240 }} />
-        {editar && aba === "contratos" && <button type="button" onClick={() => setNovo(true)} style={bt(C.accent)}>＋ Novo contrato</button>}
+        {editar && aba === "contratos" && <button type="button" onClick={() => setNovo("locacao")} style={bt(C.accent)}>＋ {moduloAtivo("patio_cliente") ? "Contrato de locação" : "Novo contrato"}</button>}
+        {editar && aba === "contratos" && moduloAtivo("patio_cliente") && <button type="button" onClick={() => setNovo("armazenagem")} style={bt(C.accent)}>＋ 📦 Contrato de armazenagem</button>}
       </div>
       {aviso && <div style={{ ...s.card, padding: "10px 14px", marginBottom: 12, fontSize: 13, borderColor: aviso.tipo === "erro" ? C.danger : C.success, color: aviso.tipo === "erro" ? C.danger : C.success }}>{aviso.texto}</div>}
       <div style={{ display: "flex", gap: 6, marginBottom: 12, borderBottom: `1px solid ${C.border}`, overflowX: "auto" }}>{/* 18h.4: abas numa linha (rola no celular) */}
@@ -117,7 +119,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
             <div key={c.id} onClick={() => setAbertoId(c.id)} style={{ ...s.card, padding: 14, cursor: "pointer", opacity: c.status === "ativo" ? 1 : 0.65, borderColor: c.atrasadas ? C.danger : C.border }}>
               <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
                 <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700 }}>{c.cliente}</div><div style={{ fontSize: 12, color: C.textSub }}>{c.numero}{c.local ? ` · ${c.local}` : ""}</div></div>
-                <span style={s.tag(FASE[faseDe(c)][1])}>{FASE[faseDe(c)][0]}</span>{c.arm_ativo && moduloAtivo("patio_cliente") && <span style={s.tag(C.success)} title="Cobra a guarda de equipamentos no pátio">📦 GUARDA</span>}
+                <span style={s.tag(FASE[faseDe(c)][1])}>{FASE[faseDe(c)][0]}</span>{c.tipo === "armazenagem" && <span style={{ ...s.tag(C.accent), marginLeft: 4 }} title="Contrato de armazenagem — área no pátio">📦 ARMAZENAGEM</span>}
               </div>
               <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>{dataBR(c.inicio)} → {c.status === "ativo" ? (c.fim_previsto ? dataBR(c.fim_previsto) : "sem prazo") : dataBR(c.fim_real)}</div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
@@ -134,7 +136,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
       {aberto && !form && !novo && !addEq && !acesso && !confirmar && !pausar && modal(<>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <div style={{ fontSize: 17, fontWeight: 700, flex: 1 }}>📑 {aberto.numero} — {aberto.cliente}</div>
-          <span style={s.tag(FASE[faseDe(aberto)][1])}>{FASE[faseDe(aberto)][0]}</span>{aberto.arm_ativo && moduloAtivo("patio_cliente") && <span style={{ ...s.tag(C.success), marginLeft: 6 }} title="Cobra a guarda de equipamentos no pátio">📦 GUARDA NO PÁTIO</span>}
+          <span style={s.tag(FASE[faseDe(aberto)][1])}>{FASE[faseDe(aberto)][0]}</span>{aberto.tipo === "armazenagem" && <span style={{ ...s.tag(C.accent), marginLeft: 6 }}>📦 ARMAZENAGEM</span>}
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "8px 14px", fontSize: 12, marginTop: 12 }}>
           {[["CNPJ / CPF", aberto.cliente_doc ? mascaraDoc(aberto.cliente_doc) : null], ["Local / obra", aberto.local], ["Início", dataBR(aberto.inicio)],
@@ -152,6 +154,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
         {aberto.cliente_id && editar && <div style={{ marginTop: 8 }}><button type="button" onClick={() => { setClienteAbrir(aberto.cliente_id); setAbertoId(null); setAba("clientes"); }} className="qf-clicavel" style={{ background: "none", border: "none", color: C.textSub, fontSize: 12, textDecoration: "underline", padding: 0 }}>✏ Editar o cadastro do cliente (nome, endereço, contato)</button></div>}
         {aberto.obs && <div style={{ fontSize: 13, marginTop: 8, whiteSpace: "pre-wrap" }}>{aberto.obs}</div>}
 
+        {aberto.tipo !== "armazenagem" && <>{/* 18zb: armazenagem não tem equipamentos locados nem mobilização */}
         <MobilizacaoContrato C={C} s={s} contrato={aberto} editar={editar} onOk={ok} onErro={err} />{/* 18y */}
         <div style={{ display: "flex", alignItems: "center", marginTop: 16, marginBottom: 6 }}>
           <div style={{ fontWeight: 700, flex: 1 }}>🚜 Equipamentos</div>
@@ -179,7 +182,8 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
           </div>
         ))}
         {aberto.equipamentos.length === 0 && <div style={{ fontSize: 13, color: C.muted, padding: "6px 0" }}>Nenhum equipamento neste contrato.</div>}
-        {moduloAtivo("patio_cliente") && <GuardaContrato C={C} s={s} contrato={aberto} editar={editar} onEditar={() => setForm({ ...vazio(), ...aberto, fim_previsto: aberto.fim_previsto || "" })} />}
+        </>}
+        {aberto.tipo === "armazenagem" && <GuardaContrato C={C} s={s} contrato={aberto} editar={editar} onEditar={() => setForm({ ...vazio(), ...aberto, fim_previsto: aberto.fim_previsto || "" })} />}
 
         <div style={{ marginTop: 14 }}><button type="button" onClick={() => { setFiltroMed(aberto.id); setAbertoId(null); setAba("medicoes"); }} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 13, padding: 0 }}>📏 Ver medições deste contrato ›</button>
           <button type="button" onClick={() => { setFiltroOc({ id: aberto.id, numero: aberto.numero }); setAbertoId(null); setAba("ocorrencias"); }} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 13, padding: 0, marginLeft: 14 }}>⚠️ Ocorrências ›</button>{/* 18h */}
@@ -227,29 +231,28 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
               <span style={{ color: C.muted }}>(ex.: 10 → do dia 10 ao dia 9 do mês seguinte)</span></label>}
           </div>
           <label style={{ display: "flex", gap: 8, alignItems: "center", marginTop: 8, fontSize: 13 }}>Vencimento da cobrança: dia <input type="number" min={1} max={31} value={form.medicao_vencimento_dia ?? ""} onChange={(e) => setForm({ ...form, medicao_vencimento_dia: e.target.value })} placeholder="ex.: 5" style={{ ...s.input, width: 80, padding: "4px 6px" }} /> <span style={{ color: C.muted }}>(aparece no boletim)</span></label>
-          <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 8, fontSize: 13, cursor: "pointer" }}><input type="checkbox" checked={!!form.checklist_locatario} onChange={(e) => setForm({ ...form, checklist_locatario: e.target.checked })} style={{ marginTop: 3 }} />
-            <span><b>Checklist pelo locatário</b> — as inspeções de rotina dos equipamentos deste contrato ficam com o cliente (ele faz pelo acesso dele). Desmarcado, a empresa faz.</span></label>
+          {form.tipo !== "armazenagem" && <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 8, fontSize: 13, cursor: "pointer" }}><input type="checkbox" checked={!!form.checklist_locatario} onChange={(e) => setForm({ ...form, checklist_locatario: e.target.checked })} style={{ marginTop: 3 }} />
+            <span><b>Checklist pelo locatário</b> — as inspeções de rotina dos equipamentos deste contrato ficam com o cliente (ele faz pelo acesso dele). Desmarcado, a empresa faz.</span></label>}
           <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 6, fontSize: 13, cursor: "pointer" }}><input type="checkbox" checked={!!form.medicao_locatario} onChange={(e) => setForm({ ...form, medicao_locatario: e.target.checked })} style={{ marginTop: 3 }} />
             <span><b>Aprovação da medição pelo locatário</b> — o sistema monta a medição de cada ciclo, você revisa e envia, e o cliente aprova (ou comenta na linha do item). Desmarcado, você revisa e fecha sozinho.</span></label>
-          {moduloAtivo("patio_cliente") && <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>{/* 18za: 📦 guarda no pátio cobrada pelo contrato */}
-            <div style={{ display: "flex", gap: 10, alignItems: "center" }}><Toggle C={C} ligado={!!form.arm_ativo} rotulo="Cobrar guarda no pátio" onChange={(v) => {
-                setForm({ ...form, arm_ativo: v, arm_unidade: form.arm_unidade || "m2_mes" });
-                if (v && form.arm_preco == null && !form._arm_ref) apiService.get("/patio/areas").then((r) => { const ps = (r.areas || []).map((a) => a.preco_ref_m2_mes).filter((x) => x != null); if (ps.length) setForm((f) => ({ ...f, _arm_ref: Math.max(...ps) })); }).catch(() => {}); }} />
-              <span style={{ fontSize: 13 }}><b>📦 Cobrar guarda no pátio</b> — a medição de cada ciclo inclui os equipamentos deste cliente em 📦 Propriedade do cliente: <b>m² × dias × preço</b>.</span></div>
-            {form.arm_ativo && <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginTop: 10, fontSize: 13 }}>
-              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={{ ...s.label, marginBottom: 0 }}>PREÇO</span><CampoMoeda value={form.arm_preco == null ? "" : Number(form.arm_preco)} onChange={(v) => setForm({ ...form, arm_preco: v })} placeholder={form._arm_ref ? `tabela: ${Number(form._arm_ref).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}` : "R$ 0,00"} style={{ ...s.input, width: 140, padding: "6px 8px" }} /></label>
+          {form.tipo === "armazenagem" && <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>{/* 18zb: 📐 condições do contrato de armazenagem (CA) */}
+            <div style={{ ...s.label, marginBottom: 6 }}>📐 CONDIÇÕES DA ARMAZENAGEM</div>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", fontSize: 13 }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={{ ...s.label, marginBottom: 0 }}>PREÇO</span><CampoMoeda value={form.arm_preco == null ? "" : Number(form.arm_preco)} onChange={(v) => setForm({ ...form, arm_preco: v })} placeholder={refArm ? `tabela: ${Number(refArm).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}` : "R$ 0,00"} style={{ ...s.input, width: 140, padding: "6px 8px" }} /></label>
               <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={{ ...s.label, marginBottom: 0 }}>POR</span><select value={form.arm_unidade || "m2_mes"} onChange={(e) => setForm({ ...form, arm_unidade: e.target.value })} style={{ ...s.input, width: 150, padding: "6px 8px" }}><option value="m2_mes">m² ao mês</option><option value="m2_dia">m² ao dia</option></select></label>
-              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={{ ...s.label, marginBottom: 0 }}>MÍNIMO CONTRATADO (m²/MÊS)</span><input inputMode="decimal" value={form.arm_minimo_m2 ?? ""} onChange={(e) => setForm({ ...form, arm_minimo_m2: e.target.value })} placeholder="opcional" style={{ ...s.input, width: 150, padding: "6px 8px" }} /></label>
-              <div style={{ flexBasis: "100%", fontSize: 12, color: C.muted }}>{form.arm_unidade === "m2_dia" ? "Preço por m² ao dia: m²·dia do ciclo × preço." : "Preço por m² ao mês: proporcional aos dias do ciclo (m² × dias × preço ÷ dias do ciclo)."} Diária: conta o dia da entrada e não o da saída. Com mínimo, o cliente paga pelo menos o mínimo × preço, mesmo usando menos.{form._arm_ref && form.arm_preco == null ? ` Preço de tabela das áreas: ${Number(form._arm_ref).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}/m²·mês.` : ""}</div>
-            </div>}
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={{ ...s.label, marginBottom: 0 }}>ÁREA MÍNIMA (m²)</span><input inputMode="decimal" value={form.arm_minimo_m2 ?? ""} onChange={(e) => setForm({ ...form, arm_minimo_m2: e.target.value })} placeholder="opcional" style={{ ...s.input, width: 130, padding: "6px 8px" }} /></label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={{ ...s.label, marginBottom: 0 }}>ÁREA MÁXIMA (m²)</span><input inputMode="decimal" value={form.arm_area_max_m2 ?? ""} onChange={(e) => setForm({ ...form, arm_area_max_m2: e.target.value })} placeholder="opcional" style={{ ...s.input, width: 130, padding: "6px 8px" }} /></label>
+              <div style={{ flexBasis: "100%", fontSize: 12, color: C.muted }}>{form.arm_unidade === "m2_dia" ? "Por m² ao dia: m²·dia do ciclo × preço." : "Por m² ao mês: proporcional aos dias do ciclo."} Área mínima: o cliente paga pelo menos ela, mesmo usando menos. Área máxima: passou dela, o pátio avisa e o gestor recebe 🔔 — o excedente é cobrado pelo mesmo preço.{refArm && form.arm_preco == null ? ` Preço de tabela das áreas: ${Number(refArm).toLocaleString("pt-BR", { style: "currency", currency: "BRL" })}/m²·mês.` : ""}</div>
+            </div>
           </div>}
         </div>}
         <label style={{ display: "block", marginTop: 8 }}><span style={s.label}>OBSERVAÇÕES</span><textarea rows={2} value={form.obs || ""} onChange={(e) => setForm({ ...form, obs: e.target.value })} style={{ ...s.input, resize: "vertical" }} /></label>
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
           <button type="button" onClick={() => setForm(null)} style={{ ...s.btn(false), cursor: "pointer", flex: 1, color: C.text }}>Cancelar</button>
           <button type="button" disabled={ocupado} onClick={async () => {
-            const { local, contato_nome, contato_email, contato_telefone, fim_previsto, obs, medicao_dia_inicio, medicao_vencimento_dia, checklist_locatario, medicao_locatario, arm_ativo, arm_preco, arm_unidade, arm_minimo_m2 } = form;
-            const arm = moduloAtivo("patio_cliente") ? { arm_ativo: !!arm_ativo, arm_preco: arm_preco === "" || arm_preco == null ? null : Number(arm_preco), arm_unidade: arm_unidade || "m2_mes", arm_minimo_m2: arm_minimo_m2 === "" || arm_minimo_m2 == null ? null : String(arm_minimo_m2) } : {};
+            const { local, contato_nome, contato_email, contato_telefone, fim_previsto, obs, medicao_dia_inicio, medicao_vencimento_dia, checklist_locatario, medicao_locatario, arm_preco, arm_unidade, arm_minimo_m2, arm_area_max_m2 } = form;
+            const vz = (x) => (x === "" || x == null ? null : String(x)); // 18zb: condições só no contrato de armazenagem
+            const arm = form.tipo === "armazenagem" ? { arm_preco: arm_preco === "" || arm_preco == null ? null : Number(arm_preco), arm_unidade: arm_unidade || "m2_mes", arm_minimo_m2: vz(arm_minimo_m2), arm_area_max_m2: vz(arm_area_max_m2) } : {};
             const r = await acao(() => apiService.put(`/contratos/${form.id}`, { local, contato_nome, contato_email, contato_telefone, fim_previsto: fim_previsto || null, obs, medicao_dia_inicio: medicao_dia_inicio || null, medicao_vencimento_dia: medicao_vencimento_dia === "" || medicao_vencimento_dia == null ? null : Number(medicao_vencimento_dia), checklist_locatario: !!checklist_locatario, medicao_locatario: !!medicao_locatario, ...arm }), "Contrato salvo.");
             if (r) setForm(null);
           }} style={{ ...s.btn(!ocupado, C.accent), flex: 1 }}>Salvar</button>
@@ -257,8 +260,8 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
       </>, () => setForm(null), 620, 320)}
 
 
-      {novo && modal(<FormNovoContrato C={C} s={s} ocupado={ocupado} onErro={err} onCancelar={() => setNovo(false)}
-        onSalvar={async (corpo) => { const r = await acao(() => apiService.post("/contratos", corpo), (x) => `Contrato ${x.contrato.numero} criado — agora adicione os equipamentos e os acessos.`); if (r) { setNovo(false); setAbertoId(r.contrato.id); } }} />, () => setNovo(false), 680, 320)}
+      {novo && modal(<FormNovoContrato C={C} s={s} tipo={novo === "armazenagem" ? "armazenagem" : "locacao"} ocupado={ocupado} onErro={err} onCancelar={() => setNovo(false)}
+        onSalvar={async (corpo) => { const r = await acao(() => apiService.post("/contratos", corpo), (x) => (x.contrato.tipo === "armazenagem" ? `Contrato ${x.contrato.numero} criado — agora informe preço e áreas em ✎ Editar condições.` : `Contrato ${x.contrato.numero} criado — agora adicione os equipamentos e os acessos.`)); if (r) { setNovo(false); setAbertoId(r.contrato.id); } }} />, () => setNovo(false), 680, 320)}
 
       {addEq && aberto && modal(<>
         <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 12 }}>＋ Equipamento no {aberto.numero}</div>
