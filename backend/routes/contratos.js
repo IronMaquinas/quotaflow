@@ -19,6 +19,7 @@
 //          GET /:id/medicoes (ciclos) · POST /:id/medicoes { inicio } (abre) · GET /medicoes/:mid · PUT /medicoes/:mid { itens, obs, repetir_programado }
 //          18d.5: GET /medicoes/painel (resumo + pendências + histórico)
 //          18d.2: POST /medicoes/:mid/enviar (envia ao cliente ou fecha) · /recalcular · /reabrir { motivo }
+//   18za.1 — GET /:id/guarda (📦 guarda no pátio: condições + o que o ciclo atual já acumulou)
 //   POST   /usuarios/:usuario/pausar         { ativo: false|true } — só usuário que é SÓ locatário
 
 const express = require('express');
@@ -79,6 +80,7 @@ router.post('/:id/medicoes', exigirEditar, responder(async (req) => MD.abrir(sup
 router.put('/:id/equipamentos/:equip/escopo', exigirEditar, responder((req) => CT.escopoEquipamento(supabase, req.tenantId, req.params.id, req.params.equip, req.body || {})));
 router.get('/', exigirVer, responder(async (req) => ({ contratos: await CT.listar(supabase, req.tenantId), pode_editar: perfisDe(req).some((p) => EDITAR.includes(p)) })));
 router.post('/', exigirEditar, responder(async (req) => CT.criar(supabase, req.tenantId, await quem(req), req.body || {})));
+router.get('/:id/guarda', exigirVer, responder((req) => MD.guardaDoContrato(supabase, req.tenantId, req.params.id))); // 18za.1: 📦 guarda no pátio do ciclo atual
 router.put('/:id', exigirEditar, responder((req) => CT.editar(supabase, req.tenantId, req.params.id, req.body || {})));
 router.post('/:id/equipamentos', exigirEditar, responder(async (req) => CT.adicionarEquipamento(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
 router.post('/:id/equipamentos/:equip/devolver', exigirEditar, responder(async (req) => CT.devolverEquipamento(supabase, req.tenantId, await quem(req), req.params.id, req.params.equip, req.body || {})));

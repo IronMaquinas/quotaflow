@@ -447,4 +447,17 @@ async function avisosDiarios(supabase, { hoje = hojeBR(), enviar = null } = {}) 
   return r;
 }
 
-module.exports = { itensGuarda, painelEmpresa, D_ANTES, naJanela, STATUS_NOME, cicloDe, ciclos, listar, detalhe, abrir, recalcular, salvar, enviar, reabrir, aprovarCliente, contestar, acaoEmpresa, pendencias, painelLocatario, acaoLocatario, informativo, avisosDiarios, _definirEnvio };
+// 18za.1: 📦 guarda no contrato — o que o ciclo atual já acumulou até hoje (prévia; a medição de verdade sai no fim do ciclo)
+async function guardaDoContrato(supabase, tenantId, contratoId) {
+  const c = await contratoDo(supabase, tenantId, contratoId); if (!c) return { status: 404, erro: 'Contrato não encontrado' };
+  const hoje = hojeBR(); const cic = cicloDe(c.medicao_dia_inicio, hoje); const diasCiclo = diasEntre(cic.inicio, cic.fim) + 1;
+  let bens = []; try { bens = await q(supabase.from('patio_bens').select('*').eq('tenant_id', tenantId)); } catch { return { sem_patio: true }; }
+  const doCli = bens.filter((b) => doCliente(c, b)); const noPatio = doCli.filter((b) => b.status === 'no_patio');
+  const base = { ativo: !!c.arm_ativo, preco: c.arm_preco != null ? Number(c.arm_preco) : null, unidade: c.arm_unidade || 'm2_mes', minimo_m2: c.arm_minimo_m2 != null ? Number(c.arm_minimo_m2) : null,
+    no_patio: noPatio.length, m2_no_patio: r2(noPatio.reduce((s, b) => s + (b.area_m2 != null ? Number(b.area_m2) : 0), 0)), sem_m2: noPatio.filter((b) => b.area_m2 == null).length, ciclo: { ...cic, ate: hoje, dias_ciclo: diasCiclo } };
+  if (!c.arm_ativo) return base;
+  const itens = (await itensGuarda(supabase, tenantId, { ...c, arm_minimo_m2: null }, { inicio: cic.inicio, fim: hoje < cic.fim ? hoje : cic.fim }, diasCiclo));
+  return { ...base, itens, m2_dia: r2(itens.reduce((s, i) => s + (i.m2_dia || 0), 0)), parcial: r2(itens.reduce((s, i) => s + (i.valor || 0), 0)) };
+}
+
+module.exports = { guardaDoContrato, itensGuarda, painelEmpresa, D_ANTES, naJanela, STATUS_NOME, cicloDe, ciclos, listar, detalhe, abrir, recalcular, salvar, enviar, reabrir, aprovarCliente, contestar, acaoEmpresa, pendencias, painelLocatario, acaoLocatario, informativo, avisosDiarios, _definirEnvio };

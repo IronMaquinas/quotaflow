@@ -1008,6 +1008,12 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18za.1 (14/11):** 📦 **Guarda visível no contrato** (o Marcony ligou a cobrança e não via em lugar nenhum).
+    - **Ficha do contrato:** bloco **📦 Guarda no pátio — COBRANDO** abaixo dos equipamentos: preço e unidade, mínimo, o que está no pátio agora (equipamentos e m²) e **o que o ciclo atual já acumulou até hoje** por equipamento (base do cálculo, dias, valor) com o total parcial; avisa equipamento sem m². Link "abrir o pátio".
+    - Cliente com equipamento no pátio e **sem** a cobrança ligada: aviso tracejado no contrato com **✎ Ligar a cobrança**.
+    - Selo **📦 GUARDA** no cartão do contrato na lista e no cabeçalho da ficha.
+    - Preço da guarda no formulário agora usa o **campo de moeda** (R$ 1.234,56), como os outros valores do contrato.
+    - Backend: `GET /api/contratos/:id/guarda`.
   - **18za (14/11):** 📦📏 **Guarda no pátio cobrada pelo contrato** (decidido com o Marcony: o preço é acordo comercial → fica no **contrato**; a área é física → só capacidade e preço de tabela). Migration 085.
     - **Contrato → 📏 Medição e inspeções → 📦 Cobrar guarda no pátio** (toggle; aparece com o módulo Propriedade do cliente): **preço** R$ por **m² ao mês** ou **m² ao dia** + **mínimo contratado** (m²/mês, opcional). Sugere o preço de tabela das áreas.
     - **Medição do ciclo** inclui, além dos equipamentos locados, **um item por equipamento do cliente no pátio**: m² × dias × preço (ao mês → ÷ dias do ciclo), com a base do cálculo visível ("10 m² × 31 dia(s) × R$ 31,00/m²·mês ÷ 31"); saída no meio do ciclo aparece. Sem m² na ficha → item sem valor, em laranja (não deixa enviar). **Mínimo**: linha de complemento quando o uso fica abaixo. Contrato só de guarda também gera medição. Medição em preparação acompanha mudanças de m²/datas. Boletim (PDF) com a coluna "Valor mensal / base"; informativo de inspeções ignora os itens de guarda.
@@ -1683,7 +1689,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18za)
+**Última atualização deste documento:** 06/11/2026 (etapa 18za.1)
 
 --------------------------------------------------------------------------------
 
