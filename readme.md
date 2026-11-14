@@ -1009,6 +1009,7 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18zb.1 (14/11):** 📦 Contrato de armazenagem (CA): sem o botão **🔍 Ir para Inspeções** (não há equipamento locado) e o texto de **Acessos do locatário** diz o que o cliente faz no CA (assina o contrato, aprova/comenta a medição, histórico).
   - **18zb (14/11):** 📦📑 **Contrato de armazenagem separado (CA-)** — decidido com o Marcony: locação de área é outro objeto (cobrança por demanda), não se mistura com a locação de equipamentos (valor fixo). Migration 086.
     - **📑 Contratos:** botões **＋ Contrato de locação** e **＋ 📦 Contrato de armazenagem** (este aparece com o módulo Propriedade do cliente). CA tem numeração própria **CA-AAAA-NNNN** e o **mesmo fluxo** do CL: modelo, prévia, 📄 emissão (PDF), aceite do cliente (tela ou papel), acessos, 📏 medição por ciclo, encerrar. Selo **📦 ARMAZENAGEM** na lista e na ficha.
     - **Ficha do CA mostra só o negociado** (📐 Condições da armazenagem): **preço** por m² (ao mês/ao dia), **área mínima** (cobrada mesmo usando menos) e **área máxima** — sem uso atual (o uso é operação: link "Ver uso no pátio"). Sem equipamentos, mobilização nem checklist pelo locatário; documento sem franquia/hora excedente. Não aceita adicionar equipamento (409).
@@ -1700,7 +1701,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18zb)
+**Última atualização deste documento:** 06/11/2026 (etapa 18zb.1)
 
 --------------------------------------------------------------------------------
 

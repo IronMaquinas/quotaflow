@@ -195,7 +195,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
           <div style={{ fontWeight: 700, flex: 1 }}>👤 Acessos do locatário</div>
           {editar && aberto.status === "ativo" && <button type="button" onClick={() => setAcesso({ nome: aberto.contato_nome || "", email: aberto.contato_email || "", senha: "", telefone: aberto.contato_telefone || "" })} style={bt(C.accent, false)}>＋ Acesso</button>}
         </div>
-        <div style={{ fontSize: 11, color: C.muted, marginBottom: 6 }}>Quem tem acesso entra no QuotaFlow e vê <b>só os contratos dele</b>: equipamentos, inspeções pendentes, fazer a inspeção e o histórico. Não conta na cobrança.</div>
+        <div style={{ fontSize: 11, color: C.muted, marginBottom: 6 }}>Quem tem acesso entra no QuotaFlow e vê <b>só os contratos dele</b>{aberto.tipo === "armazenagem" ? <>: assina o contrato, aprova (ou comenta) a medição de cada ciclo e acompanha o histórico.</> : <>: equipamentos, inspeções pendentes, fazer a inspeção e o histórico.</>} Não conta na cobrança.</div>
         {aberto.acessos.map((a) => (
           <div key={a.usuario_id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "6px 0", borderBottom: `1px solid ${C.border}`, fontSize: 13, flexWrap: "wrap" }}>
             <div style={{ flex: "1 1 200px" }}>{a.nome} <span style={{ color: C.muted }}>· {a.email}</span></div>
@@ -208,7 +208,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
         {aberto.acessos.length === 0 && <div style={{ fontSize: 13, color: C.muted, padding: "6px 0" }}>Nenhum acesso ainda.</div>}
 
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 18, flexWrap: "wrap" }}>
-          {onAbrirInspecoes && <button type="button" onClick={onAbrirInspecoes} style={{ ...bt(C.textSub, false), marginRight: "auto" }}>🔍 Ir para Inspeções</button>}
+          {onAbrirInspecoes && aberto.tipo !== "armazenagem" ? <button type="button" onClick={onAbrirInspecoes} style={{ ...bt(C.textSub, false), marginRight: "auto" }}>🔍 Ir para Inspeções</button> : <span style={{ marginRight: "auto" }} />}{/* 18zb.1: armazenagem não tem inspeção */}
           {editar && aberto.status === "ativo" && <button type="button" onClick={() => setForm({ ...vazio(), ...aberto, fim_previsto: aberto.fim_previsto || "" })} style={bt(C.accent, false)}>Editar</button>}
           {editar && aberto.status === "ativo" && <button type="button" onClick={() => setConfirmar({ titulo: `Encerrar o contrato ${aberto.numero}?`, texto: `${aberto.ativos ? `Os ${aberto.ativos} equipamento(s) ainda locados voltam para 🏠 Na base. ` : ""}As rotinas do locatário param. Faça as inspeções de devolução antes.`, cor: C.danger, rotulo: "Encerrar",
             acao: () => apiService.post(`/contratos/${aberto.id}/encerrar`, { fim_real: hoje() }), msg: "Contrato encerrado.", depois: (r) => { if (r?.sem_contrato?.length) setPausar(r.sem_contrato); } })} style={bt(C.danger, false)}>Encerrar contrato</button>}
