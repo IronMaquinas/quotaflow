@@ -23,5 +23,6 @@ export default function AvisoHorimetro({ C, s, d, editar = false, onMudou, medic
     ⏱ Cobra {COB[d.cobranca] || "por hora"}, mas {d.motivo === "sem_campo"
       ? <>{d.modelos.length > 1 ? "nenhum dos checklists" : "o checklist"} {d.modelos.map((m, i) => <span key={m.id}>{i ? ", " : ""}<b>“{m.nome}”</b></span>)} não pede horímetro — revise o modelo do checklist utilizado: {link}</>
       : <>o equipamento não tem checklist de inspeção — defina o checklist: {link}</>}
+    <div style={{ fontSize: 11.5, color: C.muted, marginTop: 2 }}>Dica: na Biblioteca de 🔍 Inspeções há o modelo “Leitura para medição contratual (horímetro)” — importe e crie uma rotina semanal para o cliente.</div>{/* 18zg */}
   </div>;
 }
