@@ -163,11 +163,11 @@ const ESPERADO = {
   'migrations/042_inspecoes_rotinas_locacao.sql': 'bf32500014ddf3f779f1fa29ead5feb9', // etapa 14b.2 (novo)
   'front:RotinasLocacao.jsx': '8bba6c8bb586ff7298f6e0d0b13f8b9b', // etapa 18c.4
   'front:gerarRelatorioCumprimento.js': 'd4b916c75f0a4290ccd9c96bf170ed90', // etapa 14c.1
-  'services/contratosLocacao.js': 'fe3fd4767bbc44047857ea9a8b2fa4d7', // etapa 18zc
+  'services/contratosLocacao.js': '5de7002830d5f777d5fb9f6c560325e3', // etapa 18zc.2
   'routes/contratos.js': 'f49f9e179870b89edd3e8f7fd3ce0d8b', // etapa 18zb
   'routes/locatario.js': 'ef7e500d9afdf40a4d5090df88883405', // etapa 18p
   'migrations/043_contratos_locatario.sql': 'f25735b281aa176b4c31c3cc2bf283ed', // etapa 14b.3 (novo)
-  'front:TelaContratos.jsx': '714dcbf11b62e076d9b2845d755185cb', // etapa 18zc.1
+  'front:TelaContratos.jsx': '9fe8de724ad125367bd957229cf3072f', // etapa 18zc.2
   'front:TelaLocatario.jsx': 'b6dc7d43a2e8ab86aedd4e638e832537', // etapa 18o
   'services/clientes.js': '9714283f0013553dc96a48b75b6734cf', // etapa 14b.3.1 (novo)
   'migrations/044_clientes.sql': '446d1a52049aea19938d36cc2b01653d', // etapa 14b.3.1 (novo)
@@ -179,9 +179,9 @@ const ESPERADO = {
   'front:logoEmpresa.js': 'd4a9118674d42a897c58aaea954dc6d2', // etapa 14d.2
   'front:comprimirImagem.js': 'b6d05cca4906e19250268c29f633f044', // etapa 14c.1 (novo)
   'front:gerarPdfNC.js': 'fe4db00132dc6c626027e234e1f5f366', // etapa 14c.2
-  'services/contratoModelos.js': '0851c7c107f8d8fb44a401276b662046', // etapa 18zb
+  'services/contratoModelos.js': '85c4a251572d885169e237dab91dfb73', // etapa 18zc.2
   'migrations/046_modelos_contrato.sql': '0b06982d731ce6038a679a7cc7e21785', // etapa 14d.2
-  'front:ModelosContrato.jsx': '45b05f5029f3a91241f7a6b4e1603ca7', // etapa 18zb
+  'front:ModelosContrato.jsx': '6188d5ab5db0fe5f5011d5fd8d15683b', // etapa 18zc.2
   'front:gerarContrato.js': '61918b643427ea861a255ca249fcb68d', // etapa 14d.7
   'front:BibliotecaContratos.jsx': 'ea69d4f5771b64870eabd53c83f18a8a', // etapa 14d.2
   'front:CampoMoeda.jsx': 'e67cbfc98693ab1ea2df84d091974ca9', // etapa 14d.2
@@ -254,7 +254,7 @@ const ESPERADO = {
   'front:ModalNaoConformidade.jsx': '244c331b28157bb6c2f14f4736d461e6', // etapa 18c.1
   'front:FiltroPeriodo.jsx': '06b873f17ff380024b38e507bdca6724', // etapa 18c.4 (novo)
   'migrations/062_medicao_locacao.sql': '5a4d7ea7f3180195a19e4121183a446e', // etapa 18d (novo)
-  'services/medicoes.js': '516bcb0accfa73c8d65acf554914b2c9', // etapa 18zc
+  'services/medicoes.js': '142febc07b6ce020c14fb7ee290f1597', // etapa 18zc.2
   'front:MedicaoModal.jsx': 'd6e68e43b4886fe929bf39bd3972ba26', // etapa 18zc
   'front:gerarMedicao.js': '0018f537b6081a46b396e88a716df174', // etapa 18za
   'migrations/063_medicao_vencimento.sql': '0b27bacd7a6a0b6d77c01a8039f5192d', // etapa 18d.2 (novo)
@@ -336,9 +336,13 @@ const ESPERADO = {
   'migrations/087_medicao_envio_automatico.sql': '8ca07e5e6d7b67718139d0cf430a70cf', // etapa 18zc (novo)
 };
 
-// Antes de copiar a etapa 18zc.1 — base: 375488a
+// Antes de copiar a etapa 18zc.2 — base: 74bf2d9
 const ANTES = {
-  'front:TelaContratos.jsx': 'daf7936b717c9ed380730107c3597448',
+  'services/medicoes.js': '516bcb0accfa73c8d65acf554914b2c9',
+  'services/contratoModelos.js': '0851c7c107f8d8fb44a401276b662046',
+  'services/contratosLocacao.js': 'fe3fd4767bbc44047857ea9a8b2fa4d7',
+  'front:TelaContratos.jsx': '714dcbf11b62e076d9b2845d755185cb',
+  'front:ModelosContrato.jsx': '45b05f5029f3a91241f7a6b4e1603ca7',
 };
 
 const RAIZ = process.cwd();
@@ -376,7 +380,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zc.1)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zc.2)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

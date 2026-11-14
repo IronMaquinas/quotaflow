@@ -501,4 +501,15 @@ async function envioAutomatico(supabase, { hoje = hojeBR() } = {}) {
   return r;
 }
 
-module.exports = { envioAutomatico, dataAuto, itensGuarda, painelEmpresa, D_ANTES, naJanela, STATUS_NOME, cicloDe, ciclos, listar, detalhe, abrir, recalcular, salvar, enviar, reabrir, aprovarCliente, contestar, acaoEmpresa, pendencias, painelLocatario, acaoLocatario, informativo, avisosDiarios, _definirEnvio };
+// 18zc.2: 📄 contrato emitido → e-mail aos acessos do locatário pedindo o aceite (também quando o acesso é criado depois da emissão)
+async function avisarAceite(supabase, tenantId, c, { so = null } = {}) {
+  let para = await destinatarios(supabase, tenantId, c.id); if (so) para = para.filter((u) => String(u.id) === String(so));
+  if (!para.length) return 0;
+  const emp = await empresaNome(supabase, tenantId); const tipo = c.tipo === 'armazenagem' ? 'armazenagem' : 'locação';
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.55;color:#111"><p>Olá! O contrato de ${tipo} <b>${escH(c.numero)}</b> com <b>${escH(emp)}</b>${c.emitido_versao > 1 ? ` (versão ${c.emitido_versao})` : ''} foi emitido e está aguardando o seu aceite.</p>
+    <p>Entre no QuotaFlow, leia o contrato e assine na tela.</p>${portal() ? `<p><a href="${portal()}/" style="background:#2563eb;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">Abrir o contrato no QuotaFlow</a></p>` : ''}<p style="color:#666;font-size:12px">${escH(emp)} — enviado pelo QuotaFlow.</p></div>`;
+  let n = 0; for (const u of para) { try { await mandarEmail(u.email, `📄 Contrato ${c.numero} aguardando o seu aceite — ${emp}`, html); n++; } catch (e) { console.error('❌ [contrato] e-mail de aceite:', e.message || e); } }
+  return n;
+}
+
+module.exports = { avisarAceite, envioAutomatico, dataAuto, itensGuarda, painelEmpresa, D_ANTES, naJanela, STATUS_NOME, cicloDe, ciclos, listar, detalhe, abrir, recalcular, salvar, enviar, reabrir, aprovarCliente, contestar, acaoEmpresa, pendencias, painelLocatario, acaoLocatario, informativo, avisosDiarios, _definirEnvio };

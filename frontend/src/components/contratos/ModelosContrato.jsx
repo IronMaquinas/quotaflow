@@ -161,7 +161,7 @@ export function DocumentoContrato({ C, s, contrato: k, editar, onErro: onErroPai
   };
   const emitir = async (forcar = false) => {
     setOcupado(true);
-    try { await salvar(); const r = await apiService.post(`/contratos/${k.id}/emitir`, { forcar }); setFaltando(null); onOk(`Contrato emitido — versão ${r.versao}. ${k.acessos?.length ? "O locatário já pode ler e aceitar pelo acesso dele." : "Crie o acesso do locatário para ele aceitar pelo sistema."}`); onMudou?.(); }
+    try { await salvar(); const r = await apiService.post(`/contratos/${k.id}/emitir`, { forcar }); setFaltando(null); onOk(`Contrato emitido — versão ${r.versao}. ${r.emails_aceite ? `E-mail pedindo o aceite enviado para ${r.emails_aceite} acesso(s) do locatário.` : k.acessos?.length ? "O locatário já pode ler e aceitar pelo acesso dele (o e-mail não saiu — confira o envio de e-mails)." : "Ninguém recebeu e-mail: o contrato não tem acesso do locatário. Crie um acesso (ele recebe o pedido de aceite) ou registre o aceite em papel."}`); onMudou?.(); }
     catch (e) { if (e.body?.faltando) setFaltando(e.body.faltando); onErro(e.message); } finally { setOcupado(false); }
   };
   const imprimirEmitido = () => { const w = prepararJanela(); try { abrirContrato({ numero: k.numero, texto: k.emitido_texto, tabela: k.emitido_tabela || [], empresa, cliente: k.cliente, versao: k.emitido_versao, emitido_em: k.emitido_em, emitido_por: k.emitido_por_nome, hash: k.emitido_hash,
@@ -182,6 +182,7 @@ export function DocumentoContrato({ C, s, contrato: k, editar, onErro: onErroPai
         {k.emitido_hash ? <span style={s.tag(k.aceite_em ? C.success : C.warn)}>{k.aceite_em ? `✍ ACEITO v${k.emitido_versao}` : `EMITIDO v${k.emitido_versao} · AGUARDANDO ACEITE`}</span> : <span style={s.tag(C.muted)}>NÃO EMITIDO</span>}
       </div>
       {k.emitido_hash && <div style={{ fontSize: 11, color: C.muted, marginBottom: 8 }}>Emitido em {dataHora(k.emitido_em)}{k.emitido_por_nome ? ` por ${k.emitido_por_nome}` : ""}{k.aceite_em ? ` · aceito por ${k.aceite_nome} em ${dataHora(k.aceite_em)}` : ""}</div>}
+      {k.emitido_hash && !k.aceite_em && k.status === "ativo" && !k.acessos?.length && <div style={{ fontSize: 12.5, color: C.warn, border: `1px dashed ${C.warn}`, borderRadius: 8, padding: "8px 12px", marginBottom: 10 }}>{/* 18zc.2 */}⚠ <b>O cliente não tem como aceitar pelo sistema</b>: este contrato não tem acesso do locatário, então ninguém recebeu o e-mail de aceite. Crie um acesso em <b>👤 Acessos do locatário</b> (ele recebe o pedido de aceite por e-mail) ou registre o <b>aceite em papel</b>.</div>}
       {modelos.length === 0 ? <div style={{ fontSize: 13, color: C.muted }}>Nenhum modelo de contrato — importe o modelo-base na aba 📄 Modelos.</div> : (<>
         {campo(s, "MODELO", <select value={f.modelo_id} onChange={(e) => set("modelo_id", e.target.value)} disabled={!editar || k.status !== "ativo"} style={s.input}><option value="">— escolha —</option>{modelos.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}</select>, "1 1 100%")}
         {ativos.length > 0 && <div style={{ marginTop: 8 }}><span style={s.label}>VALOR MENSAL POR EQUIPAMENTO (R$)</span>

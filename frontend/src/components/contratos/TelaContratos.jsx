@@ -120,12 +120,13 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
             <div key={c.id} onClick={() => setAbertoId(c.id)} style={{ ...s.card, padding: 14, cursor: "pointer", opacity: c.status === "ativo" ? 1 : 0.65, borderColor: c.atrasadas ? C.danger : C.border }}>
               <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
                 <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700 }}>{c.cliente}</div><div style={{ fontSize: 12, color: C.textSub }}>{c.numero}{c.local ? ` · ${c.local}` : ""}</div></div>
-                <span style={s.tag(FASE[faseDe(c)][1])}>{FASE[faseDe(c)][0]}</span>{c.tipo === "armazenagem" && <span style={{ ...s.tag(C.accent), marginLeft: 4 }} title="Contrato de armazenagem — área no pátio">📦 ARMAZENAGEM</span>}{c.medicao_auto && c.status === "ativo" && <span style={{ ...s.tag(C.success), marginLeft: 4 }} title={`A medição vai sozinha ${c.medicao_auto_dias || 1} dia(s) depois do fim do ciclo`}>📤 ENVIO AUTOMÁTICO</span>}
+                <span style={s.tag(FASE[faseDe(c)][1])}>{FASE[faseDe(c)][0]}</span>
               </div>
               <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>{dataBR(c.inicio)} → {c.status === "ativo" ? (c.fim_previsto ? dataBR(c.fim_previsto) : "sem prazo") : dataBR(c.fim_real)}</div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
-                <span style={s.tag(C.accent)}>🚜 {c.ativos} equipamento(s)</span>
+                {c.tipo === "armazenagem" ? <span style={s.tag(C.accent)} title="Contrato de armazenagem — área no pátio">📦 ARMAZENAGEM</span> : <span style={s.tag(C.accent)}>🚜 {c.ativos} equipamento(s)</span>}{/* 18zc.2: selos na linha de baixo */}
                 <span style={s.tag(c.acessos.length ? C.violet || "#a855f7" : C.muted)}>👤 {c.acessos.length} acesso(s)</span>
+                {c.medicao_auto && c.status === "ativo" && <span style={s.tag(C.success)} title={`A medição vai sozinha ${c.medicao_auto_dias || 1} dia(s) depois do fim do ciclo`}>📤 envio automático</span>}
                 {c.atrasadas > 0 && <span style={s.tag(C.danger)}>⚠ {c.atrasadas} inspeção(ões) atrasada(s)</span>}
               </div>
             </div>
@@ -304,7 +305,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
           <button type="button" onClick={() => setAcesso(null)} style={{ ...s.btn(false), cursor: "pointer", flex: 1, color: C.text }}>Cancelar</button>
           <button type="button" disabled={ocupado || !acesso.email.trim()} onClick={async () => {
-            const r = await acao(() => apiService.post(`/contratos/${aberto.id}/acessos`, acesso), (x) => (x.novo ? `Acesso criado: ${x.usuario.email}` : `${x.usuario.email} agora também vê ${aberto.numero}.`));
+            const r = await acao(() => apiService.post(`/contratos/${aberto.id}/acessos`, acesso), (x) => `${x.novo ? `Acesso criado: ${x.usuario.email}` : `${x.usuario.email} agora também vê ${aberto.numero}.`}${x.email_aceite ? " Recebeu o e-mail pedindo o aceite do contrato." : ""}`);
             if (r) setAcesso(null);
           }} style={{ ...s.btn(!ocupado && !!acesso.email.trim(), C.accent), flex: 1 }}>Salvar acesso</button>
         </div>

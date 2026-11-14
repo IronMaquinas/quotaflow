@@ -235,7 +235,8 @@ async function emitir(supabase, tenantId, quem, id, { forcar = false } = {}) {
   const { data, error } = await supabase.from('locacao_contratos').update({ emitido_texto: p.texto, emitido_tabela: p.tabela, emitido_em: agora, emitido_por_nome: quem.usuarioNome || null, emitido_hash: hash,
     emitido_versao: (k.emitido_versao || 0) + 1, aceite_nome: null, aceite_usuario_id: null, aceite_em: null, aceite_png: null, aceite_hash: null }).eq('id', k.id).eq('tenant_id', tenantId).select();
   if (error) throw new Error(error.message);
-  return { ok: true, versao: data[0].emitido_versao, hash };
+  const emails = await require('./medicoes').avisarAceite(supabase, tenantId, data[0]).catch(() => 0); // 18zc.2: e-mail aos acessos do locatário
+  return { ok: true, versao: data[0].emitido_versao, hash, emails_aceite: emails };
 }
 /** 14d.2: o cliente assinou no PAPEL (sem acesso ao sistema) — a empresa registra; vale como aceite da versão emitida */
 async function aceitePapel(supabase, tenantId, quem, id, { data, obs } = {}) {

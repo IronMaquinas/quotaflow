@@ -234,7 +234,9 @@ async function criarAcesso(supabase, tenantId, id, body = {}) {
   }
   const ja = (await q(supabase.from('locacao_contrato_usuarios').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id).eq('usuario_id', u.id)))[0];
   if (!ja) { const { error } = await supabase.from('locacao_contrato_usuarios').insert([{ tenant_id: tenantId, contrato_id: c.id, usuario_id: u.id }]); if (error) throw new Error(error.message); }
-  return { ok: true, usuario: { usuario_id: u.id, nome: u.nome, email: u.email }, novo };
+  // 18zc.2: contrato já emitido e sem aceite → o novo acesso recebe o e-mail pedindo o aceite
+  const aceite = c.emitido_hash && !c.aceite_em ? await require('./medicoes').avisarAceite(supabase, tenantId, c, { so: u.id }).catch(() => 0) : 0;
+  return { ok: true, usuario: { usuario_id: u.id, nome: u.nome, email: u.email }, novo, email_aceite: aceite > 0 };
 }
 async function removerAcesso(supabase, tenantId, id, usuarioId) {
   const c = await doTenant(supabase, tenantId, id); if (!c) return { status: 404, erro: 'Contrato não encontrado' };
