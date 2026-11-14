@@ -405,6 +405,7 @@ Ver seção 5 para o fluxo completo.
 - **081 (18z)** — 📦 `patio_bens` (propriedade do cliente no pátio: PAT-AAAA-NNNN, cliente, equipamento, **nº de série da plaqueta** — único por empresa enquanto está no pátio, sem diferenciar maiúscula —, NF de entrada, local, quem recebeu, fotos de entrada/saída, saída com quem liberou/retirou, documento, placa, NF de saída e AT). Idempotente.
 - **082 (18z.1)** — 📦 pátio: status `pre_entrada` (lançada pelo XML, aguardando chegada); nº de série e data de entrada podem ficar em branco na pré; colunas emitente da NF, item da NF, chegada prevista, quem lançou; série única entre pré-entradas + no pátio. Idempotente.
 - **083 (18z.5)** — 📦 `patio_bens.area_m2` (área ocupada no pátio, para cobrança por m²·dia). Idempotente.
+- **084 (18z.6)** — 🏗 `patio_areas` (áreas de armazenagem: nome, área útil m², coberta, ativo) + `patio_bens.area_id` e `patio_bens.cliente_documento` (CNPJ/CPF do cliente). Idempotente.
 - **058 (16e.3)** — `tenants (+) base_endereco` (📍 pátio / base da frota — onde o conjunto é liberado; pode ser diferente do endereço fiscal). Idempotente.
 - **057 (16e)** — `execucoes (+) fluxo` (etapas da viagem em ordem: marcações e inspeções, com status, hora, GPS, inspeção feita e liberação do gestor) e `inspecoes (+) execucao_id, etapa_id` (a inspeção feita no fluxo aponta para a AT). Idempotente.
 - **056 (16c)** — `execucoes.status (+) 'rascunho'` (cavalo pode ficar vazio no rascunho), `execucoes (+) token, link_visto_em` (📲 link do motorista) e `liberacao_docs` (CNH/CRLV vencido na data da viagem liberado pelo gestor). Idempotente.
@@ -1006,6 +1007,14 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18z.6 (13/11):** 📦 **Pátio — áreas de armazenagem, ocupação e CNPJ.** Migration 084.
+    - **🏗 Áreas de armazenagem** (botão ⚙ Áreas): nome, **área útil m²** (sem corredor de manobra), coberta/descoberta (toggle), observação; editar; desativar com confirmação (bloqueado se há equipamento nela). Aceita "1.200" e "37,5" no jeito brasileiro.
+    - **Ocupação do pátio** no painel: % geral, **m² livres** de m² úteis, barra por área (verde < 75%, laranja ≥ 75%, vermelho ≥ 90%), equipamentos e livres por área; avisa equipamentos **sem m²** ("a ocupação real é maior") e **fora das áreas cadastradas**.
+    - **Cabe?** — consulta do gestor: "3 equipamentos de 20 m²" → em quais áreas cabe e quanto sobra, ou quanto falta.
+    - **Sem nenhuma área cadastrada:** alerta discreto (borda tracejada) — o espaço não está sendo medido e aceitar mais equipamentos é um risco de compromisso; botão Cadastrar áreas. A área é **opcional** na entrada.
+    - **Entrada, chegada e ✎ alterar:** escolha da **área** (mostra m² livres) + **vaga/posição** em texto.
+    - **CNPJ/CPF do cliente** na ficha e no comprovante (do cadastro; para cliente não cadastrado, campo na entrada; na pré-entrada pelo XML vem do destinatário da NF). Comprovante mostra também o **CNPJ do emitente** da NF e a área.
+    - Dados prontos para o bloco 5 (IA): ocupação, espaço ocioso e m²·dia por cliente.
   - **18z.5 (13/11):** 📦 **Pátio — comprovante, ficha de movimentação e área (m²).** Migration 083.
     - **Ficha do equipamento:** bloco **🧾 Nota fiscal de entrada** sempre visível (nº, data, emitente + CNPJ, item, chave completa — ou "Entrada sem nota fiscal informada"); Fabricante · Modelo · Ano numa linha; **Local / área** com ✎ alterar.
     - **🖨 Comprovante de entrada** (e **de saída**, quando saiu) em PDF A4 no layout padrão: empresa, cliente proprietário, equipamento e série, NF, entrada (data, quem recebeu, local, área, observação), saída (quem liberou/retirou, documento, placa, NF, permanência), fotos, declaração ("bem de terceiro em guarda — não integra o estoque da empresa") e assinaturas.
@@ -1666,7 +1675,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18z.5)
+**Última atualização deste documento:** 06/11/2026 (etapa 18z.6)
 
 --------------------------------------------------------------------------------
 

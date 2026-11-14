@@ -7,6 +7,7 @@ import apiService from "../../services/apiService";
 import { fotoComTarja } from "../ocorrencias/RegistrarOcorrencia";
 import VerArquivo from "../programacao/VerArquivo";
 import { LeitorCodigoBarras } from "../LeitorCodigoBarras";
+import { Toggle } from "../../plataforma/ModulosPlataforma";
 import { abrirComprovantePatio, abrirMovimentacaoPatio, csvMovimentacaoPatio } from "../../utils/gerarComprovantePatio";
 
 const hoje = () => new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
@@ -26,6 +27,9 @@ export default function TelaPatio({ C, s, usuario }) {
   const [fotosPend, setFotosPend] = useState([]); const [confFoto, setConfFoto] = useState(null); // fotos tiradas antes de salvar (entrada/chegada) — sobem com a tarja depois de salvar
   const [aba, setAba] = useState("itens"); const [mov, setMov] = useState(null); const [fMov, setFMov] = useState(() => ({ cliente: "", de: `${hoje().slice(0, 7)}-01`, ate: hoje() }));
   const [edLocal, setEdLocal] = useState(null);
+  const [gerAreas, setGerAreas] = useState(null); const [edArea, setEdArea] = useState(null); const [confDesativar, setConfDesativar] = useState(null); const [cabe, setCabe] = useState({ qtd: "1", m2: "" });
+  const salvarArea = async () => { setSalv(true); try { const { id, ...corpo } = edArea; if (id) await apiService.put(`/patio/areas/${id}`, corpo); else await apiService.post("/patio/areas", corpo); setEdArea(null); ok(`✓ Área ${id ? "atualizada" : "cadastrada"}`); carregar(); } catch (e) { setErro(e.message); } finally { setSalv(false); } };
+  const desativarArea = async () => { setSalv(true); try { await apiService.put(`/patio/areas/${confDesativar.id}`, { ativo: false }); setConfDesativar(null); ok("✓ Área desativada"); carregar(); } catch (e) { setErro(e.message); setConfDesativar(null); } finally { setSalv(false); } };
   const carregarMov = (f = fMov) => apiService.get("/patio/movimentacao", f).then((r) => { setMov(r); setErro(null); }).catch((e) => setErro(e.message));
   useEffect(() => { if (aba === "mov") carregarMov(); }, [aba, fMov]); // eslint-disable-line
   const baixarCsv = () => { const blob = new Blob([csvMovimentacaoPatio(mov)], { type: "text/csv;charset=utf-8" }); const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = `movimentacao-patio-${mov.de}-a-${mov.ate}${mov.cliente ? `-${mov.cliente.replace(/\W+/g, "-")}` : ""}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 1000); };
@@ -114,6 +118,16 @@ export default function TelaPatio({ C, s, usuario }) {
   const titulo = (t, fechar) => <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 12 }}><div style={{ fontWeight: 700, fontSize: 16, flex: 1 }}>{t}</div>{fechar && <button type="button" onClick={fechar} aria-label="Fechar" style={{ background: "none", border: "none", color: C.muted, fontSize: 22, cursor: "pointer", padding: 4 }}>✕</button>}</div>;
   const campo = (st, setSt, k, rot, props = {}) => <div style={props.full ? { gridColumn: "1 / -1" } : undefined}><label style={lab}>{rot}</label><input value={st[k] || ""} onChange={(e) => setSt({ ...st, [k]: e.target.value })} style={inp} {...(props.type ? { type: props.type } : {})} {...(props.ph ? { placeholder: props.ph } : {})} {...(props.max ? { max: props.max } : {})} {...(props.im ? { inputMode: props.im } : {})} /></div>;
   const kpi = (rot, val, sub, cor, onClick) => <div onClick={onClick} role={onClick ? "button" : undefined} style={{ ...s.card, padding: "12px 16px", flex: estreito ? "1 1 140px" : "1 1 180px", cursor: onClick ? "pointer" : undefined }}><div style={{ fontSize: 11, color: C.muted, letterSpacing: "0.06em" }}>{rot}</div><div style={{ fontSize: 24, fontWeight: 800, color: cor || C.text }}>{val}</div>{sub && <div style={{ fontSize: 12, color: C.textSub }}>{sub}</div>}</div>;
+  const areasCad = d?.ocupacao?.areas || []; const nomeArea = (id) => areasCad.find((a) => String(a.id) === String(id))?.nome;
+  const m2 = (v) => Number(v || 0).toLocaleString("pt-BR", { maximumFractionDigits: 2 });
+  const corPct = (p) => (p >= 90 ? C.danger : p >= 75 ? (C.warn || "#f59e0b") : C.success);
+  const barra = (p) => <div style={{ height: 8, borderRadius: 4, background: C.border, overflow: "hidden" }}><div style={{ width: `${Math.min(100, p)}%`, height: "100%", background: corPct(p) }} /></div>;
+  const selArea = (st, setSt, rot = "ÁREA DE ARMAZENAGEM (OPCIONAL)") => <div><label style={lab}>{rot}</label>
+    {areasCad.length ? <select value={st.area_id || ""} onChange={(e) => setSt({ ...st, area_id: e.target.value })} style={inp}><option value="">— fora das áreas cadastradas —</option>{areasCad.map((a) => <option key={a.id} value={a.id}>{a.nome} — {m2(a.livre_m2)} m² livres</option>)}</select>
+      : <div style={{ fontSize: 12, color: C.muted, padding: "10px 0" }}>Nenhuma área cadastrada — <button type="button" onClick={() => setGerAreas(true)} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", padding: 0, fontSize: 12 }}>cadastrar</button></div>}</div>;
+  // "Cabe?": quantos m² o pedido do cliente precisa × espaço livre por área
+  const numBR = (v) => { let x = String(v || "").trim(); if (x.includes(",")) x = x.replace(/\./g, "").replace(",", "."); else if (/^\d{1,3}(\.\d{3})+$/.test(x)) x = x.replace(/\./g, ""); return Number(x) || 0; };
+  const precisa = numBR(cabe.qtd) * numBR(cabe.m2);
   const thumb = { width: estreito ? 84 : 92, height: estreito ? 64 : 70, objectFit: "cover", borderRadius: 6, border: `1px solid ${C.border}` };
   const botaoFoto = (rot, onFiles, desab) => <label style={{ ...btnG(false), cursor: desab ? "wait" : "pointer", display: "inline-flex", alignItems: "center" }}>{rot}<input type="file" accept="image/jpeg,image/png" multiple capture="environment" disabled={desab} onChange={(e) => { const l = Array.from(e.target.files || []); e.target.value = ""; onFiles(l); }} style={{ display: "none" }} /></label>;
   // fotos antes de salvar
@@ -180,6 +194,27 @@ export default function TelaPatio({ C, s, usuario }) {
         {kpi("SAÍRAM (30 DIAS)", d.saidas_30d)}
         {d.clientes[0] && kpi("HÁ MAIS TEMPO", `${d.clientes.reduce((m, c) => Math.max(m, c.dias_mais_antigo), 0)} dias`, d.clientes.slice().sort((a, b) => b.dias_mais_antigo - a.dias_mais_antigo)[0].cliente, d.clientes.some((c) => c.dias_mais_antigo > 90) ? (C.warn || "#f59e0b") : C.text)}
       </div>
+      {d.ocupacao && !d.ocupacao.sem_migration && (areasCad.length === 0
+        ? <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", fontSize: 12.5, color: C.warn || "#f59e0b", border: `1px dashed ${C.warn || "#f59e0b"}`, borderRadius: 8, padding: "8px 12px", marginBottom: 12 }}>
+            <span style={{ flex: 1, minWidth: 220 }}>⚠ Nenhuma área de armazenagem cadastrada — o espaço do pátio não está sendo medido. Aceitar mais equipamentos sem saber quanto cabe é um risco de compromisso que não dá para cumprir.</span>
+            <button type="button" onClick={() => setGerAreas(true)} style={{ ...s.btn(false), padding: "6px 12px", fontSize: 12 }}>Cadastrar áreas</button></div>
+        : <div style={{ ...s.card, padding: 14, marginBottom: 12 }}>
+            <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap", marginBottom: 8 }}>
+              <div style={{ fontWeight: 700 }}>🏗 Ocupação do pátio</div>
+              <div style={{ fontSize: 22, fontWeight: 800, color: corPct(d.ocupacao.pct) }}>{d.ocupacao.pct.toLocaleString("pt-BR")}%</div>
+              <div style={{ fontSize: 13, color: C.textSub, flex: 1 }}><b>{m2(d.ocupacao.livre_m2)} m² livres</b> de {m2(d.ocupacao.total_util_m2)} m² úteis</div>
+              <button type="button" onClick={() => setGerAreas(true)} style={{ ...s.btn(false), padding: "6px 12px", fontSize: 12 }}>⚙ Áreas</button></div>
+            <div style={{ display: "grid", gridTemplateColumns: estreito ? "1fr" : "repeat(auto-fill, minmax(230px, 1fr))", gap: 10 }}>
+              {areasCad.map((a) => <div key={a.id}><div style={{ display: "flex", fontSize: 12.5, marginBottom: 3 }}><span style={{ flex: 1 }}>{a.coberta ? "🏠" : "☀️"} {a.nome}</span><b style={{ color: corPct(a.pct) }}>{a.pct.toLocaleString("pt-BR")}%</b></div>{barra(a.pct)}
+                <div style={{ fontSize: 11.5, color: C.muted, marginTop: 3 }}>{m2(a.livre_m2)} m² livres · {a.equipamentos} equip.{a.sem_medida ? <span style={{ color: C.warn || "#f59e0b" }}> · {a.sem_medida} sem m²</span> : ""}</div></div>)}</div>
+            {(d.ocupacao.sem_medida > 0 || d.ocupacao.fora_das_areas > 0) && <div style={{ fontSize: 12, color: C.warn || "#f59e0b", marginTop: 8 }}>{[d.ocupacao.sem_medida > 0 && `${d.ocupacao.sem_medida} equipamento(s) no pátio sem m² informado — a ocupação real é maior`, d.ocupacao.fora_das_areas > 0 && `${d.ocupacao.fora_das_areas} fora das áreas cadastradas${d.ocupacao.fora_m2 ? ` (${m2(d.ocupacao.fora_m2)} m²)` : ""}`].filter(Boolean).join(" · ")}</div>}
+            <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginTop: 10, paddingTop: 10, borderTop: `1px solid ${C.border}`, fontSize: 13 }}>
+              <b>Cabe?</b><input value={cabe.qtd} inputMode="numeric" onChange={(e) => setCabe({ ...cabe, qtd: e.target.value })} aria-label="Quantidade de equipamentos" style={{ ...inp, width: 64, marginBottom: 0 }} /> equipamento(s) de
+              <input value={cabe.m2} inputMode="decimal" onChange={(e) => setCabe({ ...cabe, m2: e.target.value })} placeholder="m²" aria-label="m² de cada equipamento" style={{ ...inp, width: 80, marginBottom: 0 }} /> m² cada
+              {precisa > 0 && (() => { const cabem = areasCad.filter((a) => a.livre_m2 >= precisa); const ok2 = d.ocupacao.livre_m2 >= precisa;
+                return <span style={{ flexBasis: estreito ? "100%" : undefined, color: cabem.length ? C.success : ok2 ? (C.warn || "#f59e0b") : C.danger }}>= {m2(precisa)} m² → {cabem.length ? `cabe em ${cabem.map((a) => `${a.nome} (sobram ${m2(a.livre_m2 - precisa)} m²)`).join(", ")}` : ok2 ? `não cabe numa área só; somando todas sobram ${m2(d.ocupacao.livre_m2 - precisa)} m²` : `não cabe — faltam ${m2(precisa - d.ocupacao.livre_m2)} m²`}{d.ocupacao.sem_medida ? " (há equipamentos sem m² — confira no pátio)" : ""}</span>; })()}
+            </div>
+          </div>)}
       {d.clientes.length > 0 && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
         <span style={{ fontSize: 12, color: C.muted, alignSelf: "center" }}>Saldo por cliente:</span>
         {d.clientes.map((c) => <button key={c.cliente} type="button" aria-pressed={cliente === c.cliente} onClick={() => setCliente(cliente === c.cliente ? "" : c.cliente)} style={{ ...s.btn(cliente === c.cliente), padding: "6px 10px", fontSize: 12 }}>{c.cliente} · {c.qtd}</button>)}
@@ -194,7 +229,7 @@ export default function TelaPatio({ C, s, usuario }) {
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ fontSize: 11.5, fontFamily: "ui-monospace, monospace", color: C.accent }}>{b.numero}</div>
               <div style={{ fontWeight: 700 }}>{b.descricao}{b.modelo ? ` · ${b.modelo}` : ""}</div>
-              <div style={{ fontSize: 12.5, color: C.textSub }}>{b.numero_serie ? <>Série <b style={{ fontFamily: "ui-monospace, monospace" }}>{b.numero_serie}</b></> : <span style={{ color: C.warn || "#f59e0b" }}>série a conferir</span>} · 🏢 {b.cliente_nome}{b.local_patio ? ` · 📍 ${b.local_patio}` : ""}{b.nf_entrada_numero ? ` · NF ${b.nf_entrada_numero}` : ""}</div>
+              <div style={{ fontSize: 12.5, color: C.textSub }}>{b.numero_serie ? <>Série <b style={{ fontFamily: "ui-monospace, monospace" }}>{b.numero_serie}</b></> : <span style={{ color: C.warn || "#f59e0b" }}>série a conferir</span>} · 🏢 {b.cliente_nome}{b.area_id || b.local_patio ? ` · 📍 ${[nomeArea(b.area_id), b.local_patio].filter(Boolean).join(" · ")}` : ""}{b.nf_entrada_numero ? ` · NF ${b.nf_entrada_numero}` : ""}</div>
             </div>
             <div style={{ textAlign: estreito ? "left" : "right", fontSize: 12.5 }}>{tagStatus(b)}
               <div style={{ color: C.muted, marginTop: 4 }}>{b.status === "pre_entrada" ? `lançada por ${b.pre_por || "—"}` : b.status === "no_patio" ? `entrou ${dBR(b.entrada_em)}` : b.retirado_por}</div></div>
@@ -260,7 +295,7 @@ export default function TelaPatio({ C, s, usuario }) {
           </div>
           <div style={{ gridColumn: "1 / -1" }}><label style={lab}>CLIENTE DONO DO EQUIPAMENTO</label>
             <select value={form.cliente_id} onChange={(e) => setForm({ ...form, cliente_id: e.target.value, cliente_nome: e.target.value ? "" : form.cliente_nome })} style={inp}><option value="">— outro (digite abaixo) —</option>{clientes.map((c) => <option key={c.id} value={c.id}>{c.nome}{c.documento ? ` · ${c.documento}` : ""}</option>)}</select>
-            {!form.cliente_id && <input value={form.cliente_nome} onChange={(e) => setForm({ ...form, cliente_nome: e.target.value })} placeholder="Nome do cliente (não cadastrado)" style={inp} />}</div>
+            {!form.cliente_id && <div style={{ display: "grid", gridTemplateColumns: estreito ? "1fr" : "2fr 1fr", gap: "0 12px" }}><input value={form.cliente_nome} onChange={(e) => setForm({ ...form, cliente_nome: e.target.value })} placeholder="Nome do cliente (não cadastrado)" style={inp} /><input value={form.cliente_documento || ""} inputMode="numeric" onChange={(e) => setForm({ ...form, cliente_documento: e.target.value })} placeholder="CNPJ / CPF do cliente" style={inp} /></div>}</div>
           {secao("🚜 Equipamento")}
           {campo(form, setForm, "descricao", "EQUIPAMENTO", { full: true, ph: "ex.: Escavadeira hidráulica" })}
           {campo(form, setForm, "numero_serie", "Nº DE SÉRIE (PLAQUETA)", { ph: "o que está na plaqueta" })}
@@ -268,7 +303,7 @@ export default function TelaPatio({ C, s, usuario }) {
           <div style={{ gridColumn: "1 / -1", display: "grid", gridTemplateColumns: estreito ? "1fr 1fr 0.7fr" : "2fr 2fr 1fr", gap: "2px 12px" }}>
             {campo(form, setForm, "fabricante", "FABRICANTE")}{campo(form, setForm, "modelo", "MODELO")}{campo(form, setForm, "ano", "ANO (OPCIONAL)", { im: "numeric", ph: "ex.: 2024" })}</div>
           {secao("📍 Chegada")}
-          {campo(form, setForm, "local_patio", "LOCAL NO PÁTIO", { ph: "ex.: Galpão 2 · vaga 14" })}{campo(form, setForm, "entrada_em", "DATA DA ENTRADA", { type: "date", max: hoje() })}
+          {selArea(form, setForm)}{campo(form, setForm, "local_patio", "VAGA / POSIÇÃO", { ph: "ex.: vaga 14, fila B" })}{campo(form, setForm, "entrada_em", "DATA DA ENTRADA", { type: "date", max: hoje() })}
           {campo(form, setForm, "recebido_por", "RECEBIDO POR")}{campo(form, setForm, "area_m2", "ÁREA OCUPADA m² (OPCIONAL)", { im: "decimal", ph: "para cobrar por m²" })}
           <FotosPendentes />
           {campo(form, setForm, "obs", "OBSERVAÇÃO (AVARIAS NA CHEGADA, ACESSÓRIOS…)", { full: true })}
@@ -287,12 +322,12 @@ export default function TelaPatio({ C, s, usuario }) {
               <button type="button" onClick={() => setDet(null)} aria-label="Fechar" style={{ background: "none", border: "none", color: C.muted, fontSize: 22, cursor: "pointer", padding: 4 }}>✕</button></div>
             {b.status === "pre_entrada" && <div style={{ ...s.card, padding: 10, marginTop: 10, borderColor: C.warn || "#f59e0b", fontSize: 13 }}>Pré-entrada lançada por <b>{b.pre_por || "—"}</b>{b.pre_em ? ` em ${dBR(b.pre_em)}` : ""}. Quando a máquina chegar: <b>confira a plaqueta</b>, diga o local e tire as fotos.</div>}
             <div style={{ fontWeight: 700, margin: "14px 0 4px" }}>📥 Entrada</div>
-            {linha("Cliente (dono)", b.cliente_nome)}{linha("Nº de série (plaqueta)", b.numero_serie ? <b style={{ fontFamily: "ui-monospace, monospace" }}>{b.numero_serie}</b> : <span style={{ color: C.warn || "#f59e0b" }}>a conferir na chegada</span>)}{linha("Outra identificação", b.identificacao)}
+            {linha("Cliente (dono)", <span>{b.cliente_nome}{b.cliente_documento ? <span style={{ color: C.textSub }}> · CNPJ/CPF {b.cliente_documento}</span> : <span style={{ color: C.warn || "#f59e0b" }}> · sem CNPJ</span>}</span>)}{linha("Nº de série (plaqueta)", b.numero_serie ? <b style={{ fontFamily: "ui-monospace, monospace" }}>{b.numero_serie}</b> : <span style={{ color: C.warn || "#f59e0b" }}>a conferir na chegada</span>)}{linha("Outra identificação", b.identificacao)}
             {linha("Fabricante / modelo / ano", [b.fabricante, b.modelo, b.ano].filter(Boolean).join(" · "))}
             {b.entrada_em && linha("Entrou em", `${dBR(b.entrada_em)}${b.recebido_por ? ` · recebido por ${b.recebido_por}` : ""}`)}
-            {edLocal ? <div style={{ ...grid2, padding: "6px 0", borderTop: `1px solid ${C.border}` }}>{campo(edLocal, setEdLocal, "local_patio", b.status === "pre_entrada" ? "LOCAL PREVISTO" : "LOCAL NO PÁTIO")}{campo(edLocal, setEdLocal, "area_m2", "ÁREA OCUPADA (m²)", { im: "decimal" })}
+            {edLocal ? <div style={{ ...grid2, padding: "6px 0", borderTop: `1px solid ${C.border}` }}>{selArea(edLocal, setEdLocal)}{campo(edLocal, setEdLocal, "local_patio", "VAGA / POSIÇÃO")}{campo(edLocal, setEdLocal, "area_m2", "ÁREA OCUPADA PELO EQUIPAMENTO (m²)", { im: "decimal" })}
               <div style={{ gridColumn: "1 / -1", display: "flex", gap: 8, justifyContent: "flex-end" }}><button type="button" onClick={() => setEdLocal(null)} style={btnG(false)}>Cancelar</button><button type="button" disabled={salv} onClick={salvarLocal} style={btnG(true)}>Salvar</button></div></div>
-              : linha(b.status === "pre_entrada" ? "Local previsto / área" : "Local no pátio / área", <span>{[b.local_patio || "local não informado", b.area_m2 != null ? `${Number(b.area_m2).toLocaleString("pt-BR")} m²` : "área não informada"].join(" · ")}{b.status !== "saiu" && <button type="button" onClick={() => setEdLocal({ local_patio: b.local_patio || "", area_m2: b.area_m2 != null ? String(b.area_m2).replace(".", ",") : "" })} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 12.5, marginLeft: 6 }}>✎ alterar</button>}</span>)}
+              : linha(b.status === "pre_entrada" ? "Local previsto / m²" : "Local no pátio / m²", <span>{[[b.area?.nome, b.local_patio].filter(Boolean).join(" · ") || "local não informado", b.area_m2 != null ? `ocupa ${Number(b.area_m2).toLocaleString("pt-BR")} m²` : "m² não informado"].join(" · ")}{b.status !== "saiu" && <button type="button" onClick={() => setEdLocal({ area_id: b.area_id || "", local_patio: b.local_patio || "", area_m2: b.area_m2 != null ? String(b.area_m2).replace(".", ",") : "" })} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 12.5, marginLeft: 6 }}>✎ alterar</button>}</span>)}
             {linha("Observação", b.obs && <span style={{ whiteSpace: "pre-wrap" }}>{b.obs}</span>)}
             <div style={{ fontWeight: 700, margin: "14px 0 4px" }}>🧾 Nota fiscal de entrada</div>
             {b.nf_entrada_numero || b.nf_entrada_chave ? <>{linha("Número / data", [b.nf_entrada_numero ? `nº ${b.nf_entrada_numero}` : null, b.nf_entrada_data ? `emitida em ${dBR(b.nf_entrada_data)}` : null].filter(Boolean).join(" · ") || "—")}
@@ -310,7 +345,7 @@ export default function TelaPatio({ C, s, usuario }) {
               <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 8 }}><button type="button" onClick={() => setConfExcluir(false)} style={btnG(false)}>Voltar</button><button type="button" disabled={salv} onClick={excluirPre} style={{ ...btnG(true), background: C.danger, borderColor: C.danger }}>Excluir</button></div></div>}
             <div style={{ ...rodape, marginTop: 16 }}>
               {b.status === "pre_entrada" && !confExcluir && <><button type="button" onClick={() => setConfExcluir(true)} style={{ ...btnG(false), color: C.danger }}>🗑 Excluir pré-entrada</button>
-                <button type="button" onClick={() => { limparFotos(); setChegada({ numero_serie: b.numero_serie || "", local_patio: b.local_patio || "", entrada_em: hoje(), recebido_por: usuario?.nome || "", obs_chegada: "" }); }} style={btnG(true)}>✅ Confirmar chegada</button></>}
+                <button type="button" onClick={() => { limparFotos(); setChegada({ numero_serie: b.numero_serie || "", area_id: b.area_id || "", area_m2: b.area_m2 != null ? String(b.area_m2).replace(".", ",") : "", local_patio: b.local_patio || "", entrada_em: hoje(), recebido_por: usuario?.nome || "", obs_chegada: "" }); }} style={btnG(true)}>✅ Confirmar chegada</button></>}
               {b.status !== "pre_entrada" && <button type="button" onClick={() => imprimir(() => abrirComprovantePatio(b, "entrada"))} style={btnG(false)}>🖨 Comprovante de entrada</button>}
               {b.status === "saiu" && <button type="button" onClick={() => imprimir(() => abrirComprovantePatio(b, "saida"))} style={btnG(false)}>🖨 Comprovante de saída</button>}
               {b.status === "no_patio" && <button type="button" onClick={() => setSaida({ ...vazioSaida(), liberado_por: usuario?.nome || "" })} style={btnG(true)}>📤 Registrar saída</button>}
@@ -327,7 +362,7 @@ export default function TelaPatio({ C, s, usuario }) {
         <div style={grid2}>
           <div style={{ gridColumn: "1 / -1" }}><label style={lab}>Nº DE SÉRIE NA PLAQUETA</label><input value={chegada.numero_serie} onChange={(e) => setChegada({ ...chegada, numero_serie: e.target.value })} placeholder="o que está na plaqueta" style={{ ...inp, fontFamily: "ui-monospace, monospace", fontSize: 18 }} />
             {det.bem.numero_serie && chegada.numero_serie.trim() && chegada.numero_serie.trim().toUpperCase() !== det.bem.numero_serie && <div style={{ fontSize: 12, color: C.warn || "#f59e0b", marginTop: -2, marginBottom: 6 }}>⚠ Diferente da NF ({det.bem.numero_serie}) — anote na observação o motivo.</div>}</div>
-          {campo(chegada, setChegada, "local_patio", "LOCAL NO PÁTIO", { ph: "ex.: Galpão 2 · vaga 14" })}{campo(chegada, setChegada, "entrada_em", "DATA DA CHEGADA", { type: "date", max: hoje() })}
+          {selArea(chegada, setChegada)}{campo(chegada, setChegada, "local_patio", "VAGA / POSIÇÃO", { ph: "ex.: vaga 14, fila B" })}{campo(chegada, setChegada, "entrada_em", "DATA DA CHEGADA", { type: "date", max: hoje() })}
           <FotosPendentes />
           {campo(chegada, setChegada, "recebido_por", "RECEBIDO POR")}{campo(chegada, setChegada, "area_m2", "ÁREA OCUPADA m² (OPCIONAL)", { im: "decimal", ph: "para cobrar por m²" })}
           {campo(chegada, setChegada, "obs_chegada", "OBSERVAÇÃO DA CHEGADA (AVARIAS, ACESSÓRIOS…)", { full: true })}
@@ -360,6 +395,30 @@ export default function TelaPatio({ C, s, usuario }) {
         <div style={{ fontSize: 12.5, color: C.textSub, margin: "8px 0 14px" }}>Ela ainda não foi salva — se excluir, terá que tirar de novo.</div>
         <div style={{ display: "flex", gap: 10 }}><button type="button" onClick={() => setConfFoto(null)} style={{ ...btnG(false), flex: 1, padding: "12px 16px" }}>Cancelar</button>
           <button type="button" onClick={() => { setFotosPend((l) => l.filter((x) => x.url !== confFoto.url)); setConfFoto(null); }} style={{ ...btnG(true), flex: 1, padding: "12px 16px", background: C.danger, borderColor: C.danger }}>Excluir</button></div>
+      </div></div>}
+    {gerAreas && <div {...fundo(1050, () => !salv && !edArea && setGerAreas(null))}>
+      <div onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Áreas de armazenagem" style={caixa(620)}>
+        {titulo("🏗 Áreas de armazenagem", () => !salv && (setEdArea(null), setGerAreas(null)))}
+        <div style={{ fontSize: 12.5, color: C.textSub, marginBottom: 12 }}>Informe a <b>área útil</b> — o que dá para armazenar, sem os corredores de manobra. A ocupação soma os m² dos equipamentos que estão em cada área.</div>
+        {areasCad.map((a) => <div key={a.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 0", borderTop: `1px solid ${C.border}`, flexWrap: "wrap" }}>
+          <div style={{ flex: 1, minWidth: 180 }}><div style={{ fontWeight: 700 }}>{a.coberta ? "🏠" : "☀️"} {a.nome}</div><div style={{ fontSize: 12, color: C.muted }}>{m2(a.area_util_m2)} m² úteis · {a.coberta ? "coberta" : "descoberta"} · {a.pct.toLocaleString("pt-BR")}% ocupada{a.obs ? ` · ${a.obs}` : ""}</div></div>
+          <button type="button" onClick={() => setEdArea({ id: a.id, nome: a.nome, area_util_m2: String(a.area_util_m2).replace(".", ","), coberta: a.coberta, obs: a.obs || "" })} style={{ ...s.btn(false), padding: "7px 12px", fontSize: 12.5 }}>✎ Editar</button>
+          <button type="button" onClick={() => setConfDesativar(a)} style={{ ...s.btn(false), padding: "7px 12px", fontSize: 12.5, color: C.danger }}>Desativar</button></div>)}
+        {!areasCad.length && !edArea && <div style={{ fontSize: 13, color: C.muted, padding: "8px 0" }}>Nenhuma área cadastrada ainda.</div>}
+        {edArea ? <div style={{ ...s.card, padding: 12, marginTop: 10 }}>
+          <div style={{ fontWeight: 700, marginBottom: 8 }}>{edArea.id ? "Editar área" : "Nova área"}</div>
+          <div style={grid2}>{campo(edArea, setEdArea, "nome", "NOME", { ph: "ex.: Galpão 1, Pátio externo" })}{campo(edArea, setEdArea, "area_util_m2", "ÁREA ÚTIL (m²)", { im: "decimal", ph: "ex.: 1.200" })}
+            <div style={{ display: "flex", gap: 10, alignItems: "center", padding: "6px 0 10px" }}><Toggle C={C} ligado={!!edArea.coberta} onChange={(v) => setEdArea({ ...edArea, coberta: v })} rotulo="Coberta" /><span style={{ fontSize: 13 }}>{edArea.coberta ? "Coberta" : "Descoberta"}</span></div>
+            {campo(edArea, setEdArea, "obs", "OBSERVAÇÃO", { ph: "opcional" })}</div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button type="button" disabled={salv} onClick={() => setEdArea(null)} style={btnG(false)}>Cancelar</button><button type="button" disabled={salv || !String(edArea.nome || "").trim() || !String(edArea.area_util_m2 || "").trim()} onClick={salvarArea} style={btnG(true)}>{salv ? "Salvando…" : "Salvar área"}</button></div>
+        </div> : <div style={rodape}><button type="button" onClick={() => setEdArea({ nome: "", area_util_m2: "", coberta: false, obs: "" })} style={btnG(true)}>＋ Nova área</button></div>}
+        {estreito && !edArea && <div style={{ height: 8 }} />}
+      </div></div>}
+    {confDesativar && <div onClick={() => setConfDesativar(null)} style={{ position: "fixed", inset: 0, background: "#000000aa", zIndex: 1250, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+      <div onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Desativar área" style={{ ...s.card, width: 380, maxWidth: "100%", padding: 20, textAlign: "center" }}>
+        <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 8 }}>Desativar "{confDesativar.nome}"?</div>
+        <div style={{ fontSize: 12.5, color: C.textSub, marginBottom: 14 }}>Ela sai da ocupação e da escolha de local. Só dá para desativar se não houver equipamento nela.</div>
+        <div style={{ display: "flex", gap: 10 }}><button type="button" onClick={() => setConfDesativar(null)} style={{ ...btnG(false), flex: 1 }}>Cancelar</button><button type="button" disabled={salv} onClick={desativarArea} style={{ ...btnG(true), flex: 1, background: C.danger, borderColor: C.danger }}>Desativar</button></div>
       </div></div>}
     {ver && <VerArquivo C={C} s={s} arquivo={ver} z={1200} onFechar={() => setVer(null)} />}
   </div>;

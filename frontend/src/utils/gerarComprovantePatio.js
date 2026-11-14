@@ -1,4 +1,4 @@
-// frontend/src/utils/gerarComprovantePatio.js — etapa 18z.5: 📦 pátio — comprovante de entrada/saída e ficha de movimentação (A4, layout padrão) + CSV
+// frontend/src/utils/gerarComprovantePatio.js — etapas 18z.5/18z.6 (CNPJ do cliente e do emitente, área de armazenagem): 📦 pátio — comprovante de entrada/saída e ficha de movimentação (A4, layout padrão) + CSV
 import { logoHtml, dadosEmpresa } from "./logoEmpresa";
 
 const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
@@ -18,6 +18,7 @@ const topo = (titulo, sub) => { const e = dadosEmpresa(); return `<div class="to
   <div class="emp"><b>${esc(e.razao_social || e.nome || "")}</b>${e.cnpj ? `<br>CNPJ ${esc(e.cnpj)}` : ""}</div></div>`; };
 const pagina = (titulo, corpo) => `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>${esc(titulo)}</title><style>${CSS}</style></head><body><div class="pagina">${corpo}
   <div class="rodape">Emitido pelo QuotaFlow em ${new Date().toLocaleString("pt-BR")}.</div></div><script>window.onload=function(){setTimeout(function(){window.print()},500)}</script></body></html>`;
+const cnpjFmt = (v) => { const d = String(v || "").replace(/\D/g, ""); return d.length === 14 ? d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5") : d.length === 11 ? d.replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, "$1.$2.$3-$4") : v || ""; };
 const linhas = (pares) => `<table class="k">${pares.filter(([, v]) => v != null && v !== "").map(([r, v, cls]) => `<tr><th>${esc(r)}</th><td class="${cls || ""}">${esc(v)}</td></tr>`).join("")}</table>`;
 function abrir(html) { const w = window.open("", "_blank"); if (!w) throw new Error("O navegador bloqueou a janela. Libere pop-ups para este site e tente de novo."); w.document.open(); w.document.write(html); w.document.close(); }
 
@@ -26,10 +27,10 @@ export function htmlComprovantePatio(b, tipo = "entrada") {
   const saida = tipo === "saida"; const titulo = saida ? "Comprovante de saída do pátio" : "Comprovante de entrada no pátio";
   const fotos = (saida ? b.fotos_saida : b.fotos_entrada || []).filter((f) => f.url).slice(0, 8);
   const corpo = `${topo(titulo, `${esc(b.numero)} · bem de terceiro em guarda`)}
-  <h2>Cliente (proprietário)</h2>${linhas([["Cliente", b.cliente_nome]])}
+  <h2>Cliente (proprietário)</h2>${linhas([["Cliente", b.cliente_nome], ["CNPJ / CPF", b.cliente_documento ? cnpjFmt(b.cliente_documento) : "não informado"]])}
   <h2>Equipamento</h2>${linhas([["Descrição", b.descricao], ["Nº de série (plaqueta)", b.numero_serie, "mono"], ["Outra identificação", b.identificacao], ["Fabricante / modelo / ano", [b.fabricante, b.modelo, b.ano].filter(Boolean).join(" · ")]])}
-  <h2>Nota fiscal de entrada</h2>${b.nf_entrada_numero || b.nf_entrada_chave ? linhas([["Número", b.nf_entrada_numero], ["Data de emissão", b.nf_entrada_data ? dBR(b.nf_entrada_data) : ""], ["Emitente", b.nf_emitente_nome], ["Item da NF", b.nf_item], ["Chave de acesso", b.nf_entrada_chave, "mono"]]) : `<div class="nota">Entrada sem nota fiscal informada.</div>`}
-  <h2>Entrada</h2>${linhas([["Data da entrada", dBR(b.entrada_em)], ["Recebido por", b.recebido_por], ["Local no pátio", b.local_patio], ["Área ocupada", b.area_m2 != null ? `${num(b.area_m2, 2)} m²` : ""], ["Observação", b.obs]])}
+  <h2>Nota fiscal de entrada</h2>${b.nf_entrada_numero || b.nf_entrada_chave ? linhas([["Número", b.nf_entrada_numero], ["Data de emissão", b.nf_entrada_data ? dBR(b.nf_entrada_data) : ""], ["Emitente", [b.nf_emitente_nome, b.nf_emitente_cnpj && `CNPJ ${cnpjFmt(b.nf_emitente_cnpj)}`].filter(Boolean).join(" · ")], ["Item da NF", b.nf_item], ["Chave de acesso", b.nf_entrada_chave, "mono"]]) : `<div class="nota">Entrada sem nota fiscal informada.</div>`}
+  <h2>Entrada</h2>${linhas([["Data da entrada", dBR(b.entrada_em)], ["Recebido por", b.recebido_por], ["Local no pátio", [b.area?.nome, b.local_patio].filter(Boolean).join(" · ")], ["Área ocupada", b.area_m2 != null ? `${num(b.area_m2, 2)} m²` : ""], ["Observação", b.obs]])}
   ${saida ? `<h2>Saída</h2>${linhas([["Data da saída", dBR(b.saida_em)], ["Liberado por", b.liberado_por], ["Retirado por", b.retirado_por], ["Documento", b.retirado_documento], ["Placa", b.retirado_placa], ["NF de saída / remessa", b.nf_saida_numero], ["AT", b.at ? b.at.numero : ""], ["Permanência", `${b.dias_no_patio} dia(s)`], ["Observação", b.saida_obs]])}` : ""}
   ${fotos.length ? `<h2>Fotos ${saida ? "da retirada" : "da chegada"}</h2><div class="fotos">${fotos.map((f) => `<img src="${esc(f.url)}" alt="">`).join("")}</div>` : ""}
   <div class="nota">${saida ? "Declaro ter retirado o equipamento acima, conferido pelo nº de série da plaqueta, nas condições registradas." : "O equipamento acima, de propriedade do cliente, foi recebido em guarda no pátio e conferido pelo nº de série da plaqueta, nas condições registradas. Não integra o estoque da empresa."}</div>

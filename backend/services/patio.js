@@ -28,7 +28,15 @@ async function assinar(supabase, fotos) {
   return out;
 }
 const publico = (b, hoje = hojeBR()) => ({ ...b, dias_no_patio: b.entrada_em ? dias(b.entrada_em, b.status === 'saiu' && b.saida_em ? b.saida_em : hoje) : 0 });
-const area = (v) => { if (v === undefined) return undefined; if (v === null || String(v).trim() === '') return null; const n = Number(String(v).replace(',', '.')); return Number.isFinite(n) && n > 0 && n < 100000 ? Math.round(n * 100) / 100 : NaN; };
+// número no jeito brasileiro: "1.200" = mil e duzentos, "37,5" = 37.5, "1.200,50" = 1200.5
+const numBR = (v) => { let s = String(v).trim().replace(/\s|m²/g, ''); if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.'); else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, ''); return Number(s); };
+const area = (v) => { if (v === undefined) return undefined; if (v === null || String(v).trim() === '') return null; const n = typeof v === 'number' ? v : numBR(v); return Number.isFinite(n) && n > 0 && n < 100000 ? Math.round(n * 100) / 100 : NaN; };
+const docDe = (c) => String(c?.documento || c?.cnpj || '').trim() || null;
+async function areaValida(supabase, tenantId, v) {
+  if (v === undefined) return undefined; if (v === null || v === '') return null;
+  const a = (await q(supabase.from('patio_areas').select('*').eq('tenant_id', tenantId).eq('id', v)).catch(() => []))[0];
+  return a && a.ativo !== false ? a.id : NaN;
+}
 const ORD = { pre_entrada: 0, no_patio: 1, saiu: 2 };
 const ativo = (b) => b.status === 'no_patio' || b.status === 'pre_entrada';
 const NOME = { pre_entrada: 'tem pré-entrada aguardando chegada', no_patio: 'já está no pátio' };
@@ -42,7 +50,8 @@ async function listar(supabase, tenantId, { status = 'no_patio', busca = '', cli
     && (!b0 || [b.numero, b.numero_serie, b.identificacao, b.descricao, b.modelo, b.fabricante, b.cliente_nome, b.nf_entrada_numero, b.nf_entrada_chave, b.nf_emitente_nome, b.local_patio].some((x) => String(x || '').toLowerCase().includes(b0))))
     .sort((a, b) => (a.status === b.status ? String(b.entrada_em || b.previsto_em || '').localeCompare(String(a.entrada_em || a.previsto_em || '')) || String(b.numero).localeCompare(String(a.numero)) : ORD[a.status] - ORD[b.status]))
     .map((b) => publico(b, hoje));
-  return { bens: lista, total_no_patio: noPatio.length, total_pre_entrada: pre.length, pre_atrasadas: pre.filter((b) => b.previsto_em && b.previsto_em < hoje).length, clientes: [...porCliente.values()].map((c) => ({ ...c, dias_mais_antigo: dias(c.mais_antigo, hoje) })).sort((a, b) => b.qtd - a.qtd),
+  const ocupacao = await ocupacaoAreas(supabase, tenantId, noPatio);
+  return { ocupacao, bens: lista, total_no_patio: noPatio.length, total_pre_entrada: pre.length, pre_atrasadas: pre.filter((b) => b.previsto_em && b.previsto_em < hoje).length, clientes: [...porCliente.values()].map((c) => ({ ...c, dias_mais_antigo: dias(c.mais_antigo, hoje) })).sort((a, b) => b.qtd - a.qtd),
     saidas_30d: bs.filter((b) => b.status === 'saiu' && b.saida_em && dias(b.saida_em, hoje) <= 30).length };
 }
 
@@ -52,7 +61,9 @@ async function detalhe(supabase, tenantId, id) {
   const mesmos = (b.numero_serie ? await q(supabase.from('patio_bens').select('*').eq('tenant_id', tenantId)) : []).filter((x) => x.id !== b.id && serieNorm(x.numero_serie) === serieNorm(b.numero_serie))
     .sort((x, y) => String(y.entrada_em).localeCompare(String(x.entrada_em))).map((x) => ({ id: x.id, numero: x.numero, cliente_nome: x.cliente_nome, entrada_em: x.entrada_em, saida_em: x.saida_em, status: x.status }));
   let at = null; if (b.saida_at_id) { try { at = (await q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId).eq('id', b.saida_at_id)))[0] || null; } catch { /* ok */ } }
-  return { bem: { ...publico(b), fotos_entrada: await assinar(supabase, b.fotos_entrada), fotos_saida: await assinar(supabase, b.fotos_saida), at: at ? { id: at.id, numero: at.numero, status: at.status } : null }, historico_serie: mesmos };
+  let areaInfo = null; if (b.area_id) { try { const a = (await q(supabase.from('patio_areas').select('*').eq('tenant_id', tenantId).eq('id', b.area_id)))[0]; if (a) areaInfo = { id: a.id, nome: a.nome }; } catch { /* sem 084 */ } }
+  let doc = b.cliente_documento; if (!doc && b.cliente_id) { try { doc = docDe((await q(supabase.from('clientes').select('*').eq('tenant_id', tenantId).eq('id', b.cliente_id)))[0]); } catch { /* ok */ } }
+  return { bem: { ...publico(b), cliente_documento: doc || null, area: areaInfo, fotos_entrada: await assinar(supabase, b.fotos_entrada), fotos_saida: await assinar(supabase, b.fotos_saida), at: at ? { id: at.id, numero: at.numero, status: at.status } : null }, historico_serie: mesmos };
 }
 
 async function entrada(supabase, tenantId, quem = {}, body = {}) {
@@ -68,7 +79,8 @@ async function entrada(supabase, tenantId, quem = {}, body = {}) {
     if (dup) return { status: 409, erro: dup.status === 'pre_entrada' ? `O nº de série ${serie} tem pré-entrada (${dup.numero} · ${dup.cliente_nome}) — abra ela e confirme a chegada em vez de lançar de novo.` : `O nº de série ${serie} já está no pátio (${dup.numero} · ${dup.cliente_nome}). Dê a saída dele antes de uma nova entrada.`, existente_id: dup.id };
     const chave = String(body.nf_entrada_chave || '').replace(/\D/g, '');
     if (chave && chave.length !== 44) return { status: 400, erro: 'A chave da NF tem 44 dígitos' };
-    const linha = { tenant_id: tenantId, numero: await proximoNumero(supabase, tenantId), cliente_id: cliente?.id ?? null, cliente_nome: clienteNome, descricao, fabricante: txt(body.fabricante, 80) || null, modelo: txt(body.modelo, 80) || null,
+    const areaId = await areaValida(supabase, tenantId, body.area_id); if (Number.isNaN(areaId)) return { status: 400, erro: 'Área de armazenagem não encontrada' };
+    const linha = { tenant_id: tenantId, numero: await proximoNumero(supabase, tenantId), cliente_id: cliente?.id ?? null, cliente_nome: clienteNome, cliente_documento: docDe(cliente) || txt(body.cliente_documento, 20) || null, area_id: areaId ?? null, descricao, fabricante: txt(body.fabricante, 80) || null, modelo: txt(body.modelo, 80) || null,
       ano: txt(body.ano, 10) || null, numero_serie: serie, identificacao: txt(body.identificacao, 80) || null, nf_entrada_numero: txt(body.nf_entrada_numero, 30) || null, nf_entrada_chave: chave || null,
       nf_entrada_data: data10(body.nf_entrada_data), entrada_em: data10(body.entrada_em) || hojeBR(), recebido_por: txt(body.recebido_por, 80) || quem.nome || null, local_patio: txt(body.local_patio, 80) || null,
       obs: txt(body.obs, 1000) || null, status: 'no_patio', fotos_entrada: [], fotos_saida: [], area_m2: area(body.area_m2) ?? null, nf_emitente_nome: txt(body.nf_emitente_nome, 120) || null, nf_emitente_cnpj: String(body.nf_emitente_cnpj || '').replace(/\D/g, '') || null };
@@ -85,6 +97,8 @@ async function editar(supabase, tenantId, id, body = {}) {
   const upd = {}; if (b.status === 'pre_entrada') { if (body.descricao !== undefined) upd.descricao = txt(body.descricao); if (body.numero_serie !== undefined) upd.numero_serie = serieNorm(body.numero_serie) || null; if (body.previsto_em !== undefined) upd.previsto_em = data10(body.previsto_em); }
   for (const k of ['local_patio', 'obs', 'identificacao', 'nf_entrada_numero', 'fabricante', 'modelo', 'ano']) if (body[k] !== undefined) upd[k] = txt(body[k], k === 'obs' ? 1000 : 80) || null;
   if (body.area_m2 !== undefined) { const a = area(body.area_m2); if (Number.isNaN(a)) return { status: 400, erro: 'Área em m² inválida' }; upd.area_m2 = a; }
+  if (body.area_id !== undefined) { const a = await areaValida(supabase, tenantId, body.area_id); if (Number.isNaN(a)) return { status: 400, erro: 'Área de armazenagem não encontrada' }; upd.area_id = a; }
+  if (body.cliente_documento !== undefined && !b.cliente_id) upd.cliente_documento = txt(body.cliente_documento, 20) || null;
   if (!Object.keys(upd).length) return detalhe(supabase, tenantId, id);
   upd.atualizado_em = new Date().toISOString();
   const r = await supabase.from('patio_bens').update(upd).eq('id', b.id).eq('tenant_id', tenantId); if (r.error) throw new Error(r.error.message);
@@ -188,7 +202,7 @@ async function preEntradas(supabase, tenantId, quem = {}, body = {}) {
     }
     const criados = [];
     for (const it of itens) {
-      const linha = { tenant_id: tenantId, numero: await proximoNumero(supabase, tenantId), cliente_id: cliente?.id ?? null, cliente_nome: clienteNome, descricao: txt(it.descricao), fabricante: txt(it.fabricante, 80) || null, modelo: txt(it.modelo, 80) || null,
+      const linha = { tenant_id: tenantId, numero: await proximoNumero(supabase, tenantId), cliente_id: cliente?.id ?? null, cliente_nome: clienteNome, cliente_documento: docDe(cliente) || cnpj14(body.cliente_documento || nf.destinatario_cnpj) || null, descricao: txt(it.descricao), fabricante: txt(it.fabricante, 80) || null, modelo: txt(it.modelo, 80) || null,
         ano: txt(it.ano, 10) || null, numero_serie: serieNorm(it.numero_serie) || null, identificacao: txt(it.identificacao, 80) || null, nf_entrada_numero: txt(nf.numero, 30) || null, nf_entrada_chave: chave || null, nf_entrada_data: data10(nf.data),
         nf_emitente_nome: txt(nf.emitente_nome, 120) || null, nf_emitente_cnpj: cnpj14(nf.emitente_cnpj) || null, nf_item: txt(it.nf_item, 20) || null, entrada_em: null, previsto_em: data10(body.previsto_em), local_patio: txt(body.local_patio, 80) || null,
         obs: txt(it.obs, 1000) || null, status: 'pre_entrada', pre_por: quem.nome || null, pre_em: new Date().toISOString(), fotos_entrada: [], fotos_saida: [] };
@@ -209,6 +223,7 @@ async function confirmarChegada(supabase, tenantId, quem = {}, id, body = {}) {
   const upd = { status: 'no_patio', numero_serie: serie, entrada_em: quando, recebido_por: txt(body.recebido_por, 80) || quem.nome || null, atualizado_em: new Date().toISOString() };
   for (const k of ['local_patio', 'identificacao', 'fabricante', 'modelo', 'ano']) if (body[k] !== undefined) upd[k] = txt(body[k], 80) || null;
   if (body.area_m2 !== undefined) { const a = area(body.area_m2); if (Number.isNaN(a)) return { status: 400, erro: 'Área em m² inválida' }; upd.area_m2 = a; }
+  if (body.area_id !== undefined) { const a = await areaValida(supabase, tenantId, body.area_id); if (Number.isNaN(a)) return { status: 400, erro: 'Área de armazenagem não encontrada' }; upd.area_id = a; }
   if (txt(body.obs_chegada, 1000)) upd.obs = [b.obs, `Na chegada: ${txt(body.obs_chegada, 1000)}`].filter(Boolean).join('\n');
   const r = await supabase.from('patio_bens').update(upd).eq('id', b.id).eq('tenant_id', tenantId); if (r.error) { if (/duplicate|unique/i.test(r.error.message)) return { status: 409, erro: `O nº de série ${serie} já está ativo no pátio` }; throw new Error(r.error.message); }
   return detalhe(supabase, tenantId, id);
@@ -256,4 +271,36 @@ async function movimentacao(supabase, tenantId, { cliente = '', de, ate } = {}) 
     movimentos: movs, itens, por_cliente: [...porCliente.values()].map((c) => ({ ...c, m2_dia: Math.round(c.m2_dia * 100) / 100 })) };
 }
 
-module.exports = { movimentacao, diasNoPeriodo, listar, detalhe, entrada, editar, foto, saida, serieNorm, lerXml, lerXmlDoTenant, seriesDoTexto, preEntradas, confirmarChegada, cancelarPre };
+// ── 18z.6: áreas de armazenagem e ocupação ───────────────────────────────────────────────────────────────────────────────────────
+async function ocupacaoAreas(supabase, tenantId, noPatio) {
+  let areas = []; try { areas = (await q(supabase.from('patio_areas').select('*').eq('tenant_id', tenantId))).filter((a) => a.ativo !== false); } catch { return { sem_migration: true, areas: [] }; }
+  const r2 = (n) => Math.round(n * 100) / 100;
+  const lin = areas.map((a) => { const bs = noPatio.filter((b) => String(b.area_id) === String(a.id)); const ocup = bs.reduce((s, b) => s + (b.area_m2 != null ? Number(b.area_m2) : 0), 0); const util = Number(a.area_util_m2);
+    return { id: a.id, nome: a.nome, coberta: !!a.coberta, obs: a.obs || null, area_util_m2: util, ocupado_m2: r2(ocup), livre_m2: r2(Math.max(0, util - ocup)), pct: util ? Math.round((ocup / util) * 1000) / 10 : 0, equipamentos: bs.length, sem_medida: bs.filter((b) => b.area_m2 == null).length }; })
+    .sort((a, b) => a.nome.localeCompare(b.nome));
+  const ids = new Set(areas.map((a) => String(a.id))); const fora = noPatio.filter((b) => !b.area_id || !ids.has(String(b.area_id)));
+  const util = lin.reduce((s, a) => s + a.area_util_m2, 0); const ocup = lin.reduce((s, a) => s + a.ocupado_m2, 0);
+  return { areas: lin, total_util_m2: r2(util), ocupado_m2: r2(ocup), livre_m2: r2(Math.max(0, util - ocup)), pct: util ? Math.round((ocup / util) * 1000) / 10 : 0,
+    sem_medida: noPatio.filter((b) => b.area_m2 == null).length, fora_das_areas: fora.length, fora_m2: r2(fora.reduce((s, b) => s + (b.area_m2 != null ? Number(b.area_m2) : 0), 0)) };
+}
+async function salvarArea(supabase, tenantId, id, body = {}) {
+  const nome = txt(body.nome, 80); const util = area(body.area_util_m2);
+  if (!id || body.nome !== undefined) { if (!nome) return { status: 400, erro: 'Dê um nome para a área (ex.: Galpão 1, Pátio externo)' }; }
+  if (!id || body.area_util_m2 !== undefined) { if (util == null || Number.isNaN(util)) return { status: 400, erro: 'Informe a área útil em m² (o que dá para armazenar, sem corredor de manobra)' }; }
+  let todas; try { todas = await q(supabase.from('patio_areas').select('*').eq('tenant_id', tenantId)); } catch (e) { if (/patio_areas|does not exist|schema cache/i.test(e.message)) return { status: 409, erro: 'Falta rodar a migration 084 no Supabase.' }; throw e; }
+  if (nome && todas.some((a) => a.ativo !== false && String(a.id) !== String(id) && a.nome.toUpperCase() === nome.toUpperCase())) return { status: 409, erro: `Já existe a área "${nome}"` };
+  const campos = {}; if (nome) campos.nome = nome; if (util != null && !Number.isNaN(util)) campos.area_util_m2 = util; if (body.coberta !== undefined) campos.coberta = !!body.coberta; if (body.obs !== undefined) campos.obs = txt(body.obs, 300) || null;
+  if (!id) { const r = await supabase.from('patio_areas').insert([{ tenant_id: tenantId, ativo: true, ...campos }]).select(); if (r.error) throw new Error(r.error.message); return { area: r.data[0] }; }
+  const a = todas.find((x) => String(x.id) === String(id)); if (!a) return { status: 404, erro: 'Área não encontrada' };
+  if (body.ativo === false) { const em = (await q(supabase.from('patio_bens').select('*').eq('tenant_id', tenantId))).filter((b) => String(b.area_id) === String(a.id) && (b.status === 'no_patio' || b.status === 'pre_entrada'));
+    if (em.length) return { status: 409, erro: `Há ${em.length} equipamento(s) nesta área — mude o local deles antes de desativar` }; campos.ativo = false; }
+  campos.atualizado_em = new Date().toISOString();
+  const r = await supabase.from('patio_areas').update(campos).eq('id', a.id).eq('tenant_id', tenantId); if (r.error) throw new Error(r.error.message);
+  return { ok: true };
+}
+async function listarAreas(supabase, tenantId) {
+  let bs = []; try { bs = await q(supabase.from('patio_bens').select('*').eq('tenant_id', tenantId)); } catch { /* ok */ }
+  return ocupacaoAreas(supabase, tenantId, bs.filter((b) => b.status === 'no_patio'));
+}
+
+module.exports = { ocupacaoAreas, salvarArea, listarAreas, movimentacao, diasNoPeriodo, listar, detalhe, entrada, editar, foto, saida, serieNorm, lerXml, lerXmlDoTenant, seriesDoTexto, preEntradas, confirmarChegada, cancelarPre };
