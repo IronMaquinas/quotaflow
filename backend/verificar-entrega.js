@@ -181,7 +181,7 @@ const ESPERADO = {
   'front:gerarPdfNC.js': 'fe4db00132dc6c626027e234e1f5f366', // etapa 14c.2
   'services/contratoModelos.js': '8f287d3d16191638e69854407dc77281', // etapa 18zf
   'migrations/046_modelos_contrato.sql': '0b06982d731ce6038a679a7cc7e21785', // etapa 14d.2
-  'front:ModelosContrato.jsx': 'fc210efe13c02a3c06894cde194b07c2', // etapa 18zf.1
+  'front:ModelosContrato.jsx': '2259720a8062d1be1d40a966fcc6ba43', // etapa 18zf.2
   'front:gerarContrato.js': 'f76ee198463184debe5ca205c71f0b6b', // etapa 18zf
   'front:BibliotecaContratos.jsx': 'ea69d4f5771b64870eabd53c83f18a8a', // etapa 14d.2
   'front:CampoMoeda.jsx': 'e67cbfc98693ab1ea2df84d091974ca9', // etapa 14d.2
@@ -255,7 +255,7 @@ const ESPERADO = {
   'front:FiltroPeriodo.jsx': '06b873f17ff380024b38e507bdca6724', // etapa 18c.4 (novo)
   'migrations/062_medicao_locacao.sql': '5a4d7ea7f3180195a19e4121183a446e', // etapa 18d (novo)
   'services/medicoes.js': 'a95cfd27199fb967c9c357b70f7abc03', // etapa 18zf.1
-  'front:MedicaoModal.jsx': 'd97036c3f7198ca4968f4ff8f186bcbf', // etapa 18zf
+  'front:MedicaoModal.jsx': '1748c9fd1c1089203584c1b3ee713143', // etapa 18zf.2
   'front:gerarMedicao.js': '119acc71ee428d0e533453cee6e00448', // etapa 18zf
   'migrations/063_medicao_vencimento.sql': '0b27bacd7a6a0b6d77c01a8039f5192d', // etapa 18d.2 (novo)
   'front:AbaMedicoes.jsx': '88bfc994bb38ab826a1452a0e6f9f732', // etapa 18y.1
@@ -341,10 +341,10 @@ const ESPERADO = {
   'services/cobrancaLocacao.js': '9441039f57cc08d26f11bc71d1084f44', // etapa 18zf (novo)
 };
 
-// Antes de copiar a etapa 18zf.1 — base: 489e525
+// Antes de copiar a etapa 18zf.2 — base: 133decc
 const ANTES = {
-  'services/medicoes.js': '53787e5e82618a4ca03646e08cadff90',
-  'front:ModelosContrato.jsx': '9a70d8b3fbf895c6c86cabc3cbb99e25',
+  'front:MedicaoModal.jsx': 'd97036c3f7198ca4968f4ff8f186bcbf',
+  'front:ModelosContrato.jsx': 'fc210efe13c02a3c06894cde194b07c2',
 };
 
 const RAIZ = process.cwd();
@@ -382,7 +382,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zf.1)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zf.2)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

@@ -178,7 +178,7 @@ export function DocumentoContrato({ C, s, contrato: k, editar, onErro: onErroPai
   const inp = (x, extra = {}) => <input value={ehNA(x) ? "não se aplica" : (f[x] ?? "")} onChange={(e) => set(x, e.target.value)} disabled={bloq || ehNA(x)} style={{ ...s.input, ...(ehNA(x) ? { opacity: 0.55, fontStyle: "italic" } : {}) }} {...extra} />;
   const moeda = (x) => (ehNA(x) ? inp(x) : <CampoMoeda value={f[x]} onChange={(v) => set(x, v)} disabled={bloq} style={s.input} />);
   const rotNA = (rot, x) => <span style={{ display: "flex", alignItems: "center", gap: 6 }}><span style={{ flex: 1 }}>{rot}</span>
-    <span onClick={(e) => { e.preventDefault(); if (!bloq) alternaNA(x); }} title="Não se aplica a este contrato" className={bloq ? "" : "qf-clicavel"} style={{ fontSize: 10, padding: "1px 6px", borderRadius: 4, border: `1px solid ${ehNA(x) ? C.warn : C.border}`, color: ehNA(x) ? C.warn : C.muted, letterSpacing: 0 }}>{ehNA(x) ? "☑" : "☐"} N/A</span></span>;
+    <span onClick={(e) => { e.preventDefault(); if (!bloq) alternaNA(x); }} title="Não se aplica a este contrato" className={bloq ? "" : "qf-clicavel"} style={{ fontSize: 11, padding: "2px 8px", borderRadius: 4, cursor: bloq ? "default" : "pointer", border: `1px solid ${ehNA(x) ? C.warn : C.border}`, color: ehNA(x) ? C.warn : C.muted, letterSpacing: 0 }}>{ehNA(x) ? "☑ não se aplica" : "☐ não se aplica"}</span></span>; // 18zf.2: maior e por extenso
   const ativos = k.equipamentos.filter((e) => e.ativa);
   return (
     <div style={{ marginTop: 16 }}>
