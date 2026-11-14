@@ -1010,6 +1010,9 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18zc.6 (14/11):** 📄 **Modelo de contrato — o que entra sozinho no PDF** (dúvida do Marcony ao criar um modelo do zero).
+    - **Nota no editor de modelo:** o **cabeçalho** (logo, razão social, nº e versão, data de emissão), as **assinaturas** (empresa, cliente — com a assinatura da tela quando o aceite é pelo sistema — e 2 testemunhas) e o **código de integridade** entram sozinhos; no texto vai só o corpo (partes, cláusulas, data).
+    - **Contrato de armazenagem assina como CONTRATADA / CONTRATANTE** (antes saía LOCADORA / LOCATÁRIA também no CA) — na prévia, no emitido e no portal do cliente.
   - **18zc.5 (14/11):** 📑 **Ficha do contrato — botões e atalhos** (pedido do Marcony testando o CA).
     - **Uma linha só de botões** (quebra em tela pequena), todos do mesmo tamanho: Salvar · 👁 Prévia · 📄 Emitir │ ✎ Editar contrato · Encerrar contrato · Fechar.
     - **Contrato de armazenagem:** sem o "Editar" de baixo (parecia editar o contrato todo e duplicava) — fica o **✎ Editar condições** de cima. No de locação o botão chama **✎ Editar contrato**.
@@ -1725,7 +1728,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18zc.5)
+**Última atualização deste documento:** 06/11/2026 (etapa 18zc.6)
 
 --------------------------------------------------------------------------------
 

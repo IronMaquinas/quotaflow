@@ -62,7 +62,7 @@ export default function TelaLocatario({ C, s, usuario }) {
 
   const inspecionar = (e, r) => setExec({ equipamento: { id: e.equipamento_id, tag: e.tag }, chavePrep: `${e.equipamento_id}-${r.modelo_id}`,
     carregarPrep: () => apiService.get(`/locatario/preparar/${e.equipamento_id}`, { modelo_id: r.modelo_id }) });
-  const dadosContrato = (c) => ({ numero: c.numero, texto: c.documento.texto, tabela: c.documento.tabela, empresa: dadosEmpresa(), cliente: c.cliente, versao: c.documento.versao, emitido_em: c.documento.emitido_em, hash: c.documento.hash,
+  const dadosContrato = (c) => ({ numero: c.numero, tipo: c.tipo, texto: c.documento.texto, tabela: c.documento.tabela, empresa: dadosEmpresa(), cliente: c.cliente, versao: c.documento.versao, emitido_em: c.documento.emitido_em, hash: c.documento.hash,
     aceite: c.documento.aceite ? { nome: c.documento.aceite.nome, em: c.documento.aceite.em, png: c.documento.aceite.png, hash: c.documento.aceite.hash } : null });
   const imprimirContrato = (c) => { const w = janelaContrato(); try { abrirContrato(dadosContrato(c), w); } catch (e) { err(e.message); } };
   const aceitar = async () => {

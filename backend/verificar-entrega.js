@@ -163,12 +163,12 @@ const ESPERADO = {
   'migrations/042_inspecoes_rotinas_locacao.sql': 'bf32500014ddf3f779f1fa29ead5feb9', // etapa 14b.2 (novo)
   'front:RotinasLocacao.jsx': '8bba6c8bb586ff7298f6e0d0b13f8b9b', // etapa 18c.4
   'front:gerarRelatorioCumprimento.js': 'd4b916c75f0a4290ccd9c96bf170ed90', // etapa 14c.1
-  'services/contratosLocacao.js': '147e3e09ffebf4abcdef7718d3ce5c35', // etapa 18zc.5
+  'services/contratosLocacao.js': '938f1050e04982726d59981b566731d5', // etapa 18zc.6
   'routes/contratos.js': '28430e6859469d60a70ebbcdda7d0463', // etapa 18zc.4
   'routes/locatario.js': 'ef7e500d9afdf40a4d5090df88883405', // etapa 18p
   'migrations/043_contratos_locatario.sql': 'f25735b281aa176b4c31c3cc2bf283ed', // etapa 14b.3 (novo)
   'front:TelaContratos.jsx': '58ce5e9e7feeebfeacb99ce1ee6f17ec', // etapa 18zc.5
-  'front:TelaLocatario.jsx': 'b6dc7d43a2e8ab86aedd4e638e832537', // etapa 18o
+  'front:TelaLocatario.jsx': 'aaef90fe093619b958fd876017ce4480', // etapa 18zc.6
   'services/clientes.js': '9714283f0013553dc96a48b75b6734cf', // etapa 14b.3.1 (novo)
   'migrations/044_clientes.sql': '446d1a52049aea19938d36cc2b01653d', // etapa 14b.3.1 (novo)
   'front:Clientes.jsx': 'e9be5c01c41ba182663873245d56ca52', // etapa 18zb
@@ -181,8 +181,8 @@ const ESPERADO = {
   'front:gerarPdfNC.js': 'fe4db00132dc6c626027e234e1f5f366', // etapa 14c.2
   'services/contratoModelos.js': '0cd9f59b3c70104091f3769fc06d5458', // etapa 18zc.4
   'migrations/046_modelos_contrato.sql': '0b06982d731ce6038a679a7cc7e21785', // etapa 14d.2
-  'front:ModelosContrato.jsx': '5c10fb18a8bf288924ca1db68b937929', // etapa 18zc.5
-  'front:gerarContrato.js': '61918b643427ea861a255ca249fcb68d', // etapa 14d.7
+  'front:ModelosContrato.jsx': 'a80b5007c54d1ae1747fd34558bf4d98', // etapa 18zc.6
+  'front:gerarContrato.js': '9cca94add0a831347f7523c11d171539', // etapa 18zc.6
   'front:BibliotecaContratos.jsx': 'ea69d4f5771b64870eabd53c83f18a8a', // etapa 14d.2
   'front:CampoMoeda.jsx': 'e67cbfc98693ab1ea2df84d091974ca9', // etapa 14d.2
   'migrations/047_contrato_representante.sql': '4769ba9b69f785a61c1f4e940e0cf9c2', // etapa 14d.3 (novo)
@@ -336,11 +336,12 @@ const ESPERADO = {
   'migrations/087_medicao_envio_automatico.sql': '8ca07e5e6d7b67718139d0cf430a70cf', // etapa 18zc (novo)
 };
 
-// Antes de copiar a etapa 18zc.5 — base: 46e9a7a
+// Antes de copiar a etapa 18zc.6 — base: 04adafb
 const ANTES = {
-  'services/contratosLocacao.js': '5de7002830d5f777d5fb9f6c560325e3',
-  'front:TelaContratos.jsx': 'd12ed9247c3b61c53943656e8ad66dd7',
-  'front:ModelosContrato.jsx': 'e7ea988fba34e2f125c2e9bedc6450bb',
+  'services/contratosLocacao.js': '147e3e09ffebf4abcdef7718d3ce5c35',
+  'front:gerarContrato.js': '61918b643427ea861a255ca249fcb68d',
+  'front:ModelosContrato.jsx': '5c10fb18a8bf288924ca1db68b937929',
+  'front:TelaLocatario.jsx': 'b6dc7d43a2e8ab86aedd4e638e832537',
 };
 
 const RAIZ = process.cwd();
@@ -378,7 +379,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zc.5)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zc.6)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

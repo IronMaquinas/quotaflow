@@ -31,8 +31,10 @@ function corpoHtml(texto, tabela) {
   }).join("\n");
 }
 
-/** d: { numero, texto, tabela, empresa, cliente, previa, versao, emitido_em, emitido_por, hash, aceite: { nome, em, png, hash } } */
+/** d: { numero, tipo, texto, tabela, empresa, cliente, previa, versao, emitido_em, emitido_por, hash, aceite: { nome, em, png, hash } }
+ *  18zc.6: tipo "armazenagem" assina como CONTRATADA / CONTRATANTE (locação: LOCADORA / LOCATÁRIA) */
 export function gerarHtmlContrato(d) {
+  const papel = d.tipo === "armazenagem" ? ["CONTRATADA", "CONTRATANTE"] : ["LOCADORA", "LOCATÁRIA"];
   const a = d.aceite || null;
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Contrato ${esc(d.numero)}${d.previa ? " — prévia" : ""}</title><style>
   body { margin: 0; background: #f2f2f2; font-family: Georgia, "Times New Roman", serif; color: #111; font-size: 12.5px; line-height: 1.6; }
@@ -53,8 +55,8 @@ export function gerarHtmlContrato(d) {
       <div style="text-align:right;font-size:10px;color:#555">Contrato ${esc(d.numero)}${d.versao ? ` · versão ${d.versao}` : ""}<br/>${d.previa ? "prévia" : `emitido em ${dataHora(d.emitido_em)}`}</div></div>
     ${corpoHtml(d.texto, d.tabela)}
     <div class="ass">
-      <div><div style="height:62px"></div><div class="linha">${esc(d.empresa?.razao_social || d.empresa?.nome || "LOCADORA")}<br/><span style="color:#666">LOCADORA</span></div></div>
-      <div>${a?.png ? `<img src="${a.png}" alt="assinatura"/>` : '<div style="height:62px"></div>'}<div class="linha">${esc(a?.nome || d.cliente || "LOCATÁRIA")}<br/><span style="color:#666">LOCATÁRIA${a ? ` — aceite na tela em ${dataHora(a.em)}` : ""}</span></div></div>
+      <div><div style="height:62px"></div><div class="linha">${esc(d.empresa?.razao_social || d.empresa?.nome || "")}<br/><span style="color:#666">${papel[0]}</span></div></div>
+      <div>${a?.png ? `<img src="${a.png}" alt="assinatura"/>` : '<div style="height:62px"></div>'}<div class="linha">${esc(a?.nome || d.cliente || "")}<br/><span style="color:#666">${papel[1]}${a ? ` — aceite na tela em ${dataHora(a.em)}` : ""}</span></div></div>
       <div><div style="height:40px"></div><div class="linha">Testemunha 1 — nome e CPF</div></div>
       <div><div style="height:40px"></div><div class="linha">Testemunha 2 — nome e CPF</div></div>
     </div>

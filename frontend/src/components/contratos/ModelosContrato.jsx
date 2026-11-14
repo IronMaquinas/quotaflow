@@ -53,7 +53,9 @@ export function EditorModeloContrato({ C, s, inicial, campos, salvando, onSalvar
         ))}
       </div>
     </div>
-    <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>Linhas em MAIÚSCULAS e as que começam com "CLÁUSULA" saem em negrito. Coloque <b>{"{{tabela_equipamentos}}"}</b> sozinho numa linha para a tabela dos equipamentos.</div>
+    <div style={{ fontSize: 11.5, color: C.textSub, marginTop: 8, padding: "8px 10px", border: `1px solid ${C.border}`, borderRadius: 8, lineHeight: 1.5 }}>{/* 18zc.6 */}
+      ℹ <b>Entram sozinhos no PDF — não escreva no texto:</b> o <b>cabeçalho</b> (sua logo, razão social, nº e versão do contrato, data de emissão) e, no final, as <b>assinaturas</b> (sua empresa e o cliente — com a assinatura feita na tela, quando o aceite é pelo sistema — e 2 testemunhas) e o <b>código de integridade</b>. Contrato de armazenagem assina como CONTRATADA / CONTRATANTE; de locação, LOCADORA / LOCATÁRIA.
+      <br />Aqui vai só o corpo: partes, cláusulas e a data. Linhas em MAIÚSCULAS e as que começam com "CLÁUSULA" saem em negrito. Coloque <b>{"{{tabela_equipamentos}}"}</b> sozinho numa linha para a tabela dos equipamentos (locação).</div>
     <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
       <button type="button" onClick={onCancelar} style={{ ...s.btn(false), cursor: "pointer", flex: 1, color: C.text }}>Cancelar</button>
       <button type="button" disabled={salvando || !m.nome.trim()} onClick={() => onSalvar(m)} style={{ ...s.btn(!salvando && !!m.nome.trim(), C.accent), flex: 1 }}>{salvando ? "Salvando…" : "Salvar modelo"}</button>
@@ -157,7 +159,7 @@ export function DocumentoContrato({ C, s, contrato: k, editar, onErro: onErroPai
   const empresa = dadosEmpresa();
   const previa = async () => {
     setOcupado(true); const w = prepararJanela();
-    try { await salvar(); const p = await apiService.get(`/contratos/${k.id}/previa`); setFaltando(p.faltando); abrirContrato({ ...p, empresa, cliente: k.cliente, previa: true }, w); onMudou?.(); }
+    try { await salvar(); const p = await apiService.get(`/contratos/${k.id}/previa`); setFaltando(p.faltando); abrirContrato({ ...p, tipo: k.tipo, empresa, cliente: k.cliente, previa: true }, w); onMudou?.(); }
     catch (e) { try { w?.close(); } catch { /* ok */ } onErro(e.message); } finally { setOcupado(false); }
   };
   const emitir = async (forcar = false, papel = false) => {
@@ -166,7 +168,7 @@ export function DocumentoContrato({ C, s, contrato: k, editar, onErro: onErroPai
     try { await salvar(); const r = await apiService.post(`/contratos/${k.id}/emitir`, { forcar, papel }); setFaltando(null); onOk(`Contrato emitido — versão ${r.versao}. ${r.emails_aceite ? `E-mail pedindo o aceite enviado para ${r.emails_aceite} acesso(s) do locatário.` : k.acessos?.length ? "O locatário já pode ler e aceitar pelo acesso dele (o e-mail não saiu — confira o envio de e-mails)." : "Ninguém recebeu e-mail: o contrato não tem acesso do locatário. Crie um acesso (ele recebe o pedido de aceite) ou registre o aceite em papel."}`); onMudou?.(); }
     catch (e) { if (e.body?.faltando) setFaltando(e.body.faltando); onErro(e.message); } finally { setOcupado(false); }
   };
-  const imprimirEmitido = () => { const w = prepararJanela(); try { abrirContrato({ numero: k.numero, texto: k.emitido_texto, tabela: k.emitido_tabela || [], empresa, cliente: k.cliente, versao: k.emitido_versao, emitido_em: k.emitido_em, emitido_por: k.emitido_por_nome, hash: k.emitido_hash,
+  const imprimirEmitido = () => { const w = prepararJanela(); try { abrirContrato({ numero: k.numero, tipo: k.tipo, texto: k.emitido_texto, tabela: k.emitido_tabela || [], empresa, cliente: k.cliente, versao: k.emitido_versao, emitido_em: k.emitido_em, emitido_por: k.emitido_por_nome, hash: k.emitido_hash,
     aceite: k.aceite_em ? { nome: k.aceite_nome, em: k.aceite_em, png: k.aceite_png, hash: k.aceite_hash } : null }, w); } catch (e) { onErro(e.message); } };
   // 14d.2: N/A — o campo fica cinza, não conta como "falta" e sai "não se aplica" no contrato
   const ehNA = (x) => (f.na || []).includes(x);

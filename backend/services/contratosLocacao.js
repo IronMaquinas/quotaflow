@@ -271,7 +271,7 @@ async function escopoLocatario(supabase, tenantId, usuarioId) {
 async function painelLocatario(supabase, tenantId, usuarioId) {
   const esc = await escopoLocatario(supabase, tenantId, usuarioId);
   const cs = (await montar(supabase, tenantId, esc.contratos, { comAcessos: false })).map((c) => ({
-    id: c.id, numero: c.numero, cliente: c.cliente, local: c.local, inicio: c.inicio, fim_previsto: c.fim_previsto, ativos: c.ativos, atrasadas: c.atrasadas,
+    id: c.id, numero: c.numero, tipo: c.tipo || 'locacao', cliente: c.cliente, local: c.local, inicio: c.inicio, fim_previsto: c.fim_previsto, ativos: c.ativos, atrasadas: c.atrasadas,
     // 14d: contrato emitido para ler e aceitar
     documento: c.emitido_hash ? { versao: c.emitido_versao, emitido_em: c.emitido_em, texto: c.emitido_texto, tabela: c.emitido_tabela || [], hash: c.emitido_hash,
       aceite: c.aceite_em ? { nome: c.aceite_nome, em: c.aceite_em, hash: c.aceite_hash, png: c.aceite_png } : null } : null,
