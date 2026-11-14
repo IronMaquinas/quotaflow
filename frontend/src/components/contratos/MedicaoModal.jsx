@@ -3,6 +3,7 @@
 //   • empresa (comercial): edita o valor a cobrar e a observação · 💾 Salvar · ↻ Recalcular · 📤 Enviar ao cliente (ou ✓ Fechar) · Reabrir
 //   • cliente (locatário): ✓ Aprovar · ✕ Contestar comentando na linha do item
 //   • 🖨 Boletim de Medição (PDF) · informativo automático das inspeções do ciclo (só leitura)
+import AvisoHorimetro from "./AvisoHorimetro"; // 18zf.4
 import { useState, useEffect } from "react";
 import apiService from "../../services/apiService";
 import { abrirMedicao, prepararJanela } from "../../utils/gerarMedicao";
@@ -71,6 +72,7 @@ export default function MedicaoModal({ C, s, medicaoId, base = "/contratos", mod
                 <td style={{ padding: 6, whiteSpace: "nowrap", color: C.textSub }}>{dataBR(i.de)} a {dataBR(i.ate)}<div style={{ fontSize: 12.5 }}>{String(i.tipo || "").startsWith("armazenagem") ? (i.tipo === "armazenagem" ? `${i.dias} dia(s) no pátio${i.saiu_em ? ` · saiu ${dataBR(i.saiu_em)}` : ""}` : "ciclo inteiro") : (i.cobranca?.modo === "dia" ? `${i.dias} dia(s) locados` : `${i.dias} de ${i.dias_ciclo} dia(s)${i.dias < i.dias_ciclo ? " · proporcional" : ""}`)}</div>
                   {i.precisa_horas && <div style={{ fontSize: 12, marginTop: 4, whiteSpace: "normal" }}>{/* 18zf: horímetro */}
                     {i.horas_auto ? <span>⏱ horímetro {Number(i.horas_auto.de).toLocaleString("pt-BR")} → {Number(i.horas_auto.ate).toLocaleString("pt-BR")} = <b>{Number(i.horas_auto.horas).toLocaleString("pt-BR")} h</b></span> : <span style={{ color: C.warn }}>⏱ sem leitura de horímetro no ciclo</span>}
+                    {!cliente && !i.horas_auto && <AvisoHorimetro C={C} s={s} medicao editar={editavel} d={(d?.horimetro || []).find((h) => String(h.equipamento_id) === String(i.equipamento_id))} onMudou={() => carregar()} />}
                     {editavel ? <div style={{ display: "flex", gap: 6, alignItems: "center", marginTop: 4 }}><input inputMode="decimal" value={x.horas ?? ""} disabled={ocupado} placeholder={i.horas_auto ? "corrigir h" : "horas no ciclo"} aria-label="Horas no ciclo" onChange={(e) => setEd({ ...ed, [k]: { ...x, horas: e.target.value } })}
                         onBlur={() => { if (horasMudou(i)) exec(() => apiService.put(url, corpo()), "Horas salvas — valores recalculados"); }}
                         onKeyDown={(e) => { if (e.key === "Enter") e.currentTarget.blur(); }} style={{ ...s.input, width: 100, padding: "4px 6px", fontSize: 13, borderColor: i.valor_recomendado == null ? C.warn : undefined }} /><span style={{ color: C.muted }}>h{i.horas_informadas != null ? " (informadas)" : ""}</span></div>

@@ -68,4 +68,28 @@ function rotuloValor(l) {
   return l.valor_mensal != null ? `${brl(l.valor_mensal)}/mês` : null;
 }
 
-module.exports = { modoDe, ROT, franquiaDo, horasDoPeriodo, calcular, rotuloValor };
+// 18zf.4: ⏱ o contrato cobra por hora/franquia ↔ o checklist do equipamento pede horímetro? (as duas pontas conversando)
+//   Checklists considerados: o das rotinas ativas do equipamento (empresa ou locatário) + o modelo padrão do equipamento.
+//   Por equipamento que precisa de horas: { equipamento_id, tag, nome, ok, motivo: 'ok'|'sem_checklist'|'sem_campo', modelos: [{ id, nome, campos, responsavel }] }
+async function diagHorimetro(supabase, tenantId, c) {
+  const q = async (p) => { const { data, error } = await p; if (error) throw new Error(error.message); return data || []; };
+  if (!c || c.tipo === 'armazenagem') return [];
+  const franquia = franquiaDo(c);
+  const locs = (await q(supabase.from('equipamento_locacoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id)))
+    .filter((l) => !l.fim_real && (modoDe(l) === 'hora' || (franquia && modoDe(l) === 'mensal')));
+  if (!locs.length) return [];
+  const ids = new Set(locs.map((l) => String(l.equipamento_id)));
+  const eqs = (await q(supabase.from('equipamentos').select('*').eq('tenant_id', tenantId))).filter((e) => ids.has(String(e.id)));
+  const rots = (await q(supabase.from('equipamento_rotinas').select('*').eq('tenant_id', tenantId)).catch(() => [])).filter((r) => r.ativo !== false && ids.has(String(r.equipamento_id)));
+  const mods = new Map((await q(supabase.from('inspecao_modelos').select('*').eq('tenant_id', tenantId))).map((m) => [String(m.id), m]));
+  return locs.map((l) => {
+    const e = eqs.find((x) => String(x.id) === String(l.equipamento_id)) || {};
+    const lista = []; const por = (mid, resp) => { const m = mods.get(String(mid)); if (m && m.ativo !== false && !lista.some((x) => String(x.id) === String(m.id))) lista.push({ id: m.id, nome: m.nome, campos: m.campos || [], responsavel: resp }); };
+    rots.filter((r) => String(r.equipamento_id) === String(l.equipamento_id)).forEach((r) => por(r.modelo_id, r.responsavel === 'locatario' ? 'locatario' : 'empresa'));
+    if (e.inspecao_modelo_id) por(e.inspecao_modelo_id, 'padrao');
+    const ok = lista.some((m) => m.campos.includes('horimetro'));
+    return { equipamento_id: l.equipamento_id, tag: e.tag || null, nome: e.nome || null, cobranca: modoDe(l), ok, motivo: ok ? 'ok' : lista.length ? 'sem_campo' : 'sem_checklist', modelos: lista };
+  });
+}
+
+module.exports = { diagHorimetro, modoDe, ROT, franquiaDo, horasDoPeriodo, calcular, rotuloValor };

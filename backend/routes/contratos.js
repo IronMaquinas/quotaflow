@@ -16,6 +16,7 @@
 //   14d — modelos de contrato: GET /modelos · GET /modelos/biblioteca · POST /modelos/importar · POST /modelos · PUT /modelos/:id
 //          POST /modelos/:id/atualizar · DELETE /modelos/:id · PUT /:id/condicoes · GET /:id/previa?modelo_id · POST /:id/emitir { forcar } · POST /:id/aceite-papel { data, obs } (14d.2)
 //   18d — 📏 medição: PUT /:id/equipamentos/:equip/escopo { medicao_unidade, medicao_qtd, medicao_valor } · GET /medicoes/pendencias
+//          18zf.4: GET /:id/horimetro (o checklist pede horímetro onde o contrato cobra por hora/franquia?)
 //          GET /:id/medicoes (ciclos) · POST /:id/medicoes { inicio } (abre) · GET /medicoes/:mid · PUT /medicoes/:mid { itens, obs, repetir_programado }
 //          18d.5: GET /medicoes/painel (resumo + pendências + histórico)
 //          18d.2: POST /medicoes/:mid/enviar (envia ao cliente ou fecha) · /recalcular · /reabrir { motivo }
@@ -75,6 +76,11 @@ router.get('/medicoes/pendencias', exigirVer, responder(async (req) => MD.penden
 router.get('/medicoes/:mid', exigirVer, responder((req) => MD.detalhe(supabase, req.tenantId, req.params.mid)));
 router.put('/medicoes/:mid', exigirEditar, responder(async (req) => MD.acaoEmpresa(supabase, req.tenantId, await quem(req), req.params.mid, 'salvar', req.body || {})));
 for (const a of ['enviar', 'recalcular', 'reabrir']) router.post(`/medicoes/:mid/${a}`, exigirEditar, responder(async (req) => MD.acaoEmpresa(supabase, req.tenantId, await quem(req), req.params.mid, a, req.body || {})));
+router.get('/:id/horimetro', exigirVer, responder(async (req) => { // 18zf.4: cobra por hora/franquia × checklist com horímetro
+  const c = /^\d+$/.test(String(req.params.id)) ? (await supabase.from('locacao_contratos').select('*').eq('tenant_id', req.tenantId).eq('id', req.params.id)).data?.[0] : null;
+  if (!c) return { status: 404, erro: 'Contrato não encontrado' };
+  return { equipamentos: await require('../services/cobrancaLocacao').diagHorimetro(supabase, req.tenantId, c) };
+}));
 router.get('/:id/medicoes', exigirVer, responder((req) => MD.listar(supabase, req.tenantId, req.params.id)));
 router.post('/:id/medicoes', exigirEditar, responder(async (req) => MD.abrir(supabase, req.tenantId, await quem(req), req.params.id, req.body?.inicio)));
 router.put('/:id/equipamentos/:equip/escopo', exigirEditar, responder((req) => CT.escopoEquipamento(supabase, req.tenantId, req.params.id, req.params.equip, req.body || {})));

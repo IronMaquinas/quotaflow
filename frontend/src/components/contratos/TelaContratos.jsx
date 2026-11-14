@@ -16,6 +16,7 @@ import PainelOcorrencias from "../ocorrencias/PainelOcorrencias"; // 18h
 import GuardaContrato from "./GuardaContrato"; // 18za.1
 import { Toggle } from "../../plataforma/ModulosPlataforma"; // 18zc
 import CampoMoeda from "../shared/CampoMoeda";
+import AvisoHorimetro from "./AvisoHorimetro"; // 18zf.4
 
 const FREQ = { diaria: "Diária", semanal: "Semanal", quinzenal: "Quinzenal", mensal: "Mensal" };
 const dataBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
@@ -66,6 +67,10 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
   const editar = !!d?.pode_editar;
   const lista = useMemo(() => (d?.contratos || []).filter((c) => (filtro === "todos" || (filtro === "abertos" ? faseDe(c) !== "encerrado" : faseDe(c) === filtro)) && (!busca.trim() || semAcento(`${c.numero} ${c.cliente} ${c.local || ""} ${c.equipamentos.map((e) => e.tag).join(" ")}`).includes(semAcento(busca.trim())))), [d, filtro, busca]);
   const aberto = (d?.contratos || []).find((c) => c.id === abertoId) || null;
+  // 18zf.4: contrato cobra por hora/franquia → o checklist do equipamento pede horímetro?
+  const [diagH, setDiagH] = useState([]);
+  const carregarDiagH = () => { if (!aberto || aberto.tipo === "armazenagem") { setDiagH([]); return; } apiService.get(`/contratos/${aberto.id}/horimetro`).then((r) => setDiagH(r.equipamentos || [])).catch(() => setDiagH([])); };
+  useEffect(() => { carregarDiagH(); }, [aberto?.id, aberto?.equipamentos?.length, JSON.stringify(aberto?.condicoes || null)]); // eslint-disable-line
   const carregarPend = async () => { try { setPendMed((await apiService.get("/contratos/medicoes/pendencias")).pendencias || []); } catch { setPendMed([]); } };
   useEffect(() => { carregarPend(); }, []); // eslint-disable-line
   // 18h.3: contador de ocorrências em aberto na aba (paradas em destaque)
@@ -182,6 +187,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
                 acao: () => apiService.post(`/contratos/${aberto.id}/equipamentos/${e.equipamento_id}/devolver`, { fim_real: hoje() }), msg: `${e.tag} devolvido — na base.` })} style={bt(C.success, false)}>🏠 Devolver</button>}
             </div>
             {e.rotinas.map((r) => <div key={r.id} style={{ fontSize: 11, color: corEstado(C, r), marginTop: 2 }}>⏰ {r.frequencia_nome} · {r.modelo_nome} · {r.responsavel_nome} — <b>{txtEstado(r)}</b></div>)}
+            {e.ativa && <AvisoHorimetro C={C} s={s} editar={editar} d={diagH.find((x) => String(x.equipamento_id) === String(e.equipamento_id))} onMudou={() => { carregarDiagH(); ok("Horímetro ligado no checklist — as próximas inspeções vão pedir a leitura."); }} />}
           </div>
         ))}
         {aberto.equipamentos.length === 0 && <div style={{ fontSize: 13, color: C.muted, padding: "6px 0" }}>Nenhum equipamento neste contrato.</div>}
