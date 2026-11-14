@@ -120,7 +120,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
             <div key={c.id} onClick={() => setAbertoId(c.id)} style={{ ...s.card, padding: 14, cursor: "pointer", opacity: c.status === "ativo" ? 1 : 0.65, borderColor: c.atrasadas ? C.danger : C.border }}>
               <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
                 <div style={{ flex: 1, minWidth: 0 }}><div style={{ fontWeight: 700 }}>{c.cliente}</div><div style={{ fontSize: 12, color: C.textSub }}>{c.numero}{c.local ? ` · ${c.local}` : ""}</div></div>
-                <span style={s.tag(FASE[faseDe(c)][1])}>{FASE[faseDe(c)][0]}</span>{c.tipo === "armazenagem" && <span style={{ ...s.tag(C.accent), marginLeft: 4 }} title="Contrato de armazenagem — área no pátio">📦 ARMAZENAGEM</span>}
+                <span style={s.tag(FASE[faseDe(c)][1])}>{FASE[faseDe(c)][0]}</span>{c.tipo === "armazenagem" && <span style={{ ...s.tag(C.accent), marginLeft: 4 }} title="Contrato de armazenagem — área no pátio">📦 ARMAZENAGEM</span>}{c.medicao_auto && c.status === "ativo" && <span style={{ ...s.tag(C.success), marginLeft: 4 }} title={`A medição vai sozinha ${c.medicao_auto_dias || 1} dia(s) depois do fim do ciclo`}>📤 ENVIO AUTOMÁTICO</span>}
               </div>
               <div style={{ fontSize: 12, color: C.muted, marginTop: 6 }}>{dataBR(c.inicio)} → {c.status === "ativo" ? (c.fim_previsto ? dataBR(c.fim_previsto) : "sem prazo") : dataBR(c.fim_real)}</div>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 8 }}>
@@ -137,7 +137,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
       {aberto && !form && !novo && !addEq && !acesso && !confirmar && !pausar && modal(<>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <div style={{ fontSize: 17, fontWeight: 700, flex: 1 }}>📑 {aberto.numero} — {aberto.cliente}</div>
-          <span style={s.tag(FASE[faseDe(aberto)][1])}>{FASE[faseDe(aberto)][0]}</span>{aberto.tipo === "armazenagem" && <span style={{ ...s.tag(C.accent), marginLeft: 6 }}>📦 ARMAZENAGEM</span>}
+          <span style={s.tag(FASE[faseDe(aberto)][1])}>{FASE[faseDe(aberto)][0]}</span>{aberto.tipo === "armazenagem" && <span style={{ ...s.tag(C.accent), marginLeft: 6 }}>📦 ARMAZENAGEM</span>}{aberto.medicao_auto && aberto.status === "ativo" && <span style={{ ...s.tag(C.success), marginLeft: 6 }} title={`A medição vai sozinha ${aberto.medicao_auto_dias || 1} dia(s) depois do fim do ciclo — ✎ Editar para mudar`}>📤 ENVIO AUTOMÁTICO · D+{aberto.medicao_auto_dias || 1}</span>}
         </div>
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: "8px 14px", fontSize: 12, marginTop: 12 }}>
           {[["CNPJ / CPF", aberto.cliente_doc ? mascaraDoc(aberto.cliente_doc) : null], ["Local / obra", aberto.local], ["Início", dataBR(aberto.inicio)],

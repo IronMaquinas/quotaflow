@@ -167,7 +167,7 @@ const ESPERADO = {
   'routes/contratos.js': 'f49f9e179870b89edd3e8f7fd3ce0d8b', // etapa 18zb
   'routes/locatario.js': 'ef7e500d9afdf40a4d5090df88883405', // etapa 18p
   'migrations/043_contratos_locatario.sql': 'f25735b281aa176b4c31c3cc2bf283ed', // etapa 14b.3 (novo)
-  'front:TelaContratos.jsx': 'daf7936b717c9ed380730107c3597448', // etapa 18zc
+  'front:TelaContratos.jsx': '714dcbf11b62e076d9b2845d755185cb', // etapa 18zc.1
   'front:TelaLocatario.jsx': 'b6dc7d43a2e8ab86aedd4e638e832537', // etapa 18o
   'services/clientes.js': '9714283f0013553dc96a48b75b6734cf', // etapa 14b.3.1 (novo)
   'migrations/044_clientes.sql': '446d1a52049aea19938d36cc2b01653d', // etapa 14b.3.1 (novo)
@@ -336,13 +336,9 @@ const ESPERADO = {
   'migrations/087_medicao_envio_automatico.sql': '8ca07e5e6d7b67718139d0cf430a70cf', // etapa 18zc (novo)
 };
 
-// Antes de copiar a etapa 18zc — base: 37e7946
+// Antes de copiar a etapa 18zc.1 — base: 375488a
 const ANTES = {
-  'services/medicoes.js': 'c6a16fc15bce64cd7289f452d437890e',
-  'services/contratosLocacao.js': 'b07bc2fdd76ea6d5e98d28c9682321ff',
-  'server.js': 'c0b009f225cec7dd91cf9f7b0bad8d78',
-  'front:TelaContratos.jsx': '70dae7ea8b9edf2a31594c51c5b4970c',
-  'front:MedicaoModal.jsx': '62bae32a5bb230b22434d97d62808e74',
+  'front:TelaContratos.jsx': 'daf7936b717c9ed380730107c3597448',
 };
 
 const RAIZ = process.cwd();
@@ -380,7 +376,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zc)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zc.1)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
