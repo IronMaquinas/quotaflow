@@ -51,6 +51,11 @@ async function listar(supabase, tenantId, { status = 'no_patio', busca = '', cli
     .sort((a, b) => (a.status === b.status ? String(b.entrada_em || b.previsto_em || '').localeCompare(String(a.entrada_em || a.previsto_em || '')) || String(b.numero).localeCompare(String(a.numero)) : ORD[a.status] - ORD[b.status]))
     .map((b) => publico(b, hoje));
   const ocupacao = await ocupacaoAreas(supabase, tenantId, noPatio);
+  // 18za: clientes com equipamento no pátio sem contrato ativo que cobre a guarda → a guarda não está sendo cobrada
+  let semContrato = null;
+  try { const cs = (await q(supabase.from('locacao_contratos').select('*').eq('tenant_id', tenantId))).filter((c) => c.status === 'ativo' && c.arm_ativo);
+    const { doClienteContrato } = module.exports; const nomes = new Set(); for (const b of noPatio) if (!cs.some((c) => doClienteContrato(c, b))) nomes.add(b.cliente_nome); semContrato = [...nomes].sort(); } catch { semContrato = null; }
+  ocupacao.sem_contrato = semContrato;
   return { ocupacao, bens: lista, total_no_patio: noPatio.length, total_pre_entrada: pre.length, pre_atrasadas: pre.filter((b) => b.previsto_em && b.previsto_em < hoje).length, clientes: [...porCliente.values()].map((c) => ({ ...c, dias_mais_antigo: dias(c.mais_antigo, hoje) })).sort((a, b) => b.qtd - a.qtd),
     saidas_30d: bs.filter((b) => b.status === 'saiu' && b.saida_em && dias(b.saida_em, hoje) <= 30).length };
 }
@@ -276,11 +281,12 @@ async function ocupacaoAreas(supabase, tenantId, noPatio) {
   let areas = []; try { areas = (await q(supabase.from('patio_areas').select('*').eq('tenant_id', tenantId))).filter((a) => a.ativo !== false); } catch { return { sem_migration: true, areas: [] }; }
   const r2 = (n) => Math.round(n * 100) / 100;
   const lin = areas.map((a) => { const bs = noPatio.filter((b) => String(b.area_id) === String(a.id)); const ocup = bs.reduce((s, b) => s + (b.area_m2 != null ? Number(b.area_m2) : 0), 0); const util = Number(a.area_util_m2);
-    return { id: a.id, nome: a.nome, coberta: !!a.coberta, obs: a.obs || null, area_util_m2: util, ocupado_m2: r2(ocup), livre_m2: r2(Math.max(0, util - ocup)), pct: util ? Math.round((ocup / util) * 1000) / 10 : 0, equipamentos: bs.length, sem_medida: bs.filter((b) => b.area_m2 == null).length }; })
+    return { id: a.id, nome: a.nome, coberta: !!a.coberta, obs: a.obs || null, area_util_m2: util, ocupado_m2: r2(ocup), livre_m2: r2(Math.max(0, util - ocup)), pct: util ? Math.round((ocup / util) * 1000) / 10 : 0, equipamentos: bs.length, sem_medida: bs.filter((b) => b.area_m2 == null).length, preco_ref_m2_mes: a.preco_ref_m2_mes != null ? Number(a.preco_ref_m2_mes) : null }; })
     .sort((a, b) => a.nome.localeCompare(b.nome));
   const ids = new Set(areas.map((a) => String(a.id))); const fora = noPatio.filter((b) => !b.area_id || !ids.has(String(b.area_id)));
   const util = lin.reduce((s, a) => s + a.area_util_m2, 0); const ocup = lin.reduce((s, a) => s + a.ocupado_m2, 0);
   return { areas: lin, total_util_m2: r2(util), ocupado_m2: r2(ocup), livre_m2: r2(Math.max(0, util - ocup)), pct: util ? Math.round((ocup / util) * 1000) / 10 : 0,
+    livre_valor_mes: r2(lin.reduce((s, a) => s + (a.preco_ref_m2_mes != null ? a.livre_m2 * a.preco_ref_m2_mes : 0), 0)), livre_sem_preco_m2: r2(lin.filter((a) => a.preco_ref_m2_mes == null).reduce((s, a) => s + a.livre_m2, 0)), // 18za
     sem_medida: noPatio.filter((b) => b.area_m2 == null).length, fora_das_areas: fora.length, fora_m2: r2(fora.reduce((s, b) => s + (b.area_m2 != null ? Number(b.area_m2) : 0), 0)) };
 }
 async function salvarArea(supabase, tenantId, id, body = {}) {
@@ -290,6 +296,7 @@ async function salvarArea(supabase, tenantId, id, body = {}) {
   let todas; try { todas = await q(supabase.from('patio_areas').select('*').eq('tenant_id', tenantId)); } catch (e) { if (/patio_areas|does not exist|schema cache/i.test(e.message)) return { status: 409, erro: 'Falta rodar a migration 084 no Supabase.' }; throw e; }
   if (nome && todas.some((a) => a.ativo !== false && String(a.id) !== String(id) && a.nome.toUpperCase() === nome.toUpperCase())) return { status: 409, erro: `Já existe a área "${nome}"` };
   const campos = {}; if (nome) campos.nome = nome; if (util != null && !Number.isNaN(util)) campos.area_util_m2 = util; if (body.coberta !== undefined) campos.coberta = !!body.coberta; if (body.obs !== undefined) campos.obs = txt(body.obs, 300) || null;
+  if (body.preco_ref_m2_mes !== undefined) { const pr = area(body.preco_ref_m2_mes); if (Number.isNaN(pr)) return { status: 400, erro: 'Preço de referência inválido' }; campos.preco_ref_m2_mes = pr; } // 18za
   if (!id) { const r = await supabase.from('patio_areas').insert([{ tenant_id: tenantId, ativo: true, ...campos }]).select(); if (r.error) throw new Error(r.error.message); return { area: r.data[0] }; }
   const a = todas.find((x) => String(x.id) === String(id)); if (!a) return { status: 404, erro: 'Área não encontrada' };
   if (body.ativo === false) { const em = (await q(supabase.from('patio_bens').select('*').eq('tenant_id', tenantId))).filter((b) => String(b.area_id) === String(a.id) && (b.status === 'no_patio' || b.status === 'pre_entrada'));
@@ -303,4 +310,10 @@ async function listarAreas(supabase, tenantId) {
   return ocupacaoAreas(supabase, tenantId, bs.filter((b) => b.status === 'no_patio'));
 }
 
-module.exports = { ocupacaoAreas, salvarArea, listarAreas, movimentacao, diasNoPeriodo, listar, detalhe, entrada, editar, foto, saida, serieNorm, lerXml, lerXmlDoTenant, seriesDoTexto, preEntradas, confirmarChegada, cancelarPre };
+const soDig = (v) => String(v || '').replace(/\D/g, '').replace(/^0+/, '');
+function doClienteContrato(c, b) {
+  if (c.cliente_id != null && b.cliente_id != null) return String(c.cliente_id) === String(b.cliente_id);
+  if (soDig(c.cliente_doc) && soDig(b.cliente_documento)) return soDig(c.cliente_doc) === soDig(b.cliente_documento);
+  return String(c.cliente || '').trim().toUpperCase() === String(b.cliente_nome || '').trim().toUpperCase();
+}
+module.exports = { doClienteContrato, ocupacaoAreas, salvarArea, listarAreas, movimentacao, diasNoPeriodo, listar, detalhe, entrada, editar, foto, saida, serieNorm, lerXml, lerXmlDoTenant, seriesDoTexto, preEntradas, confirmarChegada, cancelarPre };

@@ -57,14 +57,14 @@ export default function MedicaoModal({ C, s, medicaoId, base = "/contratos", mod
 
         <div style={{ overflowX: "auto", marginTop: 12 }}>
           <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 14 }}>
-            <thead><tr><th style={th}>EQUIPAMENTO</th><th style={th}>PERÍODO NO CICLO</th><th style={{ ...th, textAlign: "right" }}>VALOR MENSAL</th>{!cliente && <th style={{ ...th, textAlign: "right" }}>RECOMENDADO</th>}
+            <thead><tr><th style={th}>EQUIPAMENTO</th><th style={th}>PERÍODO NO CICLO</th><th style={{ ...th, textAlign: "right" }}>VALOR MENSAL / BASE</th>{!cliente && <th style={{ ...th, textAlign: "right" }}>RECOMENDADO</th>}
               <th style={{ ...th, textAlign: "right", width: 150 }}>{cliente ? "VALOR" : "VALOR A COBRAR"}</th><th style={th}>OBSERVAÇÃO</th><th style={th}>{cliente ? "SEU COMENTÁRIO" : "COMENTÁRIO DO CLIENTE"}</th></tr></thead>
             <tbody>{(m.itens || []).map((i) => { const k = String(i.locacao_id); const x = ed[k] || {}; const v = editavel ? num(x.valor) : i.valor;
               const ajustado = v != null && i.valor_recomendado != null && Math.abs(v - i.valor_recomendado) > 0.005;
               return <tr key={k} style={{ borderTop: `1px solid ${C.border}`, verticalAlign: "top" }}>
                 <td style={{ padding: 6 }}><b>{i.tag}</b> <span style={{ color: C.textSub }}>{i.nome}</span>{!cliente && i.novo && <div style={{ fontSize: 11.5, color: C.warn }}>entrou no contrato depois da revisão — confira o valor</div>}</td>
-                <td style={{ padding: 6, whiteSpace: "nowrap", color: C.textSub }}>{dataBR(i.de)} a {dataBR(i.ate)}<div style={{ fontSize: 12.5 }}>{i.dias} de {i.dias_ciclo} dia(s){i.dias < i.dias_ciclo ? " · proporcional" : ""}</div></td>
-                <td style={{ padding: 6, textAlign: "right", whiteSpace: "nowrap" }}>{i.valor_mensal != null ? brl(i.valor_mensal) : <span style={{ color: C.warn }}>sem valor no contrato</span>}</td>
+                <td style={{ padding: 6, whiteSpace: "nowrap", color: C.textSub }}>{dataBR(i.de)} a {dataBR(i.ate)}<div style={{ fontSize: 12.5 }}>{String(i.tipo || "").startsWith("armazenagem") ? (i.tipo === "armazenagem" ? `${i.dias} dia(s) no pátio${i.saiu_em ? ` · saiu ${dataBR(i.saiu_em)}` : ""}` : "ciclo inteiro") : `${i.dias} de ${i.dias_ciclo} dia(s)${i.dias < i.dias_ciclo ? " · proporcional" : ""}`}</div></td>
+                <td style={{ padding: 6, textAlign: "right", whiteSpace: "nowrap" }}>{String(i.tipo || "").startsWith("armazenagem") ? <span style={{ fontSize: 12.5, whiteSpace: "normal", color: i.area_m2 == null && i.tipo === "armazenagem" ? C.warn : C.textSub }}>{i.base}</span> : i.valor_mensal != null ? brl(i.valor_mensal) : <span style={{ color: C.warn }}>sem valor no contrato</span>}</td>
                 {!cliente && <td style={{ padding: 6, textAlign: "right", whiteSpace: "nowrap", color: C.textSub }}>{brl(i.valor_recomendado)}</td>}
                 <td style={{ padding: 6, textAlign: "right" }}>{editavel ? <input inputMode="decimal" value={x.valor ?? ""} onChange={(e) => setEd({ ...ed, [k]: { ...x, valor: e.target.value } })} style={{ ...s.input, padding: "6px 8px", fontSize: 14, textAlign: "right", borderColor: ajustado ? C.warn : undefined }} />
                   : <b>{brl(i.valor)}</b>}{!cliente && ajustado && <div style={{ fontSize: 11.5, color: C.warn }}>ajustado</div>}</td>
@@ -83,7 +83,7 @@ export default function MedicaoModal({ C, s, medicaoId, base = "/contratos", mod
         <div style={{ ...s.card, background: C.bg, padding: "10px 12px", marginTop: 12 }}>
           <div style={{ ...s.label, marginBottom: 6 }}>INFORMATIVO DO SISTEMA — INSPEÇÕES NO PERÍODO{m.status === "aprovada" ? " (congelado no fechamento)" : ""}</div>
           <div style={{ fontSize: 13.5 }}>{inf.total ? <>Previstas <b>{inf.total.previstas}</b> · no prazo <b style={{ color: inf.total.previstas && inf.total.no_prazo < inf.total.previstas ? C.warn : C.success }}>{inf.total.no_prazo}</b> · feitas {inf.total.feitas} · reprovadas <b style={{ color: inf.total.reprovadas ? C.danger : C.text }}>{inf.total.reprovadas}</b></> : "—"}</div>
-          {(m.itens || []).map((i) => { const x = pe[String(i.equipamento_id)]; if (!x || (!x.previstas && !x.feitas)) return null;
+          {(m.itens || []).map((i) => { const x = i.equipamento_id != null ? pe[String(i.equipamento_id)] : null; if (!x || (!x.previstas && !x.feitas)) return null;
             return <div key={i.locacao_id} style={{ fontSize: 13, color: C.textSub, padding: "2px 0" }}><b style={{ color: C.text }}>{i.tag}</b>: {x.no_prazo}/{x.previstas} no prazo · {x.feitas} feita(s){x.reprovadas ? ` · ${x.reprovadas} reprovada(s)` : ""}</div>; })}
         </div>
         {!cliente && (d.paradas || []).length > 0 && <div style={{ ...s.card, background: C.bg, padding: "10px 12px", marginTop: 10, borderColor: C.danger }}>{/* 18h: só informa — o comercial decide */}

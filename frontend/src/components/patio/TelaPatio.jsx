@@ -194,6 +194,9 @@ export default function TelaPatio({ C, s, usuario }) {
         {kpi("SAÍRAM (30 DIAS)", d.saidas_30d)}
         {d.clientes[0] && kpi("HÁ MAIS TEMPO", `${d.clientes.reduce((m, c) => Math.max(m, c.dias_mais_antigo), 0)} dias`, d.clientes.slice().sort((a, b) => b.dias_mais_antigo - a.dias_mais_antigo)[0].cliente, d.clientes.some((c) => c.dias_mais_antigo > 90) ? (C.warn || "#f59e0b") : C.text)}
       </div>
+      {d.ocupacao?.sem_contrato?.length > 0 && <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", fontSize: 12.5, color: C.warn || "#f59e0b", border: `1px dashed ${C.warn || "#f59e0b"}`, borderRadius: 8, padding: "8px 12px", marginBottom: 12 }}>
+        <span style={{ flex: 1, minWidth: 220 }}>⚠ Guarda <b>sem cobrança</b>: {d.ocupacao.sem_contrato.join(", ")} {d.ocupacao.sem_contrato.length > 1 ? "têm" : "tem"} equipamento no pátio sem contrato ativo com "Cobrar guarda no pátio" ligado.</span>
+        <button type="button" onClick={() => window.dispatchEvent(new CustomEvent("qf-ir-tela", { detail: "contratos" }))} style={{ ...s.btn(false), padding: "6px 12px", fontSize: 12 }}>Abrir Contratos</button></div>}
       {d.ocupacao && !d.ocupacao.sem_migration && (areasCad.length === 0
         ? <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", fontSize: 12.5, color: C.warn || "#f59e0b", border: `1px dashed ${C.warn || "#f59e0b"}`, borderRadius: 8, padding: "8px 12px", marginBottom: 12 }}>
             <span style={{ flex: 1, minWidth: 220 }}>⚠ Nenhuma área de armazenagem cadastrada — o espaço do pátio não está sendo medido. Aceitar mais equipamentos sem saber quanto cabe é um risco de compromisso que não dá para cumprir.</span>
@@ -202,7 +205,7 @@ export default function TelaPatio({ C, s, usuario }) {
             <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap", marginBottom: 8 }}>
               <div style={{ fontWeight: 700 }}>🏗 Ocupação do pátio</div>
               <div style={{ fontSize: 22, fontWeight: 800, color: corPct(d.ocupacao.pct) }}>{d.ocupacao.pct.toLocaleString("pt-BR")}%</div>
-              <div style={{ fontSize: 13, color: C.textSub, flex: 1 }}><b>{m2(d.ocupacao.livre_m2)} m² livres</b> de {m2(d.ocupacao.total_util_m2)} m² úteis</div>
+              <div style={{ fontSize: 13, color: C.textSub, flex: 1 }}><b>{m2(d.ocupacao.livre_m2)} m² livres</b> de {m2(d.ocupacao.total_util_m2)} m² úteis{d.ocupacao.livre_valor_mes > 0 && <span title="m² livres × preço de referência de cada área"> · ≈ <b>{d.ocupacao.livre_valor_mes.toLocaleString("pt-BR", { style: "currency", currency: "BRL", maximumFractionDigits: 0 })}/mês</b> de espaço livre{d.ocupacao.livre_sem_preco_m2 > 0 ? ` (+${m2(d.ocupacao.livre_sem_preco_m2)} m² sem preço de tabela)` : ""}</span>}</div>
               <button type="button" onClick={() => setGerAreas(true)} style={{ ...s.btn(false), padding: "6px 12px", fontSize: 12 }}>⚙ Áreas</button></div>
             <div style={{ display: "grid", gridTemplateColumns: estreito ? "1fr" : "repeat(auto-fill, minmax(230px, 1fr))", gap: 10 }}>
               {areasCad.map((a) => <div key={a.id}><div style={{ display: "flex", fontSize: 12.5, marginBottom: 3 }}><span style={{ flex: 1 }}>{a.coberta ? "🏠" : "☀️"} {a.nome}</span><b style={{ color: corPct(a.pct) }}>{a.pct.toLocaleString("pt-BR")}%</b></div>{barra(a.pct)}
@@ -401,15 +404,15 @@ export default function TelaPatio({ C, s, usuario }) {
         {titulo("🏗 Áreas de armazenagem", () => !salv && (setEdArea(null), setGerAreas(null)))}
         <div style={{ fontSize: 12.5, color: C.textSub, marginBottom: 12 }}>Informe a <b>área útil</b> — o que dá para armazenar, sem os corredores de manobra. A ocupação soma os m² dos equipamentos que estão em cada área.</div>
         {areasCad.map((a) => <div key={a.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "10px 0", borderTop: `1px solid ${C.border}`, flexWrap: "wrap" }}>
-          <div style={{ flex: 1, minWidth: 180 }}><div style={{ fontWeight: 700 }}>{a.coberta ? "🏠" : "☀️"} {a.nome}</div><div style={{ fontSize: 12, color: C.muted }}>{m2(a.area_util_m2)} m² úteis · {a.coberta ? "coberta" : "descoberta"} · {a.pct.toLocaleString("pt-BR")}% ocupada{a.obs ? ` · ${a.obs}` : ""}</div></div>
-          <button type="button" onClick={() => setEdArea({ id: a.id, nome: a.nome, area_util_m2: String(a.area_util_m2).replace(".", ","), coberta: a.coberta, obs: a.obs || "" })} style={{ ...s.btn(false), padding: "7px 12px", fontSize: 12.5 }}>✎ Editar</button>
+          <div style={{ flex: 1, minWidth: 180 }}><div style={{ fontWeight: 700 }}>{a.coberta ? "🏠" : "☀️"} {a.nome}</div><div style={{ fontSize: 12, color: C.muted }}>{m2(a.area_util_m2)} m² úteis · {a.coberta ? "coberta" : "descoberta"} · {a.pct.toLocaleString("pt-BR")}% ocupada{a.preco_ref_m2_mes != null ? ` · tabela R$ ${a.preco_ref_m2_mes.toLocaleString("pt-BR", { minimumFractionDigits: 2 })}/m²·mês` : ""}{a.obs ? ` · ${a.obs}` : ""}</div></div>
+          <button type="button" onClick={() => setEdArea({ id: a.id, nome: a.nome, area_util_m2: String(a.area_util_m2).replace(".", ","), coberta: a.coberta, obs: a.obs || "", preco_ref_m2_mes: a.preco_ref_m2_mes != null ? String(a.preco_ref_m2_mes).replace(".", ",") : "" })} style={{ ...s.btn(false), padding: "7px 12px", fontSize: 12.5 }}>✎ Editar</button>
           <button type="button" onClick={() => setConfDesativar(a)} style={{ ...s.btn(false), padding: "7px 12px", fontSize: 12.5, color: C.danger }}>Desativar</button></div>)}
         {!areasCad.length && !edArea && <div style={{ fontSize: 13, color: C.muted, padding: "8px 0" }}>Nenhuma área cadastrada ainda.</div>}
         {edArea ? <div style={{ ...s.card, padding: 12, marginTop: 10 }}>
           <div style={{ fontWeight: 700, marginBottom: 8 }}>{edArea.id ? "Editar área" : "Nova área"}</div>
           <div style={grid2}>{campo(edArea, setEdArea, "nome", "NOME", { ph: "ex.: Galpão 1, Pátio externo" })}{campo(edArea, setEdArea, "area_util_m2", "ÁREA ÚTIL (m²)", { im: "decimal", ph: "ex.: 1.200" })}
             <div style={{ display: "flex", gap: 10, alignItems: "center", padding: "6px 0 10px" }}><Toggle C={C} ligado={!!edArea.coberta} onChange={(v) => setEdArea({ ...edArea, coberta: v })} rotulo="Coberta" /><span style={{ fontSize: 13 }}>{edArea.coberta ? "Coberta" : "Descoberta"}</span></div>
-            {campo(edArea, setEdArea, "obs", "OBSERVAÇÃO", { ph: "opcional" })}</div>
+            {campo(edArea, setEdArea, "obs", "OBSERVAÇÃO", { ph: "opcional" })}{campo(edArea, setEdArea, "preco_ref_m2_mes", "PREÇO DE REFERÊNCIA R$/m²·MÊS (OPCIONAL)", { im: "decimal", ph: "tabela — sugere no contrato" })}</div>
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 14, paddingTop: 12, borderTop: `1px solid ${C.border}` }}><button type="button" disabled={salv} onClick={() => setEdArea(null)} style={btnG(false)}>Cancelar</button><button type="button" disabled={salv || !String(edArea.nome || "").trim() || !String(edArea.area_util_m2 || "").trim()} onClick={salvarArea} style={btnG(true)}>{salv ? "Salvando…" : "Salvar área"}</button></div>
         </div> : <div style={rodape}><button type="button" onClick={() => setEdArea({ nome: "", area_util_m2: "", coberta: false, obs: "" })} style={btnG(true)}>＋ Nova área</button></div>}
         {estreito && !edArea && <div style={{ height: 8 }} />}

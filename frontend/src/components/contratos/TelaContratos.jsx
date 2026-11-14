@@ -13,6 +13,7 @@ import CampoTelefone, { telefoneExibir } from "../shared/CampoTelefone";
 import AbaMedicoes from "./AbaMedicoes"; // 18d.5
 import MobilizacaoContrato, { FaturamentoPrevisto } from "./MobilizacaoContrato"; // 18y
 import PainelOcorrencias from "../ocorrencias/PainelOcorrencias"; // 18h
+import { Toggle } from "../../plataforma/ModulosPlataforma"; // 18za
 
 const FREQ = { diaria: "Diária", semanal: "Semanal", quinzenal: "Quinzenal", mensal: "Mensal" };
 const dataBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
@@ -227,13 +228,26 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
             <span><b>Checklist pelo locatário</b> — as inspeções de rotina dos equipamentos deste contrato ficam com o cliente (ele faz pelo acesso dele). Desmarcado, a empresa faz.</span></label>
           <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 6, fontSize: 13, cursor: "pointer" }}><input type="checkbox" checked={!!form.medicao_locatario} onChange={(e) => setForm({ ...form, medicao_locatario: e.target.checked })} style={{ marginTop: 3 }} />
             <span><b>Aprovação da medição pelo locatário</b> — o sistema monta a medição de cada ciclo, você revisa e envia, e o cliente aprova (ou comenta na linha do item). Desmarcado, você revisa e fecha sozinho.</span></label>
+          {moduloAtivo("patio_cliente") && <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>{/* 18za: 📦 guarda no pátio cobrada pelo contrato */}
+            <div style={{ display: "flex", gap: 10, alignItems: "center" }}><Toggle C={C} ligado={!!form.arm_ativo} rotulo="Cobrar guarda no pátio" onChange={(v) => {
+                setForm({ ...form, arm_ativo: v, arm_unidade: form.arm_unidade || "m2_mes" });
+                if (v && form.arm_preco == null && !form._arm_ref) apiService.get("/patio/areas").then((r) => { const ps = (r.areas || []).map((a) => a.preco_ref_m2_mes).filter((x) => x != null); if (ps.length) setForm((f) => ({ ...f, _arm_ref: Math.max(...ps) })); }).catch(() => {}); }} />
+              <span style={{ fontSize: 13 }}><b>📦 Cobrar guarda no pátio</b> — a medição de cada ciclo inclui os equipamentos deste cliente em 📦 Propriedade do cliente: <b>m² × dias × preço</b>.</span></div>
+            {form.arm_ativo && <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", marginTop: 10, fontSize: 13 }}>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={{ ...s.label, marginBottom: 0 }}>PREÇO (R$)</span><input inputMode="decimal" value={form.arm_preco ?? ""} onChange={(e) => setForm({ ...form, arm_preco: e.target.value })} placeholder={form._arm_ref ? `tabela: ${String(form._arm_ref).replace(".", ",")}` : "ex.: 12,00"} style={{ ...s.input, width: 130, padding: "6px 8px" }} /></label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={{ ...s.label, marginBottom: 0 }}>POR</span><select value={form.arm_unidade || "m2_mes"} onChange={(e) => setForm({ ...form, arm_unidade: e.target.value })} style={{ ...s.input, width: 150, padding: "6px 8px" }}><option value="m2_mes">m² ao mês</option><option value="m2_dia">m² ao dia</option></select></label>
+              <label style={{ display: "flex", flexDirection: "column", gap: 4 }}><span style={{ ...s.label, marginBottom: 0 }}>MÍNIMO CONTRATADO (m²/MÊS)</span><input inputMode="decimal" value={form.arm_minimo_m2 ?? ""} onChange={(e) => setForm({ ...form, arm_minimo_m2: e.target.value })} placeholder="opcional" style={{ ...s.input, width: 150, padding: "6px 8px" }} /></label>
+              <div style={{ flexBasis: "100%", fontSize: 12, color: C.muted }}>{form.arm_unidade === "m2_dia" ? "Preço por m² ao dia: m²·dia do ciclo × preço." : "Preço por m² ao mês: proporcional aos dias do ciclo (m² × dias × preço ÷ dias do ciclo)."} Diária: conta o dia da entrada e não o da saída. Com mínimo, o cliente paga pelo menos o mínimo × preço, mesmo usando menos.{form._arm_ref && form.arm_preco == null ? ` Preço de tabela das áreas: R$ ${String(form._arm_ref).replace(".", ",")}/m²·mês.` : ""}</div>
+            </div>}
+          </div>}
         </div>}
         <label style={{ display: "block", marginTop: 8 }}><span style={s.label}>OBSERVAÇÕES</span><textarea rows={2} value={form.obs || ""} onChange={(e) => setForm({ ...form, obs: e.target.value })} style={{ ...s.input, resize: "vertical" }} /></label>
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
           <button type="button" onClick={() => setForm(null)} style={{ ...s.btn(false), cursor: "pointer", flex: 1, color: C.text }}>Cancelar</button>
           <button type="button" disabled={ocupado} onClick={async () => {
-            const { local, contato_nome, contato_email, contato_telefone, fim_previsto, obs, medicao_dia_inicio, medicao_vencimento_dia, checklist_locatario, medicao_locatario } = form;
-            const r = await acao(() => apiService.put(`/contratos/${form.id}`, { local, contato_nome, contato_email, contato_telefone, fim_previsto: fim_previsto || null, obs, medicao_dia_inicio: medicao_dia_inicio || null, medicao_vencimento_dia: medicao_vencimento_dia === "" || medicao_vencimento_dia == null ? null : Number(medicao_vencimento_dia), checklist_locatario: !!checklist_locatario, medicao_locatario: !!medicao_locatario }), "Contrato salvo.");
+            const { local, contato_nome, contato_email, contato_telefone, fim_previsto, obs, medicao_dia_inicio, medicao_vencimento_dia, checklist_locatario, medicao_locatario, arm_ativo, arm_preco, arm_unidade, arm_minimo_m2 } = form;
+            const arm = moduloAtivo("patio_cliente") ? { arm_ativo: !!arm_ativo, arm_preco: arm_preco === "" || arm_preco == null ? null : String(arm_preco), arm_unidade: arm_unidade || "m2_mes", arm_minimo_m2: arm_minimo_m2 === "" || arm_minimo_m2 == null ? null : String(arm_minimo_m2) } : {};
+            const r = await acao(() => apiService.put(`/contratos/${form.id}`, { local, contato_nome, contato_email, contato_telefone, fim_previsto: fim_previsto || null, obs, medicao_dia_inicio: medicao_dia_inicio || null, medicao_vencimento_dia: medicao_vencimento_dia === "" || medicao_vencimento_dia == null ? null : Number(medicao_vencimento_dia), checklist_locatario: !!checklist_locatario, medicao_locatario: !!medicao_locatario, ...arm }), "Contrato salvo.");
             if (r) setForm(null);
           }} style={{ ...s.btn(!ocupado, C.accent), flex: 1 }}>Salvar</button>
         </div>

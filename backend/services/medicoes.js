@@ -137,7 +137,40 @@ async function montarItens(supabase, tenantId, c, x) {
     const rec = mensal == null ? null : dias >= diasCiclo ? r2(mensal) : r2((mensal * dias) / diasCiclo);
     return { locacao_id: l.id, equipamento_id: l.equipamento_id, tag: e.tag || null, nome: e.nome || null, de, ate, dias, dias_ciclo: diasCiclo,
       valor_mensal: mensal, valor_recomendado: rec, valor: rec, obs: null, comentario_cliente: null };
-  }).sort((a, b) => String(a.tag || '').localeCompare(String(b.tag || '')));
+  }).sort((a, b) => String(a.tag || '').localeCompare(String(b.tag || ''))).concat(await itensGuarda(supabase, tenantId, c, x, diasCiclo));
+}
+// 18za: 📦 guarda no pátio — um item por equipamento do cliente que esteve no pátio no ciclo: m² × dias × preço do m²·dia
+//   (preço ao mês → ÷ dias do ciclo). Diária: conta o dia da entrada e não o da saída (mesmo dia = 1) — a mesma da ficha de movimentação.
+//   Mínimo contratado (m²/mês): se o m²·dia do ciclo ficar abaixo de mínimo × dias do ciclo, entra uma linha de complemento.
+const doCliente = (c, b) => require('./patio').doClienteContrato(c, b);
+const brl4 = (v) => Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: 2, maximumFractionDigits: 4 }).replace(/\u00a0/g, ' ');
+const m2f = (v) => Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 2 });
+async function itensGuarda(supabase, tenantId, c, x, diasCiclo) {
+  if (!c.arm_ativo || !(Number(c.arm_preco) > 0)) return [];
+  let bens; try { bens = await q(supabase.from('patio_bens').select('*').eq('tenant_id', tenantId)); } catch { return []; }
+  const P = require('./patio');
+  const precoDia = c.arm_unidade === 'm2_dia' ? Number(c.arm_preco) : Number(c.arm_preco) / diasCiclo;
+  const un = c.arm_unidade === 'm2_dia' ? 'm²·dia' : 'm²·mês';
+  const out = [];
+  for (const b of bens.filter((y) => y.status !== 'pre_entrada' && doCliente(c, y))) {
+    const dias = P.diasNoPeriodo(b, x.inicio, x.fim); if (!dias) continue;
+    const de = b.entrada_em > x.inicio ? b.entrada_em : x.inicio; const sai = b.status === 'saiu' && b.saida_em && b.saida_em <= x.fim ? b.saida_em : null;
+    const area = b.area_m2 != null ? Number(b.area_m2) : null; const m2dia = area != null ? r2(area * dias) : null; const rec = m2dia != null ? r2(m2dia * precoDia) : null;
+    out.push({ tipo: 'armazenagem', locacao_id: `pat-${b.id}`, patio_bem_id: b.id, equipamento_id: null, tag: b.numero, nome: `📦 Guarda no pátio — ${[b.descricao, b.modelo].filter(Boolean).join(' · ')}${b.numero_serie ? ` · série ${b.numero_serie}` : ''}`,
+      de, ate: sai || x.fim, saiu_em: sai, dias, dias_ciclo: diasCiclo, area_m2: area, m2_dia: m2dia, preco: Number(c.arm_preco), unidade: c.arm_unidade, preco_m2_dia: Math.round(precoDia * 1e6) / 1e6,
+      base: area != null ? `${m2f(area)} m² × ${dias} dia(s) × ${brl4(c.arm_preco)}/${un}${c.arm_unidade === 'm2_mes' ? ` ÷ ${diasCiclo}` : ''}` : 'sem m² informado na ficha do pátio',
+      valor_mensal: null, valor_recomendado: rec, valor: rec, obs: null, comentario_cliente: null });
+  }
+  out.sort((a, b) => String(a.tag).localeCompare(String(b.tag)));
+  const min = Number(c.arm_minimo_m2) || 0;
+  if (min > 0) {
+    const usado = out.reduce((t, i) => t + (i.m2_dia || 0), 0); const minimo = min * diasCiclo;
+    if (usado < minimo) { const falta = r2(minimo - usado); const rec = r2(falta * precoDia);
+      out.push({ tipo: 'armazenagem_minimo', locacao_id: 'pat-minimo', patio_bem_id: null, equipamento_id: null, tag: '📦', nome: `Mínimo contratado de guarda — ${m2f(min)} m²/mês (usou ${m2f(r2(usado / diasCiclo))} m² em média)`,
+        de: x.inicio, ate: x.fim, dias: diasCiclo, dias_ciclo: diasCiclo, area_m2: null, m2_dia: falta, preco: Number(c.arm_preco), unidade: c.arm_unidade, preco_m2_dia: Math.round(precoDia * 1e6) / 1e6,
+        base: `complemento: ${m2f(falta)} m²·dia × ${brl4(Math.round(precoDia * 1e4) / 1e4)}`, valor_mensal: null, valor_recomendado: rec, valor: rec, obs: null, comentario_cliente: null }); }
+  }
+  return out;
 }
 /** gera (se ainda não existe) a medição do ciclo — já com o valor recomendado como "valor a cobrar" */
 async function abrir(supabase, tenantId, quem, contratoId, inicio) {
@@ -157,7 +190,7 @@ async function abrir(supabase, tenantId, quem, contratoId, inicio) {
 /** 18d.3: mantém a medição EM PREPARAÇÃO em dia com o contrato (equipamento que entrou/saiu, valor mensal ou datas que mudaram
  *  depois que ela foi gerada). Sem revisão do comercial ainda → refaz tudo; já revisada → só acrescenta o equipamento que faltava
  *  e tira o que não está mais no ciclo (os valores que ele digitou ficam). Medição enviada/aprovada não muda. */
-const chaveItens = (l) => JSON.stringify((l || []).map((i) => [String(i.locacao_id), i.de, i.ate, i.valor_mensal]).sort());
+const chaveItens = (l) => JSON.stringify((l || []).map((i) => [String(i.locacao_id), i.de, i.ate, i.valor_mensal, i.area_m2 ?? null, i.preco_m2_dia ?? null, i.m2_dia ?? null]).sort());
 async function sincronizar(supabase, tenantId, m, c = null) {
   if (m.status !== 'aberta') return m;
   c = c || await contratoDo(supabase, tenantId, m.contrato_id); if (!c) return m;
@@ -201,7 +234,7 @@ const semValor = (m) => (m.itens || []).filter((i) => i.valor == null);
 async function enviar(supabase, tenantId, quem, m) {
   if (!['aberta', 'devolvida'].includes(m.status)) return { status: 409, erro: 'Esta medição já foi enviada' };
   if (!(m.itens || []).length) return { status: 400, erro: 'Nenhum equipamento no contrato neste ciclo' };
-  if (semValor(m).length) return { status: 400, erro: `Informe o valor a cobrar de ${semValor(m).length} equipamento(s) (o contrato não tem valor mensal)` };
+  if (semValor(m).length) return { status: 400, erro: `Informe o valor a cobrar de ${semValor(m).length} item(ns) — ${semValor(m).map((i) => i.tag).join(', ')} (sem valor mensal no contrato${semValor(m).some((i) => i.tipo === 'armazenagem') ? ' ou sem m² na ficha do pátio' : ''})` };
   const c = await contratoDo(supabase, tenantId, m.contrato_id);
   if (!c.medicao_locatario) { // fecha direto — a empresa cuida de tudo
     const info = await informativo(supabase, tenantId, c, m.inicio, m.fim);
@@ -414,4 +447,4 @@ async function avisosDiarios(supabase, { hoje = hojeBR(), enviar = null } = {}) 
   return r;
 }
 
-module.exports = { painelEmpresa, D_ANTES, naJanela, STATUS_NOME, cicloDe, ciclos, listar, detalhe, abrir, recalcular, salvar, enviar, reabrir, aprovarCliente, contestar, acaoEmpresa, pendencias, painelLocatario, acaoLocatario, informativo, avisosDiarios, _definirEnvio };
+module.exports = { itensGuarda, painelEmpresa, D_ANTES, naJanela, STATUS_NOME, cicloDe, ciclos, listar, detalhe, abrir, recalcular, salvar, enviar, reabrir, aprovarCliente, contestar, acaoEmpresa, pendencias, painelLocatario, acaoLocatario, informativo, avisosDiarios, _definirEnvio };

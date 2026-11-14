@@ -48,6 +48,12 @@ function validar(body, parcial = false) {
   if (tem('medicao_dia_inicio')) { const d = body.medicao_dia_inicio === '' || body.medicao_dia_inicio == null ? null : Number(body.medicao_dia_inicio); if (d != null && !(Number.isInteger(d) && d >= 1 && d <= 28)) return { erro: 'Início do ciclo de medição: um dia de 1 a 28 (ou marque "Mês do calendário")' }; out.medicao_dia_inicio = d === 1 ? null : d; }
   for (const k of ['checklist_locatario', 'medicao_locatario']) if (tem(k)) out[k] = body[k] === true;
   if (tem('medicao_vencimento_dia')) { const d = body.medicao_vencimento_dia === '' || body.medicao_vencimento_dia == null ? null : Number(body.medicao_vencimento_dia); if (d != null && !(Number.isInteger(d) && d >= 1 && d <= 31)) return { erro: 'Dia de vencimento: de 1 a 31' }; out.medicao_vencimento_dia = d; } // 18d.2
+  // 18za: 📦 guarda no pátio cobrada pelo contrato — preço por m² (ao mês ou ao dia) e mínimo contratado (m²/mês)
+  const numBR = (v) => { let s = String(v).trim(); if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.'); else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, ''); return Number(s); };
+  if (tem('arm_unidade')) { if (!['m2_mes', 'm2_dia'].includes(body.arm_unidade)) return { erro: 'Unidade da guarda: por m² ao mês ou por m² ao dia' }; out.arm_unidade = body.arm_unidade; }
+  if (tem('arm_preco')) { const n = body.arm_preco === '' || body.arm_preco == null ? null : numBR(body.arm_preco); if (n != null && !(Number.isFinite(n) && n > 0)) return { erro: 'Preço do m² inválido' }; out.arm_preco = n; }
+  if (tem('arm_minimo_m2')) { const n = body.arm_minimo_m2 === '' || body.arm_minimo_m2 == null ? null : numBR(body.arm_minimo_m2); if (n != null && !(Number.isFinite(n) && n > 0)) return { erro: 'Mínimo contratado (m²) inválido' }; out.arm_minimo_m2 = n; }
+  if (tem('arm_ativo')) { out.arm_ativo = body.arm_ativo === true; if (out.arm_ativo && !(out.arm_preco ?? body._arm_preco_atual)) return { erro: 'Para cobrar a guarda no pátio, informe o preço do m²' }; }
   return { dados: out };
 }
 
@@ -99,9 +105,9 @@ async function criar(supabase, tenantId, quem, body = {}) {
 }
 async function editar(supabase, tenantId, id, body = {}) {
   const c = await doTenant(supabase, tenantId, id); if (!c) return { status: 404, erro: 'Contrato não encontrado' };
-  const v = validar({ inicio: c.inicio, ...body }, true); if (v.erro) return { status: 400, erro: v.erro };
+  const v = validar({ inicio: c.inicio, ...body, _arm_preco_atual: c.arm_preco }, true); if (v.erro) return { status: 400, erro: v.erro };
   const { data, error } = await supabase.from('locacao_contratos').update(v.dados).eq('id', c.id).eq('tenant_id', tenantId).select();
-  if (error) throw new Error(error.message);
+  if (error) { if (/arm_/.test(error.message)) return { status: 409, erro: 'Falta rodar a migration 085 no Supabase (guarda no pátio no contrato).' }; throw new Error(error.message); }
   // 18d: mudou "Checklist pelo locatário" → as rotinas das locações ativas do contrato passam para quem faz agora
   if (v.dados.checklist_locatario !== undefined && v.dados.checklist_locatario !== !!c.checklist_locatario) {
     const ativas = (await q(supabase.from('equipamento_locacoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id))).filter((l) => l.status === 'ativa');

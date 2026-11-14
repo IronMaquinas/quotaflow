@@ -26,16 +26,16 @@ export function gerarHtmlMedicao({ medicao: m, contrato: c, informativo: inf = {
     </div>
     <h1>Boletim de Medição — ${esc(c.numero)}</h1>
     <div>Cliente: <b>${esc(c.cliente)}</b>${c.local ? ` · ${esc(c.local)}` : ""}<br/>Período: <b>${dataBR(m.inicio)} a ${dataBR(m.fim)}</b>${c.medicao_vencimento_dia ? ` · Vencimento: <b>dia ${String(c.medicao_vencimento_dia).padStart(2, "0")}</b>` : ""} · Situação: <b>${esc(m.status_nome || m.status)}</b></div>
-    <h2>Equipamentos medidos</h2>
-    <table><thead><tr><th>Equipamento</th><th>Período no ciclo</th><th class="n">Valor mensal</th><th class="n">Valor</th><th>Observações</th></tr></thead><tbody>
-    ${itens.map((i) => `<tr><td><b>${esc(i.tag || "")}</b> ${esc(i.nome || "")}</td><td>${dataBR(i.de)} a ${dataBR(i.ate)} (${i.dias}/${i.dias_ciclo} dias)</td>
-      <td class="n">${brl(i.valor_mensal)}</td><td class="n"><b>${brl(i.valor)}</b></td><td>${esc(i.obs || "")}${i.comentario_cliente ? `<div class="com">Cliente: ${esc(i.comentario_cliente)}</div>` : ""}</td></tr>`).join("")}
+    <h2>Itens medidos</h2>
+    <table><thead><tr><th>Equipamento</th><th>Período no ciclo</th><th class="n">Valor mensal / base</th><th class="n">Valor</th><th>Observações</th></tr></thead><tbody>
+    ${itens.map((i) => `<tr><td><b>${esc(i.tag || "")}</b> ${esc(i.nome || "")}</td><td>${dataBR(i.de)} a ${dataBR(i.ate)} (${String(i.tipo || "").startsWith("armazenagem") ? (i.tipo === "armazenagem" ? `${i.dias} dia(s) no pátio` : "ciclo inteiro") : `${i.dias}/${i.dias_ciclo} dias`})</td>
+      <td class="n">${String(i.tipo || "").startsWith("armazenagem") ? `<span style="font-size:10.5px">${esc(i.base || "")}</span>` : brl(i.valor_mensal)}</td><td class="n"><b>${brl(i.valor)}</b></td><td>${esc(i.obs || "")}${i.comentario_cliente ? `<div class="com">Cliente: ${esc(i.comentario_cliente)}</div>` : ""}</td></tr>`).join("")}
     <tr><td colspan="3" class="n"><b>Total</b></td><td class="n"><b>${brl(total)}</b></td><td></td></tr>
     </tbody></table>
     ${m.obs ? `<div class="box"><b>Observações:</b> ${esc(m.obs)}</div>` : ""}
     <h2>Informativo — inspeções no período (registrado pelo sistema)</h2>
     <table><thead><tr><th>Equipamento</th><th class="n">Previstas</th><th class="n">No prazo</th><th class="n">Feitas</th><th class="n">Reprovadas</th></tr></thead><tbody>
-    ${itens.map((i) => { const x = pe[String(i.equipamento_id)] || {}; return `<tr><td><b>${esc(i.tag || "")}</b></td><td class="n">${x.previstas ?? 0}</td><td class="n">${x.no_prazo ?? 0}</td><td class="n">${x.feitas ?? 0}</td><td class="n">${x.reprovadas ?? 0}</td></tr>`; }).join("")}
+    ${itens.filter((i) => !String(i.tipo || "").startsWith("armazenagem")).map((i) => { const x = pe[String(i.equipamento_id)] || {}; return `<tr><td><b>${esc(i.tag || "")}</b></td><td class="n">${x.previstas ?? 0}</td><td class="n">${x.no_prazo ?? 0}</td><td class="n">${x.feitas ?? 0}</td><td class="n">${x.reprovadas ?? 0}</td></tr>`; }).join("")}
     </tbody></table>
     <div class="box" style="font-size:10.5px">${m.preenchido_por ? `Revisado por <b>${esc(m.preenchido_por)}</b> em ${dataHora(m.preenchido_em)}. ` : ""}${m.enviado_por ? `Enviado por <b>${esc(m.enviado_por)}</b> em ${dataHora(m.enviado_em)}. ` : ""}${m.aprovado_por ? `Aprovado por <b>${esc(m.aprovado_por)}</b> em ${dataHora(m.aprovado_em)}.` : "Ainda não aprovado."}</div>
   </div></body></html>`;

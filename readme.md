@@ -406,6 +406,7 @@ Ver seção 5 para o fluxo completo.
 - **082 (18z.1)** — 📦 pátio: status `pre_entrada` (lançada pelo XML, aguardando chegada); nº de série e data de entrada podem ficar em branco na pré; colunas emitente da NF, item da NF, chegada prevista, quem lançou; série única entre pré-entradas + no pátio. Idempotente.
 - **083 (18z.5)** — 📦 `patio_bens.area_m2` (área ocupada no pátio, para cobrança por m²·dia). Idempotente.
 - **084 (18z.6)** — 🏗 `patio_areas` (áreas de armazenagem: nome, área útil m², coberta, ativo) + `patio_bens.area_id` e `patio_bens.cliente_documento` (CNPJ/CPF do cliente). Idempotente.
+- **085 (18za)** — 📦 guarda no pátio no contrato: `locacao_contratos.arm_ativo`, `arm_preco`, `arm_unidade` (m2_mes/m2_dia), `arm_minimo_m2`; `patio_areas.preco_ref_m2_mes` (preço de tabela). Idempotente.
 - **058 (16e.3)** — `tenants (+) base_endereco` (📍 pátio / base da frota — onde o conjunto é liberado; pode ser diferente do endereço fiscal). Idempotente.
 - **057 (16e)** — `execucoes (+) fluxo` (etapas da viagem em ordem: marcações e inspeções, com status, hora, GPS, inspeção feita e liberação do gestor) e `inspecoes (+) execucao_id, etapa_id` (a inspeção feita no fluxo aponta para a AT). Idempotente.
 - **056 (16c)** — `execucoes.status (+) 'rascunho'` (cavalo pode ficar vazio no rascunho), `execucoes (+) token, link_visto_em` (📲 link do motorista) e `liberacao_docs` (CNH/CRLV vencido na data da viagem liberado pelo gestor). Idempotente.
@@ -1007,6 +1008,12 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18za (14/11):** 📦📏 **Guarda no pátio cobrada pelo contrato** (decidido com o Marcony: o preço é acordo comercial → fica no **contrato**; a área é física → só capacidade e preço de tabela). Migration 085.
+    - **Contrato → 📏 Medição e inspeções → 📦 Cobrar guarda no pátio** (toggle; aparece com o módulo Propriedade do cliente): **preço** R$ por **m² ao mês** ou **m² ao dia** + **mínimo contratado** (m²/mês, opcional). Sugere o preço de tabela das áreas.
+    - **Medição do ciclo** inclui, além dos equipamentos locados, **um item por equipamento do cliente no pátio**: m² × dias × preço (ao mês → ÷ dias do ciclo), com a base do cálculo visível ("10 m² × 31 dia(s) × R$ 31,00/m²·mês ÷ 31"); saída no meio do ciclo aparece. Sem m² na ficha → item sem valor, em laranja (não deixa enviar). **Mínimo**: linha de complemento quando o uso fica abaixo. Contrato só de guarda também gera medição. Medição em preparação acompanha mudanças de m²/datas. Boletim (PDF) com a coluna "Valor mensal / base"; informativo de inspeções ignora os itens de guarda.
+    - Cliente do pátio × contrato: pelo cadastro do cliente, senão CNPJ/CPF, senão nome.
+    - **Modelo de contrato:** campos `{{armazenagem.preco}}` ("R$ 12,00 por m² ao mês") e `{{armazenagem.minimo}}`.
+    - **Pátio:** alerta discreto **"Guarda sem cobrança"** com os clientes que têm equipamento no pátio sem contrato ativo cobrando a guarda (botão Abrir Contratos); **preço de referência R$/m²·mês** na área; painel mostra **≈ R$/mês de espaço livre**.
   - **18z.7 (13/11):** 📦 Pátio — botões Cancelar | Salvar da **nova área** e do **✎ alterar local** ganharam espaço (linha separadora) — estavam grudados no formulário.
   - **18z.6 (13/11):** 📦 **Pátio — áreas de armazenagem, ocupação e CNPJ.** Migration 084.
     - **🏗 Áreas de armazenagem** (botão ⚙ Áreas): nome, **área útil m²** (sem corredor de manobra), coberta/descoberta (toggle), observação; editar; desativar com confirmação (bloqueado se há equipamento nela). Aceita "1.200" e "37,5" no jeito brasileiro.
@@ -1676,7 +1683,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18z.7)
+**Última atualização deste documento:** 06/11/2026 (etapa 18za)
 
 --------------------------------------------------------------------------------
 
