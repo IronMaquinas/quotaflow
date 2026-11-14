@@ -32,7 +32,7 @@ export default function TelaInspecoes({ C, s, onAbrirOS, onIrParaOS, embutida = 
   const [locais, setLocais] = useState([]);
   const [semMigration, setSemMigration] = useState(false);
   const [aviso, setAviso] = useState(null);
-  const [busca, setBusca] = useState("");
+  const [busca, setBusca] = useState(() => { const b = window.qfInspecoesBusca || ""; window.qfInspecoesBusca = null; return b; }); // 18zf.5: veio do aviso de horímetro (contrato/medição) já filtrado no equipamento
   const [perHist, setPerHist] = useState(() => faixaPeriodo("tudo")); // 18c.4: período no histórico
   const [filtroEq, setFiltroEq] = useState("");
   const [exec, setExec] = useState(null);       // { equipamento, modeloId } | { rascunho }

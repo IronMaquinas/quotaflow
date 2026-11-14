@@ -148,7 +148,7 @@ const ESPERADO = {
   'services/inspecoes.js': '3a0b0f74f10f39e6b2d2acf0831b6aca', // etapa 18c.3
   'routes/inspecoes.js': '2957a18a385cfc150fad54cdf817b4ce', // etapa 14b.2
   'migrations/040_inspecoes.sql': '0ac35a83c9621397570d1be855727cc9', // etapa 14a (novo)
-  'front:TelaInspecoes.jsx': 'ce15634096c7b1a8d4a8970eb973b0df', // etapa 18k
+  'front:TelaInspecoes.jsx': '454eebfc70b4aff07b5699a9a2a9208d', // etapa 18zf.5
   'front:ExecutarInspecao.jsx': 'fb94210a4f175ac1dad6e8190dc02deb', // etapa 18ze
   'front:EditorModeloInspecao.jsx': '00fc0578bd4bcba1221b7ced983727dd', // etapa 14c.1
   'front:Esquemas.jsx': 'f68e56580c3ed088c902109fcb016b9c', // etapa 14a (novo)
@@ -339,16 +339,13 @@ const ESPERADO = {
   'front:ImagemZoom.jsx': '0a87d5d9acc85d2193cc347bf9798c8a', // etapa 18zf
   'front:ModalDetalheNCFornecedor.jsx': '55abb21fa95396222386ade553cc9b5c', // etapa 18ze
   'services/cobrancaLocacao.js': 'f9b61394bec8321dbadbaa4e8b1c5489', // etapa 18zf.4
-  'front:AvisoHorimetro.jsx': 'e90b789b258a4ceb2897a5009bf6fc0c', // etapa 18zf.4
+  'front:AvisoHorimetro.jsx': 'a7ff6b4f1cb2fdd82ac75452041b78ce', // etapa 18zf.5
 };
 
-// Antes de copiar a etapa 18zf.4 — base: b6e844a
+// Antes de copiar a etapa 18zf.5 — base: 0cc5917
 const ANTES = {
-  'front:TelaContratos.jsx': 'b67fedc6cadadf457b09d75155d5a74c',
-  'front:MedicaoModal.jsx': 'cfc2b31ce226b57bd100bc0abf381941',
-  'services/cobrancaLocacao.js': '9b298bb506b4adc458864f77ac4b8355',
-  'services/medicoes.js': 'a95cfd27199fb967c9c357b70f7abc03',
-  'routes/contratos.js': '28430e6859469d60a70ebbcdda7d0463',
+  'front:AvisoHorimetro.jsx': 'e90b789b258a4ceb2897a5009bf6fc0c',
+  'front:TelaInspecoes.jsx': 'ce15634096c7b1a8d4a8970eb973b0df',
 };
 
 const RAIZ = process.cwd();
@@ -386,7 +383,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zf.4)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zf.5)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
