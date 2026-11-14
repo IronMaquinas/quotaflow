@@ -271,7 +271,9 @@ async function enviar(supabase, tenantId, quem, m) {
 async function reabrir(supabase, tenantId, quem, m, motivo) {
   if (!['aprovada', 'enviada'].includes(m.status)) return { status: 409, erro: 'Só a medição enviada ou aprovada pode ser reaberta' };
   const mot = texto(motivo, 500); if (!mot) return { status: 400, erro: 'Conte por que está reabrindo' };
-  return mudar(supabase, tenantId, m, { status: 'aberta', aprovado_por: null, aprovado_em: null, informativo: null }, evento('reaberta', quem.usuarioNome, mot));
+  // 18zf.1: reaberta = já revisada — os valores que foram enviados/aprovados ficam para ajustar (a atualização automática não refaz o "valor a cobrar")
+  const revisada = m.preenchido_em ? {} : { preenchido_em: m.enviado_em || m.aprovado_em || new Date().toISOString(), preenchido_por: m.enviado_por || m.aprovado_por || quem.usuarioNome || null };
+  return mudar(supabase, tenantId, m, { status: 'aberta', aprovado_por: null, aprovado_em: null, informativo: null, ...revisada }, evento('reaberta', quem.usuarioNome, mot));
 }
 /** cliente: ✓ aprova */
 async function aprovarCliente(supabase, tenantId, quem, m) {

@@ -203,6 +203,7 @@ export function DocumentoContrato({ C, s, contrato: k, editar, onErro: onErroPai
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
           {campo(s, rotNA("CAUÇÃO", "caucao"), moeda("caucao"))}{k.tipo !== "armazenagem" && <>{campo(s, rotNA("FRANQUIA (H/MÊS POR EQUIP.)", "franquia_horas"), inp("franquia_horas", { inputMode: "numeric" }))}{campo(s, rotNA("HORA EXCEDENTE", "hora_excedente"), moeda("hora_excedente"))}</>}{/* 18zb: armazenagem não tem franquia de horas */}
         </div>
+        {k.tipo !== "armazenagem" && Number(String(f.franquia_horas ?? "").replace(",", ".")) > 744 && <div style={{ fontSize: 12, color: C.warn, marginTop: 4 }}>⚠ A franquia é em <b>horas por mês</b> de cada equipamento (horímetro) — um mês tem no máximo 744 h. Confira se não digitou um valor em R$ aqui.</div>}{/* 18zf.1 */}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
           {campo(s, rotNA("REAJUSTE (ÍNDICE)", "reajuste"), inp("reajuste"))}{campo(s, rotNA("MULTA RESCISÓRIA (%)", "multa_rescisoria_pct"), inp("multa_rescisoria_pct", { inputMode: "decimal" }))}{campo(s, rotNA("VENCIMENTO (DIA)", "vencimento_dia"), inp("vencimento_dia", { inputMode: "numeric" }))}
         </div>
