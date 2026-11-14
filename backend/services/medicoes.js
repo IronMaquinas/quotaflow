@@ -129,15 +129,23 @@ async function montarItens(supabase, tenantId, c, x) {
     .filter((l) => l.inicio <= x.fim && (!(l.fim_real || null) || l.fim_real >= x.inicio));
   const eqs = new Map((await q(supabase.from('equipamentos').select('*').eq('tenant_id', tenantId))).map((e) => [String(e.id), e]));
   const diasCiclo = diasEntre(x.inicio, x.fim) + 1;
+  // 18zf: cobrança híbrida (mensal [+ franquia de horas] · diária · por hora) — ver services/cobrancaLocacao.js
+  const COB = require('./cobrancaLocacao'); const franquia = COB.franquiaDo(c);
+  const precisaH = locs.some((l) => COB.modoDe(l) === 'hora') || (franquia && locs.some((l) => COB.modoDe(l) === 'mensal'));
+  const ins = precisaH ? await q(supabase.from('inspecoes').select('*').eq('tenant_id', tenantId)).catch(() => []) : [];
   return locs.map((l) => {
     const e = eqs.get(String(l.equipamento_id)) || {};
     const de = l.inicio > x.inicio ? l.inicio : x.inicio;
     const fimLoc = l.fim_real || null; const ate = fimLoc && fimLoc < x.fim ? fimLoc : x.fim;
     const dias = Math.max(0, diasEntre(de, ate) + 1);
     const mensal = l.valor_mensal != null ? Number(l.valor_mensal) : null;
-    const rec = mensal == null ? null : dias >= diasCiclo ? r2(mensal) : r2((mensal * dias) / diasCiclo);
+    const modo = COB.modoDe(l); const usaFranquia = modo === 'mensal' ? franquia : null;
+    const horasAuto = (modo === 'hora' || usaFranquia) ? COB.horasDoPeriodo(ins.filter((i) => String(i.equipamento_id) === String(l.equipamento_id)), de, ate) : null;
+    const par = { modo, valor_mensal: mensal, valor_unit: l.medicao_valor != null ? Number(l.medicao_valor) : null, minimo_h: l.medicao_qtd != null ? Number(l.medicao_qtd) : null, franquia: usaFranquia, dias, dias_ciclo: diasCiclo };
+    const k = COB.calcular({ ...par, horas: horasAuto ? horasAuto.horas : null });
     return { locacao_id: l.id, equipamento_id: l.equipamento_id, tag: e.tag || null, nome: e.nome || null, de, ate, dias, dias_ciclo: diasCiclo,
-      valor_mensal: mensal, valor_recomendado: rec, valor: rec, obs: null, comentario_cliente: null };
+      cobranca: par, horas_auto: horasAuto, horas_informadas: null, precisa_horas: !!k.precisa_horas, base: k.base,
+      valor_mensal: modo === 'mensal' ? mensal : null, valor_recomendado: k.valor_recomendado, valor: k.valor_recomendado, obs: null, comentario_cliente: null };
   }).sort((a, b) => String(a.tag || '').localeCompare(String(b.tag || ''))).concat(await itensGuarda(supabase, tenantId, c, x, diasCiclo));
 }
 // 18za/18zb: 📦 guarda no pátio (contrato de armazenagem CA) — um item por equipamento do cliente que esteve no pátio no ciclo: m² × dias × preço do m²·dia
@@ -191,15 +199,22 @@ async function abrir(supabase, tenantId, quem, contratoId, inicio) {
 /** 18d.3: mantém a medição EM PREPARAÇÃO em dia com o contrato (equipamento que entrou/saiu, valor mensal ou datas que mudaram
  *  depois que ela foi gerada). Sem revisão do comercial ainda → refaz tudo; já revisada → só acrescenta o equipamento que faltava
  *  e tira o que não está mais no ciclo (os valores que ele digitou ficam). Medição enviada/aprovada não muda. */
-const chaveItens = (l) => JSON.stringify((l || []).map((i) => [String(i.locacao_id), i.de, i.ate, i.valor_mensal, i.area_m2 ?? null, i.preco_m2_dia ?? null, i.m2_dia ?? null]).sort());
+// 18zf: item com horas informadas à mão (sem leitura de horímetro, ou corrigindo a leitura) → refaz valor recomendado e base
+function comHoras(i, horas) {
+  if (!i.cobranca || !i.precisa_horas) return i;
+  const k = require('./cobrancaLocacao').calcular({ ...i.cobranca, horas });
+  return { ...i, horas_informadas: horas, valor_recomendado: k.valor_recomendado, base: `${k.base}${i.horas_auto ? ' (horas informadas)' : ' (horas informadas — sem leitura)'}` };
+}
+const chaveItens = (l) => JSON.stringify((l || []).map((i) => [String(i.locacao_id), i.de, i.ate, i.valor_mensal, i.area_m2 ?? null, i.preco_m2_dia ?? null, i.m2_dia ?? null, JSON.stringify(i.cobranca || null), JSON.stringify(i.horas_auto || null)]).sort());
 async function sincronizar(supabase, tenantId, m, c = null) {
   if (m.status !== 'aberta') return m;
   c = c || await contratoDo(supabase, tenantId, m.contrato_id); if (!c) return m;
   const novos = await montarItens(supabase, tenantId, c, { inicio: m.inicio, fim: m.fim });
   if (chaveItens(novos) === chaveItens(m.itens)) return m;
   let itens;
-  if (!m.preenchido_em) itens = novos.map((n) => { const v = (m.itens || []).find((i) => String(i.locacao_id) === String(n.locacao_id)); return v ? { ...n, obs: v.obs } : n; });
-  else itens = novos.map((n) => { const v = (m.itens || []).find((i) => String(i.locacao_id) === String(n.locacao_id)); return v ? { ...n, valor: v.valor, obs: v.obs, comentario_cliente: v.comentario_cliente } : { ...n, novo: true }; });
+  const hInf = (n, v) => (v && v.horas_informadas != null ? (() => { const x = comHoras(n, v.horas_informadas); return { ...x, valor: x.valor_recomendado }; })() : n); // 18zf
+  if (!m.preenchido_em) itens = novos.map((n) => { const v = (m.itens || []).find((i) => String(i.locacao_id) === String(n.locacao_id)); return v ? { ...hInf(n, v), obs: v.obs } : n; });
+  else itens = novos.map((n) => { const v = (m.itens || []).find((i) => String(i.locacao_id) === String(n.locacao_id)); return v ? { ...hInf(n, v), valor: v.valor, obs: v.obs, comentario_cliente: v.comentario_cliente } : { ...n, novo: true }; });
   const r = await mudar(supabase, tenantId, m, { itens }, evento('atualizada com o contrato', 'QuotaFlow'));
   return r.medicao;
 }
@@ -208,7 +223,7 @@ async function recalcular(supabase, tenantId, quem, m) {
   if (!['aberta', 'devolvida'].includes(m.status)) return { status: 409, erro: 'Só dá para recalcular a medição em preparação ou contestada' };
   const c = await contratoDo(supabase, tenantId, m.contrato_id);
   const novos = await montarItens(supabase, tenantId, c, { inicio: m.inicio, fim: m.fim });
-  const itens = novos.map((n) => { const v = (m.itens || []).find((i) => String(i.locacao_id) === String(n.locacao_id)); return v ? { ...n, obs: v.obs, comentario_cliente: v.comentario_cliente } : n; });
+  const itens = novos.map((n) => { const v = (m.itens || []).find((i) => String(i.locacao_id) === String(n.locacao_id)); if (!v) return n; const h = v.horas_informadas != null ? comHoras(n, v.horas_informadas) : n; return { ...h, valor: h.valor_recomendado, obs: v.obs, comentario_cliente: v.comentario_cliente }; });
   return mudar(supabase, tenantId, m, { itens }, evento('recalculada', quem.usuarioNome));
 }
 
@@ -224,8 +239,15 @@ async function salvar(supabase, tenantId, quem, m, body = {}) {
   if (!['aberta', 'devolvida'].includes(m.status)) return { status: 409, erro: m.status === 'aprovada' ? 'Medição aprovada — reabra para alterar' : 'Medição com o cliente — aguarde a resposta' };
   const por = new Map((Array.isArray(body.itens) ? body.itens : []).map((i) => [String(i.locacao_id), i]));
   for (const v of por.values()) if (v.valor !== undefined && valorOk(v.valor) === undefined) return { status: 400, erro: 'Valor a cobrar inválido' };
+  const horasOk = (h) => { if (h === '' || h == null) return null; const n = Number(String(h).replace(',', '.')); return Number.isFinite(n) && n >= 0 && n < 100000 ? Math.round(n * 10) / 10 : undefined; };
+  for (const v of por.values()) if (v.horas !== undefined && horasOk(v.horas) === undefined) return { status: 400, erro: 'Horas inválidas' };
   const itens = (m.itens || []).map((i) => { const v = por.get(String(i.locacao_id)); if (!v) return i;
-    return { ...i, ...(v.valor !== undefined ? { valor: valorOk(v.valor) } : {}), ...(v.obs !== undefined ? { obs: texto(v.obs, 300) } : {}) }; });
+    let x = i;
+    if (v.horas !== undefined && i.precisa_horas) { // 18zf: horas informadas → refaz o recomendado; o valor a cobrar acompanha, salvo se veio editado junto
+      const h = horasOk(v.horas); const antes = i.valor; x = h == null ? (() => { const k = require('./cobrancaLocacao').calcular({ ...i.cobranca, horas: i.horas_auto ? i.horas_auto.horas : null }); return { ...i, horas_informadas: null, valor_recomendado: k.valor_recomendado, base: k.base }; })() : comHoras(i, h);
+      if (v.valor === undefined || valorOk(v.valor) === antes) x = { ...x, valor: x.valor_recomendado };
+    }
+    return { ...x, ...(v.valor !== undefined && !(v.horas !== undefined && i.precisa_horas && valorOk(v.valor) === i.valor) ? { valor: valorOk(v.valor) } : {}), ...(v.obs !== undefined ? { obs: texto(v.obs, 300) } : {}) }; });
   const upd = { itens, preenchido_por: quem.usuarioNome || null, preenchido_em: new Date().toISOString() };
   if (body.obs !== undefined) upd.obs = texto(body.obs, 1000);
   return mudar(supabase, tenantId, m, upd, null);
@@ -235,7 +257,7 @@ const semValor = (m) => (m.itens || []).filter((i) => i.valor == null);
 async function enviar(supabase, tenantId, quem, m) {
   if (!['aberta', 'devolvida'].includes(m.status)) return { status: 409, erro: 'Esta medição já foi enviada' };
   if (!(m.itens || []).length) return { status: 400, erro: 'Nenhum equipamento no contrato neste ciclo' };
-  if (semValor(m).length) return { status: 400, erro: `Informe o valor a cobrar de ${semValor(m).length} item(ns) — ${semValor(m).map((i) => i.tag).join(', ')} (sem valor mensal no contrato${semValor(m).some((i) => i.tipo === 'armazenagem') ? ' ou sem m² na ficha do pátio' : ''})` };
+  if (semValor(m).length) return { status: 400, erro: `Informe o valor a cobrar de ${semValor(m).length} item(ns) — ${semValor(m).map((i) => i.tag).join(', ')} (${semValor(m).some((i) => i.precisa_horas) ? 'falta informar as horas — sem leitura de horímetro; ' : ''}sem valor no contrato${semValor(m).some((i) => i.tipo === 'armazenagem') ? ' ou sem m² na ficha do pátio' : ''})` };
   const c = await contratoDo(supabase, tenantId, m.contrato_id);
   if (!c.medicao_locatario) { // fecha direto — a empresa cuida de tudo
     const info = await informativo(supabase, tenantId, c, m.inicio, m.fim);

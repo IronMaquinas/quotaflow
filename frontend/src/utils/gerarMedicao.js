@@ -27,9 +27,9 @@ export function gerarHtmlMedicao({ medicao: m, contrato: c, informativo: inf = {
     <h1>Boletim de Medição — ${esc(c.numero)}</h1>
     <div>Cliente: <b>${esc(c.cliente)}</b>${c.local ? ` · ${esc(c.local)}` : ""}<br/>Período: <b>${dataBR(m.inicio)} a ${dataBR(m.fim)}</b>${c.medicao_vencimento_dia ? ` · Vencimento: <b>dia ${String(c.medicao_vencimento_dia).padStart(2, "0")}</b>` : ""} · Situação: <b>${esc(m.status_nome || m.status)}</b></div>
     <h2>Itens medidos</h2>
-    <table><thead><tr><th>Equipamento</th><th>Período no ciclo</th><th class="n">Valor mensal / base</th><th class="n">Valor</th><th>Observações</th></tr></thead><tbody>
+    <table><thead><tr><th>Equipamento</th><th>Período no ciclo</th><th class="n">Base do cálculo</th><th class="n">Valor</th><th>Observações</th></tr></thead><tbody>
     ${itens.map((i) => `<tr><td><b>${esc(i.tag || "")}</b> ${esc(i.nome || "")}</td><td>${dataBR(i.de)} a ${dataBR(i.ate)} (${String(i.tipo || "").startsWith("armazenagem") ? (i.tipo === "armazenagem" ? `${i.dias} dia(s) no pátio` : "ciclo inteiro") : `${i.dias}/${i.dias_ciclo} dias`})</td>
-      <td class="n">${String(i.tipo || "").startsWith("armazenagem") ? `<span style="font-size:10.5px">${esc(i.base || "")}</span>` : brl(i.valor_mensal)}</td><td class="n"><b>${brl(i.valor)}</b></td><td>${esc(i.obs || "")}${i.comentario_cliente ? `<div class="com">Cliente: ${esc(i.comentario_cliente)}</div>` : ""}</td></tr>`).join("")}
+      <td class="n">${i.base ? `<span style="font-size:10.5px">${esc(i.base)}</span>` : brl(i.valor_mensal)}</td><td class="n"><b>${brl(i.valor)}</b></td><td>${esc(i.obs || "")}${i.comentario_cliente ? `<div class="com">Cliente: ${esc(i.comentario_cliente)}</div>` : ""}</td></tr>`).join("")}
     <tr><td colspan="3" class="n"><b>Total</b></td><td class="n"><b>${brl(total)}</b></td><td></td></tr>
     </tbody></table>
     ${m.obs ? `<div class="box"><b>Observações:</b> ${esc(m.obs)}</div>` : ""}

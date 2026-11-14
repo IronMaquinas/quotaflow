@@ -11,12 +11,12 @@ const TABELA = "[[TABELA_EQUIPAMENTOS]]";
 const dBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
 
 function tabelaHtml(tabela = []) {
-  const total = tabela.every((t) => t.valor_mensal != null) ? tabela.reduce((s, t) => s + Number(t.valor_mensal), 0) : null;
+  const total = tabela.every((t) => t.valor_mensal != null && (t.cobranca || "mensal") === "mensal") ? tabela.reduce((s, t) => s + Number(t.valor_mensal), 0) : null; // 18zf: diária/hora não somam total mensal
   // 14d.6: saída e término previsto de cada equipamento (contrato emitido antes da 14d.6 não tem as datas → sem as colunas)
   const comDatas = tabela.some((t) => "inicio" in t);
   const cols = comDatas ? 4 : 2;
-  return `<table class="tab"><thead><tr><th>Tag</th><th>Equipamento</th>${comDatas ? '<th class="dt">Início</th><th class="dt">Término</th>' : ""}<th style="text-align:right">Valor mensal</th></tr></thead><tbody>
-    ${tabela.map((t) => `<tr><td>${esc(t.tag)}</td><td>${esc(t.nome)}</td>${comDatas ? `<td class="dt">${dBR(t.inicio)}</td><td class="dt">${t.fim_previsto ? dBR(t.fim_previsto) : "indeterminado"}</td>` : ""}<td style="text-align:right">${t.valor_mensal == null ? "________" : brl(t.valor_mensal)}</td></tr>`).join("")}
+  return `<table class="tab"><thead><tr><th>Tag</th><th>Equipamento</th>${comDatas ? '<th class="dt">Início</th><th class="dt">Término</th>' : ""}<th style="text-align:right">Valor</th></tr></thead><tbody>
+    ${tabela.map((t) => `<tr><td>${esc(t.tag)}</td><td>${esc(t.nome)}</td>${comDatas ? `<td class="dt">${dBR(t.inicio)}</td><td class="dt">${t.fim_previsto ? dBR(t.fim_previsto) : "indeterminado"}</td>` : ""}<td style="text-align:right">${t.valor_texto ? esc(t.valor_texto) : t.valor_mensal == null ? "________" : `${brl(t.valor_mensal)}/mês`}</td></tr>`).join("")}
     ${tabela.length ? "" : `<tr><td colspan="${cols + 1}" style="text-align:center;color:#777">nenhum equipamento</td></tr>`}
     </tbody>${total != null && tabela.length ? `<tfoot><tr><td colspan="${cols}"><b>Total mensal</b></td><td style="text-align:right"><b>${brl(total)}</b></td></tr></tfoot>` : ""}</table>`;
 }

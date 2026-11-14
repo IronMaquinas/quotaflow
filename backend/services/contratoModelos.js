@@ -11,6 +11,7 @@
 // Regras do backend: sem DB.raw; ids com String(); filtros sem null.
 
 const crypto = require('crypto');
+const COB = require('./cobrancaLocacao'); // 18zf
 
 async function q(p) { const { data, error } = await p; if (error) throw new Error(error.message); return data || []; }
 const texto = (v, max) => (v == null || String(v).trim() === '' ? null : String(v).trim().slice(0, max));
@@ -33,7 +34,7 @@ const CAMPOS = [
   ['cliente.cidade', 'Cidade do cliente'], ['cliente.uf', 'UF do cliente'], ['contato.nome', 'Contato do cliente'],
   ['empresa.endereco_completo', 'Endereço da sua empresa'], ['empresa.telefone', 'Telefone da sua empresa'], ['empresa.email', 'E-mail da sua empresa'], // 14d.4
   ['representante.nome', 'Quem assina pelo cliente — nome'], ['representante.cpf', 'Quem assina pelo cliente — CPF'], ['representante.cargo', 'Quem assina pelo cliente — cargo'], // 14d.3
-  ['tabela_equipamentos', 'Tabela dos equipamentos (tag, descrição, valor mensal)'], ['valor_mensal_total', 'Valor mensal total'], ['qtd_equipamentos', 'Quantidade de equipamentos'],
+  ['tabela_equipamentos', 'Tabela dos equipamentos (tag, descrição, valor — mensal, diária ou por hora)'], ['valor_mensal_total', 'Valor mensal total'], ['qtd_equipamentos', 'Quantidade de equipamentos'],
   ['condicoes.caucao', 'Caução'], ['condicoes.franquia_horas', 'Franquia (horas/mês)'], ['condicoes.hora_excedente', 'Valor da hora excedente'], ['condicoes.reajuste', 'Índice de reajuste'],
   ['condicoes.multa_rescisoria', 'Multa rescisória'], ['condicoes.vencimento_dia', 'Dia de vencimento'], ['condicoes.forma_pagamento', 'Forma de pagamento'], ['condicoes.foro', 'Foro (comarca)'],
   ['armazenagem.preco', 'Armazenagem: preço do m² ("R$ 12,00 por m² ao mês")'], ['armazenagem.minimo', 'Armazenagem: área mínima contratada ("200 m²")'], ['armazenagem.maximo', 'Armazenagem: área máxima contratada ("500 m²")'],
@@ -144,14 +145,17 @@ async function dadosDoContrato(supabase, tenantId, contrato) {
     q(supabase.from('equipamentos').select('*').eq('tenant_id', tenantId)),
   ]);
   const eq = new Map(equips.map((e) => [String(e.id), e]));
-  const tabela = locs.filter((l) => l.status === 'ativa').map((l) => { const e = eq.get(String(l.equipamento_id)) || {}; return { locacao_id: l.id, tag: e.tag || '', nome: e.nome || '', inicio: l.inicio || null, fim_previsto: l.fim_previsto || contrato.fim_previsto || null, valor_mensal: l.valor_mensal != null ? Number(l.valor_mensal) : null }; })
+  const tabela = locs.filter((l) => l.status === 'ativa').map((l) => { const e = eq.get(String(l.equipamento_id)) || {}; return { locacao_id: l.id, tag: e.tag || '', nome: e.nome || '', inicio: l.inicio || null, fim_previsto: l.fim_previsto || contrato.fim_previsto || null, valor_mensal: l.valor_mensal != null ? Number(l.valor_mensal) : null,
+    cobranca: COB.modoDe(l), valor_texto: COB.rotuloValor(l) }; }) // 18zf: cobrança híbrida
     .sort((a, b) => String(a.tag).localeCompare(String(b.tag)));
   return { emp, cli, tabela };
 }
 /** → { texto (com [[TABELA_EQUIPAMENTOS]] onde vai a tabela), tabela, total, faltando: [campos sem valor] } */
 function montar(corpo, { contrato, emp, cli, tabela }, hoje = hojeBR()) {
   const c = contrato.condicoes || {};
-  const total = tabela.length && tabela.every((t) => t.valor_mensal != null) ? tabela.reduce((s, t) => s + t.valor_mensal, 0) : null;
+  // 18zf: total mensal só quando todos são mensais (diária/hora dependem do uso)
+  const mensais = tabela.filter((t) => (t.cobranca || 'mensal') === 'mensal');
+  const total = tabela.length && mensais.length === tabela.length && tabela.every((t) => t.valor_mensal != null) ? tabela.reduce((s, t) => s + t.valor_mensal, 0) : null;
   const end = cli ? [[cli.endereco, cli.numero].filter(Boolean).join(', '), cli.complemento, cli.bairro, [cli.cidade, cli.uf].filter(Boolean).join('/'), cli.cep && `CEP ${String(cli.cep).replace(/^(\d{5})(\d{3})$/, '$1-$2')}`].filter(Boolean).join(' — ') : null;
   const endEmp = [[emp.endereco, emp.numero].filter(Boolean).join(', '), emp.complemento, emp.bairro, [emp.cidade, emp.regiao].filter(Boolean).join('/'), emp.cep && `CEP ${String(emp.cep).replace(/\D/g, '').replace(/^(\d{5})(\d{3})$/, '$1-$2')}`].filter(Boolean).join(' — ') || null;
   const v = {
@@ -184,10 +188,10 @@ function montar(corpo, { contrato, emp, cli, tabela }, hoje = hojeBR()) {
   // 14d.4: modelo antigo sem a sede da LOCADORA — se a empresa tem endereço, acrescenta
   if (endEmp) corpoUsado = corpoUsado.replace(/(inscrita no CNPJ sob o nº \{\{\s*empresa\.cnpj\s*\}\})\./, `$1, com sede em ${endEmp}.`);
   const texto0 = corpoUsado.replace(/\{\{\s*([\w.]+)\s*\}\}/g, (_, k) => { const x = v[k]; if (x == null || x === '') { faltando.add(k); return VAZIO; } return x; });
-  if (tabela.some((t) => t.valor_mensal == null)) faltando.add('valor mensal de equipamento');
+  if (tabela.some((t) => ((t.cobranca || 'mensal') === 'mensal' ? t.valor_mensal == null : !t.valor_texto))) faltando.add('valor de equipamento (mensal, diária ou hora)');
   if (!tabela.length && contrato.tipo !== 'armazenagem') faltando.add('equipamentos no contrato'); // 18zb: CA não tem equipamentos
   if (contrato.tipo === 'armazenagem' && !(Number(contrato.arm_preco) > 0)) faltando.add('preço do m² da armazenagem');
-  return { texto: texto0, tabela: tabela.map(({ tag, nome, inicio, fim_previsto, valor_mensal }) => ({ tag, nome, inicio, fim_previsto, valor_mensal })), total, faltando: [...faltando] };
+  return { texto: texto0, tabela: tabela.map(({ tag, nome, inicio, fim_previsto, valor_mensal, cobranca, valor_texto }) => ({ tag, nome, inicio, fim_previsto, valor_mensal, cobranca: cobranca || 'mensal', valor_texto: valor_texto || null })), total, faltando: [...faltando] };
 }
 
 async function contratoDoTenant(supabase, tenantId, id) {
@@ -212,6 +216,19 @@ async function salvarCondicoes(supabase, tenantId, id, body = {}) {
       if (n != null && (!Number.isFinite(n) || n < 0)) return { status: 400, erro: 'Valor mensal inválido' };
       const { error } = await supabase.from('equipamento_locacoes').update({ valor_mensal: n }).eq('id', l.id).eq('tenant_id', tenantId);
       if (error) throw new Error(error.message);
+    }
+  }
+  // 18zf: forma de cobrança por equipamento — body.cobrancas: { [locacao_id]: { modo: mensal|dia|hora, valor (R$/dia ou R$/h), minimo (h/mês) } }
+  if (body.cobrancas && typeof body.cobrancas === 'object') {
+    const locs = await q(supabase.from('equipamento_locacoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', k.id));
+    const nBR = (v) => { const t = String(v ?? '').trim(); if (t === '') return null; const n = Number(t.includes(',') ? t.replace(/\./g, '').replace(',', '.') : t); return Number.isFinite(n) && n >= 0 ? n : NaN; };
+    for (const [lid, cb] of Object.entries(body.cobrancas)) {
+      const l = locs.find((x) => String(x.id) === String(lid)); if (!l || !cb) continue;
+      const modo = ['mensal', 'dia', 'hora'].includes(cb.modo) ? cb.modo : null; if (!modo) return { status: 400, erro: 'Cobrança: mensal, diária ou por hora' };
+      const val = nBR(cb.valor); const min = nBR(cb.minimo);
+      if (Number.isNaN(val) || Number.isNaN(min)) return { status: 400, erro: modo === 'dia' ? 'Valor da diária inválido' : 'Valor da hora ou mínimo de horas inválido' };
+      const upd2 = modo === 'mensal' ? { medicao_unidade: null, medicao_valor: null, medicao_qtd: null } : { medicao_unidade: modo, medicao_valor: val, medicao_qtd: modo === 'hora' ? min : null };
+      const { error } = await supabase.from('equipamento_locacoes').update(upd2).eq('id', l.id).eq('tenant_id', tenantId); if (error) throw new Error(error.message);
     }
   }
   return { ok: true };

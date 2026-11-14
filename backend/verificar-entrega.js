@@ -167,7 +167,7 @@ const ESPERADO = {
   'routes/contratos.js': '28430e6859469d60a70ebbcdda7d0463', // etapa 18zc.4
   'routes/locatario.js': 'ef7e500d9afdf40a4d5090df88883405', // etapa 18p
   'migrations/043_contratos_locatario.sql': 'f25735b281aa176b4c31c3cc2bf283ed', // etapa 14b.3 (novo)
-  'front:TelaContratos.jsx': '58ce5e9e7feeebfeacb99ce1ee6f17ec', // etapa 18zc.5
+  'front:TelaContratos.jsx': 'b67fedc6cadadf457b09d75155d5a74c', // etapa 18zf
   'front:TelaLocatario.jsx': 'aaef90fe093619b958fd876017ce4480', // etapa 18zc.6
   'services/clientes.js': '9714283f0013553dc96a48b75b6734cf', // etapa 14b.3.1 (novo)
   'migrations/044_clientes.sql': '446d1a52049aea19938d36cc2b01653d', // etapa 14b.3.1 (novo)
@@ -179,10 +179,10 @@ const ESPERADO = {
   'front:logoEmpresa.js': 'd4a9118674d42a897c58aaea954dc6d2', // etapa 14d.2
   'front:comprimirImagem.js': 'b6d05cca4906e19250268c29f633f044', // etapa 14c.1 (novo)
   'front:gerarPdfNC.js': 'fe4db00132dc6c626027e234e1f5f366', // etapa 14c.2
-  'services/contratoModelos.js': '0cd9f59b3c70104091f3769fc06d5458', // etapa 18zc.4
+  'services/contratoModelos.js': '8f287d3d16191638e69854407dc77281', // etapa 18zf
   'migrations/046_modelos_contrato.sql': '0b06982d731ce6038a679a7cc7e21785', // etapa 14d.2
-  'front:ModelosContrato.jsx': 'a80b5007c54d1ae1747fd34558bf4d98', // etapa 18zc.6
-  'front:gerarContrato.js': '9cca94add0a831347f7523c11d171539', // etapa 18zc.6
+  'front:ModelosContrato.jsx': '9a70d8b3fbf895c6c86cabc3cbb99e25', // etapa 18zf
+  'front:gerarContrato.js': 'f76ee198463184debe5ca205c71f0b6b', // etapa 18zf
   'front:BibliotecaContratos.jsx': 'ea69d4f5771b64870eabd53c83f18a8a', // etapa 14d.2
   'front:CampoMoeda.jsx': 'e67cbfc98693ab1ea2df84d091974ca9', // etapa 14d.2
   'migrations/047_contrato_representante.sql': '4769ba9b69f785a61c1f4e940e0cf9c2', // etapa 14d.3 (novo)
@@ -254,9 +254,9 @@ const ESPERADO = {
   'front:ModalNaoConformidade.jsx': '46eb86deecf378b2390b9812aa90367f', // etapa 18ze
   'front:FiltroPeriodo.jsx': '06b873f17ff380024b38e507bdca6724', // etapa 18c.4 (novo)
   'migrations/062_medicao_locacao.sql': '5a4d7ea7f3180195a19e4121183a446e', // etapa 18d (novo)
-  'services/medicoes.js': '98503640a43da9fa8accc5330085c617', // etapa 18zc.4
-  'front:MedicaoModal.jsx': 'd6e68e43b4886fe929bf39bd3972ba26', // etapa 18zc
-  'front:gerarMedicao.js': '0018f537b6081a46b396e88a716df174', // etapa 18za
+  'services/medicoes.js': '53787e5e82618a4ca03646e08cadff90', // etapa 18zf
+  'front:MedicaoModal.jsx': 'd97036c3f7198ca4968f4ff8f186bcbf', // etapa 18zf
+  'front:gerarMedicao.js': '119acc71ee428d0e533453cee6e00448', // etapa 18zf
   'migrations/063_medicao_vencimento.sql': '0b27bacd7a6a0b6d77c01a8039f5192d', // etapa 18d.2 (novo)
   'front:AbaMedicoes.jsx': '88bfc994bb38ab826a1452a0e6f9f732', // etapa 18y.1
   'front:gerarRelatorioViagem.js': 'd028915abe837d37b94a4082f12d0acd', // etapa 18g.2d
@@ -314,9 +314,9 @@ const ESPERADO = {
   'services/assinaturas.js': 'e6d9c6444f36737004b1b984e58f02b1', // etapa 18x
   'migrations/077_assinaturas.sql': 'c9e4a1598392f5bdd744e042f471553f', // etapa 18v (novo)
   'migrations/078_assinatura_modalidade_pedidos.sql': 'd7f8abfc9d014eed6b1f243c4e71bc76', // etapa 18w (novo)
-  'services/mobilizacao.js': '066445c5978a5eecc82e654502c9c709', // etapa 18g.6
+  'services/mobilizacao.js': 'ef9209c83832380ed83957dea226f65a', // etapa 18zf
   'migrations/079_contrato_mobilizacao.sql': '2b89c516c0627c2f008f6b0a251459a9', // etapa 18y (novo)
-  'front:MobilizacaoContrato.jsx': '726f6849504e44a0ba89c2c9d7330005', // etapa 18y (novo)
+  'front:MobilizacaoContrato.jsx': 'a5d960309da24e01ccc56d0a8ae894cc', // etapa 18zf
   'services/fichaCte.js': 'e013154c4b0b8e6d9eb3ef10413cdd1b', // etapa 18g.6
   'migrations/080_ficha_cte_apolices.sql': '83836a53e1f1dd89b4db3c73686c0816', // etapa 18g.3 (novo)
   'front:FichaCte.jsx': '1545e475b3f1293bea31b1d2689b9af8', // etapa 18g.4
@@ -336,13 +336,23 @@ const ESPERADO = {
   'migrations/087_medicao_envio_automatico.sql': '8ca07e5e6d7b67718139d0cf430a70cf', // etapa 18zc (novo)
   'services/NfeXmlParser.js': 'b3fe06994341a9d8593ff6c53d7d512f', // etapa 18zd
   'front:ConfirmarExclusao.jsx': '5dc91681d6fcb9724a17f1c75170c31b', // etapa 18ze
-  'front:ImagemZoom.jsx': '0a87d5d9acc85d2193cc347bf9798c8a', // etapa 18ze.1
+  'front:ImagemZoom.jsx': '0a87d5d9acc85d2193cc347bf9798c8a', // etapa 18zf
   'front:ModalDetalheNCFornecedor.jsx': '55abb21fa95396222386ade553cc9b5c', // etapa 18ze
+  'services/cobrancaLocacao.js': '9441039f57cc08d26f11bc71d1084f44', // etapa 18zf (novo)
 };
 
-// Antes de copiar a etapa 18ze.1 — base: 19eaaed
+// Antes de copiar a etapa 18zf — base: 19eaaed
 const ANTES = {
-  'front:ImagemZoom.jsx': 'a0003a5cbcb469237a6941079ea182c5',
+  'services/medicoes.js': '98503640a43da9fa8accc5330085c617',
+  'services/contratoModelos.js': '0cd9f59b3c70104091f3769fc06d5458',
+  'services/mobilizacao.js': '066445c5978a5eecc82e654502c9c709',
+  'front:ModelosContrato.jsx': 'a80b5007c54d1ae1747fd34558bf4d98',
+  'front:TelaContratos.jsx': '58ce5e9e7feeebfeacb99ce1ee6f17ec',
+  'front:MedicaoModal.jsx': 'd6e68e43b4886fe929bf39bd3972ba26',
+  'front:MobilizacaoContrato.jsx': '726f6849504e44a0ba89c2c9d7330005',
+  'front:gerarMedicao.js': '0018f537b6081a46b396e88a716df174',
+  'front:gerarContrato.js': '9cca94add0a831347f7523c11d171539',
+  'front:ImagemZoom.jsx': '0a87d5d9acc85d2193cc347bf9798c8a',
 };
 
 const RAIZ = process.cwd();
@@ -380,7 +390,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18ze.1)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zf)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
@@ -428,7 +438,7 @@ for (const [chave, esperado] of Object.entries(LISTA)) {
 
 if (!modoAntes) {
   // Arquivos novos precisam entrar no commit
-  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js', 'services/matchSpot.js', 'services/recomendacoesEmail.js', 'routes/recomendacoes.js', 'services/convitesFornecedor.js', 'services/acessoSpot.js', 'services/receitaCnpj.js', 'services/cadastroPublico.js', 'services/emailConfirmacao.js', 'routes/plataforma.js', 'services/plataformaConsole.js', 'middleware/plataformaMiddleware.js', 'scripts/criarAdmin.js', 'routes/manutencao.js', 'services/calendarioManutencao.js', 'services/planosManutencao.js', 'migrations/019_planos_manutencao.sql', 'migrations/020_plano_termino.sql', 'migrations/021_plano_responsavel_dia_util.sql', 'routes/pessoas.js', 'services/documentos.js', 'migrations/022_colaboradores_documentos.sql', 'services/avisosVencimento.js', 'migrations/023_documento_avisos.sql', 'services/funcoes.js', 'migrations/024_funcoes.sql', 'migrations/025_funcoes_detalhes.sql', 'services/epi.js', 'migrations/026_epi_itens.sql', 'migrations/027_epi_catalogo_tamanhos.sql', 'services/epiEntregas.js', 'services/conformidade.js', 'migrations/028_epi_entregas.sql', 'services/historicoFuncoes.js', 'services/avisosPessoas.js', 'migrations/029_historico_funcoes_avisos.sql', 'services/treinamentos.js', 'migrations/030_treinamentos.sql', 'migrations/031_treinamentos_conteudo_horas.sql', 'services/provaOnline.js', 'routes/meusTreinamentos.js', 'routes/provaPublica.js', 'migrations/032_prova_online_colaborador.sql', 'services/competencias.js', 'migrations/033_competencias.sql', 'migrations/034_competencias_nivel.sql', 'services/dossie.js', 'migrations/035_dossie.sql', 'services/multas.js', 'migrations/036_multas.sql', 'services/disciplinar.js', 'migrations/037_disciplinar.sql', 'migrations/038_disciplinar_ciencia.sql', 'services/autuacoes.js', 'routes/autuacoes.js', 'migrations/039_autuacoes.sql', 'services/inspecoes.js', 'routes/inspecoes.js', 'migrations/040_inspecoes.sql', 'routes/inspecaoLink.js', 'migrations/041_inspecoes_tipos_links.sql', 'services/rotinasInspecao.js', 'migrations/042_inspecoes_rotinas_locacao.sql', 'services/contratosLocacao.js', 'routes/contratos.js', 'routes/locatario.js', 'migrations/043_contratos_locatario.sql', 'services/clientes.js', 'migrations/044_clientes.sql', 'services/logoEmpresa.js', 'migrations/045_logo_empresa.sql', 'services/contratoModelos.js', 'migrations/046_modelos_contrato.sql', 'migrations/047_contrato_representante.sql', 'migrations/048_dados_empresa.sql', 'services/perfilEmpresa.js', 'migrations/049_perfil_empresa_cnpj.sql', 'migrations/050_monitor_cnpj.sql', 'services/monitorCnpj.js', 'routes/monitorCnpj.js', 'migrations/051_comercial_bid.sql', 'routes/comercial.js', 'services/bids.js', 'migrations/052_bid_cliente.sql', 'routes/bidLink.js', 'services/bidsCliente.js', 'migrations/053_pedidos_venda.sql', 'services/pedidosVenda.js', 'migrations/054_tarefa_atribuida.sql', 'scripts/previaEmailsBid.js', 'migrations/055_execucoes_at.sql', 'services/execucoes.js', 'routes/programacao.js', 'migrations/056_at_rascunho_link_motorista.sql', 'routes/atLink.js', 'services/fluxoViagem.js', 'migrations/057_fluxo_viagem.sql', 'migrations/058_base_frota.sql', 'routes/minhasViagens.js', 'services/calendarioComercial.js', 'migrations/059_calendario_comercial.sql', 'migrations/060_prospeccao_evento.sql', 'migrations/061_prospeccao_oportunidades.sql', 'services/medicoes.js', 'migrations/062_medicao_locacao.sql', 'migrations/063_medicao_vencimento.sql', 'services/frotaCalendario.js', 'migrations/064_frota_dias_operacao.sql', 'services/utilizacaoFrota.js', 'migrations/065_tarefas_rastreabilidade.sql', 'services/tarefas.js', 'migrations/066_fiscal_transporte.sql', 'services/tarefasFiscais.js', 'migrations/067_tarefa_responsavel.sql', 'services/ocorrencias.js', 'routes/ocorrencias.js', 'migrations/068_ocorrencias.sql', 'migrations/069_ocorrencias_inc_config.sql', 'services/roteiroInicial.js', 'migrations/070_roteiro_inicial.sql', 'services/modulos.js', 'migrations/071_modulos_planos.sql', 'middleware/exigirModulo.js', 'services/chatSpot.js', 'migrations/072_spot_mensagens.sql', 'services/prazoSpot.js', 'migrations/073_spot_prazo_desistencia.sql', 'services/notificacoes.js', 'routes/notificacoes.js', 'migrations/074_notificacoes.sql', 'migrations/075_spot_anexo_email_atraso.sql', 'migrations/076_tenant_segmentos.sql', 'services/assinaturas.js', 'migrations/077_assinaturas.sql', 'migrations/078_assinatura_modalidade_pedidos.sql', 'services/mobilizacao.js', 'migrations/079_contrato_mobilizacao.sql', 'services/fichaCte.js', 'migrations/080_ficha_cte_apolices.sql', 'services/patio.js', 'routes/patio.js', 'migrations/081_patio_cliente.sql', 'migrations/082_patio_pre_entrada.sql', 'migrations/083_patio_area.sql', 'migrations/084_patio_areas.sql', 'migrations/085_contrato_armazenagem.sql', 'migrations/086_contrato_armazenagem_tipo.sql', 'migrations/087_medicao_envio_automatico.sql'];
+  const novos = ['services/fornecedoresVisiveis.js', 'services/atuacao.js', 'routes/atuacao.js', 'services/matchSpot.js', 'services/recomendacoesEmail.js', 'routes/recomendacoes.js', 'services/convitesFornecedor.js', 'services/acessoSpot.js', 'services/receitaCnpj.js', 'services/cadastroPublico.js', 'services/emailConfirmacao.js', 'routes/plataforma.js', 'services/plataformaConsole.js', 'middleware/plataformaMiddleware.js', 'scripts/criarAdmin.js', 'routes/manutencao.js', 'services/calendarioManutencao.js', 'services/planosManutencao.js', 'migrations/019_planos_manutencao.sql', 'migrations/020_plano_termino.sql', 'migrations/021_plano_responsavel_dia_util.sql', 'routes/pessoas.js', 'services/documentos.js', 'migrations/022_colaboradores_documentos.sql', 'services/avisosVencimento.js', 'migrations/023_documento_avisos.sql', 'services/funcoes.js', 'migrations/024_funcoes.sql', 'migrations/025_funcoes_detalhes.sql', 'services/epi.js', 'migrations/026_epi_itens.sql', 'migrations/027_epi_catalogo_tamanhos.sql', 'services/epiEntregas.js', 'services/conformidade.js', 'migrations/028_epi_entregas.sql', 'services/historicoFuncoes.js', 'services/avisosPessoas.js', 'migrations/029_historico_funcoes_avisos.sql', 'services/treinamentos.js', 'migrations/030_treinamentos.sql', 'migrations/031_treinamentos_conteudo_horas.sql', 'services/provaOnline.js', 'routes/meusTreinamentos.js', 'routes/provaPublica.js', 'migrations/032_prova_online_colaborador.sql', 'services/competencias.js', 'migrations/033_competencias.sql', 'migrations/034_competencias_nivel.sql', 'services/dossie.js', 'migrations/035_dossie.sql', 'services/multas.js', 'migrations/036_multas.sql', 'services/disciplinar.js', 'migrations/037_disciplinar.sql', 'migrations/038_disciplinar_ciencia.sql', 'services/autuacoes.js', 'routes/autuacoes.js', 'migrations/039_autuacoes.sql', 'services/inspecoes.js', 'routes/inspecoes.js', 'migrations/040_inspecoes.sql', 'routes/inspecaoLink.js', 'migrations/041_inspecoes_tipos_links.sql', 'services/rotinasInspecao.js', 'migrations/042_inspecoes_rotinas_locacao.sql', 'services/contratosLocacao.js', 'routes/contratos.js', 'routes/locatario.js', 'migrations/043_contratos_locatario.sql', 'services/clientes.js', 'migrations/044_clientes.sql', 'services/logoEmpresa.js', 'migrations/045_logo_empresa.sql', 'services/contratoModelos.js', 'migrations/046_modelos_contrato.sql', 'migrations/047_contrato_representante.sql', 'migrations/048_dados_empresa.sql', 'services/perfilEmpresa.js', 'migrations/049_perfil_empresa_cnpj.sql', 'migrations/050_monitor_cnpj.sql', 'services/monitorCnpj.js', 'routes/monitorCnpj.js', 'migrations/051_comercial_bid.sql', 'routes/comercial.js', 'services/bids.js', 'migrations/052_bid_cliente.sql', 'routes/bidLink.js', 'services/bidsCliente.js', 'migrations/053_pedidos_venda.sql', 'services/pedidosVenda.js', 'migrations/054_tarefa_atribuida.sql', 'scripts/previaEmailsBid.js', 'migrations/055_execucoes_at.sql', 'services/execucoes.js', 'routes/programacao.js', 'migrations/056_at_rascunho_link_motorista.sql', 'routes/atLink.js', 'services/fluxoViagem.js', 'migrations/057_fluxo_viagem.sql', 'migrations/058_base_frota.sql', 'routes/minhasViagens.js', 'services/calendarioComercial.js', 'migrations/059_calendario_comercial.sql', 'migrations/060_prospeccao_evento.sql', 'migrations/061_prospeccao_oportunidades.sql', 'services/medicoes.js', 'migrations/062_medicao_locacao.sql', 'migrations/063_medicao_vencimento.sql', 'services/frotaCalendario.js', 'migrations/064_frota_dias_operacao.sql', 'services/utilizacaoFrota.js', 'migrations/065_tarefas_rastreabilidade.sql', 'services/tarefas.js', 'migrations/066_fiscal_transporte.sql', 'services/tarefasFiscais.js', 'migrations/067_tarefa_responsavel.sql', 'services/ocorrencias.js', 'routes/ocorrencias.js', 'migrations/068_ocorrencias.sql', 'migrations/069_ocorrencias_inc_config.sql', 'services/roteiroInicial.js', 'migrations/070_roteiro_inicial.sql', 'services/modulos.js', 'migrations/071_modulos_planos.sql', 'middleware/exigirModulo.js', 'services/chatSpot.js', 'migrations/072_spot_mensagens.sql', 'services/prazoSpot.js', 'migrations/073_spot_prazo_desistencia.sql', 'services/notificacoes.js', 'routes/notificacoes.js', 'migrations/074_notificacoes.sql', 'migrations/075_spot_anexo_email_atraso.sql', 'migrations/076_tenant_segmentos.sql', 'services/assinaturas.js', 'migrations/077_assinaturas.sql', 'migrations/078_assinatura_modalidade_pedidos.sql', 'services/mobilizacao.js', 'migrations/079_contrato_mobilizacao.sql', 'services/fichaCte.js', 'migrations/080_ficha_cte_apolices.sql', 'services/patio.js', 'routes/patio.js', 'migrations/081_patio_cliente.sql', 'migrations/082_patio_pre_entrada.sql', 'migrations/083_patio_area.sql', 'migrations/084_patio_areas.sql', 'migrations/085_contrato_armazenagem.sql', 'migrations/086_contrato_armazenagem_tipo.sql', 'migrations/087_medicao_envio_automatico.sql', 'services/cobrancaLocacao.js'];
   try {
     for (const n of novos) {
       const rastreado = execFileSync('git', ['ls-files', n], { cwd: RAIZ, stdio: 'pipe' }).toString().trim();

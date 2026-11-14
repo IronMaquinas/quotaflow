@@ -81,14 +81,18 @@ async function faturamentoPrevisto(supabase, tenantId, { meses = 6, hoje = hojeB
     const valores = lista.map((m) => {
       let soma = 0;
       for (const l of ls) {
-        if (l.valor_mensal == null) continue;
+        // 18zf: cobrança híbrida — diária = dias × R$/dia; por hora = mínimo de horas × R$/h (sem mínimo: depende do uso, fica fora)
+        const modo = l.medicao_unidade === 'dia' ? 'dia' : l.medicao_unidade === 'hora' ? 'hora' : 'mensal';
+        if (modo === 'mensal' ? l.valor_mensal == null : l.medicao_valor == null) continue;
         const ini = [l.inicio, c.inicio].filter(Boolean).sort().pop() || m.ini; const fim = l.fim_real || l.fim_previsto || c.fim_previsto || m.fim;
         const a = ini > m.ini ? ini : m.ini; const b = fim < m.fim ? fim : m.fim; if (a > b) continue;
-        soma += Number(l.valor_mensal) * (dias(a, b) / dias(m.ini, m.fim));
+        if (modo === 'dia') soma += Number(l.medicao_valor) * dias(a, b);
+        else if (modo === 'hora') soma += Number(l.medicao_valor) * (Number(l.medicao_qtd) || 0) * (dias(a, b) / dias(m.ini, m.fim));
+        else soma += Number(l.valor_mensal) * (dias(a, b) / dias(m.ini, m.fim));
       }
       return Math.round(soma * 100) / 100;
     });
-    const sv = ls.filter((l) => l.status === 'ativa' && l.valor_mensal == null).length; semValor += sv;
+    const sv = ls.filter((l) => l.status === 'ativa' && (l.medicao_unidade === 'dia' || l.medicao_unidade === 'hora' ? l.medicao_valor == null : l.valor_mensal == null)).length; semValor += sv;
     if (valores.some((v) => v > 0) || sv) porContrato.push({ id: c.id, numero: c.numero, cliente: c.cliente, valores, sem_valor: sv, fim_previsto: c.fim_previsto || null });
     valores.forEach((v, i) => { totais[i] = Math.round((totais[i] + v) * 100) / 100; });
   }

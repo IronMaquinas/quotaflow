@@ -75,7 +75,7 @@ export function FaturamentoPrevisto({ C, s, onFechar, onAbrirContrato }) {
         <select value={meses} onChange={(e) => setMeses(Number(e.target.value))} style={{ ...s.input, width: "auto", marginBottom: 0 }}>{[3, 6, 12].map((n) => <option key={n} value={n}>{n} meses</option>)}</select>
         <button type="button" onClick={onFechar} aria-label="Fechar" style={{ background: "none", border: "none", color: C.muted, fontSize: 20, cursor: "pointer" }}>✕</button>
       </div>
-      <div style={{ fontSize: 12, color: C.textSub, marginBottom: 12 }}>Soma do valor mensal de cada equipamento locado, proporcional aos dias do mês dentro do período (início → devolução ou término previsto). Sem término = conta até o fim da janela. Medição por hora/dia e mobilização não entram.</div>
+      <div style={{ fontSize: 12, color: C.textSub, marginBottom: 12 }}>Soma do que cada equipamento locado deve faturar no mês — mensal proporcional aos dias, diária × dias, por hora pelo mínimo de horas (sem mínimo, depende do uso e fica fora) — (início → devolução ou término previsto). Sem término = conta até o fim da janela. Medição por hora/dia e mobilização não entram.</div>
       {erro ? <div style={{ color: C.danger }}>{erro}</div> : !d ? <div style={{ color: C.muted }}>Carregando…</div> : <>
         {d.equipamentos_sem_valor > 0 && <div style={{ fontSize: 12.5, color: C.warning || "#f59e0b", marginBottom: 8 }}>⚠ {d.equipamentos_sem_valor} equipamento(s) locado(s) sem valor mensal — não entram na previsão. Preencha no contrato.</div>}
         <div style={{ overflowX: "auto" }}><table style={{ borderCollapse: "collapse", width: "100%", minWidth: 520 }}>

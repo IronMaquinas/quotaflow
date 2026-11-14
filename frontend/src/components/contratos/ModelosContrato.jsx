@@ -145,16 +145,17 @@ export function DocumentoContrato({ C, s, contrato: k, editar, onErro: onErroPai
     setF({ modelo_id: k.modelo_id || "", caucao: c.caucao ?? "", franquia_horas: c.franquia_horas ?? "", hora_excedente: c.hora_excedente ?? "", reajuste: c.reajuste ?? "IPCA", multa_rescisoria_pct: c.multa_rescisoria_pct ?? "",
       vencimento_dia: c.vencimento_dia ?? "", forma_pagamento: c.forma_pagamento ?? "boleto bancário", foro: c.foro ?? "", observacoes: c.observacoes ?? "", na: c.na || [],
       valores: Object.fromEntries(k.equipamentos.filter((e) => e.ativa).map((e) => [e.locacao_id, e.valor_mensal ?? ""])),
+      cobrancas: Object.fromEntries(k.equipamentos.filter((e) => e.ativa).map((e) => [e.locacao_id, { modo: e.medicao_unidade === "dia" ? "dia" : e.medicao_unidade === "hora" ? "hora" : "mensal", valor: e.medicao_valor ?? "", minimo: e.medicao_qtd ?? "" }])), // 18zf
       rep_nome: c.representante?.nome ?? "", rep_cpf: c.representante?.cpf ?? "", rep_cargo: c.representante?.cargo ?? "" });
   }, [k.id]); // eslint-disable-line
   // 14d.3: equipamento que entrou depois de abrir o contrato ganha a linha do valor mensal (sem perder o que já foi digitado)
   const idsEq = k.equipamentos.filter((e) => e.ativa).map((e) => e.locacao_id).join(",");
-  useEffect(() => { setF((x) => (x ? { ...x, valores: Object.fromEntries(k.equipamentos.filter((e) => e.ativa).map((e) => [e.locacao_id, x.valores[e.locacao_id] ?? e.valor_mensal ?? ""])) } : x)); }, [idsEq]); // eslint-disable-line
+  useEffect(() => { setF((x) => (x ? { ...x, valores: Object.fromEntries(k.equipamentos.filter((e) => e.ativa).map((e) => [e.locacao_id, x.valores[e.locacao_id] ?? e.valor_mensal ?? ""])), cobrancas: { ...Object.fromEntries(k.equipamentos.filter((e) => e.ativa).map((e) => [e.locacao_id, { modo: e.medicao_unidade === "dia" ? "dia" : e.medicao_unidade === "hora" ? "hora" : "mensal", valor: e.medicao_valor ?? "", minimo: e.medicao_qtd ?? "" }])), ...(x.cobrancas || {}) } } : x)); }, [idsEq]); // eslint-disable-line
   if (!f || !modelos) return rodape || rodapeEsq ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 18, justifyContent: "flex-end" }}>{rodapeEsq}{rodape}</div> : null;
   const set = (x, v) => setF({ ...f, [x]: v });
   const salvar = async () => {
-    const { modelo_id, valores, rep_nome, rep_cpf, rep_cargo, ...cond } = f;
-    await apiService.put(`/contratos/${k.id}/condicoes`, { modelo_id: modelo_id || null, condicoes: { ...cond, representante: { nome: rep_nome, cpf: rep_cpf, cargo: rep_cargo } }, valores });
+    const { modelo_id, valores, cobrancas, rep_nome, rep_cpf, rep_cargo, ...cond } = f;
+    await apiService.put(`/contratos/${k.id}/condicoes`, { modelo_id: modelo_id || null, condicoes: { ...cond, representante: { nome: rep_nome, cpf: rep_cpf, cargo: rep_cargo } }, valores, cobrancas });
   };
   const empresa = dadosEmpresa();
   const previa = async () => {
@@ -189,9 +190,16 @@ export function DocumentoContrato({ C, s, contrato: k, editar, onErro: onErroPai
       {k.emitido_hash && !k.aceite_em && k.status === "ativo" && !k.acessos?.length && <div style={{ fontSize: 12.5, color: C.warn, border: `1px dashed ${C.warn}`, borderRadius: 8, padding: "8px 12px", marginBottom: 10 }}>{/* 18zc.2 */}⚠ <b>O cliente não tem como aceitar pelo sistema</b>: este contrato não tem acesso do locatário, então ninguém recebeu o e-mail de aceite. Crie um acesso em <b>👤 Acessos do locatário</b> (ele recebe o pedido de aceite por e-mail) ou registre o <b>aceite em papel</b>.</div>}
       {modelos.length === 0 ? <div style={{ fontSize: 13, color: C.muted }}>Nenhum modelo de contrato — importe o modelo-base na aba 📄 Modelos.</div> : (<>
         {campo(s, "MODELO", <select value={f.modelo_id} onChange={(e) => set("modelo_id", e.target.value)} disabled={!editar || k.status !== "ativo"} style={s.input}><option value="">— escolha —</option>{modelos.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}</select>, "1 1 100%")}
-        {ativos.length > 0 && <div style={{ marginTop: 8 }}><span style={s.label}>VALOR MENSAL POR EQUIPAMENTO (R$)</span>
-          {ativos.map((e) => <div key={e.locacao_id} style={{ display: "flex", gap: 8, alignItems: "center", marginBottom: 4 }}><span style={{ flex: 1, fontSize: 13 }}>{e.tag} — {e.nome}</span>
-            <CampoMoeda value={f.valores[e.locacao_id]} onChange={(v) => setF({ ...f, valores: { ...f.valores, [e.locacao_id]: v } })} disabled={!editar || k.status !== "ativo"} style={{ ...s.input, width: 160 }} /></div>)}</div>}
+        {ativos.length > 0 && <div style={{ marginTop: 8 }}><span style={s.label}>COBRANÇA E VALOR POR EQUIPAMENTO</span>{/* 18zf: mensal · diária · por hora */}
+          {ativos.map((e) => { const cb = f.cobrancas?.[e.locacao_id] || { modo: "mensal" }; const setCb = (x) => setF({ ...f, cobrancas: { ...f.cobrancas, [e.locacao_id]: { ...cb, ...x } } }); const off = !editar || k.status !== "ativo";
+            return <div key={e.locacao_id} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", marginBottom: 6 }}><span style={{ flex: "1 1 200px", fontSize: 13 }}>{e.tag} — {e.nome}</span>
+              <select value={cb.modo} disabled={off} onChange={(ev) => setCb({ modo: ev.target.value })} aria-label="Forma de cobrança" style={{ ...s.input, width: 130 }}><option value="mensal">mensal</option><option value="dia">diária</option><option value="hora">por hora</option></select>
+              {cb.modo === "mensal" ? <CampoMoeda value={f.valores[e.locacao_id]} onChange={(v) => setF({ ...f, valores: { ...f.valores, [e.locacao_id]: v } })} disabled={off} placeholder="R$ / mês" style={{ ...s.input, width: 160 }} />
+                : <CampoMoeda value={cb.valor} onChange={(v) => setCb({ valor: v })} disabled={off} placeholder={cb.modo === "dia" ? "R$ / dia" : "R$ / hora"} style={{ ...s.input, width: 160 }} />}
+              <span style={{ fontSize: 12, color: C.muted, width: 48 }}>{cb.modo === "mensal" ? "/mês" : cb.modo === "dia" ? "/dia" : "/hora"}</span>
+              {cb.modo === "hora" && <input inputMode="decimal" value={cb.minimo ?? ""} disabled={off} onChange={(ev) => setCb({ minimo: ev.target.value })} placeholder="mín. h/mês" title="Mínimo de horas cobradas por mês (opcional, proporcional aos dias)" style={{ ...s.input, width: 90 }} />}{cb.modo === "hora" && <span style={{ fontSize: 12, color: C.muted }}>h mín./mês</span>}
+            </div>; })}
+          <div style={{ fontSize: 11.5, color: C.muted, marginTop: 2 }}><b>Mensal</b>: proporcional aos dias no ciclo{f.franquia_horas && f.hora_excedente && !(f.na || []).includes("franquia_horas") ? ` — com a franquia de ${f.franquia_horas} h/mês, as horas acima (horímetro) são cobradas como hora excedente` : ""}. <b>Diária</b>: dias corridos locados no ciclo. <b>Por hora</b>: horas do horímetro (inspeções) no ciclo, com o mínimo opcional. Sem leitura de horímetro, a medição pede as horas antes de enviar.</div></div>}
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>
           {campo(s, rotNA("CAUÇÃO", "caucao"), moeda("caucao"))}{k.tipo !== "armazenagem" && <>{campo(s, rotNA("FRANQUIA (H/MÊS POR EQUIP.)", "franquia_horas"), inp("franquia_horas", { inputMode: "numeric" }))}{campo(s, rotNA("HORA EXCEDENTE", "hora_excedente"), moeda("hora_excedente"))}</>}{/* 18zb: armazenagem não tem franquia de horas */}
         </div>
