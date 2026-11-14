@@ -1010,6 +1010,7 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18ze.1 (14/11):** 🔍 **Clique na foto não fecha mais o visualizador** (com ou sem zoom) — só o clique no fundo, fora da foto, fecha (e ✕/Fechar). Antes, em 100%, clicar na foto fechava.
   - **18ze (14/11):** 📷 **Varredura do padrão de fotos** (pedido do Marcony na 18z.2: rodapé/tarja com a descrição do movimento · abrir por cima ao tocar · **modal antes de excluir** · compressão). Novo `components/shared/ConfirmarExclusao.jsx` — "Excluir esta foto?" com a miniatura e **Cancelar | Excluir** (botões grandes; nunca `window.confirm`).
     - **Inspeção (ExecutarInspecao):** o ✕ da miniatura e o "Excluir" da foto ampliada apagavam direto → agora perguntam; ✕ maior (26 px).
     - **Nova NC** e **Detalhe da NC:** trocado `window.confirm` pelo modal do app (anexo e ação do plano).
@@ -1739,7 +1740,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18ze)
+**Última atualização deste documento:** 06/11/2026 (etapa 18ze.1)
 
 --------------------------------------------------------------------------------
 

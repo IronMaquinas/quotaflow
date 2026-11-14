@@ -336,22 +336,13 @@ const ESPERADO = {
   'migrations/087_medicao_envio_automatico.sql': '8ca07e5e6d7b67718139d0cf430a70cf', // etapa 18zc (novo)
   'services/NfeXmlParser.js': 'b3fe06994341a9d8593ff6c53d7d512f', // etapa 18zd
   'front:ConfirmarExclusao.jsx': '5dc91681d6fcb9724a17f1c75170c31b', // etapa 18ze
-  'front:ImagemZoom.jsx': 'a0003a5cbcb469237a6941079ea182c5', // etapa 18ze (novo)
+  'front:ImagemZoom.jsx': '0a87d5d9acc85d2193cc347bf9798c8a', // etapa 18ze.1
   'front:ModalDetalheNCFornecedor.jsx': '55abb21fa95396222386ade553cc9b5c', // etapa 18ze
 };
 
-// Antes de copiar a etapa 18ze — base: 6984e1c
+// Antes de copiar a etapa 18ze.1 — base: 19eaaed
 const ANTES = {
-  'front:ConfirmarExclusao.jsx': '5dc91681d6fcb9724a17f1c75170c31b',
-  'front:ExecutarInspecao.jsx': '7e2ace02b4c8fb3fc3184b80b2a96a57',
-  'front:ModalNovaNC.jsx': '4bd356214f95d53158354f3f1878bce5',
-  'front:ModalDetalheNC.jsx': '1d6c54e5eb114a4ee04f512082370eba',
-  'front:ModalNaoConformidade.jsx': 'd1bd07cf54ec6f7763cfa3c63ee05f96',
-  'front:TelaCanalSpot.jsx': '98893959b351368e7f30103a4cdfaa69',
-  'front:VerArquivo.jsx': '1b53361cd3ca22d81bdc8cd4e0df852c',
-  'front:RegistrarOcorrencia.jsx': 'b59b650ed622b93b8d191900a8dc86b2',
-  'front:PainelOcorrencias.jsx': 'f25dd65f398940c9ecba8f13c98375d8',
-  'front:ModalDetalheNCFornecedor.jsx': '506222288f485c754815d6fa0342617e',
+  'front:ImagemZoom.jsx': 'a0003a5cbcb469237a6941079ea182c5',
 };
 
 const RAIZ = process.cwd();
@@ -389,7 +380,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18ze)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18ze.1)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

@@ -1,8 +1,8 @@
 // components/shared/ImagemZoom.jsx — etapa 18ze: 🔍 imagem com ZOOM no "ver foto" (padrão do QuotaFlow)
 //   Computador: rodinha do mouse (aproxima no ponto do cursor) · duplo clique alterna 1× ↔ 2,5× · arrastar com zoom.
 //   Celular: pinça com dois dedos · duplo toque alterna · arrastar com um dedo quando há zoom.
-//   Botões − / 100% / + no canto. Sem zoom, um clique simples passa adiante (o fundo continua fechando o visualizador);
-//   com zoom, o clique é da imagem (não fecha sem querer ao arrastar).
+//   Botões − / 100% / + no canto. Clique na foto nunca fecha; clique no fundo, fora da foto, fecha o visualizador
+//   (com zoom, arrastar também não fecha).
 import { useRef, useState, useEffect, useCallback } from "react";
 
 const MIN = 1, MAX = 6;
@@ -54,7 +54,9 @@ export default function ImagemZoom({ src, alt = "", style = {}, imgStyle = {}, b
     const ps = [...ponteiros.current.values()];
     gesto.current = ps.length === 1 ? { tipo: "arrasto", x0: ps[0].x, y0: ps[0].y, vx: vr.current.x, vy: vr.current.y } : null;
   };
-  const clique = (e) => { if (vr.current.k > 1 || moveu.current) e.stopPropagation(); };
+  // 18ze.1: clique NA FOTO nunca fecha (com ou sem zoom) — só o fundo fora dela fecha o visualizador
+  const naFoto = (e) => { const im = caixa.current?.querySelector('img'); if (!im) return false; const r = im.getBoundingClientRect(); return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom; }; // o clique chega na caixa (captura do ponteiro), não no <img>
+  const clique = (e) => { if (naFoto(e) || vr.current.k > 1 || moveu.current) e.stopPropagation(); };
   const bt = { width: 38, height: 38, borderRadius: 19, border: "none", background: "#000000aa", color: "#fff", fontSize: 18, cursor: "pointer", lineHeight: 1 };
 
   return <div ref={caixa} onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={up} onClick={clique}
