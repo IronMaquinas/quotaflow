@@ -14,6 +14,7 @@ import AbaMedicoes from "./AbaMedicoes"; // 18d.5
 import MobilizacaoContrato, { FaturamentoPrevisto } from "./MobilizacaoContrato"; // 18y
 import PainelOcorrencias from "../ocorrencias/PainelOcorrencias"; // 18h
 import GuardaContrato from "./GuardaContrato"; // 18za.1
+import { Toggle } from "../../plataforma/ModulosPlataforma"; // 18zc
 import CampoMoeda from "../shared/CampoMoeda";
 
 const FREQ = { diaria: "Diária", semanal: "Semanal", quinzenal: "Quinzenal", mensal: "Mensal" };
@@ -187,7 +188,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
 
         <div style={{ marginTop: 14 }}><button type="button" onClick={() => { setFiltroMed(aberto.id); setAbertoId(null); setAba("medicoes"); }} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 13, padding: 0 }}>📏 Ver medições deste contrato ›</button>
           <button type="button" onClick={() => { setFiltroOc({ id: aberto.id, numero: aberto.numero }); setAbertoId(null); setAba("ocorrencias"); }} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 13, padding: 0, marginLeft: 14 }}>⚠️ Ocorrências ›</button>{/* 18h */}
-          <span style={{ fontSize: 12, color: C.muted, marginLeft: 8 }}>ciclo {aberto.medicao_dia_inicio ? `do dia ${aberto.medicao_dia_inicio}` : "mês do calendário"}{aberto.medicao_vencimento_dia ? ` · vencimento dia ${String(aberto.medicao_vencimento_dia).padStart(2, "0")}` : ""}</span></div>{/* 18d.5 */}
+          <span style={{ fontSize: 12, color: C.muted, marginLeft: 8 }}>ciclo {aberto.medicao_dia_inicio ? `do dia ${aberto.medicao_dia_inicio}` : "mês do calendário"}{aberto.medicao_vencimento_dia ? ` · vencimento dia ${String(aberto.medicao_vencimento_dia).padStart(2, "0")}` : ""}{aberto.medicao_auto ? ` · 📤 envio automático ${aberto.medicao_auto_dias || 1} dia(s) após o fim do ciclo` : ""}</span></div>{/* 18d.5 · 18zc */}
 
         <DocumentoContrato C={C} s={s} contrato={aberto} editar={editar} onErro={err} onOk={ok} onMudou={carregar} />
 
@@ -235,6 +236,10 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
             <span><b>Checklist pelo locatário</b> — as inspeções de rotina dos equipamentos deste contrato ficam com o cliente (ele faz pelo acesso dele). Desmarcado, a empresa faz.</span></label>}
           <label style={{ display: "flex", gap: 8, alignItems: "flex-start", marginTop: 6, fontSize: 13, cursor: "pointer" }}><input type="checkbox" checked={!!form.medicao_locatario} onChange={(e) => setForm({ ...form, medicao_locatario: e.target.checked })} style={{ marginTop: 3 }} />
             <span><b>Aprovação da medição pelo locatário</b> — o sistema monta a medição de cada ciclo, você revisa e envia, e o cliente aprova (ou comenta na linha do item). Desmarcado, você revisa e fecha sozinho.</span></label>
+          <div style={{ display: "flex", gap: 10, alignItems: "flex-start", marginTop: 10, fontSize: 13 }}>{/* 18zc: 📤 envio automático */}
+            <Toggle C={C} ligado={!!form.medicao_auto} rotulo="Envio automático da medição" onChange={(v) => setForm({ ...form, medicao_auto: v, medicao_auto_dias: form.medicao_auto_dias || 1 })} />
+            <span><b>📤 Envio automático da medição</b> — {form.medicao_auto ? <>vai sozinha <input type="number" min={1} max={10} value={form.medicao_auto_dias ?? 1} onChange={(e) => setForm({ ...form, medicao_auto_dias: e.target.value })} style={{ ...s.input, width: 60, padding: "3px 6px", display: "inline-block" }} /> dia(s) depois do fim do ciclo, </> : "N dias depois do fim do ciclo, a medição vai sozinha: "}
+              {form.medicao_locatario ? "enviada para o cliente aprovar" : "fechada, com o resumo por e-mail ao contato do contrato"}. Na véspera o gestor recebe 🔔 para revisar se quiser. Com pendência (item sem valor) ou contestada pelo cliente, não vai — o gestor é avisado. Vale para os ciclos que terminam a partir de hoje.</span></div>
           {form.tipo === "armazenagem" && <div style={{ marginTop: 12, paddingTop: 10, borderTop: `1px solid ${C.border}` }}>{/* 18zb: 📐 condições do contrato de armazenagem (CA) */}
             <div style={{ ...s.label, marginBottom: 6 }}>📐 CONDIÇÕES DA ARMAZENAGEM</div>
             <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-end", fontSize: 13 }}>
@@ -250,10 +255,10 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
           <button type="button" onClick={() => setForm(null)} style={{ ...s.btn(false), cursor: "pointer", flex: 1, color: C.text }}>Cancelar</button>
           <button type="button" disabled={ocupado} onClick={async () => {
-            const { local, contato_nome, contato_email, contato_telefone, fim_previsto, obs, medicao_dia_inicio, medicao_vencimento_dia, checklist_locatario, medicao_locatario, arm_preco, arm_unidade, arm_minimo_m2, arm_area_max_m2 } = form;
+            const { local, contato_nome, contato_email, contato_telefone, fim_previsto, obs, medicao_dia_inicio, medicao_vencimento_dia, checklist_locatario, medicao_locatario, medicao_auto, medicao_auto_dias, arm_preco, arm_unidade, arm_minimo_m2, arm_area_max_m2 } = form;
             const vz = (x) => (x === "" || x == null ? null : String(x)); // 18zb: condições só no contrato de armazenagem
             const arm = form.tipo === "armazenagem" ? { arm_preco: arm_preco === "" || arm_preco == null ? null : Number(arm_preco), arm_unidade: arm_unidade || "m2_mes", arm_minimo_m2: vz(arm_minimo_m2), arm_area_max_m2: vz(arm_area_max_m2) } : {};
-            const r = await acao(() => apiService.put(`/contratos/${form.id}`, { local, contato_nome, contato_email, contato_telefone, fim_previsto: fim_previsto || null, obs, medicao_dia_inicio: medicao_dia_inicio || null, medicao_vencimento_dia: medicao_vencimento_dia === "" || medicao_vencimento_dia == null ? null : Number(medicao_vencimento_dia), checklist_locatario: !!checklist_locatario, medicao_locatario: !!medicao_locatario, ...arm }), "Contrato salvo.");
+            const r = await acao(() => apiService.put(`/contratos/${form.id}`, { local, contato_nome, contato_email, contato_telefone, fim_previsto: fim_previsto || null, obs, medicao_dia_inicio: medicao_dia_inicio || null, medicao_vencimento_dia: medicao_vencimento_dia === "" || medicao_vencimento_dia == null ? null : Number(medicao_vencimento_dia), checklist_locatario: !!checklist_locatario, medicao_locatario: !!medicao_locatario, medicao_auto: !!medicao_auto, medicao_auto_dias: Number(medicao_auto_dias) || 1, ...arm }), "Contrato salvo.");
             if (r) setForm(null);
           }} style={{ ...s.btn(!ocupado, C.accent), flex: 1 }}>Salvar</button>
         </div>

@@ -46,7 +46,8 @@ function validar(body, parcial = false) {
   if (out.inicio && out.fim_previsto && out.fim_previsto < out.inicio) return { erro: 'O fim previsto é antes do início' };
   // 18d: 📏 medição — ciclo (dia 1–28; vazio = mês do calendário) e os toggles do locatário
   if (tem('medicao_dia_inicio')) { const d = body.medicao_dia_inicio === '' || body.medicao_dia_inicio == null ? null : Number(body.medicao_dia_inicio); if (d != null && !(Number.isInteger(d) && d >= 1 && d <= 28)) return { erro: 'Início do ciclo de medição: um dia de 1 a 28 (ou marque "Mês do calendário")' }; out.medicao_dia_inicio = d === 1 ? null : d; }
-  for (const k of ['checklist_locatario', 'medicao_locatario']) if (tem(k)) out[k] = body[k] === true;
+  for (const k of ['checklist_locatario', 'medicao_locatario', 'medicao_auto']) if (tem(k)) out[k] = body[k] === true; // 18zc: medicao_auto
+  if (tem('medicao_auto_dias')) { const d = body.medicao_auto_dias === '' || body.medicao_auto_dias == null ? 1 : Number(body.medicao_auto_dias); if (!(Number.isInteger(d) && d >= 1 && d <= 10)) return { erro: 'Envio automático: de 1 a 10 dias depois do fim do ciclo' }; out.medicao_auto_dias = d; }
   if (tem('medicao_vencimento_dia')) { const d = body.medicao_vencimento_dia === '' || body.medicao_vencimento_dia == null ? null : Number(body.medicao_vencimento_dia); if (d != null && !(Number.isInteger(d) && d >= 1 && d <= 31)) return { erro: 'Dia de vencimento: de 1 a 31' }; out.medicao_vencimento_dia = d; } // 18d.2
   // 18za: 📦 guarda no pátio cobrada pelo contrato — preço por m² (ao mês ou ao dia) e mínimo contratado (m²/mês)
   const numBR = (v) => { let s = String(v).trim(); if (s.includes(',')) s = s.replace(/\./g, '').replace(',', '.'); else if (/^\d{1,3}(\.\d{3})+$/.test(s)) s = s.replace(/\./g, ''); return Number(s); };
@@ -110,8 +111,11 @@ async function criar(supabase, tenantId, quem, body = {}) {
 async function editar(supabase, tenantId, id, body = {}) {
   const c = await doTenant(supabase, tenantId, id); if (!c) return { status: 404, erro: 'Contrato não encontrado' };
   const v = validar({ inicio: c.inicio, ...body, _arm_min_atual: c.arm_minimo_m2, _arm_max_atual: c.arm_area_max_m2 }, true); if (v.erro) return { status: 400, erro: v.erro };
+  if (v.dados.medicao_auto === true && !c.medicao_auto) v.dados.medicao_auto_desde = hojeBR(); // 18zc: só ciclos que terminam a partir de hoje
+  if (v.dados.medicao_auto === false) v.dados.medicao_auto_desde = null;
   const { data, error } = await supabase.from('locacao_contratos').update(v.dados).eq('id', c.id).eq('tenant_id', tenantId).select();
-  if (error) { if (/arm_|tipo/.test(error.message)) return { status: 409, erro: 'Falta rodar as migrations 085 e 086 no Supabase (contrato de armazenagem).' }; throw new Error(error.message); }
+  if (error) { if (/medicao_auto/.test(error.message)) return { status: 409, erro: 'Falta rodar a migration 087 no Supabase (envio automático da medição).' };
+    if (/arm_|tipo/.test(error.message)) return { status: 409, erro: 'Falta rodar as migrations 085 e 086 no Supabase (contrato de armazenagem).' }; throw new Error(error.message); }
   // 18d: mudou "Checklist pelo locatário" → as rotinas das locações ativas do contrato passam para quem faz agora
   if (v.dados.checklist_locatario !== undefined && v.dados.checklist_locatario !== !!c.checklist_locatario) {
     const ativas = (await q(supabase.from('equipamento_locacoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id))).filter((l) => l.status === 'ativa');

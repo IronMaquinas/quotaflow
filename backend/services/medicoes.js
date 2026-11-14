@@ -114,7 +114,8 @@ async function detalhe(supabase, tenantId, medicaoId, { cliente = false } = {}) 
   const info = m.status === 'aprovada' && m.informativo ? m.informativo : await informativo(supabase, tenantId, c, m.inicio, m.fim);
   const emp = (await q(supabase.from('tenants').select('*').eq('id', tenantId)))[0] || {};
   return { medicao: { ...m, status_nome: (cliente ? STATUS_NOME_CLIENTE : STATUS_NOME)[m.status] || STATUS_NOME[m.status], rotulo: cicloDe(c.medicao_dia_inicio, m.inicio).rotulo, ...resumo(m) },
-    contrato: { id: c.id, numero: c.numero, cliente: c.cliente, local: c.local, medicao_locatario: !!c.medicao_locatario, medicao_vencimento_dia: c.medicao_vencimento_dia ?? null },
+    contrato: { id: c.id, numero: c.numero, cliente: c.cliente, local: c.local, medicao_locatario: !!c.medicao_locatario, medicao_vencimento_dia: c.medicao_vencimento_dia ?? null, tipo: c.tipo || 'locacao',
+      envio_automatico_em: c.medicao_auto && (!c.medicao_auto_desde || m.fim >= c.medicao_auto_desde) ? dataAuto(c, m.fim) : null },
     informativo: info,
     paradas: await require('./ocorrencias').paradasDoContrato(supabase, tenantId, c.id, m.inicio, m.fim).catch(() => []), // 18h: só informa — o comercial decide
     empresa: { nome: emp.nome_fantasia || emp.nome || emp.razao_social || '', razao_social: emp.razao_social || null, cnpj: emp.cnpj || null } };
@@ -447,4 +448,57 @@ async function avisosDiarios(supabase, { hoje = hojeBR(), enviar = null } = {}) 
   return r;
 }
 
-module.exports = { itensGuarda, painelEmpresa, D_ANTES, naJanela, STATUS_NOME, cicloDe, ciclos, listar, detalhe, abrir, recalcular, salvar, enviar, reabrir, aprovarCliente, contestar, acaoEmpresa, pendencias, painelLocatario, acaoLocatario, informativo, avisosDiarios, _definirEnvio };
+// ─── 18zc: 📤 ENVIO AUTOMÁTICO (cron diário das 7h) ─────────────────────────────────────────────────────────────────────────────
+//   Contrato com "Envio automático" ligado: N dias depois do fim do ciclo (medicao_auto_dias), a medição vai sozinha —
+//   com aprovação do cliente → enviada para ele aprovar; sem → fechada e o resumo vai por e-mail ao contato do contrato.
+//   Véspera: 🔔 ao gestor ("amanhã vai sozinha — revise se quiser"). Não vai sozinha (e o gestor é avisado do motivo) quando:
+//   item sem valor/sem m², nenhum item no ciclo, ou o cliente contestou (status devolvida — precisa de alguém).
+//   Só ciclos que terminam a partir do dia em que o envio automático foi ligado (medicao_auto_desde).
+const somaDias = (d, n) => new Date(Date.parse(`${d}T12:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
+const dataAuto = (c, fim) => somaDias(fim, Number.isInteger(Number(c.medicao_auto_dias)) ? Number(c.medicao_auto_dias) : 1);
+const QUEM_AUTO = { usuarioNome: 'QuotaFlow (envio automático)' };
+async function resumoPorEmail(supabase, tenantId, c, m) {
+  const para = String(c.contato_email || '').trim(); if (!para) return 0;
+  const emp = await empresaNome(supabase, tenantId); const rot = cicloDe(c.medicao_dia_inicio, m.inicio).rotulo; const tot = resumo(m).total_cobrar;
+  const linhas = (m.itens || []).map((i) => `<tr><td style="padding:4px 8px;border-bottom:1px solid #eee"><b>${escH(i.tag || '')}</b> ${escH(i.nome || '')}</td><td style="padding:4px 8px;border-bottom:1px solid #eee;text-align:right">${brl(i.valor)}</td></tr>`).join('');
+  const html = `<div style="font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.55;color:#111"><p>Olá! Segue a medição do contrato <b>${escH(c.numero)}</b> de <b>${escH(rot)}</b> (${dBR(m.inicio)} a ${dBR(m.fim)}).</p>
+    <table style="border-collapse:collapse;font-size:13px">${linhas}<tr><td style="padding:6px 8px"><b>Total</b></td><td style="padding:6px 8px;text-align:right"><b>${brl(tot)}</b></td></tr></table>
+    ${c.medicao_vencimento_dia ? `<p>Vencimento: dia ${String(c.medicao_vencimento_dia).padStart(2, '0')}.</p>` : ''}<p style="color:#666;font-size:12px">${escH(emp)} — enviado pelo QuotaFlow.</p></div>`;
+  try { await mandarEmail(para, `📏 Medição ${rot} do contrato ${c.numero} — ${emp}`, html); return 1; } catch (e) { console.error('❌ [medição auto] e-mail:', e.message || e); return 0; }
+}
+async function envioAutomatico(supabase, { hoje = hojeBR() } = {}) {
+  const N = require('./notificacoes');
+  const r = { enviadas: 0, fechadas: 0, avisos_vespera: 0, bloqueadas: 0 };
+  let cs; try { cs = (await q(supabase.from('locacao_contratos').select('*'))).filter((c) => c.status === 'ativo' && c.medicao_auto); } catch { return r; } // sem a 087
+  for (const c of cs) {
+    const tenantId = c.tenant_id;
+    for (const x of ciclos(c, hoje)) {
+      if (x.fim >= hoje || (c.medicao_auto_desde && x.fim < c.medicao_auto_desde)) continue;
+      const quando = dataAuto(c, x.fim); if (quando > somaDias(hoje, 1)) continue;
+      if (quando < somaDias(hoje, -30)) continue; // atraso muito antigo: não manda sozinho (alguém olha)
+      let m = (await q(supabase.from('locacao_medicoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id)).catch(() => [])).find((y) => y.inicio === x.inicio) || null;
+      if (m && !['aberta', 'devolvida'].includes(m.status)) continue; // já foi
+      const total = () => brl(resumo(m || { itens: [] }).total_cobrar);
+      if (quando === somaDias(hoje, 1)) { // véspera
+        if (!m) { const a = await abrir(supabase, tenantId, QUEM_AUTO, c.id, x.inicio); m = a.medicao || null; } else m = await sincronizar(supabase, tenantId, m, c);
+        if (!m || m.status !== 'aberta') continue;
+        await N.avisarPerfis(supabase, tenantId, ['gestor'], { tipo: 'medicao_auto', chave: `medicao-auto-vespera:${m.id}`, titulo: `📏 Amanhã a medição ${x.rotulo} do ${c.numero} vai sozinha (${total()})`,
+          texto: `${c.cliente} — ${c.medicao_locatario ? 'será enviada para o cliente aprovar' : 'será fechada e o resumo vai por e-mail ao contato'}. Revise se quiser.`, link: { tela: 'contratos' } }).catch(() => 0);
+        r.avisos_vespera++; continue;
+      }
+      // dia do envio (ou atrasado até 30 dias — o cron pode ter falhado)
+      if (m?.status === 'devolvida') { await N.avisarPerfis(supabase, tenantId, ['gestor'], { tipo: 'medicao_auto', chave: `medicao-auto-bloq:${m.id}`, titulo: `📏 Medição ${x.rotulo} do ${c.numero} não foi sozinha — o cliente contestou`, texto: `${c.cliente}: revise os comentários e reenvie.`, link: { tela: 'contratos' } }).catch(() => 0); r.bloqueadas++; continue; }
+      if (!m) { const a = await abrir(supabase, tenantId, QUEM_AUTO, c.id, x.inicio); if (a.vazia) continue; m = a.medicao || null; if (!m) continue; } else m = await sincronizar(supabase, tenantId, m, c);
+      const e = await enviar(supabase, tenantId, QUEM_AUTO, m);
+      if (e.erro) { await N.avisarPerfis(supabase, tenantId, ['gestor'], { tipo: 'medicao_auto', chave: `medicao-auto-bloq:${m.id}`, titulo: `📏 Medição ${x.rotulo} do ${c.numero} não foi sozinha`, texto: `${c.cliente}: ${e.erro}`, link: { tela: 'contratos' } }).catch(() => 0); r.bloqueadas++; continue; }
+      m = e.medicao;
+      if (m.status === 'aprovada') { await resumoPorEmail(supabase, tenantId, c, m); r.fechadas++; } else r.enviadas++;
+      await N.avisarPerfis(supabase, tenantId, ['gestor'], { tipo: 'medicao_auto', chave: `medicao-auto-ok:${m.id}`, titulo: `📏 Medição ${x.rotulo} do ${c.numero} ${m.status === 'aprovada' ? 'fechada' : 'enviada ao cliente'} automaticamente (${brl(resumo(m).total_cobrar)})`,
+        texto: `${c.cliente}${m.status === 'aprovada' ? (c.contato_email ? ` — resumo enviado para ${c.contato_email}` : ' — contrato sem e-mail de contato: o resumo não foi enviado') : ' — aguardando a aprovação do cliente'}.`, link: { tela: 'contratos' } }).catch(() => 0);
+    }
+  }
+  console.log(`📤 [medição auto] ${r.enviadas} enviada(s), ${r.fechadas} fechada(s), ${r.avisos_vespera} aviso(s) de véspera, ${r.bloqueadas} bloqueada(s)`);
+  return r;
+}
+
+module.exports = { envioAutomatico, dataAuto, itensGuarda, painelEmpresa, D_ANTES, naJanela, STATUS_NOME, cicloDe, ciclos, listar, detalhe, abrir, recalcular, salvar, enviar, reabrir, aprovarCliente, contestar, acaoEmpresa, pendencias, painelLocatario, acaoLocatario, informativo, avisosDiarios, _definirEnvio };
