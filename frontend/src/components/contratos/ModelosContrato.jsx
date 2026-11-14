@@ -126,7 +126,7 @@ export function AbaModelos({ C, s, editar, onErro, onOk }) {
 }
 
 /** No detalhe do contrato (empresa) */
-export function DocumentoContrato({ C, s, contrato: k, editar, onErro: onErroPai, onOk: onOkPai, onMudou, onCriarAcesso }) {
+export function DocumentoContrato({ C, s, contrato: k, editar, onErro: onErroPai, onOk: onOkPai, onMudou, onCriarAcesso, rodape = null, rodapeEsq = null }) { // 18zc.5: rodapé da ficha na mesma linha
   const [quemAceita, setQuemAceita] = useState(null); // 18zc.3: emitir sem acesso → perguntar antes
   // 14d.1: a mensagem aparece AQUI (o aviso da tela fica escondido atrás do modal do contrato)
   const [msg, setMsg] = useState(null);
@@ -148,7 +148,7 @@ export function DocumentoContrato({ C, s, contrato: k, editar, onErro: onErroPai
   // 14d.3: equipamento que entrou depois de abrir o contrato ganha a linha do valor mensal (sem perder o que já foi digitado)
   const idsEq = k.equipamentos.filter((e) => e.ativa).map((e) => e.locacao_id).join(",");
   useEffect(() => { setF((x) => (x ? { ...x, valores: Object.fromEntries(k.equipamentos.filter((e) => e.ativa).map((e) => [e.locacao_id, x.valores[e.locacao_id] ?? e.valor_mensal ?? ""])) } : x)); }, [idsEq]); // eslint-disable-line
-  if (!f || !modelos) return null;
+  if (!f || !modelos) return rodape || rodapeEsq ? <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 18, justifyContent: "flex-end" }}>{rodapeEsq}{rodape}</div> : null;
   const set = (x, v) => setF({ ...f, [x]: v });
   const salvar = async () => {
     const { modelo_id, valores, rep_nome, rep_cpf, rep_cargo, ...cond } = f;
@@ -207,10 +207,11 @@ export function DocumentoContrato({ C, s, contrato: k, editar, onErro: onErroPai
           <textarea rows={3} value={f.observacoes} onChange={(e) => set("observacoes", e.target.value)} disabled={!editar || k.status !== "ativo"} style={{ ...s.input, resize: "vertical" }} /></label>
         {msg && <div style={{ fontSize: 12.5, marginTop: 8, padding: "6px 10px", borderRadius: 6, color: msg.tipo === "erro" ? C.danger : C.success, background: `${msg.tipo === "erro" ? C.danger : C.success}14` }}>{msg.tipo === "erro" ? "⚠ " : "✓ "}{msg.texto}</div>}
         {faltando?.length > 0 && <div style={{ fontSize: 12, color: C.warn, marginTop: 6 }}>Ainda sem valor: {faltando.join(", ")}. Na prévia aparece "________".</div>}
-        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10, justifyContent: "flex-end" }}>
-          {k.emitido_hash && <button type="button" onClick={imprimirEmitido} className="qf-clicavel" style={{ ...s.btn(false), cursor: "pointer", color: C.text, background: "transparent", marginRight: "auto" }}>🖨 Contrato emitido (v{k.emitido_versao})</button>}
-          {editar && k.status === "ativo" && <button type="button" disabled={ocupado || !f.modelo_id} onClick={async () => { setOcupado(true); try { await salvar(); onOk("Condições salvas."); onMudou?.(); } catch (e) { onErro(e.message); } finally { setOcupado(false); } }} style={{ ...s.btn(!ocupado && !!f.modelo_id, C.accent), background: "transparent", color: C.accent }}>Salvar</button>}
-          <button type="button" disabled={ocupado || !f.modelo_id} onClick={previa} style={{ ...s.btn(!ocupado && !!f.modelo_id, C.accent), background: "transparent", color: C.accent }}>👁 Prévia</button>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 10, justifyContent: "flex-end", alignItems: "center" }}>
+          {rodapeEsq}
+          {k.emitido_hash && <button type="button" onClick={imprimirEmitido} className="qf-clicavel" style={{ ...s.btn(false), padding: "8px 14px", fontSize: 13, cursor: "pointer", color: C.text, background: "transparent", marginRight: "auto" }}>🖨 Contrato emitido (v{k.emitido_versao})</button>}
+          {editar && k.status === "ativo" && <button type="button" disabled={ocupado || !f.modelo_id} onClick={async () => { setOcupado(true); try { await salvar(); onOk("Condições salvas."); onMudou?.(); } catch (e) { onErro(e.message); } finally { setOcupado(false); } }} style={{ ...s.btn(!ocupado && !!f.modelo_id, C.accent), padding: "8px 14px", fontSize: 13, background: "transparent", color: C.accent }}>Salvar</button>}
+          <button type="button" disabled={ocupado || !f.modelo_id} onClick={previa} style={{ ...s.btn(!ocupado && !!f.modelo_id, C.accent), padding: "8px 14px", fontSize: 13, background: "transparent", color: C.accent }}>👁 Prévia</button>
           {quemAceita && <div onClick={() => setQuemAceita(null)} style={{ position: "fixed", inset: 0, background: "#000000aa", zIndex: 1300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
             <div onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Quem vai aceitar este contrato" style={{ ...s.card, width: 460, maxWidth: "100%", padding: 20 }}>
               <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 6 }}>Quem vai aceitar este contrato?</div>
@@ -219,7 +220,8 @@ export function DocumentoContrato({ C, s, contrato: k, editar, onErro: onErroPai
               <button type="button" onClick={() => { const x = quemAceita; setQuemAceita(null); emitir(x.forcar, true); }} style={{ ...s.btn(false), width: "100%", padding: "12px 14px", textAlign: "left", color: C.text, marginBottom: 8 }}>✍ <b>O cliente vai assinar no papel</b><div style={{ fontSize: 12, fontWeight: 400, color: C.textSub }}>Emite assim mesmo (ninguém recebe e-mail). Depois registre a assinatura em "O cliente assinou no papel?".</div></button>
               <button type="button" onClick={() => setQuemAceita(null)} style={{ ...s.btn(false), width: "100%", color: C.textSub }}>Cancelar</button>
             </div></div>}
-          {editar && k.status === "ativo" && <button type="button" disabled={ocupado || !f.modelo_id} onClick={() => emitir(!!faltando?.length)} style={s.btn(!ocupado && !!f.modelo_id, C.success)}>{faltando?.length ? "📄 Emitir mesmo assim" : k.emitido_hash ? "📄 Emitir nova versão" : "📄 Emitir"}</button>}
+          {editar && k.status === "ativo" && <button type="button" disabled={ocupado || !f.modelo_id} onClick={() => emitir(!!faltando?.length)} style={{ ...s.btn(!ocupado && !!f.modelo_id, C.success), padding: "8px 14px", fontSize: 13 }}>{faltando?.length ? "📄 Emitir mesmo assim" : k.emitido_hash ? "📄 Emitir nova versão" : "📄 Emitir"}</button>}
+          {rodape && <span style={{ width: 1, alignSelf: "stretch", background: C.border, margin: "0 4px" }} />}{rodape}
         </div>
         {editar && k.status === "ativo" && k.emitido_hash && !k.aceite_em && (papel ? (
           <div style={{ ...s.card, padding: 10, marginTop: 10 }}>

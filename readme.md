@@ -1010,6 +1010,11 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18zc.5 (14/11):** 📑 **Ficha do contrato — botões e atalhos** (pedido do Marcony testando o CA).
+    - **Uma linha só de botões** (quebra em tela pequena), todos do mesmo tamanho: Salvar · 👁 Prévia · 📄 Emitir │ ✎ Editar contrato · Encerrar contrato · Fechar.
+    - **Contrato de armazenagem:** sem o "Editar" de baixo (parecia editar o contrato todo e duplicava) — fica o **✎ Editar condições** de cima. No de locação o botão chama **✎ Editar contrato**.
+    - **Atalhos só quando há algo, com a contagem:** "📏 3 medição(ões) · 1 em aberto ›", "⚠️ 2 ocorrência(s) · 1 aberta(s) ›" (laranja se há aberta), "🔍 Inspeções · 1 atrasada(s) ›" (vermelho se atrasada; só no CL com equipamento — saiu do rodapé). Antes os links apareciam mesmo sem nada e tiravam o funcionário da tela à toa.
+    - Backend: a lista de contratos traz `n_medicoes`, `medicoes_pendentes`, `n_ocorrencias`, `ocorrencias_abertas`.
   - **18zc.4 (14/11):** 📅 **Lembretes só em dia útil** (pedido do Marcony: envio na segunda feriado → lembrete no fim de semana, o funcionário perde). Dia útil = **seg a sex, fora os feriados cadastrados da empresa** (os mesmos da frota e do fiscal).
     - **Aviso do envio automático** sai no **último dia útil antes do envio** (pode ser antes do fim do ciclo) e diz a data: "Na ter 01/12/2026 a medição … vai sozinha" (ou "Amanhã", quando é o dia seguinte). A data do envio em si continua D+N.
     - **Lembretes ao cliente** (medição aguardando aprovação há 3 dias, inspeção atrasada): só em dia útil — caindo em fim de semana/feriado, saem no próximo dia útil.
@@ -1720,7 +1725,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18zc.4)
+**Última atualização deste documento:** 06/11/2026 (etapa 18zc.5)
 
 --------------------------------------------------------------------------------
 

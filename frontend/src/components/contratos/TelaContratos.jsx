@@ -85,6 +85,7 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
       <div onClick={(e) => e.stopPropagation()} style={{ ...s.card, width: largura, maxWidth: "100%", padding: "18px 20px", margin: "auto 0", boxShadow: "0 24px 48px #00000060" }}>{conteudo}</div>
     </div>
   );
+  const btR = (cor, cheio = true) => ({ ...bt(cor, cheio), padding: "8px 14px", fontSize: 13 }); // 18zc.5: rodapé da ficha — mesmo tamanho dos botões do documento
   const bt = (cor, cheio = true) => ({ ...s.btn(true, cor), cursor: "pointer", padding: "6px 11px", fontSize: 12, ...(cheio ? {} : { background: "transparent", color: cor }) });
   const campo = (rot, el, flex = "1 1 160px") => <label style={{ flex, display: "block" }}><span style={s.label}>{rot}</span>{el}</label>;
   const inp = (obj, set, k, extra = {}) => <input value={obj[k] ?? ""} onChange={(e) => set({ ...obj, [k]: e.target.value })} style={s.input} {...extra} />;
@@ -187,9 +188,10 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
         </>}
         {aberto.tipo === "armazenagem" && <GuardaContrato C={C} s={s} contrato={aberto} editar={editar} onEditar={() => setForm({ ...vazio(), ...aberto, fim_previsto: aberto.fim_previsto || "" })} />}
 
-        <div style={{ marginTop: 14 }}><button type="button" onClick={() => { setFiltroMed(aberto.id); setAbertoId(null); setAba("medicoes"); }} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 13, padding: 0 }}>📏 Ver medições deste contrato ›</button>
-          <button type="button" onClick={() => { setFiltroOc({ id: aberto.id, numero: aberto.numero }); setAbertoId(null); setAba("ocorrencias"); }} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 13, padding: 0, marginLeft: 14 }}>⚠️ Ocorrências ›</button>{/* 18h */}
-          <span style={{ fontSize: 12, color: C.muted, marginLeft: 8 }}>ciclo {aberto.medicao_dia_inicio ? `do dia ${aberto.medicao_dia_inicio}` : "mês do calendário"}{aberto.medicao_vencimento_dia ? ` · vencimento dia ${String(aberto.medicao_vencimento_dia).padStart(2, "0")}` : ""}{aberto.medicao_auto ? ` · 📤 envio automático ${aberto.medicao_auto_dias || 1} dia(s) após o fim do ciclo` : ""}</span></div>{/* 18d.5 · 18zc */}
+        <div style={{ marginTop: 14 }}>{/* 18zc.5: links só quando há medição/ocorrência — com a contagem */}{aberto.n_medicoes > 0 && <button type="button" onClick={() => { setFiltroMed(aberto.id); setAbertoId(null); setAba("medicoes"); }} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 13, padding: 0, marginRight: 14 }}>📏 {aberto.n_medicoes} medição(ões){aberto.medicoes_pendentes ? ` · ${aberto.medicoes_pendentes} em aberto` : ""} ›</button>}
+          {aberto.n_ocorrencias > 0 && <button type="button" onClick={() => { setFiltroOc({ id: aberto.id, numero: aberto.numero }); setAbertoId(null); setAba("ocorrencias"); }} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 13, padding: 0, marginRight: 14 , color: aberto.ocorrencias_abertas ? C.warn : C.accent }}>⚠️ {aberto.n_ocorrencias} ocorrência(s){aberto.ocorrencias_abertas ? ` · ${aberto.ocorrencias_abertas} aberta(s)` : ""} ›</button>}{/* 18h */}
+          {onAbrirInspecoes && aberto.tipo !== "armazenagem" && aberto.equipamentos.length > 0 && <button type="button" onClick={onAbrirInspecoes} style={{ background: "none", border: "none", color: aberto.atrasadas ? C.danger : C.accent, cursor: "pointer", fontSize: 13, padding: 0, marginRight: 14 }}>🔍 Inspeções{aberto.atrasadas ? ` · ${aberto.atrasadas} atrasada(s)` : ""} ›</button>}
+          <span style={{ fontSize: 12, color: C.muted }}>📏 ciclo {aberto.medicao_dia_inicio ? `do dia ${aberto.medicao_dia_inicio}` : "mês do calendário"}{aberto.medicao_vencimento_dia ? ` · vencimento dia ${String(aberto.medicao_vencimento_dia).padStart(2, "0")}` : ""}{aberto.medicao_auto ? ` · 📤 envio automático ${aberto.medicao_auto_dias || 1} dia(s) após o fim do ciclo` : ""}</span></div>{/* 18d.5 · 18zc */}
 
         <div style={{ display: "flex", alignItems: "center", marginTop: 16, marginBottom: 6 }}>
           <div style={{ fontWeight: 700, flex: 1 }}>👤 Acessos do locatário</div>
@@ -208,15 +210,11 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
         {aberto.acessos.length === 0 && <div style={{ fontSize: 13, color: C.muted, padding: "6px 0" }}>Nenhum acesso ainda.</div>}
 
         {/* 18zc.3: o documento vem DEPOIS dos acessos — primeiro quem vai aceitar, depois emitir */}
-        <DocumentoContrato C={C} s={s} contrato={aberto} editar={editar} onErro={err} onOk={ok} onMudou={carregar} onCriarAcesso={() => setAcesso({ nome: aberto.contato_nome || "", email: aberto.contato_email || "", senha: "", telefone: aberto.contato_telefone || "" })} />
+        <DocumentoContrato C={C} s={s} contrato={aberto} rodape={<>{editar && aberto.status === "ativo" && aberto.tipo !== "armazenagem" && <button type="button" onClick={() => setForm({ ...vazio(), ...aberto, fim_previsto: aberto.fim_previsto || "" })} style={btR(C.accent, false)}>✎ Editar contrato</button>}
+{editar && aberto.status === "ativo" && <button type="button" onClick={() => setConfirmar({ titulo: `Encerrar o contrato ${aberto.numero}?`, texto: `${aberto.ativos ? `Os ${aberto.ativos} equipamento(s) ainda locados voltam para 🏠 Na base. ` : ""}As rotinas do locatário param. Faça as inspeções de devolução antes.`, cor: C.danger, rotulo: "Encerrar",
+            acao: () => apiService.post(`/contratos/${aberto.id}/encerrar`, { fim_real: hoje() }), msg: "Contrato encerrado.", depois: (r) => { if (r?.sem_contrato?.length) setPausar(r.sem_contrato); } })} style={btR(C.danger, false)}>Encerrar contrato</button>}
+<button type="button" onClick={() => setAbertoId(null)} style={btR(C.accent)}>Fechar</button></>} editar={editar} onErro={err} onOk={ok} onMudou={carregar} onCriarAcesso={() => setAcesso({ nome: aberto.contato_nome || "", email: aberto.contato_email || "", senha: "", telefone: aberto.contato_telefone || "" })} />
 
-        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 18, flexWrap: "wrap" }}>
-          {onAbrirInspecoes && aberto.tipo !== "armazenagem" ? <button type="button" onClick={onAbrirInspecoes} style={{ ...bt(C.textSub, false), marginRight: "auto" }}>🔍 Ir para Inspeções</button> : <span style={{ marginRight: "auto" }} />}{/* 18zb.1: armazenagem não tem inspeção */}
-          {editar && aberto.status === "ativo" && <button type="button" onClick={() => setForm({ ...vazio(), ...aberto, fim_previsto: aberto.fim_previsto || "" })} style={bt(C.accent, false)}>Editar</button>}
-          {editar && aberto.status === "ativo" && <button type="button" onClick={() => setConfirmar({ titulo: `Encerrar o contrato ${aberto.numero}?`, texto: `${aberto.ativos ? `Os ${aberto.ativos} equipamento(s) ainda locados voltam para 🏠 Na base. ` : ""}As rotinas do locatário param. Faça as inspeções de devolução antes.`, cor: C.danger, rotulo: "Encerrar",
-            acao: () => apiService.post(`/contratos/${aberto.id}/encerrar`, { fim_real: hoje() }), msg: "Contrato encerrado.", depois: (r) => { if (r?.sem_contrato?.length) setPausar(r.sem_contrato); } })} style={bt(C.danger, false)}>Encerrar contrato</button>}
-          <button type="button" onClick={() => setAbertoId(null)} style={bt(C.accent)}>Fechar</button>
-        </div>
       </>, () => setAbertoId(null), 760)}
 
       {form && modal(<>

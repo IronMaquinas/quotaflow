@@ -68,6 +68,8 @@ async function montar(supabase, tenantId, contratos, { comAcessos = true } = {})
     comAcessos ? q(supabase.from('usuarios').select('*').eq('tenant_id', tenantId)) : [],
     R.painel(supabase, tenantId),
   ]);
+  // 18zc.5: quantas medições e ocorrências cada contrato tem — os links da ficha só aparecem quando há algo
+  const [meds, ocs] = await Promise.all([q(supabase.from('locacao_medicoes').select('*').eq('tenant_id', tenantId)).catch(() => []), q(supabase.from('ocorrencias').select('*').eq('tenant_id', tenantId)).catch(() => [])]);
   const equips = new Map((await q(supabase.from('equipamentos').select('*').eq('tenant_id', tenantId))).map((e) => [String(e.id), e]));
   return contratos.map((c) => {
     const minhas = locs.filter((l) => String(l.contrato_id) === String(c.id));
@@ -79,7 +81,9 @@ async function montar(supabase, tenantId, contratos, { comAcessos = true } = {})
       .sort((a, b) => (b.ativa - a.ativa) || String(a.tag).localeCompare(String(b.tag)));
     const acessos = vinc.filter((v) => String(v.contrato_id) === String(c.id)).map((v) => { const u = usuarios.find((x) => String(x.id) === String(v.usuario_id)); return u ? { usuario_id: u.id, nome: u.nome, email: u.email, ativo: !!u.ativo } : null; }).filter(Boolean);
     const rot = equipamentos.flatMap((e) => e.rotinas);
-    return { ...c, fase: CM.fase(c), equipamentos, acessos, ativos: equipamentos.filter((e) => e.ativa).length, atrasadas: rot.filter((r) => r.estado === 'atrasada').length };
+    const mm = meds.filter((m) => String(m.contrato_id) === String(c.id)); const oo = ocs.filter((o) => String(o.contrato_id) === String(c.id));
+    return { ...c, n_medicoes: mm.length, medicoes_pendentes: mm.filter((m) => ['aberta', 'enviada', 'devolvida'].includes(m.status)).length, n_ocorrencias: oo.length, ocorrencias_abertas: oo.filter((o) => o.status !== 'encerrada').length,
+      fase: CM.fase(c), equipamentos, acessos, ativos: equipamentos.filter((e) => e.ativa).length, atrasadas: rot.filter((r) => r.estado === 'atrasada').length };
   });
 }
 async function listar(supabase, tenantId) {
