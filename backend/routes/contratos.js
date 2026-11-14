@@ -59,7 +59,7 @@ router.delete('/modelos/:id', exigirEditar, responder((req) => CM.salvarModelo(s
 router.put('/:id/condicoes', exigirEditar, responder((req) => CM.salvarCondicoes(supabase, req.tenantId, req.params.id, req.body || {})));
 router.get('/:id/previa', exigirVer, responder((req) => CM.previa(supabase, req.tenantId, req.params.id, req.query.modelo_id || null)));
 router.post('/:id/aceite-papel', exigirEditar, responder(async (req) => CM.aceitePapel(supabase, req.tenantId, await quem(req), req.params.id, req.body || {}))); // 14d.2
-router.post('/:id/emitir', exigirEditar, responder(async (req) => CM.emitir(supabase, req.tenantId, await quem(req), req.params.id, { forcar: req.body?.forcar === true })));
+router.post('/:id/emitir', exigirEditar, responder(async (req) => CM.emitir(supabase, req.tenantId, await quem(req), req.params.id, { forcar: req.body?.forcar === true, papel: req.body?.papel === true })));
 router.get('/clientes', exigirVer, responder(async (req) => ({ clientes: await CL.listar(supabase, req.tenantId) })));
 router.get('/clientes/consulta/:doc', exigirVer, responder((req) => CL.consultar(supabase, req.tenantId, req.params.doc)));
 router.post('/clientes', exigirEditar, responder((req) => CL.criar(supabase, req.tenantId, req.body || {})));

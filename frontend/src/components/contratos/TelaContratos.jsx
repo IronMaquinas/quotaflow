@@ -191,8 +191,6 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
           <button type="button" onClick={() => { setFiltroOc({ id: aberto.id, numero: aberto.numero }); setAbertoId(null); setAba("ocorrencias"); }} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 13, padding: 0, marginLeft: 14 }}>⚠️ Ocorrências ›</button>{/* 18h */}
           <span style={{ fontSize: 12, color: C.muted, marginLeft: 8 }}>ciclo {aberto.medicao_dia_inicio ? `do dia ${aberto.medicao_dia_inicio}` : "mês do calendário"}{aberto.medicao_vencimento_dia ? ` · vencimento dia ${String(aberto.medicao_vencimento_dia).padStart(2, "0")}` : ""}{aberto.medicao_auto ? ` · 📤 envio automático ${aberto.medicao_auto_dias || 1} dia(s) após o fim do ciclo` : ""}</span></div>{/* 18d.5 · 18zc */}
 
-        <DocumentoContrato C={C} s={s} contrato={aberto} editar={editar} onErro={err} onOk={ok} onMudou={carregar} />
-
         <div style={{ display: "flex", alignItems: "center", marginTop: 16, marginBottom: 6 }}>
           <div style={{ fontWeight: 700, flex: 1 }}>👤 Acessos do locatário</div>
           {editar && aberto.status === "ativo" && <button type="button" onClick={() => setAcesso({ nome: aberto.contato_nome || "", email: aberto.contato_email || "", senha: "", telefone: aberto.contato_telefone || "" })} style={bt(C.accent, false)}>＋ Acesso</button>}
@@ -208,6 +206,9 @@ export default function TelaContratos({ C, s, onAbrirInspecoes, abrirContrato, a
           </div>
         ))}
         {aberto.acessos.length === 0 && <div style={{ fontSize: 13, color: C.muted, padding: "6px 0" }}>Nenhum acesso ainda.</div>}
+
+        {/* 18zc.3: o documento vem DEPOIS dos acessos — primeiro quem vai aceitar, depois emitir */}
+        <DocumentoContrato C={C} s={s} contrato={aberto} editar={editar} onErro={err} onOk={ok} onMudou={carregar} onCriarAcesso={() => setAcesso({ nome: aberto.contato_nome || "", email: aberto.contato_email || "", senha: "", telefone: aberto.contato_telefone || "" })} />
 
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 18, flexWrap: "wrap" }}>
           {onAbrirInspecoes && aberto.tipo !== "armazenagem" ? <button type="button" onClick={onAbrirInspecoes} style={{ ...bt(C.textSub, false), marginRight: "auto" }}>🔍 Ir para Inspeções</button> : <span style={{ marginRight: "auto" }} />}{/* 18zb.1: armazenagem não tem inspeção */}

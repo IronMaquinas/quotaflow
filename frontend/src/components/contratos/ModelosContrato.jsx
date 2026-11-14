@@ -126,7 +126,8 @@ export function AbaModelos({ C, s, editar, onErro, onOk }) {
 }
 
 /** No detalhe do contrato (empresa) */
-export function DocumentoContrato({ C, s, contrato: k, editar, onErro: onErroPai, onOk: onOkPai, onMudou }) {
+export function DocumentoContrato({ C, s, contrato: k, editar, onErro: onErroPai, onOk: onOkPai, onMudou, onCriarAcesso }) {
+  const [quemAceita, setQuemAceita] = useState(null); // 18zc.3: emitir sem acesso → perguntar antes
   // 14d.1: a mensagem aparece AQUI (o aviso da tela fica escondido atrás do modal do contrato)
   const [msg, setMsg] = useState(null);
   const onErro = (t) => { setMsg({ tipo: "erro", texto: t }); onErroPai?.(t); };
@@ -159,9 +160,10 @@ export function DocumentoContrato({ C, s, contrato: k, editar, onErro: onErroPai
     try { await salvar(); const p = await apiService.get(`/contratos/${k.id}/previa`); setFaltando(p.faltando); abrirContrato({ ...p, empresa, cliente: k.cliente, previa: true }, w); onMudou?.(); }
     catch (e) { try { w?.close(); } catch { /* ok */ } onErro(e.message); } finally { setOcupado(false); }
   };
-  const emitir = async (forcar = false) => {
+  const emitir = async (forcar = false, papel = false) => {
+    if (!papel && !k.acessos?.some((a) => a.ativo)) { setQuemAceita({ forcar }); return; } // 18zc.3: ninguém para aceitar pelo sistema
     setOcupado(true);
-    try { await salvar(); const r = await apiService.post(`/contratos/${k.id}/emitir`, { forcar }); setFaltando(null); onOk(`Contrato emitido — versão ${r.versao}. ${r.emails_aceite ? `E-mail pedindo o aceite enviado para ${r.emails_aceite} acesso(s) do locatário.` : k.acessos?.length ? "O locatário já pode ler e aceitar pelo acesso dele (o e-mail não saiu — confira o envio de e-mails)." : "Ninguém recebeu e-mail: o contrato não tem acesso do locatário. Crie um acesso (ele recebe o pedido de aceite) ou registre o aceite em papel."}`); onMudou?.(); }
+    try { await salvar(); const r = await apiService.post(`/contratos/${k.id}/emitir`, { forcar, papel }); setFaltando(null); onOk(`Contrato emitido — versão ${r.versao}. ${r.emails_aceite ? `E-mail pedindo o aceite enviado para ${r.emails_aceite} acesso(s) do locatário.` : k.acessos?.length ? "O locatário já pode ler e aceitar pelo acesso dele (o e-mail não saiu — confira o envio de e-mails)." : "Ninguém recebeu e-mail: o contrato não tem acesso do locatário. Crie um acesso (ele recebe o pedido de aceite) ou registre o aceite em papel."}`); onMudou?.(); }
     catch (e) { if (e.body?.faltando) setFaltando(e.body.faltando); onErro(e.message); } finally { setOcupado(false); }
   };
   const imprimirEmitido = () => { const w = prepararJanela(); try { abrirContrato({ numero: k.numero, texto: k.emitido_texto, tabela: k.emitido_tabela || [], empresa, cliente: k.cliente, versao: k.emitido_versao, emitido_em: k.emitido_em, emitido_por: k.emitido_por_nome, hash: k.emitido_hash,
@@ -209,6 +211,14 @@ export function DocumentoContrato({ C, s, contrato: k, editar, onErro: onErroPai
           {k.emitido_hash && <button type="button" onClick={imprimirEmitido} className="qf-clicavel" style={{ ...s.btn(false), cursor: "pointer", color: C.text, background: "transparent", marginRight: "auto" }}>🖨 Contrato emitido (v{k.emitido_versao})</button>}
           {editar && k.status === "ativo" && <button type="button" disabled={ocupado || !f.modelo_id} onClick={async () => { setOcupado(true); try { await salvar(); onOk("Condições salvas."); onMudou?.(); } catch (e) { onErro(e.message); } finally { setOcupado(false); } }} style={{ ...s.btn(!ocupado && !!f.modelo_id, C.accent), background: "transparent", color: C.accent }}>Salvar</button>}
           <button type="button" disabled={ocupado || !f.modelo_id} onClick={previa} style={{ ...s.btn(!ocupado && !!f.modelo_id, C.accent), background: "transparent", color: C.accent }}>👁 Prévia</button>
+          {quemAceita && <div onClick={() => setQuemAceita(null)} style={{ position: "fixed", inset: 0, background: "#000000aa", zIndex: 1300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+            <div onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Quem vai aceitar este contrato" style={{ ...s.card, width: 460, maxWidth: "100%", padding: 20 }}>
+              <div style={{ fontWeight: 700, fontSize: 16, marginBottom: 6 }}>Quem vai aceitar este contrato?</div>
+              <div style={{ fontSize: 13, color: C.textSub, marginBottom: 14 }}>O {k.numero} ainda <b>não tem acesso do locatário</b>. Sem acesso, ninguém recebe o e-mail e o cliente não tem como assinar pelo sistema.</div>
+              <button type="button" onClick={() => { setQuemAceita(null); onCriarAcesso?.(); }} style={{ ...s.btn(true, C.accent), width: "100%", padding: "12px 14px", textAlign: "left", marginBottom: 8 }}>👤 <b>Criar o acesso do cliente</b> (recomendado)<div style={{ fontSize: 12, fontWeight: 400, opacity: 0.9 }}>Depois é só emitir — ele recebe o e-mail e assina na tela.</div></button>
+              <button type="button" onClick={() => { const x = quemAceita; setQuemAceita(null); emitir(x.forcar, true); }} style={{ ...s.btn(false), width: "100%", padding: "12px 14px", textAlign: "left", color: C.text, marginBottom: 8 }}>✍ <b>O cliente vai assinar no papel</b><div style={{ fontSize: 12, fontWeight: 400, color: C.textSub }}>Emite assim mesmo (ninguém recebe e-mail). Depois registre a assinatura em "O cliente assinou no papel?".</div></button>
+              <button type="button" onClick={() => setQuemAceita(null)} style={{ ...s.btn(false), width: "100%", color: C.textSub }}>Cancelar</button>
+            </div></div>}
           {editar && k.status === "ativo" && <button type="button" disabled={ocupado || !f.modelo_id} onClick={() => emitir(!!faltando?.length)} style={s.btn(!ocupado && !!f.modelo_id, C.success)}>{faltando?.length ? "📄 Emitir mesmo assim" : k.emitido_hash ? "📄 Emitir nova versão" : "📄 Emitir"}</button>}
         </div>
         {editar && k.status === "ativo" && k.emitido_hash && !k.aceite_em && (papel ? (

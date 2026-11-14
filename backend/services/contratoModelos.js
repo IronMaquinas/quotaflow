@@ -226,8 +226,12 @@ async function previa(supabase, tenantId, id, modeloId = null) {
   return { modelo: { id: m.id, nome: m.nome }, ...montar(m.corpo, { contrato: k, ...d }), numero: k.numero };
 }
 /** 📄 Emitir: congela texto + tabela, hash, nova versão (e zera o aceite anterior) */
-async function emitir(supabase, tenantId, quem, id, { forcar = false } = {}) {
+async function emitir(supabase, tenantId, quem, id, { forcar = false, papel = false } = {}) {
   const p = await previa(supabase, tenantId, id); if (p.erro) return p;
+  // 18zc.3: sem acesso do locatário ninguém recebe o e-mail nem tem como aceitar pelo sistema — só emite se a empresa disse que vai ser no papel
+  if (!papel) { const vinc = (await q(supabase.from('locacao_contrato_usuarios').select('*').eq('tenant_id', tenantId)).catch(() => [])).filter((v) => String(v.contrato_id) === String(id));
+    const us = vinc.length ? await q(supabase.from('usuarios').select('*').eq('tenant_id', tenantId)).catch(() => []) : [];
+    if (!vinc.some((v) => us.some((u) => String(u.id) === String(v.usuario_id) && u.ativo !== false && u.ativo !== 0))) return { status: 409, erro: 'O contrato não tem acesso do locatário ativo — crie o acesso (ele recebe o e-mail e assina na tela) ou confirme que o cliente vai assinar no papel', sem_acesso: true }; }
   if (p.faltando.length && !forcar) return { status: 400, erro: `Falta preencher: ${p.faltando.join(', ')}`, faltando: p.faltando };
   const k = await contratoDoTenant(supabase, tenantId, id);
   const agora = new Date().toISOString();
