@@ -3,6 +3,7 @@
 //   modo "cliente": aba do locatário — registra, acompanha, conversa e manda mais fotos/BO
 //   "Parado" só informa: o comercial decide (a medição mostra os dias, nada é descontado sozinho).
 import { useState, useEffect, useCallback, useRef } from "react";
+import ImagemZoom from "../shared/ImagemZoom"; // 18ze: zoom no ver foto
 import apiService from "../../services/apiService";
 import RegistrarOcorrencia, { TIPOS_OC, enviarArquivos } from "./RegistrarOcorrencia";
 import { abrirDossie, prepararJanela } from "../../utils/gerarDossieOcorrencia";
@@ -147,7 +148,7 @@ export function DetalheOcorrencia({ C, s, modo = "empresa", id, usuario = null, 
         {erro && <div style={{ color: C.danger, fontSize: 12.5, marginTop: 8 }}>{erro}</div>}
       </>}
       {foto && <div onClick={() => setFoto(null)} style={{ position: "fixed", inset: 0, background: "#000000e6", zIndex: 440, display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "center", padding: 16, cursor: "zoom-out" }}>
-        <img src={foto.url} alt="" style={{ maxWidth: "100%", maxHeight: "85vh", objectFit: "contain", borderRadius: 6 }} />
+        <ImagemZoom src={foto.url} style={{ width: "min(96vw, 1400px)", height: "80vh" }} />
         <div style={{ color: "#e2e8f0", fontSize: 13, marginTop: 10 }}>{[foto.legenda || foto.nome, foto.lado === "cliente" ? "cliente" : "empresa", dh(foto.em)].filter(Boolean).join(" · ")}{foto.antiga ? " · ⚠ foto antiga / da galeria" : ""}</div>
       </div>}
       {arq && <VerArquivo C={C} s={s} arquivo={arq} z={440} onFechar={() => setArq(null)} />}

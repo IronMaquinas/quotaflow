@@ -3,6 +3,7 @@
 // + ChipDoc: chip de documento (CNH/CRLV do cadastro ou NF-e/CT-e/MDF-e) com cor de status — sempre clicável:
 //   tem arquivo → abre no visualizador · não tem → ação (anexar / dica de onde cadastrar).
 import { useState, useEffect } from "react";
+import ImagemZoom from "../shared/ImagemZoom"; // 18ze: zoom no ver foto
 
 const tipoDe = (mime, nome, url) => {
   // 18z.3: em data:/blob: só vale o cabeçalho — o conteúdo em base64 pode conter "pdf"/"xml" por acaso e virava iframe (fundo branco)
@@ -33,7 +34,7 @@ export default function VerArquivo({ C, s, arquivo, onFechar, z = 420 }) { // 18
         <div style={{ flex: 1, background: "#525659", overflow: "auto", display: "flex", alignItems: tipo === "img" ? "center" : "stretch", justifyContent: "center" }}>
           {!url ? <div style={{ color: "#fff", padding: 24 }}>Carregando…</div>
             : tipo === "pdf" ? <iframe title={nome || "arquivo"} src={url} style={{ border: "none", width: "100%", height: "100%" }} />
-            : tipo === "img" ? <img alt={nome || ""} src={url} style={{ maxWidth: "100%", maxHeight: "100%", objectFit: "contain" }} />
+            : tipo === "img" ? <ImagemZoom alt={nome || ""} src={url} />
             : tipo === "xml" ? <pre style={{ margin: 0, padding: 16, width: "100%", background: "#0f172a", color: "#e2e8f0", fontSize: 12, whiteSpace: "pre-wrap", wordBreak: "break-all" }}>{xml ?? "Carregando…"}</pre>
             : <div style={{ color: "#fff", padding: 24 }}>Este tipo de arquivo não abre aqui — use “Abrir em nova aba”.</div>}
         </div>

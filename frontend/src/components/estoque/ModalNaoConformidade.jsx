@@ -13,7 +13,9 @@
 //   />
 
 import { useState, useRef } from 'react';
+import ImagemZoom from "../shared/ImagemZoom"; // 18ze: zoom no ver foto
 import { linhasMarca, desenharMarca, alturaMarca, pegarGps } from "../../utils/marcaFoto"; // 18c
+import ConfirmarExclusao from "../shared/ConfirmarExclusao"; // 18ze: ✕ pergunta antes de excluir
 const marcaNC = async (ref = null) => ({ oque: "Não conformidade", ref: ref || null, quem: // 18c.1: ref = NC, item, lote, NF… (rastreabilidade)
    (() => { try { return JSON.parse(localStorage.getItem("usuario") || "null")?.nome || null; } catch { return null; } })(), gps: await pegarGps(2500) });
 
@@ -84,6 +86,7 @@ export default function ModalNaoConformidade({
   const [carregando, setCarregando] = useState(false);
   const [erro, setErro] = useState(null);
   const [fotoAberta, setFotoAberta] = useState(null);
+  const [excluir, setExcluir] = useState(null); // 18ze: índice da foto a excluir
   const fileRef = useRef(null);
   const cameraRef = useRef(null);
 
@@ -264,8 +267,8 @@ export default function ModalNaoConformidade({
                         }}
                       />
                       <button
-                        onClick={() => removerAnexo(idx)}
-                        title="Remover"
+                        onClick={() => setExcluir(idx)}
+                        title="Excluir" aria-label="Excluir esta foto"
                         style={{
                           position: 'absolute', top: -6, right: -6,
                           width: 20, height: 20, borderRadius: '50%',
@@ -354,6 +357,8 @@ export default function ModalNaoConformidade({
       </div>
 
       {/* Lightbox — clique na thumbnail pra ampliar */}
+      {excluir != null && anexos[excluir] && <ConfirmarExclusao C={C} s={s} imagem={anexos[excluir].url} texto="Ainda não foi salva — se excluir, terá que tirar de novo."
+        onCancelar={() => setExcluir(null)} onConfirmar={() => { removerAnexo(excluir); setExcluir(null); }} />}
       {fotoAberta && (
         <div
           onClick={(e) => { e.stopPropagation(); setFotoAberta(null); }}
@@ -363,11 +368,7 @@ export default function ModalNaoConformidade({
             zIndex: 900, cursor: 'zoom-out', padding: 30,
           }}
         >
-          <img
-            src={fotoAberta.url}
-            alt={fotoAberta.nome_arquivo}
-            style={{ maxWidth: '95%', maxHeight: '95%', borderRadius: 8 }}
-          />
+          <ImagemZoom src={fotoAberta.url} alt={fotoAberta.nome_arquivo} style={{ width: '100%', height: '100%' }} />
           <div style={{
             position: 'absolute', bottom: 20, color: 'white',
             fontSize: 11, opacity: 0.7,

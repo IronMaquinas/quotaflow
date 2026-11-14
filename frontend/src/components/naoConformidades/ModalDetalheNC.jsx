@@ -8,8 +8,10 @@
 //   - Comentários
 
 import { useState, useEffect, useRef } from "react";
+import ImagemZoom from "../shared/ImagemZoom"; // 18ze: zoom no ver foto
 import apiService from "../../services/apiService";
 import ModalPrompt from "../shared/ModalPrompt";
+import ConfirmarExclusao from "../shared/ConfirmarExclusao"; // 18ze: ✕ pergunta antes de excluir
 import ModalGerarPdfNC from "./ModalGerarPdfNC";
 import { linhasMarca, desenharMarca, alturaMarca, pegarGps } from "../../utils/marcaFoto"; // 18c
 import { SeletorPessoa } from "../shared/CampoPessoa"; // 18g.2c: escolher pessoa digitando
@@ -141,6 +143,7 @@ export default function ModalDetalheNC({
   ncId, onFechar, onAtualizar, onIrParaOS, s, C, fmtD,
 }) {
   const [nc, setNc] = useState(null);
+  const [excluir, setExcluir] = useState(null); // 18ze: { tipo: 'anexo'|'plano', anexo?, id? }
   const [carregando, setCarregando] = useState(true);
   const [erro, setErro] = useState(null);
   const [salvando, setSalvando] = useState(false);
@@ -616,8 +619,8 @@ export default function ModalDetalheNC({
     }
   }
 
-  async function removerPlano(planoId) {
-    if (!window.confirm("Remover esta ação?")) return;
+  async function removerPlano(planoId, confirmado = false) {
+    if (!confirmado) { setExcluir({ tipo: 'plano', id: planoId }); return; } // 18ze: modal do app
     setSalvando(true);
     try {
       await apiService.delete(`/nao-conformidades/plano-acao/${planoId}`);
@@ -661,8 +664,8 @@ export default function ModalDetalheNC({
     }
   }
 
-  async function removerAnexo(anexo) {
-    if (!window.confirm(`Remover "${anexo.nome_arquivo}"?`)) return;
+  async function removerAnexo(anexo, confirmado = false) {
+    if (!confirmado) { setExcluir({ tipo: 'anexo', anexo }); return; } // 18ze: modal do app
     setSalvando(true);
     try {
       await apiService.delete(`/nao-conformidades/anexos/${anexo.id}`);
@@ -2300,15 +2303,18 @@ export default function ModalDetalheNC({
         )}
 
         {/* Lightbox */}
+        {excluir && <ConfirmarExclusao C={C} s={s} ocupado={salvando}
+          titulo={excluir.tipo === 'plano' ? "Excluir esta ação?" : excluir.anexo.mime_type?.startsWith('image/') ? "Excluir esta foto?" : `Excluir "${excluir.anexo.nome_arquivo}"?`}
+          imagem={excluir.tipo === 'anexo' && excluir.anexo.mime_type?.startsWith('image/') ? (excluir.anexo.signed_url || excluir.anexo.url) : null}
+          texto={excluir.tipo === 'plano' ? "A ação sai do plano desta NC." : "Sai da NC e não dá para desfazer."}
+          onCancelar={() => setExcluir(null)} onConfirmar={async () => { const x = excluir; if (x.tipo === 'plano') await removerPlano(x.id, true); else await removerAnexo(x.anexo, true); setExcluir(null); }} />}
         {fotoAberta && (
           <div onClick={() => setFotoAberta(null)}
             style={{ position: "fixed", inset: 0, background: "#000000ee",
                      display: "flex", alignItems: "center", justifyContent: "center",
                      zIndex: 20, cursor: "zoom-out", padding: 30 }}>
             {fotoAberta.mime_type?.startsWith('image/') ? (
-              <img src={fotoAberta.url} alt={fotoAberta.nome_arquivo}
-                style={{ maxWidth: "95%", maxHeight: "95%",
-                         borderRadius: 8 }} />
+              <ImagemZoom src={fotoAberta.url} alt={fotoAberta.nome_arquivo} style={{ width: "100%", height: "100%" }} />
             ) : (
               <div style={{ color: "white", textAlign: "center", maxWidth: 500 }}>
                 <div style={{ fontSize: 48, marginBottom: 12 }}>📄</div>

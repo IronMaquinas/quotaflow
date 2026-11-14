@@ -1010,6 +1010,14 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18ze (14/11):** 📷 **Varredura do padrão de fotos** (pedido do Marcony na 18z.2: rodapé/tarja com a descrição do movimento · abrir por cima ao tocar · **modal antes de excluir** · compressão). Novo `components/shared/ConfirmarExclusao.jsx` — "Excluir esta foto?" com a miniatura e **Cancelar | Excluir** (botões grandes; nunca `window.confirm`).
+    - **Inspeção (ExecutarInspecao):** o ✕ da miniatura e o "Excluir" da foto ampliada apagavam direto → agora perguntam; ✕ maior (26 px).
+    - **Nova NC** e **Detalhe da NC:** trocado `window.confirm` pelo modal do app (anexo e ação do plano).
+    - **NC do recebimento (ModalNaoConformidade):** o ✕ apagava direto → pergunta.
+    - **Spot (foto do equipamento publicada):** a prévia abre por cima ao tocar e o × pergunta antes.
+    - Já estavam no padrão: Ocorrência (registrar/painel), Pátio, editor de modelo de inspeção (confirma), NC no portal do fornecedor (só vê), chat do Spot (anexo de conversa — sem tarja de propósito).
+    - **🔍 Zoom no "ver foto"** (o Marcony não conseguia aproximar pelo computador): novo `components/shared/ImagemZoom.jsx` — **rodinha do mouse** aproxima no ponto do cursor, **duplo clique** alterna 1×/2,5×, **arrastar** com zoom; no celular **pinça** com dois dedos, **duplo toque** e arrastar com um dedo; botões **− / 100% / +**. Sem zoom, clicar no fundo continua fechando; com zoom, arrastar não fecha sem querer. Aplicado no visualizador geral (VerArquivo — pátio, chat, documentos) e nos de inspeção, ocorrência (registrar e painel), NC (nova, detalhe, recebimento, portal do fornecedor) e Spot.
+    - Tarja + compressão: inspeção, NC (nova/detalhe/recebimento), ocorrência e pátio já tinham. A foto do Spot (anúncio do equipamento) fica **sem tarja** de propósito — é vitrine, não registro.
   - **18zd (14/11):** 🧾 **Leitor de XML da NF-e perdia o zero à esquerda** (achado na 18z.1). O `NfeXmlParser` convertia em número tudo que "parecia número": **CNPJ** 04884082000640 → 4884082000640, **código do produto** "007" → 7, **EAN** e **NCM** começando com zero. Agora lê tudo como texto (`parseTagValue: false`) e só os valores passam por `toNumber()`.
     - **Recebimento (XML enviado pelo fornecedor):** a validação comparava o CNPJ letra por letra — empresa/fornecedor com CNPJ começando em zero (ou cadastrado com ponto/barra) aparecia sempre **"❌ divergente"**. Agora compara só os dígitos, e a mensagem acompanha o status.
     - O pátio (pré-entrada pelo XML) já tinha um contorno; ficou como proteção.
@@ -1731,7 +1739,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18zd)
+**Última atualização deste documento:** 06/11/2026 (etapa 18ze)
 
 --------------------------------------------------------------------------------
 

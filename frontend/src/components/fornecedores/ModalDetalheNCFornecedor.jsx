@@ -5,6 +5,7 @@
 // Também aceita upload de evidência e envio de mensagem na thread.
 
 import { useState, useRef } from 'react';
+import ImagemZoom from "../shared/ImagemZoom"; // 18ze: zoom no ver foto
 import apiService from '../../services/apiService';
 import { fmtD } from '../../utils/formatters';
 import ModalGerarPdfNC from '../naoConformidades/ModalGerarPdfNC';
@@ -644,10 +645,10 @@ export default function ModalDetalheNCFornecedor({ C, s, detalhe, carregando, on
             zIndex: 900, cursor: 'zoom-out', padding: 30,
           }}
         >
-          <img
+          <ImagemZoom
             src={fotoAberta.url}
             alt={fotoAberta.nome_arquivo}
-            style={{ maxWidth: '95%', maxHeight: '95%', borderRadius: 8 }}
+            style={{ width: '100%', height: '100%' }}
           />
           <div style={{
             position: 'absolute', bottom: 20, color: 'white',

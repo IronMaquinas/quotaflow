@@ -5,6 +5,7 @@
 //   Fotos: comprimidas no aparelho e com a tarja (o que · SIN · data/hora · GPS · quem) ABAIXO da foto — enviadas depois que o SIN existe.
 //   "Equipamento parado" só avisa o comercial — quem decide é ele.
 import { useState, useEffect, useRef } from "react";
+import ImagemZoom from "../shared/ImagemZoom"; // 18ze: zoom no ver foto
 import apiService from "../../services/apiService";
 import { linhasMarca, alturaMarca, desenharMarca } from "../../utils/marcaFoto";
 
@@ -117,7 +118,7 @@ export default function RegistrarOcorrencia({ C, s, modo = "cliente", at = null,
         </div>)}
       </div>}
       {verFoto && <div onClick={() => setVerFoto(null)} style={{ position: "fixed", inset: 0, background: "#000000d0", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 440, padding: 16, cursor: "zoom-out" }}>
-        <img src={verFoto.url} alt="foto ampliada" style={{ maxWidth: "100%", maxHeight: "90vh", borderRadius: 6 }} /></div>}
+        <ImagemZoom src={verFoto.url} alt="foto ampliada" style={{ width: "min(96vw, 1400px)", height: "88vh" }} /></div>}
       {remover != null && <div onClick={(x) => x.stopPropagation()} style={{ position: "fixed", inset: 0, background: "#00000090", display: "flex", alignItems: "center", justifyContent: "center", zIndex: 440, padding: 16 }}>
         <div role="dialog" aria-label="Remover foto" style={{ ...s.card, width: 360, maxWidth: "100%", padding: 18 }}>
           <div style={{ fontSize: 14, marginBottom: 12 }}>Remover a foto {remover + 1}?</div>

@@ -23,7 +23,9 @@
 // obsoleta, mínimo 2 chars).
 
 import { useState, useRef, useEffect } from 'react';
+import ImagemZoom from "../shared/ImagemZoom"; // 18ze: zoom no ver foto
 import apiService from '../../services/apiService';
+import ConfirmarExclusao from "../shared/ConfirmarExclusao"; // 18ze: ✕ pergunta antes de excluir
 import { linhasMarca, desenharMarca, alturaMarca, pegarGps } from "../../utils/marcaFoto"; // 18c
 const marcaNC = async (ref = null) => ({ oque: "Não conformidade", ref: ref || null, quem: // 18c.1: ref = NC, item, lote, NF… (rastreabilidade)
    (() => { try { return JSON.parse(localStorage.getItem("usuario") || "null")?.nome || null; } catch { return null; } })(), gps: await pegarGps(2500) });
@@ -186,6 +188,7 @@ export default function ModalNovaNC({ C, s, onFechar, onAtualizar }) {
   const [anexos, setAnexos] = useState([]);
   // cada: { id_local, nome, mime_type, tamanho_bytes, base64, dataUri }
   const [fotoAberta, setFotoAberta] = useState(null);
+  const [excluir, setExcluir] = useState(null); // 18ze
   const [enviandoAnexo, setEnviandoAnexo] = useState(false);
   const cameraInputRef = useRef(null);
   const galeriaInputRef = useRef(null);
@@ -289,9 +292,7 @@ export default function ModalNovaNC({ C, s, onFechar, onAtualizar }) {
 
   function removerAnexoLocal(idLocal) {
     const alvo = anexos.find(a => a.id_local === idLocal);
-    const nome = alvo?.nome || 'este anexo';
-    if (!window.confirm(`Remover "${nome}"?\n\nEssa ação não pode ser desfeita.`)) return;
-    setAnexos(prev => prev.filter(a => a.id_local !== idLocal));
+    if (alvo) setExcluir(alvo); // 18ze: modal do app (antes window.confirm)
   }
 
   // ── Submit ──
@@ -706,14 +707,15 @@ export default function ModalNovaNC({ C, s, onFechar, onAtualizar }) {
       </div>
 
       {/* Lightbox (mesmo padrão do ModalDetalheNC) */}
+      {excluir && <ConfirmarExclusao C={C} s={s} imagem={excluir.dataUri || null} titulo={excluir.dataUri ? "Excluir esta foto?" : `Excluir "${excluir.nome || "este anexo"}"?`} texto="Ainda não foi salvo — se excluir, terá que anexar de novo."
+        onCancelar={() => setExcluir(null)} onConfirmar={() => { setAnexos((prev) => prev.filter((a) => a.id_local !== excluir.id_local)); setExcluir(null); }} />}
       {fotoAberta && (
         <div onClick={() => setFotoAberta(null)}
           style={{ position: 'fixed', inset: 0, background: '#000000ee',
                    display: 'flex', alignItems: 'center', justifyContent: 'center',
                    zIndex: 20, cursor: 'zoom-out', padding: 30 }}>
           {fotoAberta.mime_type?.startsWith('image/') ? (
-            <img src={fotoAberta.dataUri} alt={fotoAberta.nome}
-              style={{ maxWidth: '95%', maxHeight: '95%', borderRadius: 8 }} />
+            <ImagemZoom src={fotoAberta.dataUri} alt={fotoAberta.nome} style={{ width: '100%', height: '100%' }} />
           ) : (
             <div style={{ color: 'white', textAlign: 'center', maxWidth: 500 }}>
               <div style={{ fontSize: 48, marginBottom: 12 }}>📄</div>

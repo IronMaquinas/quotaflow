@@ -1,6 +1,8 @@
 import ChatSpot, { SeloConversa, resumoConversas, pegarPedidoAbrir, limparPedidoAbrir } from './ChatSpot'; // 18l: 💬 conversa com o fornecedor · 18n: estado
+import ImagemZoom from "../shared/ImagemZoom"; // 18ze: zoom no ver foto
 import { useState, useEffect } from 'react';
 import apiService from '../../services/apiService';
+import ConfirmarExclusao from '../shared/ConfirmarExclusao'; // 18ze
 import SeletorAtuacao, { useOpcoesAtuacao, nomeAtuacao } from '../shared/SeletorAtuacao';
 
 // Reduz a imagem no navegador antes do upload: lado maior até 1280px, JPEG ~70%.
@@ -198,6 +200,7 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
 
   const [fotoArquivo, setFotoArquivo] = useState(null);
   const [fotoPreview, setFotoPreview] = useState(null);
+  const [excluirPrev, setExcluirPrev] = useState(false); // 18ze: × pergunta antes
   const [enviandoFoto, setEnviandoFoto] = useState(false);
 
   // Busca
@@ -903,15 +906,17 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
       {chat && <ChatSpot C={C} s={s} lado="comprador" url={`/spot/demandas/${chat.d.id}/interesses/${chat.i.id}/mensagens`}
         titulo={chat.i.fornecedor_nome} subtitulo={`${chat.d.numero || `DSP-${String(chat.d.id).padStart(4, '0')}`} · ${chat.d.componente}`}
         onFechar={() => { setChat(null); carregarDemandas(); }} />}{/* 18l */}
+      {excluirPrev && fotoPreview && <ConfirmarExclusao C={C} s={s} imagem={fotoPreview} texto="Ainda não foi publicada — se excluir, terá que escolher de novo."
+        onCancelar={() => setExcluirPrev(false)} onConfirmar={() => { setFotoArquivo(null); setFotoPreview(null); setExcluirPrev(false); }} />}
       {fotoAmpliada && (
         <div
           onClick={() => setFotoAmpliada(null)}
           style={{ position: 'fixed', inset: 0, background: '#000000ee', zIndex: 400, display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 20, cursor: 'zoom-out' }}
         >
-          <img
+          <ImagemZoom
             src={fotoAmpliada}
             alt=""
-            style={{ maxWidth: '95%', maxHeight: '95%', objectFit: 'contain' }}
+            style={{ width: '100%', height: '100%' }}
           />
         </div>
       )}
@@ -1007,14 +1012,12 @@ export default function TelaCanalSpot({ C, s, fmtD }) {
                   <div style={{ marginTop: 8, position: 'relative', display: 'inline-block' }}>
                     <img
                       src={fotoPreview}
-                      alt="preview"
-                      style={{ maxHeight: 120, borderRadius: 6, border: `1px solid ${C.border}` }}
+                      alt="preview" title="Toque para ver"
+                      onClick={() => setFotoAmpliada(fotoPreview)}
+                      style={{ maxHeight: 120, borderRadius: 6, border: `1px solid ${C.border}`, cursor: 'zoom-in' }}
                     />
                     <button
-                      onClick={() => {
-                        setFotoArquivo(null);
-                        setFotoPreview(null);
-                      }}
+                      onClick={() => setExcluirPrev(true)} aria-label="Excluir esta foto"
                       style={{
                         position: 'absolute', top: 4, right: 4,
                         background: '#000000aa', border: 'none', color: '#fff',
