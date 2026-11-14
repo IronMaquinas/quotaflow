@@ -148,7 +148,7 @@ const ESPERADO = {
   'services/inspecoes.js': '3a0b0f74f10f39e6b2d2acf0831b6aca', // etapa 18c.3
   'routes/inspecoes.js': '2957a18a385cfc150fad54cdf817b4ce', // etapa 14b.2
   'migrations/040_inspecoes.sql': '0ac35a83c9621397570d1be855727cc9', // etapa 14a (novo)
-  'front:TelaInspecoes.jsx': '454eebfc70b4aff07b5699a9a2a9208d', // etapa 18zf.5
+  'front:TelaInspecoes.jsx': 'a1debe86aff3a3134e17c97112970663', // etapa 18zh
   'front:ExecutarInspecao.jsx': 'fb94210a4f175ac1dad6e8190dc02deb', // etapa 18ze
   'front:EditorModeloInspecao.jsx': '00fc0578bd4bcba1221b7ced983727dd', // etapa 14c.1
   'front:Esquemas.jsx': 'f68e56580c3ed088c902109fcb016b9c', // etapa 14a (novo)
@@ -343,9 +343,9 @@ const ESPERADO = {
   'migrations/088_checklist_medicao_contratual.sql': 'ffb81733f60648c397b903b882057c1a', // etapa 18zg (novo)
 };
 
-// Antes de copiar a etapa 18zg — base: 5cfe3b2
+// Antes de copiar a etapa 18zh — base: 6b86887
 const ANTES = {
-  'front:AvisoHorimetro.jsx': 'a7ff6b4f1cb2fdd82ac75452041b78ce',
+  'front:TelaInspecoes.jsx': '454eebfc70b4aff07b5699a9a2a9208d',
 };
 
 const RAIZ = process.cwd();
@@ -383,7 +383,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zg)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zh)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

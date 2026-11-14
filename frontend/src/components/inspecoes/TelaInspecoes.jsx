@@ -41,6 +41,7 @@ export default function TelaInspecoes({ C, s, onAbrirOS, onIrParaOS, embutida = 
   const [ver, setVer] = useState(null);          // detalhe
   const [editor, setEditor] = useState(null);    // { modelo, urls }
   const [biblioteca, setBiblioteca] = useState(null);
+  const [buscaBib, setBuscaBib] = useState(""); const [verBib, setVerBib] = useState(null); // 18zh: busca + 👁 visualizar antes de importar
   const [confirmar, setConfirmar] = useState(null);
   const [ocupado, setOcupado] = useState(false);
   const [links, setLinks] = useState(null);
@@ -117,7 +118,7 @@ export default function TelaInspecoes({ C, s, onAbrirOS, onIrParaOS, embutida = 
     try { if (editor.modelo.id) await apiService.put(`/inspecoes/modelos/${editor.modelo.id}`, dados); else await apiService.post("/inspecoes/modelos", dados); ok("Modelo salvo."); setEditor(null); await carregar(); }
     catch (e) { err(e.message); } finally { setOcupado(false); }
   };
-  const abrirBiblioteca = async () => { try { setBiblioteca((await apiService.get("/inspecoes/modelos/biblioteca")).modelos || []); } catch (e) { err(e.message); } };
+  const abrirBiblioteca = async () => { setBuscaBib(""); try { setBiblioteca((await apiService.get("/inspecoes/modelos/biblioteca")).modelos || []); } catch (e) { err(e.message); } };
 
   const modal = (conteudo, fechar, largura = 640, z = 300) => ( // 14b.1.3: z maior = modal por cima do detalhe
     <div style={{ position: "fixed", inset: 0, background: "#00000090", display: "flex", alignItems: "flex-start", justifyContent: "center", zIndex: z, padding: 16, overflowY: "auto" }} onClick={fechar}>
@@ -322,16 +323,42 @@ export default function TelaInspecoes({ C, s, onAbrirOS, onIrParaOS, embutida = 
       {biblioteca && modal(<>
         <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 4 }}>📚 Biblioteca de inspeções do QuotaFlow</div>
         <div style={{ fontSize: 12, color: C.muted, marginBottom: 12 }}>Importe e ajuste à sua frota (pontos, fotos, imagem do seu equipamento).</div>
-        {biblioteca.map((m) => (
-          <div key={m.id} style={{ display: "flex", gap: 10, alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${C.border}` }}>
-            <div style={{ flex: 1 }}><div style={{ fontWeight: 600, fontSize: 13 }}>{m.nome}</div><div style={{ fontSize: 11, color: C.muted }}>{m.descricao}</div></div>
+        <input value={buscaBib} onChange={(e) => setBuscaBib(e.target.value)} placeholder="🔍 Buscar modelo (nome, descrição, ponto…)" style={{ ...s.input, marginBottom: 8 }} />
+        {(() => { const f = biblioteca.filter((m) => !buscaBib.trim() || semAcento(`${m.nome} ${m.descricao || ""} ${(m.vistas || []).flatMap((v) => (v.pontos || []).map((p) => p.rotulo)).join(" ")}`).includes(semAcento(buscaBib.trim())));
+          return <>{f.map((m) => (
+          <div key={m.id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "8px 0", borderBottom: `1px solid ${C.border}`, flexWrap: "wrap" }}>
+            <div style={{ flex: "1 1 220px" }}><div style={{ fontWeight: 600, fontSize: 13 }}>{m.nome}</div><div style={{ fontSize: 11, color: C.muted }}>{m.descricao}</div></div>
+            <button type="button" onClick={() => setVerBib(m)} style={{ ...s.btn(false), cursor: "pointer", color: C.accent, padding: "6px 12px", fontSize: 12.5 }}>👁 Visualizar</button>
             {m.ja_importado ? <span style={s.tag(C.success)}>Importado</span>
               : <button type="button" disabled={ocupado} onClick={async () => { setOcupado(true); try { await apiService.post("/inspecoes/modelos/importar", { biblioteca_id: m.id }); ok(`“${m.nome}” importado.`); setBiblioteca(null); await carregar(); } catch (e) { err(e.message); } finally { setOcupado(false); } }} style={bt(C.accent)}>Importar</button>}
           </div>
         ))}
+        {biblioteca.length > 0 && f.length === 0 && <div style={{ color: C.muted, padding: "8px 0" }}>Nenhum modelo com “{buscaBib}”.</div>}</>; })()}
         {biblioteca.length === 0 && <div style={{ color: C.muted }}>A biblioteca está vazia.</div>}
         <div style={{ textAlign: "right", marginTop: 12 }}><button type="button" onClick={() => setBiblioteca(null)} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>Fechar</button></div>
       </>, () => setBiblioteca(null), 600)}
+      {verBib && modal(<>{/* 18zh: 👁 visualizar o modelo da biblioteca antes de importar (só leitura) */}
+        <div style={{ fontSize: 16, fontWeight: 700 }}>👁 {verBib.nome}</div>
+        {verBib.descricao && <div style={{ fontSize: 12.5, color: C.textSub, margin: "4px 0 8px" }}>{verBib.descricao}</div>}
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>
+          <span style={s.tag(C.accent)}>{{ pre_uso: "Pré-uso (a cada saída)", diaria: "Diária", semanal: "Semanal", mensal: "Mensal", avulsa: "Avulsa" }[verBib.frequencia] || verBib.frequencia}</span>
+          <span style={s.tag(C.textSub)}>{verBib.pontos_qtd} ponto(s) · {verBib.vistas_qtd} vista(s){verBib.criticos_qtd ? ` · ${verBib.criticos_qtd} crítico(s)` : ""}</span>
+          {(verBib.campos || []).map((c) => <span key={c} style={s.tag(C.warn)}>{{ km: "Km obrigatório", horimetro: "Horímetro obrigatório", local: "Local obrigatório", cliente: "Cliente obrigatório" }[c] || c}</span>)}
+        </div>
+        {(verBib.vistas || []).map((v) => <div key={v.codigo} style={{ ...s.card, padding: "10px 12px", marginBottom: 8 }}>
+          <div style={{ fontWeight: 700, fontSize: 13, marginBottom: 4 }}>{v.nome}</div>
+          {(v.pontos || []).map((p, i) => <div key={p.id} style={{ display: "flex", gap: 8, fontSize: 12.5, padding: "4px 0", borderTop: i ? `1px solid ${C.border}` : "none" }}>
+            <span style={{ color: C.muted, minWidth: 18 }}>{i + 1}.</span>
+            <div style={{ flex: 1 }}>{p.rotulo}{p.critico && <span style={{ ...s.tag(C.danger), marginLeft: 6 }}>CRÍTICO</span>}
+              <div style={{ fontSize: 11, color: C.muted }}>{{ ok_nok: "OK / NOK", numero: `número${p.unidade ? ` (${p.unidade})` : ""}`, texto: "texto" }[p.tipo] || p.tipo} · foto {{ nunca: "não pede", se_nok: "se NOK", sempre: "sempre" }[p.foto] || p.foto}{p.ajuda ? ` · ${p.ajuda}` : ""}</div></div>
+          </div>)}
+        </div>)}
+        <div style={{ fontSize: 11.5, color: C.muted }}>Depois de importar, você ajusta à sua frota: pontos, fotos e a imagem do seu equipamento.</div>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 12 }}>
+          <button type="button" onClick={() => setVerBib(null)} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>Voltar</button>
+          {(() => { const m = verBib; return m.ja_importado ? <span style={s.tag(C.success)}>Importado</span> : <button type="button" disabled={ocupado} onClick={async () => { setVerBib(null); setOcupado(true); try { await apiService.post("/inspecoes/modelos/importar", { biblioteca_id: m.id }); ok(`“${m.nome}” importado.`); setBiblioteca(null); await carregar(); } catch (e) { err(e.message); } finally { setOcupado(false); } }} style={bt(C.accent)}>Importar</button>; })()}
+        </div>
+      </>, () => setVerBib(null), 600, 400)}
 
       {links && modal(<>
         <div style={{ fontSize: 16, fontWeight: 700 }}>🔗 Links de inspeção de terceiros</div>

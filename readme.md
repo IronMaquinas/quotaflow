@@ -1011,6 +1011,7 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18zh (14/11):** 📚 **Biblioteca de inspeções: 👁 Visualizar + busca** (pedido do Marcony) — cada modelo tem "👁 Visualizar" (só leitura: frequência, campos obrigatórios, vistas e pontos com tipo/foto/crítico) com Importar dentro; campo de busca por nome, descrição ou ponto.
   - **18zg (14/11):** ⏱📋 **Checklist "Leitura para medição contratual (horímetro)" na biblioteca** (migration 088) — horímetro obrigatório + foto do painel + "operando normalmente", frequência semanal: a rotina do cliente nos contratos por hora/franquia (combinado com o Marcony: checklist de carregamento/pré-uso não é o lugar da leitura). O aviso de horímetro (contrato/medição) sugere importar o modelo.
   - **18zf.5 (14/11):** ⏱ Aviso de horímetro orienta em vez de ligar o campo sozinho (decidido com o Marcony: um checklist de carregamento não é o lugar do horímetro — o certo é um checklist de rotina/medição): "o checklist X não pede horímetro — revise o modelo do checklist utilizado: TAG em 🔍 Inspeções ›" · "o equipamento não tem checklist de inspeção — defina o checklist: TAG em 🔍 Inspeções ›". O link abre 🔍 Inspeções já filtrado no equipamento. Botão "Ligar horímetro" removido.
   - **18zf.4 (14/11):** ⏱ Contrato ↔ checklist conversando: quando o contrato cobra por hora (ou tem franquia de horas), cada equipamento do contrato e cada linha da medição sem leitura mostram se o checklist pede horímetro. Sem o campo → botão "Ligar horímetro no checklist X" (confirma: fica obrigatório em toda inspeção com esse checklist); sem checklist → link para 🔍 Inspeções; tudo certo → diz em qual checklist e por quem as horas são informadas. `GET /contratos/:id/horimetro`; services/cobrancaLocacao `diagHorimetro`; components/contratos/AvisoHorimetro.jsx.
@@ -1752,7 +1753,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18zg)
+**Última atualização deste documento:** 06/11/2026 (etapa 18zh)
 
 --------------------------------------------------------------------------------
 
