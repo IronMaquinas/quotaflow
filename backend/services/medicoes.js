@@ -413,6 +413,7 @@ async function avisosDiarios(supabase, { hoje = hojeBR(), enviar = null } = {}) 
   let cs; try { cs = (await q(supabase.from('locacao_contratos').select('*'))).filter((c) => c.status === 'ativo' && (c.medicao_locatario || c.checklist_locatario)); } catch (e) { if (sem062(e)) return r; throw e; }
   const porTenant = new Map(); for (const c of cs) { const k = String(c.tenant_id); if (!porTenant.has(k)) porTenant.set(k, []); porTenant.get(k).push(c); }
   for (const [tenantId, lista] of porTenant) {
+    if (!diaUtil(hoje, await feriadosDe(supabase, tenantId))) continue; // 18zc.4: lembrete só em dia útil (sai no próximo)
     let enviados; try { enviados = await q(supabase.from('avisos_enviados').select('*').eq('tenant_id', tenantId)); } catch { continue; } // sem a 029
     const ja = new Set(enviados.map((a) => `${a.chave}|${a.marco}`));
     const ms = await q(supabase.from('locacao_medicoes').select('*').eq('tenant_id', tenantId)).catch(() => []);
@@ -457,6 +458,14 @@ async function avisosDiarios(supabase, { hoje = hojeBR(), enviar = null } = {}) 
 const somaDias = (d, n) => new Date(Date.parse(`${d}T12:00:00Z`) + n * 86400000).toISOString().slice(0, 10);
 const dataAuto = (c, fim) => somaDias(fim, Number.isInteger(Number(c.medicao_auto_dias)) ? Number(c.medicao_auto_dias) : 1);
 const QUEM_AUTO = { usuarioNome: 'QuotaFlow (envio automático)' };
+// 18zc.4: DIA ÚTIL = segunda a sexta, fora os feriados cadastrados da empresa (tenant_feriados — os mesmos da frota e do fiscal).
+//   Lembretes de rotina só saem em dia útil — aviso no fim de semana/feriado o funcionário perde.
+async function feriadosDe(supabase, tenantId) { return new Set((await q(supabase.from('tenant_feriados').select('*').eq('tenant_id', tenantId)).catch(() => [])).map((f) => String(f.data || '').slice(0, 10)).filter(Boolean)); }
+const diaUtil = (d, fer) => { const w = new Date(`${d}T12:00:00Z`).getUTCDay(); return w >= 1 && w <= 5 && !fer.has(d); };
+/** último dia útil ANTES de d */
+const diaUtilAntes = (d, fer) => { let x = somaDias(d, -1); for (let i = 0; i < 20 && !diaUtil(x, fer); i++) x = somaDias(x, -1); return x; };
+const SEMANA = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+const quandoTxt = (d, hoje) => (d === somaDias(hoje, 1) ? 'Amanhã' : `Na ${SEMANA[new Date(`${d}T12:00:00Z`).getUTCDay()]} ${dBR(d)}`);
 async function resumoPorEmail(supabase, tenantId, c, m) {
   const para = String(c.contato_email || '').trim(); if (!para) return 0;
   const emp = await empresaNome(supabase, tenantId); const rot = cicloDe(c.medicao_dia_inicio, m.inicio).rotulo; const tot = resumo(m).total_cobrar;
@@ -470,19 +479,24 @@ async function envioAutomatico(supabase, { hoje = hojeBR() } = {}) {
   const N = require('./notificacoes');
   const r = { enviadas: 0, fechadas: 0, avisos_vespera: 0, bloqueadas: 0 };
   let cs; try { cs = (await q(supabase.from('locacao_contratos').select('*'))).filter((c) => c.status === 'ativo' && c.medicao_auto); } catch { return r; } // sem a 087
+  const ferCache = new Map();
   for (const c of cs) {
     const tenantId = c.tenant_id;
+    if (!ferCache.has(String(tenantId))) ferCache.set(String(tenantId), await feriadosDe(supabase, tenantId));
+    const fer = ferCache.get(String(tenantId));
     for (const x of ciclos(c, hoje)) {
-      if (x.fim >= hoje || (c.medicao_auto_desde && x.fim < c.medicao_auto_desde)) continue;
-      const quando = dataAuto(c, x.fim); if (quando > somaDias(hoje, 1)) continue;
+      if (c.medicao_auto_desde && x.fim < c.medicao_auto_desde) continue;
+      const quando = dataAuto(c, x.fim); const vespera = diaUtilAntes(quando, fer); // 18zc.4: aviso no último dia útil antes do envio
+      const ehVespera = hoje === vespera && hoje < quando;
+      if (!ehVespera && (x.fim >= hoje || quando > hoje)) continue;
       if (quando < somaDias(hoje, -30)) continue; // atraso muito antigo: não manda sozinho (alguém olha)
       let m = (await q(supabase.from('locacao_medicoes').select('*').eq('tenant_id', tenantId).eq('contrato_id', c.id)).catch(() => [])).find((y) => y.inicio === x.inicio) || null;
       if (m && !['aberta', 'devolvida'].includes(m.status)) continue; // já foi
       const total = () => brl(resumo(m || { itens: [] }).total_cobrar);
-      if (quando === somaDias(hoje, 1)) { // véspera
+      if (ehVespera) { // véspera (último dia útil antes do envio)
         if (!m) { const a = await abrir(supabase, tenantId, QUEM_AUTO, c.id, x.inicio); m = a.medicao || null; } else m = await sincronizar(supabase, tenantId, m, c);
         if (!m || m.status !== 'aberta') continue;
-        await N.avisarPerfis(supabase, tenantId, ['gestor'], { tipo: 'medicao_auto', chave: `medicao-auto-vespera:${m.id}`, titulo: `📏 Amanhã a medição ${x.rotulo} do ${c.numero} vai sozinha (${total()})`,
+        await N.avisarPerfis(supabase, tenantId, ['gestor'], { tipo: 'medicao_auto', chave: `medicao-auto-vespera:${m.id}`, titulo: `📏 ${quandoTxt(quando, hoje)} a medição ${x.rotulo} do ${c.numero} vai sozinha (${total()})`,
           texto: `${c.cliente} — ${c.medicao_locatario ? 'será enviada para o cliente aprovar' : 'será fechada e o resumo vai por e-mail ao contato'}. Revise se quiser.`, link: { tela: 'contratos' } }).catch(() => 0);
         r.avisos_vespera++; continue;
       }
@@ -512,4 +526,4 @@ async function avisarAceite(supabase, tenantId, c, { so = null } = {}) {
   return n;
 }
 
-module.exports = { avisarAceite, envioAutomatico, dataAuto, itensGuarda, painelEmpresa, D_ANTES, naJanela, STATUS_NOME, cicloDe, ciclos, listar, detalhe, abrir, recalcular, salvar, enviar, reabrir, aprovarCliente, contestar, acaoEmpresa, pendencias, painelLocatario, acaoLocatario, informativo, avisosDiarios, _definirEnvio };
+module.exports = { diaUtil, diaUtilAntes, avisarAceite, envioAutomatico, dataAuto, itensGuarda, painelEmpresa, D_ANTES, naJanela, STATUS_NOME, cicloDe, ciclos, listar, detalhe, abrir, recalcular, salvar, enviar, reabrir, aprovarCliente, contestar, acaoEmpresa, pendencias, painelLocatario, acaoLocatario, informativo, avisosDiarios, _definirEnvio };

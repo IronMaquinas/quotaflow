@@ -1010,6 +1010,9 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18zc.4 (14/11):** 📅 **Lembretes só em dia útil** (pedido do Marcony: envio na segunda feriado → lembrete no fim de semana, o funcionário perde). Dia útil = **seg a sex, fora os feriados cadastrados da empresa** (os mesmos da frota e do fiscal).
+    - **Aviso do envio automático** sai no **último dia útil antes do envio** (pode ser antes do fim do ciclo) e diz a data: "Na ter 01/12/2026 a medição … vai sozinha" (ou "Amanhã", quando é o dia seguinte). A data do envio em si continua D+N.
+    - **Lembretes ao cliente** (medição aguardando aprovação há 3 dias, inspeção atrasada): só em dia útil — caindo em fim de semana/feriado, saem no próximo dia útil.
   - **18zc.3 (14/11):** 📄 **Não dá mais para emitir contrato sem ninguém para aceitar** (o Marcony errou duas vezes — o tenant também ia errar).
     - Ficha do contrato (CL e CA): **👤 Acessos do locatário vem antes de 📄 Contrato (documento)** — primeiro quem vai aceitar, depois emitir.
     - **📄 Emitir sem acesso ativo** abre "Quem vai aceitar este contrato?": **👤 Criar o acesso do cliente** (recomendado — abre o formulário; depois emite e ele recebe o e-mail) ou **✍ O cliente vai assinar no papel** (emite sem e-mail; registrar a assinatura depois). O servidor também recusa (409 `sem_acesso`) sem a opção do papel.
@@ -1717,7 +1720,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18zc.3)
+**Última atualização deste documento:** 06/11/2026 (etapa 18zc.4)
 
 --------------------------------------------------------------------------------
 
