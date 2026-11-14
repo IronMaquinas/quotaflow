@@ -130,13 +130,15 @@ async function validarXmlContraOc(xmlDataRaw, ordemVendaId, tenantId) {
   // 2. CNPJ destinatário
   const cnpjDestinatario = xmlData.cnpj_destinatario || '';
   const cnpjEsperado = filial?.cnpj_filial || tenant?.cnpj || '';
-  const cnpjDestStatus = cnpjDestinatario === cnpjEsperado ? 'ok' : 'divergente';
+  // 18zd: compara só os dígitos (cadastro pode estar com ponto/barra) e com o zero à esquerda preservado pelo parser
+  const dig = (v) => String(v || '').replace(/\D/g, '');
+  const cnpjDestStatus = dig(cnpjDestinatario) && dig(cnpjDestinatario) === dig(cnpjEsperado) ? 'ok' : 'divergente';
 
   // 3. CNPJ emitente vs fornecedor
   const cnpjEmitente = xmlData.cnpj_emitente || '';
   const fornecedor = await fornecedorDoTenant(DB, tenantId, ov.fornecedor_id);
   const cnpjFornecedor = fornecedor?.cnpj || '';
-  const cnpjStatus = cnpjEmitente === cnpjFornecedor ? 'ok' : 'divergente';
+  const cnpjStatus = dig(cnpjEmitente) && dig(cnpjEmitente) === dig(cnpjFornecedor) ? 'ok' : 'divergente';
 
   // 4. Itens
   const itensOV = await DB.select('ordem_venda_itens', { ordem_venda_id: ov.id }, tenantId);
@@ -276,7 +278,7 @@ async function validarXmlContraOc(xmlDataRaw, ordemVendaId, tenantId) {
 
   return {
     validacao: {
-      cnpj: cnpjEmitente === cnpjFornecedor
+      cnpj: cnpjStatus === 'ok' // 18zd
         ? '✅ CNPJ Emitente válido'
         : `❌ CNPJ Emitente divergente (Esperado: ${cnpjFornecedor})`,
       cnpj_status: cnpjStatus,

@@ -180,7 +180,7 @@ function lerXml(xml) {
   return { nf: { numero: base.numero_nf, chave: base.chave_acesso, data: String(base.data_emissao || '').slice(0, 10) || null, emitente_nome: base.nome_emitente, emitente_cnpj: cnpj14(base.cnpj_emitente), destinatario_nome: base.nome_destinatario, destinatario_cnpj: cnpj14(base.cnpj_destinatario) }, itens, avisos };
 }
 const so = (v) => String(v || '').replace(/\D/g, '');
-// o parser de NF-e lê o CNPJ como número e perde o zero à esquerda (04884… → 4884…): volta para 14 dígitos
+// (18zd: o parser já preserva o zero à esquerda; isto fica como proteção para XML antigo/legado)
 const cnpj14 = (v) => { const d = so(v); return d.length > 11 && d.length < 14 ? d.padStart(14, '0') : d; };
 async function lerXmlDoTenant(supabase, tenantId, xml) {
   const r = lerXml(xml); if (r.status) return r;

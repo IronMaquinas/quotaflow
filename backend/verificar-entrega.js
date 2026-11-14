@@ -41,7 +41,7 @@ const ESPERADO = {
   'routes/estoque/itensConsumo.js': '47011b41ff3d33ac8ad31954084c2321',
   'services/NCService.js': 'a9432a05c6bfb78719497119235bbe44',
   'services/PortalRespostaService.js': 'aff8546f40f10b238354651e8b17aefb',
-  'services/ValidacaoXmlService.js': 'a8e0f2180da6f621272f70fb80a2b8e3',
+  'services/ValidacaoXmlService.js': 'e5160c1467aca39c3e8c67682c4a2e24', // etapa 18zd
   // etapa 4 (inclui arquivos já mexidos nas etapas 1 e 3)
   'routes/fornecedores.js': 'b0c0f9dc2bf58ad8158b53d8c243abcc', // etapa 10c
   'routes/auth.js': '7f20a132bb942547729b455eacef3123', // etapa 14d.4
@@ -322,7 +322,7 @@ const ESPERADO = {
   'front:FichaCte.jsx': '1545e475b3f1293bea31b1d2689b9af8', // etapa 18g.4
   'front:gerarFichaCte.js': '82698d98c06a303fe9be9cd02c20cdc3', // etapa 18g.3 (novo)
   'front:ModalMeuPerfil.jsx': '3ebeaea85df76f80b004a23dffe5844b', // etapa 18g.6
-  'services/patio.js': 'dcc24f7c429a4f2d77eb0616fa0abe39', // etapa 18zb
+  'services/patio.js': '3a7f8df4716ecb7bde01ce5f52238261', // etapa 18zd
   'routes/patio.js': '6302dd2ea54dc7a223730167ee47ce5b', // etapa 18zb
   'migrations/081_patio_cliente.sql': '87e9b488918410bef16457f63160a911', // etapa 18z.1
   'front:TelaPatio.jsx': '72e609575589ba39982a454cd9f7619a', // etapa 18zb
@@ -334,14 +334,14 @@ const ESPERADO = {
   'front:GuardaContrato.jsx': 'd150133f27610421cbc6c6d6f7255ee9', // etapa 18zb
   'migrations/086_contrato_armazenagem_tipo.sql': 'b8d7857f165b0964d2378f90a34e23e8', // etapa 18zb (novo)
   'migrations/087_medicao_envio_automatico.sql': '8ca07e5e6d7b67718139d0cf430a70cf', // etapa 18zc (novo)
+  'services/NfeXmlParser.js': 'b3fe06994341a9d8593ff6c53d7d512f', // etapa 18zd
 };
 
-// Antes de copiar a etapa 18zc.6 — base: 04adafb
+// Antes de copiar a etapa 18zd — base: d2f4524
 const ANTES = {
-  'services/contratosLocacao.js': '147e3e09ffebf4abcdef7718d3ce5c35',
-  'front:gerarContrato.js': '61918b643427ea861a255ca249fcb68d',
-  'front:ModelosContrato.jsx': '5c10fb18a8bf288924ca1db68b937929',
-  'front:TelaLocatario.jsx': 'b6dc7d43a2e8ab86aedd4e638e832537',
+  'services/NfeXmlParser.js': '5e2892c7011c6f168a318c81b5c13dea',
+  'services/ValidacaoXmlService.js': 'a8e0f2180da6f621272f70fb80a2b8e3',
+  'services/patio.js': 'dcc24f7c429a4f2d77eb0616fa0abe39',
 };
 
 const RAIZ = process.cwd();
@@ -379,7 +379,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zc.6)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zd)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

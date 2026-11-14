@@ -39,6 +39,9 @@ const parserOptions = {
   ignoreAttributes: false,
   attributeNamePrefix: '@_',
   parseAttributeValue: false,
+  // 18zd: lê TODO valor como texto. Antes o parser convertia em número o que "parecia número" e perdia o zero à esquerda:
+  // CNPJ 04884082000640 → 4884082000640, cProd "007" → 7, EAN/NCM com zero. Os valores numéricos passam por toNumber().
+  parseTagValue: false,
   trimValues: true,
   isArray: (name) => ['det', 'dup', 'vol'].includes(name),
 };
