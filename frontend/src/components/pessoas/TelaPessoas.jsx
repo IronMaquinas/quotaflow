@@ -17,6 +17,7 @@ import PainelDossie from "./PainelDossie"; // etapa 12f
 import TelaMultas from "./TelaMultas"; // etapa 12g
 import TelaDisciplinar from "./TelaDisciplinar"; // etapa 12h
 import EditorCompetencias, { limparCompetencias } from "../shared/EditorCompetencias"; // etapa 12e.3
+import DocumentosGestao from "./DocumentosGestao"; // 18zr: 📘 aba Gestão
 import LerCnh from "./LerCnh"; // 18zl: 🪪 leitura da CNH pela IA
 import { prepararArquivo } from "../../utils/comprimirImagem"; // 14c.1: foto comprimida antes de enviar
 import { SeletorPessoa } from "../shared/CampoPessoa"; // 18g.2c: escolher pessoa digitando
@@ -64,10 +65,11 @@ const lerArquivo = (file) => new Promise((ok, falha) => {
   r.readAsDataURL(file);
 });
 
-export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAbaConsumida }) {
-  const [aba, setAba] = useState(abaInicial || "documentos");
+// 18zq: modo "documentos" = menu 📁 Documentos (só a aba de documentos) · modo "pessoas" = 👷 Pessoas (sem a aba de documentos)
+export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAbaConsumida, modo = "pessoas" }) {
+  const [aba, setAba] = useState(modo === "documentos" ? "documentos" : (abaInicial && abaInicial !== "documentos" ? abaInicial : "colaboradores"));
   const [, setVerMod] = useState(0); useEffect(() => aoMudarModulos(() => setVerMod((v) => v + 1)), []); // 18t.1: módulos chegam depois → redesenha as abas
-  useEffect(() => { setErro(""); if (['epi', 'multas', 'treinamentos'].includes(aba) && !moduloAtivo(aba)) setAba("documentos"); }, [aba]); // eslint-disable-line // 18t.1: o erro de uma aba não fica nas outras
+  useEffect(() => { setErro(""); if (['epi', 'multas', 'treinamentos'].includes(aba) && !moduloAtivo(aba)) setAba(modo === "documentos" ? "documentos" : "colaboradores"); }, [aba]); // eslint-disable-line // 18t.1: o erro de uma aba não fica nas outras
   const [config, setConfig] = useState({ tipos: [], usuarios: [], pode_editar: false });
   const [colabs, setColabs] = useState([]);
   const [docs, setDocs] = useState([]);
@@ -97,7 +99,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
   const [buscaBiblio, setBuscaBiblio] = useState("");   // busca na biblioteca
   const [listas, setListas] = useState({ escolaridades: [], riscos: [], tipos_epi: [], sugestao_por_risco: {}, treinamentos: [], cnh_categorias: [], sugestoes_competencias: [] }); // 12d.0.2 (vêm da API)
 
-  useEffect(() => { if (abaInicial) { setAba(abaInicial); onAbaConsumida?.(); } }, [abaInicial]); // eslint-disable-line
+  useEffect(() => { if (abaInicial) { if (modo !== "documentos" && abaInicial !== "documentos") setAba(abaInicial); onAbaConsumida?.(); } }, [abaInicial]); // eslint-disable-line
   useEffect(() => { if (!aviso) return; const t = setTimeout(() => setAviso(""), 4500); return () => clearTimeout(t); }, [aviso]);
 
   const carregar = async () => {
@@ -173,6 +175,20 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       && (!filtroColab || String(d.colaborador_id) === filtroColab)
       && (!b || `${d.alvo_nome} ${d.tipo_nome} ${d.numero || ""}`.toLowerCase().includes(b)));
   }, [docs, filtroAlvo, filtroSit, filtroColab, busca]);
+
+  // 18zq: documentos agrupados por dono (pessoas, depois equipamentos, depois empresa; dentro, quem tem vencido primeiro)
+  const [gruposAbertos, setGruposAbertos] = useState({});
+  const [abaDoc, setAbaDoc] = useState("colaborador"); // 18zr: aba do 📁 Documentos
+  useEffect(() => { if (modo === "documentos") setFiltroAlvo("colaborador"); }, []); // eslint-disable-line
+  const grupos = useMemo(() => {
+    const m = new Map(); const ORD = { colaborador: 0, equipamento: 1, empresa: 2 };
+    for (const d of docsFiltrados) {
+      const chave = d.alvo_tipo === "colaborador" ? `c${d.colaborador_id}` : d.alvo_tipo === "equipamento" ? `e${d.equipamento_id}` : "empresa";
+      const g = m.get(chave) || { chave, tipo: d.alvo_tipo, icone: d.alvo_tipo === "colaborador" ? "👤" : d.alvo_tipo === "equipamento" ? "🚜" : "🏢", nome: d.alvo_tipo === "empresa" ? "Empresa" : d.alvo_nome, desligado: !!d.colaborador_desligado, docs: [], vencido: 0, vence_30: 0 };
+      g.docs.push(d); if (!d.substituido_por && d.situacao === "vencido") g.vencido++; if (!d.substituido_por && d.situacao === "vence_30") g.vence_30++; m.set(chave, g);
+    }
+    return [...m.values()].sort((a, b) => ORD[a.tipo] - ORD[b.tipo] || (b.vencido - a.vencido) || (b.vence_30 - a.vence_30) || String(a.nome).localeCompare(String(b.nome), "pt-BR"));
+  }, [docsFiltrados]);
 
   // ─── ações ────────────────────────────────────────────────────────────
   const salvarColab = async () => {
@@ -338,6 +354,31 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       <div onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true" style={{ ...s.card, width: `min(${largura}px, 100%)`, padding: 24, background: C.surface }}>{conteudo}</div>
     </div>
   );
+  // 18zq: linha de documento (lista agrupada e ficha do colaborador) — semDono: o grupo/ficha já diz de quem é
+  const linhaDoc = (d, ultimo, semDono = false, soLeitura = false) => (
+                <div key={d.id} style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", padding: "12px 16px", borderBottom: ultimo ? "none" : `1px solid ${C.border}`, opacity: d.substituido_por || d.colaborador_desligado ? 0.55 : 1 }}>
+                  <div style={{ flex: "2 1 220px", minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{d.tipo_nome}{d.numero ? <span style={{ color: C.muted, fontWeight: 400 }}> · nº {d.numero}</span> : ""}</div>
+                    <div style={{ fontSize: 12, color: C.textSub }}>
+                      {semDono ? "" : <>{d.alvo_tipo === "colaborador" ? "👤" : d.alvo_tipo === "equipamento" ? "⚙" : "🏢"} {d.alvo_nome}</>}
+                      {d.colaborador_desligado ? " (desligado)" : ""}{d.responsavel_id ? ` · resp.: ${nomeUsuario(d.responsavel_id) || "—"}` : ""}
+                    </div>
+                  </div>
+                  <div style={{ flex: "1 1 140px", fontSize: 12, color: C.textSub }}>
+                    {d.emitido_em ? <>Emitido {dataBR(d.emitido_em)}<br /></> : null}Vence <b style={{ color: C.text }}>{d.vence_em ? dataBR(d.vence_em) : "—"}</b>
+                  </div>
+                  <div style={{ flex: "0 0 auto" }}>{d.substituido_por ? <span style={s.tag(C.muted)}>Renovado</span> : situacaoTag(d)}</div>
+                  <div style={{ display: "flex", gap: 6, flex: "0 0 auto" }}>
+                    {d.tem_arquivo && <button onClick={() => abrirArquivo(d)} title={d.arquivo_nome || "Abrir arquivo"} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.accent }}>📎 Abrir</button>}
+                    {editar && !soLeitura && !d.substituido_por && <button onClick={() => setFormDoc({ modo: "renovar", id: d.id, titulo: `${d.tipo_nome} — ${d.alvo_nome}`, tipo_id: d.tipo_id, numero: "", emitido_em: "", vence_em: "", responsavel_id: d.responsavel_id || "", obs: "", arquivo: null })}
+                      style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.success }}>↻ Renovar</button>}
+                    {editar && !soLeitura && <button onClick={() => setFormDoc({ modo: "editar", id: d.id, titulo: `${d.tipo_nome} — ${d.alvo_nome}`, tipo_id: d.tipo_id, numero: d.numero || "", emitido_em: d.emitido_em ? String(d.emitido_em).slice(0, 10) : "", vence_em: d.vence_em ? String(d.vence_em).slice(0, 10) : "", vence_em_manual: true, responsavel_id: d.responsavel_id || "", obs: d.obs || "", arquivo: null, arquivo_atual: d.arquivo_nome })}
+                      style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.text }}>Editar</button>}
+                    {editar && !soLeitura && <button onClick={() => excluir("Excluir documento", `Excluir ${d.tipo_nome} de ${d.alvo_nome}? O arquivo anexo também é apagado. Use só para cadastro errado — para documento novo, use “Renovar”.`, async () => { await apiService.delete(`/pessoas/documentos/${d.id}`); return "Documento excluído."; })}
+                      style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.danger }}>Excluir</button>}
+                  </div>
+                </div>
+  );
   const situacaoTag = (d) => {
     const cfg = SITUACAO_DOC[d.situacao] || SITUACAO_DOC.ok;
     const extra = d.situacao === "vencido" ? ` há ${-d.dias} d` : d.situacao === "vence_30" ? (d.dias === 0 ? " — hoje" : ` — ${d.dias} d`) : "";
@@ -346,42 +387,50 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
 
   return (
     <div style={{ padding: "20px 24px" }}>
-      <h2 style={{ margin: "0 0 4px", fontSize: 20, fontWeight: 700 }}>👷 Pessoas e documentos</h2>
-      <div style={{ fontSize: 12, color: C.textSub, marginBottom: 12 }}>Colaboradores (com ou sem login no sistema) e documentos com vencimento de pessoas, equipamentos e da empresa.</div>
-      <div style={{ borderBottom: `1px solid ${C.border}`, marginBottom: 18 }}>
-        {tab("documentos", "📄 Documentos")}{tab("colaboradores", "👥 Colaboradores")}{tab("funcoes", "👔 Funções")}{moduloAtivo("epi") && tab("epi", "🦺 EPI")}{moduloAtivo("treinamentos") && tab("treinamentos", "🎓 Treinamentos")}{moduloAtivo("multas") && tab("multas", "🚦 Multas")}{/* 18t: aba some sem o módulo */}{editar && tab("disciplinar", "⚖ Disciplinar")}
-      </div>
+      <h2 style={{ margin: "0 0 4px", fontSize: 20, fontWeight: 700 }}>{modo === "documentos" ? "📁 Documentos" : "👷 Pessoas"}</h2>
+      <div style={{ fontSize: 12, color: C.textSub, marginBottom: 12 }}>{modo === "documentos" ? "Documentos com vencimento de pessoas, equipamentos e da empresa (o sistema avisa antes de vencer) e os documentos de gestão do sistema da qualidade." : "Colaboradores (com ou sem login no sistema), funções, EPI, treinamentos, multas e disciplinar. Os documentos de cada um estão na ficha (📋) e no menu 📁 Documentos."}</div>
+      {modo !== "documentos" && <div style={{ borderBottom: `1px solid ${C.border}`, marginBottom: 18 }}>
+        {tab("colaboradores", "👥 Colaboradores")}{tab("funcoes", "👔 Funções")}{moduloAtivo("epi") && tab("epi", "🦺 EPI")}{moduloAtivo("treinamentos") && tab("treinamentos", "🎓 Treinamentos")}{moduloAtivo("multas") && tab("multas", "🚦 Multas")}{/* 18t: aba some sem o módulo */}{editar && tab("disciplinar", "⚖ Disciplinar")}
+      </div>}
 
       {aviso && <div style={{ ...s.card, padding: 12, marginBottom: 12, borderColor: C.success, color: C.success }}>✓ {aviso}</div>}
       {erro && <div style={{ ...s.card, padding: 12, marginBottom: 12, borderColor: C.danger, color: C.danger }}>⚠ <TextoComPlano texto={erro} C={C} /></div>}
       {carregando && <div style={{ color: C.muted, marginBottom: 12 }}>Carregando…</div>}
 
       {/* ─── DOCUMENTOS ─── */}
-      {aba === "documentos" && (
+      {/* 18zr: abas do 📁 Documentos — 👤 Pessoas · 🚜 Equipamentos · 🏢 Licenças e certificados · 📘 Gestão */}
+      {aba === "documentos" && modo === "documentos" && (() => {
+        const cont = (k) => { const l = docs.filter((d) => d.alvo_tipo === k && !d.substituido_por); const v = l.filter((d) => d.situacao === "vencido" || d.situacao === "vence_30").length; return v ? <span style={{ ...s.tag(C.warn), marginLeft: 6 }}>{v}</span> : null; };
+        const bt = (k, l) => <button key={k} type="button" onClick={() => { setAbaDoc(k); if (k !== "gestao") { setFiltroAlvo(k); if (k !== "colaborador") setFiltroColab(""); } }}
+          style={{ background: "none", border: "none", borderBottom: `2px solid ${abaDoc === k ? C.accent : "transparent"}`, color: abaDoc === k ? C.text : C.textSub, fontWeight: abaDoc === k ? 700 : 500, padding: "8px 12px", cursor: "pointer", fontSize: 13.5, fontFamily: "inherit" }}>{l}{k !== "gestao" && cont(k)}</button>;
+        return <div style={{ borderBottom: `1px solid ${C.border}`, marginBottom: 16, display: "flex", flexWrap: "wrap" }}>{bt("colaborador", "👤 Pessoas")}{bt("equipamento", "🚜 Equipamentos")}{bt("empresa", "🏢 Licenças e certificados")}{bt("gestao", "📘 Gestão")}</div>;
+      })()}
+      {aba === "documentos" && modo === "documentos" && abaDoc === "gestao" && <DocumentosGestao C={C} s={s} onErro={setErro} onAviso={setAviso} />}
+      {aba === "documentos" && !(modo === "documentos" && abaDoc === "gestao") && (
         <>
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 14 }}>
-            {["vencido", "vence_30", "ok"].map((k) => (
+            {["vencido", "vence_30", "ok"].map((k) => ({ k, n: modo === "documentos" ? docs.filter((d) => d.alvo_tipo === filtroAlvo && !d.substituido_por && (k === "ok" ? !["vencido", "vence_30"].includes(d.situacao) : d.situacao === k)).length : resumo[k] || 0 })).map(({ k, n }) => (
               <button key={k} onClick={() => setFiltroSit(filtroSit === k ? "" : k)}
                 style={{ ...s.card, padding: "10px 16px", cursor: "pointer", borderColor: filtroSit === k ? SITUACAO_DOC[k].c : C.border, background: filtroSit === k ? `${SITUACAO_DOC[k].c}18` : C.surface, textAlign: "left", fontFamily: "inherit", color: C.text }}>
-                <div style={{ fontSize: 22, fontWeight: 700, color: SITUACAO_DOC[k].c }}>{resumo[k] || 0}</div>
+                <div style={{ fontSize: 22, fontWeight: 700, color: SITUACAO_DOC[k].c }}>{n}</div>
                 <div style={{ fontSize: 11, color: C.textSub }}>{SITUACAO_DOC[k].l}</div>
               </button>
             ))}
             <div style={{ flex: 1 }} />
-            {editar && <button onClick={() => setFormDoc({ modo: "novo", alvo_tipo: "colaborador", colaborador_id: filtroColab || "", equipamento_id: "", tipo_id: "", numero: "", emitido_em: "", vence_em: "", responsavel_id: "", obs: "", arquivo: null })}
+            {editar && <button onClick={() => setFormDoc({ modo: "novo", alvo_tipo: modo === "documentos" ? filtroAlvo || "colaborador" : "colaborador", colaborador_id: filtroColab || "", equipamento_id: "", tipo_id: "", numero: "", emitido_em: "", vence_em: "", responsavel_id: "", obs: "", arquivo: null })}
               style={{ ...s.btn(true), cursor: "pointer", alignSelf: "center" }}>＋ Novo documento</button>}
           </div>
 
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12, alignItems: "center" }}>
             <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por nome, tipo ou número…" style={{ ...s.input, maxWidth: 280, padding: "7px 10px", fontSize: 12 }} />
-            <select value={filtroAlvo} onChange={(e) => setFiltroAlvo(e.target.value)} style={sel}>
+            {modo !== "documentos" && <select value={filtroAlvo} onChange={(e) => setFiltroAlvo(e.target.value)} style={sel}>
               <option value="">Pessoas, equipamentos e empresa</option>
               {Object.entries(ALVO).map(([k, l]) => <option key={k} value={k}>{l}</option>)}
-            </select>
-            <select value={filtroColab} onChange={(e) => setFiltroColab(e.target.value)} style={sel}>
+            </select>}
+            {(modo !== "documentos" || filtroAlvo === "colaborador") && <select value={filtroColab} onChange={(e) => setFiltroColab(e.target.value)} style={sel}>
               <option value="">Todos os colaboradores</option>
               {colabs.map((c) => <option key={c.id} value={c.id}>{c.nome}</option>)}
-            </select>
+            </select>}
             <label style={{ fontSize: 12, color: C.textSub, display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}>
               <input type="checkbox" checked={historico} onChange={(e) => setHistorico(e.target.checked)} /> Mostrar renovados (histórico)
             </label>
@@ -393,30 +442,19 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
             </div>
           ) : (
             <div style={{ ...s.card, overflow: "hidden" }}>
-              {docsFiltrados.map((d, i) => (
-                <div key={d.id} style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", padding: "12px 16px", borderBottom: i < docsFiltrados.length - 1 ? `1px solid ${C.border}` : "none", opacity: d.substituido_por || d.colaborador_desligado ? 0.55 : 1 }}>
-                  <div style={{ flex: "2 1 220px", minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 13 }}>{d.tipo_nome}{d.numero ? <span style={{ color: C.muted, fontWeight: 400 }}> · nº {d.numero}</span> : ""}</div>
-                    <div style={{ fontSize: 12, color: C.textSub }}>
-                      {d.alvo_tipo === "colaborador" ? "👤" : d.alvo_tipo === "equipamento" ? "⚙" : "🏢"} {d.alvo_nome}
-                      {d.colaborador_desligado ? " (desligado)" : ""}{d.responsavel_id ? ` · resp.: ${nomeUsuario(d.responsavel_id) || "—"}` : ""}
-                    </div>
-                  </div>
-                  <div style={{ flex: "1 1 140px", fontSize: 12, color: C.textSub }}>
-                    {d.emitido_em ? <>Emitido {dataBR(d.emitido_em)}<br /></> : null}Vence <b style={{ color: C.text }}>{d.vence_em ? dataBR(d.vence_em) : "—"}</b>
-                  </div>
-                  <div style={{ flex: "0 0 auto" }}>{d.substituido_por ? <span style={s.tag(C.muted)}>Renovado</span> : situacaoTag(d)}</div>
-                  <div style={{ display: "flex", gap: 6, flex: "0 0 auto" }}>
-                    {d.tem_arquivo && <button onClick={() => abrirArquivo(d)} title={d.arquivo_nome || "Abrir arquivo"} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.accent }}>📎 Abrir</button>}
-                    {editar && !d.substituido_por && <button onClick={() => setFormDoc({ modo: "renovar", id: d.id, titulo: `${d.tipo_nome} — ${d.alvo_nome}`, tipo_id: d.tipo_id, numero: "", emitido_em: "", vence_em: "", responsavel_id: d.responsavel_id || "", obs: "", arquivo: null })}
-                      style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.success }}>↻ Renovar</button>}
-                    {editar && <button onClick={() => setFormDoc({ modo: "editar", id: d.id, titulo: `${d.tipo_nome} — ${d.alvo_nome}`, tipo_id: d.tipo_id, numero: d.numero || "", emitido_em: d.emitido_em ? String(d.emitido_em).slice(0, 10) : "", vence_em: d.vence_em ? String(d.vence_em).slice(0, 10) : "", vence_em_manual: true, responsavel_id: d.responsavel_id || "", obs: d.obs || "", arquivo: null, arquivo_atual: d.arquivo_nome })}
-                      style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.text }}>Editar</button>}
-                    {editar && <button onClick={() => excluir("Excluir documento", `Excluir ${d.tipo_nome} de ${d.alvo_nome}? O arquivo anexo também é apagado. Use só para cadastro errado — para documento novo, use “Renovar”.`, async () => { await apiService.delete(`/pessoas/documentos/${d.id}`); return "Documento excluído."; })}
-                      style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.danger }}>Excluir</button>}
-                  </div>
-                </div>
-              ))}
+              {/* 18zq: AGRUPADO POR DONO — 👤 cada pessoa · 🚜 cada equipamento · 🏢 empresa; quem tem vencido/vencendo abre sozinho */}
+              {grupos.map((g, gi) => { const aberto = gruposAbertos[g.chave] ?? (g.vencido + g.vence_30 > 0 || !!busca.trim() || !!filtroColab || grupos.length <= 3);
+                return <div key={g.chave} style={{ borderBottom: gi < grupos.length - 1 ? `1px solid ${C.border}` : "none" }}>
+                  <button type="button" onClick={() => setGruposAbertos({ ...gruposAbertos, [g.chave]: !aberto })} style={{ width: "100%", display: "flex", gap: 10, alignItems: "center", padding: "11px 16px", background: aberto ? C.bg : "transparent", border: "none", cursor: "pointer", color: C.text, fontFamily: "inherit", textAlign: "left", flexWrap: "wrap" }}>
+                    <span style={{ color: C.muted, width: 12 }}>{aberto ? "▾" : "▸"}</span>
+                    <span style={{ fontWeight: 700, fontSize: 13.5, flex: "1 1 200px" }}>{g.icone} {g.nome}{g.desligado ? <span style={{ color: C.muted, fontWeight: 400 }}> (desligado)</span> : ""}</span>
+                    <span style={{ fontSize: 12, color: C.textSub }}>{g.docs.length} documento(s)</span>
+                    {g.vencido > 0 && <span style={s.tag(SITUACAO_DOC.vencido.c)}>{g.vencido} vencido(s)</span>}
+                    {g.vence_30 > 0 && <span style={s.tag(SITUACAO_DOC.vence_30.c)}>{g.vence_30} vencendo</span>}
+                    {!g.vencido && !g.vence_30 && <span style={s.tag(SITUACAO_DOC.ok.c)}>em dia</span>}
+                  </button>
+                  {aberto && <div style={{ paddingLeft: 12 }}>{g.docs.map((d, i) => linhaDoc(d, i === g.docs.length - 1, true))}</div>}
+                </div>; })}
             </div>
           )}
         </>
@@ -442,7 +480,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
                     <div style={{ fontWeight: 600, fontSize: 13 }}>{c.nome} {c.situacao !== "ativo" && <span style={s.tag(C.muted)}>{SITUACAO_COLAB[c.situacao]}</span>}</div>
                     <div style={{ fontSize: 12, color: C.textSub }}>{c.funcao_nome || c.funcao || "Sem função"}{c.funcao && !c.funcao_id && funcoesOk ? <span style={{ color: C.muted }}> (sem modelo)</span> : ""}{c.cpf ? ` · CPF ${c.cpf}` : ""}{!c.cpf && <span style={{ color: "#f59e0b" }}> · ⚠ sem CPF</span>}{[c.tam_calcado && `👟 ${c.tam_calcado}`, c.tam_camisa && `👕 ${c.tam_camisa}`, c.tam_calca && `👖 ${c.tam_calca}`, c.tam_luva && `🧤 ${c.tam_luva}`].filter(Boolean).map((t) => ` · ${t}`).join("")}{c.usuario_id ? ` · login: ${nomeUsuario(c.usuario_id) || "—"}` : ""}</div>
                   </div>
-                  <button onClick={() => { setFiltroColab(String(c.id)); setFiltroAlvo(""); setFiltroSit(""); setAba("documentos"); }}
+                  <button onClick={() => abrirFicha(c.id)} title="Abrir a ficha com os documentos"
                     style={{ background: "none", border: "none", cursor: "pointer", fontSize: 12, color: C.textSub, fontFamily: "inherit", flex: "1 1 160px", textAlign: "left" }}>
                     📄 {c.documentos} documento(s)
                     {c.vencidos > 0 && <span style={{ color: SITUACAO_DOC.vencido.c }}> · {c.vencidos} vencido(s)</span>}
@@ -671,7 +709,8 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
 
       {/* ─── modal ficha do colaborador ─── */}
       {ficha && modal(<>
-        <div style={{ fontSize: 17, fontWeight: 700 }}>📋 Ficha — {ficha.colaborador.nome}</div>
+        <div style={{ display: "flex", gap: 12, alignItems: "center" }}>{(() => { const f = colabs.find((x) => String(x.id) === String(ficha.colaborador.id))?.foto_url; return f ? <img src={f} alt="" style={{ width: 54, height: 68, objectFit: "cover", borderRadius: 8 }} /> : null; })()}
+          <div style={{ fontSize: 17, fontWeight: 700 }}>📋 Ficha — {ficha.colaborador.nome}</div></div>{/* 18zq: foto */}
         <div style={{ fontSize: 12, color: C.textSub, marginTop: 4 }}>{ficha.funcao ? <>Função: <b style={{ color: C.text }}>{ficha.funcao.nome}</b></> : "Sem função ligada a um modelo — escolha a função no cadastro do colaborador."}</div>
         {ficha.selo && (() => {
           const sl = SELO[ficha.selo.nivel] || SELO.em_andamento;
@@ -831,6 +870,18 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
             )}
           </>
         )}
+        {/* 18zq: 📁 TODOS os documentos da pessoa no rodapé da ficha (inclusive os que a função não exige) */}
+        {(() => { const meus = docs.filter((d) => String(d.colaborador_id) === String(ficha.colaborador.id) && !d.substituido_por);
+          return <div style={{ marginTop: 16 }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+              <div style={{ fontSize: 13, fontWeight: 700, flex: 1 }}>📁 Documentos de {String(ficha.colaborador.nome).split(" ")[0]} <span style={{ fontWeight: 400, fontSize: 12, color: C.textSub }}>· {meus.length}</span></div>
+              {editar && <button type="button" onClick={() => { const cid = ficha.colaborador.id; setVoltarFicha(cid); setFicha(null); setFormDoc({ modo: "novo", alvo_tipo: "colaborador", colaborador_id: String(cid), equipamento_id: "", tipo_id: "", numero: "", emitido_em: "", vence_em: "", responsavel_id: "", obs: "", arquivo: null }); }}
+                style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.accent }}>＋ Documento</button>}
+            </div>
+            {meus.length === 0 ? <div style={{ fontSize: 12.5, color: C.muted }}>Nenhum documento cadastrado.</div>
+              : <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden" }}>{meus.map((d, i) => linhaDoc(d, i === meus.length - 1, true, true))}</div>}
+            <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4 }}>Para renovar, editar ou excluir: menu 📁 Documentos.</div>
+          </div>; })()}
         <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginTop: 18 }}>
           {ficha.pode_editar && <PainelDossie C={C} s={s} colaboradorId={ficha.colaborador.id} onErro={setErro} onAviso={setAviso} rodape />}
           <button onClick={() => setFicha(null)} style={{ ...s.btn(true), cursor: "pointer", flex: 1 }}>Fechar</button>

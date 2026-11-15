@@ -469,6 +469,7 @@ const perfil = PERFIS[usuario.perfil] || {
     {id:"inspecoes",     l:"🔍 Inspeções",             perfis:["admin","gestor","comprador","operacao","qualidade"]}, // etapa 14a
     {id:"contratos",     l:"📑 Contratos",             perfis:["admin","gestor","comprador","operacao","qualidade"]}, // etapa 14b.3
     {id:"pessoas",       l:"👷 Pessoas",               perfis:["admin","gestor","qualidade","operacao"]},
+    {id:"documentos",    l:"📁 Documentos",            perfis:["admin","gestor","qualidade","operacao"]}, // 18zq: repositório por dono (pessoas · equipamentos · empresa)
     {id:"minhas_viagens", l:rotulo("minhas_viagens"),  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro","comercial"]}, // etapa 17a.1 — motorista com outros perfis
     {id:"meus_treinamentos", l:"🎓 Meus treinamentos",  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro","comercial"]}, // etapa 12e.2b
     {id:"fornecedores",  l:"🏭 Fornecedores",         perfis:["admin","gestor","comprador"]},
@@ -677,6 +678,11 @@ const perfil = PERFIS[usuario.perfil] || {
         {temAcesso(tela) && tela === "pessoas" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
             <TelaPessoas C={C} s={s} equipamentos={equipamentos.dados || []} abaInicial={abaPessoas} onAbaConsumida={() => setAbaPessoas(null)} />
+          </div>
+        )}
+        {temAcesso(tela) && tela === "documentos" && ( /* 18zq: 📁 Documentos — mesmo componente, só a aba de documentos */
+          <div style={{ flex: 1, overflowY: "auto" }}>
+            <TelaPessoas key="docs" C={C} s={s} modo="documentos" equipamentos={equipamentos.dados || []} />
           </div>
         )}
 
@@ -2477,6 +2483,7 @@ const PERMISSOES = {
   inspecoes:          ["admin","gestor","comprador","operacao","qualidade"], // etapa 14a
   contratos:          ["admin","gestor","comprador","operacao","qualidade"], // etapa 14b.3
   pessoas:            ["admin","gestor","qualidade","operacao"], // etapa 12c
+  documentos:         ["admin","gestor","qualidade","operacao"], // 18zq
   minhas_viagens:     ["admin","gestor","comprador","operacao","qualidade","financeiro","comercial","colaborador"], // etapa 17a.1
   meus_treinamentos:  ["admin","gestor","comprador","operacao","qualidade","financeiro","comercial","colaborador"], // etapa 12e.2b
   fornecedores:       ["admin","gestor","comprador"],

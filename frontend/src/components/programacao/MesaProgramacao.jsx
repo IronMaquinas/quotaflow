@@ -29,7 +29,7 @@ function Card({ C, s, pv, item, at, onAbrir, onAbrirAT, onErro, onOk, onMudou, s
   };
   const verAnexo = async (a) => { setVer({ nome: a.nome, mime: a.mime }); try { const r = await apiService.get(`/programacao/execucoes/${at.id}/anexos/${a.id}`); setVer({ url: r.url, nome: a.nome, mime: a.mime }); } catch (e) { setVer(null); onErro(e.message); } };
   const verDoc = async (d) => {
-    if (!d.documento_id || !d.tem_arquivo) return onErro(`${d.rotulo} de ${d.dono}: ${d.documento_id ? "cadastrado sem arquivo" : "não está cadastrado"} — inclua em ${d.alvo === "motorista" ? "👷 Pessoas → Documentos" : "documentos do equipamento"}.`);
+    if (!d.documento_id || !d.tem_arquivo) return onErro(`${d.rotulo} de ${d.dono}: ${d.documento_id ? "cadastrado sem arquivo" : "não está cadastrado"} — inclua em ${d.alvo === "motorista" ? "👷 📁 Documentos" : "documentos do equipamento"}.`);
     setVer({ nome: `${d.rotulo} — ${d.dono}` }); try { const r = await apiService.get(`/programacao/documentos/${d.documento_id}`); setVer({ url: r.url, nome: r.nome, mime: r.mime }); } catch (e) { setVer(null); onErro(e.message); }
   };
   const copiarLink = async () => { try { await navigator.clipboard.writeText(at.link_motorista); onOk("📲 Link do motorista copiado — cole no WhatsApp."); } catch { onErro(`Copie o link: ${at.link_motorista}`); } };

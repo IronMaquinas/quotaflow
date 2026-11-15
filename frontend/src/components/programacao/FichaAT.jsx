@@ -50,7 +50,7 @@ export default function FichaAT({ C, s, id, podeLiberar, onFechar, onMudou, onEr
   const pdf = async () => { const w = window.open("", "_blank"); try { abrirAT(await apiService.get(`/programacao/execucoes/${e.id}/documento`), w); } catch (er) { if (w) w.close(); onErro(er.message); } };
   const abrirAnexo = async (a) => { setVer({ nome: a.nome, mime: a.mime }); try { const r = await apiService.get(`/programacao/execucoes/${e.id}/anexos/${a.id}`); setVer({ url: r.url, nome: a.nome, mime: a.mime }); } catch (er) { setVer(null); onErro(er.message); } };
   const verDoc = async (x) => {
-    if (!x.documento_id || !x.tem_arquivo) return onErro(`${x.rotulo} de ${x.dono}: ${x.documento_id ? "cadastrado sem arquivo" : "não está cadastrado"} — inclua em ${x.alvo === "motorista" ? "👷 Pessoas → Documentos" : "documentos do equipamento"}.`);
+    if (!x.documento_id || !x.tem_arquivo) return onErro(`${x.rotulo} de ${x.dono}: ${x.documento_id ? "cadastrado sem arquivo" : "não está cadastrado"} — inclua em ${x.alvo === "motorista" ? "👷 📁 Documentos" : "documentos do equipamento"}.`);
     setVer({ nome: `${x.rotulo} — ${x.dono}` }); try { const r = await apiService.get(`/programacao/documentos/${x.documento_id}`); setVer({ url: r.url, nome: r.nome, mime: r.mime }); } catch (er) { setVer(null); onErro(er.message); }
   };
   const liberarEtapa = async () => { setOcupado(true); try { await apiService.post(`/programacao/execucoes/${e.id}/fluxo/${liberando.id}/liberar`, { motivo: liberando.motivo }); setLiberando(null); onOk("Etapa liberada — o motorista pode seguir."); await carregar(); onMudou?.(); } catch (er) { onErro(er.message); } finally { setOcupado(false); } };

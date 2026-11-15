@@ -244,6 +244,22 @@ router.put('/colaboradores/:id', exigirEditar, async (req, res) => {
   } catch (err) { erro(res, 'colaboradores', err); }
 });
 
+// 18zr: 📘 DOCUMENTOS DE GESTÃO (sistema da qualidade) — manual, procedimentos, políticas… com código e revisão
+const DG = require('../services/documentosGestao');
+const semTabelaDG = (err) => /documentos_gestao/.test(String(err?.message || ''));
+const errDG = (res, err, onde) => { if (err.status) return res.status(err.status).json({ erro: err.message }); if (semTabelaDG(err)) return res.status(409).json({ erro: 'Rode a migration 092 (documentos de gestão)' }); erro(res, onde, err); };
+router.get('/gestao', exigirVer, async (req, res) => {
+  try { res.json({ documentos: await DG.listar(supabase, req.tenantId), tipos: DG.TIPOS, status: DG.STATUS, pode_editar: podeEditar(req) }); }
+  catch (err) { if (semTabelaDG(err)) return res.json({ documentos: [], tipos: DG.TIPOS, status: DG.STATUS, pode_editar: podeEditar(req), sem_tabela: true }); erro(res, 'gestao', err); }
+});
+router.get('/gestao/:id', exigirVer, async (req, res) => {
+  try { const d = await DG.obter(supabase, req.tenantId, req.params.id); if (!d) return res.status(404).json({ erro: 'Documento não encontrado' });
+    res.json({ documento: { ...d, arquivo_url: d.arquivo_path ? await D.linkArquivo(supabase, d.arquivo_path) : null } }); } catch (err) { errDG(res, err, 'gestao'); }
+});
+router.post('/gestao', exigirEditar, async (req, res) => { try { res.status(201).json({ documento: await DG.criar(supabase, req.tenantId, req.body) }); } catch (err) { errDG(res, err, 'gestao'); } });
+router.put('/gestao/:id', exigirEditar, async (req, res) => { try { res.json({ documento: await DG.atualizar(supabase, req.tenantId, req.params.id, req.body) }); } catch (err) { errDG(res, err, 'gestao'); } });
+router.delete('/gestao/:id', exigirEditar, async (req, res) => { try { res.json(await DG.excluir(supabase, req.tenantId, req.params.id)); } catch (err) { errDG(res, err, 'gestao'); } });
+
 // 18zl: 🪪 LER A CNH PELA IA — devolve os campos para o formulário (nada é gravado aqui)
 router.post('/colaboradores/ler-cnh', exigirEditar, async (req, res) => {
   try {

@@ -116,7 +116,7 @@ export default function EditorAT({ C, s, pv, trecho, itemId, atual: atual0, base
   };
   const verAnexo = async (a) => { setVer({ nome: a.nome, mime: a.mime }); try { const r = await apiService.get(`/programacao/execucoes/${atual.id}/anexos/${a.id}`); setVer({ url: r.url, nome: a.nome, mime: a.mime }); } catch (e) { setVer(null); setErro(e.message); } };
   const verDoc = async (d) => {
-    if (!d.documento_id || !d.tem_arquivo) return setErro(`${d.rotulo} de ${d.dono}: ${d.documento_id ? "cadastrado sem arquivo" : "não está cadastrado"} — inclua em ${d.alvo === "motorista" ? "👷 Pessoas → Documentos" : "documentos do equipamento"}. O motorista pode seguir com o documento em mãos.`);
+    if (!d.documento_id || !d.tem_arquivo) return setErro(`${d.rotulo} de ${d.dono}: ${d.documento_id ? "cadastrado sem arquivo" : "não está cadastrado"} — inclua em ${d.alvo === "motorista" ? "👷 📁 Documentos" : "documentos do equipamento"}. O motorista pode seguir com o documento em mãos.`);
     setVer({ nome: `${d.rotulo} — ${d.dono}` }); try { const r = await apiService.get(`/programacao/documentos/${d.documento_id}`); setVer({ url: r.url, nome: r.nome || `${d.rotulo} — ${d.dono}`, mime: r.mime }); } catch (e) { setVer(null); setErro(e.message); }
   };
   const removerAnexo = async (a) => { try { const r = await apiService.delete(`/programacao/execucoes/${atual.id}/anexos/${a.id}`); setAtual(r.execucao); } catch (e) { setErro(e.message); } };

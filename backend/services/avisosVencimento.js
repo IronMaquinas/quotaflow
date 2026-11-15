@@ -80,7 +80,7 @@ function montarEmail(nome, docs, extras = []) {
     </table>` : ''}
     ${AP.secoesHtml(extras)}
     ${portal ? `<p style="margin-top:16px"><a href="${esc(portal)}" style="background:#14b8a6;color:#fff;padding:10px 16px;border-radius:6px;text-decoration:none">Abrir o QuotaFlow</a></p>` : ''}
-    <p style="font-size:12px;color:#6b7280;margin-top:16px">Documentos: 👷 Pessoas → Documentos → Renovar. EPI: 👷 Pessoas → 🦺 EPI → Gestão de funcionários / Estoque. Você recebe este aviso por ser admin/gestor ou responsável pelo documento.</p>
+    <p style="font-size:12px;color:#6b7280;margin-top:16px">Documentos: 📁 Documentos → Renovar. EPI: 👷 Pessoas → 🦺 EPI → Gestão de funcionários / Estoque. Você recebe este aviso por ser admin/gestor ou responsável pelo documento.</p>
   </div>`;
 }
 
@@ -169,7 +169,7 @@ async function enviarAvisosVencimento({ agora = new Date(), enviar = enviarEmail
           await enviar(c.email, assunto, montarEmail(c.nome, c.docs, c.extras));
           r.emails++;
           if (c.id != null && c.docs.length) await require('./notificacoes').avisarUsuarios(supabase, tenantId, [c.id], { tipo: 'documento_vencendo', chave: `docs:${new Date(agora).toISOString().slice(0, 10)}`, // 18r: 🔔
-            titulo: assunto.slice(0, 200), texto: c.docs.slice(0, 3).map((d) => `${d.tipo_nome || 'Documento'} — ${d.alvo_nome || ''}`).join(' · ').slice(0, 200) || null, link: { tela: 'pessoas' } }).catch(() => {});
+            titulo: assunto.slice(0, 200), texto: c.docs.slice(0, 3).map((d) => `${d.tipo_nome || 'Documento'} — ${d.alvo_nome || ''}`).join(' · ').slice(0, 200) || null, link: { tela: 'documentos' } } /* 18zq */).catch(() => {});
           for (const d of c.docs) okDocs.add(String(d.id));
           if (c.extras.length) extrasEnviados++;
         } catch (e) {

@@ -285,7 +285,7 @@ export default function TelaCalendarioManutencao({ C, s, equipamentos = [], onAb
           {d.responsavel ? ` · resp.: ${d.responsavel}` : ""}
         </div>
         {onAbrirPessoas && (
-          <button onClick={() => onAbrirPessoas()} style={{ ...s.btn(false), cursor: "pointer", color: C.accent, padding: "5px 12px", fontSize: 12, marginTop: 8 }}>Ver em Pessoas → Documentos</button>
+          <button onClick={() => window.dispatchEvent(new CustomEvent("qf-ir-tela", { detail: "documentos" }))} style={{ ...s.btn(false), cursor: "pointer", color: C.accent, padding: "5px 12px", fontSize: 12, marginTop: 8 }}>Ver em 📁 Documentos</button>
         )}
       </div>
     );
