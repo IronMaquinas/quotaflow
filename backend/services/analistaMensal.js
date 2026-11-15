@@ -30,7 +30,14 @@ Se os dados forem insuficientes para uma leitura estratégica, diga isso em UMA 
 Formato: português do Brasil, no máximo 230 palavras, três títulos em linha própria, exatamente: "Leitura do mês", "Padrões e riscos para o negócio", "Recomendações táticas" (até 4 itens numerados, cada um com o porquê em meia linha). Sem markdown além disso.`;
 
 /** monta o relatório do mês (ym = 'AAAA-MM' fechado) — { assunto, html, dados, ia } */
-async function montar(supabase, tenantId, ym, { comIA = true } = {}) {
+// 18zp (Marcony, 15/11): o parecer GERADO FICA GUARDADO (ia_uso: recurso analista_mensal, chave = mês, resposta = texto).
+//   Abrir a prévia de novo, sair da tela, o e-mail do dia 1: tudo reaproveita o mesmo parecer — sem pagar de novo.
+//   "Gerar de novo" é ação explícita (refazer = true) e tem teto por mês (IA_LIMITE_PARECER_MES, padrão 3 gerações).
+const LIMITE_PARECER = () => Math.max(1, Number(process.env.IA_LIMITE_PARECER_MES) || 3);
+async function pareceres(supabase, tenantId, ym) {
+  try { const { data } = await supabase.from('ia_uso').select('*').eq('tenant_id', tenantId).eq('recurso', 'analista_mensal'); return (data || []).filter((u) => u.chave === ym).sort((a, b) => String(a.em).localeCompare(String(b.em))); } catch { return []; }
+}
+async function montar(supabase, tenantId, ym, { comIA = true, refazer = false } = {}) {
   const emp = (await q(supabase.from('tenants').select('*').eq('id', tenantId)).catch(() => []))[0] || {};
   const agora = new Date(`${ultimoDia(ym)}T23:00:00-03:00`);
   const d = await A.painel(supabase, tenantId, { meses: 12, agora });
@@ -49,15 +56,24 @@ async function montar(supabase, tenantId, ym, { comIA = true } = {}) {
     piores_equipamentos: d.equipamentos.slice(0, 5).map((e) => ({ equipamento: e.nome || e.tag, pct: e.pct, meses_abaixo: e.meses_abaixo, reprovacoes: e.reprovadas, os: e.os })),
     achados: d.achados.map((a) => `[${a.nivel}] ${a.texto}`) };
   let ia = { texto: null, motivo: 'não pedido' };
-  if (comIA && (d.total.esperadas || mes.inspecoes)) ia = await IA.gerarTexto({ tenant: emp, registrar: { supabase, tenantId, recurso: 'analista_mensal' }, sistema: SISTEMA, prompt: `Dados da rotina de inspeção (JSON):\n${JSON.stringify(dados)}\n\nEscreva o parecer de ${dados.mes}.`, max: 900 });
-  else if (comIA) ia = { texto: null, motivo: 'sem rotina de inspeção no período' };
+  const hist = await pareceres(supabase, tenantId, ym); const guardado = [...hist].reverse().find((u) => u.ok && u.resposta?.texto);
+  const geracoes = hist.length; let limite = false;
+  if (guardado && !refazer) ia = { texto: guardado.resposta.texto, guardado: true, gerado_em: guardado.em };
+  else if ((comIA || refazer) && geracoes >= LIMITE_PARECER()) { ia = guardado ? { texto: guardado.resposta.texto, guardado: true, gerado_em: guardado.em } : { texto: null, motivo: `limite de ${LIMITE_PARECER()} gerações do parecer neste mês` }; limite = true; }
+  else if ((comIA || refazer) && (d.total.esperadas || mes.inspecoes)) {
+    ia = await IA.gerarTexto({ tenant: emp, registrar: { supabase, tenantId, recurso: 'analista_mensal', chave: ym }, sistema: SISTEMA, prompt: `Dados da rotina de inspeção (JSON):\n${JSON.stringify(dados)}\n\nEscreva o parecer de ${dados.mes}.`, max: 900 });
+    if (ia.texto && ia.uso_id != null) { try { await supabase.from('ia_uso').update({ resposta: { texto: ia.texto } }).eq('id', ia.uso_id); } catch { /* sem a migration 091 */ } }
+    if (ia.texto) ia.gerado_em = new Date().toISOString();
+    else if (guardado) ia = { texto: guardado.resposta.texto, guardado: true, gerado_em: guardado.em, motivo: `não foi possível gerar de novo (${ia.motivo}) — mantido o parecer guardado` };
+  }
+  else if (comIA || refazer) ia = { texto: null, motivo: 'sem rotina de inspeção no período' };
   const cor = (p) => (p == null ? '#666' : p >= 90 ? '#15803d' : p >= 70 ? '#b45309' : '#b91c1c');
   const pctTxt = (p) => (p == null ? '—' : `${p}%`);
   const dif = mes.pct != null && ant.pct != null ? mes.pct - ant.pct : null;
   const NIV = { alto: ['#b91c1c', '●'], medio: ['#b45309', '●'], bom: ['#15803d', '✓'] };
   const kpi = (rot, val, c, sub) => `<td style="padding:10px;border:1px solid #e5e7eb;border-radius:6px;vertical-align:top;width:25%"><div style="font-size:11px;color:#666">${rot}</div><div style="font-size:22px;font-weight:800;color:${c}">${val}</div><div style="font-size:11px;color:#666">${sub}</div></td>`;
   const parecer = ia.texto ? `<div style="margin:18px 0;padding:12px 14px;background:#f5f3ff;border-left:3px solid #6d28d9;border-radius:4px"><div style="font-weight:700;margin-bottom:6px">🧠 Parecer do Analista Sênior</div>
-      <div style="white-space:pre-wrap">${escH(ia.texto)}</div><div style="font-size:11px;color:#777;margin-top:8px">Parecer gerado por inteligência artificial a partir dos dados acima — confira antes de decidir.</div></div>` : '';
+      <div style="white-space:pre-wrap">${escH(ia.texto)}</div><div style="font-size:11px;color:#777;margin-top:8px">Parecer gerado por inteligência artificial${ia.gerado_em ? ` em ${new Date(new Date(ia.gerado_em).getTime() - 3 * 36e5).toISOString().slice(0, 16).replace(/(\d+)-(\d+)-(\d+)T/, '$3/$2/$1 ')}` : ''}, com os dados daquele momento — confira antes de decidir.</div></div>` : '';
   const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;margin:0 auto;color:#111;font-size:14px;line-height:1.55">
     <div style="font-weight:700;border-bottom:2px solid #111;padding-bottom:6px;margin-bottom:14px">${escH(dados.empresa)} · 🧠 Analista da rotina de inspeção</div>
     <p style="font-size:16px;margin:0 0 12px"><b>Relatório de ${escH(dados.mes)}</b></p>
@@ -73,7 +89,7 @@ async function montar(supabase, tenantId, ym, { comIA = true } = {}) {
     ${d.falhas.length ? `<div style="margin:16px 0 6px;font-weight:700">🔧 Itens que mais falham (12 meses)</div>${d.falhas.slice(0, 5).map((f) => `<div style="padding:2px 0"><b>${f.vezes}×</b> ${escH(f.rotulo)} <span style="color:#666;font-size:12px">— ${escH(f.equipamentos.join(', '))}${f.corrigidas ? ` · <span style="color:#15803d">✓ ${f.corrigidas} corrigida${f.corrigidas > 1 ? 's' : ''}</span>` : ''}</span></div>`).join('')}` : ''}
     <p style="margin:22px 0"><a href="${frontendURL()}" style="background:#2563eb;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:700">Abrir 🔍 Inspeções → 🧠 Analista</a></p>
     <div style="font-size:11px;color:#888">E-mail mensal automático do QuotaFlow (dia 1, 7h) para os gestores.</div></div>`;
-  return { assunto: `🧠 Rotina de inspeção — ${dados.mes}: ${pctTxt(mes.pct)} de cumprimento${d.liberacao.pendentes.length ? ` · ${d.liberacao.pendentes.length} sem liberação` : ''}`, html, dados, ia: { usada: !!ia.texto, motivo: ia.motivo || null } }; // 18zn: sem o nome do provedor/modelo (propriedade do Marcony)
+  return { assunto: `🧠 Rotina de inspeção — ${dados.mes}: ${pctTxt(mes.pct)} de cumprimento${d.liberacao.pendentes.length ? ` · ${d.liberacao.pendentes.length} sem liberação` : ''}`, html, dados, ia: { usada: !!ia.texto, motivo: ia.motivo || null, guardado: !!ia.guardado, gerado_em: ia.gerado_em || null, geracoes: geracoes + (ia.texto && !ia.guardado ? 1 : 0), limite: LIMITE_PARECER(), no_limite: limite } }; // 18zn: sem o nome do provedor/modelo (propriedade do Marcony)
 }
 
 /** envia o relatório do mês aos gestores da empresa (forcar = reenviar pela tela) */

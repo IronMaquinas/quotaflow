@@ -68,8 +68,8 @@ router.get('/analista', exigirVer, responder((req) => require('../services/anali
 router.get('/analista/mensal', exigirVer, responder(async (req) => { // 18zk: prévia do e-mail mensal (sem IA por padrão — ?ia=1 gera o parecer)
   const AM = require('../services/analistaMensal'); const ym = /^\d{4}-\d{2}$/.test(String(req.query.mes)) ? req.query.mes : AM.mesAnterior(require('../services/rotinasInspecao').hojeBR());
   const emp = (await supabase.from('tenants').select('*').eq('id', req.tenantId)).data?.[0] || null;
-  const r = await AM.montar(supabase, req.tenantId, ym, { comIA: req.query.ia === '1' });
-  return { mes: ym, mes_nome: AM.nomeMes(ym), assunto: r.assunto, html: r.html, ia: { ligada: require('../services/ia').status(emp).ligada, usada: r.ia.usada, motivo: r.ia.motivo } }; // 18zn: nunca expõe provedor/modelo à tela // 18zm: não deixa o nome nulo do resultado apagar o do status ("IA ligada · null")
+  const r = await AM.montar(supabase, req.tenantId, ym, { comIA: req.query.ia === '1', refazer: req.query.refazer === '1' && perfisDe(req).some((p) => ['admin', 'gestor'].includes(p)) });
+  return { mes: ym, mes_nome: AM.nomeMes(ym), assunto: r.assunto, html: r.html, ia: { ligada: require('../services/ia').status(emp).ligada, ...r.ia } }; // 18zp: + guardado/gerado_em/gerações // 18zn: nunca expõe provedor/modelo à tela // 18zm: não deixa o nome nulo do resultado apagar o do status ("IA ligada · null")
 }));
 router.post('/analista/mensal/enviar', exigirVer, responder(async (req) => { // 18zk: enviar agora aos gestores (reenvio)
   if (!perfisDe(req).some((p) => ['admin', 'gestor'].includes(p))) return { status: 403, erro: 'Só gestor ou admin envia o relatório' };

@@ -146,7 +146,7 @@ const ESPERADO = {
   'front:TelaAutuacoes.jsx': '0cabebaeb4efbff1a017e27f111410c5', // etapa 18g.2c
   'front:TelaNaoConformidades.jsx': 'eeaf572c39ce97d4bf77f7985c84867d', // etapa 12i.1
   'services/inspecoes.js': '3a0b0f74f10f39e6b2d2acf0831b6aca', // etapa 18c.3
-  'routes/inspecoes.js': '69d8f1f35616e5106bd42b7b1dd84c0a', // etapa 18zn
+  'routes/inspecoes.js': '9d9588efd35f6635ac6370692849da28', // etapa 18zp
   'migrations/040_inspecoes.sql': '0ac35a83c9621397570d1be855727cc9', // etapa 14a (novo)
   'front:TelaInspecoes.jsx': '97e971c93aa8ec090611bb6cea29d8c3', // etapa 18zk
   'front:ExecutarInspecao.jsx': 'fb94210a4f175ac1dad6e8190dc02deb', // etapa 18ze
@@ -342,9 +342,9 @@ const ESPERADO = {
   'front:AvisoHorimetro.jsx': '537ba74fda9abd531c9977de6f1f9284', // etapa 18zg
   'migrations/088_checklist_medicao_contratual.sql': 'ffb81733f60648c397b903b882057c1a', // etapa 18zg (novo)
   'services/analistaRotina.js': 'c0afb3121b4732e3cb22c0b81c92862b', // etapa 18zm
-  'front:AnalistaRotina.jsx': 'ba91ea7713f02189e845a338b34a1cc2', // etapa 18zn
+  'front:AnalistaRotina.jsx': '9c1a6be45ed881d85f07d0f9f733ea0d', // etapa 18zp
   'services/ia/index.js': '37d019be4fdc47387ff3f39312eee659', // etapa 18zo
-  'services/analistaMensal.js': '6af7293a27feacfc8883cee5e5dd8fe0', // etapa 18zn
+  'services/analistaMensal.js': '961c37b724548157636da9d32191999c', // etapa 18zp
   'migrations/089_ia_uso_foto_colaborador.sql': '0d683964b7f713c0b484f0e7e631c890', // etapa 18zl
   'services/leituraCnh.js': 'ff3c577c51abac6529f6855d96352184', // etapa 18zo
   'front:LerCnh.jsx': '8764531156378d03f171df0d3940536a', // etapa 18zo
@@ -354,11 +354,11 @@ const ESPERADO = {
   'migrations/091_ia_uso_cache.sql': '5bbf9aca8354504a3322565e3512b7c8', // etapa 18zo
 };
 
-// Antes de copiar a etapa 18zo — base: b80ba88
+// Antes de copiar a etapa 18zp — base: 3e163dd
 const ANTES = {
-  'services/ia/index.js': 'd0cb823e7fff522c38ad3b5ccb3ef0fb',
-  'services/leituraCnh.js': '6aa5f3f350bb09b6c97725ca3d8d0f5f',
-  'front:LerCnh.jsx': 'ac6cdce2d92b5104d6db9020a3358e5d',
+  'services/analistaMensal.js': '6af7293a27feacfc8883cee5e5dd8fe0',
+  'routes/inspecoes.js': '69d8f1f35616e5106bd42b7b1dd84c0a',
+  'front:AnalistaRotina.jsx': 'ba91ea7713f02189e845a338b34a1cc2',
 };
 
 const RAIZ = process.cwd();
@@ -396,7 +396,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zo)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zp)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

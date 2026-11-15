@@ -9,7 +9,8 @@ export default function AnalistaRotina({ C, s, onErro, onOk, onVerEquipamento, p
   // 18zk: ✉ prévia do relatório mensal (o mesmo e-mail que vai sozinho no dia 1, 7h, aos gestores)
   const [pv, setPv] = useState(null); const [pvMes, setPvMes] = useState(""); const [pvOcup, setPvOcup] = useState(false);
   const mesesPv = (() => { const out = []; const h = new Date(Date.now() - 3 * 36e5); let y = h.getUTCFullYear(), m = h.getUTCMonth(); for (let i = 0; i < 6; i++) { if (!m) { m = 12; y--; } out.push(`${y}-${String(m).padStart(2, "0")}`); m--; } return out; })();
-  const abrirPv = async (mes = pvMes || mesesPv[0], ia = false) => { setPvMes(mes); setPvOcup(true); try { setPv(await apiService.get("/inspecoes/analista/mensal", { mes, ...(ia ? { ia: 1 } : {}) })); } catch (e) { onErro?.(e.message); } finally { setPvOcup(false); } };
+  const [refazer, setRefazer] = useState(false); // 18zp
+  const abrirPv = async (mes = pvMes || mesesPv[0], ia = false, refaz = false) => { setPvMes(mes); setPvOcup(true); setRefazer(false); try { setPv(await apiService.get("/inspecoes/analista/mensal", { mes, ...(ia ? { ia: 1 } : {}), ...(refaz ? { refazer: 1 } : {}) })); } catch (e) { onErro?.(e.message); } finally { setPvOcup(false); } };
   const enviarPv = async () => { setPvOcup(true); try { const r = await apiService.post("/inspecoes/analista/mensal/enviar", { mes: pvMes }); onOk?.(r.enviados ? `✉ Relatório de ${pv?.mes_nome} enviado a ${r.enviados} gestor(es)${r.ia?.usada ? " com o parecer da IA" : ""}` : `Não enviado: ${r.motivo || "sem destinatário"}`); } catch (e) { onErro?.(e.message); } finally { setPvOcup(false); } };
   useEffect(() => { setD(null); apiService.get("/inspecoes/analista", { meses }).then(setD).catch((e) => onErro?.(e.message)); }, [meses]); // eslint-disable-line
   const cor = (p) => (p == null ? C.muted : p >= 90 ? C.success : p >= 70 ? C.warn : C.danger);
@@ -36,9 +37,17 @@ export default function AnalistaRotina({ C, s, onErro, onOk, onVerEquipamento, p
         </div>
         <div style={{ fontSize: 12, color: C.textSub, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
           <span style={s.tag(pv.ia.ligada ? C.success : C.muted)}>🧠 IA {pv.ia.ligada ? "ligada" : "desligada"}</span>
-          <span style={{ flex: 1 }}>{pv.ia.ligada ? (pv.ia.usada ? "Parecer da IA incluído abaixo." : pv.ia.motivo && pv.ia.motivo !== "não pedido" ? `Sem parecer: ${pv.ia.motivo}.` : "A prévia mostra os achados por regra; o e-mail do dia 1 inclui o parecer da IA.") : `${pv.ia.motivo || "IA desligada"} — o e-mail sai completo, só sem o parecer.`}</span>
-          {pv.ia.ligada && !pv.ia.usada && <button type="button" disabled={pvOcup} onClick={() => abrirPv(pvMes, true)} style={{ ...s.btn(false), padding: "4px 10px", fontSize: 12, cursor: "pointer", color: C.accent }}>{pvOcup ? "Gerando…" : "🧠 Gerar parecer na prévia"}</button>}
+          <span style={{ flex: 1 }}>{pv.ia.usada
+            ? <>💾 Parecer guardado{pv.ia.gerado_em ? ` — gerado em ${new Date(pv.ia.gerado_em).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })}` : ""}. É o mesmo que vai no e-mail; abrir de novo não custa nada.</>
+            : pv.ia.ligada ? (pv.ia.motivo && pv.ia.motivo !== "não pedido" ? `Sem parecer: ${pv.ia.motivo}.` : "Ainda sem parecer deste mês. Gere aqui ou ele é gerado no envio do dia 1 — fica guardado.") : `${pv.ia.motivo || "IA desligada"} — o e-mail sai completo, só sem o parecer.`}</span>
+          {pv.ia.ligada && !pv.ia.usada && !pv.ia.no_limite && <button type="button" disabled={pvOcup} onClick={() => abrirPv(pvMes, true)} style={{ ...s.btn(false), padding: "4px 10px", fontSize: 12, cursor: "pointer", color: C.accent }}>{pvOcup ? "Gerando…" : "🧠 Gerar parecer"}</button>}
+          {pv.ia.ligada && pv.ia.usada && podeEnviar && !refazer && pv.ia.geracoes < pv.ia.limite && <button type="button" disabled={pvOcup} onClick={() => setRefazer(true)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer", fontSize: 12, padding: 0 }}>🔄 Gerar de novo</button>}
         </div>
+        {refazer && <div style={{ fontSize: 12.5, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "8px 10px", border: `1px solid ${C.warn}`, borderRadius: 8 }}>{/* 18zp: refazer custa — confirma */}
+          <span style={{ flex: 1 }}>Gerar um parecer novo com os dados de agora? Usa a IA de novo (custo) e substitui o guardado. {pv.ia.geracoes} de {pv.ia.limite} gerações usadas neste mês.</span>
+          <button type="button" onClick={() => setRefazer(false)} style={{ ...s.btn(false), padding: "4px 10px", fontSize: 12, cursor: "pointer", color: C.text }}>Cancelar</button>
+          <button type="button" disabled={pvOcup} onClick={() => abrirPv(pvMes, true, true)} style={{ ...s.btn(true), padding: "4px 10px", fontSize: 12, cursor: "pointer" }}>{pvOcup ? "Gerando…" : "Gerar de novo"}</button>
+        </div>}
         <div style={{ fontSize: 12, color: C.muted }}>Assunto: <b style={{ color: C.text }}>{pv.assunto}</b></div>
         <iframe title="Prévia do e-mail" srcDoc={pv.html} style={{ flex: 1, minHeight: 360, border: `1px solid ${C.border}`, borderRadius: 8, background: "#fff" }} />
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap" }}>
