@@ -252,6 +252,8 @@ router.get('/gestao', exigirVer, async (req, res) => {
   try { res.json({ documentos: await DG.listar(supabase, req.tenantId), tipos: DG.TIPOS, status: DG.STATUS, pode_editar: podeEditar(req) }); }
   catch (err) { if (semTabelaDG(err)) return res.json({ documentos: [], tipos: DG.TIPOS, status: DG.STATUS, pode_editar: podeEditar(req), sem_tabela: true }); erro(res, 'gestao', err); }
 });
+router.get('/gestao/modelos', exigirVer, async (req, res) => { try { res.json(await DG.biblioteca(supabase, req.tenantId)); } catch (err) { errDG(res, err, 'gestao-modelos'); } }); // 18zt
+router.post('/gestao/modelos/:mid/importar', exigirEditar, async (req, res) => { try { res.status(201).json({ documento: await DG.importarModelo(supabase, req.tenantId, req.params.mid, req.body || {}) }); } catch (err) { errDG(res, err, 'gestao-importar'); } });
 router.get('/gestao/:id', exigirVer, async (req, res) => {
   try { const d = await DG.obter(supabase, req.tenantId, req.params.id); if (!d) return res.status(404).json({ erro: 'Documento não encontrado' });
     res.json({ documento: { ...d, arquivo_url: d.arquivo_path ? await D.linkArquivo(supabase, d.arquivo_path) : null, rascunho_arquivo_url: d.rascunho?.arquivo?.arquivo_path ? await D.linkArquivo(supabase, d.rascunho.arquivo.arquivo_path).catch(() => null) : null }, pode_aprovar: perfisDe(req).some((p) => ['admin', 'gestor', 'qualidade'].includes(p)) }); } catch (err) { errDG(res, err, 'gestao'); }
@@ -266,6 +268,10 @@ router.delete('/gestao/:id/rascunho', exigirEditar, async (req, res) => { try { 
 router.post('/gestao/:id/aprovar', exigirEditar, async (req, res) => {
   try { if (!perfisDe(req).some((p) => APROVAR_DG.includes(p))) return res.status(403).json({ erro: 'Só admin, gestor ou qualidade aprova revisão' });
     const eu = await quemSou(req); res.json({ documento: await DG.aprovarRevisao(supabase, req.tenantId, req.params.id, { aprovador: eu.nome }) }); } catch (err) { errDG(res, err, 'gestao-aprovar'); }
+});
+router.post('/gestao/:id/publicar', exigirEditar, async (req, res) => { // 18zt: rascunho → vigente (aprovação)
+  try { if (!perfisDe(req).some((p) => APROVAR_DG.includes(p))) return res.status(403).json({ erro: 'Só admin, gestor ou qualidade aprova' });
+    const eu = await quemSou(req); res.json({ documento: await DG.publicar(supabase, req.tenantId, req.params.id, { aprovador: eu.nome }) }); } catch (err) { errDG(res, err, 'gestao-publicar'); }
 });
 router.get('/gestao/:id/versoes', exigirVer, async (req, res) => {
   try { const l = await DG.versoes(supabase, req.tenantId, req.params.id);

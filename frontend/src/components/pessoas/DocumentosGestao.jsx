@@ -16,7 +16,7 @@ const lerArq = (f) => new Promise((ok, erro) => { const r = new FileReader(); r.
 export default function DocumentosGestao({ C, s, onErro, onAviso }) {
   const [d, setD] = useState(null); const [busca, setBusca] = useState(""); const [verObsoletos, setVerObsoletos] = useState(false);
   const [form, setForm] = useState(null); const [ver, setVer] = useState(null);
-  const [revi, setRevi] = useState(null); const [hist, setHist] = useState(null); const [leit, setLeit] = useState(null); const [verVersao, setVerVersao] = useState(null); const [descartar, setDescartar] = useState(false); /* 18zs */ const [arq, setArq] = useState(null); const [apagar, setApagar] = useState(null); const [ocup, setOcup] = useState(false);
+  const [revi, setRevi] = useState(null); const [hist, setHist] = useState(null); const [leit, setLeit] = useState(null); const [verVersao, setVerVersao] = useState(null); const [descartar, setDescartar] = useState(false); /* 18zs */ const [bib, setBib] = useState(null); const [buscaBib, setBuscaBib] = useState(""); const [verMod, setVerMod] = useState(null); const [publicar, setPublicar] = useState(false); /* 18zt */ const [arq, setArq] = useState(null); const [apagar, setApagar] = useState(null); const [ocup, setOcup] = useState(false);
   const carregar = () => apiService.get("/pessoas/gestao").then(setD).catch((e) => onErro?.(e.message));
   useEffect(() => { carregar(); }, []); // eslint-disable-line
   const editar = !!d?.pode_editar;
@@ -38,7 +38,7 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
   const abrir = async (x, editarDepois = false) => {
     try { const r = await apiService.get(`/pessoas/gestao/${x.id}`); const doc = r.documento;
       if (editarDepois) setForm({ ...doc, status_original: doc.status, aprovado_em: doc.aprovado_em ? String(doc.aprovado_em).slice(0, 10) : "", proxima_revisao: doc.proxima_revisao ? String(doc.proxima_revisao).slice(0, 10) : "" });
-      else { setVer({ ...doc, pode_aprovar: r.pode_aprovar }); setHist(null); setLeit(null); if (doc.status === "vigente") apiService.get(`/pessoas/gestao/${x.id}/leituras`).then(setLeit).catch(() => {}); } }
+      else { setPublicar(false); setVer({ ...doc, pode_aprovar: r.pode_aprovar }); setHist(null); setLeit(null); if (doc.status === "vigente") apiService.get(`/pessoas/gestao/${x.id}/leituras`).then(setLeit).catch(() => {}); } }
     catch (e) { onErro?.(e.message); }
   };
   // 18zs: ↻ nova revisão (a vigente vale até aprovar) · histórico · leitura
@@ -66,9 +66,10 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
       <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por código, título ou área…" style={{ ...s.input, maxWidth: 280, padding: "7px 10px", fontSize: 12 }} />
       <label style={{ fontSize: 12, color: C.textSub, display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}><input type="checkbox" checked={verObsoletos} onChange={(e) => setVerObsoletos(e.target.checked)} /> Mostrar obsoletos</label>
       <div style={{ flex: 1 }} />
+      <button type="button" onClick={async () => { try { setBuscaBib(""); setBib(await apiService.get("/pessoas/gestao/modelos")); } catch (e) { onErro?.(e?.response?.data?.erro || e.message); } }} style={{ ...s.btn(false), cursor: "pointer", color: C.accent }}>📚 Modelos ISO 9001</button>
       {editar && <button type="button" onClick={() => setForm({ codigo: "", titulo: "", tipo: "procedimento", area: "", revisao: 0, status: "vigente", elaborado_por: "", aprovado_por: "", aprovado_em: "", proxima_revisao: "", norma: "", conteudo: "" })} style={{ ...s.btn(true), cursor: "pointer" }}>＋ Novo documento de gestão</button>}
     </div>
-    <div style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>Manual da qualidade, políticas, procedimentos, instruções e formulários — com código e revisão (ISO 9001, 7.5). Modelos prontos para importar chegam em breve.</div>
+    <div style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>Manual da qualidade, políticas, procedimentos, instruções e formulários — com código e revisão (ISO 9001, 7.5). Comece pelos 📚 Modelos ISO 9001: entram como rascunho, você ajusta e aprova.</div>
     {grupos.length === 0 ? <div style={{ ...s.card, padding: 28, textAlign: "center", color: C.textSub }}>{d.documentos.length ? "Nenhum documento com esses filtros." : "Nenhum documento de gestão ainda. Cadastre o manual, os procedimentos e as políticas da empresa."}</div>
       : grupos.map((g) => <div key={g.tipo} style={{ marginBottom: 14 }}>
         <div style={{ fontSize: 12, fontWeight: 700, color: C.textSub, letterSpacing: "0.04em", margin: "0 0 6px" }}>{ICONE[g.tipo]} {String(d.tipos[g.tipo]).toUpperCase()}{g.tipo === "manual" ? "" : "S"} · {g.docs.length}</div>
@@ -113,6 +114,10 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
           </div>)}
         </div>}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10, flexWrap: "wrap" }}>
+          {ver.status === "rascunho" && ver.pode_aprovar && !publicar && <button type="button" onClick={() => setPublicar(true)} style={{ ...s.btn(true), cursor: "pointer" }}>✓ Aprovar e publicar ({rev(ver.revisao)})</button>}
+          {publicar && <span style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12.5, color: C.text }}>Publicar como vigente, aprovado por você hoje?
+            <button type="button" onClick={() => setPublicar(false)} style={{ ...s.btn(false), padding: "5px 10px", cursor: "pointer", color: C.text }}>Cancelar</button>
+            <button type="button" disabled={ocup} onClick={async () => { setOcup(true); try { await apiService.post(`/pessoas/gestao/${ver.id}/publicar`, {}); setPublicar(false); setVer(null); onAviso?.(`${ver.codigo} aprovado e vigente (${rev(ver.revisao)}).`); carregar(); } catch (e) { onErro?.(e?.response?.data?.erro || e.message); } finally { setOcup(false); } }} style={{ ...s.btn(true), padding: "5px 10px", cursor: "pointer" }}>Publicar</button></span>}
           <button type="button" onClick={async () => { try { setHist((await apiService.get(`/pessoas/gestao/${ver.id}/versoes`)).versoes || []); } catch (e) { onErro?.(e?.response?.data?.erro || e.message); } }} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>🗂 Histórico</button>
           {editar && ver.status === "vigente" && <button type="button" onClick={() => abrirRevisao(ver)} style={{ ...s.btn(false), cursor: "pointer", color: C.accent }}>{ver.rascunho ? `✎ Continuar Rev. ${String((ver.revisao || 0) + 1).padStart(2, "0")}` : "↻ Nova revisão"}</button>}
           {ver.arquivo_url && <button type="button" onClick={() => setArq({ url: ver.arquivo_url, nome: ver.arquivo_nome, mime: ver.arquivo_mime })} style={{ ...s.btn(false), cursor: "pointer", color: C.accent }}>📎 Arquivo anexo</button>}
@@ -123,6 +128,31 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
     </div>}
     {arq && <VerArquivo C={C} s={s} arquivo={arq} onFechar={() => setArq(null)} z={90} />}
 
+    {bib && <div onClick={() => setBib(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 80, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: 16, overflowY: "auto" }}>{/* 18zt */}
+      <div onClick={(e) => e.stopPropagation()} role="dialog" style={{ ...s.card, background: C.surface, width: "min(780px, 100%)", padding: 22 }}>
+        <div style={{ fontSize: 17, fontWeight: 700 }}>📚 Modelos ISO 9001 do QuotaFlow</div>
+        <div style={{ fontSize: 12, color: C.textSub, margin: "4px 0 10px" }}>Cada procedimento descreve o fluxo que o próprio QuotaFlow executa — o documento e a prática batem. Entra como <b>rascunho</b> com o nome e o CNPJ da sua empresa; complete os [colchetes], revise e aprove. {bib.aviso}</div>
+        <input value={buscaBib} onChange={(e) => setBuscaBib(e.target.value)} placeholder="🔍 Buscar (título, requisito, palavra do texto…)" style={{ ...s.input, marginBottom: 8 }} />
+        {bib.modelos.filter((m) => !buscaBib.trim() || `${m.codigo} ${m.titulo} ${m.norma} ${m.conteudo}`.toLowerCase().includes(buscaBib.trim().toLowerCase())).map((m) => <div key={m.id} style={{ display: "flex", gap: 8, alignItems: "center", padding: "9px 0", borderBottom: `1px solid ${C.border}`, flexWrap: "wrap" }}>
+          <div style={{ flex: "1 1 260px" }}><div style={{ fontWeight: 600, fontSize: 13 }}>{ICONE[m.tipo]} <span style={{ color: C.accent }}>{m.codigo}</span> · {m.titulo}</div><div style={{ fontSize: 11.5, color: C.muted }}>{m.norma}{m.area ? ` · ${m.area}` : ""}</div></div>
+          <button type="button" onClick={() => setVerMod(m)} style={{ ...s.btn(false), cursor: "pointer", color: C.accent, padding: "6px 12px", fontSize: 12.5 }}>👁 Visualizar</button>
+          {m.ja_importado ? <span style={s.tag(C.success)}>Importado</span> : editar && <button type="button" disabled={ocup} onClick={async () => { setOcup(true); try { await apiService.post(`/pessoas/gestao/modelos/${m.id}/importar`, m.codigo_ocupado ? { codigo: `${m.codigo}-Q` } : {}); setBib(await apiService.get("/pessoas/gestao/modelos")); setVerMod(null); onAviso?.(`${m.codigo} importado como rascunho — revise e aprove em 👁 Ver.`); carregar(); } catch (e) { onErro?.(e?.response?.data?.erro || e.message); } finally { setOcup(false); } }} style={{ ...s.btn(true), cursor: "pointer", padding: "6px 12px", fontSize: 12.5 }}>Importar{m.codigo_ocupado ? ` como ${m.codigo}-Q` : ""}</button>}
+        </div>)}
+        <div style={{ textAlign: "right", marginTop: 12 }}><button type="button" onClick={() => setBib(null)} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>Fechar</button></div>
+      </div>
+    </div>}
+    {verMod && <div onClick={() => setVerMod(null)} style={{ position: "fixed", inset: 0, background: "#000000cc", zIndex: 95, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: 16, overflowY: "auto" }}>
+      <div onClick={(e) => e.stopPropagation()} style={{ width: "min(820px, 100%)" }}>
+        <div style={{ background: "#fff", color: "#111", borderRadius: 6, padding: "28px 34px", fontFamily: "Arial, Helvetica, sans-serif", fontSize: 13.5, lineHeight: 1.6 }}>
+          <div style={{ fontWeight: 700, fontSize: 15 }}>{verMod.codigo} · {verMod.titulo}</div>
+          <div style={{ fontSize: 12, color: "#555", marginBottom: 14 }}>{verMod.norma} · modelo — os {"{{campos}}"} são preenchidos com os dados da sua empresa ao importar</div>
+          <div style={{ whiteSpace: "pre-wrap" }}>{verMod.conteudo}</div>
+        </div>
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
+          <button type="button" onClick={() => setVerMod(null)} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>Voltar</button>
+        </div>
+      </div>
+    </div>}
     {verVersao && <div onClick={() => setVerVersao(null)} style={{ position: "fixed", inset: 0, background: "#000000cc", zIndex: 95, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: 16, overflowY: "auto" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "min(820px, 100%)" }}>
         <div style={{ background: "#fff", color: "#111", borderRadius: 6, padding: "28px 34px", fontFamily: "Arial, Helvetica, sans-serif", fontSize: 13.5, lineHeight: 1.6, position: "relative", overflow: "hidden" }}>

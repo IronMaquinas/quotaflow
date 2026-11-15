@@ -133,4 +133,33 @@ async function leituras(supabase, tenantId, id, revisao) {
     .sort((a, b) => String(b.lido_em).localeCompare(String(a.lido_em)));
 }
 
-module.exports = { salvarRascunho, descartarRascunho, aprovarRevisao, versoes, confirmarLeitura, leituras, TIPOS, STATUS, validar, listar, obter, criar, atualizar, excluir };
+// ─── 18zt: 📚 BIBLIOTECA DE MODELOS (ISO 9001) — importar entra como RASCUNHO; ✓ Aprovar e publicar = Rev. 00 vigente ─────
+const BIB = () => require('./modelosGestao/iso9001');
+const fmtCnpj = (c) => { const d = String(c || '').replace(/\D/g, ''); return d.length === 14 ? d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, '$1.$2.$3/$4-$5') : (c || '[CNPJ]'); };
+function preencher(texto, emp) {
+  return String(texto || '').replace(/\{\{EMPRESA\}\}/g, emp?.nome_fantasia || emp?.razao_social || emp?.nome || '[nome da empresa]')
+    .replace(/\{\{CNPJ\}\}/g, fmtCnpj(emp?.cnpj)).replace(/\{\{CIDADE_UF\}\}/g, [emp?.cidade, emp?.uf].filter(Boolean).join('/') || '[cidade/UF]');
+}
+async function biblioteca(supabase, tenantId) {
+  const meus = await q(supabase.from('documentos_gestao').select('*').eq('tenant_id', tenantId)).catch(() => []);
+  return { aviso: BIB().AVISO, modelos: BIB().MODELOS.map((m) => { const ja = meus.find((d) => d.modelo_origem === m.id);
+    return { id: m.id, codigo: m.codigo, titulo: m.titulo, tipo: m.tipo, norma: m.norma, area: m.area, conteudo: m.conteudo, ja_importado: !!ja, documento_id: ja?.id || null, codigo_ocupado: !ja && meus.some((d) => String(d.codigo).toLowerCase() === m.codigo.toLowerCase()) }; }) };
+}
+async function importarModelo(supabase, tenantId, modeloId, { codigo } = {}) {
+  const m = BIB().MODELOS.find((x) => x.id === modeloId); if (!m) throw erro('Modelo não encontrado', 404);
+  const meus = await q(supabase.from('documentos_gestao').select('*').eq('tenant_id', tenantId));
+  if (meus.some((d) => d.modelo_origem === m.id)) throw erro(`${m.codigo} já foi importado — veja em 📘 Gestão.`, 409);
+  const emp = (await q(supabase.from('tenants').select('*').eq('id', tenantId)).catch(() => []))[0] || {};
+  return criar(supabase, tenantId, { codigo: codigo || m.codigo, titulo: m.titulo, tipo: m.tipo, area: m.area, norma: m.norma, revisao: 0, status: 'rascunho', modelo_origem: m.id,
+    conteudo: `${preencher(m.conteudo, emp)}\n\n— ${BIB().AVISO}` });
+}
+/** rascunho (novo ou importado) → vigente Rev. atual, com aprovado por/em */
+async function publicar(supabase, tenantId, id, { aprovador } = {}) {
+  const d = await obter(supabase, tenantId, id); if (!d) throw erro('Documento não encontrado', 404);
+  if (d.status !== 'rascunho') throw erro('Só rascunho se publica — documento vigente muda por nova revisão.', 409);
+  if (!String(d.conteudo || '').trim() && !d.arquivo_path) throw erro('O documento está vazio — escreva o texto ou anexe o arquivo.', 409);
+  await q(supabase.from('documentos_gestao').update({ status: 'vigente', aprovado_por: aprovador || d.aprovado_por, aprovado_em: hojeBR(), atualizado_em: new Date().toISOString() }).eq('id', id).eq('tenant_id', tenantId));
+  return obter(supabase, tenantId, id);
+}
+
+module.exports = { biblioteca, importarModelo, publicar, preencher, salvarRascunho, descartarRascunho, aprovarRevisao, versoes, confirmarLeitura, leituras, TIPOS, STATUS, validar, listar, obter, criar, atualizar, excluir };
