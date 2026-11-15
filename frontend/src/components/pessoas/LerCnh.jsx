@@ -38,7 +38,7 @@ export default function LerCnh({ C, s, form, setForm, fotoAtual = null }) {
       pega("cnh_observacoes", c.observacoes_cnh, "Observações"); pega("cnh_local_emissao", c.local_emissao, "Local");
       if (preenchidos.length > antes) { const cnh = preenchidos.splice(antes); preenchidos.push(`dados da CNH (${cnh.join(", ").toLowerCase()})`); }
       const { _foto, _foto_remover, ...semFoto } = novo;
-      setForm({ ...semFoto, _cnh: { ...c, preenchidos, foto: ft, fotoBox: c.foto, imagem: img.dataUrl, arquivo: orig } });
+      setForm({ ...semFoto, _cnh: { ...c, preenchidos, foto: ft, fotoBox: c.foto, imagem: img.dataUrl, arquivo: orig, reaproveitada: !!r.reaproveitada } });
     } catch (e) { setErro(e?.response?.data?.erro || e.message || "Não consegui ler a CNH"); }
     finally { setLendo(false); if (inp.current) inp.current.value = ""; }
   };
@@ -87,7 +87,7 @@ export default function LerCnh({ C, s, form, setForm, fotoAtual = null }) {
     <div style={{ display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap" }}>
       {bloco}
       <div style={{ flex: "1 1 240px", fontSize: 12.5 }}>
-        <div style={{ fontWeight: 700, marginBottom: 2 }}>🪪 CNH lida{k.confianca !== "alta" ? <span style={{ ...s.tag(C.warn), marginLeft: 6 }}>confiança {k.confianca}</span> : null}</div>
+        <div style={{ fontWeight: 700, marginBottom: 2 }}>🪪 CNH lida{k.reaproveitada ? <span style={{ fontWeight: 400, color: C.muted, marginLeft: 6 }}>(já lida antes — sem nova leitura)</span> : null}{k.confianca !== "alta" ? <span style={{ ...s.tag(C.warn), marginLeft: 6 }}>confiança {k.confianca}</span> : null}</div>
         <div style={{ color: C.textSub }}>{k.preenchidos.length ? <>Preenchido: <b>{k.preenchidos.join(", ")}</b> — confira abaixo.</> : "Os dados já estavam iguais aos do formulário."}</div>
         <div style={{ color: C.textSub, marginTop: 2 }}>Ao salvar, vira também o documento <b>CNH</b> (validade <b style={{ color: k.validade && k.validade < new Date().toISOString().slice(0, 10) ? C.danger : C.text }}>{dBR(k.validade)}</b>) com o arquivo anexado — o sistema avisa antes de vencer.</div>
         {(k.avisos || []).map((a, i) => <div key={i} style={{ color: C.warn, marginTop: 2 }}>⚠ {a}</div>)}

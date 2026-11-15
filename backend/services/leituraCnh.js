@@ -42,16 +42,56 @@ function normalizar(j) {
   out.avisos = avisos; return out;
 }
 
-/** lê a CNH (imagem JPG/PNG/WEBP em base64) — { cnh } ou { status, erro } */
+// 18zo (Marcony, 15/11: "a chamada aconteceu, houve a cobrança, mas não leu — vou à falência se o usuário ficar tentando"):
+//   1) MESMA IMAGEM = MESMA RESPOSTA, sem nova cobrança (cache pela impressão digital SHA-256 em ia_uso.chave/resposta);
+//   2) a mesma imagem que FALHOU 2× não vai mais para a IA ("preencha à mão");
+//   3) teto de leituras por empresa por dia (IA_LIMITE_CNH_DIA, padrão 30) — falhas também contam;
+//   4) resposta mais robusta: mais espaço para responder (era 700 tokens — a resposta podia ser cortada no meio do JSON),
+//      tira ```json```, conserta vírgula sobrando; se falhar, o texto bruto vai para o log do servidor (diagnóstico).
+const crypto = require('crypto');
+const LIMITE_DIA = () => Math.max(1, Number(process.env.IA_LIMITE_CNH_DIA) || 30);
+const MAX_FALHAS_MESMA = 2;
+
+function extrairJson(texto) {
+  let s = String(texto || '').replace(/```(?:json)?/gi, '').trim();
+  const i = s.indexOf('{'), f = s.lastIndexOf('}');
+  if (i < 0 || f <= i) return null;
+  s = s.slice(i, f + 1);
+  try { return JSON.parse(s); } catch { /* tenta consertar */ }
+  try { return JSON.parse(s.replace(/,\s*([}\]])/g, '$1').replace(/[“”]/g, '"')); } catch { return null; }
+}
+
+/** lê a CNH (imagem JPG/PNG/WEBP em base64) — { cnh, reaproveitada? } ou { status, erro } */
 async function ler(supabase, tenant, { base64, mime } = {}) {
   if (!base64 || !['image/jpeg', 'image/png', 'image/webp'].includes(mime)) return { status: 400, erro: 'Envie a CNH como imagem (o PDF é convertido no navegador)' };
   if (String(base64).length > 7_000_000) return { status: 400, erro: 'Imagem grande demais (máx. ~5 MB)' };
   const st = IA.status(tenant);
   if (!st.ligada) return { status: 409, erro: `A leitura automática da CNH usa a IA, que está desligada (${st.motivo}). Preencha à mão.` };
-  const r = await IA.gerarTexto({ tenant, sistema: SISTEMA, prompt: 'Leia esta CNH e responda só o JSON.', imagens: [{ mime, base64 }], max: 700, registrar: { supabase, tenantId: tenant?.id, recurso: 'leitura_cnh' } });
-  if (!r.texto) return { status: 502, erro: `Não consegui ler agora: ${r.motivo}. Tente de novo ou preencha à mão.` };
-  let j = null; try { const m = r.texto.match(/\{[\s\S]*\}/); j = JSON.parse(m ? m[0] : r.texto); } catch { return { status: 502, erro: 'A IA respondeu num formato inesperado — tente de novo.' }; }
-  return { cnh: normalizar(j) }; // 18zn: provedor/modelo/tokens ficam só no servidor (ia_uso)
+  const chave = crypto.createHash('sha256').update(String(base64)).digest('hex');
+  let hist = []; try { const r = await supabase.from('ia_uso').select('*').eq('tenant_id', tenant?.id).eq('recurso', 'leitura_cnh'); hist = r.data || []; } catch { /* sem a tabela */ }
+  // 1) já lida → devolve sem cobrar
+  const ja = hist.find((u) => u.chave === chave && u.ok && u.resposta);
+  if (ja) return { cnh: normalizar(ja.resposta), reaproveitada: true };
+  // 2) mesma imagem falhou demais
+  if (hist.filter((u) => u.chave === chave && !u.ok).length >= MAX_FALHAS_MESMA) return { status: 429, erro: 'Esta imagem não pôde ser lida automaticamente. Tente uma foto mais nítida da CNH ou preencha à mão.', bloqueado: true };
+  // 3) teto do dia (fuso de Brasília)
+  const hoje = new Date(Date.now() - 3 * 36e5).toISOString().slice(0, 10);
+  const doDia = hist.filter((u) => u.em && new Date(new Date(u.em).getTime() - 3 * 36e5).toISOString().slice(0, 10) === hoje).length;
+  if (doDia >= LIMITE_DIA()) return { status: 429, erro: `Limite de ${LIMITE_DIA()} leituras automáticas por dia atingido. Preencha à mão — amanhã a leitura volta.`, bloqueado: true };
+
+  const r = await IA.gerarTexto({ tenant, sistema: SISTEMA, prompt: 'Leia esta CNH e responda só o JSON, sem nenhum texto fora dele.', imagens: [{ mime, base64 }], max: 1500,
+    registrar: { supabase, tenantId: tenant?.id, recurso: 'leitura_cnh', chave } });
+  const falhou = async (detalhe) => { if (r.uso_id != null) { try { await supabase.from('ia_uso').update({ ok: false, detalhe: String(detalhe).slice(0, 2000) }).eq('id', r.uso_id); } catch { /* ok */ } } };
+  if (!r.texto) { await falhou(r.motivo || 'sem texto'); return { status: 502, erro: `Não consegui ler agora: ${r.motivo}. Tente de novo ou preencha à mão.` }; }
+  const j = extrairJson(r.texto);
+  if (!j) {
+    console.error(`⚠️ [leitura_cnh] resposta fora do formato (parada: ${r.parada || '?'}):`, String(r.texto).slice(0, 1500));
+    await falhou(`formato · parada ${r.parada || '?'} · ${String(r.texto).slice(0, 1500)}`);
+    const resta = MAX_FALHAS_MESMA - hist.filter((u) => u.chave === chave && !u.ok).length - 1;
+    return { status: 502, erro: resta > 0 ? 'A leitura saiu incompleta. Você pode tentar mais 1 vez com este arquivo — ou preencha à mão.' : 'Esta imagem não pôde ser lida automaticamente. Tente uma foto mais nítida da CNH ou preencha à mão.', bloqueado: resta <= 0 };
+  }
+  if (r.uso_id != null) { try { await supabase.from('ia_uso').update({ resposta: j }).eq('id', r.uso_id); } catch { /* sem a migration 091 */ } }
+  return { cnh: normalizar(j) };
 }
 
 /** 📊 uso da IA da empresa no mês (para acompanhar custo e decidir cobrança) */
@@ -62,4 +102,4 @@ async function usoDoMes(supabase, tenantId, ym) {
   return por;
 }
 
-module.exports = { ler, normalizar, cpfOk, usoDoMes, SISTEMA };
+module.exports = { ler, normalizar, cpfOk, usoDoMes, extrairJson, SISTEMA };
