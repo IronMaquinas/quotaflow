@@ -18,6 +18,7 @@ import TelaMultas from "./TelaMultas"; // etapa 12g
 import TelaDisciplinar from "./TelaDisciplinar"; // etapa 12h
 import EditorCompetencias, { limparCompetencias } from "../shared/EditorCompetencias"; // etapa 12e.3
 import DocumentosGestao from "./DocumentosGestao"; // 18zr: 📘 aba Gestão
+import CampoCnpj, { mascaraCnpjCpf } from "../shared/CampoCnpj"; // 18zx
 import LerCnh from "./LerCnh"; // 18zl: 🪪 leitura da CNH pela IA
 import { prepararArquivo } from "../../utils/comprimirImagem"; // 14c.1: foto comprimida antes de enviar
 import { SeletorPessoa } from "../shared/CampoPessoa"; // 18g.2c: escolher pessoa digitando
@@ -315,7 +316,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       tem_comp: c.escolaridade !== undefined, escolaridade: c.escolaridade || "", cnh_categoria: c.cnh_categoria || "", // 12e.3
       tem_nascimento: c.data_nascimento !== undefined, data_nascimento: c.data_nascimento ? String(c.data_nascimento).slice(0, 10) : "",
       tem_tamanhos: c.tam_calcado !== undefined, tam_calcado: c.tam_calcado || "", tam_camisa: c.tam_camisa || "", tam_calca: c.tam_calca || "", tam_luva: c.tam_luva || "",
-      tem_cnh: c.cnh_registro !== undefined, tem_vinculo: c.vinculo !== undefined, vinculo: c.vinculo || "proprio", rntrc: c.rntrc || "", vinculo_empresa: c.vinculo_empresa || "", vinculo_cnpj: c.vinculo_cnpj || "", // 18zw
+      tem_cnh: c.cnh_registro !== undefined, tem_vinculo: c.vinculo !== undefined, vinculo: c.vinculo || "proprio", rntrc: c.rntrc || "", vinculo_empresa: c.vinculo_empresa || "", vinculo_cnpj: c.vinculo_cnpj ? mascaraCnpjCpf(c.vinculo_cnpj) : "", // 18zw (18zx: com máscara)
        ...Object.fromEntries(CAMPOS_CNH.map((k) => [k, c[k] ? (/^cnh_(validade|emissao|primeira)/.test(k) ? String(c[k]).slice(0, 10) : c[k]) : ""])) }); // 18zn
   };
 
@@ -926,8 +927,8 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
             {campo("VÍNCULO", <select value={formColab.vinculo || "proprio"} onChange={(e) => setFormColab({ ...formColab, vinculo: e.target.value })} style={s.input}>
               <option value="proprio">Próprio (CLT)</option><option value="agregado">🚚 Agregado (motorista com veículo/empresa própria)</option><option value="terceiro">Terceiro (prestador eventual)</option></select>, "1 1 220px")}
             {(formColab.vinculo === "agregado" || formColab.vinculo === "terceiro") && <>
-              {campo("EMPRESA DO AGREGADO", <input value={formColab.vinculo_empresa || ""} onChange={(e) => setFormColab({ ...formColab, vinculo_empresa: e.target.value })} placeholder="Razão social (se tiver)" style={s.input} />, "2 1 200px")}
-              {campo("CNPJ / CPF", <input value={formColab.vinculo_cnpj || ""} inputMode="numeric" onChange={(e) => setFormColab({ ...formColab, vinculo_cnpj: e.target.value })} style={s.input} />, "1 1 150px")}
+              {campo("CNPJ / CPF", <CampoCnpj C={C} s={s} valor={formColab.vinculo_cnpj || ""} onChange={(v) => setFormColab((f) => ({ ...f, vinculo_cnpj: v }))} onEmpresa={(x) => setFormColab((f) => ({ ...f, vinculo_empresa: f.vinculo_empresa || x.razao_social }))} />, "1 1 220px")}
+              {campo("EMPRESA DO AGREGADO", <input value={formColab.vinculo_empresa || ""} onChange={(e) => setFormColab({ ...formColab, vinculo_empresa: e.target.value })} placeholder="Preenchida pela Receita ao digitar o CNPJ" style={s.input} />, "2 1 200px")}
               {campo("RNTRC (ANTT)", <input value={formColab.rntrc || ""} inputMode="numeric" onChange={(e) => setFormColab({ ...formColab, rntrc: e.target.value })} style={s.input} />, "1 1 120px")}</>}
           </div>
           {(formColab.vinculo === "agregado" || formColab.vinculo === "terceiro") && <div style={{ fontSize: 12, color: C.textSub, marginTop: -4 }}>Agregado/terceiro: a conformidade olha só os <b>documentos</b> exigidos (CNH, ASO, MOPP…) — EPI e treinamentos de funcionário são da empresa dele. Ele pode enviar a própria CNH pelo 📲 link da viagem.</div>}
