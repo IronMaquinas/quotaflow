@@ -192,6 +192,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
   }, [docsFiltrados]);
 
   // ─── ações ────────────────────────────────────────────────────────────
+  const [cpfDup, setCpfDup] = useState(null); // 18zy
   const salvarColab = async () => {
     setSalvando(true); setErro("");
     try {
@@ -231,7 +232,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       // decisão (b): função nova/trocada → mostra a ficha com as pendências
       const novoId = salvo?.id || id;
       if (corpo.funcao_id && String(corpo.funcao_id) !== String(funcao_original || "") && novoId) await abrirFicha(novoId);
-    } catch (e) { setErro(e.message); }
+    } catch (e) { if (e.body?.existente) setCpfDup(e.body.existente); else setErro(e.message); } // 18zy: CPF repetido → modal
     finally { setSalvando(false); }
   };
 
@@ -712,6 +713,18 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       </>, () => setBiblio(null), 680)}
 
       {/* ─── modal ficha do colaborador ─── */}
+      {cpfDup && <div onClick={() => setCpfDup(null)} style={{ position: "fixed", inset: 0, background: "#000000aa", zIndex: 1300, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>{/* 18zy: CPF já cadastrado */}
+        <div onClick={(e) => e.stopPropagation()} role="dialog" style={{ ...s.card, background: C.surface, width: 440, maxWidth: "100%", padding: 22 }}>
+          <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 6 }}>⚠ Este CPF já está cadastrado</div>
+          <div style={{ fontSize: 13.5, color: C.textSub }}>Pertence a <b style={{ color: C.text }}>{cpfDup.nome}</b>{cpfDup.funcao ? ` · ${cpfDup.funcao}` : ""}{cpfDup.vinculo === "agregado" ? " · 🚚 agregado" : ""}{cpfDup.situacao && cpfDup.situacao !== "ativo" ? ` · ${SITUACAO_COLAB[cpfDup.situacao] || cpfDup.situacao}` : ""}.</div>
+          <div style={{ fontSize: 12.5, color: C.muted, marginTop: 6 }}>Cada pessoa tem um cadastro só — assim documentos, treinamentos e histórico ficam juntos.{cpfDup.situacao === "desligado" ? " Se ela voltou, abra o cadastro e mude a situação para Ativo." : ""}</div>
+          <div style={{ display: "flex", gap: 8, marginTop: 16, flexWrap: "wrap" }}>
+            <button type="button" onClick={() => setCpfDup(null)} style={{ ...s.btn(false), flex: "1 1 100px", cursor: "pointer", color: C.text }}>Voltar</button>
+            <button type="button" onClick={() => { const id = cpfDup.id; setCpfDup(null); setFormColab(null); abrirFicha(id); }} style={{ ...s.btn(false), flex: "1 1 100px", cursor: "pointer", color: C.accent }}>📋 Ver ficha</button>
+            {editar && <button type="button" onClick={() => { const c = colabs.find((x) => String(x.id) === String(cpfDup.id)); setCpfDup(null); if (c) editarColab(c); }} style={{ ...s.btn(true), flex: "1 1 140px", cursor: "pointer" }}>✎ Abrir cadastro</button>}
+          </div>
+        </div>
+      </div>}
       {ficha && modal(<>
         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>{(() => { const f = colabs.find((x) => String(x.id) === String(ficha.colaborador.id))?.foto_url; return f ? <img src={f} alt="" style={{ width: 54, height: 68, objectFit: "cover", borderRadius: 8 }} /> : null; })()}
           <div style={{ fontSize: 17, fontWeight: 700 }}>📋 Ficha — {ficha.colaborador.nome}</div></div>{/* 18zq: foto */}

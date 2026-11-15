@@ -195,6 +195,13 @@ router.get('/colaboradores', exigirVer, async (req, res) => {
   } catch (err) { erro(res, 'colaboradores', err); }
 });
 
+// 18zy: CPF repetido → 409 com QUEM já tem esse CPF (a tela abre o modal "já existe" com Abrir cadastro / Ver ficha)
+async function cpfJaUsado(req, cpf, menosId = null) {
+  const d = String(cpf || '').replace(/\D/g, ''); if (!d) return null;
+  const l = await q(supabase.from('colaboradores').select('*').eq('tenant_id', req.tenantId)).catch(() => []);
+  const x = l.find((c) => String(c.cpf || '').replace(/\D/g, '') === d && String(c.id) !== String(menosId ?? ''));
+  return x ? { id: x.id, nome: x.nome, situacao: x.situacao || 'ativo', vinculo: x.vinculo || 'proprio', funcao: x.funcao || null } : null;
+}
 router.post('/colaboradores', exigirEditar, async (req, res) => {
   try {
     const { erros, dados } = D.validarColaborador(req.body || {});
@@ -204,6 +211,7 @@ router.post('/colaboradores', exigirEditar, async (req, res) => {
     if (dados.usuario_id && !(await usuarioDoTenant(req, dados.usuario_id))) return res.status(400).json({ erro: 'Usuário não encontrado' });
     const fe = await conferirFuncao(req, dados); if (fe) return res.status(400).json({ erro: fe });
     const mud = HF.validarMudanca(req.body); if (mud.erro) return res.status(400).json({ erro: mud.erro });
+    const dup = await cpfJaUsado(req, dados.cpf); if (dup) return res.status(409).json({ erro: `Já existe um colaborador com esse CPF: ${dup.nome}`, existente: dup });
     const { data, error } = await supabase.from('colaboradores').insert([{ ...dados, tenant_id: req.tenantId }]).select();
     if (error) throw new Error(error.message);
     // 12d.3: 1º período no histórico de funções (admissão)
@@ -224,6 +232,7 @@ router.put('/colaboradores/:id', exigirEditar, async (req, res) => {
     if (dados.escolaridade && !F.ESCOLARIDADES.some((x) => x.codigo === dados.escolaridade)) return res.status(400).json({ erro: 'Escolaridade inválida' }); // 12e.3
     // 12e.0: CPF obrigatório — quem já existe sem CPF precisa preencher ao editar
     if (!(dados.cpf !== undefined ? dados.cpf : c.cpf)) return res.status(400).json({ erro: 'Informe o CPF do colaborador (obrigatório desde a etapa 12e)' });
+    if (dados.cpf) { const dup = await cpfJaUsado(req, dados.cpf, c.id); if (dup) return res.status(409).json({ erro: `Já existe um colaborador com esse CPF: ${dup.nome}`, existente: dup }); } // 18zy
     if (dados.usuario_id && !(await usuarioDoTenant(req, dados.usuario_id))) return res.status(400).json({ erro: 'Usuário não encontrado' });
     const fe = await conferirFuncao(req, dados); if (fe) return res.status(400).json({ erro: fe });
     // 12d.3: mudou a função → registra no histórico ANTES (se a data for inválida, nada é gravado)
