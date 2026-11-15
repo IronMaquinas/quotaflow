@@ -17,6 +17,7 @@ import PainelDossie from "./PainelDossie"; // etapa 12f
 import TelaMultas from "./TelaMultas"; // etapa 12g
 import TelaDisciplinar from "./TelaDisciplinar"; // etapa 12h
 import EditorCompetencias, { limparCompetencias } from "../shared/EditorCompetencias"; // etapa 12e.3
+import LerCnh from "./LerCnh"; // 18zl: 🪪 leitura da CNH pela IA
 import { prepararArquivo } from "../../utils/comprimirImagem"; // 14c.1: foto comprimida antes de enviar
 import { SeletorPessoa } from "../shared/CampoPessoa"; // 18g.2c: escolher pessoa digitando
 
@@ -175,7 +176,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
   const salvarColab = async () => {
     setSalvando(true); setErro("");
     try {
-      const { id, documentos, vencidos, a_vencer, criado_em, atualizado_em, tenant_id, funcao_nome, exigidos, pendencias, funcao_original, sugerida, ...corpo } = formColab;
+      const { id, documentos, vencidos, a_vencer, criado_em, atualizado_em, tenant_id, funcao_nome, exigidos, pendencias, funcao_original, sugerida, _cnh, foto_url, foto_path, ...corpo } = formColab;
       if (sugerida) corpo.funcao_motivo = "correcao"; // 12d.3: ligar ao modelo de mesmo nome não é promoção
       if (!funcoesOk) delete corpo.funcao_id;
       // 12d.1b: tamanhos — se a migration 027 ainda não rodou (campos não vêm do banco) e nada foi digitado, não envia
@@ -190,7 +191,15 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       if (id && String(corpo.usuario_id || "") === String(formColab.usuario_original || "")) delete corpo.usuario_id;
       delete corpo.usuario_original;
       const salvo = id ? await apiService.put(`/pessoas/colaboradores/${id}`, corpo) : await apiService.post("/pessoas/colaboradores", corpo);
-      setFormColab(null); setAviso(id ? "Colaborador atualizado." : "Colaborador cadastrado."); await carregar();
+      // 18zl: 🪪 leitura da CNH → foto do colaborador + documento CNH (com o arquivo)
+      let extraCnh = "";
+      if (_cnh && (salvo?.id || id)) {
+        const cid = salvo?.id || id;
+        if (_cnh.foto) { try { await apiService.post(`/pessoas/colaboradores/${cid}/foto`, { base64: _cnh.foto.base64, mime: _cnh.foto.mime }); } catch (e) { extraCnh += ` (foto não salva: ${e.message})`; } }
+        if (_cnh.registro || _cnh.validade) { try { const r = await apiService.post(`/pessoas/colaboradores/${cid}/cnh-lida`, { numero: _cnh.registro, emitido_em: _cnh.emissao, vence_em: _cnh.validade, arquivo_base64: _cnh.arquivo?.base64, arquivo_mime: _cnh.arquivo?.mime, arquivo_nome: _cnh.arquivo?.nome });
+          extraCnh += r?.ja_existia ? " A CNH já estava nos documentos." : " Documento CNH criado."; } catch (e) { extraCnh += ` (documento CNH não criado: ${e.message})`; } }
+      }
+      setFormColab(null); setAviso((id ? "Colaborador atualizado." : "Colaborador cadastrado.") + extraCnh); await carregar();
       // decisão (b): função nova/trocada → mostra a ficha com as pendências
       const novoId = salvo?.id || id;
       if (corpo.funcao_id && String(corpo.funcao_id) !== String(funcao_original || "") && novoId) await abrirFicha(novoId);
@@ -418,6 +427,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
             <div style={{ ...s.card, overflow: "hidden" }}>
               {colabs.map((c, i) => (
                 <div key={c.id} style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", padding: "12px 16px", borderBottom: i < colabs.length - 1 ? `1px solid ${C.border}` : "none", opacity: c.situacao === "desligado" ? 0.55 : 1 }}>
+                  {c.foto_url && <img src={c.foto_url} alt="" style={{ width: 36, height: 44, objectFit: "cover", borderRadius: 6, flexShrink: 0 }} />}{/* 18zl */}
                   <div style={{ flex: "2 1 220px" }}>
                     <div style={{ fontWeight: 600, fontSize: 13 }}>{c.nome} {c.situacao !== "ativo" && <span style={s.tag(C.muted)}>{SITUACAO_COLAB[c.situacao]}</span>}</div>
                     <div style={{ fontSize: 12, color: C.textSub }}>{c.funcao_nome || c.funcao || "Sem função"}{c.funcao && !c.funcao_id && funcoesOk ? <span style={{ color: C.muted }}> (sem modelo)</span> : ""}{c.cpf ? ` · CPF ${c.cpf}` : ""}{!c.cpf && <span style={{ color: "#f59e0b" }}> · ⚠ sem CPF</span>}{[c.tam_calcado && `👟 ${c.tam_calcado}`, c.tam_camisa && `👕 ${c.tam_camisa}`, c.tam_calca && `👖 ${c.tam_calca}`, c.tam_luva && `🧤 ${c.tam_luva}`].filter(Boolean).map((t) => ` · ${t}`).join("")}{c.usuario_id ? ` · login: ${nomeUsuario(c.usuario_id) || "—"}` : ""}</div>
@@ -821,6 +831,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       {formColab && modal(<>
         <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 16 }}>{formColab.id ? "Editar colaborador" : "Novo colaborador"}</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
+          <LerCnh C={C} s={s} form={formColab} setForm={setFormColab} fotoAtual={formColab.foto_url || null} />
           {campo("NOME", <input value={formColab.nome} onChange={(e) => setFormColab({ ...formColab, nome: e.target.value })} style={s.input} />)}
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             {campo("CPF", <input value={formColab.cpf} onChange={(e) => setFormColab({ ...formColab, cpf: e.target.value })} placeholder="000.000.000-00" style={s.input} />, "1 1 180px")}

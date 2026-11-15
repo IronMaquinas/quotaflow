@@ -35,7 +35,7 @@ async function montar(supabase, tenantId, ym, { comIA = true } = {}) {
     piores_equipamentos: d.equipamentos.slice(0, 5).map((e) => ({ equipamento: e.nome || e.tag, pct: e.pct, meses_abaixo: e.meses_abaixo, reprovacoes: e.reprovadas, os: e.os })),
     achados: d.achados.map((a) => `[${a.nivel}] ${a.texto}`) };
   let ia = { texto: null, motivo: 'não pedido' };
-  if (comIA && (d.total.esperadas || mes.inspecoes)) ia = await IA.gerarTexto({ tenant: emp, sistema: SISTEMA, prompt: `Dados da rotina de inspeção (JSON):\n${JSON.stringify(dados)}\n\nEscreva o parecer de ${dados.mes}.`, max: 900 });
+  if (comIA && (d.total.esperadas || mes.inspecoes)) ia = await IA.gerarTexto({ tenant: emp, registrar: { supabase, tenantId, recurso: 'analista_mensal' }, sistema: SISTEMA, prompt: `Dados da rotina de inspeção (JSON):\n${JSON.stringify(dados)}\n\nEscreva o parecer de ${dados.mes}.`, max: 900 });
   else if (comIA) ia = { texto: null, motivo: 'sem rotina de inspeção no período' };
   const cor = (p) => (p == null ? '#666' : p >= 90 ? '#15803d' : p >= 70 ? '#b45309' : '#b91c1c');
   const pctTxt = (p) => (p == null ? '—' : `${p}%`);

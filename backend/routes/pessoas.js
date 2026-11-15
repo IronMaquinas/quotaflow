@@ -169,6 +169,7 @@ router.get('/colaboradores', exigirVer, async (req, res) => {
     let baseK = null; // 12e.3 (antes da migration 033 o selo sai sem o pilar 🧩)
     try { baseK = await K.carregarBase(supabase, req.tenantId); }
     catch (e) { if (!/colaborador_competencias|funcoes/.test(String(e.message))) throw e; }
+    const fotos = new Map(); for (const c of lista.filter((x) => x.foto_path)) { try { fotos.set(String(c.id), await D.linkArquivo(supabase, c.foto_path)); } catch { /* sem foto */ } } // 18zl
     const out = lista.map((c) => {
       const meus = docs.filter((d) => String(d.colaborador_id) === String(c.id));
       const ficha = fichas.get(String(c.id));
@@ -184,6 +185,7 @@ router.get('/colaboradores', exigirVer, async (req, res) => {
         selo: seloC, epi_resumo: epi, trein_resumo: trein,
         cpf: editar ? c.cpf : (c.cpf ? `***.***.***-${c.cpf.slice(-2)}` : null), // LGPD: CPF completo só para quem edita
         ...(c.data_nascimento !== undefined ? { data_nascimento: editar ? c.data_nascimento : null } : {}), // 12e.2a — LGPD idem
+        foto_url: c.foto_path ? (fotos.get(String(c.id)) || null) : null, // 18zl
         documentos: meus.length,
         vencidos: meus.filter((d) => d.situacao === 'vencido').length,
         a_vencer: meus.filter((d) => d.situacao === 'vence_30').length,
@@ -240,6 +242,54 @@ router.put('/colaboradores/:id', exigirEditar, async (req, res) => {
     if (error) throw new Error(error.message);
     res.json(data[0]);
   } catch (err) { erro(res, 'colaboradores', err); }
+});
+
+// 18zl: 🪪 LER A CNH PELA IA — devolve os campos para o formulário (nada é gravado aqui)
+router.post('/colaboradores/ler-cnh', exigirEditar, async (req, res) => {
+  try {
+    const tenant = (await q(supabase.from('tenants').select('*').eq('id', req.tenantId)))[0] || { id: req.tenantId };
+    const r = await require('../services/leituraCnh').ler(supabase, tenant, req.body || {});
+    if (r.erro) return res.status(r.status || 400).json(r);
+    res.json(r);
+  } catch (err) { erro(res, 'ler-cnh', err); }
+});
+
+// 18zl: 📷 foto do colaborador (recortada da CNH) — bucket privado "documentos"; null/sem base64 = tirar a foto
+router.post('/colaboradores/:id/foto', exigirEditar, async (req, res) => {
+  try {
+    const c = await colaboradorDoTenant(req, req.params.id);
+    if (!c) return res.status(404).json({ erro: 'Colaborador não encontrado' });
+    const { base64, mime } = req.body || {}; let path = null;
+    if (base64) {
+      if (!['image/jpeg', 'image/png', 'image/webp'].includes(mime)) return res.status(400).json({ erro: 'Envie a foto em JPG, PNG ou WEBP' });
+      if (String(base64).length > 2_000_000) return res.status(400).json({ erro: 'Foto grande demais' });
+      path = `tenant-${req.tenantId}/colab-${c.id}/foto-${Date.now()}.${mime.split('/')[1].replace('jpeg', 'jpg')}`;
+      const up = await supabase.storage.from(D.BUCKET).upload(path, Buffer.from(String(base64), 'base64'), { contentType: mime, upsert: false });
+      if (up.error) throw new Error(`Falha ao subir a foto: ${up.error.message}`);
+    }
+    const { error } = await supabase.from('colaboradores').update({ foto_path: path }).eq('id', c.id).eq('tenant_id', req.tenantId);
+    if (error) { if (path) await D.removerArquivo(supabase, path); if (/foto_path/.test(error.message)) return res.status(409).json({ erro: 'Rode a migration 089 antes (foto do colaborador)' }); throw new Error(error.message); }
+    if (c.foto_path && c.foto_path !== path) await D.removerArquivo(supabase, c.foto_path).catch(() => {});
+    res.json({ ok: true, foto_url: path ? await D.linkArquivo(supabase, path) : null });
+  } catch (err) { erro(res, 'foto', err); }
+});
+
+// 18zl: 🪪 depois de salvar o colaborador lido da CNH: cria o documento CNH (arquivo original + nº + emissão + validade)
+//   Se já existe CNH com o mesmo nº e validade, não duplica.
+router.post('/colaboradores/:id/cnh-lida', exigirEditar, async (req, res) => {
+  try {
+    const c = await colaboradorDoTenant(req, req.params.id);
+    if (!c) return res.status(404).json({ erro: 'Colaborador não encontrado' });
+    const b = req.body || {};
+    const tipo = (await D.tiposDoTenant(supabase, req.tenantId)).find((t) => t.alvo === 'colaborador' && t.codigo === 'cnh');
+    const ja = (await q(supabase.from('documentos').select('*').eq('tenant_id', req.tenantId).eq('colaborador_id', c.id)))
+      .find((d) => !d.substituido_por && (tipo ? String(d.tipo_id) === String(tipo.id) : /cnh/i.test(d.tipo_nome || '')) && String(d.numero || '') === String(b.numero || '') && String(d.vence_em || '') === String(b.vence_em || ''));
+    if (ja) return res.json({ documento: ja, ja_existia: true });
+    const doc = await criarDocumento(req, { alvo_tipo: 'colaborador', colaborador_id: c.id, tipo_id: tipo?.id || null, tipo_nome: tipo?.nome || 'CNH', numero: b.numero || null,
+      emitido_em: b.emitido_em || null, vence_em: b.vence_em || null, obs: b.obs || 'Cadastrado pela leitura automática da CNH (🪪 IA) — conferido pelo usuário.',
+      arquivo_base64: b.arquivo_base64 || null, arquivo_mime: b.arquivo_mime || null, arquivo_nome: b.arquivo_nome || 'CNH' });
+    res.status(201).json({ documento: doc });
+  } catch (err) { if (err.status) return res.status(err.status).json({ erro: err.message }); erro(res, 'cnh-lida', err); }
 });
 
 // Só apaga colaborador SEM documentos (histórico é prova legal) — com documentos: marque "desligado"
