@@ -19,6 +19,7 @@ router.put('/areas/:id', responder((req) => P.salvarArea(supabase, req.tenantId,
 router.get('/movimentacao', responder((req) => P.movimentacao(supabase, req.tenantId, { cliente: req.query.cliente || '', de: req.query.de, ate: req.query.ate })));
 router.post('/xml', express.text({ type: '*/*', limit: '5mb' }), responder((req) => P.lerXmlDoTenant(supabase, req.tenantId, typeof req.body === 'string' ? req.body : String(req.body?.xml || ''))));
 router.post('/pre-entradas', responder(async (req) => P.preEntradas(supabase, req.tenantId, await quem(req), req.body || {})));
+router.get('/ats', responder((req) => P.atsParaSaida(supabase, req.tenantId))); // 18zi: AT na saída
 router.get('/:id', responder((req) => P.detalhe(supabase, req.tenantId, req.params.id)));
 router.post('/', responder(async (req) => P.entrada(supabase, req.tenantId, await quem(req), req.body || {})));
 router.put('/:id', responder(async (req) => P.editar(supabase, req.tenantId, req.params.id, req.body || {}, await quem(req))));

@@ -342,4 +342,18 @@ async function checarExcesso(supabase, tenantId, quem, bem) {
     return { aviso_excesso: aviso };
   } catch { return {}; }
 }
-module.exports = { contratosArea, usoDoContrato, checarExcesso, doClienteContrato, ocupacaoAreas, salvarArea, listarAreas, movimentacao, diasNoPeriodo, listar, detalhe, entrada, editar, foto, saida, serieNorm, lerXml, lerXmlDoTenant, seriesDoTexto, preEntradas, confirmarChegada, cancelarPre };
+// 18zi: 🚛 AT na saída do pátio — ATs da Programação para escolher quando a EMPRESA levou o equipamento do cliente
+//   (programada / em execução / concluída, de 30 dias atrás a 15 dias à frente). Pré-preenche motorista e placa na saída.
+async function atsParaSaida(supabase, tenantId) {
+  let ex; try { ex = await q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId)); } catch { return { ats: [] }; }
+  const eqs = await q(supabase.from('equipamentos').select('*').eq('tenant_id', tenantId)).catch(() => []);
+  const hoje = hojeBR(); const de = new Date(Date.parse(hoje) - 30 * 864e5).toISOString().slice(0, 10); const ate = new Date(Date.parse(hoje) + 15 * 864e5).toISOString().slice(0, 10);
+  const ST = { programada: 'Programada', em_execucao: 'Em execução', concluida: 'Concluída' };
+  return { ats: ex.filter((e) => ST[e.status] && (!e.inicio_previsto || (String(e.inicio_previsto).slice(0, 10) >= de && String(e.inicio_previsto).slice(0, 10) <= ate)))
+    .sort((a, b) => String(b.inicio_previsto || '').localeCompare(String(a.inicio_previsto || '')))
+    .map((e) => { const cav = (e.conjunto || [])[0]; const eq = cav ? eqs.find((x) => String(x.id) === String(cav.id)) : null;
+      return { id: e.id, numero: e.numero || `#${e.id}`, status: e.status, status_nome: ST[e.status], inicio: e.inicio_previsto ? String(e.inicio_previsto).slice(0, 10) : null,
+        motorista: e.motorista_nome || null, conjunto: (e.conjunto || []).map((c) => c.tag).filter(Boolean).join(' + ') || null, placa: eq?.placa || null }; }) };
+}
+
+module.exports = { atsParaSaida, contratosArea, usoDoContrato, checarExcesso, doClienteContrato, ocupacaoAreas, salvarArea, listarAreas, movimentacao, diasNoPeriodo, listar, detalhe, entrada, editar, foto, saida, serieNorm, lerXml, lerXmlDoTenant, seriesDoTexto, preEntradas, confirmarChegada, cancelarPre };

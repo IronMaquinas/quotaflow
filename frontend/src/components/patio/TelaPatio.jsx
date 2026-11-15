@@ -13,7 +13,7 @@ import { abrirComprovantePatio, abrirMovimentacaoPatio, csvMovimentacaoPatio } f
 const hoje = () => new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10);
 const dBR = (v) => (v ? String(v).slice(0, 10).split("-").reverse().join("/") : "—");
 const vazioEntrada = () => ({ cliente_id: "", cliente_nome: "", descricao: "", fabricante: "", modelo: "", ano: "", numero_serie: "", identificacao: "", nf_entrada_numero: "", nf_entrada_chave: "", nf_entrada_data: "", entrada_em: hoje(), local_patio: "", recebido_por: "", obs: "" });
-const vazioSaida = () => ({ saida_em: hoje(), retirado_por: "", retirado_documento: "", retirado_placa: "", nf_saida_numero: "", liberado_por: "", saida_obs: "" });
+const vazioSaida = () => ({ saida_em: hoje(), retirado_por: "", retirado_documento: "", retirado_placa: "", nf_saida_numero: "", liberado_por: "", saida_obs: "", saida_at_id: "" });
 // chave de 44 dígitos: cUF(2) AAMM(4) CNPJ(14) mod(2) série(3) nNF(9) …
 const daChave = (ch) => (ch.length === 44 ? { numero: String(Number(ch.slice(25, 34))), aamm: `${ch.slice(4, 6)}/20${ch.slice(2, 4)}` } : null);
 const ROT_STATUS = { pre_entrada: "aguardando chegada", no_patio: "no pátio", saiu: "saiu" };
@@ -23,6 +23,7 @@ export default function TelaPatio({ C, s, usuario }) {
   const [status, setStatus] = useState("no_patio"); const [busca, setBusca] = useState(""); const [cliente, setCliente] = useState("");
   const [form, setForm] = useState(null); const [clientes, setClientes] = useState([]); const [salv, setSalv] = useState(false);
   const [det, setDet] = useState(null); const [saida, setSaida] = useState(null); const [chegada, setChegada] = useState(null); const [ver, setVer] = useState(null); const [subindo, setSubindo] = useState(false);
+  const [ats, setAts] = useState(null); // 18zi: ATs para a saída
   const [xml, setXml] = useState(null); const [leitor, setLeitor] = useState(false); const [preDaNf, setPreDaNf] = useState([]); const [confExcluir, setConfExcluir] = useState(false);
   const [fotosPend, setFotosPend] = useState([]); const [confFoto, setConfFoto] = useState(null); // fotos tiradas antes de salvar (entrada/chegada) — sobem com a tarja depois de salvar
   const [aba, setAba] = useState("itens"); const [mov, setMov] = useState(null); const [fMov, setFMov] = useState(() => ({ cliente: "", de: `${hoje().slice(0, 7)}-01`, ate: hoje() }));
@@ -362,7 +363,7 @@ export default function TelaPatio({ C, s, usuario }) {
                 <button type="button" onClick={() => { limparFotos(); setChegada({ numero_serie: b.numero_serie || "", area_id: b.area_id || "", area_m2: b.area_m2 != null ? String(b.area_m2).replace(".", ",") : "", local_patio: b.local_patio || "", entrada_em: hoje(), recebido_por: usuario?.nome || "", obs_chegada: "" }); }} style={btnG(true)}>✅ Confirmar chegada</button></>}
               {b.status !== "pre_entrada" && <button type="button" onClick={() => imprimir(() => abrirComprovantePatio(b, "entrada"))} style={btnG(false)}>🖨 Comprovante de entrada</button>}
               {b.status === "saiu" && <button type="button" onClick={() => imprimir(() => abrirComprovantePatio(b, "saida"))} style={btnG(false)}>🖨 Comprovante de saída</button>}
-              {b.status === "no_patio" && <button type="button" onClick={() => setSaida({ ...vazioSaida(), liberado_por: usuario?.nome || "" })} style={btnG(true)}>📤 Registrar saída</button>}
+              {b.status === "no_patio" && <button type="button" onClick={() => { setSaida({ ...vazioSaida(), liberado_por: usuario?.nome || "" }); if (ats == null) apiService.get("/patio/ats").then((r) => setAts(r.ats || [])).catch(() => setAts([])); }} style={btnG(true)}>📤 Registrar saída</button>}
               {b.status === "saiu" && estreito && <button type="button" onClick={() => setDet(null)} style={btnG(false)}>Fechar</button>}
             </div>
           </>; })()}
@@ -396,6 +397,13 @@ export default function TelaPatio({ C, s, usuario }) {
           {campo(saida, setSaida, "retirado_por", "QUEM RETIROU (MOTORISTA / TRANSPORTADORA)", { full: true, ph: "ou \"transporte próprio\"" })}
           {campo(saida, setSaida, "retirado_documento", "DOCUMENTO (CPF/CNH/RG)")}{campo(saida, setSaida, "retirado_placa", "PLACA")}
           {campo(saida, setSaida, "nf_saida_numero", "NF DE SAÍDA / REMESSA — Nº", { im: "numeric" })}{!estreito && <div />}
+          <div style={{ gridColumn: "1 / -1" }}><label style={lab}>🚛 AT — SE A SUA EMPRESA LEVOU (OPCIONAL)</label>{/* 18zi */}
+            <select value={saida.saida_at_id || ""} onChange={(e) => { const at = (ats || []).find((x) => String(x.id) === e.target.value);
+                setSaida({ ...saida, saida_at_id: e.target.value, ...(at && !saida.retirado_por ? { retirado_por: at.motorista || "" } : {}), ...(at && !saida.retirado_placa && at.placa ? { retirado_placa: at.placa } : {}) }); }} style={inp}>
+              <option value="">— nenhuma (o cliente ou terceiro retirou)</option>
+              {(ats || []).map((x) => <option key={x.id} value={x.id}>{x.numero} · {x.inicio ? x.inicio.split("-").reverse().join("/") : "sem data"} · {x.status_nome}{x.motorista ? ` · ${x.motorista}` : ""}{x.conjunto ? ` · ${x.conjunto}` : ""}</option>)}
+            </select>
+            <div style={{ fontSize: 11.5, color: C.muted, marginTop: 3 }}>{ats == null ? "Carregando ATs…" : ats.length ? "Ao escolher, motorista e placa entram em \"quem retirou\" se estiverem vazios. A AT sai no comprovante." : "Nenhuma AT programada nos últimos 30 dias."}</div></div>
           {campo(saida, setSaida, "saida_obs", "OBSERVAÇÃO", { full: true })}
         </div>
         <div style={{ fontSize: 12, color: C.muted, margin: "4px 0 8px" }}>Depois da saída dá para anexar as fotos da retirada.</div>

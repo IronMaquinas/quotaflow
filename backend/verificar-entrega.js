@@ -322,10 +322,10 @@ const ESPERADO = {
   'front:FichaCte.jsx': '1545e475b3f1293bea31b1d2689b9af8', // etapa 18g.4
   'front:gerarFichaCte.js': '82698d98c06a303fe9be9cd02c20cdc3', // etapa 18g.3 (novo)
   'front:ModalMeuPerfil.jsx': '3ebeaea85df76f80b004a23dffe5844b', // etapa 18g.6
-  'services/patio.js': '3a7f8df4716ecb7bde01ce5f52238261', // etapa 18zd
-  'routes/patio.js': '6302dd2ea54dc7a223730167ee47ce5b', // etapa 18zb
+  'services/patio.js': '61ece7fe277f4d2afc8537bf548eef58', // etapa 18zi
+  'routes/patio.js': '6e5a265dc676b2e42b990ca463135f4d', // etapa 18zi
   'migrations/081_patio_cliente.sql': '87e9b488918410bef16457f63160a911', // etapa 18z.1
-  'front:TelaPatio.jsx': '72e609575589ba39982a454cd9f7619a', // etapa 18zb
+  'front:TelaPatio.jsx': 'bada379e2a27f9c9bd7a791969772f4a', // etapa 18zi
   'migrations/082_patio_pre_entrada.sql': 'c7585555fe91ee8573f9f6077540c0dc', // etapa 18z.1 (novo)
   'migrations/083_patio_area.sql': '6fba8eb9fd7f4cbc576291eca361258f', // etapa 18z.5 (novo)
   'front:gerarComprovantePatio.js': 'edfdd771ff4fded95319e93132e5b200', // etapa 18z.6
@@ -343,9 +343,11 @@ const ESPERADO = {
   'migrations/088_checklist_medicao_contratual.sql': 'ffb81733f60648c397b903b882057c1a', // etapa 18zg (novo)
 };
 
-// Antes de copiar a etapa 18zh — base: 6b86887
+// Antes de copiar a etapa 18zi — base: 6218b80
 const ANTES = {
-  'front:TelaInspecoes.jsx': '454eebfc70b4aff07b5699a9a2a9208d',
+  'services/patio.js': '3a7f8df4716ecb7bde01ce5f52238261',
+  'routes/patio.js': '6302dd2ea54dc7a223730167ee47ce5b',
+  'front:TelaPatio.jsx': '72e609575589ba39982a454cd9f7619a',
 };
 
 const RAIZ = process.cwd();
@@ -383,7 +385,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zh)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zi)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
