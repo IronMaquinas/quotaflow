@@ -25,7 +25,7 @@ function validar(body, parcial = false) {
 async function listar(supabase, tenantId) {
   const l = await q(supabase.from('documentos_gestao').select('*').eq('tenant_id', tenantId));
   const hoje = new Date(Date.now() - 3 * 36e5).toISOString().slice(0, 10);
-  return l.map(({ conteudo, ...d }) => ({ ...d, tem_conteudo: !!conteudo, tem_arquivo: !!d.arquivo_path, revisar: d.status === 'vigente' && d.proxima_revisao && d.proxima_revisao <= hoje }))
+  return l.map(({ conteudo, rascunho, ...d }) => ({ ...d, em_revisao: !!rascunho, rascunho_motivo: rascunho?.motivo || null, tem_conteudo: !!conteudo, tem_arquivo: !!d.arquivo_path, revisar: d.status === 'vigente' && d.proxima_revisao && d.proxima_revisao <= hoje }))
     .sort((a, b) => String(a.codigo).localeCompare(String(b.codigo), 'pt-BR', { numeric: true }));
 }
 async function obter(supabase, tenantId, id) { return (await q(supabase.from('documentos_gestao').select('*').eq('tenant_id', tenantId).eq('id', id)))[0] || null; }
@@ -55,6 +55,11 @@ async function atualizar(supabase, tenantId, id, body) {
   const atual = await obter(supabase, tenantId, id); if (!atual) throw Object.assign(new Error('Documento não encontrado'), { status: 404 });
   const { erros, dados } = validar(body || {}, true); if (erros.length) throw Object.assign(new Error(erros[0]), { status: 400 });
   if (dados.codigo && !(await codigoLivre(supabase, tenantId, dados.codigo, id))) throw Object.assign(new Error(`Já existe um documento com o código ${dados.codigo}`), { status: 409 });
+  // 18zs: conteúdo de documento VIGENTE só muda por nova revisão (aprovada) — aqui só dados de controle e a situação
+  if (atual.status === 'vigente') {
+    const mexe = ['titulo', 'conteudo', 'revisao'].some((k) => Object.prototype.hasOwnProperty.call(dados, k) && String(dados[k] ?? '') !== String(atual[k] ?? '')) || body?.arquivo_base64 || body?.remover_arquivo;
+    if (mexe) throw Object.assign(new Error('Documento vigente: o texto, o título, a revisão e o arquivo só mudam por “↻ Nova revisão” (aprovada). Aqui dá para alterar área, datas, norma e a situação.'), { status: 409 });
+  }
   const arq = await gravarArquivo(supabase, tenantId, id, body);
   const tirar = body?.remover_arquivo && atual.arquivo_path && !arq;
   await q(supabase.from('documentos_gestao').update({ ...dados, ...(arq || {}), ...(tirar ? { arquivo_path: null, arquivo_nome: null, arquivo_mime: null } : {}), atualizado_em: new Date().toISOString() }).eq('id', id).eq('tenant_id', tenantId));
@@ -70,4 +75,62 @@ async function excluir(supabase, tenantId, id) {
   return { ok: true };
 }
 
-module.exports = { TIPOS, STATUS, validar, listar, obter, criar, atualizar, excluir };
+// ─── 18zs: 🔁 REVISÃO (a vigente vale até a nova ser aprovada) · 🗂 HISTÓRICO · ✓ LEITURA ───────────────────────────────
+//   iniciar/salvar rascunho → aprovar: a vigente vai para documentos_gestao_versoes (obsoleta, com "vigente até"), o rascunho
+//   vira a nova revisão (Rev. +1) com aprovado por/em de quem aprovou; as leituras recomeçam (são por revisão).
+const CAMPOS_RASC = ['titulo', 'conteudo', 'motivo', 'elaborado_por', 'area', 'norma', 'proxima_revisao'];
+const hojeBR = () => new Date(Date.now() - 3 * 36e5).toISOString().slice(0, 10);
+const erro = (msg, status) => Object.assign(new Error(msg), { status });
+
+async function salvarRascunho(supabase, tenantId, id, body) {
+  const d = await obter(supabase, tenantId, id); if (!d) throw erro('Documento não encontrado', 404);
+  if (d.status !== 'vigente') throw erro('Só documento vigente ganha nova revisão — rascunho novo se edita direto.', 409);
+  const r = { ...(d.rascunho || { titulo: d.titulo, conteudo: d.conteudo, area: d.area, norma: d.norma, iniciado_em: new Date().toISOString() }) };
+  for (const k of CAMPOS_RASC) if (Object.prototype.hasOwnProperty.call(body || {}, k)) r[k] = body[k] == null ? null : String(body[k]).slice(0, k === 'conteudo' ? 200000 : 2000);
+  if (r.proxima_revisao && !/^\d{4}-\d{2}-\d{2}$/.test(r.proxima_revisao)) throw erro('Data inválida', 400);
+  const arq = await gravarArquivo(supabase, tenantId, `${id}r`, body);
+  if (arq) Object.assign(r, { arquivo: arq }); if (body?.remover_arquivo) r.arquivo = { remover: true };
+  await q(supabase.from('documentos_gestao').update({ rascunho: r }).eq('id', id).eq('tenant_id', tenantId));
+  return obter(supabase, tenantId, id);
+}
+
+async function descartarRascunho(supabase, tenantId, id) {
+  const d = await obter(supabase, tenantId, id); if (!d) throw erro('Documento não encontrado', 404);
+  if (d.rascunho?.arquivo?.arquivo_path) await D.removerArquivo(supabase, d.rascunho.arquivo.arquivo_path).catch(() => {});
+  await q(supabase.from('documentos_gestao').update({ rascunho: null }).eq('id', id).eq('tenant_id', tenantId));
+  return { ok: true };
+}
+
+async function aprovarRevisao(supabase, tenantId, id, { aprovador } = {}) {
+  const d = await obter(supabase, tenantId, id); if (!d) throw erro('Documento não encontrado', 404);
+  const r = d.rascunho; if (!r) throw erro('Não há revisão em elaboração para aprovar.', 409);
+  if (!String(r.motivo || '').trim()) throw erro('Descreva o que mudou nesta revisão antes de aprovar (ISO 9001 7.5.3 — identificação das alterações).', 409);
+  if (!String(r.titulo || '').trim()) throw erro('A revisão precisa de título.', 409);
+  // a vigente vira histórico (com o arquivo dela)
+  await q(supabase.from('documentos_gestao_versoes').insert([{ tenant_id: tenantId, documento_id: d.id, revisao: d.revisao, titulo: d.titulo, conteudo: d.conteudo,
+    arquivo_path: d.arquivo_path, arquivo_nome: d.arquivo_nome, arquivo_mime: d.arquivo_mime, motivo: d.motivo_revisao || null, elaborado_por: d.elaborado_por, aprovado_por: d.aprovado_por, aprovado_em: d.aprovado_em, vigente_ate: new Date().toISOString() }]));
+  const novoArq = r.arquivo?.arquivo_path ? r.arquivo : r.arquivo?.remover ? { arquivo_path: null, arquivo_nome: null, arquivo_mime: null } : {};
+  await q(supabase.from('documentos_gestao').update({ titulo: r.titulo, conteudo: r.conteudo ?? null, area: r.area ?? d.area, norma: r.norma ?? d.norma, ...novoArq,
+    revisao: (d.revisao || 0) + 1, motivo_revisao: r.motivo, elaborado_por: r.elaborado_por || d.elaborado_por, aprovado_por: aprovador || null, aprovado_em: hojeBR(),
+    proxima_revisao: r.proxima_revisao || null, rascunho: null, status: 'vigente', atualizado_em: new Date().toISOString() }).eq('id', id).eq('tenant_id', tenantId));
+  return obter(supabase, tenantId, id);
+}
+
+async function versoes(supabase, tenantId, id) {
+  return (await q(supabase.from('documentos_gestao_versoes').select('*').eq('tenant_id', tenantId).eq('documento_id', id))).sort((a, b) => b.revisao - a.revisao);
+}
+
+async function confirmarLeitura(supabase, tenantId, id, { usuarioId, usuarioNome }) {
+  const d = await obter(supabase, tenantId, id); if (!d) throw erro('Documento não encontrado', 404);
+  if (d.status !== 'vigente') throw erro('Só se confirma leitura de documento vigente.', 409);
+  const ja = (await q(supabase.from('documentos_gestao_leituras').select('*').eq('documento_id', id).eq('revisao', d.revisao))).find((l) => String(l.usuario_id) === String(usuarioId));
+  if (ja) return { ja: true, leitura: ja };
+  const [l] = await q(supabase.from('documentos_gestao_leituras').insert([{ tenant_id: tenantId, documento_id: id, revisao: d.revisao, usuario_id: usuarioId, usuario_nome: usuarioNome || null }]).select());
+  return { leitura: l };
+}
+async function leituras(supabase, tenantId, id, revisao) {
+  return (await q(supabase.from('documentos_gestao_leituras').select('*').eq('tenant_id', tenantId).eq('documento_id', id))).filter((l) => revisao == null || Number(l.revisao) === Number(revisao))
+    .sort((a, b) => String(b.lido_em).localeCompare(String(a.lido_em)));
+}
+
+module.exports = { salvarRascunho, descartarRascunho, aprovarRevisao, versoes, confirmarLeitura, leituras, TIPOS, STATUS, validar, listar, obter, criar, atualizar, excluir };

@@ -247,17 +247,32 @@ router.put('/colaboradores/:id', exigirEditar, async (req, res) => {
 // 18zr: 📘 DOCUMENTOS DE GESTÃO (sistema da qualidade) — manual, procedimentos, políticas… com código e revisão
 const DG = require('../services/documentosGestao');
 const semTabelaDG = (err) => /documentos_gestao/.test(String(err?.message || ''));
-const errDG = (res, err, onde) => { if (err.status) return res.status(err.status).json({ erro: err.message }); if (semTabelaDG(err)) return res.status(409).json({ erro: 'Rode a migration 092 (documentos de gestão)' }); erro(res, onde, err); };
+const errDG = (res, err, onde) => { if (err.status) return res.status(err.status).json({ erro: err.message }); if (/rascunho|motivo_revisao|documentos_gestao_(versoes|leituras)/.test(String(err?.message || ''))) return res.status(409).json({ erro: 'Rode a migration 093 (revisões e leituras)' }); if (semTabelaDG(err)) return res.status(409).json({ erro: 'Rode a migration 092 (documentos de gestão)' }); erro(res, onde, err); };
 router.get('/gestao', exigirVer, async (req, res) => {
   try { res.json({ documentos: await DG.listar(supabase, req.tenantId), tipos: DG.TIPOS, status: DG.STATUS, pode_editar: podeEditar(req) }); }
   catch (err) { if (semTabelaDG(err)) return res.json({ documentos: [], tipos: DG.TIPOS, status: DG.STATUS, pode_editar: podeEditar(req), sem_tabela: true }); erro(res, 'gestao', err); }
 });
 router.get('/gestao/:id', exigirVer, async (req, res) => {
   try { const d = await DG.obter(supabase, req.tenantId, req.params.id); if (!d) return res.status(404).json({ erro: 'Documento não encontrado' });
-    res.json({ documento: { ...d, arquivo_url: d.arquivo_path ? await D.linkArquivo(supabase, d.arquivo_path) : null } }); } catch (err) { errDG(res, err, 'gestao'); }
+    res.json({ documento: { ...d, arquivo_url: d.arquivo_path ? await D.linkArquivo(supabase, d.arquivo_path) : null, rascunho_arquivo_url: d.rascunho?.arquivo?.arquivo_path ? await D.linkArquivo(supabase, d.rascunho.arquivo.arquivo_path).catch(() => null) : null }, pode_aprovar: perfisDe(req).some((p) => ['admin', 'gestor', 'qualidade'].includes(p)) }); } catch (err) { errDG(res, err, 'gestao'); }
 });
 router.post('/gestao', exigirEditar, async (req, res) => { try { res.status(201).json({ documento: await DG.criar(supabase, req.tenantId, req.body) }); } catch (err) { errDG(res, err, 'gestao'); } });
 router.put('/gestao/:id', exigirEditar, async (req, res) => { try { res.json({ documento: await DG.atualizar(supabase, req.tenantId, req.params.id, req.body) }); } catch (err) { errDG(res, err, 'gestao'); } });
+// 18zs: revisão · histórico · leitura
+const APROVAR_DG = ['admin', 'gestor', 'qualidade'];
+const quemSou = async (req) => { try { const u = (await q(supabase.from('usuarios').select('*').eq('id', req.userId)))[0]; return { id: req.userId, nome: u?.nome || req.userEmail || null }; } catch { return { id: req.userId, nome: req.userEmail || null }; } };
+router.put('/gestao/:id/rascunho', exigirEditar, async (req, res) => { try { res.json({ documento: await DG.salvarRascunho(supabase, req.tenantId, req.params.id, req.body) }); } catch (err) { errDG(res, err, 'gestao-rascunho'); } });
+router.delete('/gestao/:id/rascunho', exigirEditar, async (req, res) => { try { res.json(await DG.descartarRascunho(supabase, req.tenantId, req.params.id)); } catch (err) { errDG(res, err, 'gestao-rascunho'); } });
+router.post('/gestao/:id/aprovar', exigirEditar, async (req, res) => {
+  try { if (!perfisDe(req).some((p) => APROVAR_DG.includes(p))) return res.status(403).json({ erro: 'Só admin, gestor ou qualidade aprova revisão' });
+    const eu = await quemSou(req); res.json({ documento: await DG.aprovarRevisao(supabase, req.tenantId, req.params.id, { aprovador: eu.nome }) }); } catch (err) { errDG(res, err, 'gestao-aprovar'); }
+});
+router.get('/gestao/:id/versoes', exigirVer, async (req, res) => {
+  try { const l = await DG.versoes(supabase, req.tenantId, req.params.id);
+    res.json({ versoes: await Promise.all(l.map(async (v) => ({ ...v, arquivo_url: v.arquivo_path ? await D.linkArquivo(supabase, v.arquivo_path).catch(() => null) : null }))) }); } catch (err) { errDG(res, err, 'gestao-versoes'); }
+});
+router.post('/gestao/:id/leitura', exigirVer, async (req, res) => { try { const eu = await quemSou(req); res.json(await DG.confirmarLeitura(supabase, req.tenantId, req.params.id, { usuarioId: eu.id, usuarioNome: eu.nome })); } catch (err) { errDG(res, err, 'gestao-leitura'); } });
+router.get('/gestao/:id/leituras', exigirVer, async (req, res) => { try { const d = await DG.obter(supabase, req.tenantId, req.params.id); if (!d) return res.status(404).json({ erro: 'Documento não encontrado' }); const l = await DG.leituras(supabase, req.tenantId, req.params.id, d.revisao); res.json({ revisao: d.revisao, leituras: l, eu_li: l.some((x) => String(x.usuario_id) === String(req.userId)) }); } catch (err) { errDG(res, err, 'gestao-leituras'); } });
 router.delete('/gestao/:id', exigirEditar, async (req, res) => { try { res.json(await DG.excluir(supabase, req.tenantId, req.params.id)); } catch (err) { errDG(res, err, 'gestao'); } });
 
 // 18zl: 🪪 LER A CNH PELA IA — devolve os campos para o formulário (nada é gravado aqui)
