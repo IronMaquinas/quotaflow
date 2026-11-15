@@ -15,23 +15,37 @@ const ultimoDia = (ym) => { const [y, m] = ym.split('-').map(Number); return new
 const frontendURL = () => String(process.env.FRONTEND_URL || 'http://localhost:5173').replace(/^FRONTEND_URL=/, '').replace(/\/+$/, '');
 let enviarEmail = async (para, assunto, html) => require('./emailService').enviarEmailFornecedor(para, assunto, html);
 
-const SISTEMA = `Você é o Analista Sênior de frota de uma empresa de transporte/locação de equipamentos pesados, escrevendo para o gestor.
-Escreva em português do Brasil, direto e prático, no máximo 220 palavras, em 3 partes curtas com estes títulos exatos:
-"Leitura do mês", "Riscos" e "Ações sugeridas" (até 4 ações numeradas, cada uma com o responsável sugerido).
-Use SOMENTE os dados fornecidos; não invente números, nomes ou causas. Se os dados forem poucos, diga isso.
-Não use markdown além de títulos em linha própria e listas simples.`;
+// 18zm (Marcony, 15/11): o parecer tem de ser de ANALISTA SÊNIOR — tático e estratégico, não operacional. Nada de risco óbvio
+//   ("luz de ré queimada é risco de segurança"), nada de "trocar a peça", nada de responsável (cada empresa tem a sua estrutura).
+const SISTEMA = `Você é um analista sênior de gestão de frotas (transporte e locação de equipamentos pesados) escrevendo um parecer mensal para o DONO/GESTOR da empresa.
+Seu leitor conhece a operação de cor: NÃO explique o óbvio operacional (ex.: "item de segurança com defeito é risco", "troque a peça quebrada", "reinspecione após o reparo"). Isso é trabalho do estagiário e desvaloriza o relatório.
+Seu valor está em PADRÕES e CONSEQUÊNCIAS para o negócio:
+- recorrência: o mesmo item falhando no mesmo equipamento ou em vários (intervalo entre falhas, troca frequente demais) e hipóteses de CAUSA RAIZ a investigar (ex.: lâmpada de ré trocada a cada poucas semanas → lente trincada, umidade, mau contato, chicote, tensão do alternador);
+- disponibilidade: dias de equipamento indisponível por reprovação e o que isso significa para contratos de locação, prazos e receita;
+- disciplina da rotina: cumprimento por quem executa (equipe × locatário), tendência, e o que isso diz sobre controle e exposição contratual/jurídica;
+- custo e prioridade: onde concentrar manutenção preventiva, substituição de componente/equipamento, ou renegociação de cláusula com o cliente.
+Itens já CORRIGIDOS (campo corrigidas) não são pendência — trate só como dado de recorrência.
+Use SOMENTE os dados fornecidos; não invente números, nomes, custos ou causas confirmadas (causas são hipóteses: diga "investigar se…"). Não indique responsável por nenhuma ação.
+Se os dados forem insuficientes para uma leitura estratégica, diga isso em UMA frase e diga quais dados, acumulados nos próximos meses, vão permitir a análise — sem encher o texto.
+Formato: português do Brasil, no máximo 230 palavras, três títulos em linha própria, exatamente: "Leitura do mês", "Padrões e riscos para o negócio", "Recomendações táticas" (até 4 itens numerados, cada um com o porquê em meia linha). Sem markdown além disso.`;
 
 /** monta o relatório do mês (ym = 'AAAA-MM' fechado) — { assunto, html, dados, ia } */
 async function montar(supabase, tenantId, ym, { comIA = true } = {}) {
   const emp = (await q(supabase.from('tenants').select('*').eq('id', tenantId)).catch(() => []))[0] || {};
   const agora = new Date(`${ultimoDia(ym)}T23:00:00-03:00`);
   const d = await A.painel(supabase, tenantId, { meses: 12, agora });
-  const mes = d.serie[d.serie.length - 1] || {}; const ant = d.serie[d.serie.length - 2] || {};
+  const mes = d.serie[d.serie.length - 1] || {};
+  // 18zm: contexto de negócio — equipamento locado (cliente/contrato) pesa mais: indisponível = medição/receita/multa contratual
+  const locs = await q(supabase.from('equipamento_locacoes').select('*').eq('tenant_id', tenantId)).catch(() => []);
+  const eqs = await q(supabase.from('equipamentos').select('*').eq('tenant_id', tenantId)).catch(() => []);
+  const locados = locs.filter((l) => !l.fim_real || l.fim_real >= `${ym}-01`).map((l) => { const e = eqs.find((x) => String(x.id) === String(l.equipamento_id)); return { equipamento: e ? [e.tag, e.nome].filter(Boolean).join(' — ') : String(l.equipamento_id), cliente: l.cliente || null, desde: l.inicio || null }; }).slice(0, 30); const ant = d.serie[d.serie.length - 2] || {};
   const dados = { empresa: emp.nome_fantasia || emp.nome || emp.razao_social || '', mes: nomeMes(ym),
     cumprimento_mes: mes.pct, cumprimento_mes_anterior: ant.pct, previstas: mes.esperadas, cumpridas: mes.cumpridas, inspecoes_mes: mes.inspecoes, reprovadas_mes: mes.reprovadas,
     cumprimento_12m: d.total.pct, por_responsavel: d.responsavel.map((r) => ({ quem: r.responsavel === 'locatario' ? 'locatários' : 'equipe da empresa', pct: r.pct })),
-    serie_12m: d.serie.map((m) => ({ mes: m.rotulo, pct: m.pct })), itens_que_mais_falham: d.falhas.slice(0, 5).map((f) => ({ item: f.rotulo, vezes: f.vezes, impediu: f.criticas, equipamentos: f.equipamentos })),
+    serie_12m: d.serie.map((m) => ({ mes: m.rotulo, pct: m.pct, inspecoes: m.inspecoes, reprovadas: m.reprovadas })), itens_que_mais_falham: d.falhas.slice(0, 8).map((f) => ({ item: f.rotulo, vezes: f.vezes, impediu: f.criticas, corrigidas: f.corrigidas, datas: f.datas, equipamentos: f.equipamentos })),
     reprovados_sem_liberacao: d.liberacao.pendentes.map((p) => ({ equipamento: p.equipamento_nome, dias: p.dias, reprovacoes: p.reprovacoes })), media_dias_liberacao: d.liberacao.media_dias,
+    liberadas_por_correcao: d.liberacao.por_correcao, dias_indisponivel_por_reprovacao: d.indisponivel.map((x) => ({ equipamento: x.equipamento, dias: x.dias, reprovacoes: x.reprovacoes })),
+    os_abertas_pelas_inspecoes: d.os_abertas, equipamentos_locados: locados,
     piores_equipamentos: d.equipamentos.slice(0, 5).map((e) => ({ equipamento: e.nome || e.tag, pct: e.pct, meses_abaixo: e.meses_abaixo, reprovacoes: e.reprovadas, os: e.os })),
     achados: d.achados.map((a) => `[${a.nivel}] ${a.texto}`) };
   let ia = { texto: null, motivo: 'não pedido' };
@@ -56,7 +70,7 @@ async function montar(supabase, tenantId, ym, { comIA = true } = {}) {
     <div style="margin:16px 0 6px;font-weight:700">🔎 O que o analista viu</div>
     ${d.achados.length ? d.achados.map((a) => `<div style="padding:3px 0"><span style="color:${NIV[a.nivel][0]}">${NIV[a.nivel][1]}</span> ${escH(a.texto)}</div>`).join('') : '<div style="color:#666">Nada fora do normal no período.</div>'}
     ${parecer}
-    ${d.falhas.length ? `<div style="margin:16px 0 6px;font-weight:700">🔧 Itens que mais falham (12 meses)</div>${d.falhas.slice(0, 5).map((f) => `<div style="padding:2px 0"><b>${f.vezes}×</b> ${escH(f.rotulo)} <span style="color:#666;font-size:12px">— ${escH(f.equipamentos.join(', '))}</span></div>`).join('')}` : ''}
+    ${d.falhas.length ? `<div style="margin:16px 0 6px;font-weight:700">🔧 Itens que mais falham (12 meses)</div>${d.falhas.slice(0, 5).map((f) => `<div style="padding:2px 0"><b>${f.vezes}×</b> ${escH(f.rotulo)} <span style="color:#666;font-size:12px">— ${escH(f.equipamentos.join(', '))}${f.corrigidas ? ` · <span style="color:#15803d">✓ ${f.corrigidas} corrigida${f.corrigidas > 1 ? 's' : ''}</span>` : ''}</span></div>`).join('')}` : ''}
     <p style="margin:22px 0"><a href="${frontendURL()}" style="background:#2563eb;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:700">Abrir 🔍 Inspeções → 🧠 Analista</a></p>
     <div style="font-size:11px;color:#888">E-mail mensal automático do QuotaFlow (dia 1, 7h) para os gestores.</div></div>`;
   return { assunto: `🧠 Rotina de inspeção — ${dados.mes}: ${pctTxt(mes.pct)} de cumprimento${d.liberacao.pendentes.length ? ` · ${d.liberacao.pendentes.length} sem liberação` : ''}`, html, dados, ia: { usada: !!ia.texto, motivo: ia.motivo || null, nome: ia.nome || null } };

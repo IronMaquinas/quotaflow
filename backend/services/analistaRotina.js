@@ -12,6 +12,18 @@ const pct = (c, e) => (e ? Math.round((c / e) * 100) : null);
 const MES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
 const ultimoDia = (ym) => { const [y, m] = ym.split('-').map(Number); return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10); };
 const mesesAte = (hoje, n) => { const out = []; let [y, m] = hoje.slice(0, 7).split('-').map(Number); for (let i = 0; i < n; i++) { out.unshift(`${y}-${String(m).padStart(2, '0')}`); m--; if (!m) { m = 12; y--; } } return out; };
+// 18zm: reprovação CORRIGIDA (resolvido na hora, resolução posterior ou OS do item concluída) conta como liberada na data da correção
+//   — antes só uma nova inspeção aprovada liberava, e a luz de ré trocada pela OS-2026-0004 seguia "sem liberação" (Marcony, 15/11).
+function corrigidaEm(i) {
+  const imp = (i.respostas || []).filter((r) => r.status === 'nok' && (r.impede || i.resultado === 'reprovado'));
+  if (!imp.length) return null; let ult = null;
+  for (const r of imp) {
+    const os = (i.os_abertas || []).find((o) => o.ponto_id === r.ponto_id && o.concluida_em);
+    const d = r.resolvido ? diaBR(i.concluida_em) : r.resolucao_posterior ? diaBR(r.resolucao_posterior.em || r.resolucao_posterior.data || i.concluida_em) : os ? diaBR(os.concluida_em) : null;
+    if (!d) return null; if (!ult || d > ult) ult = d;
+  }
+  return ult;
+}
 const rotMes = (ym) => `${MES[Number(ym.slice(5, 7)) - 1]}/${ym.slice(2, 4)}`;
 
 async function painel(supabase, tenantId, { meses = 12, agora = new Date() } = {}) {
@@ -43,12 +55,17 @@ async function painel(supabase, tenantId, { meses = 12, agora = new Date() } = {
   const porEq = (id) => base.inspecoes.filter((i) => String(i.equipamento_id) === String(id)).sort((a, b) => String(a.concluida_em).localeCompare(String(b.concluida_em)));
   const reprov = ins.filter((i) => i.resultado === 'reprovado');
   const liberacoes = reprov.map((i) => { const dep = porEq(i.equipamento_id).find((j) => String(j.concluida_em) > String(i.concluida_em) && j.resultado !== 'reprovado');
-    return { inspecao_id: i.id, numero: i.numero, equipamento_id: i.equipamento_id, equipamento_nome: i.equipamento_nome, em: diaBR(i.concluida_em), liberado_em: dep ? diaBR(dep.concluida_em) : null, dias: dep ? diasEntre(diaBR(i.concluida_em), diaBR(dep.concluida_em)) : diasEntre(diaBR(i.concluida_em), hoje) }; });
+    const cor = corrigidaEm(i); const re = dep ? diaBR(dep.concluida_em) : null;
+    const lib = [cor, re].filter(Boolean).sort()[0] || null; // o que veio primeiro: correção registrada ou nova inspeção aprovada
+    return { inspecao_id: i.id, numero: i.numero, equipamento_id: i.equipamento_id, equipamento_nome: i.equipamento_nome, em: diaBR(i.concluida_em), liberado_em: lib, como: lib ? (lib === cor ? 'correcao' : 'reinspecao') : null,
+      dias: lib ? diasEntre(diaBR(i.concluida_em), lib) : diasEntre(diaBR(i.concluida_em), hoje) }; });
   const lib = liberacoes.filter((l) => l.liberado_em);
   const falhas = new Map();
   for (const i of ins) for (const r of (i.respostas || [])) if (r.status === 'nok') {
     const k = String(r.rotulo || '').trim().toLowerCase(); if (!k) continue;
-    const f = falhas.get(k) || { rotulo: r.rotulo, vezes: 0, criticas: 0, equipamentos: new Set() }; f.vezes++; if (r.impede) f.criticas++; f.equipamentos.add(String(i.equipamento_nome)); falhas.set(k, f);
+    const f = falhas.get(k) || { rotulo: r.rotulo, vezes: 0, criticas: 0, corrigidas: 0, equipamentos: new Set(), datas: [] }; f.vezes++; if (r.impede) f.criticas++;
+    if (r.resolvido || r.resolucao_posterior || (i.os_abertas || []).some((o) => o.ponto_id === r.ponto_id && o.concluida_em)) f.corrigidas++;
+    f.equipamentos.add(String(i.equipamento_nome)); f.datas.push(diaBR(i.concluida_em)); falhas.set(k, f);
   }
   const os = ins.reduce((s, i) => s + (i.os_abertas || []).length, 0);
   const porEquip = [...eqs.values()].map((q) => { const mi = base.inspecoes.filter((i) => String(i.equipamento_id) === String(q.equipamento_id) && diaBR(i.concluida_em) >= de12);
@@ -62,8 +79,10 @@ async function painel(supabase, tenantId, { meses = 12, agora = new Date() } = {
     responsavel: Object.entries(resp).map(([k, v]) => ({ responsavel: k, nome: R.RESP_NOME[k], ...v, pct: pct(v.cumpridas, v.esperadas) })).filter((x) => x.esperadas),
     terceiros: { inspecoes: ins.filter((i) => i.executor_tipo === 'terceiro').length, total: ins.length },
     equipamentos: porEquip,
-    falhas: [...falhas.values()].map((f) => ({ rotulo: f.rotulo, vezes: f.vezes, criticas: f.criticas, equipamentos: [...f.equipamentos].slice(0, 5), n_equipamentos: f.equipamentos.size })).sort((a, b) => b.vezes - a.vezes).slice(0, 10),
-    liberacao: { reprovadas: reprov.length, liberadas: lib.length, media_dias: lib.length ? Math.round((lib.reduce((s, l) => s + l.dias, 0) / lib.length) * 10) / 10 : null,
+    falhas: [...falhas.values()].map((f) => ({ rotulo: f.rotulo, vezes: f.vezes, criticas: f.criticas, corrigidas: f.corrigidas, datas: f.datas.sort(), equipamentos: [...f.equipamentos].slice(0, 5), n_equipamentos: f.equipamentos.size })).sort((a, b) => b.vezes - a.vezes).slice(0, 10),
+    // 18zm: dias de equipamento indisponível por reprovação (reprovação → correção/reinspeção) — impacto em disponibilidade/receita
+    indisponivel: [...liberacoes.reduce((m, l) => { const k = String(l.equipamento_id); const v = m.get(k) || { equipamento_id: l.equipamento_id, equipamento: l.equipamento_nome, dias: 0, reprovacoes: 0 }; v.dias += l.dias; v.reprovacoes++; m.set(k, v); return m; }, new Map()).values()].sort((a, b) => b.dias - a.dias),
+    liberacao: { reprovadas: reprov.length, liberadas: lib.length, por_correcao: lib.filter((l) => l.como === 'correcao').length, media_dias: lib.length ? Math.round((lib.reduce((s, l) => s + l.dias, 0) / lib.length) * 10) / 10 : null,
       // uma linha por equipamento: desde a 1ª reprovação ainda sem liberação (e quantas reprovações seguidas)
       pendentes: [...liberacoes.filter((l) => !l.liberado_em).reduce((m, l) => { const k = String(l.equipamento_id); const v = m.get(k); if (!v) m.set(k, { ...l, reprovacoes: 1 }); else { v.reprovacoes++; if (l.dias > v.dias) Object.assign(v, { ...l, reprovacoes: v.reprovacoes }); } return m; }, new Map()).values()].sort((a, b) => b.dias - a.dias) },
     os_abertas: os,

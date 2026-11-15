@@ -83,7 +83,7 @@ export default function AnalistaRotina({ C, s, onErro, onOk, onVerEquipamento, p
         <div style={{ ...card, flex: "1 1 300px" }}>
           {tit("🔧 Itens que mais falham", "Pontos marcados NOK no período.")}
           {d.falhas.length === 0 ? <div style={{ fontSize: 12.5, color: C.muted }}>Nenhum item NOK. 👏</div> : d.falhas.map((f) => <div key={f.rotulo} style={{ display: "flex", gap: 8, padding: "4px 0", fontSize: 13 }}>
-            <b style={{ width: 30, color: C.warn }}>{f.vezes}×</b><span style={{ flex: 1 }}>{f.rotulo}{f.criticas ? <span style={{ ...s.tag(C.danger), marginLeft: 6 }}>{f.criticas} impediu</span> : null}<div style={{ fontSize: 11, color: C.muted }}>{f.equipamentos.join(", ")}{f.n_equipamentos > 5 ? ` +${f.n_equipamentos - 5}` : ""}</div></span></div>)}
+            <b style={{ width: 30, color: C.warn }}>{f.vezes}×</b><span style={{ flex: 1 }}>{f.rotulo}{f.criticas ? <span style={{ ...s.tag(C.danger), marginLeft: 6 }}>{f.criticas} impediu</span> : null}{f.corrigidas ? <span style={{ ...s.tag(C.success), marginLeft: 6 }}>✓ {f.corrigidas} corrigida{f.corrigidas > 1 ? "s" : ""}</span> : null}<div style={{ fontSize: 11, color: C.muted }}>{f.equipamentos.join(", ")}{f.n_equipamentos > 5 ? ` +${f.n_equipamentos - 5}` : ""}</div></span></div>)}
         </div>
       </div>
 
