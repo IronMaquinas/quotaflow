@@ -62,7 +62,7 @@ async function gerarTexto({ sistema = '', prompt, max = 900, tenant = null, imag
   } catch (e) {
     const m = e?.response?.data?.error?.message || e?.message || String(e);
     console.error(`⚠️ [ia:${c.provedor}]`, m); await anotar(false);
-    return { texto: null, motivo: `a IA não respondeu (${String(m).slice(0, 120)})`, provedor: c.provedor };
+    return { texto: null, motivo: /credit|crédito|saldo|billing|quota|rate|429|529|overload/i.test(String(m)) ? 'a IA está sem crédito ou sobrecarregada no momento' : 'a IA não respondeu agora', provedor: c.provedor }; // 18zn: detalhe (provedor/modelo) só no log do servidor
   }
 }
 

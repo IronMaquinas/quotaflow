@@ -84,6 +84,12 @@ function validarColaborador(body, { parcial = false } = {}) {
   for (const k of ['tam_calcado', 'tam_camisa', 'tam_calca', 'tam_luva']) if (tem(k)) out[k] = body[k] ? String(body[k]).trim().slice(0, 10) : null; // 12d.1b
   if (tem('funcao_id')) out.funcao_id = body.funcao_id && /^\d+$/.test(String(body.funcao_id)) ? String(body.funcao_id) : null; // 12d.0
   if (tem('obs')) out.obs = body.obs ? String(body.obs).slice(0, 2000) : null;
+  // 18zn: dados da CNH na ficha da pessoa (migration 090)
+  if (tem('rg')) out.rg = body.rg ? String(body.rg).trim().slice(0, 40) : null;
+  if (tem('cnh_registro')) { const r = soDigitos(body.cnh_registro); if (body.cnh_registro && (r.length < 9 || r.length > 12)) erros.push('Nº de registro da CNH inválido'); else out.cnh_registro = r || null; }
+  for (const k of ['cnh_validade', 'cnh_emissao', 'cnh_primeira_habilitacao']) if (tem(k)) { if (body[k] && !DATA.test(String(body[k]))) erros.push('Data da CNH inválida'); else out[k] = body[k] || null; }
+  if (tem('cnh_observacoes')) out.cnh_observacoes = body.cnh_observacoes ? String(body.cnh_observacoes).trim().slice(0, 120) : null;
+  if (tem('cnh_local_emissao')) out.cnh_local_emissao = body.cnh_local_emissao ? String(body.cnh_local_emissao).trim().slice(0, 80) : null;
   return { erros, dados: out };
 }
 

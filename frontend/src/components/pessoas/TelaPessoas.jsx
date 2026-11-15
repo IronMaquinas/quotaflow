@@ -21,6 +21,8 @@ import LerCnh from "./LerCnh"; // 18zl: 🪪 leitura da CNH pela IA
 import { prepararArquivo } from "../../utils/comprimirImagem"; // 14c.1: foto comprimida antes de enviar
 import { SeletorPessoa } from "../shared/CampoPessoa"; // 18g.2c: escolher pessoa digitando
 
+// 18zn: dados da CNH na ficha (migration 090)
+const CAMPOS_CNH = ["rg", "cnh_registro", "cnh_emissao", "cnh_validade", "cnh_primeira_habilitacao", "cnh_observacoes", "cnh_local_emissao"];
 const ALVO = { colaborador: "Pessoa", equipamento: "Equipamento", empresa: "Empresa" };
 const SITUACAO_DOC = {
   vencido:        { l: "Vencido",        c: "#ef4444" },
@@ -176,7 +178,10 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
   const salvarColab = async () => {
     setSalvando(true); setErro("");
     try {
-      const { id, documentos, vencidos, a_vencer, criado_em, atualizado_em, tenant_id, funcao_nome, exigidos, pendencias, funcao_original, sugerida, _cnh, foto_url, foto_path, ...corpo } = formColab;
+      const { id, documentos, vencidos, a_vencer, criado_em, atualizado_em, tenant_id, funcao_nome, exigidos, pendencias, funcao_original, sugerida, _cnh, _foto, _foto_remover, foto_url, foto_path, ...corpo } = formColab;
+      if (!formColab.tem_cnh && CAMPOS_CNH.every((k) => !corpo[k])) CAMPOS_CNH.forEach((k) => delete corpo[k]);
+      delete corpo.tem_cnh; // 18zn: vazio não vai (funciona antes da migration 090)
+      CAMPOS_CNH.forEach((k) => { if (corpo[k] === "") corpo[k] = null; });
       if (sugerida) corpo.funcao_motivo = "correcao"; // 12d.3: ligar ao modelo de mesmo nome não é promoção
       if (!funcoesOk) delete corpo.funcao_id;
       // 12d.1b: tamanhos — se a migration 027 ainda não rodou (campos não vêm do banco) e nada foi digitado, não envia
@@ -196,8 +201,12 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       if (_cnh && (salvo?.id || id)) {
         const cid = salvo?.id || id;
         if (_cnh.foto) { try { await apiService.post(`/pessoas/colaboradores/${cid}/foto`, { base64: _cnh.foto.base64, mime: _cnh.foto.mime }); } catch (e) { extraCnh += ` (foto não salva: ${e.message})`; } }
+        else if (_cnh.foto === null && formColab.foto_url) { try { await apiService.post(`/pessoas/colaboradores/${cid}/foto`, {}); } catch { /* ok */ } }
         if (_cnh.registro || _cnh.validade) { try { const r = await apiService.post(`/pessoas/colaboradores/${cid}/cnh-lida`, { numero: _cnh.registro, emitido_em: _cnh.emissao, vence_em: _cnh.validade, arquivo_base64: _cnh.arquivo?.base64, arquivo_mime: _cnh.arquivo?.mime, arquivo_nome: _cnh.arquivo?.nome });
           extraCnh += r?.ja_existia ? " A CNH já estava nos documentos." : " Documento CNH criado."; } catch (e) { extraCnh += ` (documento CNH não criado: ${e.message})`; } }
+      }
+      if (!_cnh && (_foto || _foto_remover) && (salvo?.id || id)) { // 18zn: 📷 trocar/tirar a foto sem ler a CNH
+        try { await apiService.post(`/pessoas/colaboradores/${salvo?.id || id}/foto`, _foto ? { base64: _foto.base64, mime: _foto.mime } : {}); extraCnh += _foto ? " Foto atualizada." : " Foto retirada."; } catch (e) { extraCnh += ` (foto: ${e.message})`; }
       }
       setFormColab(null); setAviso((id ? "Colaborador atualizado." : "Colaborador cadastrado.") + extraCnh); await carregar();
       // decisão (b): função nova/trocada → mostra a ficha com as pendências
@@ -287,7 +296,8 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
     setFormColab({ ...c, cpf: c.cpf || "", admissao: c.admissao ? String(c.admissao).slice(0, 10) : "", usuario_id: c.usuario_id || "", usuario_original: c.usuario_id || "", telefone: c.telefone || "", email: c.email || "", funcao: c.funcao || "", obs: c.obs || "", funcao_id, funcao_original: c.funcao_id ? String(c.funcao_id) : "", sugerida, funcao_desde: new Date(Date.now() - 3 * 3600000).toISOString().slice(0, 10), funcao_motivo: "promocao",
       tem_comp: c.escolaridade !== undefined, escolaridade: c.escolaridade || "", cnh_categoria: c.cnh_categoria || "", // 12e.3
       tem_nascimento: c.data_nascimento !== undefined, data_nascimento: c.data_nascimento ? String(c.data_nascimento).slice(0, 10) : "",
-      tem_tamanhos: c.tam_calcado !== undefined, tam_calcado: c.tam_calcado || "", tam_camisa: c.tam_camisa || "", tam_calca: c.tam_calca || "", tam_luva: c.tam_luva || "" });
+      tem_tamanhos: c.tam_calcado !== undefined, tam_calcado: c.tam_calcado || "", tam_camisa: c.tam_camisa || "", tam_calca: c.tam_calca || "", tam_luva: c.tam_luva || "",
+      tem_cnh: c.cnh_registro !== undefined, ...Object.fromEntries(CAMPOS_CNH.map((k) => [k, c[k] ? (/^cnh_(validade|emissao|primeira)/.test(k) ? String(c[k]).slice(0, 10) : c[k]) : ""])) }); // 18zn
   };
 
   const salvarNovoTipo = async () => {
@@ -865,6 +875,20 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
                 <option value="">Sem CNH / não informada</option>{listas.cnh_categorias.map((x) => <option key={x} value={x}>{x}</option>)}</select>, "1 1 140px")}
             </div>
           )}
+          {/* 18zn: 🪪 dados da CNH (a leitura preenche; dá para digitar) */}
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            {campo("RG / ÓRGÃO / UF", <input value={formColab.rg || ""} onChange={(e) => setFormColab({ ...formColab, rg: e.target.value })} style={s.input} />, "1 1 180px")}
+            {campo("Nº REGISTRO DA CNH", <input value={formColab.cnh_registro || ""} inputMode="numeric" onChange={(e) => setFormColab({ ...formColab, cnh_registro: e.target.value })} style={s.input} />, "1 1 160px")}
+          </div>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            {campo("1ª HABILITAÇÃO", <input type="date" value={formColab.cnh_primeira_habilitacao || ""} onChange={(e) => setFormColab({ ...formColab, cnh_primeira_habilitacao: e.target.value })} style={s.input} />, "1 1 140px")}
+            {campo("EMISSÃO DA CNH", <input type="date" value={formColab.cnh_emissao || ""} onChange={(e) => setFormColab({ ...formColab, cnh_emissao: e.target.value })} style={s.input} />, "1 1 140px")}
+            {campo("VALIDADE DA CNH", <input type="date" value={formColab.cnh_validade || ""} onChange={(e) => setFormColab({ ...formColab, cnh_validade: e.target.value })} style={{ ...s.input, ...(formColab.cnh_validade && formColab.cnh_validade < new Date().toISOString().slice(0, 10) ? { borderColor: C.danger } : {}) }} />, "1 1 140px")}
+          </div>
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            {campo("OBSERVAÇÕES DA CNH (EX.: EAR)", <input value={formColab.cnh_observacoes || ""} onChange={(e) => setFormColab({ ...formColab, cnh_observacoes: e.target.value })} style={s.input} />, "1 1 180px")}
+            {campo("LOCAL DE EMISSÃO", <input value={formColab.cnh_local_emissao || ""} onChange={(e) => setFormColab({ ...formColab, cnh_local_emissao: e.target.value })} style={s.input} />, "1 1 160px")}
+          </div>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             {campo("TELEFONE", <input value={formColab.telefone} onChange={(e) => setFormColab({ ...formColab, telefone: e.target.value })} style={s.input} />, "1 1 160px")}
             {campo("E-MAIL", <input value={formColab.email} onChange={(e) => setFormColab({ ...formColab, email: e.target.value })} style={s.input} />, "1 1 200px")}

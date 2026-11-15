@@ -57,7 +57,7 @@ async function montar(supabase, tenantId, ym, { comIA = true } = {}) {
   const NIV = { alto: ['#b91c1c', '●'], medio: ['#b45309', '●'], bom: ['#15803d', '✓'] };
   const kpi = (rot, val, c, sub) => `<td style="padding:10px;border:1px solid #e5e7eb;border-radius:6px;vertical-align:top;width:25%"><div style="font-size:11px;color:#666">${rot}</div><div style="font-size:22px;font-weight:800;color:${c}">${val}</div><div style="font-size:11px;color:#666">${sub}</div></td>`;
   const parecer = ia.texto ? `<div style="margin:18px 0;padding:12px 14px;background:#f5f3ff;border-left:3px solid #6d28d9;border-radius:4px"><div style="font-weight:700;margin-bottom:6px">🧠 Parecer do Analista Sênior</div>
-      <div style="white-space:pre-wrap">${escH(ia.texto)}</div><div style="font-size:11px;color:#777;margin-top:8px">Texto escrito por IA (${escH(ia.nome || ia.provedor)}) a partir dos dados acima — confira antes de decidir.</div></div>` : '';
+      <div style="white-space:pre-wrap">${escH(ia.texto)}</div><div style="font-size:11px;color:#777;margin-top:8px">Parecer gerado por inteligência artificial a partir dos dados acima — confira antes de decidir.</div></div>` : '';
   const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;margin:0 auto;color:#111;font-size:14px;line-height:1.55">
     <div style="font-weight:700;border-bottom:2px solid #111;padding-bottom:6px;margin-bottom:14px">${escH(dados.empresa)} · 🧠 Analista da rotina de inspeção</div>
     <p style="font-size:16px;margin:0 0 12px"><b>Relatório de ${escH(dados.mes)}</b></p>
@@ -73,7 +73,7 @@ async function montar(supabase, tenantId, ym, { comIA = true } = {}) {
     ${d.falhas.length ? `<div style="margin:16px 0 6px;font-weight:700">🔧 Itens que mais falham (12 meses)</div>${d.falhas.slice(0, 5).map((f) => `<div style="padding:2px 0"><b>${f.vezes}×</b> ${escH(f.rotulo)} <span style="color:#666;font-size:12px">— ${escH(f.equipamentos.join(', '))}${f.corrigidas ? ` · <span style="color:#15803d">✓ ${f.corrigidas} corrigida${f.corrigidas > 1 ? 's' : ''}</span>` : ''}</span></div>`).join('')}` : ''}
     <p style="margin:22px 0"><a href="${frontendURL()}" style="background:#2563eb;color:#fff;padding:10px 18px;border-radius:6px;text-decoration:none;font-weight:700">Abrir 🔍 Inspeções → 🧠 Analista</a></p>
     <div style="font-size:11px;color:#888">E-mail mensal automático do QuotaFlow (dia 1, 7h) para os gestores.</div></div>`;
-  return { assunto: `🧠 Rotina de inspeção — ${dados.mes}: ${pctTxt(mes.pct)} de cumprimento${d.liberacao.pendentes.length ? ` · ${d.liberacao.pendentes.length} sem liberação` : ''}`, html, dados, ia: { usada: !!ia.texto, motivo: ia.motivo || null, nome: ia.nome || null } };
+  return { assunto: `🧠 Rotina de inspeção — ${dados.mes}: ${pctTxt(mes.pct)} de cumprimento${d.liberacao.pendentes.length ? ` · ${d.liberacao.pendentes.length} sem liberação` : ''}`, html, dados, ia: { usada: !!ia.texto, motivo: ia.motivo || null } }; // 18zn: sem o nome do provedor/modelo (propriedade do Marcony)
 }
 
 /** envia o relatório do mês aos gestores da empresa (forcar = reenviar pela tela) */

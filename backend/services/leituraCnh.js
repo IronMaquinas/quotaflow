@@ -47,11 +47,11 @@ async function ler(supabase, tenant, { base64, mime } = {}) {
   if (!base64 || !['image/jpeg', 'image/png', 'image/webp'].includes(mime)) return { status: 400, erro: 'Envie a CNH como imagem (o PDF é convertido no navegador)' };
   if (String(base64).length > 7_000_000) return { status: 400, erro: 'Imagem grande demais (máx. ~5 MB)' };
   const st = IA.status(tenant);
-  if (!st.ligada) return { status: 409, erro: `A leitura automática da CNH usa a IA, que está desligada (${st.motivo}). Preencha à mão.`, ia: st };
+  if (!st.ligada) return { status: 409, erro: `A leitura automática da CNH usa a IA, que está desligada (${st.motivo}). Preencha à mão.` };
   const r = await IA.gerarTexto({ tenant, sistema: SISTEMA, prompt: 'Leia esta CNH e responda só o JSON.', imagens: [{ mime, base64 }], max: 700, registrar: { supabase, tenantId: tenant?.id, recurso: 'leitura_cnh' } });
   if (!r.texto) return { status: 502, erro: `Não consegui ler agora: ${r.motivo}. Tente de novo ou preencha à mão.` };
   let j = null; try { const m = r.texto.match(/\{[\s\S]*\}/); j = JSON.parse(m ? m[0] : r.texto); } catch { return { status: 502, erro: 'A IA respondeu num formato inesperado — tente de novo.' }; }
-  return { cnh: normalizar(j), ia: { nome: r.nome, modelo: r.modelo, tokens: r.uso } };
+  return { cnh: normalizar(j) }; // 18zn: provedor/modelo/tokens ficam só no servidor (ia_uso)
 }
 
 /** 📊 uso da IA da empresa no mês (para acompanhar custo e decidir cobrança) */

@@ -35,7 +35,7 @@ export default function AnalistaRotina({ C, s, onErro, onOk, onVerEquipamento, p
           <button type="button" onClick={() => setPv(null)} aria-label="Fechar" style={{ background: "none", border: "none", color: C.muted, fontSize: 18, cursor: "pointer" }}>✕</button>
         </div>
         <div style={{ fontSize: 12, color: C.textSub, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-          <span style={s.tag(pv.ia.ligada ? C.success : C.muted)}>🧠 IA {pv.ia.ligada ? `ligada · ${pv.ia.nome}` : "desligada"}</span>
+          <span style={s.tag(pv.ia.ligada ? C.success : C.muted)}>🧠 IA {pv.ia.ligada ? "ligada" : "desligada"}</span>
           <span style={{ flex: 1 }}>{pv.ia.ligada ? (pv.ia.usada ? "Parecer da IA incluído abaixo." : pv.ia.motivo && pv.ia.motivo !== "não pedido" ? `Sem parecer: ${pv.ia.motivo}.` : "A prévia mostra os achados por regra; o e-mail do dia 1 inclui o parecer da IA.") : `${pv.ia.motivo || "IA desligada"} — o e-mail sai completo, só sem o parecer.`}</span>
           {pv.ia.ligada && !pv.ia.usada && <button type="button" disabled={pvOcup} onClick={() => abrirPv(pvMes, true)} style={{ ...s.btn(false), padding: "4px 10px", fontSize: 12, cursor: "pointer", color: C.accent }}>{pvOcup ? "Gerando…" : "🧠 Gerar parecer na prévia"}</button>}
         </div>
