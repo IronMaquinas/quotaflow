@@ -57,7 +57,7 @@ async function montar(supabase, tenantId, colab, { de, ate, secoes = SECOES } = 
   const baseTr = await tenta(() => TR.carregarBase(supabase, tenantId), null, /treinamento/);
   const baseK = await tenta(() => K.carregarBase(supabase, tenantId), null, /colaborador_competencias/);
   const stK = baseK ? K.statusColaborador(colab, baseK, F.ESCOLARIDADES) : null;
-  out.selo = CF.selo({ funcaoLigada: !!ficha?.funcao, docs: ficha?.resumo, epi: baseEpi ? EE.statusColaborador(colab, baseEpi).resumo : null, trein: baseTr ? TR.statusColaborador(colab, baseTr).resumo : null, comp: stK?.resumo });
+  out.selo = CF.selo({ funcaoLigada: !!ficha?.funcao, docs: ficha?.resumo, epi: baseEpi ? EE.statusColaborador(colab, baseEpi).resumo : null, trein: baseTr ? TR.statusColaborador(colab, baseTr).resumo : null, comp: stK?.resumo , vinculo: colab.vinculo });
 
   if (quer.has('funcoes')) {
     out.historico_funcoes = (await tenta(() => HF.listar(supabase, tenantId, colab.id), [], /colaborador_funcoes/))

@@ -1,6 +1,7 @@
 // backend/routes/atLink.js — etapa 16c
 //
 // 📲 Link do motorista — /api/at-link/:token (PÚBLICO, sem login, SEM valores).
+//   18zw: POST /:token/minha-cnh (o motorista envia a própria CNH — leitura automática, cadastro do agregado)
 //   16e: POST /:token/etapa/:id/marcar { gps, em, por } · GET /:token/etapa/:id/preparar · POST /:token/etapa/:id/inspecao (mesmo corpo do app)
 //   GET /:token   dados da viagem (rota, datas, conjunto, carga) + kit de documentos (CNH, CRLV do conjunto, NF-e/CT-e/MDF-e)
 //                 com links assinados de 12 h (renovados a cada abertura). Registra a primeira visualização.
@@ -35,6 +36,10 @@ const etapa = (fn) => async (req, res) => {
 router.post('/:token/etapa/:etapa/marcar', etapa((req, ex) => FV.marcar(supabase, ex, req.params.etapa, req.body || {})));
 router.get('/:token/etapa/:etapa/preparar', etapa((req, ex) => FV.prepararInspecao(supabase, ex, req.params.etapa)));
 router.post('/:token/etapa/:etapa/inspecao', etapa((req, ex) => FV.enviarInspecao(supabase, ex, req.params.etapa, req.body || {})));
+
+// 18zw: 🪪 o motorista (agregado) envia a própria CNH — corpo { base64, mime (imagem), foto?: {base64,mime}, arquivo?: {base64,mime,nome} }
+router.post('/:token/minha-cnh', etapa((req, ex) => require('../services/cnhPeloLink').enviarCnh(supabase, ex, req.body || {})));
+router.post('/:token/minha-foto', etapa((req, ex) => require('../services/cnhPeloLink').enviarFoto(supabase, ex, req.body || {})));
 
 router.get('/:token', async (req, res) => {
   try {

@@ -196,7 +196,9 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
     try {
       const { id, documentos, vencidos, a_vencer, criado_em, atualizado_em, tenant_id, funcao_nome, exigidos, pendencias, funcao_original, sugerida, _cnh, _foto, _foto_remover, foto_url, foto_path, ...corpo } = formColab;
       if (!formColab.tem_cnh && CAMPOS_CNH.every((k) => !corpo[k])) CAMPOS_CNH.forEach((k) => delete corpo[k]);
-      delete corpo.tem_cnh; // 18zn: vazio não vai (funciona antes da migration 090)
+      delete corpo.tem_cnh;
+      if (!formColab.tem_vinculo && (corpo.vinculo || "proprio") === "proprio") ["vinculo", "rntrc", "vinculo_empresa", "vinculo_cnpj"].forEach((k) => delete corpo[k]); // 18zw: antes da migration 095
+      delete corpo.tem_vinculo; ["rntrc", "vinculo_empresa", "vinculo_cnpj"].forEach((k) => { if (corpo[k] === "") corpo[k] = null; }); // 18zn: vazio não vai (funciona antes da migration 090)
       CAMPOS_CNH.forEach((k) => { if (corpo[k] === "") corpo[k] = null; });
       if (sugerida) corpo.funcao_motivo = "correcao"; // 12d.3: ligar ao modelo de mesmo nome não é promoção
       if (!funcoesOk) delete corpo.funcao_id;
@@ -313,7 +315,8 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       tem_comp: c.escolaridade !== undefined, escolaridade: c.escolaridade || "", cnh_categoria: c.cnh_categoria || "", // 12e.3
       tem_nascimento: c.data_nascimento !== undefined, data_nascimento: c.data_nascimento ? String(c.data_nascimento).slice(0, 10) : "",
       tem_tamanhos: c.tam_calcado !== undefined, tam_calcado: c.tam_calcado || "", tam_camisa: c.tam_camisa || "", tam_calca: c.tam_calca || "", tam_luva: c.tam_luva || "",
-      tem_cnh: c.cnh_registro !== undefined, ...Object.fromEntries(CAMPOS_CNH.map((k) => [k, c[k] ? (/^cnh_(validade|emissao|primeira)/.test(k) ? String(c[k]).slice(0, 10) : c[k]) : ""])) }); // 18zn
+      tem_cnh: c.cnh_registro !== undefined, tem_vinculo: c.vinculo !== undefined, vinculo: c.vinculo || "proprio", rntrc: c.rntrc || "", vinculo_empresa: c.vinculo_empresa || "", vinculo_cnpj: c.vinculo_cnpj || "", // 18zw
+       ...Object.fromEntries(CAMPOS_CNH.map((k) => [k, c[k] ? (/^cnh_(validade|emissao|primeira)/.test(k) ? String(c[k]).slice(0, 10) : c[k]) : ""])) }); // 18zn
   };
 
   const salvarNovoTipo = async () => {
@@ -477,7 +480,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
                 <div key={c.id} style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", padding: "12px 16px", borderBottom: i < colabs.length - 1 ? `1px solid ${C.border}` : "none", opacity: c.situacao === "desligado" ? 0.55 : 1 }}>
                   {c.foto_url && <img src={c.foto_url} alt="" style={{ width: 36, height: 44, objectFit: "cover", borderRadius: 6, flexShrink: 0 }} />}{/* 18zl */}
                   <div style={{ flex: "2 1 220px" }}>
-                    <div style={{ fontWeight: 600, fontSize: 13 }}>{c.nome} {c.situacao !== "ativo" && <span style={s.tag(C.muted)}>{SITUACAO_COLAB[c.situacao]}</span>}</div>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{c.nome} {c.vinculo === "agregado" && <span style={s.tag(C.accent)}>🚚 Agregado</span>}{c.vinculo === "terceiro" && <span style={s.tag(C.muted)}>Terceiro</span>} {c.situacao !== "ativo" && <span style={s.tag(C.muted)}>{SITUACAO_COLAB[c.situacao]}</span>}</div>
                     <div style={{ fontSize: 12, color: C.textSub }}>{c.funcao_nome || c.funcao || "Sem função"}{c.funcao && !c.funcao_id && funcoesOk ? <span style={{ color: C.muted }}> (sem modelo)</span> : ""}{c.cpf ? ` · CPF ${c.cpf}` : ""}{!c.cpf && <span style={{ color: "#f59e0b" }}> · ⚠ sem CPF</span>}{[c.tam_calcado && `👟 ${c.tam_calcado}`, c.tam_camisa && `👕 ${c.tam_camisa}`, c.tam_calca && `👖 ${c.tam_calca}`, c.tam_luva && `🧤 ${c.tam_luva}`].filter(Boolean).map((t) => ` · ${t}`).join("")}{c.usuario_id ? ` · login: ${nomeUsuario(c.usuario_id) || "—"}` : ""}</div>
                   </div>
                   <button onClick={() => abrirFicha(c.id)} title="Abrir a ficha com os documentos"
@@ -918,6 +921,16 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
             {campo("SITUAÇÃO", <select value={formColab.situacao} onChange={(e) => setFormColab({ ...formColab, situacao: e.target.value })} style={s.input}>
               {Object.entries(SITUACAO_COLAB).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>, "1 1 160px")}
           </div>
+          {/* 18zw: 🚚 vínculo — agregado/terceiro não é funcionário (selo só com documentos) */}
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+            {campo("VÍNCULO", <select value={formColab.vinculo || "proprio"} onChange={(e) => setFormColab({ ...formColab, vinculo: e.target.value })} style={s.input}>
+              <option value="proprio">Próprio (CLT)</option><option value="agregado">🚚 Agregado (motorista com veículo/empresa própria)</option><option value="terceiro">Terceiro (prestador eventual)</option></select>, "1 1 220px")}
+            {(formColab.vinculo === "agregado" || formColab.vinculo === "terceiro") && <>
+              {campo("EMPRESA DO AGREGADO", <input value={formColab.vinculo_empresa || ""} onChange={(e) => setFormColab({ ...formColab, vinculo_empresa: e.target.value })} placeholder="Razão social (se tiver)" style={s.input} />, "2 1 200px")}
+              {campo("CNPJ / CPF", <input value={formColab.vinculo_cnpj || ""} inputMode="numeric" onChange={(e) => setFormColab({ ...formColab, vinculo_cnpj: e.target.value })} style={s.input} />, "1 1 150px")}
+              {campo("RNTRC (ANTT)", <input value={formColab.rntrc || ""} inputMode="numeric" onChange={(e) => setFormColab({ ...formColab, rntrc: e.target.value })} style={s.input} />, "1 1 120px")}</>}
+          </div>
+          {(formColab.vinculo === "agregado" || formColab.vinculo === "terceiro") && <div style={{ fontSize: 12, color: C.textSub, marginTop: -4 }}>Agregado/terceiro: a conformidade olha só os <b>documentos</b> exigidos (CNH, ASO, MOPP…) — EPI e treinamentos de funcionário são da empresa dele. Ele pode enviar a própria CNH pelo 📲 link da viagem.</div>}
           {funcoesOk && (formColab.tem_comp || !formColab.id) && ( /* 12e.3: comparadas com a função (🧩 na Ficha) */
             <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
               {campo("ESCOLARIDADE", <select value={formColab.escolaridade || ""} onChange={(e) => setFormColab({ ...formColab, escolaridade: e.target.value })} style={s.input}>

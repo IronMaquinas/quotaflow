@@ -84,6 +84,11 @@ function validarColaborador(body, { parcial = false } = {}) {
   for (const k of ['tam_calcado', 'tam_camisa', 'tam_calca', 'tam_luva']) if (tem(k)) out[k] = body[k] ? String(body[k]).trim().slice(0, 10) : null; // 12d.1b
   if (tem('funcao_id')) out.funcao_id = body.funcao_id && /^\d+$/.test(String(body.funcao_id)) ? String(body.funcao_id) : null; // 12d.0
   if (tem('obs')) out.obs = body.obs ? String(body.obs).slice(0, 2000) : null;
+  // 18zw: vínculo (próprio · agregado · terceiro) + RNTRC e empresa do agregado (migration 095)
+  if (tem('vinculo')) { if (body.vinculo && !['proprio', 'agregado', 'terceiro'].includes(body.vinculo)) erros.push('Vínculo inválido'); else out.vinculo = body.vinculo || 'proprio'; }
+  if (tem('rntrc')) { const r = soDigitos(body.rntrc); if (body.rntrc && (r.length < 8 || r.length > 9)) erros.push('RNTRC inválido (8 ou 9 dígitos)'); else out.rntrc = r || null; }
+  if (tem('vinculo_empresa')) out.vinculo_empresa = body.vinculo_empresa ? String(body.vinculo_empresa).trim().slice(0, 160) : null;
+  if (tem('vinculo_cnpj')) { const c = soDigitos(body.vinculo_cnpj); if (body.vinculo_cnpj && c.length !== 14 && c.length !== 11) erros.push('CNPJ/CPF da empresa do agregado inválido'); else out.vinculo_cnpj = c || null; }
   // 18zn: dados da CNH na ficha da pessoa (migration 090)
   if (tem('rg')) out.rg = body.rg ? String(body.rg).trim().slice(0, 40) : null;
   if (tem('cnh_registro')) { const r = soDigitos(body.cnh_registro); if (body.cnh_registro && (r.length < 9 || r.length > 12)) erros.push('Nº de registro da CNH inválido'); else out.cnh_registro = r || null; }

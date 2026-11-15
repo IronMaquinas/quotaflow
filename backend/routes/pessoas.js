@@ -176,7 +176,7 @@ router.get('/colaboradores', exigirVer, async (req, res) => {
       const epi = baseEpi ? EE.statusColaborador(c, baseEpi).resumo : null;
       const trein = baseTr ? TR.statusColaborador(c, baseTr).resumo : null;
       const comp = baseK ? K.statusColaborador(c, baseK, F.ESCOLARIDADES).resumo : null;
-      const seloC = CF.selo({ funcaoLigada: !!ficha?.funcao, docs: ficha?.resumo, epi, trein, comp });
+      const seloC = CF.selo({ funcaoLigada: !!ficha?.funcao, docs: ficha?.resumo, epi, trein, comp, vinculo: c.vinculo });
       return {
         ...c,
         funcao_nome: ficha?.funcao?.nome || c.funcao || null,
@@ -576,7 +576,7 @@ router.get('/colaboradores/:id/ficha', exigirVer, async (req, res) => {
     res.json({
       epi: epi ? { itens: epi.itens, resumo: epi.resumo, extras: epi.extras } : null,
       treinamentos: trein ? { itens: trein.itens, resumo: trein.resumo, horas: trein.horas || null } : null,
-      selo: CF.selo({ funcaoLigada: !!f.funcao, docs: f.resumo, epi: epi?.resumo, trein: trein?.resumo, comp: comp?.resumo }),
+      selo: CF.selo({ funcaoLigada: !!f.funcao, docs: f.resumo, epi: epi?.resumo, trein: trein?.resumo, comp: comp?.resumo, vinculo: c.vinculo }),
       competencias: comp ? { itens: comp.itens, resumo: comp.resumo } : null,
       disciplinar: podeEditar(req) ? await (async () => { try { const l = await DI.listar(supabase, req.tenantId, { colaboradorId: c.id }); return { lista: l.slice(0, 20), resumo: DI.resumoColaborador(l) }; } catch (e) { if (/medidas_disciplinares/.test(String(e.message))) return null; throw e; } })() : null, // 12h (LGPD: só quem edita)
       multas: await (async () => { try { const l = await MU.listar(supabase, req.tenantId, { colaboradorId: c.id }); return { lista: l.slice(0, 20), resumo: MU.resumoColaborador(l) }; } catch (e) { if (/multas/.test(String(e.message))) return null; throw e; } })(), // 12g

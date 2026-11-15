@@ -46,7 +46,7 @@ let calcularSelos = async (supabase, tenantId, colabs) => {
     const f = fichas.get(String(c.id));
     try {
       out.set(String(c.id), CF.selo({ funcaoLigada: !!f?.funcao, docs: f?.resumo, epi: bE ? EE.statusColaborador(c, bE).resumo : null, trein: bT ? TR.statusColaborador(c, bT).resumo : null,
-        comp: bK ? K.statusColaborador(c, bK, F.ESCOLARIDADES).resumo : null }));
+        comp: bK ? K.statusColaborador(c, bK, F.ESCOLARIDADES).resumo : null, vinculo: c.vinculo }));
     } catch { out.set(String(c.id), { nivel: 'sem_funcao', geral: null, vencidos: 0, pilares: [] }); }
   }
   return out;
@@ -101,7 +101,7 @@ async function base(supabase, tenantId) {
   const selos = await calcularSelos(supabase, tenantId, ativos);
   const ehMotorista = (c) => /motorista|condutor/i.test(String(c.funcao?.nome || c.funcao || ''));
   return {
-    motoristas: ativos.map((c) => ({ id: c.id, nome: c.nome, funcao: c.funcao?.nome || c.funcao || null, cnh: c.cnh_categoria || null, motorista: ehMotorista(c), selo: selos.get(String(c.id)) || null }))
+    motoristas: ativos.map((c) => ({ id: c.id, nome: c.nome, funcao: c.funcao?.nome || c.funcao || null, cnh: c.cnh_categoria || null, vinculo: c.vinculo || 'proprio', motorista: ehMotorista(c) || c.vinculo === 'agregado', selo: selos.get(String(c.id)) || null }))
       .sort((a, b) => (b.motorista - a.motorista) || String(a.nome).localeCompare(String(b.nome), 'pt-BR')),
     equipamentos: equips.filter((e) => e.ativo !== false).map((e) => ({ id: e.id, tag: e.tag || '', nome: e.nome || '', bloqueado: !!e.bloqueado, bloqueio_motivo: e.bloqueio_motivo || null, inspecao_modelo_id: e.inspecao_modelo_id ?? null }))
       .sort((a, b) => String(a.tag || a.nome).localeCompare(String(b.tag || b.nome))),

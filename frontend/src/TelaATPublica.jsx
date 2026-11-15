@@ -8,6 +8,7 @@ import { useState, useEffect, useCallback } from "react";
 import { C as CE, s as SE } from "./App";
 import ExecutarInspecao from "./components/inspecoes/ExecutarInspecao";
 import * as Fila from "./utils/filaInspecoes";
+import { cnhParaImagem, recortarFoto, arquivoOriginal } from "./utils/lerCnh"; // 18zw
 
 const API = import.meta.env.VITE_API_URL || "http://localhost:3001/api";
 const dataHora = (d) => (d ? new Date(d).toLocaleString("pt-BR", { timeZone: "America/Sao_Paulo", weekday: "short", day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—");
@@ -165,6 +166,7 @@ export default function TelaATPublica({ tokenFixo, onVoltar } = {}) { // 17a: ta
           {!(d.kit || []).length && <div style={{ fontSize: 13, color: "#64748b" }}>Nenhum documento ainda.</div>}
           <div style={{ fontSize: 11.5, color: "#64748b", marginTop: 8 }}>Dica: abra cada documento e salve no celular antes de pegar a estrada (sem sinal, o link não abre).</div>
         </div>
+        <CnhPeloLink token={token} kit={d.kit || []} caixa={caixa} rot={rot} onEnviada={carregar} />{/* 18zw */}
         <div style={caixa}>
           <div style={rot}>👤 Motorista e conjunto</div>
           <div style={{ fontSize: 14, fontWeight: 600 }}>{d.motorista_nome || "—"}</div>
@@ -180,4 +182,35 @@ export default function TelaATPublica({ tokenFixo, onVoltar } = {}) { // 17a: ta
       </div>
     </div>
   );
+}
+
+// 18zw: 🪪 o motorista (agregado) envia a própria CNH pelo link — leitura automática; o cadastro dele se completa
+function CnhPeloLink({ token, kit, caixa, rot, onEnviada }) {
+  const cnh = kit.find((k) => k.grupo === "cadastro" && /cnh/i.test(k.rotulo || ""));
+  const [abrir, setAbrir] = useState(!cnh || cnh.status !== "ok"); const [env, setEnv] = useState(false); const [msg, setMsg] = useState(null); const [ok, setOk] = useState(null);
+  const enviar = async (file) => {
+    if (!file) return; setEnv(true); setMsg(null);
+    try {
+      const img = await cnhParaImagem(file); const orig = await arquivoOriginal(file);
+      const r = await fetch(`${API}/at-link/${encodeURIComponent(token)}/minha-cnh`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ base64: img.base64, mime: img.mime, arquivo: orig.base64.length < 9_000_000 ? orig : null }) });
+      const j = await r.json().catch(() => ({}));
+      if (!r.ok) { setMsg(j.erro || "Não consegui enviar agora — tente de novo."); return; }
+      if (j.foto_box) { try { const f = await recortarFoto(img.dataUrl, j.foto_box); await fetch(`${API}/at-link/${encodeURIComponent(token)}/minha-foto`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ base64: f.base64, mime: f.mime }) }); } catch { /* sem foto: segue */ } }
+      setOk(j.resumo); onEnviada?.();
+    } catch (e) { setMsg(e.message || "Não consegui ler o arquivo."); } finally { setEnv(false); }
+  };
+  if (ok) return <div style={{ ...caixa, borderColor: "#16a34a" }}><div style={rot}>🪪 Sua CNH</div>
+    <div style={{ fontSize: 14 }}>✅ Recebida, <b>{ok.nome}</b>. Categoria {ok.categoria || "—"} · validade {dBR(ok.validade) || "—"}.</div>
+    {ok.vencida && <div style={{ fontSize: 13, color: "#dc2626", marginTop: 4 }}>⚠ Esta CNH está VENCIDA — fale com a programação antes de sair.</div>}
+    <div style={{ fontSize: 12, color: "#64748b", marginTop: 4 }}>A empresa vai conferir. Obrigado!</div></div>;
+  return <div style={caixa}>
+    <div style={rot}>🪪 Sua CNH</div>
+    {cnh && <div style={{ fontSize: 13.5, marginBottom: 6 }}>{cnh.status === "ok" ? "✅ CNH em dia no cadastro." : cnh.status === "vence" ? "⚠ Sua CNH vence em breve." : cnh.status === "vencido" ? "⛔ A CNH do cadastro está VENCIDA." : "A empresa ainda não tem a sua CNH."}{cnh.vence_em ? ` Validade ${dBR(cnh.vence_em)}.` : ""}</div>}
+    {!abrir ? <button type="button" onClick={() => setAbrir(true)} style={{ background: "none", border: "none", color: "#2563eb", padding: 0, fontSize: 13.5, cursor: "pointer" }}>Atualizar minha CNH</button> : <>
+      <div style={{ fontSize: 13.5, color: "#334155", marginBottom: 8 }}>Envie o <b>PDF da CNH digital</b> (app Carteira Digital de Trânsito → compartilhar) ou uma <b>foto da CNH</b> aberta, bem nítida. Seus dados entram no cadastro automaticamente.</div>
+      <label style={{ display: "block", textAlign: "center", padding: "12px 14px", borderRadius: 10, background: env ? "#94a3b8" : "#2563eb", color: "#fff", fontWeight: 700, fontSize: 15, cursor: env ? "default" : "pointer" }}>
+        {env ? "Lendo a CNH…" : "📎 Enviar minha CNH"}<input type="file" accept="application/pdf,image/*" disabled={env} style={{ display: "none" }} onChange={(e) => { enviar(e.target.files?.[0]); e.target.value = ""; }} /></label>
+    </>}
+    {msg && <div style={{ fontSize: 13, color: "#b45309", marginTop: 8 }}>{msg}</div>}
+  </div>;
 }

@@ -23,7 +23,12 @@ const pct = (a, b) => (b > 0 ? Math.round((a / b) * 100) : null);
  * @param {object}  p.docs  resumo da ficha de documentos { total, falta, vencido, vence_30, ok, sem_vencimento }
  * @param {object}  p.epi   resumo de EPI { total, ok, vence, vencido, nao_entregue } (null se ainda não há EPI)
  */
-function selo({ funcaoLigada, docs, epi, trein, comp }) {
+// 18zw: motorista AGREGADO / TERCEIRO — não é funcionário: o selo olha só os DOCUMENTOS exigidos (CNH, ASO, MOPP…),
+//   sem EPI, treinamentos e competências de funcionário (que são obrigação da empresa dele).
+const VINCULOS = { proprio: 'Próprio (CLT)', agregado: 'Agregado', terceiro: 'Terceiro' };
+const soDocumentos = (vinculo) => vinculo === 'agregado' || vinculo === 'terceiro';
+function selo({ funcaoLigada, docs, epi, trein, comp, vinculo = null }) {
+  if (soDocumentos(vinculo)) { epi = null; trein = null; comp = null; }
   if (!funcaoLigada) return { nivel: 'sem_funcao', geral: null, feitos: 0, total: 0, faltam: null, vencidos: 0, pilares: [] };
   const pilares = [];
   if (docs && docs.total > 0) {
@@ -49,4 +54,4 @@ function selo({ funcaoLigada, docs, epi, trein, comp }) {
   return { nivel, geral, feitos, total, faltam: total - feitos, vencidos, pilares };
 }
 
-module.exports = { selo };
+module.exports = { selo, VINCULOS, soDocumentos };
