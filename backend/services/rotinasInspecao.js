@@ -204,4 +204,4 @@ async function avisosAtrasadas(supabase, tenantId, agora = new Date()) {
       titulo: `${x.modelo_nome} (${x.frequencia_nome.toLowerCase()})`, de: `${x.equipamento_nome} · ${x.responsavel_nome}` }));
 }
 
-module.exports = { FREQ, FREQ_NOME, RESP_NOME, situacao, cumprimento, painel, criarRotina, removerRotina, locar, encerrarLocacao, locacoes, aoGravarInspecao, relatorioCumprimento, eventosNoIntervalo, avisosAtrasadas, hojeBR };
+module.exports = { carregar, enriquecer, FREQ, FREQ_NOME, RESP_NOME, situacao, cumprimento, painel, criarRotina, removerRotina, locar, encerrarLocacao, locacoes, aoGravarInspecao, relatorioCumprimento, eventosNoIntervalo, avisosAtrasadas, hojeBR };

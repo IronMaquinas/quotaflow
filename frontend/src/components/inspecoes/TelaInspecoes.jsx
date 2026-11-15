@@ -14,6 +14,7 @@ import EditorModeloInspecao, { modeloVazio } from "./EditorModeloInspecao";
 import { FundoVista } from "./Esquemas";
 import * as Fila from "../../utils/filaInspecoes";
 import { abrirRelatorioInspecao, prepararJanela } from "../../utils/gerarRelatorioInspecao";
+import AnalistaRotina from "./AnalistaRotina"; // 18zj
 import { LinhaRotinas, ModalRotinas, ModalLocar, ModalEncerrar, AbaCumprimento } from "./RotinasLocacao"; // 14b.2
 import { idCurto } from "../../utils/marcaFoto"; // 18c.3
 import FiltroPeriodo, { faixaPeriodo } from "../shared/FiltroPeriodo"; // 18c.4
@@ -137,7 +138,7 @@ export default function TelaInspecoes({ C, s, onAbrirOS, onIrParaOS, embutida = 
   const diaI = (i) => (i.concluida_em ? new Date(new Date(i.concluida_em).getTime() - 3 * 3600000).toISOString().slice(0, 10) : "");
   const listaF = lista.filter((i) => (!filtroEq || String(i.equipamento_id) === String(filtroEq)) && (aba !== "hist" || !perHist.de || (diaI(i) >= perHist.de && diaI(i) <= perHist.ate)) && (aba !== "hist" || !busca.trim() || (semAcento(`${i.equipamento_nome} ${i.executor_nome} ${i.modelo_nome} ${i.numero || ""}`).includes(semAcento(busca.trim())) || (!!i.id_foto && semAcento(busca).replace(/[^a-z0-9]/g, "").replace(/^id/, "").length >= 4 && i.id_foto.replace("-", "").toLowerCase().startsWith(semAcento(busca).replace(/[^a-z0-9]/g, "").replace(/^id/, ""))))));
   const bloqueados = (painel?.equipamentos || []).filter((e) => e.bloqueado).length;
-  const abas = colab ? [["equip", "🚚 Inspecionar"], ["hist", "📋 Minhas inspeções"]] : [["equip", `🚚 Equipamentos${bloqueados ? ` (⛔ ${bloqueados})` : ""}`], ["hist", "📋 Inspeções"], ["cumprimento", "📊 Cumprimento"], ["modelos", "🧩 Modelos"]];
+  const abas = colab ? [["equip", "🚚 Inspecionar"], ["hist", "📋 Minhas inspeções"]] : [["equip", `🚚 Equipamentos${bloqueados ? ` (⛔ ${bloqueados})` : ""}`], ["hist", "📋 Inspeções"], ["cumprimento", "📊 Cumprimento"], ["analista", "🧠 Analista"], ["modelos", "🧩 Modelos"]];
   const atrasada = (e) => (e.rotinas || []).some((r) => r.estado === "atrasada");
   const contSit = { todos: eqs.length, base: eqs.filter((e) => e.situacao !== "locado").length, locado: eqs.filter((e) => e.situacao === "locado").length, atrasadas: eqs.filter(atrasada).length };
   const eqsF = eqs.filter((e) => filtroSit === "todos" || (filtroSit === "base" ? e.situacao !== "locado" : filtroSit === "locado" ? e.situacao === "locado" : atrasada(e)));
@@ -213,6 +214,7 @@ export default function TelaInspecoes({ C, s, onAbrirOS, onIrParaOS, embutida = 
       )}
 
       {painel && aba === "cumprimento" && <AbaCumprimento C={C} s={s} onErro={err} />}
+      {painel && aba === "analista" && <AnalistaRotina C={C} s={s} onErro={err} onVerEquipamento={(id) => { setFiltroEq(String(id)); setAba("hist"); }} />}
       {modalEq?.tipo === "rotinas" && <ModalRotinas e={(painel.equipamentos || []).find((x) => x.id === modalEq.e.id) || modalEq.e} modelos={modelos} C={C} s={s} onFechar={() => setModalEq(null)} onMudou={async (t) => { ok(t); await carregar(); }} onErro={err} />}
       {modalEq?.tipo === "locar" && <ModalLocar e={modalEq.e} modelos={modelos} C={C} s={s} onFechar={() => setModalEq(null)} onMudou={mudouEq} onErro={err} />}
       {modalEq?.tipo === "encerrar" && <ModalEncerrar e={modalEq.e} C={C} s={s} onFechar={() => setModalEq(null)} onMudou={mudouEq} onErro={err} />}

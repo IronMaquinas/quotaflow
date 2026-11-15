@@ -14,7 +14,7 @@
 //   Modelos: GET /modelos · GET /modelos/biblioteca · POST /modelos/importar · POST /modelos (novo) · PUT /modelos/:id
 //            POST /modelos/:id/atualizar · DELETE /modelos/:id (desativa) · POST /modelos/imagem { base64, mime }
 //   14b.2: POST /rotinas · DELETE /rotinas/:id · POST /equipamentos/:id/locar · POST /equipamentos/:id/encerrar-locacao ·
-//          GET /equipamentos/:id/locacoes · GET /cumprimento?de&ate (relatório) — situação na base/locado e rotinas
+//          GET /equipamentos/:id/locacoes · GET /cumprimento?de&ate (relatório) · GET /analista?meses (18zj: 🧠 analista da rotina) — situação na base/locado e rotinas
 //   14b.1: GET/POST /links · DELETE /links/:id — link de inspeção de terceiros (admin, gestor, qualidade)
 // Ver e inspecionar: admin, gestor, operação, qualidade, comprador. Modelos, links e liberar: admin, gestor, qualidade.
 // 14b.1 — perfil "colaborador" (sozinho): só painel, preparar, enviar e as PRÓPRIAS inspeções ("Minhas inspeções").
@@ -64,6 +64,7 @@ router.delete('/rotinas/:id', exigirEditar, responder((req) => R.removerRotina(s
 router.post('/equipamentos/:id/locar', exigirEditar, responder(async (req) => R.locar(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
 router.post('/equipamentos/:id/encerrar-locacao', exigirEditar, responder(async (req) => R.encerrarLocacao(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
 router.get('/equipamentos/:id/locacoes', exigirVer, responder(async (req) => ({ locacoes: await R.locacoes(supabase, req.tenantId, req.params.id) })));
+router.get('/analista', exigirVer, responder((req) => require('../services/analistaRotina').painel(supabase, req.tenantId, { meses: req.query.meses }))); // 18zj: 🧠 analista da rotina
 router.get('/cumprimento', exigirVer, responder((req) => R.relatorioCumprimento(supabase, req.tenantId, req.query.de, req.query.ate)));
 router.get('/modelos', exigirVer, responder(async (req) => ({ modelos: await I.modelosTenant(supabase, req.tenantId) })));
 router.get('/modelos/biblioteca', exigirVer, responder(async (req) => ({ modelos: await I.bibliotecaParaTenant(supabase, req.tenantId) })));
