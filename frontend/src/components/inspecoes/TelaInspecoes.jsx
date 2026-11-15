@@ -214,7 +214,7 @@ export default function TelaInspecoes({ C, s, onAbrirOS, onIrParaOS, embutida = 
       )}
 
       {painel && aba === "cumprimento" && <AbaCumprimento C={C} s={s} onErro={err} />}
-      {painel && aba === "analista" && <AnalistaRotina C={C} s={s} onErro={err} onVerEquipamento={(id) => { setFiltroEq(String(id)); setAba("hist"); }} />}
+      {painel && aba === "analista" && <AnalistaRotina C={C} s={s} onErro={err} onOk={ok} podeEnviar={editar} onVerEquipamento={(id) => { setFiltroEq(String(id)); setAba("hist"); }} />}
       {modalEq?.tipo === "rotinas" && <ModalRotinas e={(painel.equipamentos || []).find((x) => x.id === modalEq.e.id) || modalEq.e} modelos={modelos} C={C} s={s} onFechar={() => setModalEq(null)} onMudou={async (t) => { ok(t); await carregar(); }} onErro={err} />}
       {modalEq?.tipo === "locar" && <ModalLocar e={modalEq.e} modelos={modelos} C={C} s={s} onFechar={() => setModalEq(null)} onMudou={mudouEq} onErro={err} />}
       {modalEq?.tipo === "encerrar" && <ModalEncerrar e={modalEq.e} C={C} s={s} onFechar={() => setModalEq(null)} onMudou={mudouEq} onErro={err} />}

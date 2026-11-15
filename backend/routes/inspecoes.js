@@ -65,6 +65,17 @@ router.post('/equipamentos/:id/locar', exigirEditar, responder(async (req) => R.
 router.post('/equipamentos/:id/encerrar-locacao', exigirEditar, responder(async (req) => R.encerrarLocacao(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
 router.get('/equipamentos/:id/locacoes', exigirVer, responder(async (req) => ({ locacoes: await R.locacoes(supabase, req.tenantId, req.params.id) })));
 router.get('/analista', exigirVer, responder((req) => require('../services/analistaRotina').painel(supabase, req.tenantId, { meses: req.query.meses }))); // 18zj: 🧠 analista da rotina
+router.get('/analista/mensal', exigirVer, responder(async (req) => { // 18zk: prévia do e-mail mensal (sem IA por padrão — ?ia=1 gera o parecer)
+  const AM = require('../services/analistaMensal'); const ym = /^\d{4}-\d{2}$/.test(String(req.query.mes)) ? req.query.mes : AM.mesAnterior(require('../services/rotinasInspecao').hojeBR());
+  const emp = (await supabase.from('tenants').select('*').eq('id', req.tenantId)).data?.[0] || null;
+  const r = await AM.montar(supabase, req.tenantId, ym, { comIA: req.query.ia === '1' });
+  return { mes: ym, mes_nome: AM.nomeMes(ym), assunto: r.assunto, html: r.html, ia: { ...require('../services/ia').status(emp), ...r.ia } };
+}));
+router.post('/analista/mensal/enviar', exigirVer, responder(async (req) => { // 18zk: enviar agora aos gestores (reenvio)
+  if (!perfisDe(req).some((p) => ['admin', 'gestor'].includes(p))) return { status: 403, erro: 'Só gestor ou admin envia o relatório' };
+  const AM = require('../services/analistaMensal'); const ym = /^\d{4}-\d{2}$/.test(String(req.body?.mes)) ? req.body.mes : AM.mesAnterior(require('../services/rotinasInspecao').hojeBR());
+  return AM.enviar(supabase, req.tenantId, ym, { forcar: true });
+}));
 router.get('/cumprimento', exigirVer, responder((req) => R.relatorioCumprimento(supabase, req.tenantId, req.query.de, req.query.ate)));
 router.get('/modelos', exigirVer, responder(async (req) => ({ modelos: await I.modelosTenant(supabase, req.tenantId) })));
 router.get('/modelos/biblioteca', exigirVer, responder(async (req) => ({ modelos: await I.bibliotecaParaTenant(supabase, req.tenantId) })));

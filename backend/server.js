@@ -278,6 +278,9 @@ if (process.env.CRON_INTERNO === '1') {
   cron.schedule('0 9 * * *', () => { // 18v: 🎁 aviso "faltam 3 dias" do teste grátis
     require('./services/assinaturas').avisarFimDoTeste(require('./db').supabase).then((r) => { if (r.avisados) console.log('🎁 [assinaturas] avisos de fim de teste:', r.avisados); }).catch((e) => console.error('⚠️ [assinaturas] fim do teste:', e.message));
   }, { timezone: 'America/Sao_Paulo' });
+  cron.schedule('0 7 1 * *', () => { // 18zj/18zk: 🧠 relatório mensal do analista da rotina de inspeção → gestores (parecer da IA se ligada)
+    require('./services/analistaMensal').enviarMensal(require('./db').supabase).then((r) => console.log('[CRON] Analista mensal:', JSON.stringify(r))).catch(console.error);
+  }, { timezone: 'America/Sao_Paulo' });
   cron.schedule('0 3 * * *', () => { // 18n.3: 🧹 notificações lidas há +30 dias / não lidas há +90 dias
     require('./services/notificacoes').limpar(require('./db').supabase).then((r) => { if (r.apagadas) console.log('🧹 [notificacoes] apagadas:', r.apagadas); }).catch((e) => console.error('⚠️ [notificacoes] limpeza:', e.message));
   }, { timezone: 'America/Sao_Paulo' });

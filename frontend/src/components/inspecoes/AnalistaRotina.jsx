@@ -4,8 +4,13 @@
 import { useState, useEffect } from "react";
 import apiService from "../../services/apiService";
 
-export default function AnalistaRotina({ C, s, onErro, onVerEquipamento }) {
+export default function AnalistaRotina({ C, s, onErro, onOk, onVerEquipamento, podeEnviar = false }) {
   const [meses, setMeses] = useState(12); const [d, setD] = useState(null);
+  // 18zk: ✉ prévia do relatório mensal (o mesmo e-mail que vai sozinho no dia 1, 7h, aos gestores)
+  const [pv, setPv] = useState(null); const [pvMes, setPvMes] = useState(""); const [pvOcup, setPvOcup] = useState(false);
+  const mesesPv = (() => { const out = []; const h = new Date(Date.now() - 3 * 36e5); let y = h.getUTCFullYear(), m = h.getUTCMonth(); for (let i = 0; i < 6; i++) { if (!m) { m = 12; y--; } out.push(`${y}-${String(m).padStart(2, "0")}`); m--; } return out; })();
+  const abrirPv = async (mes = pvMes || mesesPv[0], ia = false) => { setPvMes(mes); setPvOcup(true); try { setPv(await apiService.get("/inspecoes/analista/mensal", { mes, ...(ia ? { ia: 1 } : {}) })); } catch (e) { onErro?.(e.message); } finally { setPvOcup(false); } };
+  const enviarPv = async () => { setPvOcup(true); try { const r = await apiService.post("/inspecoes/analista/mensal/enviar", { mes: pvMes }); onOk?.(r.enviados ? `✉ Relatório de ${pv?.mes_nome} enviado a ${r.enviados} gestor(es)${r.ia?.usada ? " com o parecer da IA" : ""}` : `Não enviado: ${r.motivo || "sem destinatário"}`); } catch (e) { onErro?.(e.message); } finally { setPvOcup(false); } };
   useEffect(() => { setD(null); apiService.get("/inspecoes/analista", { meses }).then(setD).catch((e) => onErro?.(e.message)); }, [meses]); // eslint-disable-line
   const cor = (p) => (p == null ? C.muted : p >= 90 ? C.success : p >= 70 ? C.warn : C.danger);
   const NIV = { alto: [C.danger, "●"], medio: [C.warn, "●"], bom: [C.success, "✓"] };
@@ -19,7 +24,30 @@ export default function AnalistaRotina({ C, s, onErro, onVerEquipamento }) {
     <div style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginBottom: 12 }}>
       <span style={{ fontSize: 12, color: C.muted }}>Período:</span>
       {[6, 12, 24].map((n) => <button key={n} type="button" onClick={() => setMeses(n)} style={{ ...s.btn(meses === n), padding: "5px 12px", fontSize: 12.5, cursor: "pointer", ...(meses === n ? {} : { color: C.text }) }}>{n} meses</button>)}
+      <span style={{ flex: 1 }} />
+      <button type="button" disabled={pvOcup} onClick={() => abrirPv()} style={{ ...s.btn(false), padding: "5px 12px", fontSize: 12.5, cursor: "pointer", color: C.accent }}>✉ Relatório mensal</button>
     </div>
+    {pv && <div onClick={() => !pvOcup && setPv(null)} style={{ position: "fixed", inset: 0, background: "#000000aa", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 12 }}>
+      <div onClick={(e) => e.stopPropagation()} role="dialog" aria-label="Relatório mensal" style={{ ...s.card, background: C.card || C.surface, width: 720, maxWidth: "100%", maxHeight: "94vh", display: "flex", flexDirection: "column", padding: 16, gap: 10 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
+          <div style={{ fontWeight: 700, fontSize: 15, flex: 1 }}>✉ Relatório mensal do analista</div>
+          <select value={pvMes} disabled={pvOcup} onChange={(e) => abrirPv(e.target.value)} style={{ ...s.input, width: "auto", padding: "5px 8px" }}>{mesesPv.map((m) => <option key={m} value={m}>{m.slice(5)}/{m.slice(0, 4)}</option>)}</select>
+          <button type="button" onClick={() => setPv(null)} aria-label="Fechar" style={{ background: "none", border: "none", color: C.muted, fontSize: 18, cursor: "pointer" }}>✕</button>
+        </div>
+        <div style={{ fontSize: 12, color: C.textSub, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+          <span style={s.tag(pv.ia.ligada ? C.success : C.muted)}>🧠 IA {pv.ia.ligada ? `ligada · ${pv.ia.nome}` : "desligada"}</span>
+          <span style={{ flex: 1 }}>{pv.ia.ligada ? (pv.ia.usada ? "Parecer da IA incluído abaixo." : pv.ia.motivo && pv.ia.motivo !== "não pedido" ? `Sem parecer: ${pv.ia.motivo}.` : "A prévia mostra os achados por regra; o e-mail do dia 1 inclui o parecer da IA.") : `${pv.ia.motivo || "IA desligada"} — o e-mail sai completo, só sem o parecer.`}</span>
+          {pv.ia.ligada && !pv.ia.usada && <button type="button" disabled={pvOcup} onClick={() => abrirPv(pvMes, true)} style={{ ...s.btn(false), padding: "4px 10px", fontSize: 12, cursor: "pointer", color: C.accent }}>{pvOcup ? "Gerando…" : "🧠 Gerar parecer na prévia"}</button>}
+        </div>
+        <div style={{ fontSize: 12, color: C.muted }}>Assunto: <b style={{ color: C.text }}>{pv.assunto}</b></div>
+        <iframe title="Prévia do e-mail" srcDoc={pv.html} style={{ flex: 1, minHeight: 360, border: `1px solid ${C.border}`, borderRadius: 8, background: "#fff" }} />
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", alignItems: "center", flexWrap: "wrap" }}>
+          <span style={{ fontSize: 11.5, color: C.muted, flex: 1 }}>Vai sozinho todo dia 1, às 7h, para os gestores (o admin não recebe).</span>
+          <button type="button" onClick={() => setPv(null)} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>Fechar</button>
+          {podeEnviar && <button type="button" disabled={pvOcup} onClick={enviarPv} style={{ ...s.btn(true), cursor: "pointer" }}>{pvOcup ? "Enviando…" : "✉ Enviar agora aos gestores"}</button>}
+        </div>
+      </div>
+    </div>}
     {!d ? <div style={{ color: C.muted }}>Analisando…</div> : <>
       <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 12 }}>
         {[["CUMPRIMENTO", d.total.pct == null ? "—" : `${d.total.pct}%`, cor(d.total.pct), `${d.total.cumpridas} de ${d.total.esperadas} previstas`],
