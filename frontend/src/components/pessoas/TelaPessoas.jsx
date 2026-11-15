@@ -5,7 +5,7 @@
 // Funções (descritivo do cargo + documentos exigidos; importar da biblioteca do QuotaFlow) ·
 // 🦺 EPI (12d.1 — TelaEpi.jsx; kit de EPI na função) · 🎓 Treinamentos (12e.1 — TelaTreinamentos.jsx).
 // Confirmações sempre no modal do app (nunca window.confirm/alert).
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { moduloAtivo, aoMudarModulos } from "../../utils/modulosSessao"; // 18t
 import TextoComPlano from "../shared/TextoComPlano"; // 18t.1
 import apiService from "../../services/apiService";
@@ -264,14 +264,23 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
   };
 
   // ─── 12d.0: funções e ficha ──────────────────────────────────────────
+  // 18zz: a ficha abre NA HORA (com "carregando…") — o clique sempre dá resposta; 2º clique não dispara outra busca;
+  //   as duas consultas vão juntas; erro aparece dentro do modal com "Tentar de novo"; passou de 8 s, avisa que está demorando.
+  const [fichaCarr, setFichaCarr] = useState(null); // { id, nome, foto, erro?, lento? }
+  const abrindoFicha = useRef(null);
   const abrirFicha = async (colabId) => {
+    if (abrindoFicha.current === String(colabId)) return;
+    abrindoFicha.current = String(colabId);
+    const c = colabs.find((x) => String(x.id) === String(colabId));
+    setFichaCarr({ id: colabId, nome: c?.nome || "", foto: c?.foto_url || null });
+    const lento = setTimeout(() => setFichaCarr((x) => (x && String(x.id) === String(colabId) ? { ...x, lento: true } : x)), 8000);
     try {
-      const f = await apiService.get(`/pessoas/colaboradores/${colabId}/ficha`);
-      let hist = [];
-      try { hist = (await apiService.get(`/pessoas/colaboradores/${colabId}/funcoes`))?.historico || []; } catch { /* sem a 029 */ }
-      setFicha({ ...f, historico_funcoes: hist });
+      const [f, h] = await Promise.all([apiService.get(`/pessoas/colaboradores/${colabId}/ficha`), apiService.get(`/pessoas/colaboradores/${colabId}/funcoes`).catch(() => null)]);
+      if (abrindoFicha.current !== String(colabId)) return; // fechou/abriu outra no meio
+      setFicha({ ...f, historico_funcoes: h?.historico || [] }); setFichaCarr(null);
     }
-    catch (e) { setErro(e.message); }
+    catch (e) { setFichaCarr((x) => (x ? { ...x, erro: e.message || "Não consegui abrir a ficha" } : x)); }
+    finally { clearTimeout(lento); abrindoFicha.current = null; }
   };
   const abrirBiblioteca = async () => {
     try { const r = await apiService.get("/pessoas/funcoes/biblioteca"); setBuscaBiblio(""); setBiblio({ modelos: r?.modelos || [], aberto: null }); }
@@ -725,6 +734,19 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
           </div>
         </div>
       </div>}
+      {fichaCarr && !ficha && modal(<div style={{ textAlign: "center", padding: "18px 0" }}>{/* 18zz: abre na hora */}
+        {fichaCarr.foto && <img src={fichaCarr.foto} alt="" style={{ width: 54, height: 68, objectFit: "cover", borderRadius: 8, marginBottom: 8 }} />}
+        <div style={{ fontSize: 16, fontWeight: 700 }}>📋 Ficha — {fichaCarr.nome}</div>
+        {fichaCarr.erro ? <>
+          <div style={{ color: C.danger, fontSize: 13.5, margin: "12px 0" }}>{fichaCarr.erro}</div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "center" }}>
+            <button type="button" onClick={() => setFichaCarr(null)} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>Fechar</button>
+            <button type="button" onClick={() => { const id = fichaCarr.id; setFichaCarr(null); abrirFicha(id); }} style={{ ...s.btn(true), cursor: "pointer" }}>Tentar de novo</button></div></>
+          : <><div style={{ margin: "16px auto 8px", width: 28, height: 28, border: `3px solid ${C.border}`, borderTopColor: C.accent, borderRadius: "50%", animation: "qfgira 0.8s linear infinite" }} />
+            <style>{"@keyframes qfgira{to{transform:rotate(360deg)}}"}</style>
+            <div style={{ fontSize: 13, color: C.textSub }}>Carregando documentos, EPI, treinamentos e competências…</div>
+            {fichaCarr.lento && <div style={{ fontSize: 12, color: C.warn, marginTop: 6 }}>Está demorando mais que o normal (conexão ou servidor acordando). Aguarde — não precisa clicar de novo.</div>}</>}
+      </div>, () => { abrindoFicha.current = null; setFichaCarr(null); }, 420)}
       {ficha && modal(<>
         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>{(() => { const f = colabs.find((x) => String(x.id) === String(ficha.colaborador.id))?.foto_url; return f ? <img src={f} alt="" style={{ width: 54, height: 68, objectFit: "cover", borderRadius: 8 }} /> : null; })()}
           <div style={{ fontSize: 17, fontWeight: 700 }}>📋 Ficha — {ficha.colaborador.nome}</div></div>{/* 18zq: foto */}

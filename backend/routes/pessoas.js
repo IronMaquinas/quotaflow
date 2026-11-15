@@ -571,24 +571,28 @@ router.get('/colaboradores/:id/ficha', exigirVer, async (req, res) => {
   try {
     const c = await colaboradorDoTenant(req, req.params.id);
     if (!c) return res.status(404).json({ erro: 'Colaborador não encontrado' });
-    const fichas = await F.fichasDoTenant(supabase, req.tenantId, [c]);
+    // 18zz: tudo em PARALELO (antes eram ~8 consultas em fila — a ficha demorava e parecia que o clique não tinha pegado)
+    const tenta = (fn, padrao, ignora) => fn().catch((e) => { if (ignora.test(String(e?.message || ''))) return padrao; throw e; });
+    const [fichas, bEpi, bK, bTr, histTr, disc, mult] = await Promise.all([
+      F.fichasDoTenant(supabase, req.tenantId, [c]),
+      tenta(() => EE.carregarBase(supabase, req.tenantId), null, /epi_|tam_/),
+      tenta(() => K.carregarBase(supabase, req.tenantId), null, /colaborador_competencias/),
+      tenta(() => TR.carregarBase(supabase, req.tenantId), null, /treinamento/),
+      tenta(() => TR.historico(supabase, req.tenantId, c.id), null, /treinamento/),
+      podeEditar(req) ? DI.listar(supabase, req.tenantId, { colaboradorId: c.id }).catch(() => undefined) : Promise.resolve(null),
+      MU.listar(supabase, req.tenantId, { colaboradorId: c.id }).catch(() => undefined),
+    ]);
     const f = fichas.get(String(c.id));
-    let epi = null;
-    try { epi = EE.statusColaborador(c, await EE.carregarBase(supabase, req.tenantId)); }
-    catch (e) { if (!/epi_|tam_/.test(String(e.message))) throw e; }
-    let comp = null; // 12e.3
-    try { comp = K.statusColaborador(c, await K.carregarBase(supabase, req.tenantId), F.ESCOLARIDADES); }
-    catch (e) { if (!/colaborador_competencias/.test(String(e.message))) throw e; }
-    let trein = null; // 12e.1
-    try { trein = TR.statusColaborador(c, await TR.carregarBase(supabase, req.tenantId)); trein.horas = TR.resumoHoras(await TR.historico(supabase, req.tenantId, c.id)); } // 12e.2a: ⏱
-    catch (e) { if (!/treinamento/.test(String(e.message))) throw e; }
+    let epi = null; try { if (bEpi) epi = EE.statusColaborador(c, bEpi); } catch (e) { if (!/epi_|tam_/.test(String(e.message))) throw e; }
+    let comp = null; try { if (bK) comp = K.statusColaborador(c, bK, F.ESCOLARIDADES); } catch (e) { if (!/colaborador_competencias/.test(String(e.message))) throw e; }
+    let trein = null; try { if (bTr) { trein = TR.statusColaborador(c, bTr); trein.horas = histTr ? TR.resumoHoras(histTr) : null; } } catch (e) { if (!/treinamento/.test(String(e.message))) throw e; }
     res.json({
       epi: epi ? { itens: epi.itens, resumo: epi.resumo, extras: epi.extras } : null,
       treinamentos: trein ? { itens: trein.itens, resumo: trein.resumo, horas: trein.horas || null } : null,
       selo: CF.selo({ funcaoLigada: !!f.funcao, docs: f.resumo, epi: epi?.resumo, trein: trein?.resumo, comp: comp?.resumo, vinculo: c.vinculo }),
       competencias: comp ? { itens: comp.itens, resumo: comp.resumo } : null,
-      disciplinar: podeEditar(req) ? await (async () => { try { const l = await DI.listar(supabase, req.tenantId, { colaboradorId: c.id }); return { lista: l.slice(0, 20), resumo: DI.resumoColaborador(l) }; } catch (e) { if (/medidas_disciplinares/.test(String(e.message))) return null; throw e; } })() : null, // 12h (LGPD: só quem edita)
-      multas: await (async () => { try { const l = await MU.listar(supabase, req.tenantId, { colaboradorId: c.id }); return { lista: l.slice(0, 20), resumo: MU.resumoColaborador(l) }; } catch (e) { if (/multas/.test(String(e.message))) return null; throw e; } })(), // 12g
+      disciplinar: disc ? { lista: disc.slice(0, 20), resumo: DI.resumoColaborador(disc) } : null, // 12h (LGPD: só quem edita) · 18zz: veio do Promise.all
+      multas: mult ? { lista: mult.slice(0, 20), resumo: MU.resumoColaborador(mult) } : null, // 12g · 18zz
       colaborador_comp: { escolaridade: c.escolaridade ?? null, cnh_categoria: c.cnh_categoria ?? null },
       colaborador: { id: c.id, nome: c.nome, situacao: c.situacao, funcao_id: c.funcao_id, funcao: c.funcao },
       funcao: f.funcao ? { id: f.funcao.id, nome: f.funcao.nome, descritivo: f.funcao.descritivo, requisitos: f.funcao.requisitos, cbo: f.funcao.cbo || null, setor: f.funcao.setor || null, escolaridade: f.funcao.escolaridade || null, riscos: f.funcao.riscos || [], responde_a: f.funcao.responde_a || null } : null,
