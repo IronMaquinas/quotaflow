@@ -6,10 +6,14 @@ import { useEffect, useMemo, useState } from "react";
 import apiService from "../../services/apiService";
 import VerArquivo from "../programacao/VerArquivo";
 import ConfirmarExclusao from "../shared/ConfirmarExclusao";
+import { dadosEmpresa } from "../../utils/logoEmpresa";
+import { corpoDocGestao, imprimirDocGestao, CSS_DOC_GESTAO } from "../../utils/gerarDocumentoGestao"; // 18zu: logo + rodapé
 
 const ORDEM = ["manual", "politica", "procedimento", "instrucao", "formulario", "registro", "outro"];
 const ICONE = { manual: "📕", politica: "🧭", procedimento: "📋", instrucao: "🛠", formulario: "🗒", registro: "🗂", outro: "📄" };
 const dBR = (s) => (s ? String(s).slice(0, 10).split("-").reverse().join("/") : "—");
+// 18zu: prévia do modelo já com os dados da empresa (o servidor faz o mesmo na importação)
+const preencherPrevia = (txt) => { const e = dadosEmpresa(); const c = String(e.cnpj || "").replace(/\D/g, ""); return String(txt || "").replace(/\{\{EMPRESA\}\}/g, e.nome || e.razao_social || "[nome da empresa]").replace(/\{\{CNPJ\}\}/g, c.length === 14 ? c.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5") : "[CNPJ]").replace(/\{\{CIDADE_UF\}\}/g, "[cidade/UF]"); };
 const rev = (n) => `Rev. ${String(n ?? 0).padStart(2, "0")}`;
 const lerArq = (f) => new Promise((ok, erro) => { const r = new FileReader(); r.onload = () => ok({ base64: String(r.result).split(",")[1], mime: f.type, nome: f.name }); r.onerror = () => erro(new Error("Não consegui ler o arquivo")); r.readAsDataURL(f); });
 
@@ -89,15 +93,7 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
 
     {ver && <div onClick={() => setVer(null)} style={{ position: "fixed", inset: 0, background: "#000000aa", zIndex: 80, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: 16, overflowY: "auto" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "min(820px, 100%)" }}>
-        <div style={{ background: "#fff", color: "#111", borderRadius: 6, padding: "28px 34px", fontFamily: "Arial, Helvetica, sans-serif", fontSize: 13.5, lineHeight: 1.6 }}>
-          <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 18, fontSize: 12, color: "#111" }}><tbody>
-            <tr><td rowSpan={2} style={{ border: "1px solid #999", padding: 8, fontWeight: 700, fontSize: 15 }}>{ver.titulo}</td><td style={{ border: "1px solid #999", padding: 6, width: 130 }}>Código: <b>{ver.codigo}</b></td></tr>
-            <tr><td style={{ border: "1px solid #999", padding: 6 }}>{rev(ver.revisao)} · {STATUS_TXT[ver.status]}</td></tr>
-            <tr><td colSpan={2} style={{ border: "1px solid #999", padding: 6 }}>Elaborado: {ver.elaborado_por || "—"} · Aprovado: {ver.aprovado_por || "—"} em {dBR(ver.aprovado_em)}{ver.norma ? ` · Referência: ${ver.norma}` : ""}</td></tr>
-          </tbody></table>
-          {ver.motivo_revisao && <div style={{ fontSize: 12, color: "#444", border: "1px solid #ddd", background: "#fafafa", padding: "6px 10px", marginBottom: 14 }}><b>Alterações desta revisão:</b> {ver.motivo_revisao}</div>}
-          {ver.conteudo ? <div style={{ whiteSpace: "pre-wrap" }}>{ver.conteudo}</div> : <div style={{ color: "#666" }}>Sem texto no sistema{ver.arquivo_url ? " — veja o arquivo anexo." : "."}</div>}
-        </div>
+        <div style={{ background: "#fff", borderRadius: 6, padding: "26px 32px", overflow: "hidden" }}><style>{CSS_DOC_GESTAO}</style><div dangerouslySetInnerHTML={{ __html: corpoDocGestao(ver) }} /></div>
         {ver.status === "vigente" && leit && <div style={{ ...s.card, background: C.surface, padding: "10px 12px", marginTop: 10, fontSize: 12.5 }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <b style={{ flex: 1 }}>👥 Leitura da {rev(leit.revisao)}: {leit.leituras.length} pessoa(s)</b>
@@ -121,7 +117,7 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
           <button type="button" onClick={async () => { try { setHist((await apiService.get(`/pessoas/gestao/${ver.id}/versoes`)).versoes || []); } catch (e) { onErro?.(e?.response?.data?.erro || e.message); } }} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>🗂 Histórico</button>
           {editar && ver.status === "vigente" && <button type="button" onClick={() => abrirRevisao(ver)} style={{ ...s.btn(false), cursor: "pointer", color: C.accent }}>{ver.rascunho ? `✎ Continuar Rev. ${String((ver.revisao || 0) + 1).padStart(2, "0")}` : "↻ Nova revisão"}</button>}
           {ver.arquivo_url && <button type="button" onClick={() => setArq({ url: ver.arquivo_url, nome: ver.arquivo_nome, mime: ver.arquivo_mime })} style={{ ...s.btn(false), cursor: "pointer", color: C.accent }}>📎 Arquivo anexo</button>}
-          <button type="button" onClick={() => window.print()} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>🖨 Imprimir</button>
+          <button type="button" onClick={() => { try { imprimirDocGestao(ver); } catch (e) { onErro?.(e.message); } }} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>🖨 Imprimir / PDF</button>
           <button type="button" onClick={() => setVer(null)} style={{ ...s.btn(true), cursor: "pointer" }}>Fechar</button>
         </div>
       </div>
@@ -143,11 +139,7 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
     </div>}
     {verMod && <div onClick={() => setVerMod(null)} style={{ position: "fixed", inset: 0, background: "#000000cc", zIndex: 95, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: 16, overflowY: "auto" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "min(820px, 100%)" }}>
-        <div style={{ background: "#fff", color: "#111", borderRadius: 6, padding: "28px 34px", fontFamily: "Arial, Helvetica, sans-serif", fontSize: 13.5, lineHeight: 1.6 }}>
-          <div style={{ fontWeight: 700, fontSize: 15 }}>{verMod.codigo} · {verMod.titulo}</div>
-          <div style={{ fontSize: 12, color: "#555", marginBottom: 14 }}>{verMod.norma} · modelo — os {"{{campos}}"} são preenchidos com os dados da sua empresa ao importar</div>
-          <div style={{ whiteSpace: "pre-wrap" }}>{verMod.conteudo}</div>
-        </div>
+        <div style={{ background: "#fff", borderRadius: 6, padding: "26px 32px", overflow: "hidden" }}><style>{CSS_DOC_GESTAO}</style><div dangerouslySetInnerHTML={{ __html: corpoDocGestao({ ...verMod, revisao: 0, status: "rascunho", conteudo: preencherPrevia(verMod.conteudo) }) }} /></div>
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
           <button type="button" onClick={() => setVerMod(null)} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>Voltar</button>
         </div>
@@ -155,14 +147,10 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
     </div>}
     {verVersao && <div onClick={() => setVerVersao(null)} style={{ position: "fixed", inset: 0, background: "#000000cc", zIndex: 95, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: 16, overflowY: "auto" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "min(820px, 100%)" }}>
-        <div style={{ background: "#fff", color: "#111", borderRadius: 6, padding: "28px 34px", fontFamily: "Arial, Helvetica, sans-serif", fontSize: 13.5, lineHeight: 1.6, position: "relative", overflow: "hidden" }}>
-          <div style={{ position: "absolute", top: 40, right: -40, transform: "rotate(30deg)", background: "#b91c1c", color: "#fff", padding: "4px 60px", fontWeight: 800, fontSize: 13, letterSpacing: "0.1em" }}>OBSOLETO</div>
-          <div style={{ fontWeight: 700, fontSize: 15 }}>{verVersao.titulo} — {rev(verVersao.revisao)}</div>
-          <div style={{ fontSize: 12, color: "#555", marginBottom: 14 }}>Aprovado {dBR(verVersao.aprovado_em)}{verVersao.aprovado_por ? ` por ${verVersao.aprovado_por}` : ""} · obsoleto desde {dBR(verVersao.vigente_ate)} · cópia não controlada</div>
-          {verVersao.conteudo ? <div style={{ whiteSpace: "pre-wrap" }}>{verVersao.conteudo}</div> : <div style={{ color: "#666" }}>Sem texto no sistema.</div>}
-        </div>
+        <div style={{ background: "#fff", borderRadius: 6, padding: "26px 32px", overflow: "hidden" }}><style>{CSS_DOC_GESTAO}</style><div dangerouslySetInnerHTML={{ __html: corpoDocGestao({ ...verVersao, codigo: ver?.codigo || "", status: "obsoleto" }, { obsoleto: true }) }} /></div>
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
           {verVersao.arquivo_url && <button type="button" onClick={() => setArq({ url: verVersao.arquivo_url, nome: verVersao.arquivo_nome, mime: verVersao.arquivo_mime })} style={{ ...s.btn(false), cursor: "pointer", color: C.accent }}>📎 Arquivo desta revisão</button>}
+          <button type="button" onClick={() => { try { imprimirDocGestao({ ...verVersao, codigo: ver?.codigo || "", status: "obsoleto" }, { obsoleto: true }); } catch (e) { onErro?.(e.message); } }} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>🖨 Imprimir</button>
           <button type="button" onClick={() => setVerVersao(null)} style={{ ...s.btn(true), cursor: "pointer" }}>Fechar</button>
         </div>
       </div>
