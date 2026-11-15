@@ -247,7 +247,7 @@ router.put('/colaboradores/:id', exigirEditar, async (req, res) => {
 // 18zr: 📘 DOCUMENTOS DE GESTÃO (sistema da qualidade) — manual, procedimentos, políticas… com código e revisão
 const DG = require('../services/documentosGestao');
 const semTabelaDG = (err) => /documentos_gestao/.test(String(err?.message || ''));
-const errDG = (res, err, onde) => { if (err.status) return res.status(err.status).json({ erro: err.message }); if (/rascunho|motivo_revisao|documentos_gestao_(versoes|leituras)/.test(String(err?.message || ''))) return res.status(409).json({ erro: 'Rode a migration 093 (revisões e leituras)' }); if (semTabelaDG(err)) return res.status(409).json({ erro: 'Rode a migration 092 (documentos de gestão)' }); erro(res, onde, err); };
+const errDG = (res, err, onde) => { if (err.status) return res.status(err.status).json({ erro: err.message }); if (/fluxo|assinaturas|codigo_verificacao/.test(String(err?.message || ''))) return res.status(409).json({ erro: 'Rode a migration 094 (fluxo e assinaturas)' }); if (/rascunho|motivo_revisao|documentos_gestao_(versoes|leituras)/.test(String(err?.message || ''))) return res.status(409).json({ erro: 'Rode a migration 093 (revisões e leituras)' }); if (semTabelaDG(err)) return res.status(409).json({ erro: 'Rode a migration 092 (documentos de gestão)' }); erro(res, onde, err); };
 router.get('/gestao', exigirVer, async (req, res) => {
   try { res.json({ documentos: await DG.listar(supabase, req.tenantId), tipos: DG.TIPOS, status: DG.STATUS, pode_editar: podeEditar(req) }); }
   catch (err) { if (semTabelaDG(err)) return res.json({ documentos: [], tipos: DG.TIPOS, status: DG.STATUS, pode_editar: podeEditar(req), sem_tabela: true }); erro(res, 'gestao', err); }
@@ -256,13 +256,19 @@ router.get('/gestao/modelos', exigirVer, async (req, res) => { try { res.json(aw
 router.post('/gestao/modelos/:mid/importar', exigirEditar, async (req, res) => { try { res.status(201).json({ documento: await DG.importarModelo(supabase, req.tenantId, req.params.mid, req.body || {}) }); } catch (err) { errDG(res, err, 'gestao-importar'); } });
 router.get('/gestao/:id', exigirVer, async (req, res) => {
   try { const d = await DG.obter(supabase, req.tenantId, req.params.id); if (!d) return res.status(404).json({ erro: 'Documento não encontrado' });
-    res.json({ documento: { ...d, arquivo_url: d.arquivo_path ? await D.linkArquivo(supabase, d.arquivo_path) : null, rascunho_arquivo_url: d.rascunho?.arquivo?.arquivo_path ? await D.linkArquivo(supabase, d.rascunho.arquivo.arquivo_path).catch(() => null) : null }, pode_aprovar: perfisDe(req).some((p) => ['admin', 'gestor', 'qualidade'].includes(p)) }); } catch (err) { errDG(res, err, 'gestao'); }
+    res.json({ documento: { ...d, arquivo_url: d.arquivo_path ? await D.linkArquivo(supabase, d.arquivo_path) : null, rascunho_arquivo_url: d.rascunho?.arquivo?.arquivo_path ? await D.linkArquivo(supabase, d.rascunho.arquivo.arquivo_path).catch(() => null) : null }, pode_aprovar: perfisDe(req).some((p) => ['admin', 'gestor', 'qualidade'].includes(p)), eu: req.userId, assinatura: DG.conferirAssinatura(d) }); } catch (err) { errDG(res, err, 'gestao'); }
 });
 router.post('/gestao', exigirEditar, async (req, res) => { try { res.status(201).json({ documento: await DG.criar(supabase, req.tenantId, req.body) }); } catch (err) { errDG(res, err, 'gestao'); } });
 router.put('/gestao/:id', exigirEditar, async (req, res) => { try { res.json({ documento: await DG.atualizar(supabase, req.tenantId, req.params.id, req.body) }); } catch (err) { errDG(res, err, 'gestao'); } });
 // 18zs: revisão · histórico · leitura
 const APROVAR_DG = ['admin', 'gestor', 'qualidade'];
-const quemSou = async (req) => { try { const u = (await q(supabase.from('usuarios').select('*').eq('id', req.userId)))[0]; return { id: req.userId, nome: u?.nome || req.userEmail || null }; } catch { return { id: req.userId, nome: req.userEmail || null }; } };
+const PERFIL_NOME = { admin: 'Administrador', gestor: 'Gestor', qualidade: 'Qualidade', operacao: 'Operação', comprador: 'Compras' };
+const quemSou = async (req) => { // 18zv: + função (do colaborador ligado ao login; senão, o perfil) — vai na assinatura
+  let u = null; try { u = (await q(supabase.from('usuarios').select('*').eq('id', req.userId)))[0]; } catch { /* segue */ }
+  let funcao = null; try { const c = (await q(supabase.from('colaboradores').select('*').eq('tenant_id', req.tenantId).eq('usuario_id', req.userId)))[0];
+    if (c?.funcao_id) funcao = (await q(supabase.from('funcoes').select('*').eq('id', c.funcao_id)))[0]?.nome || null; } catch { /* segue */ }
+  return { id: req.userId, nome: u?.nome || req.userEmail || null, funcao: funcao || PERFIL_NOME[perfisDe(req)[0]] || null };
+};
 router.put('/gestao/:id/rascunho', exigirEditar, async (req, res) => { try { res.json({ documento: await DG.salvarRascunho(supabase, req.tenantId, req.params.id, req.body) }); } catch (err) { errDG(res, err, 'gestao-rascunho'); } });
 router.delete('/gestao/:id/rascunho', exigirEditar, async (req, res) => { try { res.json(await DG.descartarRascunho(supabase, req.tenantId, req.params.id)); } catch (err) { errDG(res, err, 'gestao-rascunho'); } });
 router.post('/gestao/:id/aprovar', exigirEditar, async (req, res) => {
@@ -272,6 +278,24 @@ router.post('/gestao/:id/aprovar', exigirEditar, async (req, res) => {
 router.post('/gestao/:id/publicar', exigirEditar, async (req, res) => { // 18zt: rascunho → vigente (aprovação)
   try { if (!perfisDe(req).some((p) => APROVAR_DG.includes(p))) return res.status(403).json({ erro: 'Só admin, gestor ou qualidade aprova' });
     const eu = await quemSou(req); res.json({ documento: await DG.publicar(supabase, req.tenantId, req.params.id, { aprovador: eu.nome }) }); } catch (err) { errDG(res, err, 'gestao-publicar'); }
+});
+// 18zv: ✍ fluxo interno — enviar · verificar · devolver · aprovar (assinatura eletrônica com o login)
+const pessoasDG = async (req) => { const N = require('../services/notificacoes');
+  const ap = (await N.usuariosComPerfis(supabase, req.tenantId, APROVAR_DG)).map((u) => ({ id: u.id, nome: u.nome || u.email }));
+  const ve = (await N.usuariosComPerfis(supabase, req.tenantId, VER)).map((u) => ({ id: u.id, nome: u.nome || u.email }));
+  return { aprovadores: ap, verificadores: ve }; };
+router.get('/gestao-pessoas', exigirVer, async (req, res) => { try { res.json({ ...(await pessoasDG(req)), eu: req.userId }); } catch (err) { errDG(res, err, 'gestao-pessoas'); } });
+router.post('/gestao/:id/enviar', exigirEditar, async (req, res) => {
+  try { const { aprovadores, verificadores } = await pessoasDG(req); const b = req.body || {};
+    const aprovador = aprovadores.find((u) => String(u.id) === String(b.aprovador_id)) || null; const verificador = b.verificador_id ? verificadores.find((u) => String(u.id) === String(b.verificador_id)) || null : null;
+    if (b.verificador_id && !verificador) return res.status(400).json({ erro: 'Verificador inválido' });
+    res.json({ documento: await DG.enviarFluxo(supabase, req.tenantId, req.params.id, { eu: await quemSou(req), aprovador, verificador, comentario: b.comentario, aprovadores }) }); } catch (err) { errDG(res, err, 'gestao-enviar'); }
+});
+router.post('/gestao/:id/verificar', exigirVer, async (req, res) => { try { res.json({ documento: await DG.verificarFluxo(supabase, req.tenantId, req.params.id, { eu: await quemSou(req), comentario: req.body?.comentario }) }); } catch (err) { errDG(res, err, 'gestao-verificar'); } });
+router.post('/gestao/:id/devolver', exigirVer, async (req, res) => { try { res.json({ documento: await DG.devolverFluxo(supabase, req.tenantId, req.params.id, { eu: await quemSou(req), comentario: req.body?.comentario }) }); } catch (err) { errDG(res, err, 'gestao-devolver'); } });
+router.post('/gestao/:id/aprovar-fluxo', exigirVer, async (req, res) => {
+  try { if (!perfisDe(req).some((p) => APROVAR_DG.includes(p))) return res.status(403).json({ erro: 'Só admin, gestor ou qualidade aprova' });
+    res.json({ documento: await DG.aprovarFluxo(supabase, req.tenantId, req.params.id, { eu: await quemSou(req) }) }); } catch (err) { errDG(res, err, 'gestao-aprovar-fluxo'); }
 });
 router.get('/gestao/:id/versoes', exigirVer, async (req, res) => {
   try { const l = await DG.versoes(supabase, req.tenantId, req.params.id);

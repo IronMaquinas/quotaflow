@@ -178,7 +178,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
 
   // 18zq: documentos agrupados por dono (pessoas, depois equipamentos, depois empresa; dentro, quem tem vencido primeiro)
   const [gruposAbertos, setGruposAbertos] = useState({});
-  const [abaDoc, setAbaDoc] = useState("colaborador"); // 18zr: aba do 📁 Documentos
+  const [abaDoc, setAbaDoc] = useState(() => { const a = modo === "documentos" ? window.qfDocsAba : null; window.qfDocsAba = null; return a || "colaborador"; }); // 18zr: aba do 📁 Documentos (18zv: o aviso do fluxo abre direto em 📘 Gestão)
   useEffect(() => { if (modo === "documentos") setFiltroAlvo("colaborador"); }, []); // eslint-disable-line
   const grupos = useMemo(() => {
     const m = new Map(); const ORD = { colaborador: 0, equipamento: 1, empresa: 2 };

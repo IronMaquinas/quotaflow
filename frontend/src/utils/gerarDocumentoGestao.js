@@ -7,7 +7,16 @@ import { logoHtml, dadosEmpresa } from "./logoEmpresa";
 const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 const dBR = (v) => (v ? String(v).slice(0, 10).split("-").reverse().join("/") : "—");
 const rev = (n) => `Rev. ${String(n ?? 0).padStart(2, "0")}`;
-const SIT = { rascunho: "RASCUNHO — não aprovado", vigente: "Vigente", obsoleto: "OBSOLETO" };
+// 18zv: bloco de assinaturas eletrônicas (quem elaborou / verificou / aprovou, quando, função) + código de verificação
+const ETAPA_TXT = { elaborado: "Elaborado", verificado: "Verificado", aprovado: "Aprovado" };
+const dh = (iso) => { try { return new Date(iso).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }); } catch { return ""; } };
+function assinaturasHtml(d) {
+  const l = d.assinaturas?.lista; if (!l?.length) return "";
+  const inval = d.assinatura && d.assinatura.valida === false;
+  return `<div class="ass" style="border:1px solid ${inval ? "#b91c1c" : "#cbd5e1"};padding:6px 10px;margin-bottom:14px;font-size:11.5px">${l.map((a) => `<div>✍ <b>${ETAPA_TXT[a.etapa] || a.etapa}:</b> ${esc(a.nome || "—")}${a.funcao ? ` (${esc(a.funcao)})` : ""} — ${dh(a.em)}</div>`).join("")}
+    <div style="color:${inval ? "#b91c1c" : "#555"};margin-top:2px">${inval ? "⚠ O texto foi alterado depois da aprovação — assinatura INVÁLIDA." : `Assinado eletronicamente no QuotaFlow · código de verificação <b>${esc(d.codigo_verificacao || "")}</b>`}</div></div>`;
+}
+const SIT = { rascunho: "RASCUNHO — não aprovado", vigente: "Vigente", obsoleto: "OBSOLETO", em_aprovacao: "EM APROVAÇÃO" };
 const cnpjFmt = (v) => { const d = String(v || "").replace(/\D/g, ""); return d.length === 14 ? d.replace(/^(\d{2})(\d{3})(\d{3})(\d{4})(\d{2})$/, "$1.$2.$3/$4-$5") : v || ""; };
 
 export const CSS_DOC_GESTAO = `.dg{font-family:Arial,Helvetica,sans-serif;color:#111;font-size:13px;line-height:1.6;position:relative}
@@ -21,11 +30,12 @@ export const CSS_DOC_GESTAO = `.dg{font-family:Arial,Helvetica,sans-serif;color:
 export function corpoDocGestao(d, { obsoleto = false } = {}) {
   const e = dadosEmpresa(); const sit = obsoleto ? "obsoleto" : d.status;
   const logo = logoHtml({ altura: 46, largura: 140, margem: "0 auto" }) || `<b style="font-size:12px">${esc(e.razao_social || e.nome || "")}</b>`;
-  return `<div class="dg">${sit !== "vigente" ? `<div class="tarja">${sit === "obsoleto" ? "OBSOLETO" : "RASCUNHO"}</div>` : ""}
+  return `<div class="dg">${sit !== "vigente" ? `<div class="tarja">${sit === "obsoleto" ? "OBSOLETO" : sit === "em_aprovacao" ? "EM APROVAÇÃO" : "RASCUNHO"}</div>` : ""}
     <table class="cab"><tr><td rowspan="2" class="logo">${logo}</td><td rowspan="2" class="tit">${esc(d.titulo)}</td><td class="ctl">Código: <b>${esc(d.codigo)}</b></td></tr>
       <tr><td class="ctl">${rev(d.revisao)} · ${esc(SIT[sit] || sit)}</td></tr>
       <tr><td colspan="3" style="font-size:11.5px">Elaborado: ${esc(d.elaborado_por || "—")} · Aprovado: ${esc(d.aprovado_por || "—")} em ${dBR(d.aprovado_em)}${d.norma ? ` · Referência: ${esc(d.norma)}` : ""}${e.cnpj ? ` · ${esc(e.razao_social || e.nome || "")} — CNPJ ${esc(cnpjFmt(e.cnpj))}` : ""}</td></tr></table>
     ${d.motivo_revisao || d.motivo ? `<div class="mot"><b>Alterações desta revisão:</b> ${esc(d.motivo_revisao || d.motivo)}</div>` : ""}
+    ${assinaturasHtml(d)}
     <div class="txt">${d.conteudo ? esc(d.conteudo) : '<span style="color:#666">Sem texto no sistema — veja o arquivo anexo.</span>'}</div>
     <div class="rod"><span>${esc(d.codigo)} · ${rev(d.revisao)}${obsoleto ? " · OBSOLETO" : ""}</span><span>Documento controlado eletronicamente no QuotaFlow — cópia impressa não controlada</span><span>Impresso em ${new Date().toLocaleDateString("pt-BR")}</span></div></div>`;
 }

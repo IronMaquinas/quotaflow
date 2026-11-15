@@ -20,9 +20,9 @@ const lerArq = (f) => new Promise((ok, erro) => { const r = new FileReader(); r.
 export default function DocumentosGestao({ C, s, onErro, onAviso }) {
   const [d, setD] = useState(null); const [busca, setBusca] = useState(""); const [verObsoletos, setVerObsoletos] = useState(false);
   const [form, setForm] = useState(null); const [ver, setVer] = useState(null);
-  const [revi, setRevi] = useState(null); const [hist, setHist] = useState(null); const [leit, setLeit] = useState(null); const [verVersao, setVerVersao] = useState(null); const [descartar, setDescartar] = useState(false); /* 18zs */ const [bib, setBib] = useState(null); const [buscaBib, setBuscaBib] = useState(""); const [verMod, setVerMod] = useState(null); const [publicar, setPublicar] = useState(false); /* 18zt */ const [arq, setArq] = useState(null); const [apagar, setApagar] = useState(null); const [ocup, setOcup] = useState(false);
+  const [revi, setRevi] = useState(null); const [hist, setHist] = useState(null); const [leit, setLeit] = useState(null); const [verVersao, setVerVersao] = useState(null); const [descartar, setDescartar] = useState(false); /* 18zs */ const [bib, setBib] = useState(null); const [buscaBib, setBuscaBib] = useState(""); const [verMod, setVerMod] = useState(null); const [publicar, setPublicar] = useState(false); /* 18zt */ const [env, setEnv] = useState(null); const [pessoas, setPessoas] = useState(null); const [acao, setAcao] = useState(null); const [verRasc, setVerRasc] = useState(false); /* 18zv */ const [arq, setArq] = useState(null); const [apagar, setApagar] = useState(null); const [ocup, setOcup] = useState(false);
   const carregar = () => apiService.get("/pessoas/gestao").then(setD).catch((e) => onErro?.(e.message));
-  useEffect(() => { carregar(); }, []); // eslint-disable-line
+  useEffect(() => { carregar(); apiService.get("/pessoas/gestao-pessoas").then(setPessoas).catch(() => {}); }, []); // eslint-disable-line
   const editar = !!d?.pode_editar;
   const grupos = useMemo(() => {
     if (!d) return []; const b = busca.trim().toLowerCase();
@@ -42,7 +42,7 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
   const abrir = async (x, editarDepois = false) => {
     try { const r = await apiService.get(`/pessoas/gestao/${x.id}`); const doc = r.documento;
       if (editarDepois) setForm({ ...doc, status_original: doc.status, aprovado_em: doc.aprovado_em ? String(doc.aprovado_em).slice(0, 10) : "", proxima_revisao: doc.proxima_revisao ? String(doc.proxima_revisao).slice(0, 10) : "" });
-      else { setPublicar(false); setVer({ ...doc, pode_aprovar: r.pode_aprovar }); setHist(null); setLeit(null); if (doc.status === "vigente") apiService.get(`/pessoas/gestao/${x.id}/leituras`).then(setLeit).catch(() => {}); } }
+      else { setPublicar(false); setAcao(null); setVerRasc(!!doc.fluxo && !!doc.rascunho); setVer({ ...doc, pode_aprovar: r.pode_aprovar, eu: r.eu, assinatura: r.assinatura }); setHist(null); setLeit(null); if (doc.status === "vigente") apiService.get(`/pessoas/gestao/${x.id}/leituras`).then(setLeit).catch(() => {}); } }
     catch (e) { onErro?.(e.message); }
   };
   // 18zs: ↻ nova revisão (a vigente vale até aprovar) · histórico · leitura
@@ -57,6 +57,12 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
     catch (e) { onErro?.(e?.response?.data?.erro || e.message); } finally { setOcup(false); }
   };
   const lerEntendi = async () => { try { await apiService.post(`/pessoas/gestao/${ver.id}/leitura`, {}); setLeit(await apiService.get(`/pessoas/gestao/${ver.id}/leituras`)); onAviso?.("Leitura confirmada."); } catch (e) { onErro?.(e?.response?.data?.erro || e.message); } };
+  // 18zv: ✍ fluxo interno — enviar (escolhe verificador opcional + aprovador) · verificar · devolver · aprovar e assinar
+  const ETAPA = { elaboracao: "Em elaboração", verificacao: "Aguardando verificação", aprovacao: "Aguardando aprovação" };
+  const abrirEnvio = async (doc) => { try { const p = pessoas || await apiService.get("/pessoas/gestao-pessoas"); setPessoas(p); const f = doc.fluxo || {};
+    setEnv({ id: doc.id, codigo: doc.codigo, verificador_id: f.verificador?.id || "", aprovador_id: f.aprovador?.id || "", comentario: "" }); } catch (e) { onErro?.(e?.response?.data?.erro || e.message); } };
+  const fazer = async (url, corpo, msg) => { setOcup(true); try { await apiService.post(url, corpo || {}); onAviso?.(msg); setEnv(null); setAcao(null); setVer(null); setRevi(null); carregar(); } catch (e) { onErro?.(e?.response?.data?.erro || e.message); } finally { setOcup(false); } };
+  const comigo = (d?.documentos || []).filter((x) => x.com != null && pessoas && String(x.com) === String(pessoas.eu));
   const statusTag = (x) => x.status === "vigente" ? (x.revisar ? <span style={s.tag(C.warn)}>Análise crítica vencida</span> : <span style={s.tag(C.success)}>Vigente</span>)
     : x.status === "rascunho" ? <span style={s.tag(C.accent)}>Rascunho</span> : <span style={s.tag(C.muted)}>Obsoleto</span>;
   const travado = !!(form?.id && form?.status_original === "vigente"); // 18zs
@@ -73,6 +79,9 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
       <button type="button" onClick={async () => { try { setBuscaBib(""); setBib(await apiService.get("/pessoas/gestao/modelos")); } catch (e) { onErro?.(e?.response?.data?.erro || e.message); } }} style={{ ...s.btn(false), cursor: "pointer", color: C.accent }}>📚 Modelos ISO 9001</button>
       {editar && <button type="button" onClick={() => setForm({ codigo: "", titulo: "", tipo: "procedimento", area: "", revisao: 0, status: "vigente", elaborado_por: "", aprovado_por: "", aprovado_em: "", proxima_revisao: "", norma: "", conteudo: "" })} style={{ ...s.btn(true), cursor: "pointer" }}>＋ Novo documento de gestão</button>}
     </div>
+    {comigo.length > 0 && <div style={{ ...s.card, padding: "10px 14px", marginBottom: 12, borderColor: C.accent, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+      <b>✍ Aguardando você:</b>{comigo.map((x) => <button key={x.id} type="button" onClick={() => abrir(x)} style={{ ...s.btn(false), padding: "4px 10px", fontSize: 12.5, cursor: "pointer", color: C.accent }}>{x.codigo} · {x.etapa === "verificacao" ? "verificar" : "aprovar"}</button>)}
+    </div>}
     <div style={{ fontSize: 12, color: C.muted, marginBottom: 10 }}>Manual da qualidade, políticas, procedimentos, instruções e formulários — com código e revisão (ISO 9001, 7.5). Comece pelos 📚 Modelos ISO 9001: entram como rascunho, você ajusta e aprova.</div>
     {grupos.length === 0 ? <div style={{ ...s.card, padding: 28, textAlign: "center", color: C.textSub }}>{d.documentos.length ? "Nenhum documento com esses filtros." : "Nenhum documento de gestão ainda. Cadastre o manual, os procedimentos e as políticas da empresa."}</div>
       : grupos.map((g) => <div key={g.tipo} style={{ marginBottom: 14 }}>
@@ -82,7 +91,8 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
             <div style={{ fontWeight: 600, fontSize: 13 }}><span style={{ color: C.accent }}>{x.codigo}</span> · {x.titulo}</div>
             <div style={{ fontSize: 11.5, color: C.textSub }}>{rev(x.revisao)}{x.area ? ` · ${x.area}` : ""}{x.aprovado_em ? ` · aprovado em ${dBR(x.aprovado_em)}${x.aprovado_por ? ` por ${x.aprovado_por}` : ""}` : ""}{x.proxima_revisao ? ` · análise crítica até ${dBR(x.proxima_revisao)}` : ""}</div>
           </div>
-          {statusTag(x)}{x.em_revisao && <span title={x.rascunho_motivo || ""} style={s.tag(C.accent)}>↻ Rev. {String((x.revisao || 0) + 1).padStart(2, "0")} em elaboração</span>}
+          {statusTag(x)}{x.em_revisao && !x.etapa && <span title={x.rascunho_motivo || ""} style={s.tag(C.accent)}>↻ Rev. {String((x.revisao || 0) + 1).padStart(2, "0")} em elaboração</span>}
+          {x.etapa && <span style={s.tag(x.etapa === "elaboracao" ? C.warn : C.accent)}>✍ {x.etapa === "elaboracao" ? "Devolvido p/ ajuste" : ETAPA[x.etapa]}{x.etapa !== "elaboracao" && x.fluxo ? ` · ${(x.etapa === "verificacao" ? x.fluxo.verificador?.nome : x.fluxo.aprovador?.nome) || ""}` : ""}</span>}
           <div style={{ display: "flex", gap: 6 }}>
             <button type="button" onClick={() => abrir(x)} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.accent }}>👁 Ver</button>
             {editar && <button type="button" onClick={() => abrir(x, true)} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.text }}>Editar</button>}
@@ -93,7 +103,29 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
 
     {ver && <div onClick={() => setVer(null)} style={{ position: "fixed", inset: 0, background: "#000000aa", zIndex: 80, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: 16, overflowY: "auto" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "min(820px, 100%)" }}>
-        <div style={{ background: "#fff", borderRadius: 6, padding: "26px 32px", overflow: "hidden" }}><style>{CSS_DOC_GESTAO}</style><div dangerouslySetInnerHTML={{ __html: corpoDocGestao(ver) }} /></div>
+        <div style={{ background: "#fff", borderRadius: 6, padding: "26px 32px", overflow: "hidden" }}><style>{CSS_DOC_GESTAO}</style><div dangerouslySetInnerHTML={{ __html: verRasc && ver.rascunho ? corpoDocGestao({ ...ver, ...ver.rascunho, revisao: (ver.revisao || 0) + 1, status: "em_aprovacao", motivo_revisao: ver.rascunho.motivo, assinaturas: null, aprovado_por: null, aprovado_em: null }) : corpoDocGestao(ver) }} /></div>
+        {(ver.fluxo || (ver.status === "rascunho") || ver.rascunho) && <div style={{ ...s.card, background: C.surface, padding: "10px 12px", marginTop: 10, fontSize: 12.5 }}>{/* 18zv: fluxo */}
+          <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
+            <b style={{ flex: 1 }}>✍ {ver.fluxo ? (ver.fluxo.etapa === "elaboracao" ? "Devolvido para ajuste" : ETAPA[ver.fluxo.etapa]) : "Rascunho — ainda não enviado"}{ver.rascunho ? ` · Rev. ${String((ver.revisao || 0) + 1).padStart(2, "0")}` : ""}</b>
+            {ver.rascunho && <button type="button" onClick={() => setVerRasc(!verRasc)} style={{ ...s.btn(false), padding: "5px 10px", fontSize: 12, cursor: "pointer", color: C.accent }}>{verRasc ? "Ver a vigente" : `👁 Ver a Rev. ${String((ver.revisao || 0) + 1).padStart(2, "0")} proposta`}</button>}
+            {editar && (!ver.fluxo || ver.fluxo.etapa === "elaboracao") && <button type="button" onClick={() => abrirEnvio(ver)} style={{ ...s.btn(true), padding: "5px 12px", fontSize: 12.5, cursor: "pointer" }}>📤 Enviar para aprovação</button>}
+            {ver.fluxo?.etapa === "verificacao" && String(ver.fluxo.verificador?.id) === String(ver.eu) && <>
+              <button type="button" onClick={() => setAcao({ tipo: "devolver", comentario: "" })} style={{ ...s.btn(false), padding: "5px 10px", fontSize: 12.5, cursor: "pointer", color: C.warn }}>↩ Devolver</button>
+              <button type="button" onClick={() => setAcao({ tipo: "verificar", comentario: "" })} style={{ ...s.btn(true), padding: "5px 12px", fontSize: 12.5, cursor: "pointer" }}>✓ Verificar e assinar</button></>}
+            {ver.fluxo?.etapa === "aprovacao" && String(ver.fluxo.aprovador?.id) === String(ver.eu) && <>
+              <button type="button" onClick={() => setAcao({ tipo: "devolver", comentario: "" })} style={{ ...s.btn(false), padding: "5px 10px", fontSize: 12.5, cursor: "pointer", color: C.warn }}>↩ Devolver</button>
+              <button type="button" onClick={() => setAcao({ tipo: "aprovar" })} style={{ ...s.btn(true), padding: "5px 12px", fontSize: 12.5, cursor: "pointer" }}>✍ Aprovar e assinar</button></>}
+          </div>
+          {ver.fluxo && <div style={{ color: C.textSub, marginTop: 4 }}>Elaborado por {ver.fluxo.elaborado?.nome}{ver.fluxo.verificador ? ` · verificação: ${ver.fluxo.verificador.nome}${ver.fluxo.verificado ? " ✓" : ""}` : ""} · aprovação: {ver.fluxo.aprovador?.nome}</div>}
+          {(ver.fluxo?.historico || []).slice(-4).map((h, i) => <div key={i} style={{ color: C.muted, fontSize: 11.5 }}>{new Date(h.em).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" })} · {h.acao} por {h.por}{h.comentario ? ` — "${h.comentario}"` : ""}</div>)}
+          {acao && <div style={{ marginTop: 8, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+            {acao.tipo === "aprovar" ? <span style={{ flex: 1 }}>Aprovar {ver.codigo} e assinar eletronicamente com o seu login? {ver.rascunho ? "A revisão atual vai para o histórico." : "O documento passa a vigente."}</span>
+              : <input autoFocus value={acao.comentario} onChange={(e) => setAcao({ ...acao, comentario: e.target.value })} placeholder={acao.tipo === "devolver" ? "O que precisa ser ajustado? (obrigatório)" : "Comentário (opcional)"} style={{ ...s.input, flex: 1, padding: "6px 8px", fontSize: 12.5 }} />}
+            <button type="button" onClick={() => setAcao(null)} style={{ ...s.btn(false), padding: "5px 10px", cursor: "pointer", color: C.text }}>Cancelar</button>
+            <button type="button" disabled={ocup || (acao.tipo === "devolver" && !acao.comentario.trim())} onClick={() => acao.tipo === "aprovar" ? fazer(`/pessoas/gestao/${ver.id}/aprovar-fluxo`, {}, `${ver.codigo} aprovado e assinado — vigente.`) : acao.tipo === "verificar" ? fazer(`/pessoas/gestao/${ver.id}/verificar`, { comentario: acao.comentario }, `${ver.codigo} verificado — seguiu para aprovação.`) : fazer(`/pessoas/gestao/${ver.id}/devolver`, { comentario: acao.comentario }, `${ver.codigo} devolvido para ajuste.`)}
+              style={{ ...s.btn(true), padding: "5px 12px", cursor: "pointer" }}>{ocup ? "…" : acao.tipo === "aprovar" ? "✍ Aprovar" : acao.tipo === "verificar" ? "✓ Verificar" : "↩ Devolver"}</button>
+          </div>}
+        </div>}
         {ver.status === "vigente" && leit && <div style={{ ...s.card, background: C.surface, padding: "10px 12px", marginTop: 10, fontSize: 12.5 }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <b style={{ flex: 1 }}>👥 Leitura da {rev(leit.revisao)}: {leit.leituras.length} pessoa(s)</b>
@@ -110,12 +142,8 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
           </div>)}
         </div>}
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10, flexWrap: "wrap" }}>
-          {ver.status === "rascunho" && ver.pode_aprovar && !publicar && <button type="button" onClick={() => setPublicar(true)} style={{ ...s.btn(true), cursor: "pointer" }}>✓ Aprovar e publicar ({rev(ver.revisao)})</button>}
-          {publicar && <span style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12.5, color: C.text }}>Publicar como vigente, aprovado por você hoje?
-            <button type="button" onClick={() => setPublicar(false)} style={{ ...s.btn(false), padding: "5px 10px", cursor: "pointer", color: C.text }}>Cancelar</button>
-            <button type="button" disabled={ocup} onClick={async () => { setOcup(true); try { await apiService.post(`/pessoas/gestao/${ver.id}/publicar`, {}); setPublicar(false); setVer(null); onAviso?.(`${ver.codigo} aprovado e vigente (${rev(ver.revisao)}).`); carregar(); } catch (e) { onErro?.(e?.response?.data?.erro || e.message); } finally { setOcup(false); } }} style={{ ...s.btn(true), padding: "5px 10px", cursor: "pointer" }}>Publicar</button></span>}
           <button type="button" onClick={async () => { try { setHist((await apiService.get(`/pessoas/gestao/${ver.id}/versoes`)).versoes || []); } catch (e) { onErro?.(e?.response?.data?.erro || e.message); } }} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>🗂 Histórico</button>
-          {editar && ver.status === "vigente" && <button type="button" onClick={() => abrirRevisao(ver)} style={{ ...s.btn(false), cursor: "pointer", color: C.accent }}>{ver.rascunho ? `✎ Continuar Rev. ${String((ver.revisao || 0) + 1).padStart(2, "0")}` : "↻ Nova revisão"}</button>}
+          {editar && ver.status === "vigente" && !["verificacao", "aprovacao"].includes(ver.fluxo?.etapa) && <button type="button" onClick={() => abrirRevisao(ver)} style={{ ...s.btn(false), cursor: "pointer", color: C.accent }}>{ver.rascunho ? `✎ Continuar Rev. ${String((ver.revisao || 0) + 1).padStart(2, "0")}` : "↻ Nova revisão"}</button>}
           {ver.arquivo_url && <button type="button" onClick={() => setArq({ url: ver.arquivo_url, nome: ver.arquivo_nome, mime: ver.arquivo_mime })} style={{ ...s.btn(false), cursor: "pointer", color: C.accent }}>📎 Arquivo anexo</button>}
           <button type="button" onClick={() => { try { imprimirDocGestao(ver); } catch (e) { onErro?.(e.message); } }} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>🖨 Imprimir / PDF</button>
           <button type="button" onClick={() => setVer(null)} style={{ ...s.btn(true), cursor: "pointer" }}>Fechar</button>
@@ -124,6 +152,23 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
     </div>}
     {arq && <VerArquivo C={C} s={s} arquivo={arq} onFechar={() => setArq(null)} z={90} />}
 
+    {env && pessoas && <div onClick={() => !ocup && setEnv(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 100, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: 16, overflowY: "auto" }}>{/* 18zv */}
+      <div onClick={(e) => e.stopPropagation()} role="dialog" style={{ ...s.card, background: C.surface, width: "min(520px, 100%)", padding: 22 }}>
+        <div style={{ fontSize: 17, fontWeight: 700 }}>📤 Enviar {env.codigo} para aprovação</div>
+        <div style={{ fontSize: 12, color: C.textSub, margin: "4px 0 12px" }}>Você assina como <b>elaborador</b> agora. O texto fica travado até ser aprovado ou devolvido; cada pessoa recebe um aviso (🔔 e e-mail).</div>
+        <label style={{ display: "block", marginBottom: 10 }}><span style={s.label}>VERIFICAÇÃO (OPCIONAL)</span>
+          <select value={env.verificador_id} onChange={(e) => setEnv({ ...env, verificador_id: e.target.value })} style={s.input}><option value="">— sem verificação (vai direto para a aprovação)</option>
+            {pessoas.verificadores.filter((u) => String(u.id) !== String(pessoas.eu) && String(u.id) !== String(env.aprovador_id)).map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}</select></label>
+        <label style={{ display: "block", marginBottom: 10 }}><span style={s.label}>APROVAÇÃO</span>
+          <select value={env.aprovador_id} onChange={(e) => setEnv({ ...env, aprovador_id: e.target.value })} style={s.input}><option value="">Escolha quem aprova…</option>
+            {pessoas.aprovadores.filter((u) => pessoas.aprovadores.length === 1 || String(u.id) !== String(pessoas.eu)).map((u) => <option key={u.id} value={u.id}>{u.nome}{String(u.id) === String(pessoas.eu) ? " (você — único aprovador)" : ""}</option>)}</select></label>
+        <label style={{ display: "block" }}><span style={s.label}>MENSAGEM (OPCIONAL)</span><input value={env.comentario} onChange={(e) => setEnv({ ...env, comentario: e.target.value })} style={s.input} placeholder="Ex.: incluí a etapa de quarentena" /></label>
+        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
+          <button type="button" disabled={ocup} onClick={() => setEnv(null)} style={{ ...s.btn(false), flex: 1, cursor: "pointer", color: C.text }}>Cancelar</button>
+          <button type="button" disabled={ocup || !env.aprovador_id} onClick={() => fazer(`/pessoas/gestao/${env.id}/enviar`, { verificador_id: env.verificador_id || null, aprovador_id: env.aprovador_id, comentario: env.comentario }, `${env.codigo} enviado — ${env.verificador_id ? "aguardando verificação" : "aguardando aprovação"}.`)} style={{ ...s.btn(true), flex: 1, cursor: "pointer" }}>{ocup ? "Enviando…" : "📤 Enviar"}</button>
+        </div>
+      </div>
+    </div>}
     {bib && <div onClick={() => setBib(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 80, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: 16, overflowY: "auto" }}>{/* 18zt */}
       <div onClick={(e) => e.stopPropagation()} role="dialog" style={{ ...s.card, background: C.surface, width: "min(780px, 100%)", padding: 22 }}>
         <div style={{ fontSize: 17, fontWeight: 700 }}>📚 Modelos ISO 9001 do QuotaFlow</div>
@@ -178,7 +223,7 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
           <div style={{ flex: 1 }} />
           <button type="button" disabled={ocup} onClick={() => setRevi(null)} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>Fechar</button>
           <button type="button" disabled={ocup} onClick={() => salvarRevi(false)} style={{ ...s.btn(false), cursor: "pointer", color: C.accent }}>Salvar rascunho</button>
-          {revi.pode_aprovar && <button type="button" disabled={ocup || !revi.motivo.trim()} title={revi.motivo.trim() ? "" : "Descreva o que mudou"} onClick={() => salvarRevi(true)} style={{ ...s.btn(true), cursor: "pointer", opacity: revi.motivo.trim() ? 1 : 0.5 }}>{ocup ? "Aprovando…" : "✓ Aprovar revisão"}</button>}
+          <button type="button" disabled={ocup || !revi.motivo.trim()} title={revi.motivo.trim() ? "" : "Descreva o que mudou"} onClick={async () => { await salvarRevi(false); abrirEnvio({ id: revi.id, codigo: revi.codigo }); }} style={{ ...s.btn(true), cursor: "pointer", opacity: revi.motivo.trim() ? 1 : 0.5 }}>📤 Salvar e enviar para aprovação</button>
         </div>
       </div>
     </div>}

@@ -25,7 +25,7 @@ function validar(body, parcial = false) {
 async function listar(supabase, tenantId) {
   const l = await q(supabase.from('documentos_gestao').select('*').eq('tenant_id', tenantId));
   const hoje = new Date(Date.now() - 3 * 36e5).toISOString().slice(0, 10);
-  return l.map(({ conteudo, rascunho, ...d }) => ({ ...d, em_revisao: !!rascunho, rascunho_motivo: rascunho?.motivo || null, tem_conteudo: !!conteudo, tem_arquivo: !!d.arquivo_path, revisar: d.status === 'vigente' && d.proxima_revisao && d.proxima_revisao <= hoje }))
+  return l.map(({ conteudo, rascunho, ...d }) => ({ ...d, etapa: d.fluxo?.etapa || null, com: d.fluxo?.etapa === 'verificacao' ? d.fluxo.verificador?.id : d.fluxo?.etapa === 'aprovacao' ? d.fluxo.aprovador?.id : null, em_revisao: !!rascunho, rascunho_motivo: rascunho?.motivo || null, tem_conteudo: !!conteudo, tem_arquivo: !!d.arquivo_path, revisar: d.status === 'vigente' && d.proxima_revisao && d.proxima_revisao <= hoje }))
     .sort((a, b) => String(a.codigo).localeCompare(String(b.codigo), 'pt-BR', { numeric: true }));
 }
 async function obter(supabase, tenantId, id) { return (await q(supabase.from('documentos_gestao').select('*').eq('tenant_id', tenantId).eq('id', id)))[0] || null; }
@@ -55,6 +55,7 @@ async function atualizar(supabase, tenantId, id, body) {
   const atual = await obter(supabase, tenantId, id); if (!atual) throw Object.assign(new Error('Documento não encontrado'), { status: 404 });
   const { erros, dados } = validar(body || {}, true); if (erros.length) throw Object.assign(new Error(erros[0]), { status: 400 });
   if (dados.codigo && !(await codigoLivre(supabase, tenantId, dados.codigo, id))) throw Object.assign(new Error(`Já existe um documento com o código ${dados.codigo}`), { status: 409 });
+  if (atual.status === 'rascunho' && ['titulo', 'conteudo'].some((k) => Object.prototype.hasOwnProperty.call(dados, k) && String(dados[k] ?? '') !== String(atual[k] ?? ''))) travadoNoFluxo(atual); // 18zv
   // 18zs: conteúdo de documento VIGENTE só muda por nova revisão (aprovada) — aqui só dados de controle e a situação
   if (atual.status === 'vigente') {
     const mexe = ['titulo', 'conteudo', 'revisao'].some((k) => Object.prototype.hasOwnProperty.call(dados, k) && String(dados[k] ?? '') !== String(atual[k] ?? '')) || body?.arquivo_base64 || body?.remover_arquivo;
@@ -84,6 +85,7 @@ const erro = (msg, status) => Object.assign(new Error(msg), { status });
 
 async function salvarRascunho(supabase, tenantId, id, body) {
   const d = await obter(supabase, tenantId, id); if (!d) throw erro('Documento não encontrado', 404);
+  travadoNoFluxo(d);
   if (d.status !== 'vigente') throw erro('Só documento vigente ganha nova revisão — rascunho novo se edita direto.', 409);
   const r = { ...(d.rascunho || { titulo: d.titulo, conteudo: d.conteudo, area: d.area, norma: d.norma, iniciado_em: new Date().toISOString() }) };
   for (const k of CAMPOS_RASC) if (Object.prototype.hasOwnProperty.call(body || {}, k)) r[k] = body[k] == null ? null : String(body[k]).slice(0, k === 'conteudo' ? 200000 : 2000);
@@ -96,6 +98,7 @@ async function salvarRascunho(supabase, tenantId, id, body) {
 
 async function descartarRascunho(supabase, tenantId, id) {
   const d = await obter(supabase, tenantId, id); if (!d) throw erro('Documento não encontrado', 404);
+  travadoNoFluxo(d);
   if (d.rascunho?.arquivo?.arquivo_path) await D.removerArquivo(supabase, d.rascunho.arquivo.arquivo_path).catch(() => {});
   await q(supabase.from('documentos_gestao').update({ rascunho: null }).eq('id', id).eq('tenant_id', tenantId));
   return { ok: true };
@@ -108,7 +111,8 @@ async function aprovarRevisao(supabase, tenantId, id, { aprovador } = {}) {
   if (!String(r.titulo || '').trim()) throw erro('A revisão precisa de título.', 409);
   // a vigente vira histórico (com o arquivo dela)
   await q(supabase.from('documentos_gestao_versoes').insert([{ tenant_id: tenantId, documento_id: d.id, revisao: d.revisao, titulo: d.titulo, conteudo: d.conteudo,
-    arquivo_path: d.arquivo_path, arquivo_nome: d.arquivo_nome, arquivo_mime: d.arquivo_mime, motivo: d.motivo_revisao || null, elaborado_por: d.elaborado_por, aprovado_por: d.aprovado_por, aprovado_em: d.aprovado_em, vigente_ate: new Date().toISOString() }]));
+    arquivo_path: d.arquivo_path, arquivo_nome: d.arquivo_nome, arquivo_mime: d.arquivo_mime, motivo: d.motivo_revisao || null, elaborado_por: d.elaborado_por, aprovado_por: d.aprovado_por, aprovado_em: d.aprovado_em, vigente_ate: new Date().toISOString(),
+    ...(d.assinaturas ? { assinaturas: d.assinaturas, codigo_verificacao: d.codigo_verificacao || null } : {}) }])); // 18zv
   const novoArq = r.arquivo?.arquivo_path ? r.arquivo : r.arquivo?.remover ? { arquivo_path: null, arquivo_nome: null, arquivo_mime: null } : {};
   await q(supabase.from('documentos_gestao').update({ titulo: r.titulo, conteudo: r.conteudo ?? null, area: r.area ?? d.area, norma: r.norma ?? d.norma, ...novoArq,
     revisao: (d.revisao || 0) + 1, motivo_revisao: r.motivo, elaborado_por: r.elaborado_por || d.elaborado_por, aprovado_por: aprovador || null, aprovado_em: hojeBR(),
@@ -162,4 +166,92 @@ async function publicar(supabase, tenantId, id, { aprovador } = {}) {
   return obter(supabase, tenantId, id);
 }
 
-module.exports = { biblioteca, importarModelo, publicar, preencher, salvarRascunho, descartarRascunho, aprovarRevisao, versoes, confirmarLeitura, leituras, TIPOS, STATUS, validar, listar, obter, criar, atualizar, excluir };
+// ─── 18zv: ✍ FLUXO INTERNO + ASSINATURA ELETRÔNICA (Marcony, 15/11) ──────────────────────────────────────────────────
+//   Elaborado (quem envia) → Verificado (opcional: verificador escolhido) → Aprovado (aprovador escolhido, perfil admin/
+//   gestor/qualidade). Cada etapa assina com o login: usuário, nome, função, data-hora e o HASH do texto naquele momento.
+//   Durante a verificação/aprovação o texto fica TRAVADO (mudou o texto = assinatura inválida); devolver destrava e volta
+//   para quem elaborou. Aprovado: assinaturas + código de verificação vão para o documento (e, na próxima revisão, para o
+//   histórico). Cada passo avisa a próxima pessoa (🔔 no app; e-mail se não for vista — regra das notificações).
+const crypto = require('crypto');
+const ETAPA = { elaboracao: 'Em elaboração', verificacao: 'Aguardando verificação', aprovacao: 'Aguardando aprovação' };
+function travadoNoFluxo(d) { if (['verificacao', 'aprovacao'].includes(d?.fluxo?.etapa)) throw erro(`${d.codigo} está ${ETAPA[d.fluxo.etapa].toLowerCase()} — o texto fica travado. Para alterar, quem está com ele precisa devolver.`, 409); }
+/** o que está sendo aprovado: a revisão em rascunho (de um vigente) ou o próprio documento novo em rascunho */
+function emPauta(d) {
+  if (d.rascunho) return { modo: 'revisao', revisao: (d.revisao || 0) + 1, titulo: d.rascunho.titulo, conteudo: d.rascunho.conteudo || '', arquivo: d.rascunho.arquivo?.arquivo_path || d.arquivo_path || '' };
+  if (d.status === 'rascunho') return { modo: 'novo', revisao: d.revisao || 0, titulo: d.titulo, conteudo: d.conteudo || '', arquivo: d.arquivo_path || '' };
+  return null;
+}
+const hashDe = (d, p) => crypto.createHash('sha256').update(`${d.id}|${p.revisao}|${p.titulo}|${p.conteudo}|${p.arquivo}`).digest('hex');
+const codigoVer = (h) => `${h.slice(0, 4)}-${h.slice(4, 8)}`.toUpperCase();
+const assinatura = (etapa, eu, h) => ({ etapa, usuario_id: eu.id, nome: eu.nome || null, funcao: eu.funcao || null, em: new Date().toISOString(), hash: h });
+async function avisar(supabase, tenantId, usuarioId, aviso) {
+  if (!usuarioId) return; try { await require('./notificacoes').criar(supabase, { tipo: 'usuario', id: String(usuarioId) }, { tenantId, tipo: 'documento_gestao', link: { tela: 'documentos', aba: 'gestao' }, ...aviso }); } catch { /* sem notificações: segue */ }
+}
+
+async function enviarFluxo(supabase, tenantId, id, { eu, verificador = null, aprovador, comentario = null, aprovadores = [] }) {
+  const d = await obter(supabase, tenantId, id); if (!d) throw erro('Documento não encontrado', 404);
+  const p = emPauta(d); if (!p) throw erro('Não há rascunho para enviar — use ↻ Nova revisão.', 409);
+  travadoNoFluxo(d);
+  if (!String(p.titulo || '').trim() || (!p.conteudo.trim() && !p.arquivo)) throw erro('O documento está vazio — escreva o texto ou anexe o arquivo.', 409);
+  if (p.modo === 'revisao' && !String(d.rascunho?.motivo || '').trim()) throw erro('Descreva o que mudou nesta revisão antes de enviar (ISO 9001 7.5.3).', 409);
+  if (!aprovador?.id) throw erro('Escolha quem aprova.', 400);
+  if (!aprovadores.some((a) => String(a.id) === String(aprovador.id))) throw erro('O aprovador precisa ter perfil admin, gestor ou qualidade.', 400);
+  const sozinho = aprovadores.length === 1;
+  if (String(aprovador.id) === String(eu.id) && !sozinho) throw erro('Quem elaborou não aprova o próprio documento — escolha outra pessoa (segregação de funções).', 409);
+  if (verificador?.id && (String(verificador.id) === String(eu.id) || String(verificador.id) === String(aprovador.id))) throw erro('O verificador precisa ser diferente de quem elaborou e de quem aprova.', 409);
+  const h = hashDe(d, p); const etapa = verificador?.id ? 'verificacao' : 'aprovacao';
+  const fluxo = { etapa, modo: p.modo, revisao: p.revisao, elaborado: assinatura('elaborado', eu, h), verificador: verificador?.id ? { id: verificador.id, nome: verificador.nome || null } : null, aprovador: { id: aprovador.id, nome: aprovador.nome || null }, verificado: null,
+    historico: [...(d.fluxo?.historico || []), { acao: 'enviado', por: eu.nome || null, em: new Date().toISOString(), comentario: comentario ? String(comentario).slice(0, 1000) : null }] };
+  await q(supabase.from('documentos_gestao').update({ fluxo }).eq('id', id).eq('tenant_id', tenantId));
+  const quem = etapa === 'verificacao' ? fluxo.verificador : fluxo.aprovador;
+  await avisar(supabase, tenantId, quem.id, { titulo: `✍ ${d.codigo} Rev. ${String(p.revisao).padStart(2, '0')} aguarda sua ${etapa === 'verificacao' ? 'verificação' : 'aprovação'}`, texto: `${p.titulo} — enviado por ${eu.nome || 'colega'}${comentario ? `: "${String(comentario).slice(0, 140)}"` : ''}.` });
+  return obter(supabase, tenantId, id);
+}
+
+async function verificarFluxo(supabase, tenantId, id, { eu, comentario = null }) {
+  const d = await obter(supabase, tenantId, id); if (!d) throw erro('Documento não encontrado', 404);
+  const f = d.fluxo; if (f?.etapa !== 'verificacao') throw erro('Este documento não está aguardando verificação.', 409);
+  if (String(f.verificador?.id) !== String(eu.id)) throw erro(`Quem verifica é ${f.verificador?.nome || 'outra pessoa'}.`, 403);
+  const h = hashDe(d, emPauta(d)); if (h !== f.elaborado.hash) throw erro('O texto mudou depois de enviado — devolva para elaboração.', 409);
+  const fluxo = { ...f, etapa: 'aprovacao', verificado: assinatura('verificado', eu, h), historico: [...(f.historico || []), { acao: 'verificado', por: eu.nome || null, em: new Date().toISOString(), comentario: comentario ? String(comentario).slice(0, 1000) : null }] };
+  await q(supabase.from('documentos_gestao').update({ fluxo }).eq('id', id).eq('tenant_id', tenantId));
+  await avisar(supabase, tenantId, f.aprovador.id, { titulo: `✍ ${d.codigo} Rev. ${String(f.revisao).padStart(2, '0')} aguarda sua aprovação`, texto: `Verificado por ${eu.nome || 'colega'}.` });
+  return obter(supabase, tenantId, id);
+}
+
+async function devolverFluxo(supabase, tenantId, id, { eu, comentario }) {
+  const d = await obter(supabase, tenantId, id); if (!d) throw erro('Documento não encontrado', 404);
+  const f = d.fluxo; if (!['verificacao', 'aprovacao'].includes(f?.etapa)) throw erro('Este documento não está em verificação nem em aprovação.', 409);
+  const daVez = f.etapa === 'verificacao' ? f.verificador : f.aprovador;
+  if (String(daVez?.id) !== String(eu.id)) throw erro(`Quem pode devolver agora é ${daVez?.nome || 'outra pessoa'}.`, 403);
+  if (!String(comentario || '').trim()) throw erro('Diga o que precisa ser ajustado.', 400);
+  const fluxo = { ...f, etapa: 'elaboracao', verificado: null, historico: [...(f.historico || []), { acao: 'devolvido', por: eu.nome || null, em: new Date().toISOString(), comentario: String(comentario).slice(0, 1000) }] };
+  await q(supabase.from('documentos_gestao').update({ fluxo }).eq('id', id).eq('tenant_id', tenantId));
+  await avisar(supabase, tenantId, f.elaborado?.usuario_id, { titulo: `↩ ${d.codigo} devolvido para ajuste`, texto: `${eu.nome || 'Colega'}: "${String(comentario).slice(0, 160)}"` });
+  return obter(supabase, tenantId, id);
+}
+
+async function aprovarFluxo(supabase, tenantId, id, { eu }) {
+  const d = await obter(supabase, tenantId, id); if (!d) throw erro('Documento não encontrado', 404);
+  const f = d.fluxo; if (f?.etapa !== 'aprovacao') throw erro('Este documento não está aguardando aprovação.', 409);
+  if (String(f.aprovador?.id) !== String(eu.id)) throw erro(`Quem aprova é ${f.aprovador?.nome || 'outra pessoa'}.`, 403);
+  const p = emPauta(d); const h = hashDe(d, p); if (h !== f.elaborado.hash) throw erro('O texto mudou depois de enviado — devolva para elaboração.', 409);
+  const assinaturas = [f.elaborado, ...(f.verificado ? [f.verificado] : []), assinatura('aprovado', eu, h)];
+  const historico = [...(f.historico || []), { acao: 'aprovado', por: eu.nome || null, em: new Date().toISOString() }];
+  if (p.modo === 'revisao') {
+    if (!String(d.rascunho?.elaborado_por || '').trim()) await q(supabase.from('documentos_gestao').update({ rascunho: { ...d.rascunho, elaborado_por: f.elaborado.nome } }).eq('id', id).eq('tenant_id', tenantId));
+    await aprovarRevisao(supabase, tenantId, id, { aprovador: eu.nome });
+  } else await publicar(supabase, tenantId, id, { aprovador: eu.nome });
+  await q(supabase.from('documentos_gestao').update({ assinaturas: { lista: assinaturas, historico }, codigo_verificacao: codigoVer(h), elaborado_por: f.elaborado.nome || d.elaborado_por, fluxo: null }).eq('id', id).eq('tenant_id', tenantId));
+  await avisar(supabase, tenantId, f.elaborado?.usuario_id, { titulo: `✅ ${d.codigo} Rev. ${String(p.revisao).padStart(2, '0')} aprovado e vigente`, texto: `Aprovado por ${eu.nome || 'colega'}.` });
+  return obter(supabase, tenantId, id);
+}
+
+/** confere se o documento vigente ainda bate com o que foi assinado */
+function conferirAssinatura(d) {
+  const l = d?.assinaturas?.lista; if (!l?.length || !d.codigo_verificacao) return null;
+  const h = hashDe(d, { revisao: d.revisao, titulo: d.titulo, conteudo: d.conteudo || '', arquivo: d.arquivo_path || '' });
+  return { valida: codigoVer(h) === d.codigo_verificacao, codigo: d.codigo_verificacao };
+}
+
+module.exports = { ETAPA, enviarFluxo, verificarFluxo, devolverFluxo, aprovarFluxo, conferirAssinatura, emPauta, biblioteca, importarModelo, publicar, preencher, salvarRascunho, descartarRascunho, aprovarRevisao, versoes, confirmarLeitura, leituras, TIPOS, STATUS, validar, listar, obter, criar, atualizar, excluir };
