@@ -18,7 +18,7 @@ function validar(body, parcial = false) {
   if (tem('revisao')) { const r = Number(body.revisao); if (!Number.isInteger(r) || r < 0 || r > 999) erros.push('Revisão inválida'); else out.revisao = r; }
   for (const k of ['aprovado_em', 'proxima_revisao']) if (tem(k)) { if (body[k] && !DATA.test(String(body[k]))) erros.push('Data inválida'); else out[k] = body[k] || null; }
   for (const [k, n] of [['area', 80], ['elaborado_por', 120], ['aprovado_por', 120], ['norma', 120]]) if (tem(k)) out[k] = txt(body[k], n);
-  for (const k of ['elaborado_por_id', 'aprovado_por_id']) if (tem(k)) { const v = body[k]; if (v == null || v === '') out[k] = null; else if (!/^[\w-]{1,40}$/.test(String(v))) erros.push('Pessoa inválida'); else out[k] = String(v); } // 18zz.6
+  for (const k of ['elaborado_por_id', 'aprovado_por_id', 'elaborado_por_usuario_id', 'aprovado_por_usuario_id']) if (tem(k)) { const v = body[k]; if (v == null || v === '') out[k] = null; else if (!/^[\w-]{1,40}$/.test(String(v))) erros.push('Pessoa inválida'); else out[k] = String(v); } // 18zz.6
   if (tem('conteudo')) out.conteudo = body.conteudo ? String(body.conteudo).slice(0, 200000) : null;
   if (tem('distribuicao')) { // 18zz.2 · 18zz.4 (Marcony): Todos · PERFIS de acesso · FUNÇÕES (o "setor" da 18zz.3 saiu)
     const x = body.distribuicao; const PERF = ['admin', 'gestor', 'comprador', 'operacao', 'qualidade', 'financeiro', 'comercial', 'fiscal', 'colaborador'];
@@ -49,13 +49,20 @@ async function gravarArquivo(supabase, tenantId, id, b) {
 }
 
 // 18zz.6 (Marcony): elaborado/aprovado por = FUNCIONÁRIO do cadastro (rastreável) — o nome vem do cadastro; texto livre fica sem id
-async function amarrarPessoas(supabase, tenantId, dados) {
-  for (const [kid, kn] of [['elaborado_por_id', 'elaborado_por'], ['aprovado_por_id', 'aprovado_por']]) {
-    if (!Object.prototype.hasOwnProperty.call(dados, kid)) { if (Object.prototype.hasOwnProperty.call(dados, kn)) dados[kid] = null; continue; }
-    if (dados[kid] == null) continue;
-    const c = (await q(supabase.from('colaboradores').select('*').eq('tenant_id', tenantId).eq('id', dados[kid])))[0];
-    if (!c) throw Object.assign(new Error('Funcionário não encontrado no cadastro'), { status: 400 });
-    dados[kn] = c.nome;
+async function amarrarPessoas(supabase, tenantId, dados) { // 18zz.7: funcionário (colaborador) OU usuário do sistema sem cadastro de funcionário
+  const has = (k) => Object.prototype.hasOwnProperty.call(dados, k);
+  for (const pre of ['elaborado_por', 'aprovado_por']) {
+    const kc = `${pre}_id`, ku = `${pre}_usuario_id`;
+    if (!has(kc) && !has(ku)) { if (has(pre)) { dados[kc] = null; dados[ku] = null; } continue; }
+    if (dados[kc] != null) {
+      const c = (await q(supabase.from('colaboradores').select('*').eq('tenant_id', tenantId).eq('id', dados[kc])))[0];
+      if (!c) throw Object.assign(new Error('Funcionário não encontrado no cadastro'), { status: 400 });
+      dados[pre] = c.nome; dados[ku] = c.usuario_id ?? null;
+    } else if (dados[ku] != null) {
+      const u = (await q(supabase.from('usuarios').select('*').eq('tenant_id', tenantId).eq('id', dados[ku])))[0];
+      if (!u) throw Object.assign(new Error('Usuário não encontrado'), { status: 400 });
+      dados[pre] = u.nome || u.email; dados[kc] = await colabIdDoUsuario(supabase, tenantId, u.id);
+    } else { dados[kc] = null; dados[ku] = null; }
   }
   return dados;
 }
@@ -77,6 +84,7 @@ async function criar(supabase, tenantId, body) {
 async function atualizar(supabase, tenantId, id, body) {
   const atual = await obter(supabase, tenantId, id); if (!atual) throw Object.assign(new Error('Documento não encontrado'), { status: 404 });
   const { erros, dados } = validar(body || {}, true); if (erros.length) throw Object.assign(new Error(erros[0]), { status: 400 });
+  if (atual.assinaturas?.lista?.length || atual.fluxo) for (const k of ['aprovado_por', 'aprovado_por_id', 'aprovado_por_usuario_id', 'aprovado_em', 'elaborado_por', 'elaborado_por_id', 'elaborado_por_usuario_id']) delete dados[k]; // 18zz.7: quem assinou no sistema não se edita à mão
   await amarrarPessoas(supabase, tenantId, dados);
   if (dados.codigo && !(await codigoLivre(supabase, tenantId, dados.codigo, id))) throw Object.assign(new Error(`Já existe um documento com o código ${dados.codigo}`), { status: 409 });
   if (atual.status === 'rascunho' && ['titulo', 'conteudo'].some((k) => Object.prototype.hasOwnProperty.call(dados, k) && String(dados[k] ?? '') !== String(atual[k] ?? ''))) travadoNoFluxo(atual); // 18zv
@@ -103,7 +111,7 @@ async function excluir(supabase, tenantId, id) {
 // ─── 18zs: 🔁 REVISÃO (a vigente vale até a nova ser aprovada) · 🗂 HISTÓRICO · ✓ LEITURA ───────────────────────────────
 //   iniciar/salvar rascunho → aprovar: a vigente vai para documentos_gestao_versoes (obsoleta, com "vigente até"), o rascunho
 //   vira a nova revisão (Rev. +1) com aprovado por/em de quem aprovou; as leituras recomeçam (são por revisão).
-const CAMPOS_RASC = ['titulo', 'conteudo', 'motivo', 'elaborado_por', 'elaborado_por_id', 'area', 'norma', 'proxima_revisao'];
+const CAMPOS_RASC = ['titulo', 'conteudo', 'motivo', 'elaborado_por', 'elaborado_por_id', 'elaborado_por_usuario_id', 'area', 'norma', 'proxima_revisao'];
 const hojeBR = () => new Date(Date.now() - 3 * 36e5).toISOString().slice(0, 10);
 const erro = (msg, status) => Object.assign(new Error(msg), { status });
 
@@ -114,8 +122,8 @@ async function salvarRascunho(supabase, tenantId, id, body) {
   const r = { ...(d.rascunho || { titulo: d.titulo, conteudo: d.conteudo, area: d.area, norma: d.norma, iniciado_em: new Date().toISOString() }) };
   for (const k of CAMPOS_RASC) if (Object.prototype.hasOwnProperty.call(body || {}, k)) r[k] = body[k] == null ? null : String(body[k]).slice(0, k === 'conteudo' ? 200000 : 2000);
   if (r.proxima_revisao && !/^\d{4}-\d{2}-\d{2}$/.test(r.proxima_revisao)) throw erro('Data inválida', 400);
-  if (Object.prototype.hasOwnProperty.call(body || {}, 'elaborado_por') || Object.prototype.hasOwnProperty.call(body || {}, 'elaborado_por_id')) { // 18zz.6
-    const p = await amarrarPessoas(supabase, tenantId, { elaborado_por: r.elaborado_por, elaborado_por_id: r.elaborado_por_id || null }); r.elaborado_por = p.elaborado_por; r.elaborado_por_id = p.elaborado_por_id; }
+  if (['elaborado_por', 'elaborado_por_id', 'elaborado_por_usuario_id'].some((k) => Object.prototype.hasOwnProperty.call(body || {}, k))) { // 18zz.6 · 18zz.7
+    const p = await amarrarPessoas(supabase, tenantId, { elaborado_por: r.elaborado_por, elaborado_por_id: r.elaborado_por_id || null, elaborado_por_usuario_id: r.elaborado_por_usuario_id || null }); Object.assign(r, p); }
   const arq = await gravarArquivo(supabase, tenantId, `${id}r`, body);
   if (arq) Object.assign(r, { arquivo: arq }); if (body?.remover_arquivo) r.arquivo = { remover: true };
   await q(supabase.from('documentos_gestao').update({ rascunho: r }).eq('id', id).eq('tenant_id', tenantId));
@@ -130,19 +138,19 @@ async function descartarRascunho(supabase, tenantId, id) {
   return { ok: true };
 }
 
-async function aprovarRevisao(supabase, tenantId, id, { aprovador, aprovadorUsuarioId = null } = {}) {
+async function aprovarRevisao(supabase, tenantId, id, { aprovador, aprovadorUsuarioId = null, proxima } = {}) {
   const d = await obter(supabase, tenantId, id); if (!d) throw erro('Documento não encontrado', 404);
   const r = d.rascunho; if (!r) throw erro('Não há revisão em elaboração para aprovar.', 409);
   if (!String(r.motivo || '').trim()) throw erro('Descreva o que mudou nesta revisão antes de aprovar (ISO 9001 7.5.3 — identificação das alterações).', 409);
   if (!String(r.titulo || '').trim()) throw erro('A revisão precisa de título.', 409);
   // a vigente vira histórico (com o arquivo dela)
   await q(supabase.from('documentos_gestao_versoes').insert([{ tenant_id: tenantId, documento_id: d.id, revisao: d.revisao, titulo: d.titulo, conteudo: d.conteudo,
-    arquivo_path: d.arquivo_path, arquivo_nome: d.arquivo_nome, arquivo_mime: d.arquivo_mime, motivo: d.motivo_revisao || null, elaborado_por: d.elaborado_por, aprovado_por: d.aprovado_por, ...(d.elaborado_por_id != null || d.aprovado_por_id != null ? { elaborado_por_id: d.elaborado_por_id ?? null, aprovado_por_id: d.aprovado_por_id ?? null } : {}), aprovado_em: d.aprovado_em, vigente_ate: new Date().toISOString(),
+    arquivo_path: d.arquivo_path, arquivo_nome: d.arquivo_nome, arquivo_mime: d.arquivo_mime, motivo: d.motivo_revisao || null, elaborado_por: d.elaborado_por, aprovado_por: d.aprovado_por, ...(d.elaborado_por_id != null || d.aprovado_por_id != null || d.elaborado_por_usuario_id != null || d.aprovado_por_usuario_id != null ? { elaborado_por_id: d.elaborado_por_id ?? null, aprovado_por_id: d.aprovado_por_id ?? null, elaborado_por_usuario_id: d.elaborado_por_usuario_id ?? null, aprovado_por_usuario_id: d.aprovado_por_usuario_id ?? null } : {}), aprovado_em: d.aprovado_em, vigente_ate: new Date().toISOString(),
     ...(d.assinaturas ? { assinaturas: d.assinaturas, codigo_verificacao: d.codigo_verificacao || null } : {}) }])); // 18zv
   const novoArq = r.arquivo?.arquivo_path ? r.arquivo : r.arquivo?.remover ? { arquivo_path: null, arquivo_nome: null, arquivo_mime: null } : {};
   await q(supabase.from('documentos_gestao').update({ titulo: r.titulo, conteudo: r.conteudo ?? null, area: r.area ?? d.area, norma: r.norma ?? d.norma, ...novoArq,
-    revisao: (d.revisao || 0) + 1, motivo_revisao: r.motivo, elaborado_por: r.elaborado_por || d.elaborado_por, elaborado_por_id: r.elaborado_por ? (r.elaborado_por_id ?? null) : (d.elaborado_por_id ?? null), aprovado_por: aprovador || null, aprovado_por_id: await colabIdDoUsuario(supabase, tenantId, aprovadorUsuarioId), aprovado_em: hojeBR(),
-    proxima_revisao: r.proxima_revisao || null, rascunho: null, status: 'vigente', atualizado_em: new Date().toISOString() }).eq('id', id).eq('tenant_id', tenantId));
+    revisao: (d.revisao || 0) + 1, motivo_revisao: r.motivo, elaborado_por: r.elaborado_por || d.elaborado_por, elaborado_por_id: r.elaborado_por ? (r.elaborado_por_id ?? null) : (d.elaborado_por_id ?? null), elaborado_por_usuario_id: r.elaborado_por ? (r.elaborado_por_usuario_id ?? null) : (d.elaborado_por_usuario_id ?? null), aprovado_por: aprovador || null, aprovado_por_id: await colabIdDoUsuario(supabase, tenantId, aprovadorUsuarioId), aprovado_por_usuario_id: aprovadorUsuarioId || null, aprovado_em: hojeBR(),
+    proxima_revisao: proxima !== undefined ? (proxima || null) : null, rascunho: null, status: 'vigente', atualizado_em: new Date().toISOString() }).eq('id', id).eq('tenant_id', tenantId));
   return obter(supabase, tenantId, id);
 }
 
@@ -184,11 +192,11 @@ async function importarModelo(supabase, tenantId, modeloId, { codigo } = {}) {
     conteudo: `${preencher(m.conteudo, emp)}\n\n— ${BIB().AVISO}` });
 }
 /** rascunho (novo ou importado) → vigente Rev. atual, com aprovado por/em */
-async function publicar(supabase, tenantId, id, { aprovador, aprovadorUsuarioId = null } = {}) {
+async function publicar(supabase, tenantId, id, { aprovador, aprovadorUsuarioId = null, proxima } = {}) {
   const d = await obter(supabase, tenantId, id); if (!d) throw erro('Documento não encontrado', 404);
   if (d.status !== 'rascunho') throw erro('Só rascunho se publica — documento vigente muda por nova revisão.', 409);
   if (!String(d.conteudo || '').trim() && !d.arquivo_path) throw erro('O documento está vazio — escreva o texto ou anexe o arquivo.', 409);
-  await q(supabase.from('documentos_gestao').update({ status: 'vigente', aprovado_por: aprovador || d.aprovado_por, ...(aprovador ? { aprovado_por_id: await colabIdDoUsuario(supabase, tenantId, aprovadorUsuarioId) } : {}), aprovado_em: hojeBR(), atualizado_em: new Date().toISOString() }).eq('id', id).eq('tenant_id', tenantId));
+  await q(supabase.from('documentos_gestao').update({ status: 'vigente', aprovado_por: aprovador || d.aprovado_por, ...(aprovador ? { aprovado_por_id: await colabIdDoUsuario(supabase, tenantId, aprovadorUsuarioId), aprovado_por_usuario_id: aprovadorUsuarioId || null } : {}), ...(proxima !== undefined ? { proxima_revisao: proxima || null } : {}), aprovado_em: hojeBR(), atualizado_em: new Date().toISOString() }).eq('id', id).eq('tenant_id', tenantId));
   return obter(supabase, tenantId, id);
 }
 
@@ -257,7 +265,8 @@ async function devolverFluxo(supabase, tenantId, id, { eu, comentario }) {
   return obter(supabase, tenantId, id);
 }
 
-async function aprovarFluxo(supabase, tenantId, id, { eu }) {
+async function aprovarFluxo(supabase, tenantId, id, { eu, proxima = null }) { // 18zz.7: próxima análise crítica = opcional, quem aprova decide
+  if (proxima && !DATA.test(String(proxima))) throw erro('Data inválida', 400);
   const d = await obter(supabase, tenantId, id); if (!d) throw erro('Documento não encontrado', 404);
   const f = d.fluxo; if (f?.etapa !== 'aprovacao') throw erro('Este documento não está aguardando aprovação.', 409);
   if (String(f.aprovador?.id) !== String(eu.id)) throw erro(`Quem aprova é ${f.aprovador?.nome || 'outra pessoa'}.`, 403);
@@ -266,9 +275,9 @@ async function aprovarFluxo(supabase, tenantId, id, { eu }) {
   const historico = [...(f.historico || []), { acao: 'aprovado', por: eu.nome || null, em: new Date().toISOString() }];
   if (p.modo === 'revisao') {
     if (!String(d.rascunho?.elaborado_por || '').trim()) await q(supabase.from('documentos_gestao').update({ rascunho: { ...d.rascunho, elaborado_por: f.elaborado.nome } }).eq('id', id).eq('tenant_id', tenantId));
-    await aprovarRevisao(supabase, tenantId, id, { aprovador: eu.nome, aprovadorUsuarioId: eu.id });
-  } else await publicar(supabase, tenantId, id, { aprovador: eu.nome, aprovadorUsuarioId: eu.id });
-  await q(supabase.from('documentos_gestao').update({ assinaturas: { lista: assinaturas, historico }, codigo_verificacao: codigoVer(h), elaborado_por: f.elaborado.nome || d.elaborado_por, ...(f.elaborado?.usuario_id ? { elaborado_por_id: await colabIdDoUsuario(supabase, tenantId, f.elaborado.usuario_id) } : {}), fluxo: null }).eq('id', id).eq('tenant_id', tenantId));
+    await aprovarRevisao(supabase, tenantId, id, { aprovador: eu.nome, aprovadorUsuarioId: eu.id, proxima });
+  } else await publicar(supabase, tenantId, id, { aprovador: eu.nome, aprovadorUsuarioId: eu.id, proxima });
+  await q(supabase.from('documentos_gestao').update({ assinaturas: { lista: assinaturas, historico }, codigo_verificacao: codigoVer(h), elaborado_por: f.elaborado.nome || d.elaborado_por, ...(f.elaborado?.usuario_id ? { elaborado_por_id: await colabIdDoUsuario(supabase, tenantId, f.elaborado.usuario_id), elaborado_por_usuario_id: f.elaborado.usuario_id } : {}), fluxo: null }).eq('id', id).eq('tenant_id', tenantId));
   await avisar(supabase, tenantId, f.elaborado?.usuario_id, { titulo: `✅ ${d.codigo} Rev. ${String(p.revisao).padStart(2, '0')} aprovado e vigente`, texto: `Aprovado por ${eu.nome || 'colega'}.` });
   return obter(supabase, tenantId, id);
 }

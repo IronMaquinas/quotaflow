@@ -292,10 +292,14 @@ router.post('/gestao/:id/publicar', exigirEditar, async (req, res) => { // 18zt:
 const pessoasDG = async (req) => { const N = require('../services/notificacoes');
   const ap = (await N.usuariosComPerfis(supabase, req.tenantId, APROVAR_DG)).map((u) => ({ id: u.id, nome: u.nome || u.email }));
   const ve = (await N.usuariosComPerfis(supabase, req.tenantId, VER)).map((u) => ({ id: u.id, nome: u.nome || u.email }));
-  let funcionarios = []; try { // 18zz.6: auto-sugestão de "Elaborado/Aprovado por" (funcionários ativos)
+  let funcionarios = []; try { // 18zz.6 · 18zz.7: funcionários ativos + usuários do sistema sem cadastro de funcionário (fornecedor fica fora)
     const cs = (await q(supabase.from('colaboradores').select('*').eq('tenant_id', req.tenantId))).filter((c) => c.situacao !== 'desligado');
     const fs = new Map((await q(supabase.from('funcoes').select('*').eq('tenant_id', req.tenantId)).catch(() => [])).map((f) => [String(f.id), f.nome]));
-    funcionarios = cs.map((c) => ({ id: c.id, nome: c.nome, funcao: fs.get(String(c.funcao_id)) || null })).sort((x, y) => String(x.nome).localeCompare(String(y.nome), 'pt-BR'));
+    const us = (await q(supabase.from('usuarios').select('*').eq('tenant_id', req.tenantId)).catch(() => [])).filter((u) => u.ativo !== false && u.perfil !== 'fornecedor');
+    const comCol = new Set(cs.map((c) => String(c.usuario_id ?? '')));
+    funcionarios = [...cs.map((c) => ({ id: c.id, usuario_id: c.usuario_id ?? null, nome: c.nome, funcao: fs.get(String(c.funcao_id)) || null })),
+      ...us.filter((u) => !comCol.has(String(u.id))).map((u) => ({ id: null, usuario_id: u.id, nome: u.nome || u.email, funcao: 'usuário do sistema' }))]
+      .sort((x, y) => String(x.nome).localeCompare(String(y.nome), 'pt-BR'));
   } catch { /* segue sem lista */ }
   return { aprovadores: ap, verificadores: ve, funcionarios }; };
 router.post('/gestao-alcance', exigirVer, async (req, res) => { try { res.json(await DG.previaAlcance(supabase, req.tenantId, req.body?.distribuicao)); } catch (err) { errDG(res, err, 'gestao-alcance'); } }); // 18zz.4
@@ -314,7 +318,7 @@ router.post('/gestao/:id/verificar', exigirVer, async (req, res) => { try { res.
 router.post('/gestao/:id/devolver', exigirVer, async (req, res) => { try { res.json({ documento: await DG.devolverFluxo(supabase, req.tenantId, req.params.id, { eu: await quemSou(req), comentario: req.body?.comentario }) }); } catch (err) { errDG(res, err, 'gestao-devolver'); } });
 router.post('/gestao/:id/aprovar-fluxo', exigirVer, async (req, res) => {
   try { if (!perfisDe(req).some((p) => APROVAR_DG.includes(p))) return res.status(403).json({ erro: 'Só admin, gestor ou qualidade aprova' });
-    res.json({ documento: await DG.aprovarFluxo(supabase, req.tenantId, req.params.id, { eu: await quemSou(req) }) }); } catch (err) { errDG(res, err, 'gestao-aprovar-fluxo'); }
+    res.json({ documento: await DG.aprovarFluxo(supabase, req.tenantId, req.params.id, { eu: await quemSou(req), proxima: req.body?.proxima_revisao || null }) }); } catch (err) { errDG(res, err, 'gestao-aprovar-fluxo'); }
 });
 router.get('/gestao/:id/versoes', exigirVer, async (req, res) => {
   try { const l = await DG.versoes(supabase, req.tenantId, req.params.id);
