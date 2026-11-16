@@ -22,7 +22,7 @@ const cnpjFmt = (v) => { const d = String(v || "").replace(/\D/g, ""); return d.
 export const CSS_DOC_GESTAO = `.dg{font-family:Arial,Helvetica,sans-serif;color:#111;font-size:13px;line-height:1.6;position:relative}
   .dg table.cab{width:100%;border-collapse:collapse;font-size:12px;margin-bottom:12px}.dg table.cab td{border:1px solid #888;padding:6px 8px;vertical-align:middle;color:#111;background:#fff}
   .dg .tit{font-weight:700;font-size:15px;text-align:center}.dg .logo{width:150px;text-align:center}.dg .ctl{width:150px;font-size:11.5px}
-  .dg .mot{font-size:12px;color:#333;border:1px solid #ddd;background:#fafafa;padding:6px 10px;margin-bottom:14px}
+  .dg .mot{white-space:pre-line;font-size:12px;color:#333;border:1px solid #ddd;background:#fafafa;padding:6px 10px;margin-bottom:14px}
   .dg .txt{white-space:pre-wrap}.dg .rod{font-size:10px;color:#666;border-top:1px solid #ccc;margin-top:22px;padding-top:6px;display:flex;justify-content:space-between;gap:10px}
   .dg .tarja{position:absolute;top:70px;right:-6px;transform:rotate(18deg);border:3px solid #b91c1c;color:#b91c1c;font-weight:800;font-size:22px;padding:2px 14px;letter-spacing:.12em;opacity:.8}`;
 
@@ -34,7 +34,8 @@ export function corpoDocGestao(d, { obsoleto = false } = {}) {
     <table class="cab"><tr><td rowspan="2" class="logo">${logo}</td><td rowspan="2" class="tit">${esc(d.titulo)}</td><td class="ctl">Código: <b>${esc(d.codigo)}</b></td></tr>
       <tr><td class="ctl">${rev(d.revisao)} · ${esc(SIT[sit] || sit)}</td></tr>
       <tr><td colspan="3" style="font-size:11.5px">Elaborado: ${esc(d.elaborado_por || "—")} · Aprovado: ${esc(d.aprovado_por || "—")} em ${dBR(d.aprovado_em)}${d.norma ? ` · Referência: ${esc(d.norma)}` : ""}${e.cnpj ? ` · ${esc(e.razao_social || e.nome || "")} — CNPJ ${esc(cnpjFmt(e.cnpj))}` : ""}</td></tr></table>
-    ${d.motivo_revisao || d.motivo ? `<div class="mot"><b>Alterações desta revisão:</b> ${esc(d.motivo_revisao || d.motivo)}</div>` : ""}
+    ${d.motivo_revisao || d.motivo ? `<div class="mot"><b>Alterações desta revisão:</b>
+${esc(d.motivo_revisao || d.motivo)}</div>` : ""}
     ${assinaturasHtml(d)}
     <div class="txt">${d.conteudo ? esc(d.conteudo) : '<span style="color:#666">Sem texto no sistema — veja o arquivo anexo.</span>'}</div>
     <div class="rod"><span>${esc(d.codigo)} · ${rev(d.revisao)}${obsoleto ? " · OBSOLETO" : ""}</span><span>Documento controlado eletronicamente no QuotaFlow — cópia impressa não controlada</span><span>Impresso em ${new Date().toLocaleDateString("pt-BR")}</span></div></div>`;

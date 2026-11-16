@@ -175,7 +175,7 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
           <b>🗂 Histórico de revisões</b>
           {hist.length === 0 ? <div style={{ color: C.muted, marginTop: 4 }}>Esta é a primeira revisão — ainda não há anteriores.</div> : hist.map((v) => <div key={v.id} style={{ display: "flex", gap: 8, alignItems: "baseline", padding: "6px 0", borderTop: `1px solid ${C.border}`, marginTop: 4, flexWrap: "wrap" }}>
             <b style={{ width: 62 }}>{rev(v.revisao)}</b>
-            <span style={{ flex: 1, color: C.textSub }}>{v.aprovado_em ? `aprovada ${dBR(v.aprovado_em)}${v.aprovado_por ? ` por ${v.aprovado_por}` : ""} · ` : ""}obsoleta desde {dBR(v.vigente_ate)}{v.motivo ? ` · ${v.motivo}` : ""}</span>
+            <span style={{ flex: 1, color: C.textSub, whiteSpace: "pre-line" }}>{v.aprovado_em ? `aprovada ${dBR(v.aprovado_em)}${v.aprovado_por ? ` por ${v.aprovado_por}` : ""} · ` : ""}obsoleta desde {dBR(v.vigente_ate)}{v.motivo ? ` · ${v.motivo}` : ""}</span>
             <button type="button" onClick={() => setVerVersao(v)} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 12.5 }}>👁 ver</button>
           </div>)}
         </div>}
@@ -260,7 +260,7 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
         <div style={{ fontSize: 17, fontWeight: 700 }}>↻ {revi.codigo} — Rev. {String(revi.revisao).padStart(2, "0")} {revi.ja ? "(em elaboração)" : "(nova)"}</div>
         <div style={{ fontSize: 12, color: C.textSub, margin: "4px 0 12px" }}>A revisão vigente continua valendo até esta ser aprovada. Ao aprovar, a anterior vai para o 🗂 histórico como obsoleta e as leituras recomeçam.</div>
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
-          <label><span style={s.label}>O QUE MUDOU NESTA REVISÃO (OBRIGATÓRIO PARA APROVAR)</span><input value={revi.motivo} onChange={(e) => setRevi({ ...revi, motivo: e.target.value })} placeholder="Ex.: incluída a etapa de quarentena; ajustados os responsáveis" style={s.input} /></label>
+          <label><span style={s.label}>O QUE MUDOU NESTA REVISÃO (OBRIGATÓRIO PARA APROVAR)</span><textarea rows={4} value={revi.motivo} onChange={(e) => setRevi({ ...revi, motivo: e.target.value })} placeholder={"Um tópico por linha, ex.:\n- incluída a etapa de quarentena\n- ajustados os responsáveis"} style={{ ...s.input, minHeight: 92, resize: "vertical", lineHeight: 1.45, fontFamily: "inherit" }} /></label>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <label style={{ flex: "3 1 260px" }}><span style={s.label}>TÍTULO</span><input value={revi.titulo || ""} onChange={(e) => setRevi({ ...revi, titulo: e.target.value })} style={s.input} /></label>
             <div style={{ flex: "1 1 160px" }}><span style={s.label}>ELABORADO POR</span><CampoFuncionario C={C} s={s} lista={pessoas?.funcionarios ?? null} nome={revi.elaborado_por} id={revi.elaborado_por_id} usuarioId={revi.elaborado_por_usuario_id} onChange={(v) => setRevi((r) => ({ ...r, elaborado_por: v.nome, elaborado_por_id: v.id, elaborado_por_usuario_id: v.usuario_id }))} /></div>

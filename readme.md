@@ -1022,6 +1022,7 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18zz.12.1 (16/11):** 📝 ↻ Nova revisão: "O que mudou nesta revisão" virou caixa de várias linhas (um tópico por linha, redimensionável); as quebras de linha aparecem no documento/PDF ("Alterações desta revisão") e no 🗂 Histórico.
   - **18zz.12 (16/11):** 👥 **"Li e entendi" só para quem conta** (Marcony: leitura de quem não está na distribuição não servia para nada). Confirma: quem está na **distribuição** (conta em "funcionários X de Y") e a **gestão** (admin, gestor, qualidade — aparece separado como "ciência da gestão: N"). Os demais veem "fora da sua distribuição" e a rota recusa (409). Contagem no 👁 Ver: "funcionários 0 de 1 · ciência da gestão: 1".
   - **18zz.11 (16/11):** 🔒 **Documento no fluxo fica travado para todos** (Marcony: o aprovador conseguia Editar, salvar e aprovar sem o emissor saber). Em verificação/aprovação: nada se edita nem se exclui (409, inclusive para quem aprova); na lista, Editar/Excluir dão lugar a "🔒 travado no fluxo". Para mudar algo, o aprovador/verificador usa **↩ Devolver** com comentário; quem elaborou ajusta e reenvia — prática dos sistemas de controle de documentos (rastreabilidade: quem altera é o emissor, o histórico guarda devolução e comentário).
   - **18zz.10 (16/11):** ✍ **Aprovador escolhido só no 📤 Enviar para aprovação** (Marcony: preencher 2x não faz sentido; o modal escondia nomes). Saiu o campo "Aprovador responsável" do formulário e da ↻ Nova revisão. No modal, a lista mostra **todos os usuários com login**: quem tem perfil de aprovação (admin, gestor, qualidade) aparece selecionável — **inclusive você** —, os demais aparecem desabilitados "— sem perfil de aprovação". A segregação de funções deixou de bloquear (ISO 9001 não a exige): quem envia pode aprovar, com aviso no modal e registro no histórico do fluxo ("quem enviou também aprova"); vale também para ↪️ Transferir.
@@ -1797,7 +1798,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 15/11/2026 (etapa 18zz.12)
+**Última atualização deste documento:** 15/11/2026 (etapa 18zz.12.1)
 
 --------------------------------------------------------------------------------
 

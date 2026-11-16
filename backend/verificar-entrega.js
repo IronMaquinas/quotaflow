@@ -354,10 +354,10 @@ const ESPERADO = {
   'migrations/091_ia_uso_cache.sql': '5bbf9aca8354504a3322565e3512b7c8', // etapa 18zo
   'migrations/092_documentos_gestao.sql': '48938919462a5b54635b1009c748f92a', // etapa 18zr
   'services/documentosGestao.js': 'ee155fa2c19e6cdaf99ffb2fc2ef0709', // etapa 18zz.11
-  'front:DocumentosGestao.jsx': '969dfcd960f52d166437c634fd989f97', // etapa 18zz.12
+  'front:DocumentosGestao.jsx': 'fb4bd734aaf73931bf9363fd0281a35f', // etapa 18zz.12.1
   'migrations/093_gestao_revisoes_leituras.sql': 'b40ed913b39122eb1dc24988a84621c6', // etapa 18zs
   'services/modelosGestao/iso9001.js': 'eb414c0f411066ca8d505223104ac0b0', // etapa 18zt
-  'front:gerarDocumentoGestao.js': 'd891ee08f9d5230353f4c89f53ec3641', // etapa 18zv
+  'front:gerarDocumentoGestao.js': '784124ce847faddf33829d54f8f546c7', // etapa 18zz.12.1
   'migrations/094_gestao_fluxo_assinaturas.sql': '252b65e0790b8d91f7c8486afa7c1e9a', // etapa 18zv
   'migrations/095_colaborador_vinculo.sql': 'ede02d83cd18026acb0652490d16be9f', // etapa 18zw
   'services/cnhPeloLink.js': 'bd8c2956449323d9a816c139512f8dd5', // etapa 18zw
@@ -371,10 +371,10 @@ const ESPERADO = {
   'migrations/099_gestao_usuario_responsavel.sql': 'd50ccfb7d7c29cfd5e79744f3431b141', // etapa 18zz.7 (novo)
 };
 
-// Antes de copiar a etapa 18zz.12 — base: 18zz.11 (24ff632)
+// Antes de copiar a etapa 18zz.12.1 — base: 18zz.12 (7af5ee8)
 const ANTES = {
-  'routes/pessoas.js': '71b96601e389e9624c1d6e00334e2fe0',
-  'front:DocumentosGestao.jsx': '920aa61d9209d6ab592331d45e04720d',
+  'front:DocumentosGestao.jsx': '969dfcd960f52d166437c634fd989f97',
+  'front:gerarDocumentoGestao.js': 'd891ee08f9d5230353f4c89f53ec3641',
 };
 
 const RAIZ = process.cwd();
@@ -412,7 +412,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zz.12)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zz.12.1)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
