@@ -14,6 +14,7 @@ import TelaInteligenciaNova from './components/inteligencia/TelaInteligenciaNova
 import TelaBenchmarkNova from './components/benchmark/TelaBenchmarkNova';
 import PainelValorGerado, { SeloValorGerado } from './components/valor/PainelValorGerado'; // 5a
 import SalaControle from './components/home/SalaControle'; // SC1
+import TelaMetas from './components/metas/TelaMetas'; // SC2
 import TelaPortalFornecedor from './components/portal/TelaPortalFornecedor';
 import TelaGestaoCotacoesFornecedor from './components/fornecedores/TelaGestaoCotacoesFornecedor';
 import TelaLogin from './TelaLogin';
@@ -481,6 +482,7 @@ const perfil = PERFIS[usuario.perfil] || {
     {sec:"COMERCIAL E FINANCEIRO", id:"comercial",     l:"📈 Comercial",            perfis:["admin","gestor","comercial"]}, // etapa 15a
     {sec:"COMERCIAL E FINANCEIRO", id:"financeiro",    l:"💰 Financeiro",           perfis:["admin","gestor","financeiro"]},
     // ── ANÁLISES
+    {sec:"ANÁLISES", id:"metas",         l:"🎯 Metas do negócio",     perfis:["admin","gestor"]}, // SC2
     {sec:"ANÁLISES", id:"valor_gerado",  l:"💰 Valor gerado",         perfis:["admin","gestor"]}, // 5a
     {sec:"ANÁLISES", id:"relatorio",     l:"📄 Relatório",            perfis:["admin","gestor"]},
     {sec:"ANÁLISES", id:"historico",     l:"📉 Histórico Preços",     perfis:["admin","gestor"]},
@@ -798,6 +800,7 @@ const perfil = PERFIS[usuario.perfil] || {
             />
           </div>
         )}
+        {temAcesso(tela) && tela === "metas" && <div style={{flex:1,overflowY:"auto"}}><TelaMetas C={C} s={s} /></div>}
         {temAcesso(tela) && tela === "valor_gerado" && <div style={{flex:1,overflowY:"auto"}}><PainelValorGerado C={C} s={s} /></div>}
         {temAcesso(tela) && tela === "benchmark" && (
           <div style={{flex:1,overflowY:"auto"}}>
@@ -2485,6 +2488,7 @@ const PERMISSOES = {
   inteligencia:       ["admin","gestor"],
   benchmark:          ["admin","gestor"],
   valor_gerado:       ["admin","gestor"], // 5a
+  metas:              ["admin","gestor"], // SC2
   equipamentos:       ["admin","gestor","comprador","operacao"],
   inspecoes:          ["admin","gestor","comprador","operacao","qualidade"], // etapa 14a
   contratos:          ["admin","gestor","comprador","operacao","qualidade"], // etapa 14b.3

@@ -113,6 +113,7 @@ async function montar(sb, { tenantId, userId, perfis = [], nome = '', agora = ne
     try { const r = await fn(c) || {}; res.alertas.push(...(r.alertas || [])); res.prioridades.push(...(r.prioridades || [])); res.agenda.push(...(r.agenda || [])); Object.assign(res.kpis, r.kpis || {}); if (r.equipe) res.equipe = r.equipe; }
     catch (e) { res.falhas.push(k); console.warn(`⚠️ [sala-controle] sensor ${k}:`, e.message); }
   }));
+  if (c.gestor) { try { res.saude = (await require('../metas').listar(sb, tenantId, { agora })).map(({ id, chave, nome, area, area_nome, unidade, valor, sinal, tendencia, meta, sentido, tela }) => ({ id, chave, nome, area, area_nome, unidade, valor, sinal, tendencia, meta, sentido, tela })); } catch { res.saude = null; } } // SC2: 📊 saúde do negócio
   res.alertas.sort((a, b) => (a.nivel === 'critico' ? 0 : 1) - (b.nivel === 'critico' ? 0 : 1));
   res.prioridades.sort((a, b) => b.peso - a.peso);
   res.agenda.sort((a, b) => String(a.hora || '99').localeCompare(String(b.hora || '99')));

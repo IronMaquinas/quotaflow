@@ -4,6 +4,7 @@
 //   Só mostra o que o perfil/plano abre (podeAbrir(tela)). Cada item leva direto aonde se resolve.
 import { useEffect, useRef, useState } from "react";
 import apiService from "../../services/apiService";
+import { COR_SINAL, fmtValor } from "../metas/TelaMetas"; // SC2
 
 const ESTADO = {
   estavel: { cor: "#22c55e", fundo: "#0f2a1f", rot: "Tudo sob controle", ic: "🟢" },
@@ -53,6 +54,25 @@ export default function SalaControle({ C, s, podeAbrir = () => true, topo = null
         <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", color: "#f87171", marginBottom: 4 }}>🚨 ALERTAS AGORA</div>
         {alertas.map((a, i) => linha(a, i, a.nivel === "critico" ? "#fca5a5" : "#fcd34d"))}
       </div>}
+      {d.gestor && Array.isArray(d.saude) && podeAbrir("metas") && (d.saude.length === 0
+        ? <div onClick={() => ir({ tela: "metas" })} style={{ ...card, marginBottom: 12, cursor: "pointer", display: "flex", gap: 12, alignItems: "center" }}>
+            <span style={{ fontSize: 26 }}>🎯</span><span style={{ flex: 1 }}><b>Defina as metas da empresa</b><div style={{ fontSize: 12.5, color: C.muted }}>Com as metas, esta tela mostra a saúde do negócio por área — 🟢🟡🔴 e a tendência do mês.</div></span><span style={{ color: C.accent, fontSize: 12.5 }}>começar ›</span></div>
+        : <div style={{ ...card, marginBottom: 12 }}>
+            <div style={{ display: "flex", alignItems: "baseline", marginBottom: 8 }}>
+              <span style={{ flex: 1, fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", color: C.textSub }}>📊 SAÚDE DO NEGÓCIO</span>
+              <span style={{ fontSize: 12, color: C.muted }}>{["verde", "amarelo", "vermelho"].map((k) => { const n = d.saude.filter((m) => m.sinal === k).length; return n ? <span key={k} style={{ marginLeft: 8, color: COR_SINAL[k] }}>● {n}</span> : null; })}</span>
+              <button type="button" onClick={() => ir({ tela: "metas" })} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 12, marginLeft: 10 }}>metas ›</button>
+            </div>
+            <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10 }}>
+              {[...d.saude].sort((a, b) => ({ vermelho: 0, amarelo: 1, verde: 2 }[a.sinal] ?? 3) - ({ vermelho: 0, amarelo: 1, verde: 2 }[b.sinal] ?? 3)).map((m) => (
+                <div key={m.id} onClick={() => ir({ tela: m.tela && podeAbrir(m.tela) ? m.tela : "metas" })} style={{ background: C.bg, border: `1px solid ${C.border}`, borderLeft: `4px solid ${COR_SINAL[m.sinal] || C.border}`, borderRadius: 8, padding: "10px 12px", cursor: "pointer" }}>
+                  <div style={{ fontSize: 11, color: C.muted }}>{m.area_nome}</div>
+                  <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}><span style={{ fontSize: 22, fontWeight: 800, color: COR_SINAL[m.sinal] || C.text }}>{fmtValor(m.valor, m.unidade)}</span>
+                    {m.tendencia && m.tendencia.dif !== 0 && <span style={{ fontSize: 11.5, color: m.tendencia.melhorou ? "#4ade80" : "#f87171" }}>{m.tendencia.dif > 0 ? "▲" : "▼"}</span>}</div>
+                  <div style={{ fontSize: 12, color: C.textSub }}>{m.nome}</div>
+                </div>))}
+            </div>
+          </div>)}
       {kpis.length > 0 && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(118px, 1fr))", gap: 10, marginBottom: 12 }}>
         {kpis.map(([k, ic, rot, tela]) => { const v = d.kpis[k]; const ruim = ["equipamentos_bloqueados", "documentos_vencidos", "acoes_nc_atrasadas", "tarefas_atrasadas"].includes(k) && v > 0; return (
           <div key={k} onClick={() => ir({ tela })} style={{ ...card, padding: "12px 14px", cursor: "pointer" }}>
