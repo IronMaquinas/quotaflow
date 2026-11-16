@@ -111,7 +111,7 @@ async function excluir(supabase, tenantId, id) {
 // ─── 18zs: 🔁 REVISÃO (a vigente vale até a nova ser aprovada) · 🗂 HISTÓRICO · ✓ LEITURA ───────────────────────────────
 //   iniciar/salvar rascunho → aprovar: a vigente vai para documentos_gestao_versoes (obsoleta, com "vigente até"), o rascunho
 //   vira a nova revisão (Rev. +1) com aprovado por/em de quem aprovou; as leituras recomeçam (são por revisão).
-const CAMPOS_RASC = ['titulo', 'conteudo', 'motivo', 'elaborado_por', 'elaborado_por_id', 'elaborado_por_usuario_id', 'area', 'norma', 'proxima_revisao'];
+const CAMPOS_RASC = ['titulo', 'conteudo', 'motivo', 'elaborado_por', 'elaborado_por_id', 'elaborado_por_usuario_id', 'aprovado_por', 'aprovado_por_usuario_id', 'area', 'norma', 'proxima_revisao'];
 const hojeBR = () => new Date(Date.now() - 3 * 36e5).toISOString().slice(0, 10);
 const erro = (msg, status) => Object.assign(new Error(msg), { status });
 
@@ -124,6 +124,8 @@ async function salvarRascunho(supabase, tenantId, id, body) {
   if (r.proxima_revisao && !/^\d{4}-\d{2}-\d{2}$/.test(r.proxima_revisao)) throw erro('Data inválida', 400);
   if (['elaborado_por', 'elaborado_por_id', 'elaborado_por_usuario_id'].some((k) => Object.prototype.hasOwnProperty.call(body || {}, k))) { // 18zz.6 · 18zz.7
     const p = await amarrarPessoas(supabase, tenantId, { elaborado_por: r.elaborado_por, elaborado_por_id: r.elaborado_por_id || null, elaborado_por_usuario_id: r.elaborado_por_usuario_id || null }); Object.assign(r, p); }
+  if (['aprovado_por', 'aprovado_por_usuario_id'].some((k) => Object.prototype.hasOwnProperty.call(body || {}, k))) { // 18zz.8: aprovador RESPONSÁVEL (designado) da revisão
+    const p = await amarrarPessoas(supabase, tenantId, { aprovado_por: r.aprovado_por, aprovado_por_usuario_id: r.aprovado_por_usuario_id || null }); r.aprovado_por = p.aprovado_por; r.aprovado_por_usuario_id = p.aprovado_por_usuario_id; }
   const arq = await gravarArquivo(supabase, tenantId, `${id}r`, body);
   if (arq) Object.assign(r, { arquivo: arq }); if (body?.remover_arquivo) r.arquivo = { remover: true };
   await q(supabase.from('documentos_gestao').update({ rascunho: r }).eq('id', id).eq('tenant_id', tenantId));
@@ -242,6 +244,24 @@ async function enviarFluxo(supabase, tenantId, id, { eu, verificador = null, apr
   return obter(supabase, tenantId, id);
 }
 
+/** 18zz.8 (Marcony, como na NC): ↪️ transferir a APROVAÇÃO para outra pessoa — quem está como aprovador ou quem elaborou */
+async function transferirAprovacao(supabase, tenantId, id, { eu, para, motivo = null, aprovadores = [] }) {
+  const d = await obter(supabase, tenantId, id); if (!d) throw erro('Documento não encontrado', 404);
+  const f = d.fluxo; if (!f || !['verificacao', 'aprovacao'].includes(f.etapa)) throw erro('Este documento não está aguardando aprovação.', 409);
+  if (![String(f.aprovador?.id), String(f.elaborado?.usuario_id)].includes(String(eu.id))) throw erro(`Só ${f.aprovador?.nome || 'o aprovador'} ou quem elaborou pode transferir a aprovação.`, 403);
+  const novo = aprovadores.find((a) => String(a.id) === String(para));
+  if (!novo) throw erro('O novo aprovador precisa ter perfil admin, gestor ou qualidade.', 400);
+  if (String(novo.id) === String(f.aprovador?.id)) throw erro('Essa pessoa já é a aprovadora.', 409);
+  if (String(novo.id) === String(f.elaborado?.usuario_id) && aprovadores.length > 1) throw erro('Quem elaborou não aprova o próprio documento (segregação de funções).', 409);
+  if (f.verificador?.id && String(novo.id) === String(f.verificador.id)) throw erro('O verificador não pode ser também o aprovador.', 409);
+  const fluxo = { ...f, aprovador: { id: novo.id, nome: novo.nome || null }, historico: [...(f.historico || []), { acao: `aprovação transferida de ${f.aprovador?.nome || '—'} para ${novo.nome || '—'}`, por: eu.nome || null, em: new Date().toISOString(), comentario: motivo ? String(motivo).slice(0, 1000) : null }] };
+  const desig = f.modo === 'revisao' ? { rascunho: { ...(d.rascunho || {}), aprovado_por: novo.nome || null, aprovado_por_usuario_id: novo.id } } : { aprovado_por: novo.nome || null, aprovado_por_usuario_id: novo.id, aprovado_por_id: await colabIdDoUsuario(supabase, tenantId, novo.id) };
+  await q(supabase.from('documentos_gestao').update({ fluxo, ...desig }).eq('id', id).eq('tenant_id', tenantId));
+  if (f.etapa === 'aprovacao') await avisar(supabase, tenantId, novo.id, { titulo: `✍ ${d.codigo} Rev. ${String(f.revisao).padStart(2, '0')} aguarda sua aprovação`, texto: `${eu.nome || 'Colega'} transferiu a aprovação para você${motivo ? ` — "${String(motivo).slice(0, 200)}"` : ''}.` });
+  if (String(f.aprovador?.id) !== String(eu.id)) await avisar(supabase, tenantId, f.aprovador?.id, { titulo: `↪️ ${d.codigo}: aprovação transferida`, texto: `${eu.nome || 'Colega'} passou a aprovação para ${novo.nome || 'outra pessoa'}.` });
+  return obter(supabase, tenantId, id);
+}
+
 async function verificarFluxo(supabase, tenantId, id, { eu, comentario = null }) {
   const d = await obter(supabase, tenantId, id); if (!d) throw erro('Documento não encontrado', 404);
   const f = d.fluxo; if (f?.etapa !== 'verificacao') throw erro('Este documento não está aguardando verificação.', 409);
@@ -335,4 +355,4 @@ async function contagens(supabase, tenantId, docs) {
   return out;
 }
 
-module.exports = { mapaPerfis, alvo, previaAlcance, contagens, alcanca, meusProcedimentos, destinatarios, ETAPA, enviarFluxo, verificarFluxo, devolverFluxo, aprovarFluxo, conferirAssinatura, emPauta, biblioteca, importarModelo, publicar, preencher, salvarRascunho, descartarRascunho, aprovarRevisao, versoes, confirmarLeitura, leituras, TIPOS, STATUS, validar, listar, obter, criar, atualizar, excluir };
+module.exports = { transferirAprovacao, mapaPerfis, alvo, previaAlcance, contagens, alcanca, meusProcedimentos, destinatarios, ETAPA, enviarFluxo, verificarFluxo, devolverFluxo, aprovarFluxo, conferirAssinatura, emPauta, biblioteca, importarModelo, publicar, preencher, salvarRascunho, descartarRascunho, aprovarRevisao, versoes, confirmarLeitura, leituras, TIPOS, STATUS, validar, listar, obter, criar, atualizar, excluir };

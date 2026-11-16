@@ -88,7 +88,7 @@ const ESPERADO = {
   'services/planosManutencao.js': 'e32588acaefd47c5cb93bbe0d70ab799', // etapa 12b.4
   'front:TelaPlanosManutencao.jsx': '4e19850209fa1924953706a7afde7995', // etapa 18g.2c
   'front:ModalTransferirOS.jsx': '8e7c1bf0d6fc9a4f88bdd9087d22cb37', // etapa 12b.3 (novo)
-  'routes/pessoas.js': '75593718511bf9c1092f97ac6a5ebc4d', // etapa 18zz.7
+  'routes/pessoas.js': '4b46c9fa63c312d09ba18d19d4bf3aab', // etapa 18zz.8
   'services/documentos.js': '733b919e75f1eeaa8dc029754226c418', // etapa 18zw
   'front:TelaPessoas.jsx': 'b4957b847e50ff36b57fbf5ce9b31905', // etapa 18zz.5
   // etapa 12c.1
@@ -353,8 +353,8 @@ const ESPERADO = {
   'front:AjustarFoto.jsx': 'bd1842aedec450e1f98c0d0bd60c910a', // etapa 18zn
   'migrations/091_ia_uso_cache.sql': '5bbf9aca8354504a3322565e3512b7c8', // etapa 18zo
   'migrations/092_documentos_gestao.sql': '48938919462a5b54635b1009c748f92a', // etapa 18zr
-  'services/documentosGestao.js': '74a363f35937590e98ce90e263c1f083', // etapa 18zz.7
-  'front:DocumentosGestao.jsx': '4d37bacb36fedbddacd272de90d5ee15', // etapa 18zz.7
+  'services/documentosGestao.js': '534bf39935c3fe780ef5f3a12ffa98a1', // etapa 18zz.8
+  'front:DocumentosGestao.jsx': '1bb8795ae352198f0999bc8109a5efba', // etapa 18zz.8
   'migrations/093_gestao_revisoes_leituras.sql': 'b40ed913b39122eb1dc24988a84621c6', // etapa 18zs
   'services/modelosGestao/iso9001.js': 'eb414c0f411066ca8d505223104ac0b0', // etapa 18zt
   'front:gerarDocumentoGestao.js': 'd891ee08f9d5230353f4c89f53ec3641', // etapa 18zv
@@ -371,12 +371,11 @@ const ESPERADO = {
   'migrations/099_gestao_usuario_responsavel.sql': 'd50ccfb7d7c29cfd5e79744f3431b141', // etapa 18zz.7 (novo)
 };
 
-// Antes de copiar a etapa 18zz.7 — base: 18zz.6 (49bb188)
+// Antes de copiar a etapa 18zz.8 — base: 18zz.7 (a95fe7b)
 const ANTES = {
-  'routes/pessoas.js': '206bdff66ef24f8013d3769db4521f80',
-  'services/documentosGestao.js': 'c97b2b4a60859bf87a512e1f01d4e57e',
-  'front:DocumentosGestao.jsx': '66e160fc0f8dc131df9318a71e9cef28',
-  'front:CampoFuncionario.jsx': 'ac2a575df1124716e7323f7ae126d083',
+  'routes/pessoas.js': '75593718511bf9c1092f97ac6a5ebc4d',
+  'services/documentosGestao.js': '74a363f35937590e98ce90e263c1f083',
+  'front:DocumentosGestao.jsx': '4d37bacb36fedbddacd272de90d5ee15',
 };
 
 const RAIZ = process.cwd();
@@ -414,7 +413,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zz.7)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zz.8)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

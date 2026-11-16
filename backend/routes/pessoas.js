@@ -315,6 +315,9 @@ router.post('/gestao/:id/enviar', exigirEditar, async (req, res) => {
     res.json({ documento: await DG.enviarFluxo(supabase, req.tenantId, req.params.id, { eu: await quemSou(req), aprovador, verificador, comentario: b.comentario, aprovadores }) }); } catch (err) { errDG(res, err, 'gestao-enviar'); }
 });
 router.post('/gestao/:id/verificar', exigirVer, async (req, res) => { try { res.json({ documento: await DG.verificarFluxo(supabase, req.tenantId, req.params.id, { eu: await quemSou(req), comentario: req.body?.comentario }) }); } catch (err) { errDG(res, err, 'gestao-verificar'); } });
+router.post('/gestao/:id/transferir-aprovacao', exigirVer, async (req, res) => { // 18zz.8
+  try { const { aprovadores } = await pessoasDG(req); res.json({ documento: await DG.transferirAprovacao(supabase, req.tenantId, req.params.id, { eu: await quemSou(req), para: req.body?.para, motivo: req.body?.motivo, aprovadores }) }); } catch (err) { errDG(res, err, 'gestao-transferir'); }
+});
 router.post('/gestao/:id/devolver', exigirVer, async (req, res) => { try { res.json({ documento: await DG.devolverFluxo(supabase, req.tenantId, req.params.id, { eu: await quemSou(req), comentario: req.body?.comentario }) }); } catch (err) { errDG(res, err, 'gestao-devolver'); } });
 router.post('/gestao/:id/aprovar-fluxo', exigirVer, async (req, res) => {
   try { if (!perfisDe(req).some((p) => APROVAR_DG.includes(p))) return res.status(403).json({ erro: 'Só admin, gestor ou qualidade aprova' });
