@@ -488,7 +488,9 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
           ) : (
             <div style={{ ...s.card, overflow: "hidden" }}>
               {colabs.map((c, i) => (
-                <div key={c.id} style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", padding: "12px 16px", borderBottom: i < colabs.length - 1 ? `1px solid ${C.border}` : "none", opacity: c.situacao === "desligado" ? 0.55 : 1 }}>
+                <div key={c.id} title="Abrir a ficha" onClick={(e) => { if (!e.target.closest("button, a, input, select, label")) abrirFicha(c.id); }} /* 18zz.1: a linha toda abre a ficha */
+                  onMouseEnter={(e) => { e.currentTarget.style.background = C.bg; }} onMouseLeave={(e) => { e.currentTarget.style.background = ""; }}
+                  style={{ cursor: "pointer", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", padding: "12px 16px", borderBottom: i < colabs.length - 1 ? `1px solid ${C.border}` : "none", opacity: c.situacao === "desligado" ? 0.55 : 1 }}>
                   {c.foto_url && <img src={c.foto_url} alt="" style={{ width: 36, height: 44, objectFit: "cover", borderRadius: 6, flexShrink: 0 }} />}{/* 18zl */}
                   <div style={{ flex: "2 1 220px" }}>
                     <div style={{ fontWeight: 600, fontSize: 13 }}>{c.nome} {c.vinculo === "agregado" && <span style={s.tag(C.accent)}>🚚 Agregado</span>}{c.vinculo === "terceiro" && <span style={s.tag(C.muted)}>Terceiro</span>} {c.situacao !== "ativo" && <span style={s.tag(C.muted)}>{SITUACAO_COLAB[c.situacao]}</span>}</div>

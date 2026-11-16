@@ -1018,6 +1018,7 @@ npm run dev
     - **Tempo real por espera longa:** a tela pergunta "tem algo depois da última mensagem?" e o servidor segura a resposta até chegar mensagem nova (aviso em memória, na hora) ou ~25 s — então pergunta de novo. A mensagem do outro lado aparece **sozinha, em menos de 1 s**, sem recarregar, sem consultar o banco a cada poucos segundos e sem chave do banco no navegador. (Com mais de um servidor rodando, a mensagem de outro servidor chega na próxima volta, ≤ 25 s.) Sem conexão, tenta de novo em 5 s.
     - **✓ lida** para quem mandou; contador de não lidas zera ao abrir. Enter envia, Shift+Enter quebra a linha. Demanda **encerrada**: conversa só para consulta (409 ao escrever). Acesso conferido nos dois lados (a empresa só vê as conversas das demandas dela; o fornecedor, só as dele).
     - Rotas: `GET/POST /api/spot/demandas/:id/interesses/:iid/mensagens` (comprador) e `GET/POST /api/spot/fornecedor/interesses/:iid/mensagens` (fornecedor) — o GET aceita `?desde=<id>&esperar=1`. Arquivos: `services/chatSpot.js`, `components/spot/ChatSpot.jsx`.
+  - **18zz.1 (15/11):** 👆 **A linha inteira do colaborador abre a ficha** (Marcony: só abria clicando em "documento(s)"/selo). Clique em nome, foto, CPF… abre a ficha; botões (Editar, Excluir…) continuam com a ação deles; destaque ao passar o mouse.
   - **18zz (15/11):** ⏱ **Ficha do colaborador abre na hora** (Marcony: clicava e "nada acontecia", às vezes 2 cliques). Frontend: o modal abre **no clique** com foto, nome e "Carregando…" (spinner); 2º clique não dispara outra busca; as duas consultas (ficha + histórico de funções) vão **juntas**; erro aparece **dentro do modal** com "Tentar de novo"; passou de 8 s → aviso "está demorando (conexão ou servidor acordando) — não precisa clicar de novo". Backend `GET /colaboradores/:id/ficha`: as ~8 consultas (ficha, bases de EPI/competências/treinamentos, histórico de treinamentos, disciplinar, multas) rodam em **paralelo** (antes em fila).
   - **18zy (15/11):** 👥 **CPF já cadastrado → modal** (Marcony). `POST/PUT /api/pessoas/colaboradores` conferem o CPF antes de gravar e devolvem 409 com `existente` (id, nome, função, vínculo, situação). A tela abre o modal "⚠ Este CPF já está cadastrado — pertence a Fulano" com **Voltar · 📋 Ver ficha · ✎ Abrir cadastro** (desligado: dica para reativar) — em vez da mensagem no fundo da tela.
   - **18zx (15/11):** 🏢 **CNPJ do agregado com máscara e consulta à Receita** — novo `components/shared/CampoCnpj.jsx` (máscara CNPJ/CPF enquanto digita; dígito verificador; 14 dígitos válidos → BrasilAPI: razão social, cidade/UF e **situação cadastral** — ✓ ATIVA em verde, outras em vermelho "não está regular"; CPF só confere o dígito). No colaborador agregado/terceiro: CNPJ antes da empresa, que é preenchida pela Receita (se estiver vazia).
@@ -1779,7 +1780,7 @@ Dois modelos de contrato das transportadoras: (1) **serviço sob demanda / curto
 
 **Desenvolvedor:** Marcony
 **Plataforma:** QuotaFlow
-**Última atualização deste documento:** 06/11/2026 (etapa 18zz)
+**Última atualização deste documento:** 06/11/2026 (etapa 18zz.1)
 
 --------------------------------------------------------------------------------
 

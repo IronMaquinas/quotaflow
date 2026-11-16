@@ -90,7 +90,7 @@ const ESPERADO = {
   'front:ModalTransferirOS.jsx': '8e7c1bf0d6fc9a4f88bdd9087d22cb37', // etapa 12b.3 (novo)
   'routes/pessoas.js': '9d2205e48df992e2205c204c1e7b9080', // etapa 18zz
   'services/documentos.js': '733b919e75f1eeaa8dc029754226c418', // etapa 18zw
-  'front:TelaPessoas.jsx': 'c8a7063068daca4c84e844a799faeee8', // etapa 18zz
+  'front:TelaPessoas.jsx': '9c8546fc0336857eb87ac4f46c825a3b', // etapa 18zz.1
   // etapa 12c.1
   'services/avisosVencimento.js': '5e44509d6b1b33205d323e2b9bbd52a5', // etapa 18zq
   'services/funcoes.js': '9873a5e1a74e7604ab6b624d1d7cc901', // etapa 12e.3.1
@@ -364,10 +364,9 @@ const ESPERADO = {
   'front:CampoCnpj.jsx': '5fb306c0e0cb0245e644e659c6042bb7', // etapa 18zx
 };
 
-// Antes de copiar a etapa 18zz — base: 6a4ddb5
+// Antes de copiar a etapa 18zz.1 — base: 1eba617
 const ANTES = {
-  'routes/pessoas.js': '2e429228add454540e540952cd936c37',
-  'front:TelaPessoas.jsx': '58dfe31e74f6f93387b8fe2d4f8fa946',
+  'front:TelaPessoas.jsx': 'c8a7063068daca4c84e844a799faeee8',
 };
 
 const RAIZ = process.cwd();
@@ -405,7 +404,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zz)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zz.1)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
