@@ -5,6 +5,7 @@
 import { useEffect, useMemo, useState } from "react";
 import apiService from "../../services/apiService";
 import VerArquivo from "../programacao/VerArquivo";
+import { Toggle } from "../../plataforma/ModulosPlataforma"; // 18zz.2
 import ConfirmarExclusao from "../shared/ConfirmarExclusao";
 import { dadosEmpresa } from "../../utils/logoEmpresa";
 import { corpoDocGestao, imprimirDocGestao, CSS_DOC_GESTAO } from "../../utils/gerarDocumentoGestao"; // 18zu: logo + rodapé
@@ -20,7 +21,7 @@ const lerArq = (f) => new Promise((ok, erro) => { const r = new FileReader(); r.
 export default function DocumentosGestao({ C, s, onErro, onAviso }) {
   const [d, setD] = useState(null); const [busca, setBusca] = useState(""); const [verObsoletos, setVerObsoletos] = useState(false);
   const [form, setForm] = useState(null); const [ver, setVer] = useState(null);
-  const [revi, setRevi] = useState(null); const [hist, setHist] = useState(null); const [leit, setLeit] = useState(null); const [verVersao, setVerVersao] = useState(null); const [descartar, setDescartar] = useState(false); /* 18zs */ const [bib, setBib] = useState(null); const [buscaBib, setBuscaBib] = useState(""); const [verMod, setVerMod] = useState(null); const [publicar, setPublicar] = useState(false); /* 18zt */ const [env, setEnv] = useState(null); const [pessoas, setPessoas] = useState(null); const [acao, setAcao] = useState(null); const [verRasc, setVerRasc] = useState(false); /* 18zv */ const [arq, setArq] = useState(null); const [apagar, setApagar] = useState(null); const [ocup, setOcup] = useState(false);
+  const [revi, setRevi] = useState(null); const [hist, setHist] = useState(null); const [leit, setLeit] = useState(null); const [verVersao, setVerVersao] = useState(null); const [descartar, setDescartar] = useState(false); /* 18zs */ const [bib, setBib] = useState(null); const [buscaBib, setBuscaBib] = useState(""); const [verMod, setVerMod] = useState(null); const [publicar, setPublicar] = useState(false); /* 18zt */ const [env, setEnv] = useState(null); const [pessoas, setPessoas] = useState(null); const [acao, setAcao] = useState(null); const [verRasc, setVerRasc] = useState(false); /* 18zv */ const [funcoes, setFuncoes] = useState(null); /* 18zz.2 */ const [arq, setArq] = useState(null); const [apagar, setApagar] = useState(null); const [ocup, setOcup] = useState(false);
   const carregar = () => apiService.get("/pessoas/gestao").then(setD).catch((e) => onErro?.(e.message));
   useEffect(() => { carregar(); apiService.get("/pessoas/gestao-pessoas").then(setPessoas).catch(() => {}); }, []); // eslint-disable-line
   const editar = !!d?.pode_editar;
@@ -41,6 +42,7 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
   };
   const abrir = async (x, editarDepois = false) => {
     try { const r = await apiService.get(`/pessoas/gestao/${x.id}`); const doc = r.documento;
+      if (editarDepois && doc.distribuicao && !funcoes) apiService.get("/pessoas/funcoes").then((r2) => setFuncoes(r2.funcoes || [])).catch(() => setFuncoes([]));
       if (editarDepois) setForm({ ...doc, status_original: doc.status, aprovado_em: doc.aprovado_em ? String(doc.aprovado_em).slice(0, 10) : "", proxima_revisao: doc.proxima_revisao ? String(doc.proxima_revisao).slice(0, 10) : "" });
       else { setPublicar(false); setAcao(null); setVerRasc(!!doc.fluxo && !!doc.rascunho); setVer({ ...doc, pode_aprovar: r.pode_aprovar, eu: r.eu, assinatura: r.assinatura }); setHist(null); setLeit(null); if (doc.status === "vigente") apiService.get(`/pessoas/gestao/${x.id}/leituras`).then(setLeit).catch(() => {}); } }
     catch (e) { onErro?.(e.message); }
@@ -91,7 +93,7 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
             <div style={{ fontWeight: 600, fontSize: 13 }}><span style={{ color: C.accent }}>{x.codigo}</span> · {x.titulo}</div>
             <div style={{ fontSize: 11.5, color: C.textSub }}>{rev(x.revisao)}{x.area ? ` · ${x.area}` : ""}{x.aprovado_em ? ` · aprovado em ${dBR(x.aprovado_em)}${x.aprovado_por ? ` por ${x.aprovado_por}` : ""}` : ""}{x.proxima_revisao ? ` · análise crítica até ${dBR(x.proxima_revisao)}` : ""}</div>
           </div>
-          {statusTag(x)}{x.em_revisao && !x.etapa && <span title={x.rascunho_motivo || ""} style={s.tag(C.accent)}>↻ Rev. {String((x.revisao || 0) + 1).padStart(2, "0")} em elaboração</span>}
+          {statusTag(x)}{x.distribuicao && <span title="Leitura obrigatória dos colaboradores" style={s.tag(C.textSub)}>📣 {x.distribuicao.todos ? "todos" : `${(x.distribuicao.funcoes || []).length} função(ões)`}</span>}{x.em_revisao && !x.etapa && <span title={x.rascunho_motivo || ""} style={s.tag(C.accent)}>↻ Rev. {String((x.revisao || 0) + 1).padStart(2, "0")} em elaboração</span>}
           {x.etapa && <span style={s.tag(x.etapa === "elaboracao" ? C.warn : C.accent)}>✍ {x.etapa === "elaboracao" ? "Devolvido p/ ajuste" : ETAPA[x.etapa]}{x.etapa !== "elaboracao" && x.fluxo ? ` · ${(x.etapa === "verificacao" ? x.fluxo.verificador?.nome : x.fluxo.aprovador?.nome) || ""}` : ""}</span>}
           <div style={{ display: "flex", gap: 6 }}>
             <button type="button" onClick={() => abrir(x)} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.accent }}>👁 Ver</button>
@@ -128,9 +130,10 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
         </div>}
         {ver.status === "vigente" && leit && <div style={{ ...s.card, background: C.surface, padding: "10px 12px", marginTop: 10, fontSize: 12.5 }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <b style={{ flex: 1 }}>👥 Leitura da {rev(leit.revisao)}: {leit.leituras.length} pessoa(s)</b>
+            <b style={{ flex: 1 }}>👥 Leitura da {rev(leit.revisao)}: {leit.leituras.length} pessoa(s){leit.destinatarios ? ` · colaboradores: ${leit.destinatarios.total - leit.destinatarios.pendentes.length} de ${leit.destinatarios.total}` : ""}</b>
             {leit.eu_li ? <span style={s.tag(C.success)}>✓ Você leu esta revisão</span> : <button type="button" onClick={lerEntendi} style={{ ...s.btn(true), padding: "6px 12px", fontSize: 12.5, cursor: "pointer" }}>✓ Li e entendi</button>}
           </div>
+          {leit.destinatarios?.pendentes?.length > 0 && <div style={{ color: C.warn, marginTop: 4 }}>⏳ Faltam ler: {leit.destinatarios.pendentes.join(", ")}</div>}
           {leit.leituras.length > 0 && <div style={{ color: C.textSub, marginTop: 4 }}>{leit.leituras.map((l) => `${l.usuario_nome || "—"} (${new Date(l.lido_em).toLocaleDateString("pt-BR")})`).join(" · ")}</div>}
         </div>}
         {hist && <div style={{ ...s.card, background: C.surface, padding: "10px 12px", marginTop: 10, fontSize: 12.5 }}>
@@ -247,6 +250,20 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             {campo("ELABORADO POR", inp("elaborado_por"))}{campo("APROVADO POR", inp("aprovado_por"))}
             {campo("APROVADO EM", inp("aprovado_em", { type: "date" }), "0 1 150px")}{campo("PRÓXIMA ANÁLISE CRÍTICA", inp("proxima_revisao", { type: "date" }), "0 1 170px")}
+          </div>
+          {/* 18zz.2: 📣 leitura obrigatória dos colaboradores (app do colaborador → 📘 Procedimentos) */}
+          <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 12px" }}>
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <Toggle C={C} ligado={!!form.distribuicao} onChange={(v) => { setForm({ ...form, distribuicao: v ? { todos: true, funcoes: [] } : null }); if (v && !funcoes) apiService.get("/pessoas/funcoes").then((r) => setFuncoes(r.funcoes || [])).catch(() => setFuncoes([])); }} />
+              <div style={{ fontSize: 13 }}><b>📣 Leitura obrigatória dos colaboradores</b><div style={{ fontSize: 11.5, color: C.muted }}>Aparece no app do colaborador (📘 Procedimentos) para confirmar "Li e entendi" — a cada nova revisão.</div></div>
+            </div>
+            {form.distribuicao && <div style={{ marginTop: 8, fontSize: 12.5 }}>
+              <label style={{ marginRight: 14, cursor: "pointer" }}><input type="radio" checked={form.distribuicao.todos} onChange={() => setForm({ ...form, distribuicao: { todos: true, funcoes: [] } })} /> Todos</label>
+              <label style={{ cursor: "pointer" }}><input type="radio" checked={!form.distribuicao.todos} onChange={() => { setForm({ ...form, distribuicao: { todos: false, funcoes: [] } }); if (!funcoes) apiService.get("/pessoas/funcoes").then((r) => setFuncoes(r.funcoes || [])).catch(() => setFuncoes([])); }} /> Só estas funções:</label>
+              {!form.distribuicao.todos && <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>{(funcoes || []).map((f) => { const on = (form.distribuicao.funcoes || []).map(String).includes(String(f.id));
+                return <button key={f.id} type="button" onClick={() => setForm({ ...form, distribuicao: { todos: false, funcoes: on ? form.distribuicao.funcoes.filter((x) => String(x) !== String(f.id)) : [...(form.distribuicao.funcoes || []), String(f.id)] } })}
+                  style={{ ...s.btn(on), padding: "4px 10px", fontSize: 12, cursor: "pointer", ...(on ? {} : { color: C.text }) }}>{on ? "✓ " : ""}{f.nome}</button>; })}{funcoes && !funcoes.length && <span style={{ color: C.muted }}>Nenhuma função cadastrada.</span>}{!funcoes && <span style={{ color: C.muted }}>Carregando funções…</span>}</div>}
+            </div>}
           </div>
           {campo("NORMA / REFERÊNCIA (OPCIONAL)", inp("norma", { placeholder: "ISO 9001:2015 — 10.2" }), "1 1 100%")}
           {campo("TEXTO DO DOCUMENTO", <textarea disabled={travado} value={form.conteudo ?? ""} onChange={(e) => setForm({ ...form, conteudo: e.target.value })} rows={14} style={{ ...s.input, fontFamily: "inherit", lineHeight: 1.5, resize: "vertical" }} placeholder={"1. OBJETIVO\n…\n2. ABRANGÊNCIA\n…\n3. RESPONSABILIDADES\n…"} />, "1 1 100%")}

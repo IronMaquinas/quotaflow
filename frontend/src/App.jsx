@@ -46,6 +46,7 @@ import TelaMinhasViagens from "./components/viagens/TelaMinhasViagens"; // etapa
 import { carregarLogoEmpresa } from "./utils/logoEmpresa"; // etapa 14c
 import TelaLocatario from "./components/contratos/TelaLocatario"; // etapa 14b.3
 import TelaCalendarioManutencao from './components/manutencao/TelaCalendarioManutencao'; // etapa 12a
+import MeusProcedimentos from "./components/pessoas/MeusProcedimentos"; // 18zz.2
 import TelaPessoas from './components/pessoas/TelaPessoas'; // etapa 12c
 import TelaMeusTreinamentos from './components/pessoas/TelaMeusTreinamentos'; // etapa 12e.2b
 import AvisoPlanoTenant from './components/shared/AvisoPlanoTenant'; // etapa 11a: teste grátis / empresa em análise
@@ -434,11 +435,11 @@ const perfil = PERFIS[usuario.perfil] || {
       </div>
       {/* 14b.1: abas do colaborador — 🎓 treinamentos | 🔍 inspeções */}
       <div style={{ display: "flex", gap: 4, padding: "6px 12px", borderBottom: `1px solid ${C.border}` }}>
-        {[["viagens", "🚛 Viagens"], ["treinos", "🎓 Treinamentos"], ["inspecoes", "🔍 Inspeções"]].map(([k, l]) => (
+        {[["viagens", "🚛 Viagens"], ["treinos", "🎓 Treinamentos"], ["inspecoes", "🔍 Inspeções"], ["procedimentos", "📘 Procedimentos"]].map(([k, l]) => (
           <button key={k} onClick={() => setAbaColaborador(k)} style={{ background: "transparent", border: "none", borderBottom: `2px solid ${abaColaborador === k ? C.accent : "transparent"}`, padding: "8px 12px", color: abaColaborador === k ? C.text : C.muted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
         ))}
       </div>
-      <div style={{ flex: 1, overflow: abaColaborador === "treinos" ? "hidden" : "auto" }}>{abaColaborador === "viagens" ? <TelaMinhasViagens C={C} s={s} /> : abaColaborador === "inspecoes" ? <TelaInspecoes C={C} s={s} embutida /> : <TelaMeusTreinamentos />}</div>
+      <div style={{ flex: 1, overflow: abaColaborador === "treinos" ? "hidden" : "auto" }}>{abaColaborador === "procedimentos" ? <MeusProcedimentos C={C} s={s} /> : abaColaborador === "viagens" ? <TelaMinhasViagens C={C} s={s} /> : abaColaborador === "inspecoes" ? <TelaInspecoes C={C} s={s} embutida /> : <TelaMeusTreinamentos />}</div>
     </div>
   );
 

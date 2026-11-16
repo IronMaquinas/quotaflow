@@ -19,6 +19,7 @@ function validar(body, parcial = false) {
   for (const k of ['aprovado_em', 'proxima_revisao']) if (tem(k)) { if (body[k] && !DATA.test(String(body[k]))) erros.push('Data inválida'); else out[k] = body[k] || null; }
   for (const [k, n] of [['area', 80], ['elaborado_por', 120], ['aprovado_por', 120], ['norma', 120]]) if (tem(k)) out[k] = txt(body[k], n);
   if (tem('conteudo')) out.conteudo = body.conteudo ? String(body.conteudo).slice(0, 200000) : null;
+  if (tem('distribuicao')) { const x = body.distribuicao; out.distribuicao = !x || (!x.todos && !(x.funcoes || []).length) ? null : { todos: !!x.todos, funcoes: x.todos ? [] : [...new Set((x.funcoes || []).map(String))].slice(0, 200) }; } // 18zz.2
   return { erros, dados: out };
 }
 
@@ -129,7 +130,7 @@ async function confirmarLeitura(supabase, tenantId, id, { usuarioId, usuarioNome
   if (d.status !== 'vigente') throw erro('Só se confirma leitura de documento vigente.', 409);
   const ja = (await q(supabase.from('documentos_gestao_leituras').select('*').eq('documento_id', id).eq('revisao', d.revisao))).find((l) => String(l.usuario_id) === String(usuarioId));
   if (ja) return { ja: true, leitura: ja };
-  const [l] = await q(supabase.from('documentos_gestao_leituras').insert([{ tenant_id: tenantId, documento_id: id, revisao: d.revisao, usuario_id: usuarioId, usuario_nome: usuarioNome || null }]).select());
+  const [l] = await q(supabase.from('documentos_gestao_leituras').insert([{ tenant_id: tenantId, documento_id: id, revisao: d.revisao, usuario_id: usuarioId, usuario_nome: usuarioNome || null, lido_em: new Date().toISOString() }]).select());
   return { leitura: l };
 }
 async function leituras(supabase, tenantId, id, revisao) {
@@ -254,4 +255,22 @@ function conferirAssinatura(d) {
   return { valida: codigoVer(h) === d.codigo_verificacao, codigo: d.codigo_verificacao };
 }
 
-module.exports = { ETAPA, enviarFluxo, verificarFluxo, devolverFluxo, aprovarFluxo, conferirAssinatura, emPauta, biblioteca, importarModelo, publicar, preencher, salvarRascunho, descartarRascunho, aprovarRevisao, versoes, confirmarLeitura, leituras, TIPOS, STATUS, validar, listar, obter, criar, atualizar, excluir };
+// ─── 18zz.2: 📣 DISTRIBUIÇÃO PARA OS COLABORADORES (leitura obrigatória no app) ───────────────────────────────────────
+const alcanca = (dist, col) => !!dist && (dist.todos || (dist.funcoes || []).map(String).includes(String(col?.funcao_id ?? '')));
+/** documentos vigentes distribuídos para este colaborador, com "já li a revisão atual?" */
+async function meusProcedimentos(supabase, tenantId, col, usuarioId) {
+  const l = (await q(supabase.from('documentos_gestao').select('*').eq('tenant_id', tenantId))).filter((d) => d.status === 'vigente' && alcanca(d.distribuicao, col));
+  const lei = l.length ? await q(supabase.from('documentos_gestao_leituras').select('*').eq('tenant_id', tenantId)).catch(() => []) : [];
+  return l.map(({ conteudo, rascunho, fluxo, ...d }) => ({ id: d.id, codigo: d.codigo, titulo: d.titulo, tipo: d.tipo, revisao: d.revisao, aprovado_em: d.aprovado_em,
+    lido_em: lei.find((x) => String(x.documento_id) === String(d.id) && Number(x.revisao) === Number(d.revisao) && String(x.usuario_id) === String(usuarioId))?.lido_em || null }))
+    .sort((a, b) => (a.lido_em ? 1 : 0) - (b.lido_em ? 1 : 0) || String(a.codigo).localeCompare(String(b.codigo), 'pt-BR', { numeric: true }));
+}
+/** quem deveria ler (colaboradores ativos COM login alcançados) × quem já leu a revisão atual */
+async function destinatarios(supabase, tenantId, d) {
+  if (!d?.distribuicao) return null;
+  const cols = (await q(supabase.from('colaboradores').select('*').eq('tenant_id', tenantId))).filter((c) => c.usuario_id && c.situacao !== 'desligado' && alcanca(d.distribuicao, c));
+  const lei = (await leituras(supabase, tenantId, d.id, d.revisao)).map((x) => String(x.usuario_id));
+  return { total: cols.length, pendentes: cols.filter((c) => !lei.includes(String(c.usuario_id))).map((c) => c.nome) };
+}
+
+module.exports = { alcanca, meusProcedimentos, destinatarios, ETAPA, enviarFluxo, verificarFluxo, devolverFluxo, aprovarFluxo, conferirAssinatura, emPauta, biblioteca, importarModelo, publicar, preencher, salvarRascunho, descartarRascunho, aprovarRevisao, versoes, confirmarLeitura, leituras, TIPOS, STATUS, validar, listar, obter, criar, atualizar, excluir };
