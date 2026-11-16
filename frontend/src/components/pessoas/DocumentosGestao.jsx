@@ -10,6 +10,7 @@ import { Toggle } from "../../plataforma/ModulosPlataforma"; // 18zz.2
 import ConfirmarExclusao from "../shared/ConfirmarExclusao";
 import { dadosEmpresa } from "../../utils/logoEmpresa";
 import { corpoDocGestao, imprimirDocGestao, CSS_DOC_GESTAO } from "../../utils/gerarDocumentoGestao"; // 18zu: logo + rodapé
+import CorpoDocGestao, { imprimirGestao } from "./CorpoDocGestao"; // 18zz.13: documento da empresa (PDF) como é
 
 // 18zz.4: perfis de acesso (os mesmos do cadastro de usuário)
 const PERFIS = [{ codigo: "admin", label: "Administrador" }, { codigo: "gestor", label: "Gestor" }, { codigo: "comprador", label: "Comprador" }, { codigo: "operacao", label: "Operação" }, { codigo: "qualidade", label: "Qualidade" }, { codigo: "financeiro", label: "Financeiro" }, { codigo: "comercial", label: "Comercial" }, { codigo: "fiscal", label: "Fiscal" }, { codigo: "colaborador", label: "Colaborador (app de campo)" }];
@@ -133,7 +134,10 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
 
     {ver && <div onClick={() => setVer(null)} style={{ position: "fixed", inset: 0, background: "#000000aa", zIndex: 80, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: 16, overflowY: "auto" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "min(820px, 100%)" }}>
-        <div style={{ background: "#fff", borderRadius: 6, padding: "26px 32px", overflow: "hidden" }}><style>{CSS_DOC_GESTAO}</style><div dangerouslySetInnerHTML={{ __html: verRasc && ver.rascunho ? corpoDocGestao({ ...ver, ...ver.rascunho, revisao: (ver.revisao || 0) + 1, status: "em_aprovacao", motivo_revisao: ver.rascunho.motivo, assinaturas: null, aprovado_por: null, aprovado_em: null }) : corpoDocGestao(ver) }} /></div>
+        {verRasc && ver.rascunho
+          ? <CorpoDocGestao C={C} onZoom={setArq} doc={{ ...ver, ...ver.rascunho, revisao: (ver.revisao || 0) + 1, status: "em_aprovacao", motivo_revisao: ver.rascunho.motivo, assinaturas: null, aprovado_por: null, aprovado_em: null }}
+              arq={ver.rascunho_arquivo_url ? { url: ver.rascunho_arquivo_url, nome: ver.rascunho.arquivo?.arquivo_nome, mime: ver.rascunho.arquivo?.arquivo_mime } : ver.arquivo_url ? { url: ver.arquivo_url, nome: ver.arquivo_nome, mime: ver.arquivo_mime } : null} />
+          : <CorpoDocGestao C={C} onZoom={setArq} doc={ver} arq={ver.arquivo_url ? { url: ver.arquivo_url, nome: ver.arquivo_nome, mime: ver.arquivo_mime } : null} />}
         {(ver.fluxo || (ver.status === "rascunho") || ver.rascunho) && <div style={{ ...s.card, background: C.surface, padding: "10px 12px", marginTop: 10, fontSize: 12.5 }}>{/* 18zv: fluxo */}
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
             <b style={{ flex: 1 }}>✍ {ver.fluxo ? (ver.fluxo.etapa === "elaboracao" ? "Devolvido para ajuste" : ETAPA[ver.fluxo.etapa]) : "Rascunho — ainda não enviado"}{ver.rascunho ? ` · Rev. ${String((ver.revisao || 0) + 1).padStart(2, "0")}` : ""}</b>
@@ -183,7 +187,7 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
           <button type="button" onClick={async () => { try { setHist((await apiService.get(`/pessoas/gestao/${ver.id}/versoes`)).versoes || []); } catch (e) { onErro?.(e?.response?.data?.erro || e.message); } }} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>🗂 Histórico</button>
           {editar && ver.status === "vigente" && !["verificacao", "aprovacao"].includes(ver.fluxo?.etapa) && <button type="button" onClick={() => abrirRevisao(ver)} style={{ ...s.btn(false), cursor: "pointer", color: C.accent }}>{ver.rascunho ? `✎ Continuar Rev. ${String((ver.revisao || 0) + 1).padStart(2, "0")}` : "↻ Nova revisão"}</button>}
           {ver.arquivo_url && <button type="button" onClick={() => setArq({ url: ver.arquivo_url, nome: ver.arquivo_nome, mime: ver.arquivo_mime })} style={{ ...s.btn(false), cursor: "pointer", color: C.accent }}>📎 Arquivo anexo</button>}
-          <button type="button" onClick={() => { try { imprimirDocGestao(ver); } catch (e) { onErro?.(e.message); } }} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>🖨 Imprimir / PDF</button>
+          <button type="button" onClick={() => imprimirGestao(ver, ver.arquivo_url ? { url: ver.arquivo_url, nome: ver.arquivo_nome, mime: ver.arquivo_mime } : null).catch((e) => onErro?.(e.message))} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>🖨 Imprimir / PDF</button>
           <button type="button" onClick={() => setVer(null)} style={{ ...s.btn(true), cursor: "pointer" }}>Fechar</button>
         </div>
       </div>
@@ -246,10 +250,10 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
     </div>}
     {verVersao && <div onClick={() => setVerVersao(null)} style={{ position: "fixed", inset: 0, background: "#000000cc", zIndex: 95, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: 16, overflowY: "auto" }}>
       <div onClick={(e) => e.stopPropagation()} style={{ width: "min(820px, 100%)" }}>
-        <div style={{ background: "#fff", borderRadius: 6, padding: "26px 32px", overflow: "hidden" }}><style>{CSS_DOC_GESTAO}</style><div dangerouslySetInnerHTML={{ __html: corpoDocGestao({ ...verVersao, codigo: ver?.codigo || "", status: "obsoleto" }, { obsoleto: true }) }} /></div>
+        <CorpoDocGestao C={C} onZoom={setArq} doc={{ ...verVersao, codigo: ver?.codigo || "", status: "obsoleto" }} opc={{ obsoleto: true }} arq={verVersao.arquivo_url ? { url: verVersao.arquivo_url, nome: verVersao.arquivo_nome, mime: verVersao.arquivo_mime } : null} />
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10 }}>
           {verVersao.arquivo_url && <button type="button" onClick={() => setArq({ url: verVersao.arquivo_url, nome: verVersao.arquivo_nome, mime: verVersao.arquivo_mime })} style={{ ...s.btn(false), cursor: "pointer", color: C.accent }}>📎 Arquivo desta revisão</button>}
-          <button type="button" onClick={() => { try { imprimirDocGestao({ ...verVersao, codigo: ver?.codigo || "", status: "obsoleto" }, { obsoleto: true }); } catch (e) { onErro?.(e.message); } }} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>🖨 Imprimir</button>
+          <button type="button" onClick={() => imprimirGestao({ ...verVersao, codigo: ver?.codigo || "", status: "obsoleto" }, verVersao.arquivo_url ? { url: verVersao.arquivo_url, nome: verVersao.arquivo_nome, mime: verVersao.arquivo_mime } : null, { obsoleto: true }).catch((e) => onErro?.(e.message))} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>🖨 Imprimir</button>
           <button type="button" onClick={() => setVerVersao(null)} style={{ ...s.btn(true), cursor: "pointer" }}>Fechar</button>
         </div>
       </div>

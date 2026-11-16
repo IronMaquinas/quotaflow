@@ -3,7 +3,7 @@
 //   em A4 (logo, assinaturas) e confirma "✓ Li e entendi". Nova revisão = nova leitura.
 import { useEffect, useState } from "react";
 import apiService from "../../services/apiService";
-import { corpoDocGestao, CSS_DOC_GESTAO } from "../../utils/gerarDocumentoGestao";
+import CorpoDocGestao from "./CorpoDocGestao"; // 18zz.13
 import VerArquivo from "../programacao/VerArquivo";
 
 const rev = (n) => `Rev. ${String(n ?? 0).padStart(2, "0")}`;
@@ -25,7 +25,7 @@ export default function MeusProcedimentos({ C, s }) {
       </button>)}</div>}
     {ver && <div onClick={() => setVer(null)} style={{ position: "fixed", inset: 0, background: "#000000aa", zIndex: 80, overflowY: "auto", padding: 12 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 820, margin: "0 auto" }}>
-        <div style={{ background: "#fff", borderRadius: 6, padding: "20px 22px", overflow: "hidden" }}><style>{CSS_DOC_GESTAO}</style><div dangerouslySetInnerHTML={{ __html: corpoDocGestao(ver.documento) }} /></div>
+        <CorpoDocGestao C={C} pad="20px 22px" onZoom={setArq} doc={ver.documento} arq={ver.documento.arquivo_url ? { url: ver.documento.arquivo_url, nome: ver.documento.arquivo_nome, mime: ver.documento.arquivo_mime } : null} />
         <div style={{ display: "flex", gap: 8, justifyContent: "flex-end", marginTop: 10, flexWrap: "wrap", position: "sticky", bottom: 0 }}>
           {ver.documento.arquivo_url && <button type="button" onClick={() => setArq({ url: ver.documento.arquivo_url, nome: ver.documento.arquivo_nome, mime: ver.documento.arquivo_mime })} style={{ ...s.btn(false), cursor: "pointer", color: C.accent, background: C.surface }}>📎 Arquivo</button>}
           <button type="button" onClick={() => setVer(null)} style={{ ...s.btn(false), cursor: "pointer", color: C.text, background: C.surface }}>Fechar</button>
