@@ -1,3 +1,3 @@
-# Entrega 18zz.10 — ✍ aprovador só no Enviar para aprovação
+# Entrega 18zz.11 — 🔒 documento no fluxo travado para todos
 
 Sem migration. Suba **todos** os arquivos, inclusive `backend/verificar-entrega.js`.

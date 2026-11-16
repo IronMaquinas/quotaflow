@@ -124,8 +124,9 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
           {x.etapa && <span style={s.tag(x.etapa === "elaboracao" ? C.warn : C.accent)}>✍ {x.etapa === "elaboracao" ? "Devolvido p/ ajuste" : ETAPA[x.etapa]}{x.etapa !== "elaboracao" && x.fluxo ? ` · ${(x.etapa === "verificacao" ? x.fluxo.verificador?.nome : x.fluxo.aprovador?.nome) || ""}` : ""}</span>}
           <div style={{ display: "flex", gap: 6 }}>
             <button type="button" onClick={() => abrir(x)} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.accent }}>👁 Ver</button>
+            {["verificacao", "aprovacao"].includes(x.etapa) ? <span title="Em verificação/aprovação o documento fica travado (inclusive para quem aprova). Para mudar algo: ↩ Devolver com comentário — quem elaborou ajusta e reenvia." style={{ fontSize: 12, color: C.muted, alignSelf: "center" }}>🔒 travado no fluxo</span> : <>
             {editar && <button type="button" onClick={() => abrir(x, true)} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.text }}>Editar</button>}
-            {editar && x.status !== "vigente" && <button type="button" onClick={() => setApagar(x)} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.danger }}>Excluir</button>}
+            {editar && x.status !== "vigente" && <button type="button" onClick={() => setApagar(x)} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.danger }}>Excluir</button>}</>}
           </div>
         </div>)}</div>
       </div>)}

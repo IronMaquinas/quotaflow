@@ -87,7 +87,7 @@ async function atualizar(supabase, tenantId, id, body) {
   if (atual.assinaturas?.lista?.length || atual.fluxo) for (const k of ['aprovado_por', 'aprovado_por_id', 'aprovado_por_usuario_id', 'aprovado_em', 'elaborado_por', 'elaborado_por_id', 'elaborado_por_usuario_id']) delete dados[k]; // 18zz.7: quem assinou no sistema não se edita à mão
   await amarrarPessoas(supabase, tenantId, dados);
   if (dados.codigo && !(await codigoLivre(supabase, tenantId, dados.codigo, id))) throw Object.assign(new Error(`Já existe um documento com o código ${dados.codigo}`), { status: 409 });
-  if (atual.status === 'rascunho' && ['titulo', 'conteudo'].some((k) => Object.prototype.hasOwnProperty.call(dados, k) && String(dados[k] ?? '') !== String(atual[k] ?? ''))) travadoNoFluxo(atual); // 18zv
+  travadoNoFluxo(atual); // 18zz.11: em verificação/aprovação NADA se edita (nem o aprovador) — muda só depois de ↩ Devolver, pelo elaborador
   // 18zs: conteúdo de documento VIGENTE só muda por nova revisão (aprovada) — aqui só dados de controle e a situação
   if (atual.status === 'vigente') {
     const mexe = ['titulo', 'conteudo', 'revisao'].some((k) => Object.prototype.hasOwnProperty.call(dados, k) && String(dados[k] ?? '') !== String(atual[k] ?? '')) || body?.arquivo_base64 || body?.remover_arquivo;
@@ -101,6 +101,7 @@ async function atualizar(supabase, tenantId, id, body) {
 }
 
 async function excluir(supabase, tenantId, id) {
+  travadoNoFluxo(await obter(supabase, tenantId, id)); // 18zz.11
   const atual = await obter(supabase, tenantId, id); if (!atual) throw Object.assign(new Error('Documento não encontrado'), { status: 404 });
   if (atual.status === 'vigente') throw Object.assign(new Error('Documento vigente não se exclui — marque como Obsoleto (a ISO pede o histórico).'), { status: 409 });
   await q(supabase.from('documentos_gestao').delete().eq('id', id).eq('tenant_id', tenantId));
