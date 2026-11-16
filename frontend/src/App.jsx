@@ -12,6 +12,7 @@ import TelaRelatorioNova from './components/relatorio/TelaRelatorioNova';
 import TelaHistoricoPrecosNova from './components/historico/TelaHistoricoPrecosNova';
 import TelaInteligenciaNova from './components/inteligencia/TelaInteligenciaNova';
 import TelaBenchmarkNova from './components/benchmark/TelaBenchmarkNova';
+import PainelValorGerado, { SeloValorGerado } from './components/valor/PainelValorGerado'; // 5a
 import TelaPortalFornecedor from './components/portal/TelaPortalFornecedor';
 import TelaGestaoCotacoesFornecedor from './components/fornecedores/TelaGestaoCotacoesFornecedor';
 import TelaLogin from './TelaLogin';
@@ -479,6 +480,7 @@ const perfil = PERFIS[usuario.perfil] || {
     {sec:"COMERCIAL E FINANCEIRO", id:"comercial",     l:"📈 Comercial",            perfis:["admin","gestor","comercial"]}, // etapa 15a
     {sec:"COMERCIAL E FINANCEIRO", id:"financeiro",    l:"💰 Financeiro",           perfis:["admin","gestor","financeiro"]},
     // ── ANÁLISES
+    {sec:"ANÁLISES", id:"valor_gerado",  l:"💰 Valor gerado",         perfis:["admin","gestor"]}, // 5a
     {sec:"ANÁLISES", id:"relatorio",     l:"📄 Relatório",            perfis:["admin","gestor"]},
     {sec:"ANÁLISES", id:"historico",     l:"📉 Histórico Preços",     perfis:["admin","gestor"]},
     {sec:"ANÁLISES", id:"inteligencia",  l:"🧠 Inteligência",         perfis:["admin","gestor"]},
@@ -622,6 +624,7 @@ const perfil = PERFIS[usuario.perfil] || {
             <div style={{maxWidth:600,width:"100%",textAlign:"center",margin:"auto 0"}}>
               {temAcesso("configuracoes") && <BemVindo C={C} s={s} onAbrir={(p)=>window.dispatchEvent(new CustomEvent("qf-navegar",{detail:p}))} />}
               {avisoRoteiro && <div style={{...s.card,padding:"10px 14px",marginBottom:12,fontSize:13,color:C.warn||"#f59e0b",textAlign:"left"}}>{avisoRoteiro}</div>}
+              {temAcesso("valor_gerado") && <SeloValorGerado C={C} s={s} onAbrir={()=>navegar("valor_gerado")} />}
               <div style={{fontSize:52,marginBottom:16}}>{perfil.icon}</div>
               <div style={{fontSize:26,fontWeight:700,color:C.text,marginBottom:8}}>Olá, {usuario.nome.split(" ")[0]}!</div>
               <div style={{fontSize:14,color:C.muted,marginBottom:32}}>Você está logado como <strong style={{color:perfil.c}}>{perfil.l}</strong></div>
@@ -806,6 +809,7 @@ const perfil = PERFIS[usuario.perfil] || {
             />
           </div>
         )}
+        {temAcesso(tela) && tela === "valor_gerado" && <div style={{flex:1,overflowY:"auto"}}><PainelValorGerado C={C} s={s} /></div>}
         {temAcesso(tela) && tela === "benchmark" && (
           <div style={{flex:1,overflowY:"auto"}}>
             <TelaBenchmarkNova 
@@ -2491,6 +2495,7 @@ const PERMISSOES = {
   historico:          ["admin","gestor"],
   inteligencia:       ["admin","gestor"],
   benchmark:          ["admin","gestor"],
+  valor_gerado:       ["admin","gestor"], // 5a
   equipamentos:       ["admin","gestor","comprador","operacao"],
   inspecoes:          ["admin","gestor","comprador","operacao","qualidade"], // etapa 14a
   contratos:          ["admin","gestor","comprador","operacao","qualidade"], // etapa 14b.3
