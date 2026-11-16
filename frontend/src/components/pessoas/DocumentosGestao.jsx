@@ -34,13 +34,14 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
     return ORDEM.map((t) => ({ tipo: t, docs: l.filter((x) => x.tipo === t) })).filter((g) => g.docs.length);
   }, [d, busca, verObsoletos]);
 
-  const salvar = async () => {
+  const salvar = async (enviar = false) => { // 18zz.9: enviar = salva e já abre 📤 Enviar para aprovação
     setOcup(true);
     try {
       const { id, novo_arquivo, arquivo_url, rascunho_arquivo_url, rascunho, motivo_revisao, status_original, tem_conteudo, tem_arquivo, revisar, criado_em, atualizado_em, tenant_id, arquivo_path, arquivo_nome, arquivo_mime, ...corpo } = form;
       if (novo_arquivo) Object.assign(corpo, { arquivo_base64: novo_arquivo.base64, arquivo_mime: novo_arquivo.mime, arquivo_nome: novo_arquivo.nome });
-      if (id) await apiService.put(`/pessoas/gestao/${id}`, corpo); else await apiService.post("/pessoas/gestao", corpo);
-      setForm(null); onAviso?.(id ? "Documento atualizado." : "Documento cadastrado."); carregar();
+      const r = id ? await apiService.put(`/pessoas/gestao/${id}`, corpo) : await apiService.post("/pessoas/gestao", corpo);
+      setForm(null); carregar();
+      if (enviar && r?.documento) abrirEnvio(r.documento); else onAviso?.(id ? "Documento atualizado." : "Documento cadastrado.");
     } catch (e) { onErro?.(e?.response?.data?.erro || e.message); } finally { setOcup(false); }
   };
   const abrir = async (x, editarDepois = false) => {
@@ -77,6 +78,8 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
   const statusTag = (x) => x.status === "vigente" ? (x.revisar ? <span style={s.tag(C.warn)}>Análise crítica vencida</span> : <span style={s.tag(C.success)}>Vigente</span>)
     : x.status === "rascunho" ? <span style={s.tag(C.accent)}>Rascunho</span> : <span style={s.tag(C.muted)}>Obsoleto</span>;
   const travado = !!(form?.id && form?.status_original === "vigente"); // 18zs
+  const podeEnviarForm = !!form && form.status === "rascunho" && !(form.fluxo && form.fluxo.etapa !== "elaboracao"); // 18zz.9
+  const opcoesSituacao = !form ? [] : form.status_original === "vigente" ? ["vigente", "obsoleto"] : form.status_original === "obsoleto" ? ["obsoleto", "vigente"] : ["rascunho", "vigente"];
   const semPerfil = (t) => { // 18zz.8.2: a pessoa existe, mas o login não tem perfil de aprovação
     const sem = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
     const achados = (pessoas?.funcionarios || []).filter((p) => sem(p.nome).includes(t));
@@ -113,7 +116,7 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
             <div style={{ fontWeight: 600, fontSize: 13 }}><span style={{ color: C.accent }}>{x.codigo}</span> · {x.titulo}</div>
             <div style={{ fontSize: 11.5, color: C.textSub }}>{x.status === "vigente" && x.aprovado_em && (() => { const m = Math.floor((Date.now() - new Date(String(x.aprovado_em).slice(0, 10)).getTime()) / (30.44 * 864e5)); return m >= 24 ? <span title="Informativo: a ISO não fixa prazo — vale verificar se o conteúdo continua adequado" style={{ color: C.warn, fontWeight: 600 }}>⏳ sem revisão há {Math.floor(m / 12)} ano(s) · </span> : null; })()}{rev(x.revisao)}{x.area ? ` · ${x.area}` : ""}{x.aprovado_em ? ` · aprovado em ${dBR(x.aprovado_em)}${x.aprovado_por ? ` por ${x.aprovado_por}` : ""}` : ""}{x.proxima_revisao ? ` · análise crítica até ${dBR(x.proxima_revisao)}` : ""}</div>
           </div>
-          {statusTag(x)}{x.distribuicao && <span title="Leitura obrigatória — leram / esperados" style={s.tag(x.leitura && x.leitura.esperados && x.leitura.lidos >= x.leitura.esperados ? C.success : C.warn)}>📣 {x.leitura ? `${x.leitura.lidos}/${x.leitura.esperados} leram` : x.distribuicao.todos ? "todos" : "distribuído"}</span>}{x.em_revisao && !x.etapa && <span title={x.rascunho_motivo || ""} style={s.tag(C.accent)}>↻ Rev. {String((x.revisao || 0) + 1).padStart(2, "0")} em elaboração</span>}
+          {statusTag(x)}{x.distribuicao && x.status !== "vigente" && <span title="Leitura obrigatória já configurada — os colaboradores recebem quando o documento for aprovado (vigente)" style={s.tag(C.muted)}>📣 distribui ao aprovar</span>}{x.distribuicao && x.status === "vigente" && <span title="Leitura obrigatória — leram / esperados" style={s.tag(x.leitura && x.leitura.esperados && x.leitura.lidos >= x.leitura.esperados ? C.success : C.warn)}>📣 {x.leitura ? `${x.leitura.lidos}/${x.leitura.esperados} leram` : x.distribuicao.todos ? "todos" : "distribuído"}</span>}{x.em_revisao && !x.etapa && <span title={x.rascunho_motivo || ""} style={s.tag(C.accent)}>↻ Rev. {String((x.revisao || 0) + 1).padStart(2, "0")} em elaboração</span>}
           {x.etapa && <span style={s.tag(x.etapa === "elaboracao" ? C.warn : C.accent)}>✍ {x.etapa === "elaboracao" ? "Devolvido p/ ajuste" : ETAPA[x.etapa]}{x.etapa !== "elaboracao" && x.fluxo ? ` · ${(x.etapa === "verificacao" ? x.fluxo.verificador?.nome : x.fluxo.aprovador?.nome) || ""}` : ""}</span>}
           <div style={{ display: "flex", gap: 6 }}>
             <button type="button" onClick={() => abrir(x)} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.accent }}>👁 Ver</button>
@@ -276,7 +279,9 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
 
     {form && <div onClick={() => !ocup && setForm(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 80, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: 16, overflowY: "auto" }}>
       <div onClick={(e) => e.stopPropagation()} role="dialog" style={{ ...s.card, background: C.surface, width: "min(760px, 100%)", padding: 22 }}>
-        <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 12 }}>{form.id ? `Editar ${form.codigo}` : "Novo documento de gestão"}</div>
+        <div style={{ fontSize: 17, fontWeight: 700, marginBottom: 6 }}>{form.id ? `Editar ${form.codigo}` : "Novo documento de gestão"}</div>
+        {form.status === "rascunho" && <div style={{ fontSize: 12, color: C.textSub, marginBottom: 12 }}>{/* 18zz.9 */}Caminho: <b>1</b> Salvar rascunho (quantas vezes quiser) → <b>2</b> 📤 Enviar para aprovação (texto trava) → <b>3</b> o aprovador assina → fica <b>Vigente</b> e, se houver leitura obrigatória, vai para os colaboradores.</div>}
+        {form.status === "vigente" && form.status_original !== "vigente" && form.status_original !== "obsoleto" && <div style={{ fontSize: 12, color: C.warn, marginBottom: 12 }}>Vigente direto só para documento <b>já aprovado fora do sistema</b> — informe abaixo quem aprovou e quando. Documento novo: deixe em Rascunho e envie para aprovação.</div>}
         <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             {campo("CÓDIGO", inp("codigo", { placeholder: "PQ-01" }), "0 1 120px")}
@@ -286,7 +291,7 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
             {campo("TIPO", <select value={form.tipo} onChange={(e) => setForm({ ...form, tipo: e.target.value })} style={s.input}>{ORDEM.map((t) => <option key={t} value={t}>{d.tipos[t]}</option>)}</select>)}
             {campo("ÁREA / PROCESSO", inp("area", { placeholder: "Qualidade, Operação…" }))}
             {campo("REVISÃO", <input type="number" min={0} disabled={travado} value={form.revisao} onChange={(e) => setForm({ ...form, revisao: e.target.value === "" ? "" : Number(e.target.value) })} style={s.input} />, "0 1 90px")}
-            {campo("SITUAÇÃO", <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} style={s.input}>{Object.entries(d.status).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>, "0 1 130px")}
+            {campo("SITUAÇÃO", <select value={form.status} disabled={!!(form.fluxo && form.fluxo.etapa !== "elaboracao")} onChange={(e) => setForm({ ...form, status: e.target.value })} style={s.input}>{opcoesSituacao.map((k) => <option key={k} value={k}>{k === "vigente" && form.status_original !== "vigente" && form.status_original !== "obsoleto" ? "Vigente (já aprovado fora)" : d.status[k]}</option>)}</select>, "0 1 200px")}
           </div>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             {campo("ELABORADO POR", <CampoFuncionario C={C} s={s} lista={pessoas?.funcionarios ?? null} nome={form.elaborado_por} id={form.elaborado_por_id} usuarioId={form.elaborado_por_usuario_id} onChange={(v) => setForm((f) => ({ ...f, elaborado_por: v.nome, elaborado_por_id: v.id, elaborado_por_usuario_id: v.usuario_id }))} />)}
@@ -331,7 +336,8 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
         </div>
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
           <button type="button" disabled={ocup} onClick={() => setForm(null)} style={{ ...s.btn(false), flex: 1, cursor: "pointer", color: C.text }}>Cancelar</button>
-          <button type="button" disabled={ocup} onClick={salvar} style={{ ...s.btn(true), flex: 1, cursor: "pointer" }}>{ocup ? "Salvando…" : "Salvar"}</button>
+          <button type="button" disabled={ocup} onClick={() => salvar(false)} style={{ ...s.btn(!podeEnviarForm), flex: 1, cursor: "pointer", ...(podeEnviarForm ? { color: C.accent } : {}) }}>{ocup ? "Salvando…" : podeEnviarForm ? "Salvar rascunho" : "Salvar"}</button>
+          {podeEnviarForm && <button type="button" disabled={ocup} onClick={() => salvar(true)} style={{ ...s.btn(true), flex: 1.4, cursor: "pointer" }}>📤 Salvar e enviar para aprovação</button>}
         </div>
       </div>
     </div>}

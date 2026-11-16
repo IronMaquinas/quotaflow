@@ -267,8 +267,16 @@ router.get('/gestao/:id', exigirVer, async (req, res) => {
   try { const d = await DG.obter(supabase, req.tenantId, req.params.id); if (!d) return res.status(404).json({ erro: 'Documento não encontrado' });
     res.json({ documento: { ...d, arquivo_url: d.arquivo_path ? await D.linkArquivo(supabase, d.arquivo_path) : null, rascunho_arquivo_url: d.rascunho?.arquivo?.arquivo_path ? await D.linkArquivo(supabase, d.rascunho.arquivo.arquivo_path).catch(() => null) : null }, pode_aprovar: perfisDe(req).some((p) => ['admin', 'gestor', 'qualidade'].includes(p)), eu: req.userId, assinatura: DG.conferirAssinatura(d) }); } catch (err) { errDG(res, err, 'gestao'); }
 });
-router.post('/gestao', exigirEditar, async (req, res) => { try { res.status(201).json({ documento: await DG.criar(supabase, req.tenantId, req.body) }); } catch (err) { errDG(res, err, 'gestao'); } });
-router.put('/gestao/:id', exigirEditar, async (req, res) => { try { res.json({ documento: await DG.atualizar(supabase, req.tenantId, req.params.id, req.body) }); } catch (err) { errDG(res, err, 'gestao'); } });
+// 18zz.9: Vigente "na mão" só para documento JÁ aprovado fora do sistema (com quem aprovou e quando); o normal é 📤 Enviar para aprovação
+const vigenteNaMao = (b, atual = null) => b?.status === 'vigente' && (!atual || atual.status === 'rascunho') && (!String(b.aprovado_por ?? atual?.aprovado_por ?? '').trim() || !(b.aprovado_em || atual?.aprovado_em));
+router.post('/gestao', exigirEditar, async (req, res) => { try {
+  if (vigenteNaMao(req.body)) return res.status(409).json({ erro: 'Vigente direto só para documento já aprovado fora do sistema — informe quem aprovou e quando. Documento novo: salve como Rascunho e envie para aprovação.' });
+  res.status(201).json({ documento: await DG.criar(supabase, req.tenantId, req.body) }); } catch (err) { errDG(res, err, 'gestao'); } });
+router.put('/gestao/:id', exigirEditar, async (req, res) => { try {
+  const atual = await DG.obter(supabase, req.tenantId, req.params.id);
+  if (atual?.fluxo && req.body?.status && req.body.status !== atual.status) return res.status(409).json({ erro: 'O documento está no fluxo de aprovação — a situação muda pela aprovação (ou devolva para elaboração).' });
+  if (vigenteNaMao(req.body, atual)) return res.status(409).json({ erro: 'Vigente direto só para documento já aprovado fora do sistema — informe quem aprovou e quando. Para documento novo, use 📤 Salvar e enviar para aprovação.' });
+  res.json({ documento: await DG.atualizar(supabase, req.tenantId, req.params.id, req.body) }); } catch (err) { errDG(res, err, 'gestao'); } });
 // 18zs: revisão · histórico · leitura
 const APROVAR_DG = ['admin', 'gestor', 'qualidade'];
 const PERFIL_NOME = { admin: 'Administrador', gestor: 'Gestor', qualidade: 'Qualidade', operacao: 'Operação', comprador: 'Compras' };
