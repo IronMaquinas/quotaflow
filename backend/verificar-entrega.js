@@ -88,7 +88,7 @@ const ESPERADO = {
   'services/planosManutencao.js': 'e32588acaefd47c5cb93bbe0d70ab799', // etapa 12b.4
   'front:TelaPlanosManutencao.jsx': '4e19850209fa1924953706a7afde7995', // etapa 18g.2c
   'front:ModalTransferirOS.jsx': '8e7c1bf0d6fc9a4f88bdd9087d22cb37', // etapa 12b.3 (novo)
-  'routes/pessoas.js': '71b96601e389e9624c1d6e00334e2fe0', // etapa 18zz.9
+  'routes/pessoas.js': 'bc40f09fd14232023be4b7a88f448de6', // etapa 18zz.12
   'services/documentos.js': '733b919e75f1eeaa8dc029754226c418', // etapa 18zw
   'front:TelaPessoas.jsx': 'b4957b847e50ff36b57fbf5ce9b31905', // etapa 18zz.5
   // etapa 12c.1
@@ -354,7 +354,7 @@ const ESPERADO = {
   'migrations/091_ia_uso_cache.sql': '5bbf9aca8354504a3322565e3512b7c8', // etapa 18zo
   'migrations/092_documentos_gestao.sql': '48938919462a5b54635b1009c748f92a', // etapa 18zr
   'services/documentosGestao.js': 'ee155fa2c19e6cdaf99ffb2fc2ef0709', // etapa 18zz.11
-  'front:DocumentosGestao.jsx': '920aa61d9209d6ab592331d45e04720d', // etapa 18zz.11
+  'front:DocumentosGestao.jsx': '969dfcd960f52d166437c634fd989f97', // etapa 18zz.12
   'migrations/093_gestao_revisoes_leituras.sql': 'b40ed913b39122eb1dc24988a84621c6', // etapa 18zs
   'services/modelosGestao/iso9001.js': 'eb414c0f411066ca8d505223104ac0b0', // etapa 18zt
   'front:gerarDocumentoGestao.js': 'd891ee08f9d5230353f4c89f53ec3641', // etapa 18zv
@@ -371,10 +371,10 @@ const ESPERADO = {
   'migrations/099_gestao_usuario_responsavel.sql': 'd50ccfb7d7c29cfd5e79744f3431b141', // etapa 18zz.7 (novo)
 };
 
-// Antes de copiar a etapa 18zz.11 — base: 18zz.10 (03d17ee)
+// Antes de copiar a etapa 18zz.12 — base: 18zz.11 (24ff632)
 const ANTES = {
-  'services/documentosGestao.js': 'f18ece2b4683475fbeef6b7f1c20afb0',
-  'front:DocumentosGestao.jsx': '78726973e6d7c7a6e249e893d0e93258',
+  'routes/pessoas.js': '71b96601e389e9624c1d6e00334e2fe0',
+  'front:DocumentosGestao.jsx': '920aa61d9209d6ab592331d45e04720d',
 };
 
 const RAIZ = process.cwd();
@@ -412,7 +412,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zz.11)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zz.12)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

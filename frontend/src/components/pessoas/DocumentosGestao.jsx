@@ -164,8 +164,8 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
         </div>}
         {ver.status === "vigente" && leit && <div style={{ ...s.card, background: C.surface, padding: "10px 12px", marginTop: 10, fontSize: 12.5 }}>
           <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}>
-            <b style={{ flex: 1 }}>👥 Leitura da {rev(leit.revisao)}: {leit.leituras.length} pessoa(s){leit.destinatarios ? ` · funcionários: ${leit.destinatarios.lidos.length} de ${leit.destinatarios.total}` : ""}</b>
-            {leit.eu_li ? <span style={s.tag(C.success)}>✓ Você leu esta revisão</span> : <button type="button" onClick={lerEntendi} style={{ ...s.btn(true), padding: "6px 12px", fontSize: 12.5, cursor: "pointer" }}>✓ Li e entendi</button>}
+            <b style={{ flex: 1 }}>👥 Leitura da {rev(leit.revisao)}: {leit.destinatarios ? `funcionários ${leit.destinatarios.lidos.length} de ${leit.destinatarios.total}` : `${leit.leituras.length} pessoa(s)`}{leit.destinatarios && leit.leituras.length > leit.destinatarios.lidos.length ? <span style={{ fontWeight: 400, color: C.textSub }}> · ciência da gestão: {leit.leituras.length - leit.destinatarios.lidos.length}</span> : null}</b>
+            {leit.eu_li ? <span style={s.tag(C.success)}>✓ Você leu esta revisão</span> : leit.pode_confirmar === false ? <span title="Não foi distribuído para você — a confirmação vale para quem está na distribuição (ou para a gestão)" style={{ fontSize: 11.5, color: C.muted }}>fora da sua distribuição</span> : <button type="button" onClick={lerEntendi} style={{ ...s.btn(true), padding: "6px 12px", fontSize: 12.5, cursor: "pointer" }}>✓ Li e entendi</button>}
           </div>
           {leit.destinatarios?.lidos?.length > 0 && <div style={{ color: C.success, marginTop: 4 }}>✓ Leram: {leit.destinatarios.lidos.map((p) => `${p.nome} (${new Date(p.em).toLocaleDateString("pt-BR")})`).join(" · ")}</div>}
           {leit.destinatarios?.pendentes?.length > 0 && <div style={{ color: C.warn, marginTop: 4 }}>⏳ Faltam: {leit.destinatarios.pendentes.map((p) => `${p.nome}${p.sem_login ? " (sem login)" : ""}`).join(" · ")}</div>}

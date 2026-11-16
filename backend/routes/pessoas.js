@@ -335,8 +335,17 @@ router.get('/gestao/:id/versoes', exigirVer, async (req, res) => {
   try { const l = await DG.versoes(supabase, req.tenantId, req.params.id);
     res.json({ versoes: await Promise.all(l.map(async (v) => ({ ...v, arquivo_url: v.arquivo_path ? await D.linkArquivo(supabase, v.arquivo_path).catch(() => null) : null }))) }); } catch (err) { errDG(res, err, 'gestao-versoes'); }
 });
-router.post('/gestao/:id/leitura', exigirVer, async (req, res) => { try { const eu = await quemSou(req); res.json(await DG.confirmarLeitura(supabase, req.tenantId, req.params.id, { usuarioId: eu.id, usuarioNome: eu.nome })); } catch (err) { errDG(res, err, 'gestao-leitura'); } });
-router.get('/gestao/:id/leituras', exigirVer, async (req, res) => { try { const d = await DG.obter(supabase, req.tenantId, req.params.id); if (!d) return res.status(404).json({ erro: 'Documento não encontrado' }); const l = await DG.leituras(supabase, req.tenantId, req.params.id, d.revisao); res.json({ revisao: d.revisao, leituras: l, eu_li: l.some((x) => String(x.usuario_id) === String(req.userId)), destinatarios: await DG.destinatarios(supabase, req.tenantId, d).catch(() => null) }); } catch (err) { errDG(res, err, 'gestao-leituras'); } });
+// 18zz.12 (Marcony): "Li e entendi" só para quem foi DISTRIBUÍDO (conta no "funcionários X de Y") ou para a gestão (admin, gestor, qualidade = ciência da gestão)
+async function podeConfirmarLeitura(req, d) {
+  if (perfisDe(req).some((p) => ['admin', 'gestor', 'qualidade'].includes(p))) return { pode: true, como: 'gestao' };
+  try {
+    const col = (await q(supabase.from('colaboradores').select('*').eq('tenant_id', req.tenantId).eq('usuario_id', req.userId)))[0];
+    if (col && d.distribuicao && DG.alcanca(d.distribuicao, col, await DG.mapaPerfis(supabase, req.tenantId))) return { pode: true, como: 'distribuido' };
+  } catch { /* segue */ }
+  return { pode: false };
+}
+router.post('/gestao/:id/leitura', exigirVer, async (req, res) => { try { const d0 = await DG.obter(supabase, req.tenantId, req.params.id); if (d0 && !(await podeConfirmarLeitura(req, d0)).pode) return res.status(409).json({ erro: 'Este documento não foi distribuído para você — a confirmação de leitura vale para quem está na distribuição (ou para a gestão).' }); const eu = await quemSou(req); res.json(await DG.confirmarLeitura(supabase, req.tenantId, req.params.id, { usuarioId: eu.id, usuarioNome: eu.nome })); } catch (err) { errDG(res, err, 'gestao-leitura'); } });
+router.get('/gestao/:id/leituras', exigirVer, async (req, res) => { try { const d = await DG.obter(supabase, req.tenantId, req.params.id); if (!d) return res.status(404).json({ erro: 'Documento não encontrado' }); const l = await DG.leituras(supabase, req.tenantId, req.params.id, d.revisao); res.json({ revisao: d.revisao, leituras: l, eu_li: l.some((x) => String(x.usuario_id) === String(req.userId)), pode_confirmar: (await podeConfirmarLeitura(req, d)).pode, destinatarios: await DG.destinatarios(supabase, req.tenantId, d).catch(() => null) }); } catch (err) { errDG(res, err, 'gestao-leituras'); } });
 router.delete('/gestao/:id', exigirEditar, async (req, res) => { try { res.json(await DG.excluir(supabase, req.tenantId, req.params.id)); } catch (err) { errDG(res, err, 'gestao'); } });
 
 // 18zl: 🪪 LER A CNH PELA IA — devolve os campos para o formulário (nada é gravado aqui)
