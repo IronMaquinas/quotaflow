@@ -373,15 +373,13 @@ const ESPERADO = {
   'front:DocArquivo.jsx': '7f5d9b741400d4f22486686415b35e14', // etapa 18zz.13 (novo)
   'front:CorpoDocGestao.jsx': '11744b9eb391959a686d244f1e8aa4d1', // etapa 18zz.13 (novo)
   'migrations/100_leitura_registrada.sql': '5f06269692d543b98dad64a09d0e2336', // etapa 18zz.14 (novo)
-  'front:AgingDocumentos.jsx': 'f4bd079d9be635d7c872fcf222b85c8e', // etapa 18zz.14 (novo)
+  'front:AgingDocumentos.jsx': 'c5b665e6e676fb3d3ba6ec8af695bbaf', // etapa 18zz.14.1
   'front:RegistrarLeitura.jsx': 'bae540b8403a17bb34dffeec4f64824a', // etapa 18zz.14 (novo)
 };
 
-// Antes de copiar a etapa 18zz.14 — base: 18zz.13 (4f5494b)
+// Antes de copiar a etapa 18zz.14.1 — base: 18zz.14 (ce14ec6)
 const ANTES = {
-  'routes/pessoas.js': 'bc40f09fd14232023be4b7a88f448de6',
-  'services/documentosGestao.js': 'ee155fa2c19e6cdaf99ffb2fc2ef0709',
-  'front:DocumentosGestao.jsx': 'd131ae2b80f92fa32670b987225edb22',
+  'front:AgingDocumentos.jsx': 'f4bd079d9be635d7c872fcf222b85c8e',
 };
 
 const RAIZ = process.cwd();
@@ -419,7 +417,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zz.14)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zz.14.1)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

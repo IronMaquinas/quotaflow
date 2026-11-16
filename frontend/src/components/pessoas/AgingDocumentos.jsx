@@ -1,7 +1,8 @@
 // components/pessoas/AgingDocumentos.jsx — etapa 18zz.14: 📊 AGING dos documentos de gestão (para o representante da qualidade)
 //   Tempo desde a última aprovação (vigente) ou desde o cadastro (rascunho = nunca aprovado). Informativo: a ISO 9001 não fixa prazo.
 //   Faixas + "nunca revisado" (Rev. 00) + próxima análise crítica vencida. Clique = abre o documento. 🖨 Imprimir em A4.
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import apiService from "../../services/apiService";
 import { logoHtml, dadosEmpresa } from "../../utils/logoEmpresa";
 
 const dBR = (v) => (v ? String(v).slice(0, 10).split("-").reverse().join("/") : "—");
@@ -13,6 +14,16 @@ const FAIXAS = [["todos", "Todos"], ["36", "3 anos ou mais"], ["24", "2 a 3 anos
 
 export default function AgingDocumentos({ C, s, d, onAbrir, onFechar, onErro }) {
   const [faixa, setFaixa] = useState("todos");
+  const [pessoas, setPessoas] = useState(null); // 18zz.14.1: emissor ainda está na empresa?
+  useEffect(() => { apiService.get("/pessoas/gestao-pessoas").then((r) => setPessoas(r.funcionarios || [])).catch(() => setPessoas([])); }, []);
+  const emissor = (x) => { // { nome, alerta }
+    if (!x.elaborado_por) return { nome: "—", alerta: "sem emissor" };
+    if (pessoas == null) return { nome: x.elaborado_por, alerta: null };
+    const ok = (x.elaborado_por_id != null && pessoas.some((p) => String(p.id) === String(x.elaborado_por_id))) || (x.elaborado_por_usuario_id != null && pessoas.some((p) => String(p.usuario_id) === String(x.elaborado_por_usuario_id)));
+    if (ok) return { nome: x.elaborado_por, alerta: null };
+    if (x.elaborado_por_id != null || x.elaborado_por_usuario_id != null) return { nome: x.elaborado_por, alerta: "desligado / sem acesso" };
+    return { nome: x.elaborado_por, alerta: "nome digitado — sem vínculo" };
+  };
   const hoje = new Date().toISOString().slice(0, 10);
   const linhas = useMemo(() => (d?.documentos || []).filter((x) => x.status !== "obsoleto").map((x) => {
     const base = x.status === "vigente" ? (x.aprovado_em || x.vigente_desde || x.criado_em) : x.criado_em;
@@ -28,12 +39,12 @@ export default function AgingDocumentos({ C, s, d, onAbrir, onFechar, onErro }) 
   const imprimir = () => {
     const e = dadosEmpresa(); const logo = logoHtml({ altura: 40, largura: 130, margem: "0" }) || `<b>${esc(e.razao_social || e.nome || "")}</b>`;
     const html = `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Aging dos documentos de gestão</title><style>
-      body{font:12px Arial,sans-serif;color:#111;margin:0}.p{max-width:800px;margin:16px auto;padding:20px}h1{font-size:16px;margin:0}table{width:100%;border-collapse:collapse;margin-top:10px}
+      body{font:11.5px Arial,sans-serif;color:#111;margin:0;background:#9ca3af}.p{width:210mm;min-height:297mm;box-sizing:border-box;margin:16px auto;padding:12mm;background:#fff;box-shadow:0 4px 18px rgba(0,0,0,.35)}h1{font-size:16px;margin:0}table{width:100%;border-collapse:collapse;margin-top:10px}
       th,td{border:1px solid #bbb;padding:4px 6px;text-align:left;color:#111;vertical-align:top}th{background:#eee;font-size:11px}.r{color:#b91c1c;font-weight:700}.a{color:#b45309;font-weight:700}
-      @media print{.p{margin:0;max-width:none;padding:0}@page{size:A4 portrait;margin:12mm}}</style></head><body><div class="p">
+      @media print{body{background:#fff}.p{width:auto;min-height:0;margin:0;padding:0;box-shadow:none}@page{size:A4 portrait;margin:12mm}}</style></head><body><div class="p">
       <div style="display:flex;justify-content:space-between;align-items:center;gap:12px">${logo}<div style="text-align:right"><h1>📊 Aging dos documentos de gestão</h1><div>${esc(FAIXAS.find((f) => f[0] === faixa)?.[1])} · ${vis.length} documento(s) · emitido em ${new Date().toLocaleDateString("pt-BR")}</div></div></div>
-      <table><tr><th>Código</th><th>Título</th><th>Rev.</th><th>Situação</th><th>Última aprovação</th><th>Sem revisão há</th><th>Próx. análise</th><th>Leitura</th></tr>
-      ${vis.map((x) => `<tr><td>${esc(x.codigo)}</td><td>${esc(x.titulo)}</td><td>${rev(x.revisao)}${x.nunca ? " · nunca revisado" : ""}</td><td>${x.status === "rascunho" ? "Rascunho (nunca aprovado)" : "Vigente"}</td>
+      <table><tr><th>Código</th><th>Título</th><th>Rev.</th><th>Situação</th><th>Emissor</th><th>Última aprovação</th><th>Sem revisão há</th><th>Próx. análise</th><th>Leitura</th></tr>
+      ${vis.map((x) => `<tr><td>${esc(x.codigo)}</td><td>${esc(x.titulo)}</td><td>${rev(x.revisao)}${x.nunca ? " · nunca revisado" : ""}</td><td>${x.status === "rascunho" ? "Rascunho (nunca aprovado)" : "Vigente"}</td><td>${esc(emissor(x).nome)}${emissor(x).alerta ? `<div class="a">⚠ ${esc(emissor(x).alerta)}</div>` : ""}</td>
         <td>${x.status === "vigente" ? dBR(x.aprovado_em) : "—"}</td><td class="${x.m >= 36 ? "r" : x.m >= 24 ? "a" : ""}">${x.status === "rascunho" ? `cadastrado há ${tempo(x.m)}` : tempo(x.m)}</td>
         <td${x.vencida ? ' class="r"' : ""}>${dBR(x.proxima_revisao)}${x.vencida ? " · vencida" : ""}</td><td>${x.leitura ? `${x.leitura.lidos}/${x.leitura.esperados}` : "—"}</td></tr>`).join("")}</table>
       <p style="font-size:10.5px;color:#555;margin-top:10px">Informativo: a ISO 9001 não fixa periodicidade de revisão — cabe à organização avaliar se o conteúdo continua adequado. Emitido pelo QuotaFlow.</p></div>
@@ -57,12 +68,13 @@ export default function AgingDocumentos({ C, s, d, onAbrir, onFechar, onErro }) 
         {vis.length === 0 ? <div style={{ color: C.muted, fontSize: 13, padding: 16, textAlign: "center" }}>Nenhum documento nesta faixa.</div> : (
           <div style={{ overflowX: "auto" }}>
             <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12.5 }}>
-              <thead><tr style={{ color: C.textSub, textAlign: "left" }}>{["Código", "Título", "Rev.", "Última aprovação", "Sem revisão há", "Próx. análise", "Leitura"].map((h) => <th key={h} style={{ padding: "6px 8px", borderBottom: `1px solid ${C.border}`, fontWeight: 600, whiteSpace: "nowrap" }}>{h}</th>)}</tr></thead>
+              <thead><tr style={{ color: C.textSub, textAlign: "left" }}>{["Código", "Título", "Rev.", "Emissor", "Última aprovação", "Sem revisão há", "Próx. análise", "Leitura"].map((h) => <th key={h} style={{ padding: "6px 8px", borderBottom: `1px solid ${C.border}`, fontWeight: 600, whiteSpace: "nowrap" }}>{h}</th>)}</tr></thead>
               <tbody>{vis.map((x) => (
                 <tr key={x.id} onClick={() => onAbrir(x)} style={{ cursor: "pointer", borderBottom: `1px solid ${C.border}` }}>
                   <td style={{ padding: "7px 8px", color: C.accent, fontWeight: 600, whiteSpace: "nowrap" }}>{x.codigo}</td>
                   <td style={{ padding: "7px 8px" }}>{x.titulo}{x.status === "rascunho" && <span style={{ ...s.tag(C.muted), marginLeft: 6 }}>Rascunho</span>}</td>
                   <td style={{ padding: "7px 8px", whiteSpace: "nowrap" }}>{rev(x.revisao)}{x.nunca && <div style={{ fontSize: 11, color: C.warn }}>nunca revisado</div>}</td>
+                  <td style={{ padding: "7px 8px" }}>{emissor(x).nome}{emissor(x).alerta && <div style={{ fontSize: 11, color: C.warn }}>⚠ {emissor(x).alerta}</div>}</td>
                   <td style={{ padding: "7px 8px", whiteSpace: "nowrap" }}>{x.status === "vigente" ? dBR(x.aprovado_em) : <span style={{ color: C.muted }}>nunca aprovado</span>}</td>
                   <td style={{ padding: "7px 8px", whiteSpace: "nowrap", color: cor(x), fontWeight: x.m >= 24 && x.status === "vigente" ? 700 : 400 }}>{x.status === "rascunho" ? `cadastrado há ${tempo(x.m)}` : tempo(x.m)}</td>
                   <td style={{ padding: "7px 8px", whiteSpace: "nowrap", color: x.vencida ? C.danger : C.text }}>{dBR(x.proxima_revisao)}{x.vencida ? " · vencida" : ""}</td>
