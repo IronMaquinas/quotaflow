@@ -55,12 +55,12 @@ async function documentosGestao(c) {
 
 async function planoAcaoNC(c) {
   const out = { prioridades: [], kpis: {} };
-  const ncs = await q(c.sb.from('nao_conformidades').select('id, numero, titulo, status').eq('tenant_id', c.tenantId));
+  const ncs = await q(c.sb.from('nao_conformidades').select('*').eq('tenant_id', c.tenantId));
   const abertas = ncs.filter((n) => !['resolvida', 'cancelada'].includes(n.status));
   const acoes = (await q(c.sb.from('nao_conformidade_plano_acao').select('*').eq('tenant_id', c.tenantId))).filter((a) => a.status === 'pendente' && a.prazo && String(a.prazo).slice(0, 10) < c.hoje && abertas.some((n) => String(n.id) === String(a.nc_id)));
   for (const a of acoes.filter((x) => String(x.responsavel_id) === String(c.userId))) {
     const n = abertas.find((x) => String(x.id) === String(a.nc_id));
-    out.prioridades.push({ peso: 85, icone: '⚠️', titulo: `Ação da ${n?.numero || 'NC'} atrasada`, detalhe: a.acao, link: { tela: 'nao_conformidades', id: a.nc_id } });
+    out.prioridades.push({ peso: 85, icone: '⚠️', titulo: `Ação da ${n?.numero_nc || 'NC'} atrasada`, detalhe: a.acao, link: { tela: 'nao_conformidades', id: a.nc_id } });
   }
   if (c.gestao || c.qualidade) {
     out.kpis.ncs_abertas = abertas.length; out.kpis.acoes_nc_atrasadas = acoes.length;
