@@ -11,6 +11,8 @@ import ConfirmarExclusao from "../shared/ConfirmarExclusao";
 import { dadosEmpresa } from "../../utils/logoEmpresa";
 import { corpoDocGestao, imprimirDocGestao, CSS_DOC_GESTAO } from "../../utils/gerarDocumentoGestao"; // 18zu: logo + rodapé
 import CorpoDocGestao, { imprimirGestao } from "./CorpoDocGestao"; // 18zz.13: documento da empresa (PDF) como é
+import AgingDocumentos from "./AgingDocumentos"; // 18zz.14
+import RegistrarLeitura from "./RegistrarLeitura"; // 18zz.14
 
 // 18zz.4: perfis de acesso (os mesmos do cadastro de usuário)
 const PERFIS = [{ codigo: "admin", label: "Administrador" }, { codigo: "gestor", label: "Gestor" }, { codigo: "comprador", label: "Comprador" }, { codigo: "operacao", label: "Operação" }, { codigo: "qualidade", label: "Qualidade" }, { codigo: "financeiro", label: "Financeiro" }, { codigo: "comercial", label: "Comercial" }, { codigo: "fiscal", label: "Fiscal" }, { codigo: "colaborador", label: "Colaborador (app de campo)" }];
@@ -25,6 +27,7 @@ const lerArq = (f) => new Promise((ok, erro) => { const r = new FileReader(); r.
 export default function DocumentosGestao({ C, s, onErro, onAviso }) {
   const [d, setD] = useState(null); const [busca, setBusca] = useState(""); const [verObsoletos, setVerObsoletos] = useState(false);
   const [form, setForm] = useState(null); const [ver, setVer] = useState(null);
+  const [aging, setAging] = useState(false); const [regLeit, setRegLeit] = useState(false); // 18zz.14
   const [revi, setRevi] = useState(null); const [hist, setHist] = useState(null); const [leit, setLeit] = useState(null); const [verVersao, setVerVersao] = useState(null); const [descartar, setDescartar] = useState(false); /* 18zs */ const [bib, setBib] = useState(null); const [buscaBib, setBuscaBib] = useState(""); const [verMod, setVerMod] = useState(null); const [publicar, setPublicar] = useState(false); /* 18zt */ const [env, setEnv] = useState(null); const [pessoas, setPessoas] = useState(null); const [acao, setAcao] = useState(null); const [verRasc, setVerRasc] = useState(false); /* 18zv */ const [funcoes, setFuncoes] = useState(null); /* 18zz.2 */ const [modalDist, setModalDist] = useState(null); const [alcance, setAlcance] = useState(null); const [paraMim, setParaMim] = useState([]); /* 18zz.4 */ const [arq, setArq] = useState(null); const [apagar, setApagar] = useState(null); const [ocup, setOcup] = useState(false);
   const carregar = () => apiService.get("/pessoas/gestao").then(setD).catch((e) => onErro?.(e.message));
   useEffect(() => { carregar(); apiService.get("/pessoas/gestao-pessoas").then(setPessoas).catch(() => {}); apiService.get("/pessoas/gestao-para-mim").then((r) => setParaMim(r.documentos || [])).catch(() => {}); const ir = window.qfAbrirGestaoDoc; window.qfAbrirGestaoDoc = null; if (ir) abrir({ id: ir }); /* 18zz.5: veio da ficha/treinamento */ }, []); // eslint-disable-line
@@ -103,6 +106,7 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
       <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por código, título ou área…" style={{ ...s.input, maxWidth: 280, padding: "7px 10px", fontSize: 12 }} />
       <label style={{ fontSize: 12, color: C.textSub, display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}><input type="checkbox" checked={verObsoletos} onChange={(e) => setVerObsoletos(e.target.checked)} /> Mostrar obsoletos</label>
       <div style={{ flex: 1 }} />
+      <button type="button" onClick={() => setAging(true)} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>📊 Aging</button>
       <button type="button" onClick={async () => { try { setBuscaBib(""); setBib(await apiService.get("/pessoas/gestao/modelos")); } catch (e) { onErro?.(e?.response?.data?.erro || e.message); } }} style={{ ...s.btn(false), cursor: "pointer", color: C.accent }}>📚 Modelos ISO 9001</button>
       {editar && <button type="button" onClick={() => setForm({ codigo: "", titulo: "", tipo: "procedimento", area: "", revisao: 0, status: "rascunho", elaborado_por: "", elaborado_por_id: null, aprovado_por: "", aprovado_por_id: null, aprovado_em: "", proxima_revisao: "", norma: "", conteudo: "" })} style={{ ...s.btn(true), cursor: "pointer" }}>＋ Novo documento de gestão</button>}
     </div>
@@ -173,7 +177,9 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
           </div>
           {leit.destinatarios?.lidos?.length > 0 && <div style={{ color: C.success, marginTop: 4 }}>✓ Leram: {leit.destinatarios.lidos.map((p) => `${p.nome} (${new Date(p.em).toLocaleDateString("pt-BR")})`).join(" · ")}</div>}
           {leit.destinatarios?.pendentes?.length > 0 && <div style={{ color: C.warn, marginTop: 4 }}>⏳ Faltam: {leit.destinatarios.pendentes.map((p) => `${p.nome}${p.sem_login ? " (sem login)" : ""}`).join(" · ")}</div>}
-          {leit.leituras.length > 0 && <div style={{ color: C.textSub, marginTop: 4 }}>{leit.leituras.map((l) => `${l.usuario_nome || "—"} (${new Date(l.lido_em).toLocaleDateString("pt-BR")})`).join(" · ")}</div>}
+          {leit.leituras.length > 0 && <div style={{ color: C.textSub, marginTop: 4 }}>{leit.leituras.map((l, i) => <span key={l.id || i}>{i ? " · " : ""}{l.usuario_nome || "—"} ({new Date(l.lido_em).toLocaleDateString("pt-BR")}){l.registrado_por && <span title={`Justificativa: ${l.justificativa || "—"}`} style={{ color: C.warn }}> 🧾 registrada por {l.registrado_por}</span>}{l.evidencia_url && <button type="button" onClick={() => setArq({ url: l.evidencia_url, nome: l.evidencia_nome, mime: l.evidencia_mime })} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 12, padding: "0 2px" }}>📎 presença</button>}</span>)}</div>}
+          {leit.leituras.some((l) => l.registrado_por) && <div style={{ color: C.muted, fontSize: 11.5, marginTop: 4 }}>🧾 = registrada pela gestão em nome da pessoa (passe o mouse para ver a justificativa).</div>}
+          {leit.pode_registrar && leit.destinatarios?.pendentes?.length > 0 && <button type="button" onClick={() => setRegLeit(true)} style={{ ...s.btn(false), marginTop: 8, padding: "5px 10px", fontSize: 12.5, cursor: "pointer", color: C.accent }}>🧾 Registrar leitura por outra pessoa</button>}
         </div>}
         {hist && <div style={{ ...s.card, background: C.surface, padding: "10px 12px", marginTop: 10, fontSize: 12.5 }}>
           <b>🗂 Histórico de revisões</b>
@@ -192,6 +198,9 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
         </div>
       </div>
     </div>}
+    {aging && d && <AgingDocumentos C={C} s={s} d={d} onErro={onErro} onFechar={() => setAging(false)} onAbrir={(x) => { setAging(false); abrir(x); }} />}
+    {regLeit && ver && leit && <RegistrarLeitura C={C} s={s} doc={ver} pendentes={leit.destinatarios?.pendentes || []} onErro={onErro} onFechar={() => setRegLeit(false)}
+      onFeito={async (msg) => { setRegLeit(false); onAviso?.(msg); try { setLeit(await apiService.get(`/pessoas/gestao/${ver.id}/leituras`)); } catch { /* segue */ } carregar(); }} />}
     {arq && <VerArquivo C={C} s={s} arquivo={arq} onFechar={() => setArq(null)} z={90} />}
 
     {modalDist && form && <div onClick={() => setModalDist(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 110, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: 16, overflowY: "auto" }}>{/* 18zz.4 */}

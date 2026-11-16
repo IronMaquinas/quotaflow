@@ -169,6 +169,26 @@ async function confirmarLeitura(supabase, tenantId, id, { usuarioId, usuarioNome
   const [l] = await q(supabase.from('documentos_gestao_leituras').insert([{ tenant_id: tenantId, documento_id: id, revisao: d.revisao, usuario_id: usuarioId, usuario_nome: usuarioNome || null, lido_em: new Date().toISOString() }]).select());
   return { leitura: l };
 }
+/** 18zz.14: 🧾 a GESTÃO registra a leitura em nome de funcionários (sem login, reunião, treinamento presencial) — justificativa obrigatória, lista de presença opcional */
+async function registrarLeituraPor(supabase, tenantId, id, { colaboradorIds = [], justificativa = '', evidencia = null, eu }) {
+  const d = await obter(supabase, tenantId, id); if (!d) throw erro('Documento não encontrado', 404);
+  if (d.status !== 'vigente') throw erro('Só se registra leitura de documento vigente.', 409);
+  const just = String(justificativa || '').trim(); if (just.length < 10) throw erro('Descreva a justificativa (ex.: "treinamento presencial de 14/11, lista de presença anexa").', 400);
+  const ids = [...new Set((Array.isArray(colaboradorIds) ? colaboradorIds : []).map(String))]; if (!ids.length) throw erro('Escolha ao menos uma pessoa.', 400);
+  const cols = (await q(supabase.from('colaboradores').select('*').eq('tenant_id', tenantId))).filter((c) => ids.includes(String(c.id)));
+  if (cols.length !== ids.length) throw erro('Funcionário não encontrado no cadastro.', 400);
+  const ja = await leituras(supabase, tenantId, id, d.revisao);
+  const novos = cols.filter((c) => !ja.some((x) => (c.usuario_id && String(x.usuario_id) === String(c.usuario_id)) || String(x.colaborador_id) === String(c.id)));
+  if (!novos.length) return { registradas: 0, ja: cols.length };
+  let ev = {}; if (evidencia?.base64) {
+    const msg = D.validarArquivo({ base64: evidencia.base64, mime: evidencia.mime, nome: evidencia.nome }); if (msg) throw erro(msg, 400);
+    ev = { evidencia_path: await D.subirArquivo(supabase, { tenantId, documentoId: `g${id}l`, base64: evidencia.base64, mime: evidencia.mime }), evidencia_nome: String(evidencia.nome || 'lista-de-presenca').slice(0, 200), evidencia_mime: evidencia.mime };
+  }
+  const agora = new Date().toISOString();
+  await q(supabase.from('documentos_gestao_leituras').insert(novos.map((c) => ({ tenant_id: tenantId, documento_id: id, revisao: d.revisao, usuario_id: c.usuario_id || null, usuario_nome: c.nome, colaborador_id: c.id, lido_em: agora,
+    registrado_por: eu?.nome || null, registrado_por_id: eu?.id || null, justificativa: just.slice(0, 1000), ...ev }))));
+  return { registradas: novos.length, ja: cols.length - novos.length };
+}
 async function leituras(supabase, tenantId, id, revisao) {
   return (await q(supabase.from('documentos_gestao_leituras').select('*').eq('tenant_id', tenantId).eq('documento_id', id))).filter((l) => revisao == null || Number(l.revisao) === Number(revisao))
     .sort((a, b) => String(b.lido_em).localeCompare(String(a.lido_em)));
@@ -330,7 +350,7 @@ async function meusProcedimentos(supabase, tenantId, col, usuarioId) {
   const l = (await q(supabase.from('documentos_gestao').select('*').eq('tenant_id', tenantId))).filter((d) => d.status === 'vigente' && alcanca(d.distribuicao, col, pd));
   const lei = l.length ? await q(supabase.from('documentos_gestao_leituras').select('*').eq('tenant_id', tenantId)).catch(() => []) : [];
   return l.map(({ conteudo, rascunho, fluxo, ...d }) => ({ id: d.id, codigo: d.codigo, titulo: d.titulo, tipo: d.tipo, revisao: d.revisao, aprovado_em: d.aprovado_em,
-    lido_em: lei.find((x) => String(x.documento_id) === String(d.id) && Number(x.revisao) === Number(d.revisao) && String(x.usuario_id) === String(usuarioId))?.lido_em || null }))
+    lido_em: lei.find((x) => String(x.documento_id) === String(d.id) && Number(x.revisao) === Number(d.revisao) && ((usuarioId && String(x.usuario_id) === String(usuarioId)) || (x.colaborador_id != null && String(x.colaborador_id) === String(col.id))))?.lido_em || null })) // 18zz.14
     .sort((a, b) => (a.lido_em ? 1 : 0) - (b.lido_em ? 1 : 0) || String(a.codigo).localeCompare(String(b.codigo), 'pt-BR', { numeric: true }));
 }
 /** quem deveria ler × quem já leu a revisão atual — { total, lidos:[{nome,em}], pendentes:[{nome,sem_login}] } */
@@ -338,8 +358,8 @@ async function destinatarios(supabase, tenantId, d, ctx = null) {
   if (!d?.distribuicao) return null;
   const pessoas = await alvo(supabase, tenantId, d.distribuicao, ctx);
   const lei = ctx?.leituras ? ctx.leituras.filter((x) => String(x.documento_id) === String(d.id) && Number(x.revisao) === Number(d.revisao)) : await leituras(supabase, tenantId, d.id, d.revisao);
-  const leu = (p) => p.usuario_id && lei.find((x) => String(x.usuario_id) === String(p.usuario_id));
-  return { total: pessoas.length, lidos: pessoas.filter(leu).map((p) => ({ nome: p.nome, em: leu(p).lido_em })), pendentes: pessoas.filter((p) => !leu(p)).map((p) => ({ nome: p.nome, sem_login: p.sem_login })) };
+  const leu = (p) => lei.find((x) => (p.usuario_id && String(x.usuario_id) === String(p.usuario_id)) || (x.colaborador_id != null && String(x.colaborador_id) === String(p.id))); // 18zz.14: também a registrada pela gestão
+  return { total: pessoas.length, lidos: pessoas.filter(leu).map((p) => ({ id: p.id, nome: p.nome, em: leu(p).lido_em, registrado_por: leu(p).registrado_por || null })), pendentes: pessoas.filter((p) => !leu(p)).map((p) => ({ id: p.id, nome: p.nome, sem_login: p.sem_login })) };
 }
 /** 🔢 prévia: quantos funcionários uma distribuição alcança (enquanto escolhe) */
 async function previaAlcance(supabase, tenantId, distribuicao) {
@@ -354,4 +374,4 @@ async function contagens(supabase, tenantId, docs) {
   return out;
 }
 
-module.exports = { transferirAprovacao, mapaPerfis, alvo, previaAlcance, contagens, alcanca, meusProcedimentos, destinatarios, ETAPA, enviarFluxo, verificarFluxo, devolverFluxo, aprovarFluxo, conferirAssinatura, emPauta, biblioteca, importarModelo, publicar, preencher, salvarRascunho, descartarRascunho, aprovarRevisao, versoes, confirmarLeitura, leituras, TIPOS, STATUS, validar, listar, obter, criar, atualizar, excluir };
+module.exports = { registrarLeituraPor, transferirAprovacao, mapaPerfis, alvo, previaAlcance, contagens, alcanca, meusProcedimentos, destinatarios, ETAPA, enviarFluxo, verificarFluxo, devolverFluxo, aprovarFluxo, conferirAssinatura, emPauta, biblioteca, importarModelo, publicar, preencher, salvarRascunho, descartarRascunho, aprovarRevisao, versoes, confirmarLeitura, leituras, TIPOS, STATUS, validar, listar, obter, criar, atualizar, excluir };
