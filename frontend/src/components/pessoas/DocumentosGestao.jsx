@@ -283,6 +283,7 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
           </div>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             {campo("ELABORADO POR", <CampoFuncionario C={C} s={s} lista={pessoas?.funcionarios ?? null} nome={form.elaborado_por} id={form.elaborado_por_id} usuarioId={form.elaborado_por_usuario_id} onChange={(v) => setForm((f) => ({ ...f, elaborado_por: v.nome, elaborado_por_id: v.id, elaborado_por_usuario_id: v.usuario_id }))} />)}
+            {!form.assinaturas?.lista?.length && form.status !== "vigente" && !(form.fluxo && form.fluxo.etapa !== "elaboracao") && campo("APROVADOR RESPONSÁVEL", <CampoFuncionario C={C} s={s} lista={listaAprov} nome={form.aprovado_por} usuarioId={form.aprovado_por_usuario_id} placeholder="Quem vai aprovar (admin, gestor ou qualidade)…" onChange={(v) => setForm((f) => ({ ...f, aprovado_por: v.nome, aprovado_por_usuario_id: v.usuario_id, aprovado_por_id: null }))} />)}
           </div>
           {/* 18zz.7 (Marcony): "Aprovado por/em" = quem aprovou, quando aprovou (no fluxo). À mão só para registrar documento JÁ aprovado fora do sistema. Próxima análise crítica: quem aprova decide (opcional). */}
           {form.assinaturas?.lista?.length ? <div style={{ fontSize: 12.5, color: C.textSub }}>✍ Aprovado no sistema{form.aprovado_por ? ` por ${form.aprovado_por}` : ""}{form.aprovado_em ? ` em ${dBR(form.aprovado_em)}` : ""} — vem da assinatura, não se edita.{form.proxima_revisao ? ` · próxima análise crítica: ${dBR(form.proxima_revisao)}` : ""}</div>
@@ -293,8 +294,7 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
                 {campo("APROVADO EM", inp("aprovado_em", { type: "date" }), "0 1 150px")}
               </div></div>
             : form.fluxo && form.fluxo.etapa !== "elaboracao" ? <div style={{ fontSize: 12.5, color: C.textSub }}>✍ Aprovação com <b>{form.fluxo.aprovador?.nome}</b> (em andamento) — para trocar, use ↪️ Transferir no 👁 Ver.</div>
-            : <div>{campo("APROVADOR RESPONSÁVEL", <CampoFuncionario C={C} s={s} lista={listaAprov} nome={form.aprovado_por} usuarioId={form.aprovado_por_usuario_id} placeholder="Quem vai aprovar (admin, gestor ou qualidade)…" onChange={(v) => setForm((f) => ({ ...f, aprovado_por: v.nome, aprovado_por_usuario_id: v.usuario_id, aprovado_por_id: null }))} />)}
-              <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4 }}>A data e a assinatura entram quando essa pessoa aprovar (📤 Enviar para aprovação já vem com ela). A próxima análise crítica, se houver, quem aprova define.</div></div>}
+            : <div style={{ fontSize: 11.5, color: C.muted, marginTop: -4 }}>A data e a assinatura entram quando essa pessoa aprovar (📤 Enviar para aprovação já vem com ela). A próxima análise crítica, se houver, quem aprova define.</div>}
           {/* 18zz.2: 📣 leitura obrigatória dos colaboradores (app do colaborador → 📘 Procedimentos) */}
           <div style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: "10px 12px" }}>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>

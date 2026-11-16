@@ -354,7 +354,7 @@ const ESPERADO = {
   'migrations/091_ia_uso_cache.sql': '5bbf9aca8354504a3322565e3512b7c8', // etapa 18zo
   'migrations/092_documentos_gestao.sql': '48938919462a5b54635b1009c748f92a', // etapa 18zr
   'services/documentosGestao.js': '534bf39935c3fe780ef5f3a12ffa98a1', // etapa 18zz.8
-  'front:DocumentosGestao.jsx': '1bb8795ae352198f0999bc8109a5efba', // etapa 18zz.8
+  'front:DocumentosGestao.jsx': '6cc11af092f3f66370b2df8c609f3f7a', // etapa 18zz.8.1
   'migrations/093_gestao_revisoes_leituras.sql': 'b40ed913b39122eb1dc24988a84621c6', // etapa 18zs
   'services/modelosGestao/iso9001.js': 'eb414c0f411066ca8d505223104ac0b0', // etapa 18zt
   'front:gerarDocumentoGestao.js': 'd891ee08f9d5230353f4c89f53ec3641', // etapa 18zv
@@ -371,11 +371,9 @@ const ESPERADO = {
   'migrations/099_gestao_usuario_responsavel.sql': 'd50ccfb7d7c29cfd5e79744f3431b141', // etapa 18zz.7 (novo)
 };
 
-// Antes de copiar a etapa 18zz.8 — base: 18zz.7 (a95fe7b)
+// Antes de copiar a etapa 18zz.8.1 — base: 18zz.8 (fbd273d)
 const ANTES = {
-  'routes/pessoas.js': '75593718511bf9c1092f97ac6a5ebc4d',
-  'services/documentosGestao.js': '74a363f35937590e98ce90e263c1f083',
-  'front:DocumentosGestao.jsx': '4d37bacb36fedbddacd272de90d5ee15',
+  'front:DocumentosGestao.jsx': '1bb8795ae352198f0999bc8109a5efba',
 };
 
 const RAIZ = process.cwd();
@@ -413,7 +411,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zz.8)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zz.8.1)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
