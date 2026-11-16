@@ -77,6 +77,13 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
   const statusTag = (x) => x.status === "vigente" ? (x.revisar ? <span style={s.tag(C.warn)}>Análise crítica vencida</span> : <span style={s.tag(C.success)}>Vigente</span>)
     : x.status === "rascunho" ? <span style={s.tag(C.accent)}>Rascunho</span> : <span style={s.tag(C.muted)}>Obsoleto</span>;
   const travado = !!(form?.id && form?.status_original === "vigente"); // 18zs
+  const semPerfil = (t) => { // 18zz.8.2: a pessoa existe, mas o login não tem perfil de aprovação
+    const sem = (x) => String(x || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+    const achados = (pessoas?.funcionarios || []).filter((p) => sem(p.nome).includes(t));
+    if (!achados.length) return null;
+    const nomes = achados.slice(0, 3).map((p) => p.nome).join(", ");
+    return `${nomes} ${achados.length > 1 ? "estão" : "está"} no cadastro, mas sem perfil para aprovar (admin, gestor ou qualidade)${achados.some((p) => !p.usuario_id) ? " ou sem login" : ""}. Para aprovar documentos, ajuste o perfil em Administração → Usuários.`;
+  };
   const listaAprov = pessoas ? (pessoas.aprovadores || []).map((u) => ({ id: null, usuario_id: u.id, nome: u.nome, funcao: "pode aprovar" })) : null; // 18zz.8: só quem tem perfil de aprovação
   const campo = (rot, el, flex = "1 1 160px") => <label style={{ flex, minWidth: 0 }}><span style={s.label}>{rot}</span>{el}</label>;
   const inp = (k, extra = {}) => <input value={form[k] ?? ""} onChange={(e) => setForm({ ...form, [k]: e.target.value })} style={s.input} {...extra} />;
@@ -246,7 +253,7 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
           <label><span style={s.label}>O QUE MUDOU NESTA REVISÃO (OBRIGATÓRIO PARA APROVAR)</span><input value={revi.motivo} onChange={(e) => setRevi({ ...revi, motivo: e.target.value })} placeholder="Ex.: incluída a etapa de quarentena; ajustados os responsáveis" style={s.input} /></label>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <label style={{ flex: "3 1 260px" }}><span style={s.label}>TÍTULO</span><input value={revi.titulo || ""} onChange={(e) => setRevi({ ...revi, titulo: e.target.value })} style={s.input} /></label>
-            <div style={{ flex: "1 1 160px" }}><span style={s.label}>ELABORADO POR</span><CampoFuncionario C={C} s={s} lista={pessoas?.funcionarios ?? null} nome={revi.elaborado_por} id={revi.elaborado_por_id} usuarioId={revi.elaborado_por_usuario_id} onChange={(v) => setRevi((r) => ({ ...r, elaborado_por: v.nome, elaborado_por_id: v.id, elaborado_por_usuario_id: v.usuario_id }))} /></div><div style={{ flex: "1 1 160px" }}><span style={s.label}>APROVADOR RESPONSÁVEL</span><CampoFuncionario C={C} s={s} lista={listaAprov} nome={revi.aprovado_por} usuarioId={revi.aprovado_por_usuario_id} placeholder="Quem vai aprovar…" onChange={(v) => setRevi((r) => ({ ...r, aprovado_por: v.nome, aprovado_por_usuario_id: v.usuario_id }))} /></div>
+            <div style={{ flex: "1 1 160px" }}><span style={s.label}>ELABORADO POR</span><CampoFuncionario C={C} s={s} lista={pessoas?.funcionarios ?? null} nome={revi.elaborado_por} id={revi.elaborado_por_id} usuarioId={revi.elaborado_por_usuario_id} onChange={(v) => setRevi((r) => ({ ...r, elaborado_por: v.nome, elaborado_por_id: v.id, elaborado_por_usuario_id: v.usuario_id }))} /></div><div style={{ flex: "1 1 160px" }}><span style={s.label}>APROVADOR RESPONSÁVEL</span><CampoFuncionario C={C} s={s} lista={listaAprov} explicarVazio={semPerfil} nome={revi.aprovado_por} usuarioId={revi.aprovado_por_usuario_id} placeholder="Quem vai aprovar…" onChange={(v) => setRevi((r) => ({ ...r, aprovado_por: v.nome, aprovado_por_usuario_id: v.usuario_id }))} /></div>
             
           </div>
           <label><span style={s.label}>TEXTO</span><textarea value={revi.conteudo} onChange={(e) => setRevi({ ...revi, conteudo: e.target.value })} rows={14} style={{ ...s.input, fontFamily: "inherit", lineHeight: 1.5, resize: "vertical" }} /></label>
@@ -283,7 +290,7 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
           </div>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             {campo("ELABORADO POR", <CampoFuncionario C={C} s={s} lista={pessoas?.funcionarios ?? null} nome={form.elaborado_por} id={form.elaborado_por_id} usuarioId={form.elaborado_por_usuario_id} onChange={(v) => setForm((f) => ({ ...f, elaborado_por: v.nome, elaborado_por_id: v.id, elaborado_por_usuario_id: v.usuario_id }))} />)}
-            {!form.assinaturas?.lista?.length && form.status !== "vigente" && !(form.fluxo && form.fluxo.etapa !== "elaboracao") && campo("APROVADOR RESPONSÁVEL", <CampoFuncionario C={C} s={s} lista={listaAprov} nome={form.aprovado_por} usuarioId={form.aprovado_por_usuario_id} placeholder="Quem vai aprovar (admin, gestor ou qualidade)…" onChange={(v) => setForm((f) => ({ ...f, aprovado_por: v.nome, aprovado_por_usuario_id: v.usuario_id, aprovado_por_id: null }))} />)}
+            {!form.assinaturas?.lista?.length && form.status !== "vigente" && !(form.fluxo && form.fluxo.etapa !== "elaboracao") && campo("APROVADOR RESPONSÁVEL", <CampoFuncionario C={C} s={s} lista={listaAprov} explicarVazio={semPerfil} nome={form.aprovado_por} usuarioId={form.aprovado_por_usuario_id} placeholder="Quem vai aprovar (admin, gestor ou qualidade)…" onChange={(v) => setForm((f) => ({ ...f, aprovado_por: v.nome, aprovado_por_usuario_id: v.usuario_id, aprovado_por_id: null }))} />)}
           </div>
           {/* 18zz.7 (Marcony): "Aprovado por/em" = quem aprovou, quando aprovou (no fluxo). À mão só para registrar documento JÁ aprovado fora do sistema. Próxima análise crítica: quem aprova decide (opcional). */}
           {form.assinaturas?.lista?.length ? <div style={{ fontSize: 12.5, color: C.textSub }}>✍ Aprovado no sistema{form.aprovado_por ? ` por ${form.aprovado_por}` : ""}{form.aprovado_em ? ` em ${dBR(form.aprovado_em)}` : ""} — vem da assinatura, não se edita.{form.proxima_revisao ? ` · próxima análise crítica: ${dBR(form.proxima_revisao)}` : ""}</div>

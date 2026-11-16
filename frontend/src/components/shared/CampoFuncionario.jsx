@@ -6,7 +6,7 @@ import { useMemo, useRef, useState } from "react";
 
 const sem = (t) => String(t || "").normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
-export default function CampoFuncionario({ nome, id, usuarioId = null, onChange, lista, C, s, placeholder = "Digite o nome…", desabilitado = false }) {
+export default function CampoFuncionario({ nome, id, usuarioId = null, onChange, lista, C, s, placeholder = "Digite o nome…", desabilitado = false, explicarVazio = null }) {
   const [aberto, setAberto] = useState(false); const [ativo, setAtivo] = useState(0); const fechar = useRef(null);
   const t = sem(nome).trim();
   const todos = useMemo(() => (t ? (lista || []).filter((p) => sem(p.nome).includes(t)) : []), [t, lista]);
@@ -35,7 +35,7 @@ export default function CampoFuncionario({ nome, id, usuarioId = null, onChange,
                 style={{ display: "block", width: "100%", textAlign: "left", background: i === ativo ? (C.accent + "22") : "transparent", border: "none", padding: "8px 12px", color: C.text, cursor: "pointer", fontSize: 13.5 }}>
                 {p.nome}{p.funcao ? <span style={{ color: C.textSub, fontSize: 12 }}> · {p.funcao}</span> : null}
               </button>))
-            : <div style={{ padding: 10, fontSize: 12.5, color: C.textSub }}>Ninguém com esse nome — cadastre o funcionário ou o usuário para ficar rastreável.</div>}
+            : <div style={{ padding: 10, fontSize: 12.5, color: C.textSub }}>{explicarVazio?.(t) || "Ninguém com esse nome — cadastre o funcionário ou o usuário para ficar rastreável."}</div>}
           {todos.length > sug.length && <div style={{ padding: "6px 12px", fontSize: 11.5, color: C.muted }}>+{todos.length - sug.length} — continue digitando para filtrar</div>}
         </div>
       )}

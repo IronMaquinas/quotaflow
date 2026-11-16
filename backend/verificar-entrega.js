@@ -354,7 +354,7 @@ const ESPERADO = {
   'migrations/091_ia_uso_cache.sql': '5bbf9aca8354504a3322565e3512b7c8', // etapa 18zo
   'migrations/092_documentos_gestao.sql': '48938919462a5b54635b1009c748f92a', // etapa 18zr
   'services/documentosGestao.js': '534bf39935c3fe780ef5f3a12ffa98a1', // etapa 18zz.8
-  'front:DocumentosGestao.jsx': '6cc11af092f3f66370b2df8c609f3f7a', // etapa 18zz.8.1
+  'front:DocumentosGestao.jsx': 'a0680caea4dccf135916c73d476e22d2', // etapa 18zz.8.2
   'migrations/093_gestao_revisoes_leituras.sql': 'b40ed913b39122eb1dc24988a84621c6', // etapa 18zs
   'services/modelosGestao/iso9001.js': 'eb414c0f411066ca8d505223104ac0b0', // etapa 18zt
   'front:gerarDocumentoGestao.js': 'd891ee08f9d5230353f4c89f53ec3641', // etapa 18zv
@@ -367,13 +367,14 @@ const ESPERADO = {
   'front:MeusProcedimentos.jsx': '8213d748ce15c31ee8888f96d5fe6711', // etapa 18zz.5
   'migrations/097_treinamento_procedimentos.sql': '96dad2796bee2f6a03016bd92db27c54', // etapa 18zz.5 (novo)
   'migrations/098_gestao_pessoas_rastreaveis.sql': '5dc141afff2e70180e1b9faad0d848dd', // etapa 18zz.6 (novo)
-  'front:CampoFuncionario.jsx': 'f69ecdc4e610efa9ee927390eabd9367', // etapa 18zz.7
+  'front:CampoFuncionario.jsx': '2d447a2e846f12974edaecd665104156', // etapa 18zz.8.2
   'migrations/099_gestao_usuario_responsavel.sql': 'd50ccfb7d7c29cfd5e79744f3431b141', // etapa 18zz.7 (novo)
 };
 
-// Antes de copiar a etapa 18zz.8.1 — base: 18zz.8 (fbd273d)
+// Antes de copiar a etapa 18zz.8.2 — base: 18zz.8.1 (440aca2)
 const ANTES = {
-  'front:DocumentosGestao.jsx': '1bb8795ae352198f0999bc8109a5efba',
+  'front:DocumentosGestao.jsx': '6cc11af092f3f66370b2df8c609f3f7a',
+  'front:CampoFuncionario.jsx': 'f69ecdc4e610efa9ee927390eabd9367',
 };
 
 const RAIZ = process.cwd();
@@ -411,7 +412,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zz.8.1)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zz.8.2)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
