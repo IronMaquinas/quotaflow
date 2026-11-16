@@ -232,12 +232,11 @@ async function enviarFluxo(supabase, tenantId, id, { eu, verificador = null, apr
   if (p.modo === 'revisao' && !String(d.rascunho?.motivo || '').trim()) throw erro('Descreva o que mudou nesta revisão antes de enviar (ISO 9001 7.5.3).', 409);
   if (!aprovador?.id) throw erro('Escolha quem aprova.', 400);
   if (!aprovadores.some((a) => String(a.id) === String(aprovador.id))) throw erro('O aprovador precisa ter perfil admin, gestor ou qualidade.', 400);
-  const sozinho = aprovadores.length === 1;
-  if (String(aprovador.id) === String(eu.id) && !sozinho) throw erro('Quem elaborou não aprova o próprio documento — escolha outra pessoa (segregação de funções).', 409);
+  const proprio = String(aprovador.id) === String(eu.id); // 18zz.10: permitido, mas fica registrado (sem segregação)
   if (verificador?.id && (String(verificador.id) === String(eu.id) || String(verificador.id) === String(aprovador.id))) throw erro('O verificador precisa ser diferente de quem elaborou e de quem aprova.', 409);
   const h = hashDe(d, p); const etapa = verificador?.id ? 'verificacao' : 'aprovacao';
   const fluxo = { etapa, modo: p.modo, revisao: p.revisao, elaborado: assinatura('elaborado', eu, h), verificador: verificador?.id ? { id: verificador.id, nome: verificador.nome || null } : null, aprovador: { id: aprovador.id, nome: aprovador.nome || null }, verificado: null,
-    historico: [...(d.fluxo?.historico || []), { acao: 'enviado', por: eu.nome || null, em: new Date().toISOString(), comentario: comentario ? String(comentario).slice(0, 1000) : null }] };
+    historico: [...(d.fluxo?.historico || []), { acao: proprio ? 'enviado (quem enviou também aprova — sem segregação de funções)' : 'enviado', por: eu.nome || null, em: new Date().toISOString(), comentario: comentario ? String(comentario).slice(0, 1000) : null }] };
   await q(supabase.from('documentos_gestao').update({ fluxo }).eq('id', id).eq('tenant_id', tenantId));
   const quem = etapa === 'verificacao' ? fluxo.verificador : fluxo.aprovador;
   await avisar(supabase, tenantId, quem.id, { titulo: `✍ ${d.codigo} Rev. ${String(p.revisao).padStart(2, '0')} aguarda sua ${etapa === 'verificacao' ? 'verificação' : 'aprovação'}`, texto: `${p.titulo} — enviado por ${eu.nome || 'colega'}${comentario ? `: "${String(comentario).slice(0, 140)}"` : ''}.` });
@@ -252,7 +251,6 @@ async function transferirAprovacao(supabase, tenantId, id, { eu, para, motivo = 
   const novo = aprovadores.find((a) => String(a.id) === String(para));
   if (!novo) throw erro('O novo aprovador precisa ter perfil admin, gestor ou qualidade.', 400);
   if (String(novo.id) === String(f.aprovador?.id)) throw erro('Essa pessoa já é a aprovadora.', 409);
-  if (String(novo.id) === String(f.elaborado?.usuario_id) && aprovadores.length > 1) throw erro('Quem elaborou não aprova o próprio documento (segregação de funções).', 409);
   if (f.verificador?.id && String(novo.id) === String(f.verificador.id)) throw erro('O verificador não pode ser também o aprovador.', 409);
   const fluxo = { ...f, aprovador: { id: novo.id, nome: novo.nome || null }, historico: [...(f.historico || []), { acao: `aprovação transferida de ${f.aprovador?.nome || '—'} para ${novo.nome || '—'}`, por: eu.nome || null, em: new Date().toISOString(), comentario: motivo ? String(motivo).slice(0, 1000) : null }] };
   const desig = f.modo === 'revisao' ? { rascunho: { ...(d.rascunho || {}), aprovado_por: novo.nome || null, aprovado_por_usuario_id: novo.id } } : { aprovado_por: novo.nome || null, aprovado_por_usuario_id: novo.id, aprovado_por_id: await colabIdDoUsuario(supabase, tenantId, novo.id) };
