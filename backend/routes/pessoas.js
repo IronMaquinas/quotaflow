@@ -282,17 +282,22 @@ router.put('/gestao/:id/rascunho', exigirEditar, async (req, res) => { try { res
 router.delete('/gestao/:id/rascunho', exigirEditar, async (req, res) => { try { res.json(await DG.descartarRascunho(supabase, req.tenantId, req.params.id)); } catch (err) { errDG(res, err, 'gestao-rascunho'); } });
 router.post('/gestao/:id/aprovar', exigirEditar, async (req, res) => {
   try { if (!perfisDe(req).some((p) => APROVAR_DG.includes(p))) return res.status(403).json({ erro: 'Só admin, gestor ou qualidade aprova revisão' });
-    const eu = await quemSou(req); res.json({ documento: await DG.aprovarRevisao(supabase, req.tenantId, req.params.id, { aprovador: eu.nome }) }); } catch (err) { errDG(res, err, 'gestao-aprovar'); }
+    const eu = await quemSou(req); res.json({ documento: await DG.aprovarRevisao(supabase, req.tenantId, req.params.id, { aprovador: eu.nome, aprovadorUsuarioId: req.userId }) }); } catch (err) { errDG(res, err, 'gestao-aprovar'); }
 });
 router.post('/gestao/:id/publicar', exigirEditar, async (req, res) => { // 18zt: rascunho → vigente (aprovação)
   try { if (!perfisDe(req).some((p) => APROVAR_DG.includes(p))) return res.status(403).json({ erro: 'Só admin, gestor ou qualidade aprova' });
-    const eu = await quemSou(req); res.json({ documento: await DG.publicar(supabase, req.tenantId, req.params.id, { aprovador: eu.nome }) }); } catch (err) { errDG(res, err, 'gestao-publicar'); }
+    const eu = await quemSou(req); res.json({ documento: await DG.publicar(supabase, req.tenantId, req.params.id, { aprovador: eu.nome, aprovadorUsuarioId: req.userId }) }); } catch (err) { errDG(res, err, 'gestao-publicar'); }
 });
 // 18zv: ✍ fluxo interno — enviar · verificar · devolver · aprovar (assinatura eletrônica com o login)
 const pessoasDG = async (req) => { const N = require('../services/notificacoes');
   const ap = (await N.usuariosComPerfis(supabase, req.tenantId, APROVAR_DG)).map((u) => ({ id: u.id, nome: u.nome || u.email }));
   const ve = (await N.usuariosComPerfis(supabase, req.tenantId, VER)).map((u) => ({ id: u.id, nome: u.nome || u.email }));
-  return { aprovadores: ap, verificadores: ve }; };
+  let funcionarios = []; try { // 18zz.6: auto-sugestão de "Elaborado/Aprovado por" (funcionários ativos)
+    const cs = (await q(supabase.from('colaboradores').select('*').eq('tenant_id', req.tenantId))).filter((c) => c.situacao !== 'desligado');
+    const fs = new Map((await q(supabase.from('funcoes').select('*').eq('tenant_id', req.tenantId)).catch(() => [])).map((f) => [String(f.id), f.nome]));
+    funcionarios = cs.map((c) => ({ id: c.id, nome: c.nome, funcao: fs.get(String(c.funcao_id)) || null })).sort((x, y) => String(x.nome).localeCompare(String(y.nome), 'pt-BR'));
+  } catch { /* segue sem lista */ }
+  return { aprovadores: ap, verificadores: ve, funcionarios }; };
 router.post('/gestao-alcance', exigirVer, async (req, res) => { try { res.json(await DG.previaAlcance(supabase, req.tenantId, req.body?.distribuicao)); } catch (err) { errDG(res, err, 'gestao-alcance'); } }); // 18zz.4
 router.get('/gestao-para-mim', exigirVer, async (req, res) => { // 18zz.4: documentos que o LOGADO (gestor, qualidade…) precisa ler
   try { const col = (await q(supabase.from('colaboradores').select('*').eq('tenant_id', req.tenantId).eq('usuario_id', req.userId)))[0];

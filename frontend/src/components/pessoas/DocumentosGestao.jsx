@@ -3,6 +3,7 @@
 //   próxima análise crítica, texto editável no sistema e/ou arquivo. Vigente não se exclui (vira Obsoleto — histórico).
 //   Próximas etapas: 18zs (fluxo de revisão, histórico de versões, confirmação de leitura) · 18zt (biblioteca de modelos ISO 9001).
 import { useEffect, useMemo, useState } from "react";
+import CampoFuncionario from "../shared/CampoFuncionario"; // 18zz.6
 import apiService from "../../services/apiService";
 import VerArquivo from "../programacao/VerArquivo";
 import { Toggle } from "../../plataforma/ModulosPlataforma"; // 18zz.2
@@ -50,7 +51,7 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
     catch (e) { onErro?.(e.message); }
   };
   // 18zs: ↻ nova revisão (a vigente vale até aprovar) · histórico · leitura
-  const abrirRevisao = (doc) => { const r = doc.rascunho || {}; setRevi({ id: doc.id, codigo: doc.codigo, revisao: (doc.revisao || 0) + 1, pode_aprovar: doc.pode_aprovar, titulo: r.titulo ?? doc.titulo, conteudo: r.conteudo ?? doc.conteudo ?? "", motivo: r.motivo || "", elaborado_por: r.elaborado_por || "", proxima_revisao: r.proxima_revisao || "", arquivo_nome: r.arquivo?.arquivo_nome || null, ja: !!doc.rascunho }); setVer(null); };
+  const abrirRevisao = (doc) => { const r = doc.rascunho || {}; setRevi({ id: doc.id, codigo: doc.codigo, revisao: (doc.revisao || 0) + 1, pode_aprovar: doc.pode_aprovar, titulo: r.titulo ?? doc.titulo, conteudo: r.conteudo ?? doc.conteudo ?? "", motivo: r.motivo || "", elaborado_por: r.elaborado_por || "", elaborado_por_id: r.elaborado_por_id ?? null, proxima_revisao: r.proxima_revisao || "", arquivo_nome: r.arquivo?.arquivo_nome || null, ja: !!doc.rascunho }); setVer(null); };
   const corpoRevi = () => { const { id, codigo, revisao, pode_aprovar, ja, novo_arquivo, arquivo_nome, ...c } = revi; return { ...c, ...(novo_arquivo ? { arquivo_base64: novo_arquivo.base64, arquivo_mime: novo_arquivo.mime, arquivo_nome: novo_arquivo.nome } : {}) }; };
   const salvarRevi = async (aprovar = false) => {
     setOcup(true);
@@ -87,7 +88,7 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
       <label style={{ fontSize: 12, color: C.textSub, display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}><input type="checkbox" checked={verObsoletos} onChange={(e) => setVerObsoletos(e.target.checked)} /> Mostrar obsoletos</label>
       <div style={{ flex: 1 }} />
       <button type="button" onClick={async () => { try { setBuscaBib(""); setBib(await apiService.get("/pessoas/gestao/modelos")); } catch (e) { onErro?.(e?.response?.data?.erro || e.message); } }} style={{ ...s.btn(false), cursor: "pointer", color: C.accent }}>📚 Modelos ISO 9001</button>
-      {editar && <button type="button" onClick={() => setForm({ codigo: "", titulo: "", tipo: "procedimento", area: "", revisao: 0, status: "vigente", elaborado_por: "", aprovado_por: "", aprovado_em: "", proxima_revisao: "", norma: "", conteudo: "" })} style={{ ...s.btn(true), cursor: "pointer" }}>＋ Novo documento de gestão</button>}
+      {editar && <button type="button" onClick={() => setForm({ codigo: "", titulo: "", tipo: "procedimento", area: "", revisao: 0, status: "vigente", elaborado_por: "", elaborado_por_id: null, aprovado_por: "", aprovado_por_id: null, aprovado_em: "", proxima_revisao: "", norma: "", conteudo: "" })} style={{ ...s.btn(true), cursor: "pointer" }}>＋ Novo documento de gestão</button>}
     </div>
     {paraMim.length > 0 && <div style={{ ...s.card, padding: "10px 14px", marginBottom: 12, borderColor: C.warn, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
       <b>📣 Para você ler:</b>{paraMim.map((x) => <button key={x.id} type="button" onClick={() => abrir(x)} style={{ ...s.btn(false), padding: "4px 10px", fontSize: 12.5, cursor: "pointer", color: C.warn }}>{x.codigo} · {x.titulo}</button>)}
@@ -238,7 +239,7 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
           <label><span style={s.label}>O QUE MUDOU NESTA REVISÃO (OBRIGATÓRIO PARA APROVAR)</span><input value={revi.motivo} onChange={(e) => setRevi({ ...revi, motivo: e.target.value })} placeholder="Ex.: incluída a etapa de quarentena; ajustados os responsáveis" style={s.input} /></label>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             <label style={{ flex: "3 1 260px" }}><span style={s.label}>TÍTULO</span><input value={revi.titulo || ""} onChange={(e) => setRevi({ ...revi, titulo: e.target.value })} style={s.input} /></label>
-            <label style={{ flex: "1 1 160px" }}><span style={s.label}>ELABORADO POR</span><input value={revi.elaborado_por} onChange={(e) => setRevi({ ...revi, elaborado_por: e.target.value })} style={s.input} /></label>
+            <div style={{ flex: "1 1 160px" }}><span style={s.label}>ELABORADO POR</span><CampoFuncionario C={C} s={s} lista={pessoas?.funcionarios ?? null} nome={revi.elaborado_por} id={revi.elaborado_por_id} onChange={(v) => setRevi((r) => ({ ...r, elaborado_por: v.nome, elaborado_por_id: v.id }))} /></div>
             <label style={{ flex: "0 1 170px" }}><span style={s.label}>PRÓXIMA ANÁLISE CRÍTICA</span><input type="date" value={revi.proxima_revisao} onChange={(e) => setRevi({ ...revi, proxima_revisao: e.target.value })} style={s.input} /></label>
           </div>
           <label><span style={s.label}>TEXTO</span><textarea value={revi.conteudo} onChange={(e) => setRevi({ ...revi, conteudo: e.target.value })} rows={14} style={{ ...s.input, fontFamily: "inherit", lineHeight: 1.5, resize: "vertical" }} /></label>
@@ -274,7 +275,7 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
             {campo("SITUAÇÃO", <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })} style={s.input}>{Object.entries(d.status).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>, "0 1 130px")}
           </div>
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
-            {campo("ELABORADO POR", inp("elaborado_por"))}{campo("APROVADO POR", inp("aprovado_por"))}
+            {campo("ELABORADO POR", <CampoFuncionario C={C} s={s} lista={pessoas?.funcionarios ?? null} nome={form.elaborado_por} id={form.elaborado_por_id} onChange={(v) => setForm((f) => ({ ...f, elaborado_por: v.nome, elaborado_por_id: v.id }))} />)}{campo("APROVADO POR", <CampoFuncionario C={C} s={s} lista={pessoas?.funcionarios ?? null} nome={form.aprovado_por} id={form.aprovado_por_id} onChange={(v) => setForm((f) => ({ ...f, aprovado_por: v.nome, aprovado_por_id: v.id }))} />)}
             {campo("APROVADO EM", inp("aprovado_em", { type: "date" }), "0 1 150px")}{campo("PRÓXIMA ANÁLISE CRÍTICA", inp("proxima_revisao", { type: "date" }), "0 1 170px")}
           </div>
           {/* 18zz.2: 📣 leitura obrigatória dos colaboradores (app do colaborador → 📘 Procedimentos) */}
