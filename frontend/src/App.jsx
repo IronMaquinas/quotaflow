@@ -13,6 +13,7 @@ import TelaHistoricoPrecosNova from './components/historico/TelaHistoricoPrecosN
 import TelaInteligenciaNova from './components/inteligencia/TelaInteligenciaNova';
 import TelaBenchmarkNova from './components/benchmark/TelaBenchmarkNova';
 import PainelValorGerado, { SeloValorGerado } from './components/valor/PainelValorGerado'; // 5a
+import SalaControle from './components/home/SalaControle'; // SC1
 import TelaPortalFornecedor from './components/portal/TelaPortalFornecedor';
 import TelaGestaoCotacoesFornecedor from './components/fornecedores/TelaGestaoCotacoesFornecedor';
 import TelaLogin from './TelaLogin';
@@ -620,24 +621,12 @@ const perfil = PERFIS[usuario.perfil] || {
         <AvisoPlanoTenant />
         {usuario?.id && usuario.perfil !== "fornecedor" && <SinoNotificacoes C={C} base="/notificacoes" onAbrir={(l)=>{ if (l.tela==="spot") { setTela("spot"); pedirAbrirDemanda(l); } else if (l.ocorrencia_id != null) window.dispatchEvent(new CustomEvent("qf-abrir-ocorrencia", { detail: l.ocorrencia_id })); else if (l.tela && temAcesso(l.tela)) { if (l.tela === "documentos" && l.aba) window.qfDocsAba = l.aba; /* 18zv */ setTela(l.tela); } }} />}
         {tela==="home"&&(
-          <div style={{flex:1,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"40px 40px 48px",overflowY:"auto"}}>{/* 18j: no topo — centralizado na vertical cortava o cartão de boas-vindas */}
-            <div style={{maxWidth:600,width:"100%",textAlign:"center",margin:"auto 0"}}>
+          <div style={{flex:1,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"24px 28px 48px",overflowY:"auto"}}>{/* 18j: no topo — centralizado na vertical cortava o cartão de boas-vindas */}
+            <div style={{maxWidth:1100,width:"100%",textAlign:"center",margin:"0"}}>
               {temAcesso("configuracoes") && <BemVindo C={C} s={s} onAbrir={(p)=>window.dispatchEvent(new CustomEvent("qf-navegar",{detail:p}))} />}
               {avisoRoteiro && <div style={{...s.card,padding:"10px 14px",marginBottom:12,fontSize:13,color:C.warn||"#f59e0b",textAlign:"left"}}>{avisoRoteiro}</div>}
-              {temAcesso("valor_gerado") && <SeloValorGerado C={C} s={s} onAbrir={()=>navegar("valor_gerado")} />}
-              <div style={{fontSize:52,marginBottom:16}}>{perfil.icon}</div>
-              <div style={{fontSize:26,fontWeight:700,color:C.text,marginBottom:8}}>Olá, {usuario.nome.split(" ")[0]}!</div>
-              <div style={{fontSize:14,color:C.muted,marginBottom:32}}>Você está logado como <strong style={{color:perfil.c}}>{perfil.l}</strong></div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(140px,1fr))",gap:12}}>
-                {navItems.filter(n=>n.id!=="home").map(n=>(
-                  <div key={n.id} onClick={()=>navegar(n.id)}
-                    style={{...s.card,padding:"18px 14px",cursor:"pointer",textAlign:"center",transition:"all .15s"}}
-                    onMouseEnter={e=>{e.currentTarget.style.background="#151d2e";e.currentTarget.style.transform="translateY(-2px)";}}
-                    onMouseLeave={e=>{e.currentTarget.style.background=C.surface;e.currentTarget.style.transform="translateY(0)";}}>
-                    <div style={{fontSize:11,color:C.text,fontWeight:500}}>{n.l}</div>
-                  </div>
-                ))}
-              </div>
+              {/* SC1: 🛰 Sala de Controle — substitui o "Olá" + atalhos (o menu já tem tudo, em seções) */}
+              <SalaControle C={C} s={s} podeAbrir={temAcesso} topo={temAcesso("valor_gerado") ? <SeloValorGerado C={C} s={s} onAbrir={()=>navegar("valor_gerado")} /> : null} />
             </div>
           </div>
         )}
