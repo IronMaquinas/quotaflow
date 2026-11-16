@@ -22,7 +22,7 @@ router.get('/:id', async (req, res) => {
   try {
     const col = await eu(req, res); if (!col) return;
     const d = await DG.obter(supabase, req.tenantId, req.params.id);
-    if (!d || d.status !== 'vigente' || !DG.alcanca(d.distribuicao, col)) return res.status(404).json({ erro: 'Documento não disponível para você' });
+    if (!d || d.status !== 'vigente' || !DG.alcanca(d.distribuicao, col, await DG.mapaSetores(supabase, req.tenantId))) return res.status(404).json({ erro: 'Documento não disponível para você' });
     const lido = (await DG.leituras(supabase, req.tenantId, d.id, d.revisao)).some((x) => String(x.usuario_id) === String(req.userId));
     const { rascunho, fluxo, ...doc } = d;
     res.json({ documento: { ...doc, arquivo_url: d.arquivo_path ? await D.linkArquivo(supabase, d.arquivo_path) : null, assinatura: DG.conferirAssinatura(d) }, lido });
@@ -32,7 +32,7 @@ router.post('/:id/leitura', async (req, res) => {
   try {
     const col = await eu(req, res); if (!col) return;
     const d = await DG.obter(supabase, req.tenantId, req.params.id);
-    if (!d || d.status !== 'vigente' || !DG.alcanca(d.distribuicao, col)) return res.status(404).json({ erro: 'Documento não disponível para você' });
+    if (!d || d.status !== 'vigente' || !DG.alcanca(d.distribuicao, col, await DG.mapaSetores(supabase, req.tenantId))) return res.status(404).json({ erro: 'Documento não disponível para você' });
     res.json(await DG.confirmarLeitura(supabase, req.tenantId, d.id, { usuarioId: req.userId, usuarioNome: col.nome }));
   } catch (err) { falha(res, err); }
 });

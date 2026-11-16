@@ -353,8 +353,8 @@ const ESPERADO = {
   'front:AjustarFoto.jsx': 'bd1842aedec450e1f98c0d0bd60c910a', // etapa 18zn
   'migrations/091_ia_uso_cache.sql': '5bbf9aca8354504a3322565e3512b7c8', // etapa 18zo
   'migrations/092_documentos_gestao.sql': '48938919462a5b54635b1009c748f92a', // etapa 18zr
-  'services/documentosGestao.js': '5c837a4ec4028b00c850a8920f38cafe', // etapa 18zz.2
-  'front:DocumentosGestao.jsx': 'e28bac14ac8a1088d865ef205d457ea8', // etapa 18zz.2
+  'services/documentosGestao.js': 'baed8f738c6e6c5c5a9869fcbb6f7d01', // etapa 18zz.3
+  'front:DocumentosGestao.jsx': '8d27cc42ec86a23fe87874dd86780104', // etapa 18zz.3
   'migrations/093_gestao_revisoes_leituras.sql': 'b40ed913b39122eb1dc24988a84621c6', // etapa 18zs
   'services/modelosGestao/iso9001.js': 'eb414c0f411066ca8d505223104ac0b0', // etapa 18zt
   'front:gerarDocumentoGestao.js': 'd891ee08f9d5230353f4c89f53ec3641', // etapa 18zv
@@ -363,18 +363,15 @@ const ESPERADO = {
   'services/cnhPeloLink.js': 'bd8c2956449323d9a816c139512f8dd5', // etapa 18zw
   'front:CampoCnpj.jsx': '5fb306c0e0cb0245e644e659c6042bb7', // etapa 18zx
   'migrations/096_gestao_distribuicao.sql': '021438cdc0fbfff2e12ba88a36b70929', // etapa 18zz.2
-  'routes/meusProcedimentos.js': '56b7291bf9b60da504a9e9904adfd1ef', // etapa 18zz.2
+  'routes/meusProcedimentos.js': 'f6cbe9c314e1f4fe6dfb5c37dbe134dc', // etapa 18zz.3
   'front:MeusProcedimentos.jsx': '55182aea26d66845ef5014e171f640bd', // etapa 18zz.2
 };
 
-// Antes de copiar a etapa 18zz.2 — base: cbc5512
+// Antes de copiar a etapa 18zz.3 — base: fe5a33b
 const ANTES = {
-  'services/documentosGestao.js': '98f5785680ac00f02af885fe3da02d56',
-  'routes/pessoas.js': '9d2205e48df992e2205c204c1e7b9080',
-  'server.js': '19d3541a3e6bf96ed6cd5b42c8c90620',
-  'middleware/tenantMiddleware.js': '95a77fe216e5baad7387b827aab7a060',
-  'front:DocumentosGestao.jsx': 'ebd154b8e2bc9ea17ce46444cc27f353',
-  'front:App.jsx': '79833346d5cf438931a253a080b63fbb',
+  'services/documentosGestao.js': '5c837a4ec4028b00c850a8920f38cafe',
+  'routes/meusProcedimentos.js': '56b7291bf9b60da504a9e9904adfd1ef',
+  'front:DocumentosGestao.jsx': 'e28bac14ac8a1088d865ef205d457ea8',
 };
 
 const RAIZ = process.cwd();
@@ -412,7 +409,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zz.2)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zz.3)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

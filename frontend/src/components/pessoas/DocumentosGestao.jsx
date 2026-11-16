@@ -93,7 +93,7 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
             <div style={{ fontWeight: 600, fontSize: 13 }}><span style={{ color: C.accent }}>{x.codigo}</span> · {x.titulo}</div>
             <div style={{ fontSize: 11.5, color: C.textSub }}>{rev(x.revisao)}{x.area ? ` · ${x.area}` : ""}{x.aprovado_em ? ` · aprovado em ${dBR(x.aprovado_em)}${x.aprovado_por ? ` por ${x.aprovado_por}` : ""}` : ""}{x.proxima_revisao ? ` · análise crítica até ${dBR(x.proxima_revisao)}` : ""}</div>
           </div>
-          {statusTag(x)}{x.distribuicao && <span title="Leitura obrigatória dos colaboradores" style={s.tag(C.textSub)}>📣 {x.distribuicao.todos ? "todos" : `${(x.distribuicao.funcoes || []).length} função(ões)`}</span>}{x.em_revisao && !x.etapa && <span title={x.rascunho_motivo || ""} style={s.tag(C.accent)}>↻ Rev. {String((x.revisao || 0) + 1).padStart(2, "0")} em elaboração</span>}
+          {statusTag(x)}{x.distribuicao && <span title="Leitura obrigatória dos colaboradores" style={s.tag(C.textSub)}>📣 {x.distribuicao.todos ? "todos" : [(x.distribuicao.setores || []).length ? `${x.distribuicao.setores.join(", ")}` : null, (x.distribuicao.funcoes || []).length ? `${x.distribuicao.funcoes.length} função(ões)` : null].filter(Boolean).join(" + ")}</span>}{x.em_revisao && !x.etapa && <span title={x.rascunho_motivo || ""} style={s.tag(C.accent)}>↻ Rev. {String((x.revisao || 0) + 1).padStart(2, "0")} em elaboração</span>}
           {x.etapa && <span style={s.tag(x.etapa === "elaboracao" ? C.warn : C.accent)}>✍ {x.etapa === "elaboracao" ? "Devolvido p/ ajuste" : ETAPA[x.etapa]}{x.etapa !== "elaboracao" && x.fluxo ? ` · ${(x.etapa === "verificacao" ? x.fluxo.verificador?.nome : x.fluxo.aprovador?.nome) || ""}` : ""}</span>}
           <div style={{ display: "flex", gap: 6 }}>
             <button type="button" onClick={() => abrir(x)} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.accent }}>👁 Ver</button>
@@ -257,13 +257,23 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
               <Toggle C={C} ligado={!!form.distribuicao} onChange={(v) => { setForm({ ...form, distribuicao: v ? { todos: true, funcoes: [] } : null }); if (v && !funcoes) apiService.get("/pessoas/funcoes").then((r) => setFuncoes(r.funcoes || [])).catch(() => setFuncoes([])); }} />
               <div style={{ fontSize: 13 }}><b>📣 Leitura obrigatória dos colaboradores</b><div style={{ fontSize: 11.5, color: C.muted }}>Aparece no app do colaborador (📘 Procedimentos) para confirmar "Li e entendi" — a cada nova revisão.</div></div>
             </div>
-            {form.distribuicao && <div style={{ marginTop: 8, fontSize: 12.5 }}>
-              <label style={{ marginRight: 14, cursor: "pointer" }}><input type="radio" checked={form.distribuicao.todos} onChange={() => setForm({ ...form, distribuicao: { todos: true, funcoes: [] } })} /> Todos</label>
-              <label style={{ cursor: "pointer" }}><input type="radio" checked={!form.distribuicao.todos} onChange={() => { setForm({ ...form, distribuicao: { todos: false, funcoes: [] } }); if (!funcoes) apiService.get("/pessoas/funcoes").then((r) => setFuncoes(r.funcoes || [])).catch(() => setFuncoes([])); }} /> Só estas funções:</label>
-              {!form.distribuicao.todos && <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginTop: 6 }}>{(funcoes || []).map((f) => { const on = (form.distribuicao.funcoes || []).map(String).includes(String(f.id));
-                return <button key={f.id} type="button" onClick={() => setForm({ ...form, distribuicao: { todos: false, funcoes: on ? form.distribuicao.funcoes.filter((x) => String(x) !== String(f.id)) : [...(form.distribuicao.funcoes || []), String(f.id)] } })}
-                  style={{ ...s.btn(on), padding: "4px 10px", fontSize: 12, cursor: "pointer", ...(on ? {} : { color: C.text }) }}>{on ? "✓ " : ""}{f.nome}</button>; })}{funcoes && !funcoes.length && <span style={{ color: C.muted }}>Nenhuma função cadastrada.</span>}{!funcoes && <span style={{ color: C.muted }}>Carregando funções…</span>}</div>}
-            </div>}
+            {form.distribuicao && (() => { // 18zz.3: Todos · ou setores (agrupam funções) + funções avulsas
+              const dist = form.distribuicao; const setores = [...new Set((funcoes || []).map((f) => String(f.setor || "").trim()).filter(Boolean))].sort((x, y) => x.localeCompare(y, "pt-BR"));
+              const tog = (k, v) => { const l = (dist[k] || []).map(String); const on = l.includes(String(v)); setForm({ ...form, distribuicao: { ...dist, todos: false, [k]: on ? l.filter((x) => x !== String(v)) : [...l, String(v)] } }); };
+              const chip = (on, txt, fn, key) => <button key={key} type="button" onClick={fn} style={{ ...s.btn(on), padding: "4px 10px", fontSize: 12, cursor: "pointer", ...(on ? {} : { color: C.text }) }}>{on ? "✓ " : ""}{txt}</button>;
+              const cobertas = (funcoes || []).filter((f) => (dist.funcoes || []).map(String).includes(String(f.id)) || (dist.setores || []).map((x) => x.toLowerCase()).includes(String(f.setor || "").trim().toLowerCase())).length;
+              return <div style={{ marginTop: 8, fontSize: 12.5 }}>
+                <label style={{ marginRight: 14, cursor: "pointer" }}><input type="radio" checked={!!dist.todos} onChange={() => setForm({ ...form, distribuicao: { todos: true, setores: [], funcoes: [] } })} /> Todos</label>
+                <label style={{ cursor: "pointer" }}><input type="radio" checked={!dist.todos} onChange={() => setForm({ ...form, distribuicao: { todos: false, setores: dist.setores || [], funcoes: dist.funcoes || [] } })} /> Escolher setores e/ou funções</label>
+                {!dist.todos && <>
+                  {!funcoes ? <div style={{ color: C.muted, marginTop: 6 }}>Carregando funções…</div> : <>
+                    <div style={{ fontSize: 11, color: C.muted, margin: "8px 0 4px", letterSpacing: "0.04em" }}>SETOR (TODAS AS FUNÇÕES DELE)</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{setores.length ? setores.map((x) => chip((dist.setores || []).map((y) => y.toLowerCase()).includes(x.toLowerCase()), x, () => tog("setores", x), x)) : <span style={{ color: C.muted }}>Nenhuma função tem setor — preencha em 👷 Pessoas → Funções.</span>}</div>
+                    <div style={{ fontSize: 11, color: C.muted, margin: "10px 0 4px", letterSpacing: "0.04em" }}>FUNÇÕES AVULSAS</div>
+                    <div style={{ display: "flex", flexWrap: "wrap", gap: 6 }}>{funcoes.map((f) => chip((dist.funcoes || []).map(String).includes(String(f.id)), `${f.nome}${f.setor ? ` · ${f.setor}` : ""}`, () => tog("funcoes", f.id), f.id))}</div>
+                    <div style={{ fontSize: 11.5, color: C.textSub, marginTop: 6 }}>Alcança {cobertas} de {funcoes.length} função(ões).</div></>}
+                </>}
+              </div>; })()}
           </div>
           {campo("NORMA / REFERÊNCIA (OPCIONAL)", inp("norma", { placeholder: "ISO 9001:2015 — 10.2" }), "1 1 100%")}
           {campo("TEXTO DO DOCUMENTO", <textarea disabled={travado} value={form.conteudo ?? ""} onChange={(e) => setForm({ ...form, conteudo: e.target.value })} rows={14} style={{ ...s.input, fontFamily: "inherit", lineHeight: 1.5, resize: "vertical" }} placeholder={"1. OBJETIVO\n…\n2. ABRANGÊNCIA\n…\n3. RESPONSABILIDADES\n…"} />, "1 1 100%")}
