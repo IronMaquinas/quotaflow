@@ -69,7 +69,7 @@ const ESPERADO = {
   'services/acessoSpot.js': '6ecce4d16d6b123c6ce93c1223b32f01', // etapa 10c (novo)
   'services/receitaCnpj.js': 'b0e2a678127403d5608723c21ec61b78', // etapa 14d.5
   'services/cadastroPublico.js': '750c29b11811b3ae3cdddad46da4fb8a', // etapa 18v
-  'front:App.jsx': '86fb9cbae606afc09616e6a75506584c', // etapa 18zz.5
+  'front:App.jsx': '340047879a05bdac7949ef2f0968dcfd', // etapa 18zz.15
   'front:TelaLogin.jsx': '742946c163f48c3a80f798f6077678c2', // etapa 18g.6
   'front:TelaSignup.jsx': '345dceefb937b38e74cfef44cfc33ef3', // etapa 11a.3
   'front:AvisoPlanoTenant.jsx': '2a75bbac9eaae456cc5d1b81d1dfbff8', // etapa 18v
@@ -377,9 +377,9 @@ const ESPERADO = {
   'front:RegistrarLeitura.jsx': 'bae540b8403a17bb34dffeec4f64824a', // etapa 18zz.14 (novo)
 };
 
-// Antes de copiar a etapa 18zz.14.1 — base: 18zz.14 (ce14ec6)
+// Antes de copiar a etapa 18zz.15 — base: 18zz.14.1 (8aad2dd)
 const ANTES = {
-  'front:AgingDocumentos.jsx': 'f4bd079d9be635d7c872fcf222b85c8e',
+  'front:App.jsx': '86fb9cbae606afc09616e6a75506584c',
 };
 
 const RAIZ = process.cwd();
@@ -417,7 +417,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zz.14.1)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a 18zz.15)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

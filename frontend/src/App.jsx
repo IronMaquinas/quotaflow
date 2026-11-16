@@ -1,4 +1,4 @@
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, Fragment } from "react";
 //import TelaCotacoesNova from "./components/cotacoes/TelaCotacoesNova";
 import TelaCotacoesNovaComAbas from "./components/cotacoes/TelaCotacoesNovaComAbas";
 import TelaChamadosNova from "./components/chamados/TelaChamadosNova";
@@ -445,43 +445,53 @@ const perfil = PERFIS[usuario.perfil] || {
   );
 
   // Nav items filtrados por perfil
+  // 18zz.15 (Marcony): menu do tenant em SEÇÕES (como o painel da plataforma) — ordem pelo fluxo do trabalho
   const navItems = [
-    {id:"home",          l:"Início",                  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro","comercial","fiscal"]},
-    {id:"comercial",     l:"📈 Comercial",            perfis:["admin","gestor","comercial"]}, // etapa 15a
-    {id:"programacao",   l:rotulo("programacao"),          perfis:["admin","gestor","operacao"]}, // etapa 16a
-    {id:"ordem_servico", l:"🛠️ Ordem de Serviço",    perfis:["admin","gestor","operacao","qualidade"]},
-    {id:"calendario",    l:"📅 Calendário",           perfis:["admin","gestor","comprador","operacao"]},
-    {id:"recebimento",   l:"📥 Recebimento",         perfis:["admin","gestor","comprador","operacao"]},
-    {id:"tecnico",       l:"🔧 Requisição de Compras",perfis:["admin","gestor","comprador","operacao"]},
-    {id:"compradora",    l:"📋 Compras",              perfis:["admin","gestor","comprador"]},
-    {id:"spot",          l:"⚡ Canal Spot",            perfis:["admin","gestor","comprador"]},
-    {id:"retirada",      l:"📤 Retirada",             perfis:["admin","gestor","comprador","operacao"]},
-    {id:"estoque",       l:"📦 Consumíveis",          perfis:["admin","gestor","comprador","operacao"]},
-    {id:"patio",         l:"📦 Propriedade do cliente", perfis:["admin","gestor","comprador","operacao"]}, // 18z
-    {id:"historico_estoque", l:"📜 Movimentações",    perfis:["admin","gestor","comprador"]},
-    {id:"aprovacoes",    l:"✅ Aprovações",           perfis:["admin","gestor"], badge: totalPendencias > 0 ? totalPendencias : null},
-    {id:"ordensvenda",   l:"📄 Ordens de Venda",      perfis:["admin","gestor","comprador"]},
-    {id:"plano",         l:`✅ Plano${tarefas.dados.filter(t=>t.status==="em_andamento").length>0?` (${tarefas.dados.filter(t=>t.status==="em_andamento").length})`:""}`, perfis:["admin","gestor","comprador","fiscal"]},
-    {id:"financeiro",    l:"💰 Financeiro",           perfis:["admin","gestor","financeiro"]},
-    {id:"relatorio",     l:"📄 Relatório",            perfis:["admin","gestor"]},
-    {id:"historico",     l:"📉 Histórico Preços",     perfis:["admin","gestor"]},
-    {id:"inteligencia",  l:"🧠 Inteligência",         perfis:["admin","gestor"]},
-    {id:"benchmark",     l:"📈 Benchmark",            perfis:["admin","gestor"]},
-    {id:"equipamentos",  l:rotulo("frota"),          perfis:["admin","gestor","comprador","operacao"]},
-    {id:"inspecoes",     l:"🔍 Inspeções",             perfis:["admin","gestor","comprador","operacao","qualidade"]}, // etapa 14a
-    {id:"contratos",     l:"📑 Contratos",             perfis:["admin","gestor","comprador","operacao","qualidade"]}, // etapa 14b.3
-    {id:"pessoas",       l:"👷 Pessoas",               perfis:["admin","gestor","qualidade","operacao"]},
-    {id:"documentos",    l:"📁 Documentos",            perfis:["admin","gestor","qualidade","operacao"]}, // 18zq: repositório por dono (pessoas · equipamentos · empresa)
-    {id:"minhas_viagens", l:rotulo("minhas_viagens"),  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro","comercial"]}, // etapa 17a.1 — motorista com outros perfis
-    {id:"meus_treinamentos", l:"🎓 Meus treinamentos",  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro","comercial"]}, // etapa 12e.2b
-    {id:"fornecedores",  l:"🏭 Fornecedores",         perfis:["admin","gestor","comprador"]},
-    {id:"monitor_cnpj",  l:"🛡 Monitor de CNPJs",     perfis:["admin","gestor","comprador"]}, // etapa 14e
-    {id:"portalfornecedor", l:"🏢 Portal Fornecedor", perfis:["admin","fornecedor"]},
-    {id:"catalogo",      l:"📦 Catálogo",             perfis:["admin","gestor","comprador","qualidade"]},
-    {id:"usuarios",      l:"👥 Usuários",             perfis:["admin"]},
-    {id:"nao_conformidades", l:"⚠️ Não Conformidades", perfis:["admin","gestor","operacao","qualidade"]},
-    {id:"configuracoes", l:"⚙️ Configurações",        perfis:["admin","gestor"]},
-    {id:"meu_plano",     l:"⭐ Meu plano",             perfis:["admin","gestor"]}, // 18j
+    // ── GERAL
+    {sec:"GERAL", id:"home",          l:"🏠 Início",                  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro","comercial","fiscal"]},
+    {sec:"GERAL", id:"aprovacoes",    l:"✅ Aprovações",           perfis:["admin","gestor"], badge: totalPendencias > 0 ? totalPendencias : null},
+    {sec:"GERAL", id:"plano",         l:`✅ Plano${tarefas.dados.filter(t=>t.status==="em_andamento").length>0?` (${tarefas.dados.filter(t=>t.status==="em_andamento").length})`:""}`, perfis:["admin","gestor","comprador","fiscal"]},
+    {sec:"GERAL", id:"calendario",    l:"📅 Calendário",           perfis:["admin","gestor","comprador","operacao"]},
+    // ── OPERAÇÃO
+    {sec:"OPERAÇÃO", id:"programacao",   l:rotulo("programacao"),          perfis:["admin","gestor","operacao"]}, // etapa 16a
+    {sec:"OPERAÇÃO", id:"ordem_servico", l:"🛠️ Ordem de Serviço",    perfis:["admin","gestor","operacao","qualidade"]},
+    {sec:"OPERAÇÃO", id:"equipamentos",  l:rotulo("frota"),          perfis:["admin","gestor","comprador","operacao"]},
+    {sec:"OPERAÇÃO", id:"inspecoes",     l:"🔍 Inspeções",             perfis:["admin","gestor","comprador","operacao","qualidade"]}, // etapa 14a
+    {sec:"OPERAÇÃO", id:"contratos",     l:"📑 Contratos",             perfis:["admin","gestor","comprador","operacao","qualidade"]}, // etapa 14b.3
+    {sec:"OPERAÇÃO", id:"patio",         l:"📦 Propriedade do cliente", perfis:["admin","gestor","comprador","operacao"]}, // 18z
+    // ── COMPRAS E ESTOQUE
+    {sec:"COMPRAS E ESTOQUE", id:"tecnico",       l:"🔧 Requisição de Compras",perfis:["admin","gestor","comprador","operacao"]},
+    {sec:"COMPRAS E ESTOQUE", id:"compradora",    l:"📋 Compras",              perfis:["admin","gestor","comprador"]},
+    {sec:"COMPRAS E ESTOQUE", id:"spot",          l:"⚡ Canal Spot",            perfis:["admin","gestor","comprador"]},
+    {sec:"COMPRAS E ESTOQUE", id:"recebimento",   l:"📥 Recebimento",         perfis:["admin","gestor","comprador","operacao"]},
+    {sec:"COMPRAS E ESTOQUE", id:"retirada",      l:"📤 Retirada",             perfis:["admin","gestor","comprador","operacao"]},
+    {sec:"COMPRAS E ESTOQUE", id:"estoque",       l:"📦 Consumíveis",          perfis:["admin","gestor","comprador","operacao"]},
+    {sec:"COMPRAS E ESTOQUE", id:"historico_estoque", l:"📜 Movimentações",    perfis:["admin","gestor","comprador"]},
+    {sec:"COMPRAS E ESTOQUE", id:"ordensvenda",   l:"📄 Ordens de Venda",      perfis:["admin","gestor","comprador"]},
+    {sec:"COMPRAS E ESTOQUE", id:"catalogo",      l:"📦 Catálogo",             perfis:["admin","gestor","comprador","qualidade"]},
+    {sec:"COMPRAS E ESTOQUE", id:"fornecedores",  l:"🏭 Fornecedores",         perfis:["admin","gestor","comprador"]},
+    {sec:"COMPRAS E ESTOQUE", id:"monitor_cnpj",  l:"🛡 Monitor de CNPJs",     perfis:["admin","gestor","comprador"]}, // etapa 14e
+    // ── QUALIDADE E PESSOAS
+    {sec:"QUALIDADE E PESSOAS", id:"nao_conformidades", l:"⚠️ Não Conformidades", perfis:["admin","gestor","operacao","qualidade"]},
+    {sec:"QUALIDADE E PESSOAS", id:"documentos",    l:"📁 Documentos",            perfis:["admin","gestor","qualidade","operacao"]}, // 18zq: repositório por dono (pessoas · equipamentos · empresa)
+    {sec:"QUALIDADE E PESSOAS", id:"pessoas",       l:"👷 Pessoas",               perfis:["admin","gestor","qualidade","operacao"]},
+    // ── COMERCIAL E FINANCEIRO
+    {sec:"COMERCIAL E FINANCEIRO", id:"comercial",     l:"📈 Comercial",            perfis:["admin","gestor","comercial"]}, // etapa 15a
+    {sec:"COMERCIAL E FINANCEIRO", id:"financeiro",    l:"💰 Financeiro",           perfis:["admin","gestor","financeiro"]},
+    // ── ANÁLISES
+    {sec:"ANÁLISES", id:"relatorio",     l:"📄 Relatório",            perfis:["admin","gestor"]},
+    {sec:"ANÁLISES", id:"historico",     l:"📉 Histórico Preços",     perfis:["admin","gestor"]},
+    {sec:"ANÁLISES", id:"inteligencia",  l:"🧠 Inteligência",         perfis:["admin","gestor"]},
+    {sec:"ANÁLISES", id:"benchmark",     l:"📈 Benchmark",            perfis:["admin","gestor"]},
+    // ── MEU ESPAÇO
+    {sec:"MEU ESPAÇO", id:"minhas_viagens", l:rotulo("minhas_viagens"),  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro","comercial"]}, // etapa 17a.1 — motorista com outros perfis
+    {sec:"MEU ESPAÇO", id:"meus_treinamentos", l:"🎓 Meus treinamentos",  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro","comercial"]}, // etapa 12e.2b
+    // ── FORNECEDOR
+    {sec:"FORNECEDOR", id:"portalfornecedor", l:"🏢 Portal Fornecedor", perfis:["admin","fornecedor"]},
+    // ── ADMINISTRAÇÃO
+    {sec:"ADMINISTRAÇÃO", id:"usuarios",      l:"👥 Usuários",             perfis:["admin"]},
+    {sec:"ADMINISTRAÇÃO", id:"configuracoes", l:"⚙️ Configurações",        perfis:["admin","gestor"]},
+    {sec:"ADMINISTRAÇÃO", id:"meu_plano",     l:"⭐ Meu plano",             perfis:["admin","gestor"]}, // 18j
   ].filter(n => {
     // M4.5: multi-perfil. `usuario.perfis` é array (do backend). Cai pro
     // `usuario.perfil` (singular) quando não vier — compat com login antigo.
@@ -517,9 +527,9 @@ const perfil = PERFIS[usuario.perfil] || {
           </div>
 
           {/* Navegação */}
-          {navItems.map(t => (
+          {navItems.map((t, i) => (<Fragment key={t.id}>
+            {(i === 0 || navItems[i - 1].sec !== t.sec) && <div style={{ fontSize: 10, fontWeight: 700, letterSpacing: "0.09em", color: C.muted, opacity: 0.75, padding: i === 0 ? "0 14px 4px" : "12px 14px 4px" }}>{t.sec}</div>}
             <button
-              key={t.id}
               onClick={() => navegar(t.id)}
               style={{
                 background: tela === t.id ? "#1e2a3f" : "transparent",
@@ -558,7 +568,7 @@ const perfil = PERFIS[usuario.perfil] || {
                 </span>
               )}
             </button>
-          ))}
+          </Fragment>))}
 
           {/* Espaçador para empurrar o logout para baixo */}
           <div style={{ flex: 1 }} />
