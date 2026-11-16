@@ -293,6 +293,11 @@ const pessoasDG = async (req) => { const N = require('../services/notificacoes')
   const ap = (await N.usuariosComPerfis(supabase, req.tenantId, APROVAR_DG)).map((u) => ({ id: u.id, nome: u.nome || u.email }));
   const ve = (await N.usuariosComPerfis(supabase, req.tenantId, VER)).map((u) => ({ id: u.id, nome: u.nome || u.email }));
   return { aprovadores: ap, verificadores: ve }; };
+router.post('/gestao-alcance', exigirVer, async (req, res) => { try { res.json(await DG.previaAlcance(supabase, req.tenantId, req.body?.distribuicao)); } catch (err) { errDG(res, err, 'gestao-alcance'); } }); // 18zz.4
+router.get('/gestao-para-mim', exigirVer, async (req, res) => { // 18zz.4: documentos que o LOGADO (gestor, qualidade…) precisa ler
+  try { const col = (await q(supabase.from('colaboradores').select('*').eq('tenant_id', req.tenantId).eq('usuario_id', req.userId)))[0];
+    res.json({ documentos: col ? (await DG.meusProcedimentos(supabase, req.tenantId, col, req.userId)).filter((d) => !d.lido_em) : [] }); } catch (err) { errDG(res, err, 'gestao-para-mim'); }
+});
 router.get('/gestao-pessoas', exigirVer, async (req, res) => { try { res.json({ ...(await pessoasDG(req)), eu: req.userId }); } catch (err) { errDG(res, err, 'gestao-pessoas'); } });
 router.post('/gestao/:id/enviar', exigirEditar, async (req, res) => {
   try { const { aprovadores, verificadores } = await pessoasDG(req); const b = req.body || {};
@@ -573,7 +578,7 @@ router.get('/colaboradores/:id/ficha', exigirVer, async (req, res) => {
     if (!c) return res.status(404).json({ erro: 'Colaborador não encontrado' });
     // 18zz: tudo em PARALELO (antes eram ~8 consultas em fila — a ficha demorava e parecia que o clique não tinha pegado)
     const tenta = (fn, padrao, ignora) => fn().catch((e) => { if (ignora.test(String(e?.message || ''))) return padrao; throw e; });
-    const [fichas, bEpi, bK, bTr, histTr, disc, mult] = await Promise.all([
+    const [fichas, bEpi, bK, bTr, histTr, disc, mult, procs] = await Promise.all([
       F.fichasDoTenant(supabase, req.tenantId, [c]),
       tenta(() => EE.carregarBase(supabase, req.tenantId), null, /epi_|tam_/),
       tenta(() => K.carregarBase(supabase, req.tenantId), null, /colaborador_competencias/),
@@ -581,6 +586,7 @@ router.get('/colaboradores/:id/ficha', exigirVer, async (req, res) => {
       tenta(() => TR.historico(supabase, req.tenantId, c.id), null, /treinamento/),
       podeEditar(req) ? DI.listar(supabase, req.tenantId, { colaboradorId: c.id }).catch(() => undefined) : Promise.resolve(null),
       MU.listar(supabase, req.tenantId, { colaboradorId: c.id }).catch(() => undefined),
+      DG.meusProcedimentos(supabase, req.tenantId, c, c.usuario_id).catch(() => null), // 18zz.5: 📣 leituras pendentes (informativo, fora do %)
     ]);
     const f = fichas.get(String(c.id));
     let epi = null; try { if (bEpi) epi = EE.statusColaborador(c, bEpi); } catch (e) { if (!/epi_|tam_/.test(String(e.message))) throw e; }
@@ -593,6 +599,7 @@ router.get('/colaboradores/:id/ficha', exigirVer, async (req, res) => {
       competencias: comp ? { itens: comp.itens, resumo: comp.resumo } : null,
       disciplinar: disc ? { lista: disc.slice(0, 20), resumo: DI.resumoColaborador(disc) } : null, // 12h (LGPD: só quem edita) · 18zz: veio do Promise.all
       multas: mult ? { lista: mult.slice(0, 20), resumo: MU.resumoColaborador(mult) } : null, // 12g · 18zz
+      leituras: procs ? { total: procs.length, sem_login: !c.usuario_id, pendentes: procs.filter((d) => !d.lido_em).map((d) => ({ id: d.id, codigo: d.codigo, titulo: d.titulo, revisao: d.revisao })) } : null,
       colaborador_comp: { escolaridade: c.escolaridade ?? null, cnh_categoria: c.cnh_categoria ?? null },
       colaborador: { id: c.id, nome: c.nome, situacao: c.situacao, funcao_id: c.funcao_id, funcao: c.funcao },
       funcao: f.funcao ? { id: f.funcao.id, nome: f.funcao.nome, descritivo: f.funcao.descritivo, requisitos: f.funcao.requisitos, cbo: f.funcao.cbo || null, setor: f.funcao.setor || null, escolaridade: f.funcao.escolaridade || null, riscos: f.funcao.riscos || [], responde_a: f.funcao.responde_a || null } : null,

@@ -846,6 +846,16 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
                 <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }}>💡 Próxima sugerida: {ficha.disciplinar.resumo.sugestao.tipo === "orientacao" ? "orientação" : ficha.disciplinar.resumo.sugestao.tipo === "advertencia" ? "advertência escrita" : ficha.disciplinar.resumo.sugestao.tipo === "suspensao" ? "suspensão" : "avaliar justa causa com o jurídico"} — {ficha.disciplinar.resumo.sugestao.motivo}. Detalhes: aba ⚖ Disciplinar.</div>
               </div>
             )}
+            {ficha.leituras && ficha.leituras.pendentes.length > 0 && ( /* 18zz.5: 📣 informativo — não entra no % */
+              <div style={{ ...s.card, padding: 12, marginTop: 12, borderColor: "#8b5cf6" }}>
+                <div style={{ fontSize: 14, fontWeight: 700 }}>📣 Leituras pendentes: {ficha.leituras.pendentes.length}<span style={{ fontWeight: 400, fontSize: 12, color: C.textSub }}> de {ficha.leituras.total} procedimento(s) distribuído(s) · informativo, não entra no %</span></div>
+                {ficha.leituras.sem_login && <div style={{ fontSize: 12, color: C.warn, marginTop: 4 }}>Sem login no app — não tem como confirmar a leitura. Crie o acesso em Acesso.</div>}
+                {ficha.leituras.pendentes.map((d) => (
+                  <button key={d.id} type="button" onClick={() => { setFicha(null); window.qfAbrirGestaoDoc = d.id; if (modo === "documentos") { setAba("documentos"); setAbaDoc("gestao"); } else { window.qfDocsAba = "gestao"; window.dispatchEvent(new CustomEvent("qf-ir-tela", { detail: "documentos" })); } }}
+                    style={{ display: "block", background: "none", border: "none", padding: "5px 0", color: C.accent, cursor: "pointer", fontSize: 13, textAlign: "left" }}>📘 {d.codigo} — {d.titulo} <span style={{ color: C.muted }}>(rev. {d.revisao}) ›</span></button>
+                ))}
+              </div>
+            )}
             {ficha.multas && ficha.multas.lista.length > 0 && ( /* 12g */
               <div style={{ marginTop: 14 }}>
                 <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>🚦 Multas

@@ -19,16 +19,18 @@ function validar(body, parcial = false) {
   for (const k of ['aprovado_em', 'proxima_revisao']) if (tem(k)) { if (body[k] && !DATA.test(String(body[k]))) erros.push('Data inválida'); else out[k] = body[k] || null; }
   for (const [k, n] of [['area', 80], ['elaborado_por', 120], ['aprovado_por', 120], ['norma', 120]]) if (tem(k)) out[k] = txt(body[k], n);
   if (tem('conteudo')) out.conteudo = body.conteudo ? String(body.conteudo).slice(0, 200000) : null;
-  if (tem('distribuicao')) { // 18zz.2 · 18zz.3: + setores (agrupa funções: Operação, Logística, Qualidade…)
-    const x = body.distribuicao; const fs = [...new Set((x?.funcoes || []).map(String))].slice(0, 200); const ss = [...new Set((x?.setores || []).map((v) => String(v).trim()).filter(Boolean))].slice(0, 50);
-    out.distribuicao = !x || (!x.todos && !fs.length && !ss.length) ? null : { todos: !!x.todos, setores: x.todos ? [] : ss, funcoes: x.todos ? [] : fs }; }
+  if (tem('distribuicao')) { // 18zz.2 · 18zz.4 (Marcony): Todos · PERFIS de acesso · FUNÇÕES (o "setor" da 18zz.3 saiu)
+    const x = body.distribuicao; const PERF = ['admin', 'gestor', 'comprador', 'operacao', 'qualidade', 'financeiro', 'comercial', 'fiscal', 'colaborador'];
+    const fs = [...new Set((x?.funcoes || []).map(String))].slice(0, 300); const ps = [...new Set((x?.perfis || []).map(String))].filter((p) => PERF.includes(p));
+    out.distribuicao = !x || (!x.todos && !fs.length && !ps.length) ? null : { todos: !!x.todos, perfis: x.todos ? [] : ps, funcoes: x.todos ? [] : fs }; }
   return { erros, dados: out };
 }
 
 async function listar(supabase, tenantId) {
   const l = await q(supabase.from('documentos_gestao').select('*').eq('tenant_id', tenantId));
+  const cont = await contagens(supabase, tenantId, l).catch(() => new Map()); // 18zz.4
   const hoje = new Date(Date.now() - 3 * 36e5).toISOString().slice(0, 10);
-  return l.map(({ conteudo, rascunho, ...d }) => ({ ...d, etapa: d.fluxo?.etapa || null, com: d.fluxo?.etapa === 'verificacao' ? d.fluxo.verificador?.id : d.fluxo?.etapa === 'aprovacao' ? d.fluxo.aprovador?.id : null, em_revisao: !!rascunho, rascunho_motivo: rascunho?.motivo || null, tem_conteudo: !!conteudo, tem_arquivo: !!d.arquivo_path, revisar: d.status === 'vigente' && d.proxima_revisao && d.proxima_revisao <= hoje }))
+  return l.map(({ conteudo, rascunho, ...d }) => ({ ...d, leitura: cont.get(String(d.id)) || null, etapa: d.fluxo?.etapa || null, com: d.fluxo?.etapa === 'verificacao' ? d.fluxo.verificador?.id : d.fluxo?.etapa === 'aprovacao' ? d.fluxo.aprovador?.id : null, em_revisao: !!rascunho, rascunho_motivo: rascunho?.motivo || null, tem_conteudo: !!conteudo, tem_arquivo: !!d.arquivo_path, revisar: d.status === 'vigente' && d.proxima_revisao && d.proxima_revisao <= hoje }))
     .sort((a, b) => String(a.codigo).localeCompare(String(b.codigo), 'pt-BR', { numeric: true }));
 }
 async function obter(supabase, tenantId, id) { return (await q(supabase.from('documentos_gestao').select('*').eq('tenant_id', tenantId).eq('id', id)))[0] || null; }
@@ -258,27 +260,49 @@ function conferirAssinatura(d) {
 }
 
 // ─── 18zz.2: 📣 DISTRIBUIÇÃO PARA OS COLABORADORES (leitura obrigatória no app) ───────────────────────────────────────
-// alcança: todos · OU o SETOR da função dele está na lista · OU a função dele está na lista (setorDe: id da função → setor)
-const norm = (v) => String(v || '').trim().toLowerCase();
-const alcanca = (dist, col, setorDe = null) => !!dist && (dist.todos || (dist.funcoes || []).map(String).includes(String(col?.funcao_id ?? ''))
-  || (!!setorDe && (dist.setores || []).map(norm).includes(norm(setorDe.get(String(col?.funcao_id ?? ''))))));
-async function mapaSetores(supabase, tenantId) { try { return new Map((await q(supabase.from('funcoes').select('*').eq('tenant_id', tenantId))).map((f) => [String(f.id), f.setor || ''])); } catch { return new Map(); } }
+// alcança (por COLABORADOR ativo = o "funcionário"): todos · OU a função dele está na lista · OU o login ligado a ele tem um dos
+//   perfis marcados (colaborador sem login só entra por "todos"/função — e aparece como "sem login" na contagem)
+const alcanca = (dist, col, perfisDe = null) => !!dist && (dist.todos || (dist.funcoes || []).map(String).includes(String(col?.funcao_id ?? ''))
+  || (!!perfisDe && !!col?.usuario_id && (perfisDe.get(String(col.usuario_id)) || []).some((p) => (dist.perfis || []).includes(p))));
+async function mapaPerfis(supabase, tenantId) {
+  try { return new Map((await q(supabase.from('usuarios').select('*').eq('tenant_id', tenantId))).filter((u) => u.ativo !== false)
+    .map((u) => [String(u.id), Array.isArray(u.perfis) && u.perfis.length ? u.perfis : [u.perfil].filter(Boolean)])); } catch { return new Map(); }
+}
+/** quem precisa ler: colaboradores ativos alcançados (com/sem login) */
+async function alvo(supabase, tenantId, dist, ctx = null) {
+  if (!dist) return [];
+  const perfisDe = ctx?.perfisDe || await mapaPerfis(supabase, tenantId);
+  const cols = ctx?.cols || await q(supabase.from('colaboradores').select('*').eq('tenant_id', tenantId));
+  return cols.filter((c) => c.situacao !== 'desligado' && alcanca(dist, c, perfisDe)).map((c) => ({ id: c.id, nome: c.nome, usuario_id: c.usuario_id || null, sem_login: !c.usuario_id }));
+}
 /** documentos vigentes distribuídos para este colaborador, com "já li a revisão atual?" */
 async function meusProcedimentos(supabase, tenantId, col, usuarioId) {
-  const st = await mapaSetores(supabase, tenantId);
-  const l = (await q(supabase.from('documentos_gestao').select('*').eq('tenant_id', tenantId))).filter((d) => d.status === 'vigente' && alcanca(d.distribuicao, col, st));
+  const pd = await mapaPerfis(supabase, tenantId);
+  const l = (await q(supabase.from('documentos_gestao').select('*').eq('tenant_id', tenantId))).filter((d) => d.status === 'vigente' && alcanca(d.distribuicao, col, pd));
   const lei = l.length ? await q(supabase.from('documentos_gestao_leituras').select('*').eq('tenant_id', tenantId)).catch(() => []) : [];
   return l.map(({ conteudo, rascunho, fluxo, ...d }) => ({ id: d.id, codigo: d.codigo, titulo: d.titulo, tipo: d.tipo, revisao: d.revisao, aprovado_em: d.aprovado_em,
     lido_em: lei.find((x) => String(x.documento_id) === String(d.id) && Number(x.revisao) === Number(d.revisao) && String(x.usuario_id) === String(usuarioId))?.lido_em || null }))
     .sort((a, b) => (a.lido_em ? 1 : 0) - (b.lido_em ? 1 : 0) || String(a.codigo).localeCompare(String(b.codigo), 'pt-BR', { numeric: true }));
 }
-/** quem deveria ler (colaboradores ativos COM login alcançados) × quem já leu a revisão atual */
-async function destinatarios(supabase, tenantId, d) {
+/** quem deveria ler × quem já leu a revisão atual — { total, lidos:[{nome,em}], pendentes:[{nome,sem_login}] } */
+async function destinatarios(supabase, tenantId, d, ctx = null) {
   if (!d?.distribuicao) return null;
-  const st = await mapaSetores(supabase, tenantId);
-  const cols = (await q(supabase.from('colaboradores').select('*').eq('tenant_id', tenantId))).filter((c) => c.usuario_id && c.situacao !== 'desligado' && alcanca(d.distribuicao, c, st));
-  const lei = (await leituras(supabase, tenantId, d.id, d.revisao)).map((x) => String(x.usuario_id));
-  return { total: cols.length, pendentes: cols.filter((c) => !lei.includes(String(c.usuario_id))).map((c) => c.nome) };
+  const pessoas = await alvo(supabase, tenantId, d.distribuicao, ctx);
+  const lei = ctx?.leituras ? ctx.leituras.filter((x) => String(x.documento_id) === String(d.id) && Number(x.revisao) === Number(d.revisao)) : await leituras(supabase, tenantId, d.id, d.revisao);
+  const leu = (p) => p.usuario_id && lei.find((x) => String(x.usuario_id) === String(p.usuario_id));
+  return { total: pessoas.length, lidos: pessoas.filter(leu).map((p) => ({ nome: p.nome, em: leu(p).lido_em })), pendentes: pessoas.filter((p) => !leu(p)).map((p) => ({ nome: p.nome, sem_login: p.sem_login })) };
+}
+/** 🔢 prévia: quantos funcionários uma distribuição alcança (enquanto escolhe) */
+async function previaAlcance(supabase, tenantId, distribuicao) {
+  const { dados } = validar({ distribuicao }, true); const p = await alvo(supabase, tenantId, dados.distribuicao);
+  return { total: p.length, sem_login: p.filter((x) => x.sem_login).length };
+}
+/** contagem lidos/esperados para a LISTA (uma consulta de cada tabela para todos os documentos) */
+async function contagens(supabase, tenantId, docs) {
+  const dist = docs.filter((d) => d.status === 'vigente' && d.distribuicao); if (!dist.length) return new Map();
+  const [perfisDe, cols, lei] = await Promise.all([mapaPerfis(supabase, tenantId), q(supabase.from('colaboradores').select('*').eq('tenant_id', tenantId)), q(supabase.from('documentos_gestao_leituras').select('*').eq('tenant_id', tenantId)).catch(() => [])]);
+  const out = new Map(); for (const d of dist) { const r = await destinatarios(supabase, tenantId, d, { perfisDe, cols, leituras: lei }); out.set(String(d.id), { esperados: r.total, lidos: r.lidos.length }); }
+  return out;
 }
 
-module.exports = { mapaSetores, alcanca, meusProcedimentos, destinatarios, ETAPA, enviarFluxo, verificarFluxo, devolverFluxo, aprovarFluxo, conferirAssinatura, emPauta, biblioteca, importarModelo, publicar, preencher, salvarRascunho, descartarRascunho, aprovarRevisao, versoes, confirmarLeitura, leituras, TIPOS, STATUS, validar, listar, obter, criar, atualizar, excluir };
+module.exports = { mapaPerfis, alvo, previaAlcance, contagens, alcanca, meusProcedimentos, destinatarios, ETAPA, enviarFluxo, verificarFluxo, devolverFluxo, aprovarFluxo, conferirAssinatura, emPauta, biblioteca, importarModelo, publicar, preencher, salvarRascunho, descartarRascunho, aprovarRevisao, versoes, confirmarLeitura, leituras, TIPOS, STATUS, validar, listar, obter, criar, atualizar, excluir };

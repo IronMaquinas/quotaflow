@@ -15,6 +15,18 @@ async function eu(req, res) {
 }
 const falha = (res, err) => { if (/distribuicao|documentos_gestao/.test(String(err?.message || ''))) return res.json({ documentos: [], sem_tabela: true }); console.error('❌ [meus-procedimentos]', err.message); res.status(err.status || 500).json({ erro: err.status ? err.message : 'Erro ao carregar os procedimentos' }); };
 
+// 18zz.5: pode ler se foi distribuído para ele OU se um treinamento em que ele está inscrito cita o documento ("Leia também")
+async function podeLer(req, d, col) {
+  if (DG.alcanca(d.distribuicao, col, await DG.mapaPerfis(supabase, req.tenantId))) return true;
+  try {
+    const ps = (await supabase.from('treinamento_participacoes').select('*').eq('tenant_id', req.tenantId).eq('colaborador_id', col.id)).data || [];
+    if (!ps.length) return false;
+    const ts = (await supabase.from('treinamento_turmas').select('*').eq('tenant_id', req.tenantId).in('id', ps.map((p) => p.turma_id))).data || [];
+    const trs = ts.length ? (await supabase.from('treinamentos').select('*').eq('tenant_id', req.tenantId).in('id', ts.map((t) => t.treinamento_id))).data || [] : [];
+    return trs.some((t) => (t.procedimentos || []).map(String).includes(String(d.id)));
+  } catch { return false; }
+}
+
 router.get('/', async (req, res) => {
   try { const col = await eu(req, res); if (!col) return; res.json({ documentos: await DG.meusProcedimentos(supabase, req.tenantId, col, req.userId) }); } catch (err) { falha(res, err); }
 });
@@ -22,7 +34,7 @@ router.get('/:id', async (req, res) => {
   try {
     const col = await eu(req, res); if (!col) return;
     const d = await DG.obter(supabase, req.tenantId, req.params.id);
-    if (!d || d.status !== 'vigente' || !DG.alcanca(d.distribuicao, col, await DG.mapaSetores(supabase, req.tenantId))) return res.status(404).json({ erro: 'Documento não disponível para você' });
+    if (!d || d.status !== 'vigente' || !(await podeLer(req, d, col))) return res.status(404).json({ erro: 'Documento não disponível para você' });
     const lido = (await DG.leituras(supabase, req.tenantId, d.id, d.revisao)).some((x) => String(x.usuario_id) === String(req.userId));
     const { rascunho, fluxo, ...doc } = d;
     res.json({ documento: { ...doc, arquivo_url: d.arquivo_path ? await D.linkArquivo(supabase, d.arquivo_path) : null, assinatura: DG.conferirAssinatura(d) }, lido });
@@ -32,7 +44,7 @@ router.post('/:id/leitura', async (req, res) => {
   try {
     const col = await eu(req, res); if (!col) return;
     const d = await DG.obter(supabase, req.tenantId, req.params.id);
-    if (!d || d.status !== 'vigente' || !DG.alcanca(d.distribuicao, col, await DG.mapaSetores(supabase, req.tenantId))) return res.status(404).json({ erro: 'Documento não disponível para você' });
+    if (!d || d.status !== 'vigente' || !(await podeLer(req, d, col))) return res.status(404).json({ erro: 'Documento não disponível para você' });
     res.json(await DG.confirmarLeitura(supabase, req.tenantId, d.id, { usuarioId: req.userId, usuarioNome: col.nome }));
   } catch (err) { falha(res, err); }
 });

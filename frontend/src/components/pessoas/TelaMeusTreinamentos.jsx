@@ -7,6 +7,7 @@ import AulaEProva, { ListaMeusTreinamentos, CORES, card, baixarCertificado } fro
 
 const api = {
   abrir: (t) => apiService.get(`/meus-treinamentos/${t}`),
+  irProcedimento: (id) => { window.qfAbrirProcedimento = id; window.dispatchEvent(new CustomEvent("qf-colab-aba", { detail: "procedimentos" })); }, // 18zz.5
   material: (t, i) => apiService.get(`/meus-treinamentos/${t}/material/${i}`),
   prova: (t, respostas) => apiService.post(`/meus-treinamentos/${t}/prova`, { respostas }),
   concluir: (t) => apiService.post(`/meus-treinamentos/${t}/concluir`, {}),

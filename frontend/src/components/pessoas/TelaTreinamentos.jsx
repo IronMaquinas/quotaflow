@@ -73,6 +73,9 @@ export default function TelaTreinamentos({ C, s, modal, campo, colabs = [], onAv
     finally { setSalvando(false); }
   };
   useEffect(() => { carregar(); }, []); // eslint-disable-line
+  const [docsG, setDocsG] = useState(null); // 18zz.5: 📘 procedimentos vigentes para citar
+  useEffect(() => { if (formTr && !docsG) apiService.get("/pessoas/gestao").then((r) => setDocsG((r.documentos || []).filter((d) => d.status === "vigente"))).catch(() => setDocsG([])); }, [formTr]); // eslint-disable-line
+  const irDoc = (id) => { window.qfDocsAba = "gestao"; window.qfAbrirGestaoDoc = id; window.dispatchEvent(new CustomEvent("qf-ir-tela", { detail: "documentos" })); };
   const recarregarTudo = async () => { await carregar(); onMudou?.(); };
 
   const treinos = cat?.treinamentos || [];
@@ -138,7 +141,7 @@ export default function TelaTreinamentos({ C, s, modal, campo, colabs = [], onAv
   const salvarTr = async () => {
     setSalvando(true);
     try {
-      const f = formTr; const corpo = { nome: f.nome, norma: f.norma, carga_horaria: f.carga_horaria, validade_meses: f.validade_meses, tipo: f.tipo, conteudo: f.conteudo, ...limparConteudo(f) };
+      const f = formTr; const corpo = { nome: f.nome, norma: f.norma, carga_horaria: f.carga_horaria, validade_meses: f.validade_meses, tipo: f.tipo, conteudo: f.conteudo, ...limparConteudo(f), ...(f.procedimentos ? { procedimentos: f.procedimentos } : {}) };
       if (f.id) await apiService.put(`/pessoas/treinamentos/${f.id}`, corpo); else await apiService.post("/pessoas/treinamentos", corpo);
       setFormTr(null); onAviso("Treinamento salvo."); await recarregarTudo();
     } catch (e) { onErro(e.message); }
@@ -278,9 +281,10 @@ export default function TelaTreinamentos({ C, s, modal, campo, colabs = [], onAv
                 </div>
                 {t.origem_id != null && <span style={s.tag(C.accent)} title="Veio da biblioteca do QuotaFlow">📚 QuotaFlow</span>}
                 {(t.secoes || []).length > 0 && <span style={s.tag("#64748b")}>📖 {t.secoes.length} seç.{t.secoes.some((x) => x.video_url) ? " · 🎬" : ""}</span>}
+                {(t.procedimentos || []).length > 0 && <span style={s.tag("#8b5cf6")} title="Procedimentos citados como material de apoio">📘 {t.procedimentos.length} proc.</span>}
                 {t.prova?.perguntas?.length > 0 && <span style={s.tag("#22c55e")}>📝 prova ({t.prova.perguntas.length})</span>}
                 {editar && t.versao_nova && <button onClick={() => setConfirmar({ titulo: "Atualizar da biblioteca", texto: `Trazer a versão nova de “${t.nome}”? O conteúdo, a prova e a carga horária ficam iguais aos do QuotaFlow (o que você mudou aqui é substituído). Turmas já feitas não mudam.`, botao: "Atualizar", acao: async () => { await apiService.post(`/pessoas/treinamentos/${t.id}/atualizar`); return "Treinamento atualizado com a versão nova."; } })} style={{ ...s.btn(true, "#f59e0b"), cursor: "pointer", padding: "5px 10px", fontSize: 12 }}>✨ Versão nova</button>}
-                {editar && <button onClick={() => setFormTr({ id: t.id, nome: t.nome, norma: t.norma || "", carga_horaria: t.carga_horaria ?? "", validade_meses: t.validade_meses ?? "", tipo: t.tipo || "regulatorio", conteudo: t.conteudo || "", secoes: t.secoes || [], prova: t.prova || null })} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.text }}>Editar</button>}
+                {editar && <button onClick={() => setFormTr({ id: t.id, nome: t.nome, norma: t.norma || "", carga_horaria: t.carga_horaria ?? "", validade_meses: t.validade_meses ?? "", tipo: t.tipo || "regulatorio", conteudo: t.conteudo || "", secoes: t.secoes || [], prova: t.prova || null, ...(t.procedimentos ? { procedimentos: t.procedimentos } : {}) })} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.text }}>Editar</button>}
                 {editar && <button onClick={() => setConfirmar({ titulo: "Tirar do catálogo", texto: `“${t.nome}” deixa de aparecer para novas turmas. O histórico das turmas já feitas fica.`, acao: async () => { await apiService.delete(`/pessoas/treinamentos/${t.id}`); return "Treinamento retirado do catálogo."; } })} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.danger }}>Tirar</button>}
               </div>
             ))}
@@ -300,6 +304,20 @@ export default function TelaTreinamentos({ C, s, modal, campo, colabs = [], onAv
           </div>
           {campo("TIPO", <select value={formTr.tipo} onChange={(e) => setFormTr({ ...formTr, tipo: e.target.value })} style={s.input}>{Object.entries(TIPO).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>)}
           {campo("CONTEÚDO PROGRAMÁTICO (RESUMO — VAI NA LISTA DE PRESENÇA)", <textarea rows={3} value={formTr.conteudo} onChange={(e) => setFormTr({ ...formTr, conteudo: e.target.value })} style={{ ...s.input, resize: "vertical" }} />)}
+          {campo("📘 PROCEDIMENTOS DE APOIO (LEIA TAMBÉM)", <div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 6, marginBottom: 6 }}>
+              {(formTr.procedimentos || []).map((id) => { const d = (docsG || []).find((x) => String(x.id) === String(id)); return (
+                <span key={id} style={{ ...s.tag("#8b5cf6"), display: "inline-flex", gap: 6, alignItems: "center" }}>
+                  {d ? `${d.codigo} — ${d.titulo}` : docsG ? "documento fora de vigência" : "…"}
+                  <button type="button" aria-label="Tirar" onClick={() => setFormTr((f) => ({ ...f, procedimentos: (f.procedimentos || []).filter((x) => String(x) !== String(id)) }))} style={{ background: "none", border: "none", color: "inherit", cursor: "pointer", padding: 0, fontSize: 14 }}>×</button>
+                </span>); })}
+              {!(formTr.procedimentos || []).length && <span style={{ fontSize: 12, color: C.muted }}>Nenhum — o colaborador vê os citados na aula, com link para ler.</span>}
+            </div>
+            <select value="" onChange={(e) => { const v = e.target.value; if (v) setFormTr((f) => ({ ...f, procedimentos: [...new Set([...(f.procedimentos || []).map(String), v])].map(Number) })); }} style={s.input} disabled={!docsG || (formTr.procedimentos || []).length >= 10}>
+              <option value="">{docsG ? (docsG.length ? "+ Citar procedimento vigente…" : "Nenhum documento vigente em 📁 Documentos → 📘 Gestão") : "Carregando…"}</option>
+              {(docsG || []).filter((d) => !(formTr.procedimentos || []).map(String).includes(String(d.id))).map((d) => <option key={d.id} value={d.id}>{d.codigo} — {d.titulo}</option>)}
+            </select>
+          </div>)}
           <EditorConteudoTreinamento secoes={formTr.secoes || []} prova={formTr.prova} onChange={(v) => setFormTr((f) => ({ ...f, ...v }))}
             onEnviarPdf={async (base64, nome) => apiService.post("/pessoas/treinamentos/material", { base64, nome })}
             onVerPdf={async (path) => (await apiService.get(`/pessoas/treinamentos/material?path=${encodeURIComponent(path)}`))?.url}

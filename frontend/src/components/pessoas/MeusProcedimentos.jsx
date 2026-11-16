@@ -10,7 +10,7 @@ const rev = (n) => `Rev. ${String(n ?? 0).padStart(2, "0")}`;
 export default function MeusProcedimentos({ C, s }) {
   const [l, setL] = useState(null); const [erro, setErro] = useState(null); const [ver, setVer] = useState(null); const [arq, setArq] = useState(null); const [ocup, setOcup] = useState(false);
   const carregar = () => apiService.get("/meus-procedimentos").then((r) => setL(r.documentos || [])).catch((e) => setErro(e.message));
-  useEffect(() => { carregar(); }, []);
+  useEffect(() => { carregar(); const id = window.qfAbrirProcedimento; window.qfAbrirProcedimento = null; if (id) abrir({ id }); }, []); // eslint-disable-line -- 18zz.5: veio do "Leia também"
   const abrir = async (d) => { try { setVer(await apiService.get(`/meus-procedimentos/${d.id}`)); } catch (e) { setErro(e.message); } };
   const li = async () => { setOcup(true); try { await apiService.post(`/meus-procedimentos/${ver.documento.id}/leitura`, {}); setVer({ ...ver, lido: true }); carregar(); } catch (e) { setErro(e.message); } finally { setOcup(false); } };
   const pend = (l || []).filter((d) => !d.lido_em).length;

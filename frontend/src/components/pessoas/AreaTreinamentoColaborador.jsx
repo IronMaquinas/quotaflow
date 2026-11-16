@@ -99,6 +99,14 @@ export default function AulaEProva({ api, turmaId, onVoltar, onMudou }) {
       {/* ─── conteúdo ─── */}
       {modo !== "prova" && (<>
         {d.conteudo && <div style={{ fontSize: 13, color: C.textSub, marginBottom: 12 }}>{d.conteudo}</div>}
+        {(d.procedimentos || []).length > 0 && ( /* 18zz.5: 📘 leia também */
+          <div style={{ ...card, padding: 12, marginBottom: 12 }}>
+            <div style={{ fontSize: 13, fontWeight: 700, marginBottom: 6 }}>📘 Leia também</div>
+            {d.procedimentos.map((p) => api.irProcedimento
+              ? <button key={p.id} type="button" onClick={() => api.irProcedimento(p.id)} style={{ display: "block", background: "none", border: "none", padding: "4px 0", color: C.accent, cursor: "pointer", fontSize: 13, textAlign: "left" }}>{p.codigo} — {p.titulo} ›</button>
+              : <div key={p.id} style={{ fontSize: 13, padding: "4px 0" }}>{p.codigo} — {p.titulo}</div>)}
+          </div>
+        )}
         {d.secoes.map((sec) => {
           const emb = embedVideo(sec.video_url);
           return (

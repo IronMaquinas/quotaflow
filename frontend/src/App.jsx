@@ -204,6 +204,7 @@ export default function App() {
   const [abrirTarefa, setAbrirTarefa] = useState(null); // 18g.1: selo 🧾 fiscal da Mesa → tarefa no ✅ Plano
   useEffect(() => { const f = (ev) => { if (!ev.detail) return; setAbrirTarefa({ numero: ev.detail, em: Date.now() }); setTela("plano"); }; window.addEventListener("qf-abrir-tarefa", f); return () => window.removeEventListener("qf-abrir-tarefa", f); }, []); // eslint-disable-line
   const [abaColaborador, setAbaColaborador] = useState("viagens"); // 14b.1: tela do colaborador · 17a: começa em 🚛 Minhas viagens
+  useEffect(() => { const f = (e) => e.detail && setAbaColaborador(e.detail); window.addEventListener("qf-colab-aba", f); return () => window.removeEventListener("qf-colab-aba", f); }, []); // 18zz.5: "Leia também" → 📘 Procedimentos
   useEffect(() => { if (usuario?.id) carregarLogoEmpresa(); }, [usuario?.id]); // 14c: logo da empresa nos documentos
   useEffect(() => { // 18j
     const ps = usuario?.id ? (Array.isArray(usuario.perfis) && usuario.perfis.length ? usuario.perfis : [usuario.perfil].filter(Boolean)) : [];

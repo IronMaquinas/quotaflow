@@ -114,7 +114,10 @@ async function abrir(supabase, tenantId, colaboradorId, turmaId) {
   const ctx = await contexto(supabase, tenantId, colaboradorId, turmaId);
   if (ctx.erro) return ctx;
   const secoes = (ctx.tr?.secoes || []).map((x, i) => ({ indice: i, titulo: x.titulo, texto: x.texto, video_url: x.video_url, material_url: x.material_url, tem_pdf: !!x.material_path, material_nome: x.material_nome }));
-  return { ...resumo(ctx), conteudo: ctx.tr?.conteudo || null, secoes, prova: ctx.prova && !resumo(ctx).concluido ? TR.provaSemGabarito(ctx.prova) : null };
+  const ids = (ctx.tr?.procedimentos || []).map(String); // 18zz.5: 📘 leia também
+  const procedimentos = ids.length ? (await q(supabase.from('documentos_gestao').select('*').eq('tenant_id', tenantId)).catch(() => []))
+    .filter((d) => ids.includes(String(d.id)) && d.status === 'vigente').map((d) => ({ id: d.id, codigo: d.codigo, titulo: d.titulo, revisao: d.revisao })) : [];
+  return { ...resumo(ctx), conteudo: ctx.tr?.conteudo || null, secoes, procedimentos, prova: ctx.prova && !resumo(ctx).concluido ? TR.provaSemGabarito(ctx.prova) : null };
 }
 
 async function linkMaterial(supabase, tenantId, colaboradorId, turmaId, indice) {

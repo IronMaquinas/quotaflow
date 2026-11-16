@@ -58,6 +58,10 @@ function validarTreinamento(body, opcoes = {}) {
   if (tem('conteudo')) out.conteudo = texto(body.conteudo, 8000);
   if (tem('tipo')) { if (!TIPOS.includes(body.tipo)) erros.push('Tipo inválido'); else out.tipo = body.tipo; }
   if (tem('secoes')) { const r = validarSecoes(body.secoes, { prefixos: opcoes.prefixos }); if (r.erro) erros.push(r.erro); else out.secoes = r.secoes; }
+  if (tem('procedimentos')) { // 18zz.5: 📘 documentos de gestão de apoio (ids) — "leia também" na aula
+    const l = Array.isArray(body.procedimentos) ? [...new Set(body.procedimentos.map(String).filter((x) => /^\d+$/.test(x)))] : [];
+    if (l.length > 10) erros.push('No máximo 10 procedimentos por treinamento'); else out.procedimentos = l.map(Number);
+  }
   if (tem('prova')) { const r = validarProva(body.prova); if (r.erro) erros.push(r.erro); else out.prova = r.prova; }
   return { erros, dados: out };
 }
