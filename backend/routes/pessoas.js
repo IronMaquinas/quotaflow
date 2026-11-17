@@ -24,6 +24,7 @@ const K = require('../services/competencias'); // etapa 12e.3
 const DS = require('../services/dossie'); // etapa 12f
 const MU = require('../services/multas'); // etapa 12g
 const DI = require('../services/disciplinar'); // etapa 12h
+const FE = require('../services/ferias'); // B1.5: 🏖 férias
 const bcrypt = require('bcryptjs');            // etapa 12e.2b (acesso do colaborador)
 
 const VER = ['admin', 'gestor', 'qualidade', 'operacao'];
@@ -169,6 +170,7 @@ router.get('/colaboradores', exigirVer, async (req, res) => {
     let baseK = null; // 12e.3 (antes da migration 033 o selo sai sem o pilar 🧩)
     try { baseK = await K.carregarBase(supabase, req.tenantId); }
     catch (e) { if (!/colaborador_competencias|funcoes/.test(String(e.message))) throw e; }
+    let feriasHoje = new Map(); try { feriasHoje = await FE.deFeriasHoje(supabase, req.tenantId); } catch { /* B1.5: antes da migration 105 */ }
     const fotos = new Map(); for (const c of lista.filter((x) => x.foto_path)) { try { fotos.set(String(c.id), await D.linkArquivo(supabase, c.foto_path)); } catch { /* sem foto */ } } // 18zl
     const out = lista.map((c) => {
       const meus = docs.filter((d) => String(d.colaborador_id) === String(c.id));
@@ -189,6 +191,7 @@ router.get('/colaboradores', exigirVer, async (req, res) => {
         documentos: meus.length,
         vencidos: meus.filter((d) => d.situacao === 'vencido').length,
         a_vencer: meus.filter((d) => d.situacao === 'vence_30').length,
+        ferias_ate: feriasHoje.get(String(c.id))?.fim || null, // B1.5
       };
     }).sort((a, b) => (a.situacao === 'desligado') - (b.situacao === 'desligado') || String(a.nome).localeCompare(String(b.nome)));
     res.json({ colaboradores: out, pode_editar: editar });
@@ -636,7 +639,7 @@ router.get('/colaboradores/:id/ficha', exigirVer, async (req, res) => {
       multas: mult ? { lista: mult.slice(0, 20), resumo: MU.resumoColaborador(mult) } : null, // 12g · 18zz
       leituras: procs ? { total: procs.length, sem_login: !c.usuario_id, pendentes: procs.filter((d) => !d.lido_em).map((d) => ({ id: d.id, codigo: d.codigo, titulo: d.titulo, revisao: d.revisao })) } : null,
       colaborador_comp: { escolaridade: c.escolaridade ?? null, cnh_categoria: c.cnh_categoria ?? null },
-      colaborador: { id: c.id, nome: c.nome, situacao: c.situacao, funcao_id: c.funcao_id, funcao: c.funcao },
+      colaborador: { id: c.id, nome: c.nome, situacao: c.situacao, funcao_id: c.funcao_id, funcao: c.funcao, admissao: c.admissao || null }, // B1.6: admissão na ficha
       funcao: f.funcao ? { id: f.funcao.id, nome: f.funcao.nome, descritivo: f.funcao.descritivo, requisitos: f.funcao.requisitos, cbo: f.funcao.cbo || null, setor: f.funcao.setor || null, escolaridade: f.funcao.escolaridade || null, riscos: f.funcao.riscos || [], responde_a: f.funcao.responde_a || null } : null,
       ...F.LISTAS,
       itens: f.itens, resumo: f.resumo, pode_editar: podeEditar(req),
@@ -1076,5 +1079,19 @@ router.get('/colaboradores/:id/acesso', exigirVer, async (req, res) => {
     res.json({ tem: true, email: u.email, ativo: !!u.ativo, so_colaborador: perfis.length > 0 && perfis.every((p) => p === 'colaborador') });
   } catch (err) { erro(res, 'acesso', err); }
 });
+
+// ── B1.5: 🏖 férias ──────────────────────────────────────────────────────────
+const errFE = (res, err, onde) => { if (/colaborador_ferias/.test(String(err.message))) return res.status(409).json({ erro: 'Falta rodar a migration 105 (férias) no banco.' }); erro(res, onde, err); };
+// B1.6: saldo por colaborador, 🧠 Analista da programação e ⚠ faltas injustificadas
+const errFE6 = (res, err, onde) => { if (/colaborador_faltas|column .*pais/.test(String(err.message))) return res.status(409).json({ erro: 'Falta rodar a migration 106 (regras de férias e faltas) no banco.' }); errFE(res, err, onde); };
+router.get('/ferias/saldos', exigirVer, async (req, res) => { try { res.json(await FE.saldos(supabase, req.tenantId, { colaboradorId: req.query.colaborador_id || null })); } catch (err) { errFE6(res, err, 'ferias-saldos'); } });
+router.post('/ferias/analisar', exigirVer, async (req, res) => { try { res.json(await FE.analisar(supabase, req.tenantId, req.body || {}, req.body?.id || null)); } catch (err) { errFE6(res, err, 'ferias-analisar'); } });
+router.get('/colaboradores/:id/faltas', exigirVer, async (req, res) => { try { res.json({ faltas: await FE.listarFaltas(supabase, req.tenantId, req.params.id), pode_editar: podeEditar(req) }); } catch (err) { errFE6(res, err, 'faltas'); } });
+router.post('/colaboradores/:id/faltas', exigirEditar, async (req, res) => { try { const r = await FE.registrarFalta(supabase, req.tenantId, req.params.id, req.body || {}, (await quem(req)).usuarioNome); if (r.erro) return res.status(r.status || 400).json(r); res.status(201).json(r); } catch (err) { errFE6(res, err, 'faltas-criar'); } });
+router.delete('/faltas/:id', exigirEditar, async (req, res) => { try { res.json(await FE.excluirFalta(supabase, req.tenantId, req.params.id)); } catch (err) { errFE6(res, err, 'faltas-excluir'); } });
+router.get('/ferias', exigirVer, async (req, res) => { try { res.json({ ferias: await FE.listar(supabase, req.tenantId, { colaboradorId: req.query.colaborador_id || null }), pode_editar: podeEditar(req) }); } catch (err) { errFE(res, err, 'ferias'); } });
+router.post('/ferias', exigirEditar, async (req, res) => { try { const r = await FE.criar(supabase, req.tenantId, req.body || {}, (await quem(req)).usuarioNome); if (r.erro) return res.status(r.status || 400).json(r); res.status(201).json(r); } catch (err) { errFE(res, err, 'ferias-criar'); } });
+router.put('/ferias/:id', exigirEditar, async (req, res) => { try { const r = await FE.atualizar(supabase, req.tenantId, req.params.id, req.body || {}); if (r.erro) return res.status(r.status || 400).json(r); res.json(r); } catch (err) { errFE(res, err, 'ferias-editar'); } });
+router.delete('/ferias/:id', exigirEditar, async (req, res) => { try { res.json(await FE.excluir(supabase, req.tenantId, req.params.id)); } catch (err) { errFE(res, err, 'ferias-excluir'); } });
 
 module.exports = router;

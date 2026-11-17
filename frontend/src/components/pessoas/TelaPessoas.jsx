@@ -16,6 +16,8 @@ import FichaCompetencias from "./FichaCompetencias"; // etapa 12e.3
 import PainelDossie from "./PainelDossie"; // etapa 12f
 import TelaMultas from "./TelaMultas"; // etapa 12g
 import TelaDisciplinar from "./TelaDisciplinar"; // etapa 12h
+import TelaFerias from "./TelaFerias"; // B1.5: 🏖 férias
+import FichaFeriasFaltas from "./FichaFeriasFaltas"; // B1.6: admissão, saldo de férias e faltas na ficha
 import EditorCompetencias, { limparCompetencias } from "../shared/EditorCompetencias"; // etapa 12e.3
 import DocumentosGestao from "./DocumentosGestao"; // 18zr: 📘 aba Gestão
 import CampoCnpj, { mascaraCnpjCpf } from "../shared/CampoCnpj"; // 18zx
@@ -68,7 +70,7 @@ const lerArquivo = (file) => new Promise((ok, falha) => {
 
 // 18zq: modo "documentos" = menu 📁 Documentos (só a aba de documentos) · modo "pessoas" = 👷 Pessoas (sem a aba de documentos)
 export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAbaConsumida, modo = "pessoas" }) {
-  const [aba, setAba] = useState(modo === "documentos" ? "documentos" : (abaInicial && abaInicial !== "documentos" ? abaInicial : "colaboradores"));
+  const [aba, setAba] = useState(() => { const w = modo !== "documentos" && window.qfPessoasAba; window.qfPessoasAba = null; return modo === "documentos" ? "documentos" : w || (abaInicial && abaInicial !== "documentos" ? abaInicial : "colaboradores"); }); // B1.5: link da 👋 Beta abre a aba
   const [, setVerMod] = useState(0); useEffect(() => aoMudarModulos(() => setVerMod((v) => v + 1)), []); // 18t.1: módulos chegam depois → redesenha as abas
   useEffect(() => { setErro(""); if (['epi', 'multas', 'treinamentos'].includes(aba) && !moduloAtivo(aba)) setAba(modo === "documentos" ? "documentos" : "colaboradores"); }, [aba]); // eslint-disable-line // 18t.1: o erro de uma aba não fica nas outras
   const [config, setConfig] = useState({ tipos: [], usuarios: [], pode_editar: false });
@@ -268,6 +270,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
   //   as duas consultas vão juntas; erro aparece dentro do modal com "Tentar de novo"; passou de 8 s, avisa que está demorando.
   const [fichaCarr, setFichaCarr] = useState(null); // { id, nome, foto, erro?, lento? }
   const abrindoFicha = useRef(null);
+  useEffect(() => { const id = window.qfAbrirColab; if (id && modo !== "documentos") { window.qfAbrirColab = null; abrirFicha(id); } }, []); // eslint-disable-line -- B1.5: link da 👋 Beta abre a ficha
   const abrirFicha = async (colabId) => {
     if (abrindoFicha.current === String(colabId)) return;
     abrindoFicha.current = String(colabId);
@@ -404,7 +407,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       <h2 style={{ margin: "0 0 4px", fontSize: 20, fontWeight: 700 }}>{modo === "documentos" ? "📁 Documentos" : "👷 Pessoas"}</h2>
       <div style={{ fontSize: 12, color: C.textSub, marginBottom: 12 }}>{modo === "documentos" ? "Documentos com vencimento de pessoas, equipamentos e da empresa (o sistema avisa antes de vencer) e os documentos de gestão do sistema da qualidade." : "Colaboradores (com ou sem login no sistema), funções, EPI, treinamentos, multas e disciplinar. Os documentos de cada um estão na ficha (📋) e no menu 📁 Documentos."}</div>
       {modo !== "documentos" && <div style={{ borderBottom: `1px solid ${C.border}`, marginBottom: 18 }}>
-        {tab("colaboradores", "👥 Colaboradores")}{tab("funcoes", "👔 Funções")}{moduloAtivo("epi") && tab("epi", "🦺 EPI")}{moduloAtivo("treinamentos") && tab("treinamentos", "🎓 Treinamentos")}{moduloAtivo("multas") && tab("multas", "🚦 Multas")}{/* 18t: aba some sem o módulo */}{editar && tab("disciplinar", "⚖ Disciplinar")}
+        {tab("colaboradores", "👥 Colaboradores")}{tab("funcoes", "👔 Funções")}{tab("ferias", "🏖 Férias")}{moduloAtivo("epi") && tab("epi", "🦺 EPI")}{moduloAtivo("treinamentos") && tab("treinamentos", "🎓 Treinamentos")}{moduloAtivo("multas") && tab("multas", "🚦 Multas")}{/* 18t: aba some sem o módulo */}{editar && tab("disciplinar", "⚖ Disciplinar")}
       </div>}
 
       {aviso && <div style={{ ...s.card, padding: 12, marginBottom: 12, borderColor: C.success, color: C.success }}>✓ {aviso}</div>}
@@ -493,7 +496,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
                   style={{ cursor: "pointer", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", padding: "12px 16px", borderBottom: i < colabs.length - 1 ? `1px solid ${C.border}` : "none", opacity: c.situacao === "desligado" ? 0.55 : 1 }}>
                   {c.foto_url && <img src={c.foto_url} alt="" style={{ width: 36, height: 44, objectFit: "cover", borderRadius: 6, flexShrink: 0 }} />}{/* 18zl */}
                   <div style={{ flex: "2 1 220px" }}>
-                    <div style={{ fontWeight: 600, fontSize: 13 }}>{c.nome} {c.vinculo === "agregado" && <span style={s.tag(C.accent)}>🚚 Agregado</span>}{c.vinculo === "terceiro" && <span style={s.tag(C.muted)}>Terceiro</span>} {c.situacao !== "ativo" && <span style={s.tag(C.muted)}>{SITUACAO_COLAB[c.situacao]}</span>}</div>
+                    <div style={{ fontWeight: 600, fontSize: 13 }}>{c.nome} {c.vinculo === "agregado" && <span style={s.tag(C.accent)}>🚚 Agregado</span>}{c.vinculo === "terceiro" && <span style={s.tag(C.muted)}>Terceiro</span>} {c.situacao !== "ativo" && <span style={s.tag(C.muted)}>{SITUACAO_COLAB[c.situacao]}</span>}{c.ferias_ate && <span style={s.tag("#22c55e")} title="Férias lançadas em Pessoas → 🏖 Férias">🏖 férias até {String(c.ferias_ate).slice(0, 10).split("-").reverse().join("/")}</span>}</div>
                     <div style={{ fontSize: 12, color: C.textSub }}>{c.funcao_nome || c.funcao || "Sem função"}{c.funcao && !c.funcao_id && funcoesOk ? <span style={{ color: C.muted }}> (sem modelo)</span> : ""}{c.cpf ? ` · CPF ${c.cpf}` : ""}{!c.cpf && <span style={{ color: "#f59e0b" }}> · ⚠ sem CPF</span>}{[c.tam_calcado && `👟 ${c.tam_calcado}`, c.tam_camisa && `👕 ${c.tam_camisa}`, c.tam_calca && `👖 ${c.tam_calca}`, c.tam_luva && `🧤 ${c.tam_luva}`].filter(Boolean).map((t) => ` · ${t}`).join("")}{c.usuario_id ? ` · login: ${nomeUsuario(c.usuario_id) || "—"}` : ""}</div>
                   </div>
                   <button onClick={() => abrirFicha(c.id)} title="Abrir a ficha com os documentos"
@@ -576,6 +579,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       )}
 
       {/* ─── Treinamentos (12e.1) ─── */}
+      {aba === "ferias" && <TelaFerias C={C} s={s} modal={modal} campo={campo} colabs={colabs} editar={editar} excluir={excluir} onAviso={setAviso} onErro={setErro} />}{/* B1.5 */}
       {aba === "disciplinar" && editar && <TelaDisciplinar C={C} s={s} modal={modal} campo={campo} colabs={colabs} onAviso={setAviso} onErro={setErro} />}
       {aba === "multas" && moduloAtivo("multas") && <TelaMultas C={C} s={s} modal={modal} campo={campo} colabs={colabs} onAviso={setAviso} onErro={setErro} />}
       {aba === "treinamentos" && moduloAtivo("treinamentos") && <TelaTreinamentos C={C} s={s} modal={modal} campo={campo} colabs={colabs} onAviso={setAviso} onErro={setErro} onMudou={carregar} />}
@@ -753,6 +757,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>{(() => { const f = colabs.find((x) => String(x.id) === String(ficha.colaborador.id))?.foto_url; return f ? <img src={f} alt="" style={{ width: 54, height: 68, objectFit: "cover", borderRadius: 8 }} /> : null; })()}
           <div style={{ fontSize: 17, fontWeight: 700 }}>📋 Ficha — {ficha.colaborador.nome}</div></div>{/* 18zq: foto */}
         <div style={{ fontSize: 12, color: C.textSub, marginTop: 4 }}>{ficha.funcao ? <>Função: <b style={{ color: C.text }}>{ficha.funcao.nome}</b></> : "Sem função ligada a um modelo — escolha a função no cadastro do colaborador."}</div>
+        <FichaFeriasFaltas C={C} s={s} colaborador={ficha.colaborador} editar={editar} excluir={excluir} />{/* B1.6 */}
         {ficha.selo && (() => {
           const sl = SELO[ficha.selo.nivel] || SELO.em_andamento;
           return (

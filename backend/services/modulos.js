@@ -92,7 +92,7 @@ async function daEmpresa(supabase, tenantId) {
 }
 
 // ─── Console da Plataforma ──────────────────────────────────────────────────
-const catalogo = () => ({ segmentos: SEGMENTOS, areas: AREAS.map((a) => ({ id: a.id, nome: a.nome, modulos: a.modulos.map((m) => ({ id: m.id, nome: m.nome, desc: m.desc, futuro: !!m.futuro, depende: m.depende || [], dependeUm: m.dependeUm || [] })) })), todos: TODOS });
+const catalogo = () => ({ paises: require('./feriasRegras').lista(), segmentos: SEGMENTOS, areas: AREAS.map((a) => ({ id: a.id, nome: a.nome, modulos: a.modulos.map((m) => ({ id: m.id, nome: m.nome, desc: m.desc, futuro: !!m.futuro, depende: m.depende || [], dependeUm: m.dependeUm || [] })) })), todos: TODOS });
 async function listarPlanos(supabase) {
   const { data, error } = await supabase.from('plataforma_planos').select('*');
   if (error) { if (/plataforma_planos|does not exist|schema cache/i.test(error.message)) return { planos: [], sem_migration: true }; throw new Error(error.message); }
@@ -124,6 +124,11 @@ async function definirDaEmpresa(supabase, tenantId, body = {}) {
     if (!('segmentos' in t)) return { status: 409, erro: 'Falta rodar a migration 076 no Supabase (segmentos).' };
     const sg = [...new Set(body.segmentos.map(String))].filter((x) => SEGMENTOS.some((g) => g.id === x)); if (!sg.length) return { status: 400, erro: 'Escolha ao menos um segmento' };
     upd.segmentos = sg;
+  }
+  if (body.pais) { // B1.6: país → regras de férias (services/feriasRegras)
+    if (!('pais' in t)) return { status: 409, erro: 'Falta rodar a migration 106 no Supabase (país).' };
+    const pa = String(body.pais).toUpperCase(); if (!require('./feriasRegras').PAISES[pa]) return { status: 400, erro: 'País sem regras cadastradas.' };
+    upd.pais = pa;
   }
   const r = await supabase.from('tenants').update(upd).eq('id', tenantId).select(); if (r.error) throw new Error(r.error.message);
   try { require('../middleware/exigirModulo').limparCache(tenantId); } catch { /* ok */ } // 18k: vale na hora

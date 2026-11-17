@@ -122,7 +122,18 @@ async function ocorrencias(c) { // SC2.7: 🚨 incidentes de campo (cliente e mo
   };
 }
 
-const SENSORES = { ocorrencias, metasInformar, minhasTarefas, documentosGestao, planoAcaoNC, frotaBloqueada, viagens, vencimentos };
+async function ferias(c) { // B1.6: 🏖 férias vencidas / vencendo (regras do país) — gestão e qualidade (RH)
+  if (!(c.gestor || c.qualidade)) return {};
+  const FE = require('../ferias');
+  const s = await FE.saldos(c.sb, c.tenantId); const xs = s.colaboradores;
+  const venc = xs.filter((x) => x.alerta === 'vencido'), crit = xs.filter((x) => x.alerta === 'critico'), vindo = xs.filter((x) => x.alerta === 'vencendo');
+  const alertas = [...venc.map((x) => ({ nivel: 'critico', icone: '🏖', titulo: `Férias vencidas — ${x.nome}`, detalhe: `${x.a_gozar} dia(s) a gozar · ${s.regras.includes('CLT') ? 'paga em dobro' : 'fora do prazo'}`, link: { tela: 'pessoas', aba: 'ferias' } })),
+    ...crit.map((x) => ({ nivel: 'atencao', icone: '🏖', titulo: `Férias de ${x.nome} vencem em ${dBR(x.proximo_limite)}`, detalhe: `${x.a_gozar} dia(s) a programar`, link: { tela: 'pessoas', aba: 'ferias' } }))].slice(0, 6);
+  const prioridades = vindo.length ? [{ peso: 40, icone: '🏖', titulo: `${vindo.length} funcionário(s) com férias vencendo nos próximos meses`, detalhe: 'programe antes do limite', link: { tela: 'pessoas', aba: 'ferias' } }] : [];
+  return { alertas, prioridades, kpis: { ferias_vencidas: venc.length, ferias_vencendo: crit.length + vindo.length } };
+}
+
+const SENSORES = { ocorrencias, ferias, metasInformar, minhasTarefas, documentosGestao, planoAcaoNC, frotaBloqueada, viagens, vencimentos };
 
 async function montar(sb, { tenantId, userId, perfis = [], nome = '', agora = new Date() }) {
   const hoje = hojeBR(agora);

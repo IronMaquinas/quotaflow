@@ -38,7 +38,7 @@ export default function SalaControle({ C, s, podeAbrir = () => true, topo = null
     const volta = () => carregarSe(60000); document.addEventListener("visibilitychange", volta); window.addEventListener("focus", volta);
     return () => { clearInterval(t.current); document.removeEventListener("visibilitychange", volta); window.removeEventListener("focus", volta); };
   }, []); // eslint-disable-line
-  const ir = (l) => { if (!l?.tela) return; if (l.evento) { window.dispatchEvent(new CustomEvent(l.evento, { detail: l.id })); return; } if (l.tela === "documentos" && l.aba === "gestao") { window.qfDocsAba = "gestao"; if (l.id) window.qfAbrirGestaoDoc = l.id; } window.dispatchEvent(new CustomEvent("qf-navegar", { detail: { tela: l.tela, titulo: l.titulo } })); };
+  const ir = (l) => { if (!l?.tela) return; if (l.evento) { window.dispatchEvent(new CustomEvent(l.evento, { detail: l.id })); return; } if (l.tela === "pessoas" && l.aba) window.qfPessoasAba = l.aba; /* B1.6 */ if (l.tela === "documentos" && l.aba === "gestao") { window.qfDocsAba = "gestao"; if (l.id) window.qfAbrirGestaoDoc = l.id; } window.dispatchEvent(new CustomEvent("qf-navegar", { detail: { tela: l.tela, titulo: l.titulo } })); };
   const ok = (x) => !x.link?.tela || podeAbrir(x.link.tela);
   if (!d) return <div style={{ ...s.card, padding: 40, textAlign: "center", color: C.muted }}>{erro || "Montando a sua sala de controle…"}</div>;
   const alertas = d.alertas.filter(ok); const prior = d.prioridades.filter(ok); const agenda = d.agenda.filter(ok);
