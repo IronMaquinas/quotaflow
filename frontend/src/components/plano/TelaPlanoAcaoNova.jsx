@@ -19,8 +19,9 @@ import { resumoTarefas, dataBase, abrirRelatorioTarefas, csvTarefas, TIPOS_REL }
 export const TIPOS_TAREFA = {
   TR: { nome: 'Transporte', icone: '🚚' }, NC: { nome: 'Não conformidade', icone: '⚠️' }, AU: { nome: 'Auditoria', icone: '🔎' },
   MT: { nome: 'Manutenção', icone: '🔧' }, CM: { nome: 'Comercial', icone: '📈' }, HR: { nome: 'Pessoas', icone: '👥' }, GN: { nome: 'Geral', icone: '📌' },
+  KPI: { nome: 'Meta (KPI)', icone: '🎯' }, // SC2.5
 };
-const VINC = { bid: 'BID', pv: 'Pedido', trecho: 'Trecho', at: 'AT', nc: 'NC', prospeccao: 'Prospecção', contrato: 'Contrato', inspecao: 'Inspeção', multa: 'Multa', autuacao: 'Autuação', tarefa: 'Tarefa' };
+const VINC = { bid: 'BID', pv: 'Pedido', trecho: 'Trecho', at: 'AT', nc: 'NC', prospeccao: 'Prospecção', contrato: 'Contrato', inspecao: 'Inspeção', multa: 'Multa', autuacao: 'Autuação', tarefa: 'Tarefa', meta: 'Meta (KPI)' };
 const EVENTO = { at: 'qf-abrir-at', prospeccao: 'qf-abrir-prospeccao', contrato: 'qf-abrir-contrato', ocorrencia: 'qf-abrir-ocorrencia' }; // 18h.3.2: ⚠️ SIN abre a ocorrência
 const ACAO = { criada: '✨ criada', status: '🔄 situação', editada: '✏️ editada', reclassificada: '🏷 reclassificada', anexo: '📎 evidência', anexo_removido: '🗑 evidência removida' };
 const FORM0 = { titulo: '', detalhe: '', responsavel: '', responsavel_ref: null, prazo: '', prioridade: 'media', status: 'pendente', tipo: 'GN' };

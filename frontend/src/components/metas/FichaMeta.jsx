@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import apiService from "../../services/apiService";
 import { COR_SINAL, fmtValor } from "./TelaMetas";
+import { STATUS_ACAO, abrirTarefa } from "./PlanoAcaoMeta"; // SC2.5
 
 const ORIGEM = { calculado: "📐 calculado", informado: "✏️ informado", ajustado: "✎ ajustado", parcial: "⏳ parcial do mês" };
 
@@ -59,6 +60,10 @@ export default function FichaMeta({ C, s, metaId, podeCorrigir, onFechar, onMudo
                     <button type="button" onClick={() => setEd(null)} style={{ background: "none", border: "none", color: C.textSub, cursor: "pointer", marginLeft: 4 }}>×</button></>
                 : <button type="button" onClick={() => setEd({ mes: r.mes, valor: r.valor ?? "", motivo: "", tinha: r.valor != null })} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 12 }}>{r.valor == null ? "＋ lançar" : "✏️ corrigir"}</button>)}</td>
             </tr>)}</tbody></table></div>
+          <div style={{ marginTop: 14 }}><div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", color: C.textSub, marginBottom: 4 }}>📋 PLANOS DE AÇÃO ({(d.acoes || []).length})</div>
+            {(d.acoes || []).length === 0 ? <div style={{ fontSize: 12.5, color: C.muted }}>{["amarelo", "vermelho"].includes(m.sinal) ? "Fora da meta e sem plano de ação — recomendado abrir um (botão ＋ Plano de ação no cartão)." : "Nenhum plano de ação para esta meta."}</div>
+              : d.acoes.map((a) => <div key={a.id} onClick={() => abrirTarefa(a.numero)} style={{ display: "flex", gap: 10, padding: "7px 4px", borderTop: `1px solid ${C.border}`, cursor: a.numero ? "pointer" : "default", fontSize: 12.5 }}>
+                <span style={{ color: C.accent, whiteSpace: "nowrap" }}>{a.numero || "tarefa"}</span><span style={{ flex: 1 }}>{a.titulo}{a.responsavel ? <span style={{ color: C.muted }}> · 👤 {a.responsavel}</span> : null}{a.prazo ? <span style={{ color: C.muted }}> · prazo {String(a.prazo).slice(0, 10).split("-").reverse().join("/")}</span> : null}</span><span style={{ color: C.muted, whiteSpace: "nowrap" }}>{STATUS_ACAO[a.status] || a.status}</span></div>)}</div>
           <div style={{ fontSize: 11, color: C.muted, marginTop: 8 }}>O mês fecha sozinho no dia 1 (📐 calculado). Metas próprias: o dono recebe aviso no 🔔 dia 1 e lembrete dia 5. Toda correção guarda quem, quando, o motivo e o valor original.</div>
         </>}
       </div>

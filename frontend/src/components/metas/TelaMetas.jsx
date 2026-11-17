@@ -8,6 +8,7 @@ import ConfirmarExclusao from "../shared/ConfirmarExclusao";
 import CampoFuncionario from "../shared/CampoFuncionario"; // SC2.1: dono da meta = funcionário do cadastro
 import FichaMeta from "./FichaMeta"; // SC2.4
 import PainelAnualMetas from "./PainelAnualMetas"; // SC2.4
+import PlanoAcaoMeta, { STATUS_ACAO, abrirTarefa } from "./PlanoAcaoMeta"; // SC2.5
 
 function Mini({ valores, cor }) { // SC2.4: mini gráfico dos últimos meses
   const W = 90; const H = 28; const lo = Math.min(...valores); const hi = Math.max(...valores); const y = (v) => (hi === lo ? H / 2 : 3 + (1 - (v - lo) / (hi - lo)) * (H - 6));
@@ -22,6 +23,7 @@ export default function TelaMetas({ C, s }) {
   const [d, setD] = useState(null); const [erro, setErro] = useState(null); const [sug, setSug] = useState(null); const [marcadas, setMarcadas] = useState(new Set());
   const [form, setForm] = useState(null); const [apagar, setApagar] = useState(null); const [ocup, setOcup] = useState(false); const [aviso, setAviso] = useState(null);
   const [ficha, setFicha] = useState(null); const [painel, setPainel] = useState(false); // SC2.4
+  const [acaoDe, setAcaoDe] = useState(null); const [areaF, setAreaF] = useState("todas"); // SC2.5
   const [pessoas, setPessoas] = useState(null); const [areas, setAreas] = useState({}); const [unidades, setUnidades] = useState(["%", "un", "R$", "h", "dias"]); const [valorDe, setValorDe] = useState(null);
   useEffect(() => { apiService.get("/pessoas/gestao-pessoas").then((r) => setPessoas(r.funcionarios || [])).catch(() => setPessoas([])); }, []);
   const informar = async () => { setOcup(true); try { await apiService.post(`/metas/${valorDe.id}/valor`, { valor: valorDe.valor }); setValorDe(null); carregar(); } catch (e) { setErro(e?.response?.data?.erro || e.message); } finally { setOcup(false); } };
@@ -43,7 +45,7 @@ export default function TelaMetas({ C, s }) {
   const grupos = d ? Object.entries(d.metas.reduce((g, m) => { (g[m.area_nome] = g[m.area_nome] || []).push(m); return g; }, {})) : [];
   const card = { ...s.card, padding: 16 };
   return (
-    <div style={{ padding: "24px 28px 48px", maxWidth: 1100, margin: "0 auto" }}>
+    <div style={{ padding: "24px 28px 48px", width: "100%", boxSizing: "border-box" }}>
       <div style={{ display: "flex", gap: 10, alignItems: "baseline", flexWrap: "wrap" }}>
         <div style={{ fontSize: 24, fontWeight: 700, flex: 1 }}>🎯 Metas do Negócio</div>
         {d?.metas?.length > 0 && <button type="button" onClick={() => setPainel(true)} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>📅 Painel anual</button>}
@@ -57,13 +59,15 @@ export default function TelaMetas({ C, s }) {
         <div style={{ fontSize: 32 }}>🎯</div><div style={{ fontWeight: 700, margin: "6px 0" }}>Nenhuma meta ainda</div>
         <div style={{ fontSize: 13, color: C.textSub, marginBottom: 12 }}>Comece pelas métricas sugeridas — dá para ajustar tudo depois.</div>
         <button type="button" onClick={abrirSug} style={{ ...s.btn(true), cursor: "pointer" }}>📚 Ver métricas sugeridas</button></div>}
-      {grupos.map(([area, ms]) => <div key={area} style={{ marginBottom: 16 }}>
-        <div style={{ fontSize: 12, fontWeight: 700, letterSpacing: "0.08em", color: C.textSub, margin: "8px 0" }}>{area.toUpperCase()}</div>
-        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(300px, 1fr))", gap: 12 }}>
+      {d && d.metas.length > 0 && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>{/* SC2.5: filtro por área — os cartões ocupam a tela toda */}
+        {[["todas", `Todas · ${d.metas.length}`], ...grupos.map(([a, ms]) => [a, `${a} · ${ms.length}`]), ["fora", `⚠ Fora da meta · ${d.metas.filter((m) => ["amarelo", "vermelho"].includes(m.sinal)).length}`]].map(([k, l]) =>
+          <button key={k} type="button" onClick={() => setAreaF(k)} style={{ ...s.btn(areaF === k), padding: "5px 12px", fontSize: 12.5, cursor: "pointer" }}>{l}</button>)}</div>}
+      {d && (() => { const ms = d.metas.filter((m) => areaF === "todas" || (areaF === "fora" ? ["amarelo", "vermelho"].includes(m.sinal) : m.area_nome === areaF)); return (<div>
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(290px, 1fr))", gap: 12 }}>
           {ms.map((m) => { const dono = String(m.responsavel_usuario_id || "") === String(d.eu || ""); const pts = [...(m.serie || []).map((x) => x.valor), m.valor].filter((v) => v != null); return (
           <div key={m.id} onClick={() => setFicha(m.id)} style={{ ...card, borderLeft: `4px solid ${COR_SINAL[m.sinal] || C.border}`, cursor: "pointer", display: "flex", flexDirection: "column", gap: 6 }}>
             <div style={{ display: "flex", gap: 8, alignItems: "flex-start" }}>
-              <div style={{ flex: 1, fontSize: 14, fontWeight: 700, lineHeight: 1.3 }}>{m.nome}</div>
+              <div style={{ flex: 1, fontSize: 14, fontWeight: 700, lineHeight: 1.3 }}><div style={{ fontSize: 10.5, fontWeight: 600, color: C.muted, letterSpacing: "0.05em", marginBottom: 2 }}>{m.area_nome}</div>{m.nome}</div>
               {m.sem_dono ? <span style={{ ...s.tag(C.warn), fontSize: 10.5, whiteSpace: "nowrap" }}>⚠ sem dono</span> : <span style={{ fontSize: 11, color: C.muted, whiteSpace: "nowrap" }}>👤 {m.responsavel_nome}</span>}
             </div>
             <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
@@ -78,6 +82,16 @@ export default function TelaMetas({ C, s }) {
               <input autoFocus type="number" step="any" value={valorDe.valor} onChange={(e) => setValorDe({ ...valorDe, valor: e.target.value })} placeholder={`valor de hoje${m.unidade ? ` (${m.unidade})` : ""}`} style={{ ...s.input, padding: "5px 8px" }} />
               <button type="button" disabled={ocup || valorDe.valor === ""} onClick={informar} style={{ ...s.btn(true), padding: "4px 12px", fontSize: 12, cursor: "pointer" }}>Salvar</button>
               <button type="button" onClick={() => setValorDe(null)} style={{ ...s.btn(false), padding: "4px 10px", fontSize: 12, cursor: "pointer", color: C.text }}>×</button></div>}
+            {(["amarelo", "vermelho"].includes(m.sinal) || (m.acoes || []).length > 0) && <div onClick={(e) => e.stopPropagation()} style={{ background: C.bg, border: `1px solid ${["amarelo", "vermelho"].includes(m.sinal) ? COR_SINAL[m.sinal] + "55" : C.border}`, borderRadius: 8, padding: "8px 10px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                <span style={{ flex: 1, fontSize: 11.5, fontWeight: 700, color: ["amarelo", "vermelho"].includes(m.sinal) ? COR_SINAL[m.sinal] : C.textSub }}>{["amarelo", "vermelho"].includes(m.sinal) ? "⚠ Fora da meta" : "📋 Planos de ação"}</span>
+                {(d.pode_editar || dono) && <button type="button" onClick={() => setAcaoDe(m)} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 12, padding: 0 }}>＋ Plano de ação</button>}
+              </div>
+              {(m.acoes || []).length === 0 ? <div style={{ fontSize: 11.5, color: C.muted, marginTop: 2 }}>Recomendado: abra um plano de ação para voltar ao alvo.</div>
+                : (m.acoes || []).slice(0, 3).map((a) => <div key={a.id} onClick={() => abrirTarefa(a.numero)} title="Abrir no ✅ Plano" style={{ fontSize: 12, marginTop: 4, cursor: a.numero ? "pointer" : "default", display: "flex", gap: 6 }}>
+                  <span style={{ color: C.accent, whiteSpace: "nowrap" }}>{a.numero || "tarefa"}</span><span style={{ flex: 1, color: C.textSub, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{a.titulo}</span><span style={{ color: C.muted, whiteSpace: "nowrap" }}>{STATUS_ACAO[a.status] || a.status}</span></div>)}
+              {(m.acoes || []).length > 3 && <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4 }}>+{m.acoes.length - 3} ação(ões) — veja em 📈 Mês a mês</div>}
+            </div>}
             <div onClick={(e) => e.stopPropagation()} style={{ display: "flex", gap: 6, marginTop: "auto", paddingTop: 4, flexWrap: "wrap" }}>
               <button type="button" onClick={() => setFicha(m.id)} style={{ ...s.btn(false), padding: "4px 10px", fontSize: 12, cursor: "pointer", color: C.accent }}>📈 Mês a mês</button>
               {m.origem === "manual" && (d.pode_editar || dono) && valorDe?.id !== m.id && <button type="button" onClick={() => setValorDe({ id: m.id, valor: "" })} style={{ ...s.btn(false), padding: "4px 10px", fontSize: 12, cursor: "pointer", color: C.accent }}>✏️ Informar valor</button>}
@@ -85,7 +99,7 @@ export default function TelaMetas({ C, s }) {
               {d.pode_editar && <button type="button" onClick={() => setApagar(m)} style={{ ...s.btn(false), padding: "4px 10px", fontSize: 12, cursor: "pointer", color: C.danger }}>Excluir</button>}
             </div>
           </div>); })}
-        </div></div>)}
+        </div></div>); })()}
 
       {sug && <div onClick={() => setSug(null)} style={{ position: "fixed", inset: 0, background: "#000000aa", zIndex: 80, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: 16, overflowY: "auto" }}>
         <div onClick={(e) => e.stopPropagation()} style={{ ...card, width: "min(640px, 100%)" }}>
@@ -131,6 +145,7 @@ export default function TelaMetas({ C, s }) {
             <button type="button" disabled={ocup || !String(form.nome || "").trim() || semDono} onClick={salvar} style={{ ...s.btn(true), flex: 1.4, cursor: "pointer" }}>{ocup ? "Salvando…" : "Salvar"}</button>
           </div>
         </div></div>}
+      {acaoDe && <PlanoAcaoMeta C={C} s={s} meta={acaoDe} pessoas={pessoas} onFechar={() => setAcaoDe(null)} onCriada={(t) => { setAcaoDe(null); setAviso(`Plano de ação ${t?.numero || ""} criado — está no ✅ Plano e no cartão da meta.`); carregar(); }} />}
       {ficha && <FichaMeta C={C} s={s} metaId={ficha} podeCorrigir={d?.pode_editar || String(d?.metas?.find((x) => String(x.id) === String(ficha))?.responsavel_usuario_id || "") === String(d?.eu || "")} onFechar={() => setFicha(null)} onMudou={carregar} />}
       {painel && <PainelAnualMetas C={C} s={s} onErro={setErro} onFechar={() => setPainel(false)} onAbrir={(id) => { setPainel(false); setFicha(id); }} />}
       {apagar && <ConfirmarExclusao C={C} s={s} titulo={`Excluir a meta "${apagar.nome}"?`} texto="O indicador sai da Saúde do negócio. O histórico de fotografias fica guardado." ocupado={ocup} onCancelar={() => setApagar(null)} onConfirmar={excluir} />}

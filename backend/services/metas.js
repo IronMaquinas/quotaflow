@@ -92,6 +92,7 @@ async function listar(sb, tenantId, { agora = new Date(), fotografar = true } = 
   const valores = {}; await Promise.all([...new Set(ms.filter((m) => m.origem !== 'manual').map((m) => m.chave))].map(async (k) => { try { valores[k] = MEDIDAS[k] ? await MEDIDAS[k].calc(c) : null; } catch (e) { console.warn(`⚠️ [metas] ${k}:`, e.message); valores[k] = null; } }));
   let fotos = []; try { fotos = await q(sb.from('metas_fotografias').select('*').eq('tenant_id', tenantId)); } catch { /* sem 101 */ }
   let resultados = []; try { resultados = await q(sb.from('metas_resultados').select('*').eq('tenant_id', tenantId)); } catch { /* sem 103 */ }
+  const acoesDe = await mapaAcoes(sb, tenantId); // SC2.5
   if (fotografar) { try { const novas = Object.entries(valores).filter(([k, v]) => v != null && !fotos.some((f) => f.chave === k && String(f.dia).slice(0, 10) === c.hoje)).map(([k, v]) => ({ tenant_id: tenantId, chave: k, dia: c.hoje, valor: v })); if (novas.length) await q(sb.from('metas_fotografias').insert(novas)); } catch { /* corrida entre abas: ignora */ } }
   const alvo = diasAtras(c.hoje, 30);
   return ms.map((m) => {
@@ -101,6 +102,7 @@ async function listar(sb, tenantId, { agora = new Date(), fotografar = true } = 
     const dif = antes && v != null && antes.valor != null ? Math.round((v - Number(antes.valor)) * 10) / 10 : null;
     return { ...m, descricao: m.observacao || (md.como ? `${md.como[0].toUpperCase()}${md.como.slice(1)}.` : ''), unidade: m.unidade || md.unidade || '', area_nome: AREAS[m.area] || m.area, como: m.origem === 'manual' ? 'meta própria — valor informado pela empresa' : (md.como || ''), tela: md.tela || null, valor: v, sinal: sinal(m, v),
       informado: ult ? { dia: String(ult.dia).slice(0, 10), por: ult.informado_por || null } : null,
+      acoes: acoesDe(m.id),
       serie: resultados.filter((r) => String(r.meta_id) === String(m.id)).sort((a, b) => a.mes.localeCompare(b.mes)).slice(-6).map((r) => ({ mes: r.mes, valor: Number(r.valor), sinal: sinal(m, Number(r.valor)), origem: r.origem })), sem_dono: !m.responsavel_usuario_id && !m.responsavel_colaborador_id,
       tendencia: dif == null ? null : { dif, melhorou: dif === 0 ? null : (m.sentido === 'menor' ? dif < 0 : dif > 0), desde: String(antes.dia).slice(0, 10) } };
   });
@@ -212,7 +214,7 @@ async function historico(sb, tenantId, metaId, { agora = new Date() } = {}) {
   const rs = await q(sb.from('metas_resultados').select('*').eq('meta_id', metaId));
   const atual = ymDe(hojeBR(agora)); const meses = []; let ym = atual;
   for (let i = 0; i < 13; i++) { meses.unshift(ym); ym = mesAnterior(ym); }
-  return { meta: m, meses: meses.map((k) => { const r = rs.find((x) => x.mes === k); const parcial = k === atual;
+  return { meta: m, acoes: m.acoes || [], meses: meses.map((k) => { const r = rs.find((x) => x.mes === k); const parcial = k === atual;
     const valor = r ? Number(r.valor) : parcial ? m.valor : null;
     return { mes: k, nome: nomeMes(k), valor, sinal: sinal(m, valor), parcial: parcial && !r, origem: r?.origem || (parcial && valor != null ? 'parcial' : null), valor_original: r?.valor_original ?? null, origem_original: r?.origem_original || null, por: r?.por_nome || null, motivo: r?.motivo || null, em: r?.em || null }; }) };
 }
@@ -223,7 +225,7 @@ async function painelAnual(sb, tenantId, { ano = null, agora = new Date() } = {}
   const ms = await listar(sb, tenantId, { agora, fotografar: false });
   const rs = (await seguroQ(sb.from('metas_resultados').select('*').eq('tenant_id', tenantId))).filter((r) => r.mes.startsWith(A));
   const meses = Array.from({ length: 12 }, (_, i) => `${A}-${String(i + 1).padStart(2, '0')}`);
-  return { ano: A, meses: meses.map((k) => ({ mes: k, nome: nomeMes(k) })), metas: ms.map((m) => ({ id: m.id, nome: m.nome, area_nome: m.area_nome, unidade: m.unidade, sentido: m.sentido, meta: m.meta, limite: m.limite, responsavel_nome: m.responsavel_nome,
+  return { ano: A, meses: meses.map((k) => ({ mes: k, nome: nomeMes(k) })), metas: ms.map((m) => ({ id: m.id, acoes: m.acoes || [], sinal_atual: m.sinal, nome: m.nome, area_nome: m.area_nome, unidade: m.unidade, sentido: m.sentido, meta: m.meta, limite: m.limite, responsavel_nome: m.responsavel_nome,
     celulas: meses.map((k) => { const r = rs.find((x) => String(x.meta_id) === String(m.id) && x.mes === k); const v = r ? Number(r.valor) : k === atual ? m.valor : null; return { mes: k, valor: v, sinal: sinal(m, v), origem: r?.origem || (k === atual && v != null ? 'parcial' : null), motivo: r?.motivo || null, por: r?.por_nome || null }; }) })) };
 }
 
@@ -252,4 +254,22 @@ async function rotinaDiaria(sb, { agora = new Date() } = {}) {
   return out;
 }
 
-module.exports = { fecharMes, gravarResultado, historico, painelAnual, pendentesInformar, rotinaDiaria, informarValor, UNIDADES, MEDIDAS, AREAS, sinal, validar, listar, sugeridas, importar, criar, atualizar, excluir };
+// ── SC2.5: PLANO DE AÇÃO da meta (tarefa tipo KPI, vinculada à meta) ─────────────────────────────────────
+async function mapaAcoes(sb, tenantId) {
+  const ts = await seguroQ(sb.from('tarefas').select('*').eq('tenant_id', tenantId));
+  const vinc = (t) => { let v = t.vinculos; if (typeof v === 'string') { try { v = JSON.parse(v); } catch { v = []; } } return Array.isArray(v) ? v : []; };
+  const por = new Map();
+  for (const t of ts) for (const v of vinc(t)) if (v.tipo === 'meta' && v.id != null) { const k = String(v.id); if (!por.has(k)) por.set(k, []); por.get(k).push({ id: t.id, numero: t.numero || null, titulo: t.titulo, status: t.status, prazo: t.prazo || null, responsavel: t.responsavel || null, criado_em: t.criado_em }); }
+  return (id) => (por.get(String(id)) || []).sort((a, b) => String(b.criado_em).localeCompare(String(a.criado_em)));
+}
+
+async function criarAcao(sb, tenantId, metaId, quem, body = {}) {
+  const m = (await listar(sb, tenantId, { fotografar: false })).find((x) => String(x.id) === String(metaId)); if (!m) throw erro('Meta não encontrada', 404);
+  const fmt = (v) => (v == null ? '—' : `${Number(v).toLocaleString('pt-BR', { maximumFractionDigits: 1 })}${m.unidade === '%' ? '%' : m.unidade ? ` ${m.unidade}` : ''}`);
+  const contexto = `🎯 Meta: ${m.nome} · atual ${fmt(m.valor)} · meta ${m.sentido === 'menor' ? '≤' : '≥'} ${fmt(m.meta)}${m.sinal ? ` · ${{ verde: '🟢', amarelo: '🟡', vermelho: '🔴' }[m.sinal]}` : ''}`;
+  const r = await require('./tarefas').criar(sb, tenantId, quem, { ...body, tipo: 'KPI', detalhe: [String(body.detalhe || '').trim(), contexto].filter(Boolean).join('\n\n'), vinculos: [{ tipo: 'meta', id: String(m.id), rotulo: m.nome }] });
+  if (r && r.status && r.erro) throw erro(r.erro, r.status);
+  return r;
+}
+
+module.exports = { criarAcao, mapaAcoes, fecharMes, gravarResultado, historico, painelAnual, pendentesInformar, rotinaDiaria, informarValor, UNIDADES, MEDIDAS, AREAS, sinal, validar, listar, sugeridas, importar, criar, atualizar, excluir };

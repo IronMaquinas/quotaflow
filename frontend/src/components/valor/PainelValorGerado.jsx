@@ -20,7 +20,7 @@ export default function PainelValorGerado({ C, s }) {
   const maxMes = d ? Math.max(1, ...d.por_mes.map((m) => m.valor)) : 1;
   const card = { ...s.card, padding: 16 };
   return (
-    <div style={{ padding: "24px 28px 48px", maxWidth: 1100, margin: "0 auto" }}>
+    <div style={{ padding: "24px 28px 48px", width: "100%", boxSizing: "border-box" }}>
       <div style={{ display: "flex", alignItems: "baseline", gap: 12, flexWrap: "wrap", marginBottom: 4 }}>
         <div style={{ fontSize: 24, fontWeight: 700, flex: 1 }}>💰 Valor gerado</div>
         <select value={ano} onChange={(e) => setAno(e.target.value)} style={{ ...s.input, width: "auto", padding: "6px 10px" }}>{[0, 1, 2].map((i) => String(Number(anoAtual) - i)).map((a) => <option key={a} value={a}>{a}</option>)}</select>

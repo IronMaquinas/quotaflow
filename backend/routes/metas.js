@@ -8,7 +8,7 @@ const perfisDe = (req) => (Array.isArray(req.perfis) && req.perfis.length ? req.
 router.use(async (req, res, next) => {
   if (perfisDe(req).some((p) => ['admin', 'gestor'].includes(p))) { req.gestorMetas = true; return next(); }
   if (req.method === 'GET' && (req.path === '/' || /^\/\d+\/historico$/.test(req.path))) return next();
-  const m = req.path.match(/^\/(\d+)\/(resultados\/\d{4}-\d{2}|valor)$/);
+  const m = req.path.match(/^\/(\d+)\/(resultados\/\d{4}-\d{2}|valor|acoes)$/);
   if (m && ['PUT', 'POST'].includes(req.method)) { try { const { data } = await supabase.from('metas_negocio').select('responsavel_usuario_id').eq('id', m[1]).eq('tenant_id', req.tenantId).limit(1); if (data?.[0] && String(data[0].responsavel_usuario_id) === String(req.userId)) return next(); } catch { /* cai no 403 */ } }
   return res.status(403).json({ erro: 'Só gestor, admin ou o dono da meta.' });
 });
@@ -24,6 +24,7 @@ const quem = async (req) => { try { const { data } = await supabase.from('usuari
 router.get('/painel-anual', async (req, res) => { try { res.json(await M.painelAnual(supabase, req.tenantId, { ano: /^\d{4}$/.test(String(req.query.ano || '')) ? req.query.ano : null })); } catch (e) { falha(res, e); } }); // SC2.4
 router.get('/:id/historico', async (req, res) => { try { res.json(await M.historico(supabase, req.tenantId, req.params.id)); } catch (e) { falha(res, e); } }); // SC2.4
 router.put('/:id/resultados/:mes', async (req, res) => { try { res.json({ resultado: await M.gravarResultado(supabase, req.tenantId, req.params.id, req.params.mes, { valor: req.body?.valor, motivo: req.body?.motivo, eu: await quem(req) }) }); } catch (e) { falha(res, e); } }); // SC2.4
+router.post('/:id/acoes', async (req, res) => { try { res.status(201).json({ tarefa: await M.criarAcao(supabase, req.tenantId, req.params.id, await quem(req), req.body || {}) }); } catch (e) { falha(res, e); } }); // SC2.5: plano de ação (TSK-KPI)
 router.delete('/:id', async (req, res) => { try { res.json(await M.excluir(supabase, req.tenantId, req.params.id)); } catch (e) { falha(res, e); } });
 
 module.exports = router;
