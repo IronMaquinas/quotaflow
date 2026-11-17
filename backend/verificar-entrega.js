@@ -69,7 +69,7 @@ const ESPERADO = {
   'services/acessoSpot.js': '6ecce4d16d6b123c6ce93c1223b32f01', // etapa 10c (novo)
   'services/receitaCnpj.js': 'b0e2a678127403d5608723c21ec61b78', // etapa 14d.5
   'services/cadastroPublico.js': '750c29b11811b3ae3cdddad46da4fb8a', // etapa 18v
-  'front:App.jsx': '5ee0d4666b87eddd1f4a3f8550e16d13', // etapa SC2.4
+  'front:App.jsx': 'a6fd20d4c16dbbe37d08538561ff96a3', // etapa SC2.8
   'front:TelaLogin.jsx': '742946c163f48c3a80f798f6077678c2', // etapa 18g.6
   'front:TelaSignup.jsx': '345dceefb937b38e74cfef44cfc33ef3', // etapa 11a.3
   'front:AvisoPlanoTenant.jsx': '2a75bbac9eaae456cc5d1b81d1dfbff8', // etapa 18v
@@ -393,10 +393,9 @@ const ESPERADO = {
   'front:PlanoAcaoMeta.jsx': 'f6b1b4af99c561c3b59cb66632ffe725', // etapa SC2.5 (novo)
 };
 
-// Antes de copiar a etapa SC2.7 — base: SC2.6 (fd1afd3)
+// Antes de copiar a etapa SC2.8 — base: SC2.7 (9962468)
 const ANTES = {
-  'services/salaControle/index.js': '676d1297c3b42bdd3fd1d104a615118f',
-  'front:SalaControle.jsx': 'db98ad6788f2123fb69076e11b8b9a91',
+  'front:App.jsx': '5ee0d4666b87eddd1f4a3f8550e16d13',
 };
 
 const RAIZ = process.cwd();
@@ -434,7 +433,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a SC2.7)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a SC2.8)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

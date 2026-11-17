@@ -624,7 +624,7 @@ const perfil = PERFIS[usuario.perfil] || {
         {usuario?.id && usuario.perfil !== "fornecedor" && <SinoNotificacoes C={C} base="/notificacoes" onAbrir={(l)=>{ if (l.tela==="spot") { setTela("spot"); pedirAbrirDemanda(l); } else if (l.ocorrencia_id != null) window.dispatchEvent(new CustomEvent("qf-abrir-ocorrencia", { detail: l.ocorrencia_id })); else if (l.tela && temAcesso(l.tela)) { if (l.tela === "documentos" && l.aba) window.qfDocsAba = l.aba; /* 18zv */ setTela(l.tela); } }} />}
         {tela==="home"&&(
           <div style={{flex:1,display:"flex",alignItems:"flex-start",justifyContent:"center",padding:"24px 28px 48px",overflowY:"auto"}}>{/* 18j: no topo — centralizado na vertical cortava o cartão de boas-vindas */}
-            <div style={{maxWidth:1100,width:"100%",textAlign:"center",margin:"0"}}>
+            <div style={{width:"100%",textAlign:"center",margin:"0"}}>{/* SC2.8: Início na largura toda */}
               {temAcesso("configuracoes") && <BemVindo C={C} s={s} onAbrir={(p)=>window.dispatchEvent(new CustomEvent("qf-navegar",{detail:p}))} />}
               {avisoRoteiro && <div style={{...s.card,padding:"10px 14px",marginBottom:12,fontSize:13,color:C.warn||"#f59e0b",textAlign:"left"}}>{avisoRoteiro}</div>}
               {/* SC1: 🛰 Sala de Controle — substitui o "Olá" + atalhos (o menu já tem tudo, em seções) */}
