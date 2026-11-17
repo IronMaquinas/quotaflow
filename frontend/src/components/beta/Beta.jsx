@@ -4,6 +4,7 @@
 // B1.5: ⚡ consultas rápidas (CNH, férias, carreta livre, AT, tarefas, contrato, cotação, BID, peça) — resposta direto do sistema
 //   (selo "⚡ direto do sistema") + botão "Abrir →" para a tela. Sugestões vêm do servidor conforme o perfil.
 import { useEffect, useRef, useState } from "react";
+import BotoesContato from "../shared/BotoesContato"; // B1.10
 import apiService from "../../services/apiService";
 
 
@@ -16,7 +17,7 @@ export default function Beta({ C, s, podeAbrir = () => true }) {
   const enviar = async (pergunta) => {
     const p = String(pergunta ?? txt).trim(); if (!p || ocup) return;
     const nova = [...msgs, { de: "pessoa", texto: p }]; setMsgs(nova); setTxt(""); setOcup(true);
-    try { const r = await apiService.post("/beta", { mensagens: nova.map(({ de, texto }) => ({ de, texto })) }); setMsgs([...nova, { de: "beta", texto: r.texto, conferido: r.conferido, suspeitos: r.suspeitos, direto: r.direto, link: r.link }]); setRest(r.restantes); }
+    try { const r = await apiService.post("/beta", { mensagens: nova.map(({ de, texto }) => ({ de, texto })) }); setMsgs([...nova, { de: "beta", texto: r.texto, conferido: r.conferido, suspeitos: r.suspeitos, direto: r.direto, link: r.link, acoes: r.acoes }]); setRest(r.restantes); }
     catch (e) { const d = e?.response?.data; setMsgs([...nova, { de: "beta", texto: d?.erro || "Não consegui responder agora. Tente de novo em instantes.", erro: true }]); if (d?.restantes != null) setRest(d.restantes); }
     finally { setOcup(false); }
   };
@@ -37,6 +38,7 @@ export default function Beta({ C, s, podeAbrir = () => true }) {
         </div>}
         {msgs.map((m, i) => <div key={i} style={{ alignSelf: m.de === "pessoa" ? "flex-end" : "flex-start", maxWidth: "88%" }}>
           <div style={{ background: m.de === "pessoa" ? C.accent : m.erro ? "#7f1d1d55" : C.bg, color: m.de === "pessoa" ? "#fff" : C.text, border: m.de === "pessoa" ? "none" : `1px solid ${C.border}`, borderRadius: 12, padding: "8px 12px", fontSize: 13.5, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{m.texto}</div>
+          {m.de === "beta" && (m.acoes || []).map((a, k) => <div key={k} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}>{m.acoes.length > 1 && <span style={{ fontSize: 11.5, color: C.textSub }}>{a.rotulo}:</span>}<BotoesContato C={C} telefone={a.telefone} email={a.email} tamanho={11.5} /></div>)}
           {m.de === "beta" && m.link?.tela && podeAbrir(m.link.tela) && <button type="button" onClick={() => ir(m.link)} style={{ background: "none", border: "none", color: C.accent, fontSize: 12, cursor: "pointer", padding: "4px 2px 0", fontFamily: "inherit" }}>Abrir no sistema →</button>}
           {m.de === "beta" && m.direto && !m.erro && <div style={{ fontSize: 10.5, color: "#4ade80", marginTop: 3 }}>⚡ direto do sistema</div>}
           {m.de === "beta" && !m.direto && m.conferido === true && /\d/.test(m.texto || "") && <div style={{ fontSize: 10.5, color: "#4ade80", marginTop: 3 }}>✓ números conferidos com os dados</div>}

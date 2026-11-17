@@ -71,7 +71,7 @@ const CONSULTAS = [
   },
   {
     nome: 'dados_cadastro',
-    descricao: 'Dados de cadastro de um funcionário: CPF, admissão (tempo de casa), função, telefone, e-mail, nascimento, categoria da CNH, situação.',
+    descricao: 'Dados de cadastro de um FUNCIONÁRIO: CPF, admissão (tempo de casa), função, telefone, e-mail, nascimento, CNH, situação, contato de emergência, plano de saúde (carteirinha).',
     args: { pessoa: 'nome do funcionário', campo: 'qual dado, ex.: CPF, telefone (opcional)' },
     perfis: ['qualidade'],
     exemplo: 'Qual o telefone da Ana?',
@@ -81,10 +81,36 @@ const CONSULTAS = [
       const cpf = c.cpf ? (edita ? String(c.cpf).replace(/\D/g, '').replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4') : `***.***.***-${String(c.cpf).slice(-2)}`) : null;
       const casa = (() => { if (!c.admissao) return null; const m = Math.floor(diasEntre(c.admissao, ctx.hoje) / 30.44); return m >= 12 ? `${Math.floor(m / 12)} ano(s)${m % 12 ? ` e ${m % 12} mês(es)` : ''}` : `${m} mês(es)`; })();
       const F = [['cpf', 'CPF', cpf], ['admissao', 'Admissão', c.admissao ? `${dBR(c.admissao)}${casa ? ` (${casa} de casa)` : ''}` : null], ['funcao', 'Função', c.funcao], ['telefone', 'Telefone', c.telefone], ['email', 'E-mail', c.email],
-        ['nascimento', 'Nascimento', c.data_nascimento ? dBR(c.data_nascimento) : null], ['cnh', 'CNH', c.cnh_categoria ? `categoria ${c.cnh_categoria}${c.cnh_validade ? ` · validade ${dBR(c.cnh_validade)}` : ''}` : null], ['situacao', 'Situação', c.situacao]];
-      const pedido = campo ? F.filter(([k, rot]) => norm(campo).includes(k) || norm(rot).includes(norm(campo)) || (k === 'admissao' && /contrat|entrou|casa/.test(norm(campo))) || (k === 'telefone' && /celular|fone|whats/.test(norm(campo)))) : [];
+        ['nascimento', 'Nascimento', c.data_nascimento ? dBR(c.data_nascimento) : null], ['cnh', 'CNH', c.cnh_categoria ? `categoria ${c.cnh_categoria}${c.cnh_validade ? ` · validade ${dBR(c.cnh_validade)}` : ''}` : null], ['situacao', 'Situação', c.situacao],
+        // B1.10: 🚑 emergência e 🩺 plano de saúde
+        ['emergencia', 'Contato de emergência', c.emergencia_nome || c.emergencia_telefone ? `${c.emergencia_nome || '—'}${c.emergencia_parentesco ? ` (${c.emergencia_parentesco})` : ''}${c.emergencia_telefone ? ` · ${c.emergencia_telefone}` : ''}` : null],
+        ['plano', 'Plano de saúde', c.plano_saude_operadora || c.plano_saude_carteira ? `${c.plano_saude_operadora || '—'}${c.plano_saude_plano ? ` · ${c.plano_saude_plano}` : ''}${c.plano_saude_carteira ? ` · carteirinha ${c.plano_saude_carteira}` : ''}${c.plano_saude_validade ? ` · validade ${dBR(c.plano_saude_validade)}` : ''}` : null]];
+      const pedido = campo ? F.filter(([k, rot]) => norm(campo).includes(k) || norm(rot).includes(norm(campo)) || (k === 'admissao' && /contrat|entrou|casa/.test(norm(campo))) || (k === 'telefone' && /celular|fone|whats|contato|ligar/.test(norm(campo)) && !/emerg/.test(norm(campo))) || (k === 'emergencia' && /emerg|parente|familia|avisar/.test(norm(campo))) || (k === 'plano' && /saude|carteir|unimed|convenio|medic/.test(norm(campo)))) : [];
       const lista = pedido.length ? pedido : F;
-      return { texto: `${c.nome}:\n${lista.map(([, rot, v]) => `• ${rot}: ${v || 'não cadastrado'}`).join('\n')}${cpf && !edita && lista.some(([k]) => k === 'cpf') ? '\n(CPF completo só para quem edita Pessoas.)' : ''}`, link: { tela: 'pessoas', colaborador: c.id } };
+      return { texto: `${c.nome}:\n${lista.map(([, rot, v]) => `• ${rot}: ${v || 'não cadastrado'}`).join('\n')}${cpf && !edita && lista.some(([k]) => k === 'cpf') ? '\n(CPF completo só para quem edita Pessoas.)' : ''}`, link: { tela: 'pessoas', colaborador: c.id },
+        acoes: [...(lista.some(([k]) => ['telefone', 'email'].includes(k)) && (c.telefone || c.email) ? [{ rotulo: c.nome.split(' ')[0], telefone: c.telefone || null, email: c.email || null }] : []),
+          ...(lista.some(([k]) => k === 'emergencia') && c.emergencia_telefone ? [{ rotulo: `🚑 ${c.emergencia_nome || 'emergência'}`, telefone: c.emergencia_telefone }] : [])] }; // B1.10: ligar/WhatsApp/e-mail
+    },
+  },
+  {
+    nome: 'contato_empresa',
+    descricao: 'Telefone, e-mail e pessoa de contato de um CLIENTE ou FORNECEDOR (por nome ou CNPJ).',
+    args: { empresa: 'nome ou CNPJ do cliente/fornecedor' },
+    perfis: ['comprador', 'comercial', 'operacao', 'qualidade', 'financeiro', 'fiscal'],
+    exemplo: 'Qual o telefone da Rolamentos Brasil?',
+    async executar(ctx, { empresa }) { // B1.10
+      const cli = (await q(ctx.sb.from('clientes').select('*').eq('tenant_id', ctx.tenantId)).catch(() => [])).filter((x) => x.ativo !== false).map((x) => ({ tipo: 'Cliente', nome: x.nome, doc: x.documento, contato: x.contato_nome, telefone: x.contato_telefone, email: x.contato_email, tela: 'clientes' }));
+      const Visiveis = require('./fornecedoresVisiveis');
+      const db = { select: async (tab, filtros = {}, tid) => { let r = ctx.sb.from(tab).select('*'); if (tid && tab !== 'tenant_fornecedores' && !filtros.tipo) r = r.eq('tenant_id', tid); for (const [k, v] of Object.entries(filtros)) r = r.eq(k, v); return q(r); } };
+      const fm = await Visiveis.mapaFornecedoresDoTenant(db, ctx.tenantId, {}).catch(() => ({}));
+      const forn = Object.values(fm).map((x) => ({ tipo: 'Fornecedor', nome: x.nome_fantasia || x.nome, razao: x.nome, doc: x.cnpj || x.documento, contato: x.contato_nome, telefone: x.contato_whatsapp || x.contato_telefone || x.telefone, email: x.contato_email || x.email, tela: 'fornecedores' }));
+      const todos = [...cli, ...forn]; const d = String(empresa).replace(/\D/g, '');
+      let xs = d.length >= 8 ? todos.filter((x) => String(x.doc || '').replace(/\D/g, '').startsWith(d)) : [];
+      if (!xs.length) xs = achar(todos, empresa, ['nome', 'razao']);
+      if (!xs.length) return { texto: `Não encontrei cliente nem fornecedor "${empresa}".` };
+      if (xs.length > 4) return { texto: `Encontrei ${xs.length}: ${listaNomes(xs, (x) => `${x.nome} (${x.tipo.toLowerCase()})`)}. Qual deles?` };
+      return { texto: xs.map((x) => `${x.tipo === 'Cliente' ? '🏢' : '🏭'} ${x.nome} (${x.tipo.toLowerCase()})\n• Contato: ${x.contato || 'não cadastrado'}\n• Telefone: ${x.telefone || 'não cadastrado'}\n• E-mail: ${x.email || 'não cadastrado'}`).join('\n\n'),
+        link: { tela: xs[0].tela }, acoes: xs.filter((x) => x.telefone || x.email).map((x) => ({ rotulo: x.nome, telefone: x.telefone || null, email: x.email || null })) };
     },
   },
   {
@@ -121,7 +147,7 @@ const CONSULTAS = [
   },
   {
     nome: 'disponibilidade_equipamento',
-    descricao: 'Se uma carreta, cavalo, caminhão, máquina ou equipamento (por placa, TAG ou nome) está livre, quando fica disponível, se está bloqueado, locado ou em manutenção.',
+    descricao: 'Agenda/programação de uma carreta, cavalo, caminhão, máquina ou equipamento (por placa, TAG ou nome): próxima AT/viagem programada, se está livre, quando fica disponível, bloqueado, locado ou em manutenção.',
     args: { equipamento: 'placa, TAG ou nome do equipamento' },
     perfis: ['comprador', 'operacao'],
     exemplo: 'A carreta CR-07 está livre?',

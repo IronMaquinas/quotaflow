@@ -639,7 +639,11 @@ router.get('/colaboradores/:id/ficha', exigirVer, async (req, res) => {
       multas: mult ? { lista: mult.slice(0, 20), resumo: MU.resumoColaborador(mult) } : null, // 12g · 18zz
       leituras: procs ? { total: procs.length, sem_login: !c.usuario_id, pendentes: procs.filter((d) => !d.lido_em).map((d) => ({ id: d.id, codigo: d.codigo, titulo: d.titulo, revisao: d.revisao })) } : null,
       colaborador_comp: { escolaridade: c.escolaridade ?? null, cnh_categoria: c.cnh_categoria ?? null },
-      colaborador: { id: c.id, nome: c.nome, situacao: c.situacao, funcao_id: c.funcao_id, funcao: c.funcao, admissao: c.admissao || null }, // B1.6: admissão na ficha
+      colaborador: { id: c.id, nome: c.nome, situacao: c.situacao, funcao_id: c.funcao_id, funcao: c.funcao, admissao: c.admissao || null, // B1.6: admissão na ficha
+        // B1.10: contato no topo da ficha (CPF completo só para quem edita — LGPD) + 🚑 emergência e 🩺 plano de saúde
+        cpf: c.cpf ? (podeEditar(req) ? c.cpf : `***.***.***-${String(c.cpf).slice(-2)}`) : null, telefone: c.telefone || null, email: c.email || null,
+        emergencia_nome: c.emergencia_nome || null, emergencia_telefone: c.emergencia_telefone || null, emergencia_parentesco: c.emergencia_parentesco || null,
+        plano_saude_operadora: c.plano_saude_operadora || null, plano_saude_plano: c.plano_saude_plano || null, plano_saude_carteira: c.plano_saude_carteira || null, plano_saude_validade: c.plano_saude_validade || null },
       funcao: f.funcao ? { id: f.funcao.id, nome: f.funcao.nome, descritivo: f.funcao.descritivo, requisitos: f.funcao.requisitos, cbo: f.funcao.cbo || null, setor: f.funcao.setor || null, escolaridade: f.funcao.escolaridade || null, riscos: f.funcao.riscos || [], responde_a: f.funcao.responde_a || null } : null,
       ...F.LISTAS,
       itens: f.itens, resumo: f.resumo, pode_editar: podeEditar(req),

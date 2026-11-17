@@ -95,6 +95,14 @@ function validarColaborador(body, { parcial = false } = {}) {
   for (const k of ['cnh_validade', 'cnh_emissao', 'cnh_primeira_habilitacao']) if (tem(k)) { if (body[k] && !DATA.test(String(body[k]))) erros.push('Data da CNH inválida'); else out[k] = body[k] || null; }
   if (tem('cnh_observacoes')) out.cnh_observacoes = body.cnh_observacoes ? String(body.cnh_observacoes).trim().slice(0, 120) : null;
   if (tem('cnh_local_emissao')) out.cnh_local_emissao = body.cnh_local_emissao ? String(body.cnh_local_emissao).trim().slice(0, 80) : null;
+  // B1.10: 🚑 contato de emergência e 🩺 plano de saúde (migration 107)
+  if (tem('emergencia_nome')) out.emergencia_nome = body.emergencia_nome ? String(body.emergencia_nome).trim().slice(0, 120) : null;
+  if (tem('emergencia_telefone')) out.emergencia_telefone = body.emergencia_telefone ? String(body.emergencia_telefone).trim().slice(0, 30) : null;
+  if (tem('emergencia_parentesco')) out.emergencia_parentesco = body.emergencia_parentesco ? String(body.emergencia_parentesco).trim().slice(0, 40) : null;
+  if (tem('plano_saude_operadora')) out.plano_saude_operadora = body.plano_saude_operadora ? String(body.plano_saude_operadora).trim().slice(0, 80) : null;
+  if (tem('plano_saude_plano')) out.plano_saude_plano = body.plano_saude_plano ? String(body.plano_saude_plano).trim().slice(0, 80) : null;
+  if (tem('plano_saude_carteira')) out.plano_saude_carteira = body.plano_saude_carteira ? String(body.plano_saude_carteira).trim().slice(0, 40) : null;
+  if (tem('plano_saude_validade')) { if (body.plano_saude_validade && !DATA.test(String(body.plano_saude_validade))) erros.push('Validade do plano de saúde inválida'); else out.plano_saude_validade = body.plano_saude_validade || null; }
   return { erros, dados: out };
 }
 

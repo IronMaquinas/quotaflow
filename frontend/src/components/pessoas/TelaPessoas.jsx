@@ -18,6 +18,7 @@ import TelaMultas from "./TelaMultas"; // etapa 12g
 import TelaDisciplinar from "./TelaDisciplinar"; // etapa 12h
 import TelaFerias from "./TelaFerias"; // B1.5: 🏖 férias
 import FichaFeriasFaltas from "./FichaFeriasFaltas"; // B1.6: admissão, saldo de férias e faltas na ficha
+import FichaContato from "./FichaContato"; // B1.10: contato, emergência e plano de saúde no topo da ficha
 import EditorCompetencias, { limparCompetencias } from "../shared/EditorCompetencias"; // etapa 12e.3
 import DocumentosGestao from "./DocumentosGestao"; // 18zr: 📘 aba Gestão
 import CampoCnpj, { mascaraCnpjCpf } from "../shared/CampoCnpj"; // 18zx
@@ -204,6 +205,8 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       if (!formColab.tem_vinculo && (corpo.vinculo || "proprio") === "proprio") ["vinculo", "rntrc", "vinculo_empresa", "vinculo_cnpj"].forEach((k) => delete corpo[k]); // 18zw: antes da migration 095
       delete corpo.tem_vinculo; ["rntrc", "vinculo_empresa", "vinculo_cnpj"].forEach((k) => { if (corpo[k] === "") corpo[k] = null; }); // 18zn: vazio não vai (funciona antes da migration 090)
       CAMPOS_CNH.forEach((k) => { if (corpo[k] === "") corpo[k] = null; });
+      ["emergencia_nome", "emergencia_telefone", "emergencia_parentesco", "plano_saude_operadora", "plano_saude_plano", "plano_saude_carteira", "plano_saude_validade"].forEach((k) => { if (corpo[k] === undefined) delete corpo[k]; else if (corpo[k] === "") corpo[k] = null; }); // B1.10: nunca tocado = não vai (antes da migration 107)
+      delete corpo.ferias_ate; // B1.5: só exibição
       if (sugerida) corpo.funcao_motivo = "correcao"; // 12d.3: ligar ao modelo de mesmo nome não é promoção
       if (!funcoesOk) delete corpo.funcao_id;
       // 12d.1b: tamanhos — se a migration 027 ainda não rodou (campos não vêm do banco) e nada foi digitado, não envia
@@ -757,6 +760,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
         <div style={{ display: "flex", gap: 12, alignItems: "center" }}>{(() => { const f = colabs.find((x) => String(x.id) === String(ficha.colaborador.id))?.foto_url; return f ? <img src={f} alt="" style={{ width: 54, height: 68, objectFit: "cover", borderRadius: 8 }} /> : null; })()}
           <div style={{ fontSize: 17, fontWeight: 700 }}>📋 Ficha — {ficha.colaborador.nome}</div></div>{/* 18zq: foto */}
         <div style={{ fontSize: 12, color: C.textSub, marginTop: 4 }}>{ficha.funcao ? <>Função: <b style={{ color: C.text }}>{ficha.funcao.nome}</b></> : "Sem função ligada a um modelo — escolha a função no cadastro do colaborador."}</div>
+        <FichaContato C={C} colaborador={ficha.colaborador} />{/* B1.10 */}
         <FichaFeriasFaltas C={C} s={s} colaborador={ficha.colaborador} editar={editar} excluir={excluir} />{/* B1.6 */}
         {ficha.selo && (() => {
           const sl = SELO[ficha.selo.nivel] || SELO.em_andamento;
@@ -1009,6 +1013,17 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             {campo("TELEFONE", <input value={formColab.telefone} onChange={(e) => setFormColab({ ...formColab, telefone: e.target.value })} style={s.input} />, "1 1 160px")}
             {campo("E-MAIL", <input value={formColab.email} onChange={(e) => setFormColab({ ...formColab, email: e.target.value })} style={s.input} />, "1 1 200px")}
+            {/* B1.10: 🚑 contato de emergência e 🩺 plano de saúde (migration 107) */}
+            <div style={{ flex: "1 1 100%", fontSize: 12, fontWeight: 700, color: C.textSub, marginTop: 6 }}>🚑 CONTATO DE EMERGÊNCIA</div>
+            {campo("NOME", <input value={formColab.emergencia_nome || ""} onChange={(e) => setFormColab({ ...formColab, emergencia_nome: e.target.value })} style={s.input} />, "2 1 220px")}
+            {campo("TELEFONE", <input value={formColab.emergencia_telefone || ""} onChange={(e) => setFormColab({ ...formColab, emergencia_telefone: e.target.value })} placeholder="(DDD) número" style={s.input} />, "1 1 160px")}
+            {campo("PARENTESCO", <select value={formColab.emergencia_parentesco || ""} onChange={(e) => setFormColab({ ...formColab, emergencia_parentesco: e.target.value })} style={s.input}>
+              <option value="">—</option>{["Cônjuge / companheiro(a)", "Pai", "Mãe", "Filho(a)", "Irmão(ã)", "Avô / avó", "Tio(a)", "Amigo(a)", "Outro"].map((x) => <option key={x}>{x}</option>)}</select>, "1 1 170px")}
+            <div style={{ flex: "1 1 100%", fontSize: 12, fontWeight: 700, color: C.textSub, marginTop: 6 }}>🩺 PLANO DE SAÚDE</div>
+            {campo("OPERADORA", <input value={formColab.plano_saude_operadora || ""} onChange={(e) => setFormColab({ ...formColab, plano_saude_operadora: e.target.value })} placeholder="ex.: Unimed" style={s.input} />, "1 1 160px")}
+            {campo("PLANO", <input value={formColab.plano_saude_plano || ""} onChange={(e) => setFormColab({ ...formColab, plano_saude_plano: e.target.value })} placeholder="opcional" style={s.input} />, "1 1 140px")}
+            {campo("Nº DA CARTEIRINHA", <input value={formColab.plano_saude_carteira || ""} onChange={(e) => setFormColab({ ...formColab, plano_saude_carteira: e.target.value })} style={s.input} />, "1 1 180px")}
+            {campo("VALIDADE", <input type="date" value={formColab.plano_saude_validade ? String(formColab.plano_saude_validade).slice(0, 10) : ""} onChange={(e) => setFormColab({ ...formColab, plano_saude_validade: e.target.value })} style={s.input} />, "1 1 150px")}
           </div>
           <div>
             <span style={s.label}>TAMANHOS (PARA A ENTREGA DE EPI)</span>

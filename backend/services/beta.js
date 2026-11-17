@@ -56,7 +56,7 @@ async function perguntar(sb, { tenantId, userId, perfis = [], nome = '', mensage
   const esc = await escolher({ emp, registrar, lista, conversa, gestor });
   if (esc.consulta) {
     const r = await BC.executar(sb, ctxP, esc.consulta, esc.args);
-    return { texto: r.texto, link: r.link || null, consulta: esc.consulta, conferido: true, direto: true, suspeitos: [], restantes: await restam(sb, tenantId, userId) };
+    return { texto: r.texto, link: r.link || null, acoes: r.acoes || [], consulta: esc.consulta, conferido: true, direto: true, suspeitos: [], restantes: await restam(sb, tenantId, userId) };
   }
   if (!gestor) return { texto: `Isso eu ainda não sei responder. Por enquanto eu consulto: ${lista.map((c) => c.exemplo.replace(/\?$/, '')).join(' · ')}.`, conferido: true, direto: true, suspeitos: [], restantes: await restam(sb, tenantId, userId) };
   // 🧠 2) gestor: visão geral pelo painel (B1)
@@ -72,15 +72,17 @@ const restam = async (sb, tenantId, userId) => Math.max(0, LIMITE() - (await uso
 const ROTEADOR = `Você classifica perguntas para a Beta, assistente do QuotaFlow. Responda SOMENTE um JSON numa linha, sem texto em volta:
 {"consulta":"<nome>","args":{...}}  ou  {"consulta":null}
 Escolha a consulta da lista que responde à ÚLTIMA mensagem da Pessoa (use a conversa para completar: se a Beta perguntou "qual delas?" e a Pessoa respondeu um nome, repita a consulta anterior com o nome completo).
-Copie nomes, placas e números exatamente como a Pessoa escreveu (sem inventar). Não preencha argumento que a Pessoa não disse.`;
+Copie nomes, placas e números exatamente como a Pessoa escreveu (sem inventar). Não preencha argumento que a Pessoa não disse.
+NÃO explique, NÃO pense em voz alta, NÃO use markdown: a resposta inteira é só o JSON.`;
 
 async function escolher({ emp, registrar, lista, conversa, gestor }) {
   if (!lista.length) return { consulta: null };
   const cat = lista.map((c) => `- ${c.nome}: ${c.descricao} Argumentos: ${Object.entries(c.args).map(([k, v]) => `${k} (${v})`).join(', ')}. Ex.: "${c.exemplo}"`).join('\n');
   const extra = gestor ? '\nSe a pergunta for sobre a visão geral da empresa (como está hoje, metas, valor gerado, alertas, resumo) e nenhuma consulta for exata, devolva {"consulta":null}.' : '';
-  const r = await IA.gerarTexto({ tenant: emp, registrar, sistema: ROTEADOR + extra, prompt: `Consultas:\n${cat}\n\nConversa:\n${conversa}`, max: 120, rapido: true }); // B1.8: IA_MODELO_RAPIDO
+  const r = await IA.gerarTexto({ tenant: emp, registrar, sistema: ROTEADOR + extra, prompt: `Consultas:\n${cat}\n\nConversa:\n${conversa}`, max: 400, rapido: true }); // B1.8: IA_MODELO_RAPIDO · B1.10: folga (com 120 o modelo econômico às vezes cortava antes do JSON)
   try {
-    const j = JSON.parse(String(r.texto || '').match(/\{[\s\S]*\}/)[0]);
+    const bruto = String(r.texto || ''); const m = bruto.match(/\{[\s\S]*\}/);
+    let j = null; try { j = JSON.parse(m[0]); } catch { const n = bruto.match(/"consulta"\s*:\s*"([a-z_]+)"/); if (n) { j = { consulta: n[1], args: {} }; for (const a of bruto.matchAll(/"([a-z_]+)"\s*:\s*"([^"]*)"/g)) if (a[1] !== 'consulta') j.args[a[1]] = a[2]; } } // B1.10: JSON cortado ainda serve
     if (j && j.consulta && lista.some((c) => c.nome === j.consulta)) return { consulta: j.consulta, args: j.args && typeof j.args === 'object' ? j.args : {} };
   } catch { /* não entendeu → segue sem consulta */ }
   return { consulta: null };
