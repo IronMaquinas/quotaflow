@@ -25,6 +25,13 @@ export default function SalaControle({ C, s, podeAbrir = () => true, topo = null
   const carregar = () => apiService.get("/sala-controle").then((r) => { setD(r); setErro(null); setEm(new Date()); }).catch(() => setErro("Não consegui atualizar a sala agora."));
   // SC2.6: atualiza a cada 5 min SÓ com a aba visível; ao voltar para a aba (se passou 1 min) atualiza na hora; ↻ manual
   const ultimo = useRef(0);
+  const [analista, setAnalista] = useState(null); const [tv, setTv] = useState(false); const [relogio, setRelogio] = useState(new Date()); // SC3
+  useEffect(() => { apiService.get("/sala-controle/analista").then((r) => r?.texto && setAnalista(r)).catch(() => {}); }, []);
+  useEffect(() => { if (!tv) return undefined; const iv = setInterval(() => setRelogio(new Date()), 15000); const esc = (e) => { if (e.key === "Escape") sairTv(); }; window.addEventListener("keydown", esc);
+    const fs = () => { if (!document.fullscreenElement) setTv(false); }; document.addEventListener("fullscreenchange", fs);
+    return () => { clearInterval(iv); window.removeEventListener("keydown", esc); document.removeEventListener("fullscreenchange", fs); }; }, [tv]); // eslint-disable-line
+  const entrarTv = () => { setTv(true); setRelogio(new Date()); try { document.documentElement.requestFullscreen?.(); } catch { /* sem tela cheia: segue sobreposto */ } };
+  const sairTv = () => { setTv(false); try { if (document.fullscreenElement) document.exitFullscreen?.(); } catch { /* ok */ } };
   const carregarSe = (minMs) => { if (document.visibilityState === "visible" && Date.now() - ultimo.current >= minMs) { ultimo.current = Date.now(); carregar(); } };
   useEffect(() => {
     ultimo.current = Date.now(); carregar(); t.current = setInterval(() => carregarSe(5 * 60000 - 1000), 5 * 60000);
@@ -54,16 +61,24 @@ export default function SalaControle({ C, s, podeAbrir = () => true, topo = null
       {x.link && <span style={{ color: C.accent, fontSize: 12, paddingTop: 2 }}>›</span>}
     </div>);
   return (
-    <div style={{ textAlign: "left" }}>
+    <div style={tv ? { position: "fixed", inset: 0, zIndex: 300, background: C.bg, overflowY: "auto", padding: "22px 30px", textAlign: "left", zoom: 1.12 } : { textAlign: "left" }}>
+      {tv && <div style={{ display: "flex", alignItems: "center", gap: 12, marginBottom: 10 }}>
+        <span style={{ fontSize: 30, fontWeight: 800, letterSpacing: "0.02em" }}>{relogio.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })}</span>
+        <span style={{ flex: 1, fontSize: 13, color: C.muted }}>🛰 Sala de Controle · modo TV · atualiza sozinha</span>
+        <button type="button" onClick={sairTv} style={{ ...s.btn(false), cursor: "pointer", color: C.text, padding: "6px 12px" }}>Sair (Esc)</button></div>}
       <div style={{ ...card, padding: "18px 20px", marginBottom: 12, background: `linear-gradient(135deg, ${C.surface}, ${est.fundo})`, borderColor: est.cor + "66", display: "flex", gap: 16, alignItems: "center", flexWrap: "wrap" }}>
         <div style={{ flex: "1 1 280px" }}>
           <div style={{ fontSize: 24, fontWeight: 700 }}>{saud()}, {d.nome || "tudo bem"}!</div>
-          <div style={{ fontSize: 13, color: C.textSub, marginTop: 2 }}>{new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })} · {d.gestor ? "a empresa está assim agora" : "estas são as suas prioridades"}</div>
+          <div style={{ fontSize: 13, color: C.textSub, marginTop: 2 }}>{new Date().toLocaleDateString("pt-BR", { weekday: "long", day: "2-digit", month: "long" })} · {d.gestor ? "a empresa está assim agora" : "estas são as suas prioridades"}
+            {!tv && <button type="button" onClick={entrarTv} title="Tela cheia para o monitor da operação" style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 12.5, marginLeft: 8 }}>🖥 Modo TV</button>}</div>
         </div>
-        <div style={{ textAlign: "right" }}>
+        <div style={{ textAlign: "right", flex: "0 1 520px" }}>
           <div style={{ fontSize: 15, fontWeight: 700, color: est.cor }}>{est.ic} {est.rot}</div>
           <div style={{ fontSize: 12, color: C.textSub }}>{frase}</div>
         </div>
+          {analista?.texto && <div style={{ flexBasis: "100%", marginTop: 2, fontSize: 14, lineHeight: 1.55, color: C.text, borderLeft: `3px solid ${est.cor}`, paddingLeft: 12 }}>
+            <span style={{ fontSize: 11, fontWeight: 700, letterSpacing: "0.08em", color: C.textSub }}>🧠 ANALISTA SÊNIOR</span>{analista.conferido && <span title="Todos os números e códigos da frase foram conferidos com os dados do sistema" style={{ fontSize: 10.5, color: "#4ade80", marginLeft: 8 }}>✓ números conferidos</span>}
+            <div>{analista.texto}</div></div>}
       </div>
       {topo}
       {alertas.length > 0 && <div style={{ ...card, marginBottom: 12, borderColor: "#ef444466" }}>

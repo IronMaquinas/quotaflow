@@ -58,11 +58,11 @@ async function montar(supabase, tenantId, ym, { comIA = true, refazer = false } 
   let ia = { texto: null, motivo: 'não pedido' };
   const hist = await pareceres(supabase, tenantId, ym); const guardado = [...hist].reverse().find((u) => u.ok && u.resposta?.texto);
   const geracoes = hist.length; let limite = false;
-  if (guardado && !refazer) ia = { texto: guardado.resposta.texto, guardado: true, gerado_em: guardado.em };
+  if (guardado && !refazer) ia = { texto: guardado.resposta.texto, guardado: true, gerado_em: guardado.em, conferido: guardado.resposta.conferido ?? null, suspeitos: guardado.resposta.suspeitos || [] };
   else if ((comIA || refazer) && geracoes >= LIMITE_PARECER()) { ia = guardado ? { texto: guardado.resposta.texto, guardado: true, gerado_em: guardado.em } : { texto: null, motivo: `limite de ${LIMITE_PARECER()} gerações do parecer neste mês` }; limite = true; }
   else if ((comIA || refazer) && (d.total.esperadas || mes.inspecoes)) {
-    ia = await IA.gerarTexto({ tenant: emp, registrar: { supabase, tenantId, recurso: 'analista_mensal', chave: ym }, sistema: SISTEMA, prompt: `Dados da rotina de inspeção (JSON):\n${JSON.stringify(dados)}\n\nEscreva o parecer de ${dados.mes}.`, max: 900 });
-    if (ia.texto && ia.uso_id != null) { try { await supabase.from('ia_uso').update({ resposta: { texto: ia.texto } }).eq('id', ia.uso_id); } catch { /* sem a migration 091 */ } }
+    ia = await require('./ia/conferir').gerarConferido((extra) => IA.gerarTexto({ tenant: emp, registrar: { supabase, tenantId, recurso: 'analista_mensal', chave: ym }, sistema: SISTEMA, prompt: `Dados da rotina de inspeção (JSON):\n${JSON.stringify(dados)}\n\nEscreva o parecer de ${dados.mes}.${extra}`, max: 900 }), dados) // SC3: 🛡 números conferidos;
+    if (ia.texto && ia.uso_id != null) { try { await supabase.from('ia_uso').update({ resposta: { texto: ia.texto, conferido: ia.conferido, suspeitos: ia.suspeitos || [] } }).eq('id', ia.uso_id); } catch { /* sem a migration 091 */ } }
     if (ia.texto) ia.gerado_em = new Date().toISOString();
     else if (guardado) ia = { texto: guardado.resposta.texto, guardado: true, gerado_em: guardado.em, motivo: `não foi possível gerar de novo (${ia.motivo}) — mantido o parecer guardado` };
   }
@@ -73,7 +73,7 @@ async function montar(supabase, tenantId, ym, { comIA = true, refazer = false } 
   const NIV = { alto: ['#b91c1c', '●'], medio: ['#b45309', '●'], bom: ['#15803d', '✓'] };
   const kpi = (rot, val, c, sub) => `<td style="padding:10px;border:1px solid #e5e7eb;border-radius:6px;vertical-align:top;width:25%"><div style="font-size:11px;color:#666">${rot}</div><div style="font-size:22px;font-weight:800;color:${c}">${val}</div><div style="font-size:11px;color:#666">${sub}</div></td>`;
   const parecer = ia.texto ? `<div style="margin:18px 0;padding:12px 14px;background:#f5f3ff;border-left:3px solid #6d28d9;border-radius:4px"><div style="font-weight:700;margin-bottom:6px">🧠 Parecer do Analista Sênior</div>
-      <div style="white-space:pre-wrap">${escH(ia.texto)}</div><div style="font-size:11px;color:#777;margin-top:8px">Parecer gerado por inteligência artificial${ia.gerado_em ? ` em ${new Date(new Date(ia.gerado_em).getTime() - 3 * 36e5).toISOString().slice(0, 16).replace(/(\d+)-(\d+)-(\d+)T/, '$3/$2/$1 ')}` : ''}, com os dados daquele momento — confira antes de decidir.</div></div>` : '';
+      <div style="white-space:pre-wrap">${escH(ia.texto)}</div>${ia.conferido === true ? '<div style="font-size:11px;color:#15803d;margin-top:6px">✓ Números conferidos com os dados do sistema</div>' : ia.conferido === false ? `<div style="font-size:11px;color:#b45309;margin-top:6px">⚠ Não confirmado nos dados: ${escH((ia.suspeitos || []).join(', '))} — confira antes de usar</div>` : ''}<div style="font-size:11px;color:#777;margin-top:8px">Parecer gerado por inteligência artificial${ia.gerado_em ? ` em ${new Date(new Date(ia.gerado_em).getTime() - 3 * 36e5).toISOString().slice(0, 16).replace(/(\d+)-(\d+)-(\d+)T/, '$3/$2/$1 ')}` : ''}, com os dados daquele momento — confira antes de decidir.</div></div>` : '';
   const html = `<div style="font-family:Arial,Helvetica,sans-serif;max-width:640px;margin:0 auto;color:#111;font-size:14px;line-height:1.55">
     <div style="font-weight:700;border-bottom:2px solid #111;padding-bottom:6px;margin-bottom:14px">${escH(dados.empresa)} · 🧠 Analista da rotina de inspeção</div>
     <p style="font-size:16px;margin:0 0 12px"><b>Relatório de ${escH(dados.mes)}</b></p>

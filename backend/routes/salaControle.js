@@ -12,4 +12,11 @@ router.get('/', async (req, res) => {
   } catch (err) { console.error('❌ sala-controle:', err.message); res.status(500).json({ erro: 'Não consegui montar a sala de controle agora.' }); }
 });
 
+// SC3: 🧠 frase do Analista Sênior (gestor/admin) — separada do painel para não atrasar a tela; 1 por dia, conferida
+router.get('/analista', async (req, res) => {
+  const perfis = perfisDe(req); if (!perfis.some((p) => ['admin', 'gestor'].includes(p))) return res.json({ texto: null });
+  try { const painel = await SC.montar(supabase, { tenantId: req.tenantId, userId: req.userId, perfis }); res.json(await require('../services/salaControle/analista').fraseDoDia(supabase, req.tenantId, painel)); }
+  catch (err) { console.warn('⚠️ sala-controle/analista:', err.message); res.json({ texto: null }); }
+});
+
 module.exports = router;

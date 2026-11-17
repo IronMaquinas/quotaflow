@@ -5,31 +5,39 @@
 import { useState, useEffect, useCallback } from "react";
 import apiService from "../../services/apiService";
 import { perfisDaSessao } from "../../utils/areaRestrita";
+import { Toggle } from "../../plataforma/ModulosPlataforma";
 
 const CHAVE = "qf_bemvindo_minimizado";
 const ler = () => { try { return localStorage.getItem(CHAVE) === "1"; } catch { return false; } };
 const gravar = (v) => { try { localStorage.setItem(CHAVE, v ? "1" : "0"); } catch { /* ok */ } };
+const OCULTO = "qf_bemvindo_oculto"; // SC3: o gestor escolhe se o roteiro aparece no Início (⚙️ Configurações → 👋 Roteiro inicial)
+export const roteiroOculto = () => { try { return localStorage.getItem(OCULTO) === "1"; } catch { return false; } };
+const gravarOculto = (v) => { try { localStorage.setItem(OCULTO, v ? "1" : "0"); } catch { /* ok */ } };
 const GRUPOS = { empresa: "🏢 Empresa e equipe", pessoas: "👷 Pessoas", comercial: "📈 Comercial", operacoes: "🚛 Operações", qualidade: "✅ Qualidade", suprimentos: "🛒 Suprimentos" }; // 18j: áreas dos módulos
 
 export default function BemVindo({ C, s, modo = "cartao", podeEditar = true, onAbrir }) {
   const [d, setD] = useState(null); const [mini, setMini] = useState(modo === "cartao" && ler());
-  const [erro, setErro] = useState(null); const [ocupado, setOcupado] = useState(false);
+  const [erro, setErro] = useState(null); const [ocupado, setOcupado] = useState(false); const [oculto, setOculto] = useState(roteiroOculto());
   const carregar = useCallback(() => apiService.get("/configuracoes/roteiro").then((r) => setD(r)).catch(() => setD(null)), []);
   useEffect(() => { carregar(); }, [carregar]);
   const admin = perfisDaSessao().includes("admin"); // 👥 Usuários só o Administrador abre
   if (!d) return null;
-  if (modo === "cartao" && d.completo) return null;
+  if (modo === "cartao" && (d.completo || oculto)) return null;
+  const ocultar = (v) => { gravarOculto(v); setOculto(v); };
   const salvar = async (corpo) => { setOcupado(true); setErro(null); try { const r = await apiService.put("/configuracoes/roteiro", corpo); setD(r); } catch (e) { setErro(e.message); } finally { setOcupado(false); } };
   const pct = d.total ? Math.round((d.feitos / d.total) * 100) : 0;
   const barra = <div style={{ height: 6, background: C.border, borderRadius: 3, overflow: "hidden", flex: 1 }}><div style={{ width: `${pct}%`, height: "100%", background: C.accent }} /></div>;
   if (mini) return <div onClick={() => { setMini(false); gravar(false); }} className="qf-clicavel" style={{ ...s.card, padding: "10px 14px", marginBottom: 20, display: "flex", alignItems: "center", gap: 12, textAlign: "left" }}>
-    <span style={{ fontSize: 13, fontWeight: 600 }}>👋 Configuração inicial {d.feitos}/{d.total}</span>{barra}<span style={{ fontSize: 12, color: C.accent }}>continuar ›</span></div>;
+    <span style={{ fontSize: 13, fontWeight: 600 }}>👋 Configuração inicial {d.feitos}/{d.total}</span>{barra}<span style={{ fontSize: 12, color: C.accent }}>continuar ›</span>
+    <button type="button" title="Não mostrar no Início (volta em ⚙️ Configurações → 👋 Roteiro inicial)" onClick={(e) => { e.stopPropagation(); ocultar(true); }} style={{ background: "none", border: "none", color: C.muted, fontSize: 12, cursor: "pointer", padding: "0 0 0 6px" }}>ocultar ✕</button></div>;
 
   const grupos = Object.keys(GRUPOS).filter((g) => d.passos.some((p) => p.grupo === g));
   const proximo = d.passos.find((p) => !p.ok && !p.dispensado && p.obrigatorio) || d.passos.find((p) => !p.ok && !p.dispensado);
   return <div style={{ ...s.card, padding: "16px 18px", marginBottom: 24, textAlign: "left", border: modo === "cartao" ? `1px solid ${C.accent}55` : undefined }}>
     <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 4 }}>
       <div style={{ fontSize: 16, fontWeight: 700, flex: 1 }}>👋 Bem-vindo ao QuotaFlow</div>
+      {modo === "pagina" && <span style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 12.5, color: C.textSub }}>Mostrar no Início <Toggle C={C} ligado={!oculto} onChange={() => ocultar(!oculto)} rotulo="Mostrar a configuração inicial no Início" /></span>}
+      {modo === "cartao" && <button type="button" onClick={() => ocultar(true)} className="qf-clicavel" style={{ background: "none", border: "none", color: C.muted, fontSize: 12, cursor: "pointer" }}>não mostrar no Início</button>}
       {modo === "cartao" && <button type="button" onClick={() => { setMini(true); gravar(true); }} className="qf-clicavel" style={{ background: "none", border: "none", color: C.muted, fontSize: 12, cursor: "pointer" }}>minimizar</button>}
     </div>
     <div style={{ fontSize: 13, color: C.textSub, marginBottom: 8 }}>Estes são os passos para o seu plano (<b>⭐ {d.plano_nome}</b>) funcionar. <b>Não se preocupe:</b> tudo pode ser ajustado depois em ⚙️ Configurações.</div>
