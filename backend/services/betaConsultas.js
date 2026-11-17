@@ -70,6 +70,24 @@ const CONSULTAS = [
     },
   },
   {
+    nome: 'dados_cadastro',
+    descricao: 'Dados de cadastro de um funcionário: CPF, admissão (tempo de casa), função, telefone, e-mail, nascimento, categoria da CNH, situação.',
+    args: { pessoa: 'nome do funcionário', campo: 'qual dado, ex.: CPF, telefone (opcional)' },
+    perfis: ['qualidade'],
+    exemplo: 'Qual o telefone da Ana?',
+    async executar(ctx, { pessoa, campo }) { // B1.8: mesma regra da tela Pessoas — CPF completo só para quem edita (admin/gestor/qualidade)
+      const xs = await acharColaborador(ctx, pessoa); if (xs.length !== 1) return qualPessoa(xs, pessoa);
+      const c = xs[0]; const edita = ctx.perfis.some((p) => ['admin', 'gestor', 'qualidade'].includes(p));
+      const cpf = c.cpf ? (edita ? String(c.cpf).replace(/\D/g, '').replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4') : `***.***.***-${String(c.cpf).slice(-2)}`) : null;
+      const casa = (() => { if (!c.admissao) return null; const m = Math.floor(diasEntre(c.admissao, ctx.hoje) / 30.44); return m >= 12 ? `${Math.floor(m / 12)} ano(s)${m % 12 ? ` e ${m % 12} mês(es)` : ''}` : `${m} mês(es)`; })();
+      const F = [['cpf', 'CPF', cpf], ['admissao', 'Admissão', c.admissao ? `${dBR(c.admissao)}${casa ? ` (${casa} de casa)` : ''}` : null], ['funcao', 'Função', c.funcao], ['telefone', 'Telefone', c.telefone], ['email', 'E-mail', c.email],
+        ['nascimento', 'Nascimento', c.data_nascimento ? dBR(c.data_nascimento) : null], ['cnh', 'CNH', c.cnh_categoria ? `categoria ${c.cnh_categoria}${c.cnh_validade ? ` · validade ${dBR(c.cnh_validade)}` : ''}` : null], ['situacao', 'Situação', c.situacao]];
+      const pedido = campo ? F.filter(([k, rot]) => norm(campo).includes(k) || norm(rot).includes(norm(campo)) || (k === 'admissao' && /contrat|entrou|casa/.test(norm(campo))) || (k === 'telefone' && /celular|fone|whats/.test(norm(campo)))) : [];
+      const lista = pedido.length ? pedido : F;
+      return { texto: `${c.nome}:\n${lista.map(([, rot, v]) => `• ${rot}: ${v || 'não cadastrado'}`).join('\n')}${cpf && !edita && lista.some(([k]) => k === 'cpf') ? '\n(CPF completo só para quem edita Pessoas.)' : ''}`, link: { tela: 'pessoas', colaborador: c.id } };
+    },
+  },
+  {
     nome: 'ferias',
     descricao: 'Férias: quando um funcionário sai/volta de férias e o saldo de dias a gozar/vencimento, ou quem está de férias agora e quem sai nos próximos 30 dias (sem pessoa).',
     args: { pessoa: 'nome do funcionário (opcional)' },
@@ -85,6 +103,8 @@ const CONSULTAS = [
         const ult = m.filter((f) => f.situacao === 'concluida').sort((a, b) => b.fim.localeCompare(a.fim))[0];
         let saldo = ''; try { const s = (await FE.saldos(ctx.sb, ctx.tenantId, { colaboradorId: c.id })).colaboradores[0]; // B1.6
           if (s && !s.admissao) saldo = '\n⚠ Sem data de admissão no cadastro — não consigo calcular o saldo.';
+          else if (s?.atual?.situacao === 'em_aquisicao' && !s.a_gozar) { const p = s.atual; const fimP = p.fim; const prox = new Date(Date.parse(fimP) + 864e5).toISOString().slice(0, 10); // B1.8
+            saldo = `\nPeríodo aquisitivo em andamento (admissão ${dBR(s.admissao)}): completa em ${dBR(prox)}, aí terá ${p.direito - p.gozado - p.programado} dia(s) para gozar até ${dBR(p.limite)}${p.faltas ? ` · ${p.faltas} falta(s) no período` : ''}.`; }
           else if (s?.atual) saldo = `\nSaldo: ${s.a_gozar} dia(s) a gozar${s.programado ? ` · ${s.programado} programado(s)` : ''}${s.proximo_limite ? ` · limite ${dBR(s.proximo_limite)}` : ''}${s.alerta === 'vencido' ? ' · ⛔ período vencido' : ''}${s.faltas_periodo > 5 ? ` · ${s.faltas_periodo} faltas no período` : ''}.`; } catch { /* sem 106 */ }
         if (agora) return { texto: `🏖 ${c.nome} está de férias até ${dBR(agora.fim)} — volta em ${dBR(agora.retorno)}.${prox ? ` Próximo período: ${dBR(prox.inicio)} a ${dBR(prox.fim)}.` : ''}${saldo}`, link: { tela: 'pessoas', aba: 'ferias' } };
         if (prox) return { texto: `${c.nome} sai de férias em ${dBR(prox.inicio)} (em ${prox.faltam_dias} dia(s)) e volta em ${dBR(prox.retorno)} — ${prox.dias} dia(s).${saldo}`, link: { tela: 'pessoas', aba: 'ferias' } };

@@ -49,10 +49,10 @@ function status(tenant = null) {
 let _fake = null; // testes
 /** { texto, provedor, modelo } — texto null quando não deu (motivo explica); nunca lança */
 //   18zl: imagens (documentos) e registro do uso em ia_uso (registrar = { supabase, tenantId, recurso }) — base do custo por empresa
-async function gerarTexto({ sistema = '', prompt, max = 900, tenant = null, imagens = [], registrar = null } = {}) {
+async function gerarTexto({ sistema = '', prompt, max = 900, tenant = null, imagens = [], registrar = null, rapido = false } = {}) {
   const st = status(tenant);
   if (!st.ligada) return { texto: null, motivo: st.motivo, provedor: st.provedor };
-  const c = config();
+  const c = config(); if (rapido && process.env.IA_MODELO_RAPIDO) c.modelo = process.env.IA_MODELO_RAPIDO; // B1.8: tarefa simples (roteador da Beta) num modelo mais barato, se configurado
   // 18zo: devolve o id do registro (quem chamou completa com o resultado/falha) + log de custo no servidor
   const anotar = async (ok, uso = {}) => {
     console.log(`🧠 [ia] ${registrar?.recurso || 'texto'} · ${c.modelo} · entrada ${uso.entrada || 0} · saída ${uso.saida || 0} tokens${ok ? '' : ' · FALHOU'}`);

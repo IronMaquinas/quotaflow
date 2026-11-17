@@ -78,7 +78,7 @@ async function escolher({ emp, registrar, lista, conversa, gestor }) {
   if (!lista.length) return { consulta: null };
   const cat = lista.map((c) => `- ${c.nome}: ${c.descricao} Argumentos: ${Object.entries(c.args).map(([k, v]) => `${k} (${v})`).join(', ')}. Ex.: "${c.exemplo}"`).join('\n');
   const extra = gestor ? '\nSe a pergunta for sobre a visão geral da empresa (como está hoje, metas, valor gerado, alertas, resumo) e nenhuma consulta for exata, devolva {"consulta":null}.' : '';
-  const r = await IA.gerarTexto({ tenant: emp, registrar, sistema: ROTEADOR + extra, prompt: `Consultas:\n${cat}\n\nConversa:\n${conversa}`, max: 120 });
+  const r = await IA.gerarTexto({ tenant: emp, registrar, sistema: ROTEADOR + extra, prompt: `Consultas:\n${cat}\n\nConversa:\n${conversa}`, max: 120, rapido: true }); // B1.8: IA_MODELO_RAPIDO
   try {
     const j = JSON.parse(String(r.texto || '').match(/\{[\s\S]*\}/)[0]);
     if (j && j.consulta && lista.some((c) => c.nome === j.consulta)) return { consulta: j.consulta, args: j.args && typeof j.args === 'object' ? j.args : {} };

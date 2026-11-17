@@ -39,7 +39,7 @@ export default function Beta({ C, s, podeAbrir = () => true }) {
           <div style={{ background: m.de === "pessoa" ? C.accent : m.erro ? "#7f1d1d55" : C.bg, color: m.de === "pessoa" ? "#fff" : C.text, border: m.de === "pessoa" ? "none" : `1px solid ${C.border}`, borderRadius: 12, padding: "8px 12px", fontSize: 13.5, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{m.texto}</div>
           {m.de === "beta" && m.link?.tela && podeAbrir(m.link.tela) && <button type="button" onClick={() => ir(m.link)} style={{ background: "none", border: "none", color: C.accent, fontSize: 12, cursor: "pointer", padding: "4px 2px 0", fontFamily: "inherit" }}>Abrir no sistema →</button>}
           {m.de === "beta" && m.direto && !m.erro && <div style={{ fontSize: 10.5, color: "#4ade80", marginTop: 3 }}>⚡ direto do sistema</div>}
-          {m.de === "beta" && !m.direto && m.conferido === true && <div style={{ fontSize: 10.5, color: "#4ade80", marginTop: 3 }}>✓ números conferidos com os dados</div>}
+          {m.de === "beta" && !m.direto && m.conferido === true && /\d/.test(m.texto || "") && <div style={{ fontSize: 10.5, color: "#4ade80", marginTop: 3 }}>✓ números conferidos com os dados</div>}
           {m.de === "beta" && m.conferido === false && <div style={{ fontSize: 10.5, color: C.warn, marginTop: 3 }}>⚠ não confirmado nos dados: {(m.suspeitos || []).join(", ")} — confira na tela</div>}
         </div>)}
         {ocup && <div style={{ alignSelf: "flex-start", fontSize: 13, color: C.muted }}>Beta está olhando os dados…</div>}
