@@ -28,6 +28,7 @@ export default function TelaFerias({ C, s, modal, campo, colabs = [], editar, ex
   const agora = lista.filter((f) => f.situacao === "em_gozo").sort((a, b) => a.fim.localeCompare(b.fim));
   const prox = lista.filter((f) => f.situacao === "programada").sort((a, b) => a.inicio.localeCompare(b.inicio));
   const hist = lista.filter((f) => f.situacao === "concluida");
+  const fimAntes = !!(form?.inicio && form?.fim && form.fim < form.inicio); // B1.9
   const dias = form?.inicio && form?.fim && form.fim >= form.inicio ? Math.round((Date.parse(form.fim) - Date.parse(form.inicio)) / 864e5) + 1 : null;
 
   const salvar = async () => {
@@ -136,9 +137,10 @@ export default function TelaFerias({ C, s, modal, campo, colabs = [], editar, ex
               {resumo.faltas_periodo > 5 && <div style={{ fontSize: 12, color: C.warn, marginTop: 4 }}>💡 {resumo.faltas_periodo} faltas injustificadas no período — o direito caiu.</div>}</>}
             </div>); })()}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
-            {campo("Início *", <input type="date" value={form.inicio} onChange={(e) => setForm({ ...form, inicio: e.target.value, fim: form.fim || somaDias(e.target.value, 29) })} style={s.input} />)}
-            {campo("Fim (último dia) *", <input type="date" value={form.fim} min={form.inicio || undefined} onChange={(e) => setForm({ ...form, fim: e.target.value })} style={s.input} />)}
+            {campo("Início *", <input type="date" value={form.inicio} onChange={(e) => { const v = e.target.value; setForm({ ...form, inicio: v, fim: !form.fim || (v && form.fim < v) ? somaDias(v, 29) : form.fim }); }} style={s.input} />)}{/* B1.9: início depois do fim → fim recalculado */}
+            {campo("Fim (último dia) *", <input type="date" value={form.fim} min={form.inicio || undefined} onChange={(e) => setForm({ ...form, fim: e.target.value })} style={{ ...s.input, ...(fimAntes ? { borderColor: C.danger } : {}) }} />)}
           </div>
+          {fimAntes && <div style={{ fontSize: 12.5, color: C.danger, fontWeight: 600 }}>❌ O fim ({dBR(form.fim)}) está antes do início ({dBR(form.inicio)}) — ajuste as datas.</div>}
           {dias != null && <div style={{ fontSize: 12, color: dias > 30 ? C.danger : C.textSub }}>{dias} dia(s) · volta em {dBR(somaDias(form.fim, 1))}{dias > 30 ? " — máximo 30 por período" : ""}</div>}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
             {campo("Período aquisitivo", <div style={{ ...s.input, opacity: 0.85 }}>{analise?.periodo ? `${analise.periodo.rotulo} · direito ${analise.periodo.direito} dias` : "calculado pela admissão"}</div>)}
@@ -154,7 +156,7 @@ export default function TelaFerias({ C, s, modal, campo, colabs = [], editar, ex
           {erroForm && <div style={{ color: C.danger, fontSize: 13 }}>⚠ {erroForm}</div>}
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <button onClick={() => setForm(null)} disabled={salvando} style={{ ...s.btn(false), cursor: "pointer" }}>Cancelar</button>
-            <button onClick={salvar} disabled={salvando || !form.inicio || !form.fim || !!analise?.bloqueia} title={analise?.bloqueia ? "Em desacordo com a legislação — veja o Analista" : undefined} style={{ ...s.btn(true), cursor: analise?.bloqueia ? "not-allowed" : "pointer", opacity: analise?.bloqueia ? 0.45 : 1 }}>{salvando ? "Salvando…" : "Salvar"}</button>
+            <button onClick={salvar} disabled={salvando || !form.inicio || !form.fim || fimAntes || !!analise?.bloqueia} title={analise?.bloqueia ? "Em desacordo com a legislação — veja o Analista" : undefined} style={{ ...s.btn(true), cursor: analise?.bloqueia || fimAntes ? "not-allowed" : "pointer", opacity: analise?.bloqueia || fimAntes ? 0.45 : 1 }}>{salvando ? "Salvando…" : "Salvar"}</button>
           </div>
         </div>
       </>, () => setForm(null), 560)}

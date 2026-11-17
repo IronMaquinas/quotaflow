@@ -69,7 +69,7 @@ const ESPERADO = {
   'services/acessoSpot.js': '6ecce4d16d6b123c6ce93c1223b32f01', // etapa 10c (novo)
   'services/receitaCnpj.js': 'b0e2a678127403d5608723c21ec61b78', // etapa 14d.5
   'services/cadastroPublico.js': '750c29b11811b3ae3cdddad46da4fb8a', // etapa 18v
-  'front:App.jsx': 'a058b40f59d9bd80742c0d15f4f74734', // etapa B1.7
+  'front:App.jsx': '3886b1c1fcde1e816a56e72987a63699', // etapa B1.9
   'front:TelaLogin.jsx': '742946c163f48c3a80f798f6077678c2', // etapa 18g.6
   'front:TelaSignup.jsx': '345dceefb937b38e74cfef44cfc33ef3', // etapa 11a.3
   'front:AvisoPlanoTenant.jsx': '2a75bbac9eaae456cc5d1b81d1dfbff8', // etapa 18v
@@ -343,7 +343,7 @@ const ESPERADO = {
   'migrations/088_checklist_medicao_contratual.sql': 'ffb81733f60648c397b903b882057c1a', // etapa 18zg (novo)
   'services/analistaRotina.js': 'c0afb3121b4732e3cb22c0b81c92862b', // etapa 18zm
   'front:AnalistaRotina.jsx': '9c1a6be45ed881d85f07d0f9f733ea0d', // etapa 18zp
-  'services/ia/index.js': 'c822511a0781ba7ae598936dbad183cc', // etapa B1.8
+  'services/ia/index.js': '9192dbed73bc49300036c29c8194cc2c', // etapa B1.9
   'services/analistaMensal.js': '816e02e2538a5ca13a8cd75531d03bf4', // etapa SC3
   'migrations/089_ia_uso_foto_colaborador.sql': '0d683964b7f713c0b484f0e7e631c890', // etapa 18zl
   'services/leituraCnh.js': 'ff3c577c51abac6529f6855d96352184', // etapa 18zo
@@ -394,24 +394,24 @@ const ESPERADO = {
   'services/ia/conferir.js': '9722ac7f95c6d0f1d88d52edfb19a620', // etapa B1
   'services/salaControle/analista.js': 'a6b6b2ccc047d8b42ee354100430a68e', // etapa SC3 (novo)
   'services/beta.js': '8d5faed4314a5bbcbe4be76b55e541db', // etapa B1.8
-  'routes/beta.js': 'd3cbdb6921a8966b245c573df1204508', // etapa B1.7
+  'routes/beta.js': 'dae7ee687adabe756999ee3085c3c984', // etapa B1.9
   'front:Beta.jsx': '61433e49fc51ff221cdae5e5fd115699', // etapa B1.8
   'services/betaConsultas.js': '5102e23e9a1a06da7bd59ad503dbddc7', // etapa B1.8
   'services/ferias.js': '680710410c3456d964323554456079c4', // etapa B1.7
   'migrations/105_colaborador_ferias.sql': '35db94dbde383bdedd3080434704e697', // etapa B1.7
-  'front:TelaFerias.jsx': '361a5e37d30d90787b4c0b2e04c7bb68', // etapa B1.7
+  'front:TelaFerias.jsx': '441b412a2896cc829df01d14a5c22078', // etapa B1.9
   'services/feriasRegras/index.js': '8730bb457bcc3905ccf6bd07f52146c7', // etapa B1.7
   'services/feriasRegras/BR.js': 'af3edaa3cb2200f0d9852154a544347c', // etapa B1.7
   'migrations/106_ferias_regras_faltas.sql': '49954de069bdc79e2e8d3a93b96327d1', // etapa B1.7
   'front:FichaFeriasFaltas.jsx': 'b14a30d525872218a1a863516295569e', // etapa B1.7
 };
 
-// Antes de copiar a etapa B1.8 — base: B1.7 (99e3135)
+// Antes de copiar a etapa B1.9 — base: B1.8 (cb02045)
 const ANTES = {
-  'services/betaConsultas.js': 'dcf8d8699fef85c2cb1035690386d812',
-  'services/beta.js': '7afa972088a70790431d8bdf547d2947',
-  'services/ia/index.js': '37d019be4fdc47387ff3f39312eee659',
-  'front:Beta.jsx': '372f1f8e743753ec32bb5920456b2657',
+  'services/ia/index.js': 'c822511a0781ba7ae598936dbad183cc',
+  'routes/beta.js': 'd3cbdb6921a8966b245c573df1204508',
+  'front:TelaFerias.jsx': '361a5e37d30d90787b4c0b2e04c7bb68',
+  'front:App.jsx': 'a058b40f59d9bd80742c0d15f4f74734',
 };
 
 const RAIZ = process.cwd();
@@ -449,7 +449,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a B1.8)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a B1.9)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

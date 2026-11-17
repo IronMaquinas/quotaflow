@@ -13,7 +13,7 @@ router.get('/consultas', (req, res) => {
 
 router.post('/', async (req, res) => {
   const perfis = perfisDe(req);
-  if (!perfis.length || perfis.every((p) => ['fornecedor', 'colaborador', 'tecnico'].includes(p))) return res.status(403).json({ erro: 'A Beta não está disponível para este acesso.' });
+  if (!perfis.some((p) => ['admin', 'gestor'].includes(p))) return res.status(403).json({ erro: 'A Beta está disponível para gestores nesta fase.' }); // B1.9: só gestão enquanto valida (as consultas já têm perfis — liberar = trocar esta linha e a do App.jsx)
   try {
     let nome = ''; try { const { data } = await supabase.from('usuarios').select('nome').eq('id', req.userId).limit(1); nome = data?.[0]?.nome || ''; } catch { /* segue */ }
     const r = await B.perguntar(supabase, { tenantId: req.tenantId, userId: req.userId, perfis, nome, mensagens: req.body?.mensagens });

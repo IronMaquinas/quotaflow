@@ -52,7 +52,10 @@ let _fake = null; // testes
 async function gerarTexto({ sistema = '', prompt, max = 900, tenant = null, imagens = [], registrar = null, rapido = false } = {}) {
   const st = status(tenant);
   if (!st.ligada) return { texto: null, motivo: st.motivo, provedor: st.provedor };
-  const c = config(); if (rapido && process.env.IA_MODELO_RAPIDO) c.modelo = process.env.IA_MODELO_RAPIDO; // B1.8: tarefa simples (roteador da Beta) num modelo mais barato, se configurado
+  const c = config();
+  // B1.8/B1.9: tarefa simples (roteador da Beta: só escolhe a consulta) vai para o modelo ECONÔMICO; análise elaborada fica no principal.
+  //   IA_MODELO_RAPIDO no Render troca; sem ela, o econômico padrão do provedor (OpenAI-compatível: o mesmo IA_MODELO, já econômico).
+  if (rapido) c.modelo = process.env.IA_MODELO_RAPIDO || (c.provedor === 'anthropic' ? 'claude-haiku-5-5' : c.modelo);
   // 18zo: devolve o id do registro (quem chamou completa com o resultado/falha) + log de custo no servidor
   const anotar = async (ok, uso = {}) => {
     console.log(`🧠 [ia] ${registrar?.recurso || 'texto'} · ${c.modelo} · entrada ${uso.entrada || 0} · saída ${uso.saida || 0} tokens${ok ? '' : ' · FALHOU'}`);
