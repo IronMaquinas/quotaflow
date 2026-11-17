@@ -21,7 +21,7 @@ export default function TelaMetas({ C, s }) {
   useEffect(() => { carregar(); }, []);
   const abrirSug = () => apiService.get("/metas/sugeridas").then((r) => { setSug(r.medidas); setMarcadas(new Set()); }).catch((e) => setErro(e?.response?.data?.erro || e.message));
   const importar = async () => { setOcup(true); try { const r = await apiService.post("/metas/importar", { chaves: [...marcadas] }); setSug(null); setAviso(`${r.importadas} meta(s) importada(s) — ajuste os limites como fizer sentido para a empresa.`); carregar(); } catch (e) { setErro(e?.response?.data?.erro || e.message); } finally { setOcup(false); } };
-  const salvar = async () => { setOcup(true); try { const corpo = { nome: form.nome, meta: form.meta, limite: form.limite, responsavel_colaborador_id: form.responsavel_colaborador_id || null, responsavel_usuario_id: form.responsavel_usuario_id || null, observacao: form.observacao || null,
+  const salvar = async () => { setOcup(true); try { const corpo = { nome: form.nome, meta: form.meta, limite: form.limite, responsavel_colaborador_id: form.responsavel_colaborador_id || null, responsavel_usuario_id: form.responsavel_usuario_id || null, observacao: String(form.observacao || "").trim() || null,
         ...((form.chave === "manual" || form.origem === "manual") ? { area: form.area, unidade: form.unidade, sentido: form.sentido } : {}) };
       if (form.id) await apiService.put(`/metas/${form.id}`, corpo); else await apiService.post("/metas", { ...corpo, chave: form.chave });
       setForm(null); carregar(); } catch (e) { setErro(e?.response?.data?.erro || e.message); } finally { setOcup(false); } };
@@ -58,6 +58,7 @@ export default function TelaMetas({ C, s }) {
               {m.tendencia && m.tendencia.dif !== 0 && <span title={`desde ${m.tendencia.desde.split("-").reverse().join("/")}`} style={{ fontSize: 12.5, color: m.tendencia.melhorou ? "#4ade80" : "#f87171" }}>{m.tendencia.dif > 0 ? "▲" : "▼"} {fmtValor(Math.abs(m.tendencia.dif), m.unidade)}</span>}
             </div>
             <div style={{ fontSize: 11.5, color: C.muted }}>{regra(m)}</div>
+            {m.descricao && <div style={{ fontSize: 12, color: C.textSub, margin: "6px 0 2px", lineHeight: 1.45, whiteSpace: "pre-line" }}>{m.descricao}</div>}
             <div style={{ fontSize: 11, color: C.muted, marginTop: 4 }} title={m.como}>📐 {m.como}{m.responsavel_nome ? ` · 👤 ${m.responsavel_nome}` : ""}</div>
             {m.origem === "manual" && <div style={{ fontSize: 11, color: C.muted, marginTop: 2 }}>{m.informado ? `✏️ informado em ${m.informado.dia.split("-").reverse().join("/")}${m.informado.por ? ` por ${m.informado.por}` : ""}` : "✏️ ainda sem valor informado"}</div>}
             {m.sem_dono && <div style={{ fontSize: 11.5, color: C.warn, marginTop: 4 }}>⚠ Sem dono — clique em Editar e escolha o responsável</div>}
@@ -67,7 +68,7 @@ export default function TelaMetas({ C, s }) {
               <button type="button" onClick={() => setValorDe(null)} style={{ ...s.btn(false), padding: "4px 10px", fontSize: 12, cursor: "pointer", color: C.text }}>×</button></div>}
             <div style={{ display: "flex", gap: 6, marginTop: 10 }}>
               {m.origem === "manual" && valorDe?.id !== m.id && <button type="button" onClick={() => setValorDe({ id: m.id, valor: "" })} style={{ ...s.btn(false), padding: "4px 10px", fontSize: 12, cursor: "pointer", color: C.accent }}>✏️ Informar valor</button>}
-              <button type="button" onClick={() => { apiService.get("/metas/sugeridas").then((r) => { setAreas(r.areas || {}); if (r.unidades) setUnidades(r.unidades); }).catch(() => {}); setForm({ ...m, meta: m.meta ?? "", limite: m.limite ?? "" }); }} style={{ ...s.btn(false), padding: "4px 10px", fontSize: 12, cursor: "pointer", color: C.text }}>Editar</button>
+              <button type="button" onClick={() => { apiService.get("/metas/sugeridas").then((r) => { setAreas(r.areas || {}); if (r.unidades) setUnidades(r.unidades); }).catch(() => {}); setForm({ ...m, observacao: m.observacao || m.descricao || "", meta: m.meta ?? "", limite: m.limite ?? "" }); }} style={{ ...s.btn(false), padding: "4px 10px", fontSize: 12, cursor: "pointer", color: C.text }}>Editar</button>
               <button type="button" onClick={() => setApagar(m)} style={{ ...s.btn(false), padding: "4px 10px", fontSize: 12, cursor: "pointer", color: C.danger }}>Excluir</button>
             </div>
           </div>)}
@@ -105,6 +106,9 @@ export default function TelaMetas({ C, s }) {
             <label style={{ flex: "1 1 140px" }}><span style={s.label}>🟡 LIMITE DO AMARELO</span><input type="number" step="any" value={form.limite} onChange={(e) => setForm({ ...form, limite: e.target.value })} style={s.input} /></label>
           </div>
           <div style={{ fontSize: 11.5, color: C.muted, margin: "4px 0 10px" }}>{form.sentido === "menor" ? "Menor é melhor: até a meta 🟢, até o limite 🟡, acima 🔴." : "Maior é melhor: a partir da meta 🟢, a partir do limite 🟡, abaixo 🔴."} Sem meta = mostra o número sem semáforo.</div>
+          <label style={{ display: "block", marginBottom: 10 }}><span style={s.label}>DESCRIÇÃO (O QUE A META MEDE E POR QUE IMPORTA)</span>
+            <textarea rows={3} value={form.observacao || ""} onChange={(e) => setForm({ ...form, observacao: e.target.value })} placeholder="Ex.: Tempo médio entre falhas da frota — quanto maior, menos parada na estrada. Medido todo fim de mês pela manutenção." style={{ ...s.input, minHeight: 70, resize: "vertical", fontFamily: "inherit" }} />
+            <span style={{ fontSize: 11, color: C.muted }}>Aparece no cartão da meta e na Saúde do negócio — escreva para quem vai ler.</span></label>
           <div style={{ marginBottom: 10 }}><span style={s.label}>👤 DONO DA META (OBRIGATÓRIO)</span>
             <CampoFuncionario C={C} s={s} lista={pessoas} nome={form.responsavel_nome || ""} id={form.responsavel_colaborador_id} usuarioId={form.responsavel_usuario_id} placeholder="Digite o nome do funcionário…"
               onChange={(v) => setForm({ ...form, responsavel_nome: v.nome, responsavel_colaborador_id: v.id, responsavel_usuario_id: v.usuario_id })} />

@@ -289,7 +289,7 @@ const ESPERADO = {
   'front:ConfigOcorrencias.jsx': 'e799bac0e58a978808d6041d9e3ed50a', // etapa 18h.4c
   'front:IndicadoresOcorrencias.jsx': '2cf48ec396f6722644bbfa4dfb9ef720', // etapa 18h.4 (novo)
   'front:gerarRelatorioOcorrencias.js': '6bf80339de4eb3c15849b55972de04fa', // etapa 18h.4 (novo)
-  'services/roteiroInicial.js': '8f3510585b8c1be7b9da30ec88b654fb', // etapa 18g.4
+  'services/roteiroInicial.js': 'a3f4c9da083b36bc16d2b9530e5fd2df', // etapa SC2.3
   'migrations/070_roteiro_inicial.sql': 'ee88701340141118fc400549de31fc3a', // etapa 18i (novo)
   'front:BemVindo.jsx': '89a5cc6d829575da05687e53eab3884b', // etapa 18j
   'services/modulos.js': '6624c00b1cc5faf7d1ca913bd3586611', // etapa 18zm
@@ -378,19 +378,23 @@ const ESPERADO = {
   'services/valorGerado.js': 'd901a9a6d6d354c9025251c61d36b277', // etapa 5a (novo)
   'routes/valorGerado.js': '741c909bfde3dc6734e803c82b545dca', // etapa 5a (novo)
   'front:PainelValorGerado.jsx': '6763081e30950998d36ab680a5b86b3b', // etapa 5a (novo)
-  'services/salaControle/index.js': '24f5b71348bde9bd243eb263d3067edf', // etapa SC2.1
+  'services/salaControle/index.js': '7957c710d8896c0dae7f070b31819d57', // etapa SC2.3
   'routes/salaControle.js': '3efb39aea62743915130666d229b1699', // etapa SC1 (novo)
-  'front:SalaControle.jsx': 'd1acba17db4ca54099fbd433c44290d3', // etapa SC2
-  'services/metas.js': '82eaee203929e5266d86ddee5e88d2d0', // etapa SC2.1
+  'front:SalaControle.jsx': 'f4a75c93adf521382fd3243f1b429bdb', // etapa SC2.3
+  'services/metas.js': 'f823049ff0743d75a0dbd181096a3197', // etapa SC2.3
   'routes/metas.js': '78b62f98d9c461ba089838c7a16dc822', // etapa SC2.1
   'migrations/101_metas_negocio.sql': '93d87925592a0da96839a247d76f4d1e', // etapa SC2 (novo)
-  'front:TelaMetas.jsx': '88b927b4adc27ee5f3e4b1ef53884381', // etapa SC2.2
+  'front:TelaMetas.jsx': '188c36f264cd6fc2b037f6bec70f4fa8', // etapa SC2.3
   'migrations/102_metas_manuais_responsavel.sql': 'e499fe2a4d3a714ea55bdd981870fa8f', // etapa SC2.1 (novo)
 };
 
-// Antes de copiar a etapa SC2.2 — base: SC2.1 (88fb48e)
+// Antes de copiar a etapa SC2.3 — base: SC2.2 (8536e72)
 const ANTES = {
-  'front:TelaMetas.jsx': '198cce1f811c8f6a7552f242443e140f',
+  'services/roteiroInicial.js': '8f3510585b8c1be7b9da30ec88b654fb',
+  'services/metas.js': '82eaee203929e5266d86ddee5e88d2d0',
+  'services/salaControle/index.js': '24f5b71348bde9bd243eb263d3067edf',
+  'front:TelaMetas.jsx': '88b927b4adc27ee5f3e4b1ef53884381',
+  'front:SalaControle.jsx': 'd1acba17db4ca54099fbd433c44290d3',
 };
 
 const RAIZ = process.cwd();
@@ -428,7 +432,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a SC2.2)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a SC2.3)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

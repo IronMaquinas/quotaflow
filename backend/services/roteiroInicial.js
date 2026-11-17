@@ -64,6 +64,8 @@ async function montar(supabase, tenantId) {
   P('contratos_locacao', 'clientes', 'Clientes', 'O contrato de locação nasce de um cliente cadastrado (CNPJ/CPF, contato).', (await da('clientes')).length > 0, { tela: 'contratos', obrigatorio: false });
   P('contratos_locacao', 'modelo_contrato', 'Modelo de contrato', 'O texto do contrato com as suas cláusulas — o cliente lê e aceita pelo sistema.', (await da('contrato_modelos')).length > 0, { tela: 'contratos' });
   P(['contratos_locacao', 'ocorrencias'], 'oc_lc', 'Quem é avisado das ocorrências de locação', 'Quando o cliente registra avaria ou pane: quem recebe o e-mail e fica responsável pela tarefa.', (ocCfg.lc?.pessoas || []).length > 0, { aba: 'empresa', obrigatorio: false });
+  // ── gestão (SC2.3): metas do negócio alimentam a 📊 Saúde do negócio no Início
+  P(null, 'metas', 'Defina as metas do negócio', 'Os indicadores que dizem se a empresa vai bem (frota disponível, viagens no prazo, documentos em dia…). Viram a 📊 Saúde do negócio no Início, com 🟢🟡🔴.', (await da('metas_negocio').catch(() => [])).length > 0, { tela: 'metas', obrigatorio: false });
   // ── qualidade
   P('inspecoes', 'modelo_inspecao', 'Modelo de inspeção', 'O checklist das inspeções (pode importar da biblioteca).', (await da('inspecao_modelos')).length > 0, { tela: 'inspecoes' });
   // ── suprimentos

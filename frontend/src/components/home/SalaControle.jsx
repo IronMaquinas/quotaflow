@@ -65,7 +65,7 @@ export default function SalaControle({ C, s, podeAbrir = () => true, topo = null
             </div>
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(170px, 1fr))", gap: 10 }}>
               {[...d.saude].sort((a, b) => ({ vermelho: 0, amarelo: 1, verde: 2 }[a.sinal] ?? 3) - ({ vermelho: 0, amarelo: 1, verde: 2 }[b.sinal] ?? 3)).map((m) => (
-                <div key={m.id} onClick={() => ir({ tela: m.tela && podeAbrir(m.tela) ? m.tela : "metas" })} style={{ background: C.bg, border: `1px solid ${C.border}`, borderLeft: `4px solid ${COR_SINAL[m.sinal] || C.border}`, borderRadius: 8, padding: "10px 12px", cursor: "pointer" }}>
+                <div key={m.id} title={m.descricao || ""} onClick={() => ir({ tela: m.tela && podeAbrir(m.tela) ? m.tela : "metas" })} style={{ background: C.bg, border: `1px solid ${C.border}`, borderLeft: `4px solid ${COR_SINAL[m.sinal] || C.border}`, borderRadius: 8, padding: "10px 12px", cursor: "pointer" }}>
                   <div style={{ fontSize: 11, color: C.muted }}>{m.area_nome}</div>
                   <div style={{ display: "flex", alignItems: "baseline", gap: 6 }}><span style={{ fontSize: 22, fontWeight: 800, color: COR_SINAL[m.sinal] || C.text }}>{fmtValor(m.valor, m.unidade)}</span>
                     {m.tendencia && m.tendencia.dif !== 0 && <span style={{ fontSize: 11.5, color: m.tendencia.melhorou ? "#4ade80" : "#f87171" }}>{m.tendencia.dif > 0 ? "▲" : "▼"}</span>}</div>

@@ -10,7 +10,7 @@ const diasAtras = (dia, n) => new Date(new Date(dia + 'T12:00:00Z').getTime() - 
 const pct = (a, b) => (b > 0 ? Math.round((a / b) * 1000) / 10 : null);
 const ATIVA = (e) => !/vendid|baixad|inativ|sucata/i.test(String(e.situacao || ''));
 
-const AREAS = { operacao: '🚛 Operação', frota: '🛠 Frota', manutencao: '🔧 Manutenção', financeiro: '💵 Financeiro', seguranca: '🦺 Segurança', qualidade: '⚠️ Qualidade', pessoas: '👷 Pessoas', comercial: '📈 Comercial', compras: '🛒 Compras', gestao: '📌 Gestão' };
+const AREAS = { operacao: '🛠 Operação', frota: '🚛 Frota', manutencao: '🔧 Manutenção', financeiro: '💵 Financeiro', seguranca: '🦺 Segurança', qualidade: '⚠️ Qualidade', pessoas: '👷 Pessoas', comercial: '📈 Comercial', compras: '🛒 Compras', gestao: '📌 Gestão' };
 
 const MEDIDAS = {
   disponibilidade_frota: { nome: 'Disponibilidade da frota', area: 'frota', unidade: '%', sentido: 'maior', sug: [95, 90], tela: 'equipamentos',
@@ -98,7 +98,7 @@ async function listar(sb, tenantId, { agora = new Date(), fotografar = true } = 
     const v = m.origem === 'manual' ? (ult ? Number(ult.valor) : null) : (valores[m.chave] ?? null);
     const antes = fotos.filter((f) => f.chave === m.chave && String(f.dia).slice(0, 10) <= alvo).sort((a, b) => String(b.dia).localeCompare(String(a.dia)))[0];
     const dif = antes && v != null && antes.valor != null ? Math.round((v - Number(antes.valor)) * 10) / 10 : null;
-    return { ...m, unidade: m.unidade || md.unidade || '', area_nome: AREAS[m.area] || m.area, como: m.origem === 'manual' ? 'meta própria — valor informado pela empresa' : (md.como || ''), tela: md.tela || null, valor: v, sinal: sinal(m, v),
+    return { ...m, descricao: m.observacao || (md.como ? `${md.como[0].toUpperCase()}${md.como.slice(1)}.` : ''), unidade: m.unidade || md.unidade || '', area_nome: AREAS[m.area] || m.area, como: m.origem === 'manual' ? 'meta própria — valor informado pela empresa' : (md.como || ''), tela: md.tela || null, valor: v, sinal: sinal(m, v),
       informado: ult ? { dia: String(ult.dia).slice(0, 10), por: ult.informado_por || null } : null, sem_dono: !m.responsavel_usuario_id && !m.responsavel_colaborador_id,
       tendencia: dif == null ? null : { dif, melhorou: dif === 0 ? null : (m.sentido === 'menor' ? dif < 0 : dif > 0), desde: String(antes.dia).slice(0, 10) } };
   });
@@ -111,7 +111,7 @@ function sugeridas(jaTem = []) {
 async function importar(sb, tenantId, chaves = []) {
   const atuais = await q(sb.from('metas_negocio').select('chave').eq('tenant_id', tenantId));
   const novas = [...new Set(chaves)].filter((k) => MEDIDAS[k] && !atuais.some((a) => a.chave === k))
-    .map((k, i) => ({ tenant_id: tenantId, chave: k, nome: MEDIDAS[k].nome, area: MEDIDAS[k].area, sentido: MEDIDAS[k].sentido, meta: MEDIDAS[k].sug[0], limite: MEDIDAS[k].sug[1], ordem: atuais.length + i }));
+    .map((k, i) => ({ tenant_id: tenantId, chave: k, nome: MEDIDAS[k].nome, area: MEDIDAS[k].area, sentido: MEDIDAS[k].sentido, unidade: MEDIDAS[k].unidade, origem: 'sistema', observacao: `${MEDIDAS[k].como[0].toUpperCase()}${MEDIDAS[k].como.slice(1)}.`, meta: MEDIDAS[k].sug[0], limite: MEDIDAS[k].sug[1], ordem: atuais.length + i }));
   if (novas.length) await q(sb.from('metas_negocio').insert(novas));
   return { importadas: novas.length };
 }
