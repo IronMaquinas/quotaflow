@@ -107,7 +107,22 @@ async function metasInformar(c) { // SC2.4: dono da meta própria — informar o
   return { prioridades: ps.map((p) => ({ peso: 62, icone: '🎯', titulo: `Informar ${p.nome} de ${p.mes_nome}`, detalhe: 'você é o dono desta meta', link: { tela: 'metas', id: p.id } })) };
 }
 
-const SENSORES = { metasInformar, minhasTarefas, documentosGestao, planoAcaoNC, frotaBloqueada, viagens, vencimentos };
+async function ocorrencias(c) { // SC2.7: 🚨 incidentes de campo (cliente e motorista) — gestor + donos do processo (destinatários configurados)
+  const O = require('../ocorrencias');
+  let dono = false;
+  if (!c.gestor) { const cfg = await O.config(c.sb, c.tenantId); for (const or of ['contrato', 'at']) { const ds = await O.destinatarios(c.sb, c.tenantId, or, cfg).catch(() => []); if (ds.some((d) => String(d.usuario_id) === String(c.userId))) dono = true; } }
+  if (!c.gestor && !dono) return {};
+  const os = (await q(c.sb.from('ocorrencias').select('*').eq('tenant_id', c.tenantId))).filter((o) => o.status !== 'encerrada');
+  const semTrat = os.filter((o) => o.status === 'registrada'); const emTrat = os.filter((o) => o.status !== 'registrada');
+  const horas = (o) => Math.max(0, Math.round((c.agora - Date.parse(o.criado_em || o.created_at || c.agora)) / 36e5));
+  const quem = (o) => { const x = o.contexto || {}; return o.origem === 'at' ? `AT ${x.at?.numero || ''}${x.motorista?.nome ? ` · ${x.motorista.nome}` : ''}` : `${x.contrato?.cliente || 'cliente'}${x.equipamento?.tag ? ` · ${x.equipamento.tag}` : ''}`; };
+  return {
+    alertas: semTrat.map((o) => ({ nivel: 'critico', icone: '🚨', titulo: `${o.numero || 'Ocorrência'} — ${O.TIPOS[o.tipo] || 'ocorrência'} sem tratamento`, detalhe: `${quem(o)} · registrada há ${horas(o) < 24 ? `${horas(o)} h` : `${Math.floor(horas(o) / 24)} dia(s)`}`, link: { tela: 'contratos', evento: 'qf-abrir-ocorrencia', id: o.id } })),
+    kpis: { ocorrencias_sem_tratamento: semTrat.length, ocorrencias_em_tratamento: emTrat.length },
+  };
+}
+
+const SENSORES = { ocorrencias, metasInformar, minhasTarefas, documentosGestao, planoAcaoNC, frotaBloqueada, viagens, vencimentos };
 
 async function montar(sb, { tenantId, userId, perfis = [], nome = '', agora = new Date() }) {
   const hoje = hojeBR(agora);

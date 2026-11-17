@@ -15,6 +15,7 @@ const KPIS = [
   ["ats_hoje", "🚛", "ATs hoje", "programacao"], ["ats_em_execucao", "🛣", "em execução", "programacao"], ["equipamentos_bloqueados", "⛔", "equip. bloqueados", "inspecoes"],
   ["documentos_vencidos", "📄", "docs vencidos", "documentos"], ["documentos_7d", "📅", "vencem em 7 dias", "documentos"], ["ncs_abertas", "⚠️", "NCs abertas", "nao_conformidades"],
   ["acoes_nc_atrasadas", "⏰", "ações de NC atrasadas", "nao_conformidades"], ["tarefas_atrasadas", "📌", "tarefas atrasadas", "plano"],
+  ["ocorrencias_sem_tratamento", "🚨", "ocorrências sem tratamento", "contratos"], ["ocorrencias_em_tratamento", "🛟", "ocorrências em tratamento", "contratos"], // SC2.7
 ];
 const saud = () => { const h = new Date().getHours(); return h < 12 ? "Bom dia" : h < 18 ? "Boa tarde" : "Boa noite"; };
 
@@ -30,7 +31,7 @@ export default function SalaControle({ C, s, podeAbrir = () => true, topo = null
     const volta = () => carregarSe(60000); document.addEventListener("visibilitychange", volta); window.addEventListener("focus", volta);
     return () => { clearInterval(t.current); document.removeEventListener("visibilitychange", volta); window.removeEventListener("focus", volta); };
   }, []); // eslint-disable-line
-  const ir = (l) => { if (!l?.tela) return; if (l.tela === "documentos" && l.aba === "gestao") { window.qfDocsAba = "gestao"; if (l.id) window.qfAbrirGestaoDoc = l.id; } window.dispatchEvent(new CustomEvent("qf-navegar", { detail: { tela: l.tela, titulo: l.titulo } })); };
+  const ir = (l) => { if (!l?.tela) return; if (l.evento) { window.dispatchEvent(new CustomEvent(l.evento, { detail: l.id })); return; } if (l.tela === "documentos" && l.aba === "gestao") { window.qfDocsAba = "gestao"; if (l.id) window.qfAbrirGestaoDoc = l.id; } window.dispatchEvent(new CustomEvent("qf-navegar", { detail: { tela: l.tela, titulo: l.titulo } })); };
   const ok = (x) => !x.link?.tela || podeAbrir(x.link.tela);
   if (!d) return <div style={{ ...s.card, padding: 40, textAlign: "center", color: C.muted }}>{erro || "Montando a sua sala de controle…"}</div>;
   const alertas = d.alertas.filter(ok); const prior = d.prioridades.filter(ok); const agenda = d.agenda.filter(ok);
@@ -89,9 +90,9 @@ export default function SalaControle({ C, s, podeAbrir = () => true, topo = null
             </div>
           </div>)}
       {kpis.length > 0 && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(118px, 1fr))", gap: 10, marginBottom: 12 }}>
-        {kpis.map(([k, ic, rot, tela]) => { const v = d.kpis[k]; const ruim = ["equipamentos_bloqueados", "documentos_vencidos", "acoes_nc_atrasadas", "tarefas_atrasadas"].includes(k) && v > 0; return (
+        {kpis.map(([k, ic, rot, tela]) => { const v = d.kpis[k]; const ruim = ["equipamentos_bloqueados", "documentos_vencidos", "acoes_nc_atrasadas", "tarefas_atrasadas", "ocorrencias_sem_tratamento"].includes(k) && v > 0; const bom = k === "ocorrencias_em_tratamento" && v > 0; return (
           <div key={k} onClick={() => ir({ tela })} style={{ ...card, padding: "12px 14px", cursor: "pointer" }}>
-            <div style={{ fontSize: 24, fontWeight: 800, color: ruim ? "#f87171" : C.text }}>{v}</div>
+            <div style={{ fontSize: 24, fontWeight: 800, color: ruim ? "#f87171" : bom ? "#4ade80" : C.text }}>{v}</div>
             <div style={{ fontSize: 11.5, color: C.muted }}>{ic} {rot}</div>
           </div>); })}
       </div>}

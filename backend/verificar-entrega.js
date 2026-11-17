@@ -378,9 +378,9 @@ const ESPERADO = {
   'services/valorGerado.js': 'd901a9a6d6d354c9025251c61d36b277', // etapa 5a (novo)
   'routes/valorGerado.js': '741c909bfde3dc6734e803c82b545dca', // etapa 5a (novo)
   'front:PainelValorGerado.jsx': 'c2a982a4d57f469c86df05ee83a58b19', // etapa SC2.5
-  'services/salaControle/index.js': '676d1297c3b42bdd3fd1d104a615118f', // etapa SC2.4
+  'services/salaControle/index.js': '6ddde4403437aa029a46e60d76936f73', // etapa SC2.7
   'routes/salaControle.js': '3efb39aea62743915130666d229b1699', // etapa SC1 (novo)
-  'front:SalaControle.jsx': 'db98ad6788f2123fb69076e11b8b9a91', // etapa SC2.6
+  'front:SalaControle.jsx': 'dfdae13b88da165a683ef9e58b35aff3', // etapa SC2.7
   'services/metas.js': 'c9f7f147de4fa800c3b722cc202260d1', // etapa SC2.5
   'routes/metas.js': '2945b25b438295620aff1500158659fa', // etapa SC2.5
   'migrations/101_metas_negocio.sql': '93d87925592a0da96839a247d76f4d1e', // etapa SC2 (novo)
@@ -393,9 +393,10 @@ const ESPERADO = {
   'front:PlanoAcaoMeta.jsx': 'f6b1b4af99c561c3b59cb66632ffe725', // etapa SC2.5 (novo)
 };
 
-// Antes de copiar a etapa SC2.6 — base: SC2.5 (b1aca1d)
+// Antes de copiar a etapa SC2.7 — base: SC2.6 (fd1afd3)
 const ANTES = {
-  'front:SalaControle.jsx': 'f4a75c93adf521382fd3243f1b429bdb',
+  'services/salaControle/index.js': '676d1297c3b42bdd3fd1d104a615118f',
+  'front:SalaControle.jsx': 'db98ad6788f2123fb69076e11b8b9a91',
 };
 
 const RAIZ = process.cwd();
@@ -433,7 +434,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a SC2.6)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a SC2.7)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
