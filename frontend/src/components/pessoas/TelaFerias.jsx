@@ -12,10 +12,13 @@ const SIT = { em_gozo: { l: "🏖 De férias", c: "#22c55e" }, programada: { l: 
 const somaDias = (d, n) => { if (!d) return ""; const x = new Date(`${d}T12:00:00Z`); x.setUTCDate(x.getUTCDate() + n); return x.toISOString().slice(0, 10); };
 
 export default function TelaFerias({ C, s, modal, campo, colabs = [], editar, excluir, onAviso, onErro, recarregar }) {
+  const [resumo, setResumo] = useState(null); // B1.7: resumo do funcionário escolhido
   const [saldos, setSaldos] = useState(null); const [analise, setAnalise] = useState(null); const [filtroSaldo, setFiltroSaldo] = useState("alerta");
   const [lista, setLista] = useState([]); const [form, setForm] = useState(null); const [salvando, setSalvando] = useState(false); const [verHist, setVerHist] = useState(false); const [erroForm, setErroForm] = useState("");
   const carregar = async () => { try { const r = await apiService.get("/pessoas/ferias"); setLista(r.ferias || []); } catch (e) { onErro?.(e?.response?.data?.erro || e.message); }
     try { setSaldos(await apiService.get("/pessoas/ferias/saldos")); } catch (e) { setSaldos({ erro: e?.response?.data?.erro || e.message }); } };
+  useEffect(() => { if (!form?.colaborador_id) { setResumo(null); return; } setResumo({ carregando: true });
+    apiService.get(`/pessoas/ferias/saldos?colaborador_id=${form.colaborador_id}`).then((r) => setResumo(r.colaboradores?.[0] || { vazio: true })).catch(() => setResumo(null)); }, [form?.colaborador_id]); // eslint-disable-line
   // 🧠 Analista: confere a programação enquanto preenche
   useEffect(() => { if (!form?.colaborador_id || !form.inicio || !form.fim || form.fim < form.inicio) { setAnalise(null); return; }
     const t = setTimeout(() => apiService.post("/pessoas/ferias/analisar", { id: form.id, colaborador_id: form.colaborador_id, inicio: form.inicio, fim: form.fim, abono_dias: form.abono_dias || 0 }).then(setAnalise).catch(() => setAnalise(null)), 350);
@@ -118,6 +121,20 @@ export default function TelaFerias({ C, s, modal, campo, colabs = [], editar, ex
           {campo("Funcionário *", form.id ? <div style={{ ...s.input, opacity: 0.8 }}>{form.colaborador_nome}</div>
             : <CampoFuncionario C={C} s={s} lista={pessoas} nome={form.colaborador_nome} id={form.colaborador_id} placeholder="Digite o nome do funcionário…"
               onChange={(p) => setForm({ ...form, colaborador_nome: p.nome, colaborador_id: p.id })} />)}
+          {form.colaborador_id && resumo && !resumo.carregando && !resumo.vazio && (() => { const p = resumo.atual; const ALR = { vencido: ["⛔ período vencido — paga em dobro", C.danger], critico: ["⚠ vence em até 30 dias", C.warn], vencendo: ["vence em até 90 dias", "#eab308"] }[resumo.alerta];
+            const cel = (rot, val, sub, cor) => <div style={{ flex: "1 1 110px", minWidth: 0 }}><div style={{ fontSize: 10.5, color: C.textSub, fontWeight: 600, letterSpacing: 0.3 }}>{rot}</div><div style={{ fontSize: 15, fontWeight: 700, color: cor || C.text }}>{val}</div>{sub && <div style={{ fontSize: 11, color: C.textSub }}>{sub}</div>}</div>;
+            return (
+            <div style={{ border: `1px solid ${ALR ? ALR[1] : C.border}`, borderRadius: 8, padding: "10px 12px", background: `${ALR ? ALR[1] : C.accent}0d` }}>
+              {!resumo.admissao ? <div style={{ fontSize: 12.5, color: C.warn }}>⚠ Sem data de admissão no cadastro — sem ela não dá para calcular saldo e vencimento. Preencha em Colaboradores → Editar.</div> : <>
+              <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
+                {cel("ADMISSÃO", dBR(resumo.admissao))}
+                {cel("PERÍODO A GOZAR", p ? `${dBR(p.inicio).slice(0, 5)}/${p.inicio.slice(2, 4)} a ${dBR(p.fim).slice(0, 5)}/${p.fim.slice(2, 4)}` : "—", p?.situacao === "em_aquisicao" ? "em aquisição" : p ? `direito ${p.direito} dias${p.faltas ? ` · ${p.faltas} falta(s)` : ""}` : null)}
+                {cel("SALDO", p ? `${p.situacao === "em_aquisicao" ? p.direito - p.gozado - p.programado : resumo.a_gozar} dias` : "—", p && p.programado ? `${p.programado} já programado(s)` : null, ALR?.[1])}
+                {cel("LIMITE PARA GOZAR", p && p.situacao !== "em_aquisicao" ? dBR(p.limite) : "—", null, ALR?.[1])}
+              </div>
+              {ALR && <div style={{ fontSize: 12, color: ALR[1], fontWeight: 600, marginTop: 6 }}>{ALR[0]}</div>}
+              {resumo.faltas_periodo > 5 && <div style={{ fontSize: 12, color: C.warn, marginTop: 4 }}>💡 {resumo.faltas_periodo} faltas injustificadas no período — o direito caiu.</div>}</>}
+            </div>); })()}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
             {campo("Início *", <input type="date" value={form.inicio} onChange={(e) => setForm({ ...form, inicio: e.target.value, fim: form.fim || somaDias(e.target.value, 29) })} style={s.input} />)}
             {campo("Fim (último dia) *", <input type="date" value={form.fim} min={form.inicio || undefined} onChange={(e) => setForm({ ...form, fim: e.target.value })} style={s.input} />)}
@@ -128,15 +145,16 @@ export default function TelaFerias({ C, s, modal, campo, colabs = [], editar, ex
             {campo("Dias vendidos (abono)", <input type="number" min={0} max={10} value={form.abono_dias || 0} onChange={(e) => setForm({ ...form, abono_dias: e.target.value })} style={s.input} />)}
           </div>
           {campo("Observação", <textarea rows={2} value={form.obs || ""} onChange={(e) => setForm({ ...form, obs: e.target.value })} style={{ ...s.input, resize: "vertical" }} />)}
-          {analise?.avisos?.length > 0 && <div style={{ border: `1px solid ${analise.avisos.some((a) => a.nivel === "alerta") ? C.warn : C.border}`, borderRadius: 8, padding: "10px 12px", background: `${analise.avisos.some((a) => a.nivel === "alerta") ? C.warn : C.accent}10` }}>
+          {analise?.avisos?.length > 0 && (() => { const cor = analise.bloqueia ? C.danger : analise.avisos.some((a) => a.nivel === "alerta") ? C.warn : C.border; return (
+          <div style={{ border: `1px solid ${cor}`, borderRadius: 8, padding: "10px 12px", background: `${analise.bloqueia ? C.danger : analise.avisos.some((a) => a.nivel === "alerta") ? C.warn : C.accent}10` }}>
             <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>🧠 Analista</div>
-            {analise.avisos.map((a, i) => <div key={i} style={{ fontSize: 12.5, color: a.nivel === "alerta" ? C.warn : a.nivel === "ok" ? "#22c55e" : C.text, marginTop: 3 }}>{a.nivel === "alerta" ? "⚠" : a.nivel === "ok" ? "✓" : "💡"} {a.texto}</div>)}
-            {analise.avisos.some((a) => a.nivel === "alerta") && <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>São lembretes — você pode salvar mesmo assim.</div>}
-          </div>}
+            {analise.avisos.map((a, i) => <div key={i} style={{ fontSize: 12.5, color: a.nivel === "erro" ? C.danger : a.nivel === "alerta" ? C.warn : a.nivel === "ok" ? "#22c55e" : C.text, marginTop: 3, fontWeight: a.nivel === "erro" ? 600 : 400 }}>{a.nivel === "erro" ? "❌" : a.nivel === "alerta" ? "⚠" : a.nivel === "ok" ? "✓" : "💡"} {a.texto}</div>)}
+            <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>{analise.bloqueia ? "❌ Em desacordo com a legislação — ajuste as datas para salvar." : analise.avisos.some((a) => a.nivel === "alerta") ? "⚠ São lembretes — você pode salvar mesmo assim." : ""}</div>
+          </div>); })()}
           {erroForm && <div style={{ color: C.danger, fontSize: 13 }}>⚠ {erroForm}</div>}
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <button onClick={() => setForm(null)} disabled={salvando} style={{ ...s.btn(false), cursor: "pointer" }}>Cancelar</button>
-            <button onClick={salvar} disabled={salvando || !form.inicio || !form.fim} style={{ ...s.btn(true), cursor: "pointer" }}>{salvando ? "Salvando…" : "Salvar"}</button>
+            <button onClick={salvar} disabled={salvando || !form.inicio || !form.fim || !!analise?.bloqueia} title={analise?.bloqueia ? "Em desacordo com a legislação — veja o Analista" : undefined} style={{ ...s.btn(true), cursor: analise?.bloqueia ? "not-allowed" : "pointer", opacity: analise?.bloqueia ? 0.45 : 1 }}>{salvando ? "Salvando…" : "Salvar"}</button>
           </div>
         </div>
       </>, () => setForm(null), 560)}

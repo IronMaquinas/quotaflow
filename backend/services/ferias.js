@@ -6,7 +6,8 @@
 //   Cada lançamento de férias consome o período aberto mais antigo (ordem de data). Períodos cujo limite acabou ANTES do
 //   início do controle (1º lançamento de férias da empresa) contam como "anteriores ao controle" (não viram alerta falso).
 //   analisar(): o 🧠 Analista confere a programação e lembra o gestor (faltas, saldo, fracionamento, abono, aviso de 30 dias,
-//   início antes de feriado/domingo, limite) — avisos, não bloqueios. Bloqueia só: datas inválidas, > 30 dias, sobreposição.
+//   início antes de feriado/domingo, limite). B1.7: o que a LEI proíbe vira ❌ erro e bloqueia o salvar (passa do saldo, fracionamento,
+//   abono acima de 1/3, início antes de feriado/repouso) — exceto férias já passadas (registro histórico). O resto é lembrete.
 const REGRAS = require('./feriasRegras');
 async function q(p) { const { data, error } = await p; if (error) throw new Error(error.message); return data || []; }
 const hojeBR = () => new Date(Date.now() - 3 * 36e5).toISOString().slice(0, 10);
@@ -63,6 +64,7 @@ const campos = (d) => ({ colaborador_id: d.colaborador_id, inicio: d10(d.inicio)
 
 async function criar(sb, tenantId, dados, porNome) {
   const v = await validar(sb, tenantId, dados); if (v) return typeof v === 'string' ? { status: 400, erro: v } : v;
+  const lei = await bloqueioLegal(sb, tenantId, dados); if (lei) return lei;
   const r = await q(sb.from('colaborador_ferias').insert([{ tenant_id: tenantId, ...campos(dados), criado_por_nome: porNome || null }]).select());
   return { ferias: r[0] };
 }
@@ -71,8 +73,13 @@ async function atualizar(sb, tenantId, id, dados) {
   if (!atual) return { status: 404, erro: 'Férias não encontradas.' };
   const novo = { ...atual, ...dados };
   const v = await validar(sb, tenantId, novo, id); if (v) return typeof v === 'string' ? { status: 400, erro: v } : v;
+  const lei = await bloqueioLegal(sb, tenantId, novo, id); if (lei) return lei;
   const r = await q(sb.from('colaborador_ferias').update({ ...campos(novo), atualizado_em: new Date().toISOString() }).eq('tenant_id', tenantId).eq('id', id).select());
   return { ferias: r[0] };
+}
+async function bloqueioLegal(sb, tenantId, dados, id = null) { // B1.7
+  try { const a = await analisar(sb, tenantId, dados, id); const e = a.avisos.filter((x) => x.nivel === 'erro'); return e.length ? { status: 409, erro: e.map((x) => x.texto).join(' '), avisos: a.avisos } : null; }
+  catch { return null; } // sem a 106: não bloqueia
 }
 async function excluir(sb, tenantId, id) {
   await q(sb.from('colaborador_ferias').delete().eq('tenant_id', tenantId).eq('id', id));
@@ -158,26 +165,27 @@ async function analisar(sb, tenantId, dados = {}, id = null) {
   if (p) {
     if (p.faltas > 5) A('lembrete', `${c.nome} tem ${p.faltas} falta(s) injustificada(s) no período ${dBR(p.inicio)} a ${dBR(p.fim)} — pela regra (${R.nome}) o direito cai para ${p.direito} dias.`);
     else if (p.faltas > 0) A('info', `${p.faltas} falta(s) injustificada(s) no período aquisitivo — ainda não reduz os dias (reduz a partir de 6).`);
-    if (p.saldo < 0) A('alerta', `Passa do saldo: o período ${p.rotulo} dá direito a ${p.direito} dias e, com esta, ficam ${p.direito - p.saldo} lançados (${-p.saldo} a mais).`);
+    if (p.saldo < 0) A('erro', `Passa do saldo: o período ${p.rotulo} dá direito a ${p.direito} dias e, com esta, ficam ${p.direito - p.saldo} lançados (${-p.saldo} a mais).`);
     if (p.em_aquisicao) A('alerta', `Férias antecipadas: o período aquisitivo de ${c.nome} só se completa em ${dBR(somaDias(p.fim, 1))}.`);
     if (fim > p.limite) A('alerta', `Termina depois do limite do período (${dBR(p.limite)}) — os dias além do limite saem em dobro.`);
     const doPeriodo = [...doColab.filter((f) => alocacao.get(String(f.id)) === p), nova].map((f) => dias(d10(f.inicio), d10(f.fim)) + 1);
     const F = R.fracionamento;
-    if (doPeriodo.length > F.maxPeriodos) A('alerta', `Este seria o ${doPeriodo.length}º período de férias do aquisitivo ${p.rotulo} — o máximo é ${F.maxPeriodos}.`);
-    if (doPeriodo.length > 1 && qtd < F.minDemais) A('alerta', `Férias fracionadas: cada período precisa ter pelo menos ${F.minDemais} dias.`);
-    if (doPeriodo.length > 1 && p.saldo <= 0 && !doPeriodo.some((d) => d >= F.minUmPeriodo)) A('alerta', `Férias fracionadas: um dos períodos precisa ter pelo menos ${F.minUmPeriodo} dias.`);
-    if (doPeriodo.length > 1 && p.saldo > 0 && !doPeriodo.some((d) => d >= F.minUmPeriodo) && p.saldo < F.minUmPeriodo) A('alerta', `Férias fracionadas: nenhum período tem ${F.minUmPeriodo} dias e o saldo (${p.saldo}) não dá mais para isso.`);
-    if (nova.abono_dias > Math.floor(p.direito * R.abonoMaxFracao)) A('alerta', `Abono acima do permitido: pode vender até ${Math.floor(p.direito * R.abonoMaxFracao)} dia(s) deste período.`);
-    if (p.saldo >= 0 && !avisos.some((a) => a.nivel === 'alerta')) A('ok', `Período ${p.rotulo}: direito ${p.direito} dias · com esta, sobra ${p.saldo} · limite para gozar ${dBR(p.limite)}.`);
+    if (doPeriodo.length > F.maxPeriodos) A('erro', `Este seria o ${doPeriodo.length}º período de férias do aquisitivo ${p.rotulo} — o máximo é ${F.maxPeriodos}.`);
+    if (doPeriodo.length > 1 && qtd < F.minDemais) A('erro', `Férias fracionadas: cada período precisa ter pelo menos ${F.minDemais} dias.`);
+    if (doPeriodo.length > 1 && p.saldo <= 0 && !doPeriodo.some((d) => d >= F.minUmPeriodo)) A('erro', `Férias fracionadas: um dos períodos precisa ter pelo menos ${F.minUmPeriodo} dias.`);
+    if (doPeriodo.length > 1 && p.saldo > 0 && !doPeriodo.some((d) => d >= F.minUmPeriodo) && p.saldo < F.minUmPeriodo) A('erro', `Férias fracionadas: nenhum período tem ${F.minUmPeriodo} dias e o saldo (${p.saldo}) não dá mais para isso.`);
+    if (nova.abono_dias > Math.floor(p.direito * R.abonoMaxFracao)) A('erro', `Abono acima do permitido: pode vender até ${Math.floor(p.direito * R.abonoMaxFracao)} dia(s) deste período.`);
+    if (p.saldo >= 0 && !avisos.some((a) => ['alerta', 'erro'].includes(a.nivel))) A('ok', `Período ${p.rotulo}: direito ${p.direito} dias · com esta, sobra ${p.saldo} · limite para gozar ${dBR(p.limite)}.`);
   }
   if (dias(hoje, inicio) < R.avisoPrevioDias && inicio >= hoje) A('alerta', `Começa em ${dias(hoje, inicio)} dia(s) — a comunicação ao funcionário deve ser feita com ${R.avisoPrevioDias} dias de antecedência.`);
   const feriados = new Set([...R.feriadosNacionais(+inicio.slice(0, 4)), ...R.feriadosNacionais(+inicio.slice(0, 4) + 1)]);
   try { for (const f of await q(sb.from('tenant_feriados').select('*').eq('tenant_id', tenantId))) feriados.add(d10(f.data)); } catch { /* ok */ }
   for (let k = 1; k <= R.inicioVedadoAntesDeDescanso; k++) {
     const d = somaDias(inicio, k); const dow = new Date(`${d}T12:00:00Z`).getUTCDay();
-    if (feriados.has(d) || R.diasDescanso.includes(dow)) { A('alerta', `Começa ${k === 1 ? 'na véspera' : `${k} dias antes`} de ${feriados.has(d) ? `feriado (${dBR(d)})` : 'domingo (repouso)'} — a regra não permite início nos ${R.inicioVedadoAntesDeDescanso} dias antes de feriado ou repouso.`); break; }
+    if (feriados.has(d) || R.diasDescanso.includes(dow)) { A('erro', `Começa ${k === 1 ? 'na véspera' : `${k} dias antes`} de ${feriados.has(d) ? `feriado (${dBR(d)})` : 'domingo (repouso)'} — a regra não permite início nos ${R.inicioVedadoAntesDeDescanso} dias antes de feriado ou repouso.`); break; }
   }
-  return { periodo: p ? { rotulo: p.rotulo, inicio: p.inicio, fim: p.fim, limite: p.limite, direito: p.direito, faltas: p.faltas, saldo_depois: p.saldo } : null, avisos };
+  if (fim < hoje) for (const a of avisos) if (a.nivel === 'erro') a.nivel = 'alerta'; // registro de férias passadas: não bloqueia
+  return { bloqueia: avisos.some((a) => a.nivel === 'erro'), periodo: p ? { rotulo: p.rotulo, inicio: p.inicio, fim: p.fim, limite: p.limite, direito: p.direito, faltas: p.faltas, saldo_depois: p.saldo } : null, avisos };
 }
 
 // ⚠ faltas injustificadas
