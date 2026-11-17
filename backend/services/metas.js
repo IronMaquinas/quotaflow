@@ -91,6 +91,7 @@ async function listar(sb, tenantId, { agora = new Date(), fotografar = true } = 
   const c = { sb, tenantId, agora, hoje: hojeBR(agora) };
   const valores = {}; await Promise.all([...new Set(ms.filter((m) => m.origem !== 'manual').map((m) => m.chave))].map(async (k) => { try { valores[k] = MEDIDAS[k] ? await MEDIDAS[k].calc(c) : null; } catch (e) { console.warn(`⚠️ [metas] ${k}:`, e.message); valores[k] = null; } }));
   let fotos = []; try { fotos = await q(sb.from('metas_fotografias').select('*').eq('tenant_id', tenantId)); } catch { /* sem 101 */ }
+  let resultados = []; try { resultados = await q(sb.from('metas_resultados').select('*').eq('tenant_id', tenantId)); } catch { /* sem 103 */ }
   if (fotografar) { try { const novas = Object.entries(valores).filter(([k, v]) => v != null && !fotos.some((f) => f.chave === k && String(f.dia).slice(0, 10) === c.hoje)).map(([k, v]) => ({ tenant_id: tenantId, chave: k, dia: c.hoje, valor: v })); if (novas.length) await q(sb.from('metas_fotografias').insert(novas)); } catch { /* corrida entre abas: ignora */ } }
   const alvo = diasAtras(c.hoje, 30);
   return ms.map((m) => {
@@ -99,7 +100,8 @@ async function listar(sb, tenantId, { agora = new Date(), fotografar = true } = 
     const antes = fotos.filter((f) => f.chave === m.chave && String(f.dia).slice(0, 10) <= alvo).sort((a, b) => String(b.dia).localeCompare(String(a.dia)))[0];
     const dif = antes && v != null && antes.valor != null ? Math.round((v - Number(antes.valor)) * 10) / 10 : null;
     return { ...m, descricao: m.observacao || (md.como ? `${md.como[0].toUpperCase()}${md.como.slice(1)}.` : ''), unidade: m.unidade || md.unidade || '', area_nome: AREAS[m.area] || m.area, como: m.origem === 'manual' ? 'meta própria — valor informado pela empresa' : (md.como || ''), tela: md.tela || null, valor: v, sinal: sinal(m, v),
-      informado: ult ? { dia: String(ult.dia).slice(0, 10), por: ult.informado_por || null } : null, sem_dono: !m.responsavel_usuario_id && !m.responsavel_colaborador_id,
+      informado: ult ? { dia: String(ult.dia).slice(0, 10), por: ult.informado_por || null } : null,
+      serie: resultados.filter((r) => String(r.meta_id) === String(m.id)).sort((a, b) => a.mes.localeCompare(b.mes)).slice(-6).map((r) => ({ mes: r.mes, valor: Number(r.valor), sinal: sinal(m, Number(r.valor)), origem: r.origem })), sem_dono: !m.responsavel_usuario_id && !m.responsavel_colaborador_id,
       tendencia: dif == null ? null : { dif, melhorou: dif === 0 ? null : (m.sentido === 'menor' ? dif < 0 : dif > 0), desde: String(antes.dia).slice(0, 10) } };
   });
 }
@@ -158,4 +160,96 @@ async function excluir(sb, tenantId, id) {
   if (!r.length) throw erro('Meta não encontrada', 404); return { ok: true };
 }
 
-module.exports = { informarValor, UNIDADES, MEDIDAS, AREAS, sinal, validar, listar, sugeridas, importar, criar, atualizar, excluir };
+// ── SC2.4: RESULTADO MENSAL ─────────────────────────────────────────────────────────────────────────
+const MESES = ['jan', 'fev', 'mar', 'abr', 'mai', 'jun', 'jul', 'ago', 'set', 'out', 'nov', 'dez'];
+const ymDe = (dia) => String(dia).slice(0, 7);
+const mesAnterior = (ym) => { const [a, m] = ym.split('-').map(Number); return m === 1 ? `${a - 1}-12` : `${a}-${String(m - 1).padStart(2, '0')}`; };
+const nomeMes = (ym) => `${MESES[Number(ym.slice(5)) - 1]}/${ym.slice(2, 4)}`;
+const seguroQ = async (p) => { try { return await q(p); } catch { return []; } };
+
+/** fecha o mês (padrão: o anterior) — metas do sistema: última fotografia do mês (ou o valor de agora, se o mês acabou de virar);
+ *  metas próprias: o último valor informado no mês. Não mexe em mês já fechado (idempotente). */
+async function fecharMes(sb, tenantId, { ym = null, agora = new Date() } = {}) {
+  const mes = ym || mesAnterior(ymDe(hojeBR(agora)));
+  const ms = (await q(sb.from('metas_negocio').select('*').eq('tenant_id', tenantId))).filter((m) => m.ativo !== false);
+  if (!ms.length) return { mes, fechadas: 0 };
+  const ja = await q(sb.from('metas_resultados').select('meta_id').eq('tenant_id', tenantId).eq('mes', mes));
+  const fotos = await seguroQ(sb.from('metas_fotografias').select('*').eq('tenant_id', tenantId));
+  const c = { sb, tenantId, agora, hoje: hojeBR(agora) };
+  const novos = [];
+  for (const m of ms.filter((x) => !ja.some((j) => String(j.meta_id) === String(x.id)))) {
+    const f = fotos.filter((x) => x.chave === m.chave && ymDe(x.dia) === mes).sort((a, b) => String(b.dia).localeCompare(String(a.dia)))[0];
+    let v = f ? Number(f.valor) : null;
+    if (v == null && m.origem !== 'manual' && MEDIDAS[m.chave] && mes === mesAnterior(ymDe(c.hoje))) { try { v = await MEDIDAS[m.chave].calc(c); } catch { v = null; } }
+    if (v == null) continue; // meta própria sem valor no mês: fica pendente (aviso ao dono)
+    novos.push({ tenant_id: tenantId, meta_id: m.id, mes, valor: v, origem: m.origem === 'manual' ? 'informado' : 'calculado', por_nome: m.origem === 'manual' ? (f?.informado_por || null) : null });
+  }
+  if (novos.length) await q(sb.from('metas_resultados').insert(novos));
+  return { mes, fechadas: novos.length };
+}
+
+/** informa ou corrige o resultado de um mês. Já existe e muda o valor → motivo obrigatório, guarda o original e quem alterou. */
+async function gravarResultado(sb, tenantId, metaId, mes, { valor, motivo = '', eu = {} } = {}) {
+  if (!/^\d{4}-\d{2}$/.test(String(mes))) throw erro('Mês inválido', 400);
+  const m = (await q(sb.from('metas_negocio').select('*').eq('id', metaId).eq('tenant_id', tenantId)))[0]; if (!m) throw erro('Meta não encontrada', 404);
+  const v = num(valor); if (v == null || Number.isNaN(v)) throw erro('Informe um número', 400);
+  if (mes > ymDe(hojeBR())) throw erro('Não dá para lançar mês que ainda não chegou.', 400);
+  const atual = (await q(sb.from('metas_resultados').select('*').eq('meta_id', metaId).eq('mes', mes)))[0];
+  const mot = String(motivo || '').trim();
+  if (atual) {
+    if (Number(atual.valor) === v) return atual;
+    if (mot.length < 5) throw erro('Diga o motivo da correção (ex.: "controle paralelo da oficina mostrou 2 paradas não registradas").', 400);
+    return (await q(sb.from('metas_resultados').update({ valor: v, origem: 'ajustado', valor_original: atual.valor_original ?? atual.valor, origem_original: atual.origem_original || atual.origem, por_nome: eu.nome || null, por_id: eu.id || null, motivo: mot.slice(0, 500), em: new Date().toISOString() }).eq('id', atual.id).select()))[0];
+  }
+  const sistema = m.origem !== 'manual';
+  if (sistema && mot.length < 5) throw erro('Este mês é calculado pelo sistema — para lançar à mão, diga o motivo.', 400);
+  return (await q(sb.from('metas_resultados').insert([{ tenant_id: tenantId, meta_id: m.id, mes, valor: v, origem: sistema ? 'ajustado' : 'informado', por_nome: eu.nome || null, por_id: eu.id || null, motivo: mot ? mot.slice(0, 500) : null }]).select()))[0];
+}
+
+/** histórico de uma meta: últimos 12 meses fechados + o parcial do mês atual */
+async function historico(sb, tenantId, metaId, { agora = new Date() } = {}) {
+  const m = (await listar(sb, tenantId, { agora, fotografar: false })).find((x) => String(x.id) === String(metaId)); if (!m) throw erro('Meta não encontrada', 404);
+  const rs = await q(sb.from('metas_resultados').select('*').eq('meta_id', metaId));
+  const atual = ymDe(hojeBR(agora)); const meses = []; let ym = atual;
+  for (let i = 0; i < 13; i++) { meses.unshift(ym); ym = mesAnterior(ym); }
+  return { meta: m, meses: meses.map((k) => { const r = rs.find((x) => x.mes === k); const parcial = k === atual;
+    const valor = r ? Number(r.valor) : parcial ? m.valor : null;
+    return { mes: k, nome: nomeMes(k), valor, sinal: sinal(m, valor), parcial: parcial && !r, origem: r?.origem || (parcial && valor != null ? 'parcial' : null), valor_original: r?.valor_original ?? null, origem_original: r?.origem_original || null, por: r?.por_nome || null, motivo: r?.motivo || null, em: r?.em || null }; }) };
+}
+
+/** painel anual: todas as metas × meses do ano (para a análise crítica pela direção) */
+async function painelAnual(sb, tenantId, { ano = null, agora = new Date() } = {}) {
+  const A = String(ano || hojeBR(agora).slice(0, 4)); const atual = ymDe(hojeBR(agora));
+  const ms = await listar(sb, tenantId, { agora, fotografar: false });
+  const rs = (await seguroQ(sb.from('metas_resultados').select('*').eq('tenant_id', tenantId))).filter((r) => r.mes.startsWith(A));
+  const meses = Array.from({ length: 12 }, (_, i) => `${A}-${String(i + 1).padStart(2, '0')}`);
+  return { ano: A, meses: meses.map((k) => ({ mes: k, nome: nomeMes(k) })), metas: ms.map((m) => ({ id: m.id, nome: m.nome, area_nome: m.area_nome, unidade: m.unidade, sentido: m.sentido, meta: m.meta, limite: m.limite, responsavel_nome: m.responsavel_nome,
+    celulas: meses.map((k) => { const r = rs.find((x) => String(x.meta_id) === String(m.id) && x.mes === k); const v = r ? Number(r.valor) : k === atual ? m.valor : null; return { mes: k, valor: v, sinal: sinal(m, v), origem: r?.origem || (k === atual && v != null ? 'parcial' : null), motivo: r?.motivo || null, por: r?.por_nome || null }; }) })) };
+}
+
+/** pendências de metas próprias do mês anterior (para a Sala de Controle e o aviso do sininho) */
+async function pendentesInformar(sb, tenantId, { agora = new Date(), usuarioId = null } = {}) {
+  const mes = mesAnterior(ymDe(hojeBR(agora)));
+  const ms = (await seguroQ(sb.from('metas_negocio').select('*').eq('tenant_id', tenantId))).filter((m) => m.ativo !== false && m.origem === 'manual' && (!usuarioId || String(m.responsavel_usuario_id) === String(usuarioId)));
+  if (!ms.length) return [];
+  const rs = await seguroQ(sb.from('metas_resultados').select('meta_id').eq('tenant_id', tenantId).eq('mes', mes));
+  return ms.filter((m) => !rs.some((r) => String(r.meta_id) === String(m.id))).map((m) => ({ id: m.id, nome: m.nome, mes, mes_nome: nomeMes(mes), responsavel_usuario_id: m.responsavel_usuario_id }));
+}
+
+/** cron diário (7h): fecha o mês anterior; no dia 1 e no dia 5 avisa o dono das metas próprias sem valor (sininho) */
+async function rotinaDiaria(sb, { agora = new Date() } = {}) {
+  const dia = Number(hojeBR(agora).slice(8, 10)); let tenants = []; const out = { fechadas: 0, avisos: 0 };
+  try { tenants = [...new Set((await q(sb.from('metas_negocio').select('tenant_id'))).map((x) => String(x.tenant_id)))]; } catch { return out; }
+  for (const t of tenants) {
+    try { out.fechadas += (await fecharMes(sb, t, { agora })).fechadas; } catch (e) { console.warn('⚠️ [metas] fechar mês', t, e.message); }
+    if (dia !== 1 && dia !== 5) continue;
+    for (const p of await pendentesInformar(sb, t, { agora })) {
+      if (!p.responsavel_usuario_id) continue;
+      await require('./notificacoes').criar(sb, { tipo: 'usuario', id: String(p.responsavel_usuario_id) }, { tenantId: t, tipo: 'meta_informar', titulo: `🎯 Informe o resultado de ${p.mes_nome}: ${p.nome}`, texto: dia === 5 ? 'Lembrete — o mês ainda está sem valor.' : 'Você é o dono desta meta.', link: { tela: 'metas', id: p.id }, chave: `meta_informar_${p.id}_${p.mes}` }).catch(() => null);
+      out.avisos++;
+    }
+  }
+  return out;
+}
+
+module.exports = { fecharMes, gravarResultado, historico, painelAnual, pendentesInformar, rotinaDiaria, informarValor, UNIDADES, MEDIDAS, AREAS, sinal, validar, listar, sugeridas, importar, criar, atualizar, excluir };

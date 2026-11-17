@@ -285,6 +285,9 @@ if (process.env.CRON_INTERNO === '1') {
   cron.schedule('0 7 1 * *', () => { // 18zj/18zk: 🧠 relatório mensal do analista da rotina de inspeção → gestores (parecer da IA se ligada)
     require('./services/analistaMensal').enviarMensal(require('./db').supabase).then((r) => console.log('[CRON] Analista mensal:', JSON.stringify(r))).catch(console.error);
   }, { timezone: 'America/Sao_Paulo' });
+  cron.schedule('10 7 * * *', () => { // SC2.4: 🎯 fecha o mês das metas + avisa (dia 1 e 5) o dono das metas próprias sem valor
+    require('./services/metas').rotinaDiaria(require('./db').supabase).then((r) => { if (r.fechadas || r.avisos) console.log('[CRON] Metas:', JSON.stringify(r)); }).catch(console.error);
+  }, { timezone: 'America/Sao_Paulo' });
   cron.schedule('0 3 * * *', () => { // 18n.3: 🧹 notificações lidas há +30 dias / não lidas há +90 dias
     require('./services/notificacoes').limpar(require('./db').supabase).then((r) => { if (r.apagadas) console.log('🧹 [notificacoes] apagadas:', r.apagadas); }).catch((e) => console.error('⚠️ [notificacoes] limpeza:', e.message));
   }, { timezone: 'America/Sao_Paulo' });

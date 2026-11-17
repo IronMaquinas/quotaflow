@@ -2488,7 +2488,7 @@ const PERMISSOES = {
   inteligencia:       ["admin","gestor"],
   benchmark:          ["admin","gestor"],
   valor_gerado:       ["admin","gestor"], // 5a
-  metas:              ["admin","gestor"], // SC2
+  metas:              ["admin","gestor","comprador","operacao","qualidade","financeiro","comercial","fiscal"], // SC2 · SC2.4: o dono da meta (qualquer perfil) abre pela Sala/🔔; menu só gestão
   equipamentos:       ["admin","gestor","comprador","operacao"],
   inspecoes:          ["admin","gestor","comprador","operacao","qualidade"], // etapa 14a
   contratos:          ["admin","gestor","comprador","operacao","qualidade"], // etapa 14b.3

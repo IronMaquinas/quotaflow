@@ -102,7 +102,12 @@ async function vencimentos(c) {
   return out;
 }
 
-const SENSORES = { minhasTarefas, documentosGestao, planoAcaoNC, frotaBloqueada, viagens, vencimentos };
+async function metasInformar(c) { // SC2.4: dono da meta própria — informar o resultado do mês que fechou
+  const ps = await require('../metas').pendentesInformar(c.sb, c.tenantId, { agora: c.agora, usuarioId: c.userId });
+  return { prioridades: ps.map((p) => ({ peso: 62, icone: '🎯', titulo: `Informar ${p.nome} de ${p.mes_nome}`, detalhe: 'você é o dono desta meta', link: { tela: 'metas', id: p.id } })) };
+}
+
+const SENSORES = { metasInformar, minhasTarefas, documentosGestao, planoAcaoNC, frotaBloqueada, viagens, vencimentos };
 
 async function montar(sb, { tenantId, userId, perfis = [], nome = '', agora = new Date() }) {
   const hoje = hojeBR(agora);
