@@ -158,7 +158,8 @@ app.use('/api/meus-treinamentos', tenantMiddleware, exigirModulo('treinamentos')
 app.use('/api/meus-procedimentos', tenantMiddleware, require('./routes/meusProcedimentos'));
 app.use('/api/valor-gerado', tenantMiddleware, require('./routes/valorGerado'));
 app.use('/api/sala-controle', tenantMiddleware, require('./routes/salaControle'));
-app.use('/api/metas', tenantMiddleware, require('./routes/metas')); // SC2 — 🎯 metas do negócio // SC1 — 🛰 Início por perfil // 5a — 💰 valor gerado (ganhos medidos) // 18zz.2 — 📘 colaborador lê os procedimentos
+app.use('/api/metas', tenantMiddleware, require('./routes/metas'));
+app.use('/api/beta', tenantMiddleware, require('./routes/beta')); // B1 — 👋 Beta (assistente por texto, só consulta) // SC2 — 🎯 metas do negócio // SC1 — 🛰 Início por perfil // 5a — 💰 valor gerado (ganhos medidos) // 18zz.2 — 📘 colaborador lê os procedimentos
 app.use('/api/minhas-viagens', tenantMiddleware, exigirModulo('transporte'), require('./routes/minhasViagens')); // etapa 17a — 🚛 motorista logado // etapa 12e.2b — colaborador logado
 app.use('/api/prova', require('./routes/provaPublica')); // etapa 12e.2b — link externo da prova (público, CPF + nascimento)
 app.use('/api/autuacoes', tenantMiddleware, exigirModulo('nao_conformidades'), require('./routes/autuacoes')); // etapa 12i — autuações da empresa (requisito legal)

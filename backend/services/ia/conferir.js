@@ -9,10 +9,11 @@ const NUMERO = /(?:R\$\s*)?-?\d{1,3}(?:\.\d{3})+(?:,\d+)?%?|(?:R\$\s*)?-?\d+(?:[
 
 const paraNum = (t) => { let x = String(t).replace(/R\$\s*/, '').replace('%', '').trim(); if (/\d\.\d{3}(\D|$)/.test(x) && !/,/.test(x) && x.split('.').length > 1 && x.split('.').slice(1).every((g) => g.length === 3)) x = x.replace(/\./g, ''); else x = x.replace(/\./g, '').replace(',', '.'); const n = Number(x); return Number.isFinite(n) ? n : null; };
 
+// datas/horas dos dados (2026-11-17, 17/11, 06:00) não viram "números" que validam o texto
 function numerosDosDados(dados) {
   const out = new Set(); const txt = typeof dados === 'string' ? dados : JSON.stringify(dados);
   const vistos = (v) => { if (v == null || !Number.isFinite(v)) return; out.add(v); out.add(Math.round(v)); out.add(Math.round(v * 10) / 10); out.add(Math.abs(v)); };
-  (function walk(o) { if (o == null) return; if (typeof o === 'number') vistos(o); else if (typeof o === 'string') { for (const m of o.match(NUMERO) || []) vistos(paraNum(m)); } else if (Array.isArray(o)) o.forEach(walk); else if (typeof o === 'object') Object.values(o).forEach(walk); })(typeof dados === 'string' ? txt : dados);
+  (function walk(o) { if (o == null) return; if (typeof o === 'number') vistos(o); else if (typeof o === 'string') { for (const m of o.replace(/\d{4}-\d{2}-\d{2}(?:T[\d:.]+Z?)?/g, ' ').replace(/\b\d{1,2}\/\d{1,2}(?:\/\d{2,4})?\b/g, ' ').replace(/\b\d{1,2}:\d{2}\b/g, ' ').match(NUMERO) || []) vistos(paraNum(m)); } else if (Array.isArray(o)) o.forEach(walk); else if (typeof o === 'object') Object.values(o).forEach(walk); })(typeof dados === 'string' ? txt : dados);
   return { lista: [...out], txt };
 }
 
