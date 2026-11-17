@@ -29,7 +29,7 @@ export default function TelaMetas({ C, s }) {
   const MANUAL = { chave: "manual", nome: "", meta: "", limite: "", sentido: "maior", unidade: "un", area: "manutencao", como: "Você define o nome e informa o valor quando medir (ex.: MTBF, consumo por km, custo de manutenção por hora)." };
   const novo = async () => { let r; try { r = await apiService.get("/metas/sugeridas"); } catch (e) { setErro(e?.response?.data?.erro || e.message); return; }
     setAreas(r.areas || {}); if (r.unidades) setUnidades(r.unidades);
-    const livre = r.medidas.filter((m) => !m.ja); const ini = livre[0] || MANUAL;
+    const livre = r.medidas.filter((m) => !m.ja); const ini = MANUAL; // SC2.2: começa vazio — digita e escolhe
     setForm({ _medidas: livre, ...ini, meta: ini.meta ?? "", limite: ini.limite ?? "" }); };
   const semDono = !form || (!form.responsavel_colaborador_id && !form.responsavel_usuario_id);
   const grupos = d ? Object.entries(d.metas.reduce((g, m) => { (g[m.area_nome] = g[m.area_nome] || []).push(m); return g; }, {})) : [];
@@ -91,17 +91,15 @@ export default function TelaMetas({ C, s }) {
       {form && <div onClick={() => setForm(null)} style={{ position: "fixed", inset: 0, background: "#000000aa", zIndex: 80, display: "flex", justifyContent: "center", alignItems: "flex-start", padding: 16, overflowY: "auto" }}>
         <div onClick={(e) => e.stopPropagation()} style={{ ...card, width: "min(520px, 100%)" }}>
           <div style={{ fontSize: 16, fontWeight: 700, marginBottom: 10 }}>{form.id ? "Editar meta" : "Nova meta"}</div>
-          {!form.id && <label style={{ display: "block", marginBottom: 10 }}><span style={s.label}>MEDIDA</span>
-            <select value={form.chave} onChange={(e) => { const m = e.target.value === "manual" ? MANUAL : form._medidas.find((x) => x.chave === e.target.value); setForm({ ...form, chave: m.chave, nome: m.nome, meta: m.meta ?? "", limite: m.limite ?? "", sentido: m.sentido, unidade: m.unidade, area: m.area, como: m.como }); }} style={s.input}>
-              {form._medidas.map((m) => <option key={m.chave} value={m.chave}>{m.nome}</option>)}
-              <option value="manual">✏️ Meta própria — eu informo o valor</option></select>
-            {form.como && <span style={{ display: "block", fontSize: 11.5, color: C.muted, marginTop: 4 }}>📐 {form.como}</span>}</label>}
+          {!form.id && <label style={{ display: "block", marginBottom: 10 }}><span style={s.label}>NOME DA META</span>{/* SC2.2: Nova meta = sempre meta própria; as que o sistema calcula ficam em 📚 Métricas sugeridas */}
+            <input autoFocus value={form.nome} placeholder="Ex.: MTBF da frota, custo de manutenção por km…" onChange={(e) => setForm({ ...form, nome: e.target.value })} style={s.input} />
+            <span style={{ display: "block", fontSize: 11.5, color: C.muted, marginTop: 4 }}>✏️ Você informa o valor quando medir. As medidas que o sistema calcula sozinho estão em 📚 Métricas sugeridas.</span></label>}
           {(form.chave === "manual" || form.origem === "manual") && <div style={{ display: "flex", gap: 10, flexWrap: "wrap", marginBottom: 10 }}>
             <label style={{ flex: "1 1 150px" }}><span style={s.label}>ÁREA</span><select value={form.area} onChange={(e) => setForm({ ...form, area: e.target.value })} style={s.input}>{Object.entries(Object.keys(areas).length ? areas : { [form.area]: form.area_nome || form.area }).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></label>
             <label style={{ flex: "0 1 100px" }}><span style={s.label}>UNIDADE</span><select value={form.unidade || ""} onChange={(e) => setForm({ ...form, unidade: e.target.value })} style={s.input}>{unidades.map((u) => <option key={u} value={u}>{u}</option>)}</select></label>
             <label style={{ flex: "1 1 160px" }}><span style={s.label}>O QUE É MELHOR</span><select value={form.sentido} onChange={(e) => setForm({ ...form, sentido: e.target.value })} style={s.input}><option value="maior">Quanto maior, melhor</option><option value="menor">Quanto menor, melhor</option></select></label>
           </div>}
-          <label style={{ display: "block", marginBottom: 10 }}><span style={s.label}>NOME</span><input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} style={s.input} /></label>
+          {form.id && <label style={{ display: "block", marginBottom: 10 }}><span style={s.label}>NOME</span><input value={form.nome} onChange={(e) => setForm({ ...form, nome: e.target.value })} style={s.input} /></label>}
           <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
             <label style={{ flex: "1 1 140px" }}><span style={s.label}>🟢 META ({form.sentido === "menor" ? "no máximo" : "no mínimo"}{form.unidade ? ` · ${form.unidade}` : ""})</span><input type="number" step="any" value={form.meta} onChange={(e) => setForm({ ...form, meta: e.target.value })} style={s.input} /></label>
             <label style={{ flex: "1 1 140px" }}><span style={s.label}>🟡 LIMITE DO AMARELO</span><input type="number" step="any" value={form.limite} onChange={(e) => setForm({ ...form, limite: e.target.value })} style={s.input} /></label>

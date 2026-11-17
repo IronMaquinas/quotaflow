@@ -384,16 +384,13 @@ const ESPERADO = {
   'services/metas.js': '82eaee203929e5266d86ddee5e88d2d0', // etapa SC2.1
   'routes/metas.js': '78b62f98d9c461ba089838c7a16dc822', // etapa SC2.1
   'migrations/101_metas_negocio.sql': '93d87925592a0da96839a247d76f4d1e', // etapa SC2 (novo)
-  'front:TelaMetas.jsx': '148745ff962409157d5b35a7e5a50728', // etapa SC2.1
+  'front:TelaMetas.jsx': '88b927b4adc27ee5f3e4b1ef53884381', // etapa SC2.2
   'migrations/102_metas_manuais_responsavel.sql': 'e499fe2a4d3a714ea55bdd981870fa8f', // etapa SC2.1 (novo)
 };
 
-// Antes de copiar a etapa SC2.1 — base: SC2 (6b0d04d)
+// Antes de copiar a etapa SC2.2 — base: SC2.1 (88fb48e)
 const ANTES = {
-  'services/salaControle/index.js': '5328fb3f477555dcb90ba8a1c4d8260b',
-  'services/metas.js': '1d3c312d9eb220ecd7f60c79963e68ba',
-  'routes/metas.js': '1c5c150e53a011daa0aaf45a38d63544',
-  'front:TelaMetas.jsx': '6649b74fcdc3a83b404c1f144845e854',
+  'front:TelaMetas.jsx': '198cce1f811c8f6a7552f242443e140f',
 };
 
 const RAIZ = process.cwd();
@@ -431,7 +428,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a SC2.1)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a SC2.2)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
