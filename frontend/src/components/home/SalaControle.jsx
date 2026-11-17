@@ -22,13 +22,28 @@ export default function SalaControle({ C, s, podeAbrir = () => true, topo = null
   const [d, setD] = useState(null); const [erro, setErro] = useState(null); const [em, setEm] = useState(null);
   const [todasP, setTodasP] = useState(false); const [verEquipe, setVerEquipe] = useState(false); const t = useRef(null);
   const carregar = () => apiService.get("/sala-controle").then((r) => { setD(r); setErro(null); setEm(new Date()); }).catch(() => setErro("Não consegui atualizar a sala agora."));
-  useEffect(() => { carregar(); t.current = setInterval(carregar, 60000); return () => clearInterval(t.current); }, []); // eslint-disable-line
+  // SC2.6: atualiza a cada 5 min SÓ com a aba visível; ao voltar para a aba (se passou 1 min) atualiza na hora; ↻ manual
+  const ultimo = useRef(0);
+  const carregarSe = (minMs) => { if (document.visibilityState === "visible" && Date.now() - ultimo.current >= minMs) { ultimo.current = Date.now(); carregar(); } };
+  useEffect(() => {
+    ultimo.current = Date.now(); carregar(); t.current = setInterval(() => carregarSe(5 * 60000 - 1000), 5 * 60000);
+    const volta = () => carregarSe(60000); document.addEventListener("visibilitychange", volta); window.addEventListener("focus", volta);
+    return () => { clearInterval(t.current); document.removeEventListener("visibilitychange", volta); window.removeEventListener("focus", volta); };
+  }, []); // eslint-disable-line
   const ir = (l) => { if (!l?.tela) return; if (l.tela === "documentos" && l.aba === "gestao") { window.qfDocsAba = "gestao"; if (l.id) window.qfAbrirGestaoDoc = l.id; } window.dispatchEvent(new CustomEvent("qf-navegar", { detail: { tela: l.tela, titulo: l.titulo } })); };
   const ok = (x) => !x.link?.tela || podeAbrir(x.link.tela);
   if (!d) return <div style={{ ...s.card, padding: 40, textAlign: "center", color: C.muted }}>{erro || "Montando a sua sala de controle…"}</div>;
   const alertas = d.alertas.filter(ok); const prior = d.prioridades.filter(ok); const agenda = d.agenda.filter(ok);
-  const est = ESTADO[alertas.some((a) => a.nivel === "critico") ? "critico" : (alertas.length || prior.some((p) => p.peso >= 80)) ? "atencao" : "estavel"];
-  const frase = [alertas.length && `${alertas.length} alerta(s)`, prior.length && `${prior.length} prioridade(s)`, agenda.length && `${agenda.length} compromisso(s) hoje`].filter(Boolean).join(" · ") || "nada pendente — bom trabalho!";
+  // SC2.6 (Marcony): o estado olha o PAINEL TODO — alertas, prioridades, metas fora do alvo e os números ruins da gestão (não só os indicadores)
+  const saudeVis = d.gestor && Array.isArray(d.saude) && podeAbrir("metas") ? d.saude : [];
+  const k = d.gestor ? d.kpis || {} : {};
+  const ruins = [["tarefas_atrasadas", "tarefa(s) atrasada(s) na equipe", "plano"], ["acoes_nc_atrasadas", "ação(ões) de NC atrasada(s)", "nao_conformidades"], ["documentos_vencidos", "documento(s) vencido(s)", "documentos"], ["equipamentos_bloqueados", "equipamento(s) bloqueado(s)", "inspecoes"]]
+    .filter(([c, , tela]) => k[c] > 0 && podeAbrir(tela)).map(([c, rot]) => `${k[c]} ${rot}`);
+  const metasVerm = saudeVis.filter((m) => m.sinal === "vermelho").length; const metasAm = saudeVis.filter((m) => m.sinal === "amarelo").length;
+  const critico = alertas.some((a) => a.nivel === "critico") || metasVerm > 0;
+  const atencao = alertas.length || prior.length || metasAm || ruins.length;
+  const est = ESTADO[critico ? "critico" : atencao ? "atencao" : "estavel"];
+  const frase = [alertas.length && `${alertas.length} alerta(s)`, metasVerm && `${metasVerm} meta(s) no vermelho`, metasAm && `${metasAm} meta(s) no amarelo`, ...ruins.filter((r) => !/vencido|bloqueado/.test(r) || !alertas.length), prior.length && `${prior.length} prioridade(s) suas`, agenda.length && `${agenda.length} compromisso(s) hoje`].filter(Boolean).join(" · ") || "nada pendente — bom trabalho!";
   const kpis = d.gestor ? KPIS.filter(([k, , , tela]) => d.kpis[k] != null && podeAbrir(tela)) : [];
   const card = { ...s.card, padding: 16, textAlign: "left" };
   const linha = (x, i, cor) => (
@@ -101,7 +116,7 @@ export default function SalaControle({ C, s, podeAbrir = () => true, topo = null
           {verEquipe && (d.equipe.pessoas.length ? d.equipe.pessoas.map((p, i) => linha({ icone: "👤", titulo: p.nome, detalhe: `${p.atrasadas} atrasada(s)`, link: { tela: "plano" } }, i)) : <div style={{ fontSize: 12.5, color: C.muted, marginTop: 6 }}>Ninguém com tarefa atrasada. 👏</div>)}
         </div>}
       </div>
-      <div style={{ fontSize: 11, color: C.muted, marginTop: 10, textAlign: "right" }}>{erro ? `⚠ ${erro} · ` : ""}atualizado às {em?.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} · atualiza sozinho a cada minuto</div>
+      <div style={{ fontSize: 11, color: C.muted, marginTop: 10, textAlign: "right" }}>{erro ? `⚠ ${erro} · ` : ""}atualizado às {em?.toLocaleTimeString("pt-BR", { hour: "2-digit", minute: "2-digit" })} · atualiza sozinho a cada 5 min (com a tela aberta) · <button type="button" onClick={() => { ultimo.current = Date.now(); carregar(); }} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 11, padding: 0 }}>↻ atualizar agora</button></div>
     </div>
   );
 }

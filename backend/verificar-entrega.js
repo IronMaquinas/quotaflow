@@ -380,7 +380,7 @@ const ESPERADO = {
   'front:PainelValorGerado.jsx': 'c2a982a4d57f469c86df05ee83a58b19', // etapa SC2.5
   'services/salaControle/index.js': '676d1297c3b42bdd3fd1d104a615118f', // etapa SC2.4
   'routes/salaControle.js': '3efb39aea62743915130666d229b1699', // etapa SC1 (novo)
-  'front:SalaControle.jsx': 'f4a75c93adf521382fd3243f1b429bdb', // etapa SC2.3
+  'front:SalaControle.jsx': 'db98ad6788f2123fb69076e11b8b9a91', // etapa SC2.6
   'services/metas.js': 'c9f7f147de4fa800c3b722cc202260d1', // etapa SC2.5
   'routes/metas.js': '2945b25b438295620aff1500158659fa', // etapa SC2.5
   'migrations/101_metas_negocio.sql': '93d87925592a0da96839a247d76f4d1e', // etapa SC2 (novo)
@@ -393,17 +393,9 @@ const ESPERADO = {
   'front:PlanoAcaoMeta.jsx': 'f6b1b4af99c561c3b59cb66632ffe725', // etapa SC2.5 (novo)
 };
 
-// Antes de copiar a etapa SC2.5 — base: SC2.4 (6ef7c30)
+// Antes de copiar a etapa SC2.6 — base: SC2.5 (b1aca1d)
 const ANTES = {
-  'services/metas.js': '647c23c3dae52a4d9d26e87db1e5b33a',
-  'routes/metas.js': 'ad587f80a10c4f7bea1a116c56f17257',
-  'services/tarefas.js': '824658d386f15d106af37a1b02983791',
-  'front:TelaMetas.jsx': 'c7b81c9c694e78b0fe35c2325fbf2d70',
-  'front:FichaMeta.jsx': '862dc5a09e3a1d97ae95869b543f04ce',
-  'front:PainelAnualMetas.jsx': 'bde260b1748db0a967569b104aad1bb1',
-  'front:PainelValorGerado.jsx': '6763081e30950998d36ab680a5b86b3b',
-  'front:TelaPlanoAcaoNova.jsx': 'ad31f4649658e6833125d433ff14b559',
-  'front:gerarRelatorioTarefas.js': '483dd597e30b11635886ba51406d36cf',
+  'front:SalaControle.jsx': 'f4a75c93adf521382fd3243f1b429bdb',
 };
 
 const RAIZ = process.cwd();
@@ -441,7 +433,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a SC2.5)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a SC2.6)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
