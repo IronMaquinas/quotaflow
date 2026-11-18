@@ -10,6 +10,7 @@ const IA = require('./ia');
 const { gerarConferido } = require('./ia/conferir');
 const SC = require('./salaControle');
 const BC = require('./betaConsultas');
+const BA = require('./betaAcoes'); // B3: ações com confirmação
 
 const LIMITE = () => Math.max(1, Number(process.env.IA_LIMITE_BETA_DIA) || 20);
 const SISTEMA = `Você é a Beta, assistente do QuotaFlow (sistema de gestão de transportadoras e locadoras), conversando em português do Brasil com uma pessoa da empresa.
@@ -57,9 +58,12 @@ async function perguntar(sb, { tenantId, userId, perfis = [], nome = '', mensage
   const gestor = perfis.some((p) => ['admin', 'gestor'].includes(p));
   const lista = BC.permitidas(perfis);
   // ⚡ 0) B2.0: perguntas comuns entendidas SEM IA (palavras-chave) — custo zero
-  let esc = await BC.rotearLocal(sb, ctxP, pergunta.texto, hist, ultimoAssunto).catch(() => null);
+  // B3: pedido para FAZER algo (cria, marca, lança, registra, avisa, passa…) → direto ao roteador (as ações estão no catálogo dele)
+  const pedeAcao = gestor && /^\s*(por favor[, ]*)?(cri[ae]r?|abr[ae]|abrir|lanc[ae]r?|lanç[ae]r?|marc[ae]r?|program[ae]r?|registr[ae]r?|anot[ae]r?|avis[ae]r?|mand[ae]r?|envi[ae]r?|pass[ae]r?|transfer[ae]r?|reatribu[ai]r?|mud[ae]r?|alter[ae]r?|coloc[ae]r?|agend[ae]r?)\b/i.test(pergunta.texto);
+  const emAcao = String(ultimoAssunto?.consulta || '').startsWith('acao:');
+  let esc = pedeAcao || emAcao ? null : await BC.rotearLocal(sb, ctxP, pergunta.texto, hist, ultimoAssunto).catch(() => null);
   // ⚡ 1) senão, o modelo econômico escolhe a consulta
-  if (!esc) esc = await escolher({ emp, registrar, lista, conversa, gestor });
+  if (!esc) esc = await escolher({ emp, registrar, lista, conversa, gestor, acoes: BA.permitidas(perfis) });
   if (esc.consulta === '__painel' && gestor) {
     // 🧠 visão geral (só quando pedida): modelo principal
     const { dados } = await contexto(sb, { tenantId, userId, perfis, nome });
@@ -68,6 +72,13 @@ async function perguntar(sb, { tenantId, userId, perfis = [], nome = '', mensage
     if (!r.texto) return { erro: 'A Beta não conseguiu responder agora. Tente de novo em instantes.', status: 503 };
     await contar();
     return { texto: r.texto, conferido: r.conferido, suspeitos: r.suspeitos || [], restantes: await restam(sb, tenantId, userId) };
+  }
+  if (String(esc.consulta || '').startsWith('acao:')) { // B3: monta a PROPOSTA — nada é feito sem o "Confirmar ✓"
+    const nomeA = esc.consulta.slice(5); const args = { ...(esc.args || {}) };
+    if (ultimoAssunto?.consulta === esc.consulta) for (const [k, v] of Object.entries(ultimoAssunto.args || {})) if (args[k] == null || args[k] === '') args[k] = v; // completa o que faltava
+    const r = await BA.preparar(sb, { ...ctxP, quem: { id: userId, nome: nome || 'gestor' } }, nomeA, args);
+    if (r.proposta) await contar();
+    return { texto: r.texto, proposta: r.proposta || null, acoes: r.acoes || [], assunto: r.assunto, pergunta_de_volta: !!r.falta, conferido: true, direto: true, suspeitos: [], restantes: await restam(sb, tenantId, userId) };
   }
   if (esc.consulta === '__perguntar') { // B2.4: falta um dado — pergunta em vez de cortar a conversa (não conta no limite)
     return { texto: esc.args.texto, pergunta_de_volta: true, assunto: ultimoAssunto, conferido: true, direto: true, suspeitos: [], restantes: await restam(sb, tenantId, userId) };
@@ -101,19 +112,21 @@ const ROTEADOR = `Você classifica perguntas para a Beta, assistente do QuotaFlo
 {"consulta":"<nome>","args":{...}}  ou  {"consulta":null}
 Escolha a consulta da lista que responde à ÚLTIMA mensagem da Pessoa (use a conversa para completar: se a Beta perguntou "qual delas?" e a Pessoa respondeu um nome, repita a consulta anterior com o nome completo).
 Copie nomes, placas e números exatamente como a Pessoa escreveu (sem inventar). Não preencha argumento que a Pessoa não disse.
+Pedidos para FAZER algo (criar, marcar, lançar, registrar, avisar, passar/transferir) usam as ações "acao:…" — preencha os argumentos com as palavras da Pessoa (datas como ela disse: "amanhã", "25/11"). Se a Beta acabou de pedir um dado para uma ação e a Pessoa respondeu, devolva a MESMA ação com esse dado.
 Se a Pessoa usar "nessa data", "esse dia", "ele/ela", "esse cliente", "o mesmo", copie o valor correspondente do [assunto] da resposta anterior da Beta.
 Se a pergunta é continuação mas falta um dado essencial que não está na conversa, devolva {"consulta":"__perguntar","args":{"texto":"<pergunta curta pedindo o dado>"}}.
 NÃO explique, NÃO pense em voz alta, NÃO use markdown: a resposta inteira é só o JSON.`;
 
-async function escolher({ emp, registrar, lista, conversa, gestor }) {
-  if (!lista.length) return { consulta: null };
-  const cat = lista.map((c) => `- ${c.nome}: ${c.descricao} Argumentos: ${Object.entries(c.args).map(([k, v]) => `${k} (${v})`).join(', ')}. Ex.: "${c.exemplo}"`).join('\n');
+async function escolher({ emp, registrar, lista, conversa, gestor, acoes = [] }) {
+  if (!lista.length && !acoes.length) return { consulta: null };
+  const cat = [...lista, ...acoes.map((a) => ({ ...a, nome: `acao:${a.nome}` }))].map((c) => `- ${c.nome}: ${c.descricao} Argumentos: ${Object.entries(c.args).map(([k, v]) => `${k} (${v})`).join(', ')}. Ex.: "${c.exemplo}"`).join('\n');
   const extra = gestor ? '\nSe a pessoa pedir a VISÃO GERAL da empresa (como está hoje, resumo, metas, valor gerado, alertas), devolva {"consulta":"__painel"}.' : '';
   const r = await IA.gerarTexto({ tenant: emp, registrar, sistema: ROTEADOR + extra, prompt: `Consultas:\n${cat}\n\nConversa:\n${conversa}`, max: 400, rapido: true }); // B1.8: IA_MODELO_RAPIDO · B1.10: folga (com 120 o modelo econômico às vezes cortava antes do JSON)
   try {
     const bruto = String(r.texto || ''); const m = bruto.match(/\{[\s\S]*\}/);
     let j = null; try { j = JSON.parse(m[0]); } catch { const n = bruto.match(/"consulta"\s*:\s*"([a-z_]+)"/); if (n) { j = { consulta: n[1], args: {} }; for (const a of bruto.matchAll(/"([a-z_]+)"\s*:\s*"([^"]*)"/g)) if (a[1] !== 'consulta') j.args[a[1]] = a[2]; } } // B1.10: JSON cortado ainda serve
     if (j && j.consulta === '__perguntar' && j.args?.texto) return { consulta: '__perguntar', args: { texto: String(j.args.texto).slice(0, 200) } }; // B2.4
+    if (j && /^acao:/.test(j.consulta || '') && acoes.some((a) => `acao:${a.nome}` === j.consulta)) return { consulta: j.consulta, args: j.args && typeof j.args === 'object' ? j.args : {} }; // B3
     if (j && j.consulta && lista.some((c) => c.nome === j.consulta)) return { consulta: j.consulta, args: j.args && typeof j.args === 'object' ? j.args : {} };
   } catch { /* não entendeu → segue sem consulta */ }
   if (gestor && /"consulta"\s*:\s*"__painel"/.test(String(r?.texto || ''))) return { consulta: '__painel' };

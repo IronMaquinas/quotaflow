@@ -8,7 +8,17 @@ const perfisDe = (req) => (Array.isArray(req.perfis) && req.perfis.length ? req.
 // sugestões do painel conforme o perfil
 router.get('/consultas', (req, res) => {
   const perfis = perfisDe(req); const gestor = perfis.some((p) => ['admin', 'gestor'].includes(p));
-  res.json({ sugestoes: [...(gestor ? ['Como está minha empresa hoje?'] : []), ...require('../services/betaConsultas').permitidas(perfis).map((c) => c.exemplo)] });
+  res.json({ sugestoes: [...(gestor ? ['Como está minha empresa hoje?', 'Cria uma tarefa para revisar o contrato até sexta'] : []), ...require('../services/betaConsultas').permitidas(perfis).map((c) => c.exemplo)] });
+});
+
+// B3: ✓ confirma a ação proposta pela Beta (token assinado, 15 min, só quem pediu)
+router.post('/confirmar', async (req, res) => {
+  try {
+    const perfis = perfisDe(req); if (!perfis.some((p) => ['admin', 'gestor'].includes(p))) return res.status(403).json({ erro: 'Ações da Beta são para a gestão.' });
+    let nome = null; try { const { data } = await supabase.from('usuarios').select('*').eq('tenant_id', req.tenantId).eq('id', req.userId); nome = data?.[0]?.nome || null; } catch { /* ok */ }
+    const r = await require('../services/betaAcoes').confirmar(supabase, { tenantId: req.tenantId, userId: req.userId, perfis, quem: { id: req.userId, nome: nome || 'gestor' } }, req.body?.token);
+    if (r.erro) return res.status(r.status || 400).json(r); res.json(r);
+  } catch (err) { console.error('❌ [beta] confirmar', err.message); res.status(500).json({ erro: 'Não consegui confirmar agora.' }); }
 });
 
 router.post('/', async (req, res) => {

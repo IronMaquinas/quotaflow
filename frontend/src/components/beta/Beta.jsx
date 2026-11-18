@@ -17,9 +17,17 @@ export default function Beta({ C, s, podeAbrir = () => true }) {
   const enviar = async (pergunta) => {
     const p = String(pergunta ?? txt).trim(); if (!p || ocup) return;
     const nova = [...msgs, { de: "pessoa", texto: p }]; setMsgs(nova); setTxt(""); setOcup(true);
-    try { const r = await apiService.post("/beta", { mensagens: nova.map(({ de, texto, assunto }) => ({ de, texto, assunto: assunto || undefined })) }); setMsgs([...nova, { de: "beta", texto: r.texto, conferido: r.conferido, suspeitos: r.suspeitos, direto: r.direto, link: r.link, acoes: r.acoes, aprendendo: r.aprendendo, assunto: r.assunto }]); setRest(r.restantes); }
+    try { const r = await apiService.post("/beta", { mensagens: nova.map(({ de, texto, assunto }) => ({ de, texto, assunto: assunto || undefined })) }); setMsgs([...nova, { de: "beta", texto: r.texto, conferido: r.conferido, suspeitos: r.suspeitos, direto: r.direto, link: r.link, acoes: r.acoes, aprendendo: r.aprendendo, assunto: r.assunto, proposta: r.proposta || null }]); setRest(r.restantes); }
     catch (e) { const d = e?.response?.data; setMsgs([...nova, { de: "beta", texto: d?.erro || "Não consegui responder agora. Tente de novo em instantes.", erro: true }]); if (d?.restantes != null) setRest(d.restantes); }
     finally { setOcup(false); }
+  };
+  // B3: ✓ confirmar / ✕ cancelar a ação proposta
+  const decidir = async (i, ok) => {
+    const m = msgs[i]; if (!m?.proposta || m.decidida) return;
+    setMsgs((l) => l.map((x, k) => (k === i ? { ...x, decidida: ok ? "confirmando" : "cancelada" } : x)));
+    if (!ok) { setMsgs((l) => [...l, { de: "beta", texto: "Tudo bem, não fiz nada. 👍", direto: true }]); return; }
+    try { const r = await apiService.post("/beta/confirmar", { token: m.proposta.token }); setMsgs((l) => [...l.map((x, k) => (k === i ? { ...x, decidida: "feita" } : x)), { de: "beta", texto: r.texto, link: r.link, direto: true, feito: true }]); }
+    catch (e) { setMsgs((l) => [...l.map((x, k) => (k === i ? { ...x, decidida: null } : x)), { de: "beta", texto: e?.response?.data?.erro || "Não consegui fazer agora. Tente pela tela.", erro: true }]); }
   };
   if (!aberta) return (
     <button type="button" onClick={() => setAberta(true)} title="Converse com a Beta, a assistente do QuotaFlow"
@@ -33,11 +41,19 @@ export default function Beta({ C, s, podeAbrir = () => true }) {
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
         {msgs.length === 0 && <div>
-          <div style={{ fontSize: 13.5, color: C.text, marginBottom: 10 }}>Oi! Eu sou a Beta. Pergunte do seu jeito — vencimento de CNH, quem está de férias, se a carreta está livre, quem falta responder a cotação… Eu olho os dados e respondo. Por enquanto eu só consulto: não crio nem altero nada.</div>
+          <div style={{ fontSize: 13.5, color: C.text, marginBottom: 10 }}>Oi! Eu sou a Beta. Pergunte do seu jeito — vencimento de CNH, quem está de férias, se a carreta está livre, quem falta responder a cotação… Eu olho os dados e respondo. Também posso criar tarefas, lançar férias, registrar faltas e avisar a equipe — sempre com o seu ✓ antes.</div>
           <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>{sug.map((x) => <button key={x} type="button" onClick={() => enviar(x)} style={{ textAlign: "left", background: C.bg, border: `1px solid ${C.border}`, borderRadius: 10, padding: "8px 12px", color: C.text, fontSize: 13, cursor: "pointer" }}>{x}</button>)}</div>
         </div>}
         {msgs.map((m, i) => <div key={i} style={{ alignSelf: m.de === "pessoa" ? "flex-end" : "flex-start", maxWidth: "88%" }}>
           <div style={{ background: m.de === "pessoa" ? C.accent : m.erro ? "#7f1d1d55" : C.bg, color: m.de === "pessoa" ? "#fff" : C.text, border: m.de === "pessoa" ? "none" : `1px solid ${C.border}`, borderRadius: 12, padding: "8px 12px", fontSize: 13.5, lineHeight: 1.5, whiteSpace: "pre-wrap" }}>{m.texto}</div>
+          {m.de === "beta" && m.proposta && <div style={{ marginTop: 6, border: `1px solid ${m.proposta.bloqueia ? C.danger : C.accent}`, borderRadius: 10, padding: "10px 12px", background: `${m.proposta.bloqueia ? C.danger : C.accent}12` }}>
+            {m.proposta.resumo.map((l, k) => <div key={k} style={{ fontSize: 13, fontWeight: k === 0 ? 700 : 400, marginTop: k ? 2 : 0 }}>{l}</div>)}
+            {m.proposta.avisos.map((l, k) => <div key={`a${k}`} style={{ fontSize: 12, color: /^❌/.test(l) ? C.danger : C.warn, marginTop: 4 }}>{l}</div>)}
+            {!m.proposta.bloqueia && !m.decidida && <div style={{ display: "flex", gap: 8, marginTop: 10 }}>
+              <button type="button" onClick={() => decidir(i, true)} style={{ ...s.btn(true), cursor: "pointer", flex: 1 }}>✓ Confirmar</button>
+              <button type="button" onClick={() => decidir(i, false)} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>Cancelar</button></div>}
+            {m.decidida && <div style={{ fontSize: 11.5, color: C.textSub, marginTop: 6 }}>{{ confirmando: "fazendo…", feita: "✓ confirmado", cancelada: "✕ cancelado" }[m.decidida]}</div>}
+          </div>}
           {m.de === "beta" && (m.acoes || []).map((a, k) => <div key={k} style={{ display: "flex", gap: 6, alignItems: "center", flexWrap: "wrap", marginTop: 6 }}>{m.acoes.length > 1 && <span style={{ fontSize: 11.5, color: C.textSub }}>{a.rotulo}:</span>}<BotoesContato C={C} telefone={a.telefone} email={a.email} tamanho={11.5} /></div>)}
           {m.de === "beta" && m.link?.tela && podeAbrir(m.link.tela) && <button type="button" onClick={() => ir(m.link)} style={{ background: "none", border: "none", color: C.accent, fontSize: 12, cursor: "pointer", padding: "4px 2px 0", fontFamily: "inherit" }}>Abrir no sistema →</button>}
           {m.de === "beta" && m.aprendendo && <div style={{ fontSize: 10.5, color: "#a78bfa", marginTop: 3 }}>📮 encaminhada aos especialistas · não contou no seu limite</div>}{m.de === "beta" && m.direto && !m.aprendendo && !m.erro && <div style={{ fontSize: 10.5, color: "#4ade80", marginTop: 3 }}>⚡ direto do sistema</div>}
