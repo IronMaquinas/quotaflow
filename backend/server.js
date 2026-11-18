@@ -297,6 +297,7 @@ if (process.env.CRON_INTERNO === '1') {
     enviarResumoDiario().catch(console.error);
     // etapa 12c.1: avisos de vencimento de documentos (30/15/5 dias e vencido)
     require('./services/avisosVencimento').enviarAvisosVencimento().catch(console.error);
+    require('./services/avisosFerias').enviar(require('./db').supabase).catch(console.error); // B1.14: 🏖 férias a 60/30 dias do limite → gestor e funcionário
     // etapa 14e: Monitor de CNPJs — ciclo quinzenal (01 e 15), um lote por dia até 100%
     require('./services/monitorCnpj').rodarCiclo(require('./db').supabase).then((r) => console.log('[CRON] Monitor de CNPJs:', JSON.stringify(r))).catch(console.error);
     // etapa 15b: BID com validade vencendo em 2 dias → e-mail ao responsável

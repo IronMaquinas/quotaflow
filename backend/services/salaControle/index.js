@@ -127,9 +127,10 @@ async function ferias(c) { // B1.6: 🏖 férias vencidas / vencendo (regras do 
   const FE = require('../ferias');
   const s = await FE.saldos(c.sb, c.tenantId); const xs = s.colaboradores;
   const venc = xs.filter((x) => x.alerta === 'vencido'), crit = xs.filter((x) => x.alerta === 'critico'), vindo = xs.filter((x) => x.alerta === 'vencendo');
-  const alertas = [...venc.map((x) => ({ nivel: 'critico', icone: '🏖', titulo: `Férias vencidas — ${x.nome}`, detalhe: `${x.a_gozar} dia(s) a gozar · ${s.regras.includes('CLT') ? 'paga em dobro' : 'fora do prazo'}`, link: { tela: 'pessoas', aba: 'ferias' } })),
-    ...crit.map((x) => ({ nivel: 'atencao', icone: '🏖', titulo: `Férias de ${x.nome} vencem em ${dBR(x.proximo_limite)}`, detalhe: `${x.a_gozar} dia(s) a programar`, link: { tela: 'pessoas', aba: 'ferias' } }))].slice(0, 6);
-  const prioridades = vindo.length ? [{ peso: 40, icone: '🏖', titulo: `${vindo.length} funcionário(s) com férias vencendo nos próximos meses`, detalhe: 'programe antes do limite', link: { tela: 'pessoas', aba: 'ferias' } }] : [];
+  // B1.14: a 60 dias do limite sem programação = ⚠ risco (trabalhista e de operação); vencido = crítico
+  const alertas = [...venc.map((x) => ({ nivel: 'critico', icone: '🏖', titulo: `Férias vencidas — ${x.nome}`, detalhe: `${x.a_gozar} dia(s) sem gozar · ${s.regras.includes('CLT') ? 'paga em dobro' : 'fora do prazo'}`, link: { tela: 'pessoas', aba: 'ferias' } })),
+    ...[...crit, ...vindo].sort((a, b) => String(a.proximo_limite).localeCompare(String(b.proximo_limite))).map((x) => ({ nivel: 'atencao', icone: '🏖', titulo: `Risco: férias de ${x.nome} vencem em ${dBR(x.proximo_limite)}`, detalhe: `${x.a_gozar} dia(s) sem programar${x.atual?.sair_ate ? ` · sair até ${dBR(x.atual.sair_ate)}` : ''}`, link: { tela: 'pessoas', aba: 'ferias' } }))].slice(0, 8);
+  const prioridades = [];
   return { alertas, prioridades, kpis: { ferias_vencidas: venc.length, ferias_vencendo: crit.length + vindo.length } };
 }
 

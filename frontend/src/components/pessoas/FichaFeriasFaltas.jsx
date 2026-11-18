@@ -25,7 +25,7 @@ export default function FichaFeriasFaltas({ C, s, colaborador, editar, excluir }
     try { await apiService.post(`/pessoas/colaboradores/${id}/faltas`, nova); setNova(null); carregar(); }
     catch (e) { setErro(e?.response?.data?.erro || e.message); } finally { setSalvando(false); }
   };
-  const p = saldo?.atual; const ALR = { vencido: ["⛔ período vencido", C.danger], critico: ["⚠ vence em até 30 dias", C.warn], vencendo: ["vence em até 90 dias", "#eab308"] }[saldo?.alerta];
+  const p = saldo?.atual; const ALR = { vencido: ["⛔ período vencido", C.danger], critico: ["⚠ vence em até 30 dias", C.warn], vencendo: ["vence em até 60 dias", "#eab308"] }[saldo?.alerta];
   const total = Array.isArray(faltas) ? faltas.reduce((t, f) => t + Number(f.dias || 1), 0) : 0;
 
   return (

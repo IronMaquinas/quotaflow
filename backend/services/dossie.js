@@ -20,7 +20,7 @@ const DI = require('./disciplinar'); // 12h
 
 async function q(p) { const { data, error } = await p; if (error) throw new Error(error.message); return data || []; }
 const DATA = /^\d{4}-\d{2}-\d{2}$/;
-const SECOES = ['dados', 'funcoes', 'documentos', 'epi', 'treinamentos', 'competencias', 'multas', 'disciplinar']; // 12g: + multas · 12h: + disciplinar
+const SECOES = ['dados', 'funcoes', 'documentos', 'epi', 'treinamentos', 'competencias', 'multas', 'disciplinar', 'ferias']; // 12g: + multas · 12h: + disciplinar · B1.14: + férias e faltas
 const MOTIVOS = ['auditoria', 'trabalhista', 'colaborador', 'desligamento', 'outro'];
 const tenta = async (fn, padrao, re) => { try { return await fn(); } catch (e) { if (re.test(String(e.message))) return padrao; throw e; } };
 const dia = (v) => (v ? String(v).slice(0, 10) : null);
@@ -110,6 +110,19 @@ async function montar(supabase, tenantId, colab, { de, ate, secoes = SECOES } = 
     out.disciplinar = { resumo: DI.resumoColaborador(l), lista: l.filter((m) => dentro(m.data_aplicacao)).sort((a, b) => String(a.data_aplicacao).localeCompare(String(b.data_aplicacao)))
       .map((m) => ({ data_fato: m.data_fato, data_aplicacao: m.data_aplicacao, tipo: m.tipo_nome, categoria: m.categoria_nome, descricao: m.descricao, dias_suspensao: m.dias_suspensao, suspensao_inicio: m.suspensao_inicio, suspensao_fim: m.suspensao_fim,
         ciencia: m.ciencia, ciencia_em: m.ciencia_em, ciencia_hash: m.ciencia_hash, testemunhas: m.testemunhas.map((t) => (t.cpf ? `${t.nome} (CPF ${String(t.cpf).replace(/^(\d{3})(\d{3})(\d{3})(\d{2})$/, '$1.$2.$3-$4')})` : t.nome)), aplicado_por: m.aplicado_por_nome, status: m.status, cancelamento_motivo: m.cancelamento_motivo })) };
+  }
+  if (quer.has('ferias')) { // B1.14: 🏖 férias (ausências) e ⚠ faltas injustificadas
+    const FE = require('./ferias');
+    const lanc = await tenta(() => FE.listar(supabase, tenantId, { colaboradorId: colab.id }), [], /colaborador_ferias|colaborador_faltas|pais/);
+    const sal = await tenta(async () => (await FE.saldos(supabase, tenantId, { colaboradorId: colab.id })).colaboradores[0] || null, null, /colaborador_ferias|colaborador_faltas|pais/);
+    const faltas = await tenta(() => FE.listarFaltas(supabase, tenantId, colab.id), [], /colaborador_faltas/);
+    out.ferias = {
+      lancamentos: lanc.filter((f) => dentro(f.inicio) || dentro(f.fim)).sort((a, b) => String(a.inicio).localeCompare(String(b.inicio)))
+        .map((f) => ({ inicio: f.inicio, fim: f.fim, dias: f.dias, abono_dias: f.abono_dias || 0, retorno: f.retorno, periodo: f.periodo_aquisitivo, situacao: f.situacao, obs: f.obs || null, lancado_por: f.criado_por_nome || null })),
+      periodos: (sal?.periodos || []).map((p) => ({ rotulo: p.rotulo, inicio: p.inicio, fim: p.fim, limite: p.limite, direito: p.direito, faltas: p.faltas, gozado: p.gozado, programado: p.programado, saldo: p.saldo, situacao: p.situacao })),
+      faltas: faltas.filter((f) => dentro(f.data)).map((f) => ({ data: f.data, dias: f.dias, obs: f.obs || null, por: f.criado_por_nome || null })),
+      dias_ferias_periodo: lanc.filter((f) => dentro(f.inicio) || dentro(f.fim)).reduce((s, f) => s + (f.dias || 0), 0),
+    };
   }
   return out;
 }

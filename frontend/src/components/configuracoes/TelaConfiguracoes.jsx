@@ -257,6 +257,17 @@ function SecaoJornada({ C, s, onErro }) {
         </div>
       </div>
 
+      {/* B1.14: escala rápida → dias de folga (usados também nas férias: não podem começar nos 2 dias antes do repouso) */}
+      <div style={{ ...s.card, padding: "18px 20px", marginBottom: 16 }}>
+        <div style={{ fontSize: 12, color: C.textSub, fontWeight: 600, marginBottom: 10 }}>ESCALA</div>
+        <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+          {[["5x2", "5x2 — segunda a sexta", { regra_sabado: "folga", regra_domingo: "excepcional" }], ["6x1", "6x1 — segunda a sábado", { regra_sabado: "normal", regra_domingo: "excepcional" }]].map(([k, l, v]) => {
+            const on = form.regra_sabado === v.regra_sabado && ["segunda", "terca", "quarta", "quinta", "sexta"].every((d) => form[`regra_${d}`] === "normal");
+            return <button key={k} type="button" onClick={() => setForm((f) => ({ ...f, regra_segunda: "normal", regra_terca: "normal", regra_quarta: "normal", regra_quinta: "normal", regra_sexta: "normal", ...v }))} style={{ ...s.btn(on), cursor: "pointer", fontSize: 12.5 }}>{on ? "✓ " : ""}{l}</button>; })}
+        </div>
+        <div style={{ fontSize: 12, color: C.muted, marginTop: 8 }}>Define os dias de folga abaixo. 🏖 Férias não podem começar nos 2 dias antes da folga ou de feriado — {(() => { const NOMES = ["domingo", "segunda", "terça", "quarta", "quinta", "sexta", "sábado"]; const k = ["regra_domingo", "regra_segunda", "regra_terca", "regra_quarta", "regra_quinta", "regra_sexta", "regra_sabado"]; const folga = k.map((x, i) => (["folga", "excepcional"].includes(form[x]) ? i : null)).filter((x) => x != null); const ved = new Set(); folga.forEach((w) => { ved.add((w + 6) % 7); ved.add((w + 5) % 7); }); folga.forEach((w) => ved.delete(w)); return ved.size ? `nesta jornada: ${[...ved].sort().map((w) => NOMES[w]).join(", ")}.` : "defina ao menos um dia de folga."; })()} Funcionário com escala diferente: Pessoas → Editar → Escala.</div>
+      </div>
+
       {/* Bloco 2: Intervalo */}
       <div style={{ ...s.card, padding: "18px 20px", marginBottom: 16 }}>
         <label style={{ display: "flex", alignItems: "center", gap: 8,

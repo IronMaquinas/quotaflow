@@ -205,7 +205,7 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
       if (!formColab.tem_vinculo && (corpo.vinculo || "proprio") === "proprio") ["vinculo", "rntrc", "vinculo_empresa", "vinculo_cnpj"].forEach((k) => delete corpo[k]); // 18zw: antes da migration 095
       delete corpo.tem_vinculo; ["rntrc", "vinculo_empresa", "vinculo_cnpj"].forEach((k) => { if (corpo[k] === "") corpo[k] = null; }); // 18zn: vazio não vai (funciona antes da migration 090)
       CAMPOS_CNH.forEach((k) => { if (corpo[k] === "") corpo[k] = null; });
-      ["emergencia_nome", "emergencia_telefone", "emergencia_parentesco", "plano_saude_operadora", "plano_saude_plano", "plano_saude_carteira", "plano_saude_validade"].forEach((k) => { if (corpo[k] === undefined) delete corpo[k]; else if (corpo[k] === "") corpo[k] = null; }); // B1.10: nunca tocado = não vai (antes da migration 107)
+      ["escala", "emergencia_nome", "emergencia_telefone", "emergencia_parentesco", "plano_saude_operadora", "plano_saude_plano", "plano_saude_carteira", "plano_saude_validade"].forEach((k) => { if (corpo[k] === undefined) delete corpo[k]; else if (corpo[k] === "") corpo[k] = null; }); // B1.10: nunca tocado = não vai (antes da migration 107)
       delete corpo.ferias_ate; // B1.5: só exibição
       if (sugerida) corpo.funcao_motivo = "correcao"; // 12d.3: ligar ao modelo de mesmo nome não é promoção
       if (!funcoesOk) delete corpo.funcao_id;
@@ -1013,6 +1013,8 @@ export default function TelaPessoas({ C, s, equipamentos = [], abaInicial, onAba
           <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>
             {campo("TELEFONE", <input value={formColab.telefone} onChange={(e) => setFormColab({ ...formColab, telefone: e.target.value })} style={s.input} />, "1 1 160px")}
             {campo("E-MAIL", <input value={formColab.email} onChange={(e) => setFormColab({ ...formColab, email: e.target.value })} style={s.input} />, "1 1 200px")}
+            {campo("ESCALA", <select value={formColab.escala || ""} onChange={(e) => setFormColab({ ...formColab, escala: e.target.value })} style={s.input}>
+              <option value="">Jornada da empresa (padrão)</option><option value="5x2">5x2 — segunda a sexta</option><option value="6x1">6x1 — segunda a sábado</option><option value="12x36">12x36 — plantão</option></select>, "1 1 220px")}{/* B1.14: férias não começam nos 2 dias antes da folga */}
             {/* B1.10: 🚑 contato de emergência e 🩺 plano de saúde (migration 107) */}
             <div style={{ flex: "1 1 100%", fontSize: 12, fontWeight: 700, color: C.textSub, marginTop: 6 }}>🚑 CONTATO DE EMERGÊNCIA</div>
             {campo("NOME", <input value={formColab.emergencia_nome || ""} onChange={(e) => setFormColab({ ...formColab, emergencia_nome: e.target.value })} style={s.input} />, "2 1 220px")}

@@ -9,6 +9,7 @@
 //   • multa_indicacao / multa_venc — 12g: prazo de indicação do condutor (5 dias, vencido) e vencimento (5 dias, vencido)
 //   • aut_defesa / aut_venc — 12i: autuação da empresa — prazo de defesa/recurso e vencimento (5 dias, vencido)
 //   • insp_atrasada — 14b.2: rotina de inspeção atrasada (empresa ou locatário), uma vez por vencimento
+//   • ferias_venc — B1.14: férias sem programar a 60 e 30 dias do limite legal e vencidas ('60', '30', 'vencido')
 //   • trein_faltou — turma encerrada com quem não fez/não assinou → reagendar (uma vez por turma; só para o GESTOR — 12e.2d)
 // Cada marco sai uma vez (tabela avisos_enviados). Se o servidor ficou dias fora, manda só o mais urgente.
 // Destinatários: gestor — 18h.4a: admin não recebe e-mail de rotina (o responsável do documento continua só nos avisos de documento).
@@ -21,7 +22,7 @@ const TR = require('./treinamentos'); // 12e.1
 async function q(p) { const { data, error } = await p; if (error) throw new Error(error.message); return data || []; }
 const hojeBR = (agora = new Date()) => new Date(agora.getTime() - 3 * 3600000).toISOString().slice(0, 10);
 const diasAte = (de, ate) => Math.round((Date.parse(String(ate).slice(0, 10) + 'T00:00:00Z') - Date.parse(de + 'T00:00:00Z')) / 86400000);
-const ORDEM = { falta: 1, '30': 1, '15': 2, '5': 2, vencido: 3 }; // 12g: '5' (multas)
+const ORDEM = { '60': 0.5, falta: 1, '30': 1, '15': 2, '5': 2, vencido: 3 }; // 12g: '5' (multas)
 
 function marcoTroca(dias) { return dias == null ? null : dias < 0 ? 'vencido' : dias <= 15 ? '15' : null; }
 function marcoCA(dias) { return dias == null ? null : dias < 0 ? 'vencido' : dias <= 30 ? '30' : null; }
@@ -127,6 +128,22 @@ async function candidatos(supabase, tenantId, agora = new Date()) {
       }
     }
   } catch (e) { if (!/treinamento/.test(String(e.message))) throw e; }
+
+  // B1.14: 🏖 férias sem programar perto do limite legal
+  for (const x of await feriasAVencer(supabase, tenantId)) out.push({ categoria: 'ferias_venc', chave: `ferias_venc:${x.colaborador_id}:${x.limite}`, marco: x.marco, dias: x.dias, data: x.limite, titulo: `${x.a_programar} dia(s) de férias sem programar${x.sair_ate ? ` — sair até ${String(x.sair_ate).split('-').reverse().join('/')}` : ''}`, de: x.nome, ...x });
+  return out;
+}
+
+/** B1.14: quem tem férias sem programar a ≤ 60 dias do limite (ou vencidas) — marco '60' · '30' · 'vencido' */
+async function feriasAVencer(supabase, tenantId) {
+  let s; try { s = await require('./ferias').saldos(supabase, tenantId); } catch { return []; } // sem as migrations 105/106
+  const out = [];
+  for (const c of s.colaboradores) {
+    for (const p of c.periodos.filter((x) => ['aberto', 'vencido'].includes(x.situacao) && x.saldo > 0)) {
+      const dias = p.dias_para_limite; const marco = dias < 0 ? 'vencido' : dias <= 30 ? '30' : dias <= 60 ? '60' : null;
+      if (marco) out.push({ colaborador_id: c.colaborador_id, nome: c.nome, limite: p.limite, dias, marco, a_programar: p.saldo, sair_ate: p.sair_ate, rotulo: p.rotulo });
+    }
+  }
   return out;
 }
 
@@ -146,7 +163,7 @@ async function registrar(supabase, tenantId, itens, destinatarios) {
   if (error) console.error('❌ [avisos-pessoas] registrar:', error.message);
 }
 
-const TITULO = { epi_troca: '🦺 Troca de EPI', epi_ca: '🦺 CA de EPI', doc_falta: '📋 Documento exigido não cadastrado', trein_venc: '🎓 Treinamento vencendo', trein_falta: '🎓 Treinamento exigido não realizado', trein_faltou: '🎓 Turma encerrada com faltas — reagendar', multa_indicacao: '🚦 Multa — indicar o condutor', multa_venc: '🚦 Multa vencendo', aut_defesa: '🏛 Autuação da empresa — defesa / recurso', aut_venc: '🏛 Autuação da empresa vencendo', insp_atrasada: '🔍 Inspeção de rotina atrasada' };
+const TITULO = { ferias_venc: '🏖 Férias perto do limite legal (sem programar)', epi_troca: '🦺 Troca de EPI', epi_ca: '🦺 CA de EPI', doc_falta: '📋 Documento exigido não cadastrado', trein_venc: '🎓 Treinamento vencendo', trein_falta: '🎓 Treinamento exigido não realizado', trein_faltou: '🎓 Turma encerrada com faltas — reagendar', multa_indicacao: '🚦 Multa — indicar o condutor', multa_venc: '🚦 Multa vencendo', aut_defesa: '🏛 Autuação da empresa — defesa / recurso', aut_venc: '🏛 Autuação da empresa vencendo', insp_atrasada: '🔍 Inspeção de rotina atrasada' };
 const esc = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const dataBR = (d) => (d ? String(d).slice(0, 10).split('-').reverse().join('/') : '—');
 function prazo(i) {
@@ -158,7 +175,7 @@ function prazo(i) {
 }
 /** Seções HTML para o e-mail diário */
 function secoesHtml(itens) {
-  const cats = ['insp_atrasada', 'aut_defesa', 'aut_venc', 'multa_indicacao', 'multa_venc', 'epi_troca', 'epi_ca', 'trein_venc', 'trein_faltou', 'doc_falta', 'trein_falta'].filter((c) => itens.some((i) => i.categoria === c));
+  const cats = ['ferias_venc', 'insp_atrasada', 'aut_defesa', 'aut_venc', 'multa_indicacao', 'multa_venc', 'epi_troca', 'epi_ca', 'trein_venc', 'trein_faltou', 'doc_falta', 'trein_falta'].filter((c) => itens.some((i) => i.categoria === c));
   return cats.map((c) => `
     <h3 style="margin:18px 0 6px;font-size:15px">${TITULO[c]}</h3>
     <table style="border-collapse:collapse;width:100%;font-size:14px">
@@ -168,4 +185,4 @@ function secoesHtml(itens) {
     </table>`).join('');
 }
 
-module.exports = { candidatos, pendentes, registrar, secoesHtml, marcoTroca, marcoCA };
+module.exports = { feriasAVencer, candidatos, pendentes, registrar, secoesHtml, marcoTroca, marcoCA };

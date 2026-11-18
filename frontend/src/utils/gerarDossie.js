@@ -159,6 +159,26 @@ export function gerarHtmlDossie(d) {
         </tbody></table>` : `<div class="vazio">Nenhuma medida no período.</div>`}`));
   }
 
+  // 9. férias e faltas (B1.14)
+  if (tem("ferias")) {
+    const fe = d.ferias || { lancamentos: [], periodos: [], faltas: [] };
+    const SITP = { em_aquisicao: "em aquisição", aberto: "a gozar", quitado: "quitado", vencido: "VENCIDO", anterior_controle: "anterior ao controle" };
+    const SITF = { programada: "programada", em_gozo: "em gozo", concluida: "gozada" };
+    partes.push(sec("Férias e faltas injustificadas", `
+      <div class="bloco" style="white-space:normal"><b>No período do dossiê:</b> ${fe.dias_ferias_periodo || 0} dia(s) de férias · ${fe.faltas.reduce((s, f) => s + (f.dias || 1), 0)} dia(s) de falta injustificada</div>
+      ${fe.periodos.length ? `<table><thead><tr><th>Período aquisitivo</th><th>Faltas</th><th>Direito</th><th>Gozado</th><th>Programado</th><th>Saldo</th><th>Limite para gozar</th><th>Situação</th></tr></thead><tbody>
+        ${fe.periodos.map((p) => `<tr><td>${dBR(p.inicio)} a ${dBR(p.fim)}</td><td>${p.faltas}</td><td>${p.direito}</td><td>${p.gozado}</td><td>${p.programado}</td><td>${p.saldo}</td><td>${dBR(p.limite)}</td><td>${p.situacao === "vencido" ? `<b style="color:#dc2626">${SITP[p.situacao]}</b>` : esc(SITP[p.situacao] || p.situacao)}</td></tr>`).join("")}
+        </tbody></table>` : `<div class="vazio">Sem admissão cadastrada — períodos não calculados.</div>`}
+      <h3 style="font-size:12px;margin:10px 0 4px">Ausências por férias</h3>
+      ${fe.lancamentos.length ? `<table><thead><tr><th>Saída</th><th>Último dia</th><th>Retorno</th><th>Dias</th><th>Vendidos</th><th>Período aquisitivo</th><th>Situação</th><th>Lançado por</th></tr></thead><tbody>
+        ${fe.lancamentos.map((f) => `<tr><td>${dBR(f.inicio)}</td><td>${dBR(f.fim)}</td><td>${dBR(f.retorno)}</td><td>${f.dias}</td><td>${f.abono_dias || "—"}</td><td>${esc(f.periodo || "—")}</td><td>${esc(SITF[f.situacao] || f.situacao)}</td><td>${esc(f.lancado_por || "—")}${f.obs ? `<br/><span style="color:#666">${esc(f.obs)}</span>` : ""}</td></tr>`).join("")}
+        </tbody></table>` : `<div class="vazio">Nenhuma férias no período.</div>`}
+      <h3 style="font-size:12px;margin:10px 0 4px">Faltas injustificadas</h3>
+      ${fe.faltas.length ? `<table><thead><tr><th>Data</th><th>Dias</th><th>Observação</th><th>Registrado por</th></tr></thead><tbody>
+        ${fe.faltas.map((f) => `<tr><td>${dBR(f.data)}</td><td>${f.dias}</td><td>${esc(f.obs || "")}</td><td>${esc(f.por || "—")}</td></tr>`).join("")}
+        </tbody></table>` : `<div class="vazio">Nenhuma falta injustificada no período.</div>`}`));
+  }
+
   return `<!doctype html><html lang="pt-BR"><head><meta charset="utf-8"><title>Dossiê — ${esc(c.nome)}</title><style>${CSS}</style></head><body><div class="pagina">
     <div class="capa">
       ${logoHtml({ altura: 70, largura: 260, margem: "0 auto 8px" })}<div style="font-size:14px;font-weight:700">${esc(e.razao_social || e.nome)}</div><div class="linha">${e.cnpj ? `CNPJ ${esc(fmtCNPJ(e.cnpj))}` : ""}</div>
@@ -170,7 +190,7 @@ export function gerarHtmlDossie(d) {
         <b>Código de verificação:</b> ${esc(d.codigo)}<br/>
         <b>Emitido em:</b> ${dataHora(d.gerado_em)}${d.gerado_por_nome ? ` · <b>por:</b> ${esc(d.gerado_por_nome)}` : ""}<br/>
         <b>Finalidade:</b> ${esc(MOTIVO[d.motivo] || d.motivo || "—")}<br/>
-        <b>Conteúdo:</b> ${(d.secoes || []).map((s) => ({ dados: "Dados e selo", funcoes: "Função e histórico", documentos: "Documentos", epi: "EPIs", treinamentos: "Treinamentos", competencias: "Competências", multas: "Multas", disciplinar: "Disciplinar" }[s])).join(" · ")}
+        <b>Conteúdo:</b> ${(d.secoes || []).map((s) => ({ dados: "Dados e selo", funcoes: "Função e histórico", documentos: "Documentos", epi: "EPIs", treinamentos: "Treinamentos", competencias: "Competências", multas: "Multas", disciplinar: "Disciplinar", ferias: "Férias e faltas" }[s])).join(" · ")}
       </div>
       <div class="confid">DOCUMENTO CONFIDENCIAL — contém dados pessoais (LGPD, Lei 13.709/2018). Uso restrito à finalidade indicada; a emissão fica registrada no sistema (quem, quando e por quê). Não compartilhe além do necessário.</div>
     </div>

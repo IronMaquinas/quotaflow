@@ -95,6 +95,7 @@ function validarColaborador(body, { parcial = false } = {}) {
   for (const k of ['cnh_validade', 'cnh_emissao', 'cnh_primeira_habilitacao']) if (tem(k)) { if (body[k] && !DATA.test(String(body[k]))) erros.push('Data da CNH inválida'); else out[k] = body[k] || null; }
   if (tem('cnh_observacoes')) out.cnh_observacoes = body.cnh_observacoes ? String(body.cnh_observacoes).trim().slice(0, 120) : null;
   if (tem('cnh_local_emissao')) out.cnh_local_emissao = body.cnh_local_emissao ? String(body.cnh_local_emissao).trim().slice(0, 80) : null;
+  if (tem('escala')) { if (body.escala && !['5x2', '6x1', '12x36'].includes(body.escala)) erros.push('Escala inválida'); else out.escala = body.escala || null; } // B1.14 (migration 108)
   // B1.10: 🚑 contato de emergência e 🩺 plano de saúde (migration 107)
   if (tem('emergencia_nome')) out.emergencia_nome = body.emergencia_nome ? String(body.emergencia_nome).trim().slice(0, 120) : null;
   if (tem('emergencia_telefone')) out.emergencia_telefone = body.emergencia_telefone ? String(body.emergencia_telefone).trim().slice(0, 30) : null;

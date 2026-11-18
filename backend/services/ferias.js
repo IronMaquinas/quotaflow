@@ -131,9 +131,21 @@ async function contexto(sb, tenantId) {
   // B1.13: calendário de início proibido (2 dias antes de feriado ou repouso) e "sair até" (último início que ainda cabe no prazo)
   let locais = []; try { locais = (await q(sb.from('tenant_feriados').select('*').eq('tenant_id', tenantId))).map((f) => d10(f.data)); } catch { /* ok */ }
   const cacheF = new Map(); const ehFeriado = (d) => { const a = +d.slice(0, 4); if (!cacheF.has(a)) cacheF.set(a, new Set(R.feriadosNacionais(a))); return cacheF.get(a).has(d) || locais.includes(d); };
-  const vedado = (ini) => { for (let k = 1; k <= R.inicioVedadoAntesDeDescanso; k++) { const d = somaDias(ini, k); if (ehFeriado(d)) return `${k === 1 ? 'véspera' : `${k} dias antes`} de feriado (${dBR(d)})`; if (R.diasDescanso.includes(new Date(`${d}T12:00:00Z`).getUTCDay())) return `${k === 1 ? 'véspera' : `${k} dias antes`} do repouso semanal (domingo)`; } return null; };
-  const ultimaSaida = (limite, n, abre) => { let s = somaDias(limite, -(n - 1)); while (s >= abre && vedado(s)) s = somaDias(s, -1); return s >= abre ? s : null; };
-  return { R, ferias, faltas, colabs, hoje, controleDesde: primeiro && primeiro < hoje ? primeiro : hoje, vedado, ultimaSaida };
+  // B1.14: repouso semanal pela ESCALA do colaborador (5x2/6x1/12x36) ou pela jornada padrão da empresa (dias "folga"/"excepcional")
+  const DIAS = ['regra_domingo', 'regra_segunda', 'regra_terca', 'regra_quarta', 'regra_quinta', 'regra_sexta', 'regra_sabado'];
+  const NOME_DIA = ['domingo', 'segunda', 'terça', 'quarta', 'quinta', 'sexta', 'sábado'];
+  let descansoEmpresa = R.diasDescanso;
+  try { const j = (await q(sb.from('tenant_jornadas').select('*').eq('tenant_id', tenantId))).filter((x) => x.ativo !== false).sort((a, b) => (b.padrao ? 1 : 0) - (a.padrao ? 1 : 0))[0];
+    if (j) { const d = DIAS.map((k, i) => (['folga', 'excepcional'].includes(j[k] || (i === 0 ? 'excepcional' : 'normal')) ? i : null)).filter((x) => x != null); if (d.length) descansoEmpresa = d; } } catch { /* sem jornada */ }
+  const descansoDe = (c) => { const e = c && c.escala && R.escalas?.[c.escala]; return e ? e.descanso : descansoEmpresa; };
+  const cal = (descanso) => {
+    const vedado = (ini) => { if (!descanso) return null; for (let k = 1; k <= R.inicioVedadoAntesDeDescanso; k++) { const d = somaDias(ini, k); if (ehFeriado(d)) return `${k === 1 ? 'véspera' : `${k} dias antes`} de feriado (${dBR(d)})`; const w = new Date(`${d}T12:00:00Z`).getUTCDay(); if (descanso.includes(w)) return `${k === 1 ? 'véspera' : `${k} dias antes`} do repouso semanal (${NOME_DIA[w]})`; } return null; };
+    const ultimaSaida = (limite, n, abre) => { let s = somaDias(limite, -(n - 1)); while (s >= abre && vedado(s)) s = somaDias(s, -1); return s >= abre ? s : null; };
+    return { vedado, ultimaSaida, descanso };
+  };
+  const padrao = cal(descansoEmpresa);
+  const escalaTxt = (c) => (c && c.escala && R.escalas?.[c.escala] ? R.escalas[c.escala].nome : `jornada da empresa (repouso: ${descansoEmpresa.map((w) => NOME_DIA[w]).join(' e ')})`);
+  return { R, ferias, faltas, colabs, hoje, controleDesde: primeiro && primeiro < hoje ? primeiro : hoje, vedado: padrao.vedado, ultimaSaida: padrao.ultimaSaida, cal: (c) => cal(descansoDe(c)), escalaTxt };
 }
 
 /** saldo de férias por colaborador (ativos) — alerta: vencido · critico · vencendo · sem_admissao */
@@ -141,7 +153,9 @@ async function saldos(sb, tenantId, { colaboradorId = null } = {}) {
   const ctx = await contexto(sb, tenantId); const { R, hoje } = ctx;
   const lista = ctx.colabs.filter((c) => c.situacao !== 'desligado' && (!colaboradorId || String(c.id) === String(colaboradorId))).map((c) => {
     const { periodos } = montarPeriodos({ admissao: d10(c.admissao), ferias: ctx.ferias.filter((f) => String(f.colaborador_id) === String(c.id)), faltas: ctx.faltas, colabId: c.id, R, hoje, controleDesde: ctx.controleDesde });
-    for (const p of periodos) { const n = p.saldo > 0 ? p.saldo : 0; p.sair_ate = n ? ctx.ultimaSaida(p.limite, n, somaDias(p.fim, 1)) : null; } // B1.13
+    const cc = ctx.cal(c); const fsC = ctx.ferias.filter((f) => String(f.colaborador_id) === String(c.id));
+    for (const p of periodos) { const n = p.saldo > 0 ? p.saldo : 0; p.sair_ate = n ? cc.ultimaSaida(p.limite, n, somaDias(p.fim, 1)) : null; // B1.13
+      const tam = fsC.filter((f) => p.lancamentos.some((id) => String(id) === String(f.id))).map((f) => dias(d10(f.inicio), d10(f.fim)) + 1); p.qtd_lancamentos = tam.length; p.maior = tam.length ? Math.max(...tam) : 0; } // B1.14
     const vis = periodos.filter((p) => p.situacao !== 'anterior_controle' && (p.situacao !== 'quitado' || p.limite >= hoje));
     const abertos = vis.filter((p) => ['aberto', 'vencido'].includes(p.situacao));
     const atual = abertos[0] || vis.find((p) => p.situacao === 'em_aquisicao') || null;
@@ -152,7 +166,7 @@ async function saldos(sb, tenantId, { colaboradorId = null } = {}) {
     else if (proxLimite && proxLimite.dias_para_limite <= R.alertas.criticoDias) alerta = 'critico';
     else if (proxLimite && proxLimite.dias_para_limite <= R.alertas.vencendoDias) alerta = 'vencendo';
     const faltas12 = faltasNoIntervalo(ctx.faltas, c.id, atual ? atual.inicio : somaMeses(hoje, -12), hoje);
-    return { colaborador_id: c.id, nome: c.nome, funcao: c.funcao || null, admissao: d10(c.admissao), periodos: vis, atual, alerta, a_gozar: abertos.reduce((s, p) => s + Math.max(0, p.saldo), 0), programado: vis.reduce((s, p) => s + p.programado, 0), proximo_limite: proxLimite?.limite || null, faltas_periodo: faltas12 };
+    return { escala: ctx.escalaTxt(c), colaborador_id: c.id, nome: c.nome, funcao: c.funcao || null, admissao: d10(c.admissao), periodos: vis, atual, alerta, a_gozar: abertos.reduce((s, p) => s + Math.max(0, p.saldo), 0), programado: vis.reduce((s, p) => s + p.programado, 0), proximo_limite: proxLimite?.limite || null, faltas_periodo: faltas12 };
   });
   return { pais: R.pais, regras: R.nome, controle_desde: ctx.controleDesde, hoje, colaboradores: lista.sort((a, b) => a.nome.localeCompare(b.nome)) };
 }
@@ -161,7 +175,9 @@ async function saldos(sb, tenantId, { colaboradorId = null } = {}) {
 async function analisar(sb, tenantId, dados = {}, id = null) {
   const ctx = await contexto(sb, tenantId); const { R, hoje } = ctx;
   const c = ctx.colabs.find((x) => String(x.id) === String(dados.colaborador_id)); if (!c) return { avisos: [] };
-  const inicio = d10(dados.inicio), fim = d10(dados.fim); if (!inicio || !fim || fim < inicio) return { avisos: [] };
+  const inicio = d10(dados.inicio); if (!inicio) return { avisos: [] };
+  const soInicio = !d10(dados.fim); const fim = soInicio ? inicio : d10(dados.fim); if (fim < inicio) return { avisos: [] }; // B1.14: só com o início já confere prazo e dia proibido
+  const C2 = ctx.cal(c);
   const avisos = []; const A = (nivel, texto) => avisos.push({ nivel, texto });
   if (!c.admissao) { A('alerta', `Sem data de admissão no cadastro de ${c.nome} — sem ela não dá para calcular o período aquisitivo e o saldo. Preencha em Pessoas → Editar.`); return { avisos }; }
   const nova = { id: id || '__nova', colaborador_id: c.id, inicio, fim, abono_dias: Number(dados.abono_dias || 0) };
@@ -172,7 +188,7 @@ async function analisar(sb, tenantId, dados = {}, id = null) {
   if (p) {
     const F = R.fracionamento; const abre = somaDias(p.fim, 1); const rot = p.rotulo;
     const consumo = qtd + nova.abono_dias; const saldoAntes = p.saldo + consumo; const restante = p.saldo;
-    const sair = (n) => ctx.ultimaSaida(p.limite, n, abre);
+    const sair = (n) => C2.ultimaSaida(p.limite, n, abre);
     const txtSair = (n) => { const s = sair(n); return !s ? `Não cabem mais ${n} dia(s) seguidos dentro do prazo.` : s < hoje ? `Para gozar ${n} dia(s) dentro do prazo, a saída teria de ser até ${dBR(s)} — esse prazo já passou.` : `Para gozar ${n === p.direito ? `os ${n} dias` : `os ${n} dia(s) de saldo`} de uma vez, a saída tem de ser até ${dBR(s)}.`; };
     if (p.faltas > 5) A('lembrete', `${c.nome} tem ${p.faltas} falta(s) injustificada(s) no período ${dBR(p.inicio)} a ${dBR(p.fim)} — pela regra (${R.nome}) o direito cai para ${p.direito} dias.`);
     else if (p.faltas > 0) A('info', `${p.faltas} falta(s) injustificada(s) no período aquisitivo — ainda não reduz os dias (reduz a partir de 6).`);
@@ -180,20 +196,25 @@ async function analisar(sb, tenantId, dados = {}, id = null) {
     else if (restante < 0) A('erro', `Passa do saldo: o período ${rot} dá direito a ${p.direito} dias e restavam ${saldoAntes}; com esta seriam ${consumo} (${-restante} a mais).`);
     // janela legal: entre o fim do aquisitivo + 1 e o limite do concessivo (depois → dobro)
     let foraDoPrazo = false;
-    if (inicio > p.limite) { foraDoPrazo = true; A('erro', `Fora do prazo legal: o período ${rot} precisa ser gozado entre ${dBR(abre)} e ${dBR(p.limite)} (depois disso, paga em dobro). ${txtSair(Math.max(saldoAntes, 1))}`); }
+    if (soInicio) { const s = sair(Math.max(saldoAntes - nova.abono_dias, 1)); // B1.14: só o início — prazo do saldo inteiro
+      if (inicio > p.limite) A('erro', `Fora do prazo legal: o período ${rot} precisa ser gozado entre ${dBR(abre)} e ${dBR(p.limite)} (depois disso, paga em dobro). ${txtSair(Math.max(saldoAntes, 1))}`);
+      else if (s && inicio > s) A('alerta', `Começando em ${dBR(inicio)}, não cabem os ${saldoAntes} dia(s) de saldo de uma vez antes de ${dBR(p.limite)} (saída até ${dBR(s)}) — o restante teria de ser marcado antes.`);
+      if (inicio <= p.fim) A('alerta', `Férias antecipadas: o período ${rot} só se completa em ${dBR(abre)} — o normal é marcar entre ${dBR(abre)} e ${dBR(p.limite)}.`);
+    } else if (inicio > p.limite) { foraDoPrazo = true; A('erro', `Fora do prazo legal: o período ${rot} precisa ser gozado entre ${dBR(abre)} e ${dBR(p.limite)} (depois disso, paga em dobro). ${txtSair(Math.max(saldoAntes, 1))}`); }
     else if (fim > p.limite) { foraDoPrazo = true; A('erro', `Passa do prazo legal: ${dBR(p.limite)} é o último dia de ausência permitido do período ${rot}. ${txtSair(Math.max(saldoAntes, 1))}`); }
-    if (inicio <= p.fim) A('alerta', `Férias antecipadas: o período ${rot} só se completa em ${dBR(abre)} — o normal é marcar entre ${dBR(abre)} e ${dBR(p.limite)}.`);
+    if (!soInicio && inicio <= p.fim) A('alerta', `Férias antecipadas: o período ${rot} só se completa em ${dBR(abre)} — o normal é marcar entre ${dBR(abre)} e ${dBR(p.limite)}.`);
     // o que sobra precisa caber no prazo (dias livres na janela, sem contar os já lançados)
     const doPer = [...doColab.filter((f) => alocacao.get(String(f.id)) === p), nova];
-    if (!foraDoPrazo && restante > 0) {
+    if (!soInicio && !foraDoPrazo && restante > 0) {
       const ocup = new Set(); for (const f of doPer) for (let d = d10(f.inicio); d <= d10(f.fim); d = somaDias(d, 1)) ocup.add(d);
       let livre = 0; for (let d = abre > hoje ? abre : hoje; d <= p.limite; d = somaDias(d, 1)) if (!ocup.has(d)) livre++;
       if (restante > livre) A('erro', `Não sobra prazo para o restante: depois desta ainda faltam ${restante} dia(s) do período ${rot} e só cabem ${livre} até ${dBR(p.limite)}. ${txtSair(saldoAntes)} Ou marque o restante antes desta.`);
       else { let depois = 0; for (let d = somaDias(fim, 1); d <= p.limite; d = somaDias(d, 1)) if (!ocup.has(d)) depois++;
-        if (restante > depois) { const s = ctx.ultimaSaida(somaDias(inicio, -1), restante, abre > hoje ? abre : hoje);
+        if (restante > depois) { const s = C2.ultimaSaida(somaDias(inicio, -1), restante, abre > hoje ? abre : hoje);
           A('alerta', `Depois desta só cabem ${depois} dia(s) até ${dBR(p.limite)}: os ${restante} dia(s) restantes terão de ser marcados ANTES dela${s ? `, com saída até ${dBR(s)}` : ''}.`); } }
     }
     // fracionamento (até 3 períodos; um com ≥ 14; os demais ≥ 5) — considerando o que ainda falta tirar
+    if (!soInicio) {
     const tams = doPer.map((f) => dias(d10(f.inicio), d10(f.fim)) + 1); const tem14 = tams.some((d) => d >= F.minUmPeriodo);
     const fracionado = doPer.length > 1 || restante > 0;
     if (doPer.length > F.maxPeriodos) A('erro', `Este seria o ${doPer.length}º período de férias do aquisitivo ${rot} — o máximo é ${F.maxPeriodos}.`);
@@ -201,15 +222,17 @@ async function analisar(sb, tenantId, dados = {}, id = null) {
     if (fracionado && qtd < F.minDemais) A('erro', `Férias fracionadas: cada período precisa ter pelo menos ${F.minDemais} dias (este tem ${qtd}).`);
     if (restante > 0 && restante < F.minDemais) A('erro', `Sobrariam só ${restante} dia(s) — e cada período precisa ter pelo menos ${F.minDemais}. Ajuste para sobrar 0 ou ${F.minDemais} ou mais.`);
     if (fracionado && !tem14 && restante < F.minUmPeriodo) A('erro', `Férias fracionadas: um dos períodos precisa ter pelo menos ${F.minUmPeriodo} dias — ${restante > 0 ? `o saldo que sobra (${restante}) não permite mais` : 'nenhum tem'}.`);
+    }
     if (nova.abono_dias > Math.floor(p.direito * R.abonoMaxFracao)) A('erro', `Abono acima do permitido: pode vender até ${Math.floor(p.direito * R.abonoMaxFracao)} dia(s) deste período (1/3).`);
-    if (restante >= 0 && !avisos.some((a) => ['alerta', 'erro'].includes(a.nivel))) {
+    if (!soInicio && restante >= 0 && !avisos.some((a) => ['alerta', 'erro'].includes(a.nivel))) {
       const s = restante > 0 ? sair(restante) : null;
       A('ok', `Período ${rot}: direito ${p.direito} dias · com esta, ${restante > 0 ? `sobram ${restante}` : 'saldo zerado'} · prazo para gozar ${dBR(abre)} a ${dBR(p.limite)}${s ? ` · o restante tem de sair até ${dBR(s)}` : ''}.`);
     }
   }
   if (dias(hoje, inicio) < R.avisoPrevioDias && inicio >= hoje) A('alerta', `Começa em ${dias(hoje, inicio)} dia(s) — a comunicação ao funcionário deve ser feita por escrito com ${R.avisoPrevioDias} dias de antecedência.`);
-  const v = ctx.vedado(inicio);
-  if (v) A('erro', `Não pode começar em ${dBR(inicio)}: ${v} — a lei proíbe início nos ${R.inicioVedadoAntesDeDescanso} dias antes de feriado ou do repouso semanal.${ctx.ultimaSaida(inicio, 1, '0000-01-01') ? ` Antecipe para ${dBR(ctx.ultimaSaida(inicio, 1, '0000-01-01'))}.` : ''}`);
+  const v = C2.vedado(inicio);
+  if (v) A('erro', `Não pode começar em ${dBR(inicio)}: ${v} — a lei proíbe início nos ${R.inicioVedadoAntesDeDescanso} dias antes de feriado ou do repouso semanal (escala: ${ctx.escalaTxt(c)}).${C2.ultimaSaida(inicio, 1, '0000-01-01') ? ` Antecipe para ${dBR(C2.ultimaSaida(inicio, 1, '0000-01-01'))}.` : ''}`);
+  if (!C2.descanso) A('info', `Escala ${ctx.escalaTxt(c)}: confira se o início não cai nos 2 dias antes da folga do funcionário.`);
   if (fim < hoje) for (const a of avisos) if (a.nivel === 'erro') a.nivel = 'alerta'; // registro de férias passadas: não bloqueia
   return { bloqueia: avisos.some((a) => a.nivel === 'erro'), periodo: p ? { rotulo: p.rotulo, inicio: p.inicio, fim: p.fim, abre: somaDias(p.fim, 1), limite: p.limite, direito: p.direito, faltas: p.faltas, saldo_depois: p.saldo } : null, avisos };
 }

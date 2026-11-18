@@ -16,8 +16,10 @@ module.exports = {
   abonoMaxFracao: 1 / 3,           // art. 143: vender até 1/3
   avisoPrevioDias: 30,             // art. 135: comunicar com 30 dias
   inicioVedadoAntesDeDescanso: 2,  // art. 134 §3º: não começar nos 2 dias antes de feriado ou do repouso semanal
-  diasDescanso: [0],               // domingo = repouso semanal (0=dom … 6=sáb)
-  alertas: { vencendoDias: 90, criticoDias: 30 },
+  diasDescanso: [0],               // padrão sem jornada configurada: domingo (0=dom … 6=sáb)
+  // B1.14: escala → dias de repouso (a jornada padrão da empresa, em Configurações, define o padrão pelos dias "folga"/"excepcional")
+  escalas: { '5x2': { nome: '5x2 (segunda a sexta)', descanso: [6, 0] }, '6x1': { nome: '6x1 (segunda a sábado)', descanso: [0] }, '12x36': { nome: '12x36 (plantão)', descanso: null } },
+  alertas: { vencendoDias: 60, criticoDias: 30 }, // B1.14: aviso a 60 dias (risco trabalhista na Home, sininho e e-mail)
   textoVencido: 'período concessivo vencido — a CLT manda pagar em dobro (art. 137)',
   /** feriados nacionais do ano (YYYY-MM-DD) — os locais vêm do cadastro de feriados da empresa */
   feriadosNacionais(ano) {
