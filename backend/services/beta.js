@@ -74,6 +74,11 @@ async function perguntar(sb, { tenantId, userId, perfis = [], nome = '', mensage
     await contar();
     return { texto: r.texto, link: r.link || null, acoes: r.acoes || [], assunto: r.assunto || { consulta: esc.consulta, args: esc.args || {} }, consulta: esc.consulta, local: !!esc.local, conferido: true, direto: true, suspeitos: [], restantes: await restam(sb, tenantId, userId) };
   }
+  // 🛟 B2.3: não bateu com consulta, mas cita algo do cadastro → resumo do que existe sobre aquilo (sem IA)
+  try { const cit = await BC.resumoDoCitado(sb, ctxP, pergunta.texto); if (cit) {
+    const r = cit.consulta.startsWith('__') ? await BC.executarResumo(sb, ctxP, cit.consulta, cit.args) : await BC.executar(sb, ctxP, cit.consulta, cit.args);
+    if (r?.texto) { await contar(); try { await q(sb.from('beta_pendentes').insert([{ tenant_id: tenantId, usuario_id: String(userId), usuario_nome: nome || null, perfis: perfis.join(','), pergunta: pergunta.texto.slice(0, 800), conversa: hist.slice(-4), status: 'pendente', nota: 'respondida com resumo do citado (melhorar)' }])); } catch { /* ok */ }
+      return { texto: r.texto, link: r.link || null, acoes: r.acoes || [], assunto: { consulta: cit.consulta, args: cit.args }, resumo: true, conferido: true, direto: true, suspeitos: [], restantes: await restam(sb, tenantId, userId) }; } } } catch { /* segue */ }
   // 📮 B2.0: ainda não sabe → registra para o admin da plataforma (Console) e NÃO conta no limite
   try { await q(sb.from('beta_pendentes').insert([{ tenant_id: tenantId, usuario_id: String(userId), usuario_nome: nome || null, perfis: perfis.join(','), pergunta: pergunta.texto.slice(0, 800), conversa: hist.slice(-4), status: 'pendente' }])); } catch { /* sem a 110 */ }
   return { texto: 'Desculpe, ainda estou aprendendo a consultar isso. 🙏 Encaminhei a sua pergunta para os nossos especialistas — em breve você poderá perguntar de novo.' + (lista.length ? `\n\nHoje eu já sei, por exemplo: ${lista.slice(0, 5).map((c) => c.exemplo.replace(/\?$/, '')).join(' · ')}.` : ''),

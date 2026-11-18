@@ -256,6 +256,57 @@ const CONSULTAS = [
     },
   },
   {
+    nome: 'agenda',
+    descricao: 'Agenda/próximas programações: próximos carregamentos/viagens (ATs), pedidos com data sem programação, manutenções (OS) e tarefas com prazo — de hoje, amanhã, da semana ou de um período.',
+    args: { data: 'dia ou período, ex.: amanhã, esta semana, de 20 a 25/11 (opcional — padrão: próximos 7 dias)', foco: 'transporte, manutenção ou tarefas (opcional)' },
+    perfis: ['operacao', 'comercial', 'comprador', 'fiscal', 'financeiro', 'qualidade'],
+    exemplo: 'Qual a próxima programação de carregamento?',
+    async executar(ctx, { data, foco }) { // B2.3
+      const s = norm(`${data || ''} ${foco || ''}`); let per = data ? lerPeriodo(data, ctx.hoje) : null;
+      if (!per && /\bsemana\b/.test(s)) per = [ctx.hoje, somaD(ctx.hoje, 7 - (new Date(`${ctx.hoje}T12:00:00Z`).getUTCDay() || 7))];
+      if (!per && /\bmes\b/.test(s)) per = [ctx.hoje, new Date(Date.UTC(+ctx.hoje.slice(0, 4), +ctx.hoje.slice(5, 7), 0)).toISOString().slice(0, 10)];
+      const [de, ate] = per || [ctx.hoje, somaD(ctx.hoje, 7)]; const quando = de === ate ? (de === ctx.hoje ? 'hoje' : de === somaD(ctx.hoje, 1) ? 'amanhã' : `em ${dBR(de)}`) : `de ${dBR(de)} a ${dBR(ate)}`;
+      const so = (k) => !foco || norm(foco).includes(k);
+      const l = []; const TF = require('./tarefasFiscais');
+      if (so('transp') || /carreg|viag|entreg|colet|frete/.test(norm(foco || ''))) {
+        const ats = (await q(ctx.sb.from('execucoes').select('*').eq('tenant_id', ctx.tenantId)).catch(() => [])).filter((a) => ['programada', 'em_execucao', 'rascunho'].includes(a.status) && d10(a.inicio_previsto) && d10(a.inicio_previsto) <= ate && (d10(a.fim_previsto) || d10(a.inicio_previsto)) >= de).sort((a, b) => String(a.inicio_previsto).localeCompare(String(b.inicio_previsto)));
+        const tfs = (await q(ctx.sb.from('tarefas').select('*').eq('tenant_id', ctx.tenantId)).catch(() => [])).filter((x) => x.origem === 'fiscal' && x.status !== 'cancelada');
+        if (ats.length) { l.push(`🚛 Carregamentos / viagens ${quando} (${ats.length}):`);
+          for (const a of ats.slice(0, 8)) { const tf = tfs.find((x) => String(x.origem_ref) === `${a.pv_id}:${a.grupo_id}`); const rs = tf ? TF.resumo(tf.checklist || {}) : null;
+            const docs = rs ? (rs.feitos === rs.total ? 'docs ✅' : `docs ${rs.feitos}/${rs.total} — falta ${TF.ORDEM.filter((k) => !rs.itens[k]).map((k) => TF.ITENS[k]).join(', ')}`) : null;
+            l.push(`• ${dhBR(a.inicio_previsto)} — ${a.numero}${a.status === 'rascunho' ? ' (rascunho)' : a.status === 'em_execucao' ? ' (em viagem)' : ''}${a.cliente_nome ? ` · ${a.cliente_nome}` : ''} · ${a.origem || '?'} → ${a.destino || '?'}\n   motorista: ${a.motorista_nome || '⚠ a definir'}${docs ? ` · ${docs}` : ''}`); }
+          if (ats.length > 8) l.push(`…e mais ${ats.length - 8}`); }
+        try { const pend = (await require('./execucoes').pendenciasProgramacao(ctx.sb, ctx.tenantId, { ateDias: Math.max(7, diasEntre(ctx.hoje, ate)) })).filter((x) => x.data >= de && x.data <= ate || x.dias < 0);
+          if (pend.length) { l.push(`${l.length ? '\n' : ''}⚠ Pedidos com data e SEM programação (${pend.length}):`); for (const x of pend.slice(0, 6)) l.push(`• ${x.pv_numero} · ${x.cliente || ''} · ${x.trecho} — ${dBR(x.data)}${x.dias < 0 ? ' (atrasado)' : x.dias <= 2 ? ' ⛔' : ''} · ${x.itens} item(ns) sem AT`); } } catch { /* ok */ }
+      }
+      if (so('manut') || so('os')) {
+        const chs = (await q(ctx.sb.from('chamados').select('*').eq('tenant_id', ctx.tenantId)).catch(() => [])).filter((o) => !o.concluida_em && !['concluida', 'cancelada', 'finalizada'].includes(o.status) && d10(o.data_inicio_prevista) && d10(o.data_inicio_prevista) <= ate && (d10(o.data_fim_prevista) || d10(o.data_inicio_prevista)) >= de);
+        if (chs.length) { const eqs = await q(ctx.sb.from('equipamentos').select('id, tag, nome').eq('tenant_id', ctx.tenantId)).catch(() => []); l.push(`${l.length ? '\n' : ''}🔧 Manutenções ${quando} (${chs.length}):`); for (const o of chs.slice(0, 6)) { const e = eqs.find((x) => String(x.id) === String(o.equipamento_id)); l.push(`• ${dBR(o.data_inicio_prevista)} — ${o.numero || 'OS'}${e ? ` · ${e.tag || e.nome}` : ''}${o.responsavel ? ` · ${o.responsavel}` : ''}`); } }
+      }
+      if (so('tarefa')) {
+        const ts = (await q(ctx.sb.from('tarefas').select('*').eq('tenant_id', ctx.tenantId)).catch(() => [])).filter((x) => ['pendente', 'em_andamento'].includes(x.status) && d10(x.prazo) && d10(x.prazo) >= de && d10(x.prazo) <= ate && (ctx.perfis.some((p) => GESTAO.includes(p)) || String(x.responsavel_usuario_id) === String(ctx.userId)));
+        if (ts.length) { l.push(`${l.length ? '\n' : ''}📋 Tarefas com prazo ${quando} (${ts.length}):`); for (const x of ts.sort((a, b) => String(a.prazo).localeCompare(String(b.prazo))).slice(0, 6)) l.push(`• ${dBR(x.prazo)} — ${x.numero ? `${x.numero} ` : ''}${x.titulo || ''} · ${x.responsavel || 'sem responsável'}`); }
+      }
+      return { texto: l.length ? l.join('\n') : `Nada programado ${quando}${foco ? ` (${foco})` : ''}.`, link: { tela: 'programacao' } };
+    },
+  },
+  {
+    nome: 'pendencias',
+    descricao: 'O que precisa de atenção agora: alertas, atrasos, pendências e prioridades (o mesmo da tela Início/Sala de Controle) — "o que está pendente?", "o que eu preciso resolver hoje?", "tem algo urgente?".',
+    args: {},
+    perfis: ['operacao', 'comercial', 'comprador', 'fiscal', 'financeiro', 'qualidade'],
+    exemplo: 'O que precisa de atenção hoje?',
+    async executar(ctx) { // B2.3: sem IA — lê a Sala de Controle do perfil
+      const sc = await require('./salaControle').montar(ctx.sb, { tenantId: ctx.tenantId, userId: ctx.userId, perfis: ctx.perfis });
+      const al = sc.alertas || []; const pr = (sc.prioridades || []).sort((a, b) => (b.peso || 0) - (a.peso || 0));
+      if (!al.length && !pr.length) return { texto: '✅ Tudo sob controle — nenhum alerta nem prioridade em aberto agora.', link: { tela: 'home' } };
+      const l = [];
+      if (al.length) { l.push(`🚨 Alertas (${al.length}):`); for (const a of al.sort((x, y) => (x.nivel === 'critico' ? 0 : 1) - (y.nivel === 'critico' ? 0 : 1)).slice(0, 6)) l.push(`• ${a.nivel === 'critico' ? '⛔' : '⚠'} ${a.titulo}${a.detalhe ? ` — ${a.detalhe}` : ''}`); }
+      if (pr.length) { l.push(`${l.length ? '\n' : ''}🎯 Prioridades (${pr.length}):`); for (const a of pr.slice(0, 5)) l.push(`• ${a.titulo}${a.detalhe ? ` — ${a.detalhe}` : ''}`); }
+      return { texto: l.join('\n'), link: { tela: 'home' } };
+    },
+  },
+  {
     nome: 'situacao_at',
     descricao: 'Situação de uma AT (autorização de transporte/viagem) pelo número: status, motorista, conjunto, horários.',
     args: { numero: 'número da AT, ex.: AT-0231' },
@@ -517,6 +568,35 @@ const CONSULTAS = [
   },
 ];
 
+/** B2.3: 🛟 rede de segurança — a pergunta não bateu com nenhuma consulta, mas CITA algo do cadastro (cliente, equipamento,
+ *  pessoa, pedido/AT/OS/tarefa): responde um resumo do que existe sobre aquilo (sem IA), em vez de "estou aprendendo". */
+async function resumoDoCitado(sb, ctx, texto) {
+  const nt = ` ${norm(texto)} `; const ct = compacto(texto); const tem = (n) => n && n.length >= 3 && nt.includes(` ${norm(n)} `); const pode = (n) => permitidas(ctx.perfis).some((c) => c.nome === n);
+  const cods = String(texto).match(/\b(PV|AT|OS|TSK|BID|COT)[-\s]?[A-Z]{0,3}[-\s]?\d{2,}[-\d]*/gi) || [];
+  for (const cod of cods) { const k = cod.slice(0, 2).toUpperCase();
+    if (k === 'AT' && pode('situacao_at')) return { consulta: 'situacao_at', args: { numero: cod } }; if (k === 'OS' && pode('situacao_os')) return { consulta: 'situacao_os', args: { ref: cod } };
+    if (k === 'TS' && pode('tarefa')) return { consulta: 'tarefa', args: { ref: cod } }; if (k === 'BI' && pode('status_bid')) return { consulta: 'status_bid', args: { bid: cod } };
+    if (k === 'CO' && pode('status_cotacao')) return { consulta: 'status_cotacao', args: { numero: cod } }; if (k === 'PV' && pode('documentacao_transporte')) return { consulta: '__resumo_pv', args: { ref: cod } }; }
+  const eqs = await q(sb.from('equipamentos').select('id, tag, placa, nome').eq('tenant_id', ctx.tenantId)).catch(() => []);
+  const eq = eqs.find((e) => [e.tag, e.placa].some((x) => x && compacto(x).length >= 3 && String(texto).split(/[\s,?!.]+/).some((w) => compacto(w) === compacto(x))));
+  if (eq) return { consulta: '__resumo_equipamento', args: { ref: eq.tag || eq.placa } };
+  const pvs = await q(sb.from('pedidos_venda').select('id, numero, cliente_nome, status').eq('tenant_id', ctx.tenantId)).catch(() => []);
+  const cli = pvs.find((p) => p.status !== 'cancelado' && tem(p.cliente_nome));
+  if (cli) return { consulta: '__resumo_pv', args: { ref: cli.cliente_nome } };
+  const cols = await q(sb.from('colaboradores').select('id, nome, situacao').eq('tenant_id', ctx.tenantId)).catch(() => []);
+  const pes = cols.filter((c) => c.situacao !== 'desligado' && c.nome && (tem(c.nome) || (c.nome.split(' ').length > 1 && tem(c.nome.split(' ').slice(0, 2).join(' ')))));
+  if (pes.length === 1 && pode('ferias')) return { consulta: '__resumo_pessoa', args: { pessoa: pes[0].nome } };
+  return null;
+}
+async function executarResumo(sb, ctx, nome, args) {
+  const partes = []; const acoes = []; const rodar = async (c, a) => { if (!permitidas(ctx.perfis).some((x) => x.nome === c)) return; try { const r = await executar(sb, ctx, c, a); if (r?.texto && !/^Não encontrei/.test(r.texto)) { partes.push(r.texto); (r.acoes || []).forEach((x) => acoes.push(x)); } } catch { /* ok */ } };
+  if (nome === '__resumo_pv') { await rodar('documentacao_transporte', { ref: args.ref }); await rodar('agenda', { data: `de ${dBR(hojeBR())} a ${dBR(somaD(hojeBR(), 30))}`, foco: 'transporte' }); }
+  if (nome === '__resumo_equipamento') { await rodar('disponibilidade_equipamento', { equipamento: args.ref }); await rodar('situacao_os', { ref: args.ref }); }
+  if (nome === '__resumo_pessoa') { await rodar('ferias', { pessoa: args.pessoa }); await rodar('vencimento_documento', { pessoa: args.pessoa }); await rodar('dados_cadastro', { pessoa: args.pessoa, campo: 'telefone' }); }
+  if (!partes.length) return null;
+  return { texto: `Não tenho uma resposta exata para isso, mas eis o que sei sobre o assunto:\n\n${partes.join('\n\n')}`, acoes, resumo: true };
+}
+
 /** B2.0: ⚡ roteador local (sem IA) — perguntas comuns por palavras-chave; null = deixa para o modelo */
 async function rotearLocal(sb, ctx, texto, hist = [], ultimo = null) {
   const s = norm(texto); const ok = (n) => permitidas(ctx.perfis).some((c) => c.nome === n);
@@ -533,6 +613,13 @@ async function rotearLocal(sb, ctx, texto, hist = [], ultimo = null) {
   let m = String(texto).match(/\bAT[-\s]?(\d{2,})/i); if (m && ok('situacao_at')) return { consulta: 'situacao_at', args: { numero: m[0].replace(/\s/, '-') }, local: true };
   m = String(texto).match(/\bBID[-\s]?\d{2,}/i); if (m && ok('status_bid')) return { consulta: 'status_bid', args: { bid: m[0] }, local: true };
   m = s.match(/\b(?:cot|cotacao)(?: n[oº]?)?\s*(\d{1,})/); if (m && ok('status_cotacao')) return { consulta: 'status_cotacao', args: { numero: m[1] }, local: true };
+  // B2.3: agenda / próximas programações e "o que precisa de atenção"
+  if (/\b(proxim[oa]s? (programac|carregament|viage|entreg|coleta|saida|at\b|ats\b|manutenc)|agenda|o que (tem|temos|esta programado|ha) (pra|para)? ?(hoje|amanha|essa semana|esta semana|semana)|programac(ao|oes) (de|da|do|para) (hoje|amanha|semana)|carregamentos? (de|da|para)? ?(hoje|amanha|semana))/.test(s) && ok('agenda')) {
+  { const eqs = await q(sb.from('equipamentos').select('id, tag, placa').eq('tenant_id', ctx.tenantId)).catch(() => []); const tok = String(texto).split(/[\s,?!.]+/).filter((w) => w.length >= 3 && /\d/.test(w));
+    const eq = eqs.find((e) => tok.some((w) => [e.tag, e.placa].filter(Boolean).some((x) => compacto(x) === compacto(w)))); if (eq && ok('disponibilidade_equipamento')) return { consulta: 'disponibilidade_equipamento', args: { equipamento: eq.tag || eq.placa }, local: true }; } // equipamento citado → agenda DELE
+    return { consulta: 'agenda', args: { data: /\b(hoje|amanha|semana|mes|\d{1,2}\/\d{1,2})/.test(s) ? texto : undefined, foco: /manutenc|oficina|\bos\b/.test(s) ? 'manutenção' : /tarefa/.test(s) ? 'tarefas' : /carreg|viage|entreg|colet|transp|at\b/.test(s) ? 'transporte' : undefined }, local: true };
+  }
+  if (/\b(o que|quais|tem algo|alguma coisa).{0,30}(pendente|pendencia|atencao|atrasad|urgente|alerta|resolver|critico)|o que (eu )?(preciso|tenho que) (fazer|resolver|ver)/.test(s) && ok('pendencias')) return { consulta: 'pendencias', args: {}, local: true };
   m = String(texto).match(/\bOS[-\s]?\d{2,}[-\d]*/i); if (m && ok('situacao_os')) return { consulta: 'situacao_os', args: { ref: m[0] }, local: true }; // B2.1
   if (/\b(manutencao|conserto|oficina)\b/.test(s) && ok('situacao_os')) { const eqs = await q(sb.from('equipamentos').select('id, tag, placa, nome').eq('tenant_id', ctx.tenantId)).catch(() => []);
     const tok = String(texto).split(/[\s,?!.]+/).filter((w) => w.length >= 3 && /\d/.test(w)); const eq = eqs.find((e) => tok.some((w) => [e.tag, e.placa].filter(Boolean).some((x) => compacto(x) === compacto(w))));
@@ -559,4 +646,4 @@ async function executar(sb, { tenantId, userId, perfis }, nome, args = {}) {
   return c.executar({ sb, tenantId, userId, perfis, hoje: hojeBR() }, limpos);
 }
 
-module.exports = { CONSULTAS, permitidas, executar, achar, norm, rotearLocal, lerData, lerPeriodo, mapaOcupacao };
+module.exports = { CONSULTAS, permitidas, executar, achar, norm, resumoDoCitado, executarResumo, rotearLocal, lerData, lerPeriodo, mapaOcupacao };
