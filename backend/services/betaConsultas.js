@@ -218,7 +218,38 @@ const CONSULTAS = [
       for (const [k, xs] of grupo(livres)) l.push(`${k ? `${k}: ` : ''}${listaNomes(xs, rot, 12)}`);
       if (ocup.length) { l.push(`\nOcupados (${ocup.length}):`); for (const e of ocup.slice(0, 10)) { const os = oc.get(String(e.id)); const lib = os.every((x) => x.ate) ? os.map((x) => x.ate).sort().pop() : null; l.push(`• ${rot(e)} — ${os.map((x) => x.motivo).join(' + ')}${lib ? ` · livre a partir de ${dBR(somaD(lib, 1))}` : ''}`); } if (ocup.length > 10) l.push(`…e mais ${ocup.length - 10}`); }
       if (semTipo) l.push(`\n(${semTipo} equipamento(s) sem tipo não entraram — Configurações → Tipos de equipamento → revisar.)`);
-      return { texto: l.join('\n'), link: { tela: 'programacao' } };
+      return { texto: l.join('\n'), link: { tela: 'programacao' }, assunto: { consulta: 'frota_disponivel', args: { tipo: tipo || '', data: de === ate ? dBR(de) : `de ${dBR(de)} a ${dBR(ate)}` } } }; // B2.4: data normalizada para "nessa data" 
+    },
+  },
+  {
+    nome: 'motoristas_disponiveis',
+    descricao: 'Quais MOTORISTAS (ou pessoas de uma função) estão livres numa data/período: fora de AT, sem férias, com CNH válida — e quem está ocupado e por quê.',
+    args: { data: 'data ou período, ex.: 02/02/2027, amanhã', funcao: 'função, se não for motorista (opcional)' },
+    perfis: ['operacao', 'comercial'],
+    exemplo: 'Tenho motorista livre amanhã?',
+    async executar(ctx, { data, funcao }) { // B2.4
+      const per = lerPeriodo(data || '', ctx.hoje); if (!per) return { texto: 'Para qual data (ou período)? Ex.: "02/02/2027", "amanhã", "de 05 a 10/01".', falta: 'data' };
+      const [de, ate] = per; const quando = de === ate ? `em ${dBR(de)}` : `de ${dBR(de)} a ${dBR(ate)}`;
+      const cols = (await q(ctx.sb.from('colaboradores').select('*').eq('tenant_id', ctx.tenantId))).filter((c) => c.situacao !== 'desligado');
+      const fn = funcao && !/motorist|condutor/.test(norm(funcao)) ? norm(funcao) : null;
+      const alvo = cols.filter((c) => (fn ? norm(c.funcao_nome || c.funcao || '').includes(fn) : (/motorista|condutor/i.test(String(c.funcao_nome || c.funcao || '')) || c.vinculo === 'agregado')));
+      if (!alvo.length) return { texto: fn ? `Não encontrei ninguém da função "${funcao}".` : 'Não há motoristas cadastrados (função com "motorista" no nome, ou agregado).' };
+      const sob = (a1, a2, b1, b2) => !(a2 < b1 || a1 > b2);
+      const ats = (await q(ctx.sb.from('execucoes').select('*').eq('tenant_id', ctx.tenantId)).catch(() => [])).filter((a) => ['programada', 'em_execucao'].includes(a.status) && d10(a.inicio_previsto));
+      let aus = []; try { aus = await require('./ferias').ausencias(ctx.sb, ctx.tenantId, de, ate); } catch { /* sem férias */ }
+      const docs = await q(ctx.sb.from('documentos').select('*').eq('tenant_id', ctx.tenantId)).catch(() => []);
+      const motivo = (c) => { const m = [];
+        for (const a of ats) if (String(a.motorista_id) === String(c.id) && sob(de, ate, d10(a.inicio_previsto), d10(a.fim_previsto) || d10(a.inicio_previsto))) m.push({ t: `🚛 ${a.numero}${a.cliente_nome ? ` (${a.cliente_nome})` : ''}`, ate: d10(a.fim_previsto) || d10(a.inicio_previsto) });
+        for (const f of aus) if (String(f.colaborador_id) === String(c.id)) m.push({ t: `🏖 férias ${dBR(f.inicio)}–${dBR(f.fim)}`, ate: f.fim });
+        if (!fn) { const cnh = d10(c.cnh_validade) || d10((docs.filter((d) => String(d.colaborador_id) === String(c.id) && /cnh/i.test(d.tipo_nome || '') && !d.substituido_por).sort((a, b) => String(b.vence_em).localeCompare(String(a.vence_em)))[0] || {}).vence_em);
+          if (cnh && cnh < ate) m.push({ t: `🪪 CNH vence ${dBR(cnh)}`, ate: null }); }
+        return m; };
+      const livres = alvo.filter((c) => !motivo(c).length); const ocup = alvo.filter((c) => motivo(c).length);
+      const nomeF = fn ? funcao : 'motorista';
+      const l = [livres.length ? `✅ Sim — ${livres.length} ${nomeF}(s) livre(s) ${quando}:` : `⛔ Nenhum ${nomeF} livre ${quando}.`];
+      if (livres.length) l.push(listaNomes(livres, (c) => `${c.nome}${c.vinculo === 'agregado' ? ' (agregado)' : ''}${c.cnh_categoria ? ` · CNH ${c.cnh_categoria}` : ''}`, 12));
+      if (ocup.length) { l.push(`\nOcupados (${ocup.length}):`); for (const c of ocup.slice(0, 10)) { const m = motivo(c); const lib = m.every((x) => x.ate) ? m.map((x) => x.ate).sort().pop() : null; l.push(`• ${c.nome} — ${m.map((x) => x.t).join(' + ')}${lib ? ` · livre a partir de ${dBR(somaD(lib, 1))}` : ''}`); } }
+      return { texto: l.join('\n'), link: { tela: 'programacao' }, assunto: { consulta: 'motoristas_disponiveis', args: { data: de === ate ? dBR(de) : `de ${dBR(de)} a ${dBR(ate)}`, funcao: funcao || '' } } };
     },
   },
   {
@@ -613,6 +644,16 @@ async function rotearLocal(sb, ctx, texto, hist = [], ultimo = null) {
   let m = String(texto).match(/\bAT[-\s]?(\d{2,})/i); if (m && ok('situacao_at')) return { consulta: 'situacao_at', args: { numero: m[0].replace(/\s/, '-') }, local: true };
   m = String(texto).match(/\bBID[-\s]?\d{2,}/i); if (m && ok('status_bid')) return { consulta: 'status_bid', args: { bid: m[0] }, local: true };
   m = s.match(/\b(?:cot|cotacao)(?: n[oº]?)?\s*(\d{1,})/); if (m && ok('status_cotacao')) return { consulta: 'status_cotacao', args: { numero: m[1] }, local: true };
+  // B2.4: 🧠 memória da conversa — "nessa data", "mesmo dia", "nesse período" herdam a data da resposta anterior
+  const refData = /\b(nessa|nesta|naquela|essa|esta|mesma) (data|dia|periodo|semana)|\bnesse (dia|periodo)|\bno mesmo (dia|periodo)|\bmesma data\b|\bnesse mesmo\b|\be (pra|para) (essa|esta|a mesma) data\b/.test(s);
+  const dataAnt = ultimo?.args?.data && lerPeriodo(ultimo.args.data, hojeBR()) ? ultimo.args.data : null;
+  const textoD = refData && dataAnt && !lerPeriodo(texto, hojeBR()) ? `${texto} ${dataAnt}` : texto;
+  if (/\b(motoristas?|condutor(es)?)\b/.test(s) && /\b(livres?|disponive(l|is)|vagos?|folga|sobrando|tenho|temos|quem pode)\b/.test(s) && ok('motoristas_disponiveis')) {
+    if (!lerPeriodo(textoD, hojeBR())) return { consulta: '__perguntar', args: { texto: refData ? 'De qual data você está falando? (ex.: 02/02/2027)' : 'Para qual data? (ex.: amanhã, 02/02/2027, de 05 a 10/01)' }, local: true };
+    return { consulta: 'motoristas_disponiveis', args: { data: textoD }, local: true };
+  }
+  if (refData && dataAnt && /\b(livres?|disponive(l|is)|vagos?)\b/.test(s) && ok('frota_disponivel') && !/\bmotorist/.test(s)) { let tps = []; try { tps = require('./tiposEquipamento').tiposNaFrase(texto, await require('./tiposEquipamento').listar(sb, ctx.tenantId)); } catch { /* ok */ }
+    return { consulta: 'frota_disponivel', args: { tipo: tps.length ? tps.map((x) => x.nome).join(', ') : undefined, data: dataAnt }, local: true }; }
   // B2.3: agenda / próximas programações e "o que precisa de atenção"
   if (/\b(proxim[oa]s? (programac|carregament|viage|entreg|coleta|saida|at\b|ats\b|manutenc)|agenda|o que (tem|temos|esta programado|ha) (pra|para)? ?(hoje|amanha|essa semana|esta semana|semana)|programac(ao|oes) (de|da|do|para) (hoje|amanha|semana)|carregamentos? (de|da|para)? ?(hoje|amanha|semana))/.test(s) && ok('agenda')) {
   { const eqs = await q(sb.from('equipamentos').select('id, tag, placa').eq('tenant_id', ctx.tenantId)).catch(() => []); const tok = String(texto).split(/[\s,?!.]+/).filter((w) => w.length >= 3 && /\d/.test(w));

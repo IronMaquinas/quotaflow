@@ -69,8 +69,16 @@ async function perguntar(sb, { tenantId, userId, perfis = [], nome = '', mensage
     await contar();
     return { texto: r.texto, conferido: r.conferido, suspeitos: r.suspeitos || [], restantes: await restam(sb, tenantId, userId) };
   }
+  if (esc.consulta === '__perguntar') { // B2.4: falta um dado — pergunta em vez de cortar a conversa (não conta no limite)
+    return { texto: esc.args.texto, pergunta_de_volta: true, assunto: ultimoAssunto, conferido: true, direto: true, suspeitos: [], restantes: await restam(sb, tenantId, userId) };
+  }
   if (esc.consulta && esc.consulta !== '__painel') {
+    // B2.4: argumento faltando? herda do assunto anterior (mesmos nomes: data, pessoa, equipamento, ref…)
+    const def = BC.CONSULTAS.find((c) => c.nome === esc.consulta); const args = { ...(esc.args || {}) };
+    if (def && ultimoAssunto?.args) for (const k of Object.keys(def.args)) if ((args[k] == null || args[k] === '') && ultimoAssunto.args[k]) args[k] = ultimoAssunto.args[k];
+    esc.args = args;
     const r = await BC.executar(sb, ctxP, esc.consulta, esc.args);
+    if (r?.falta) return { texto: r.texto, pergunta_de_volta: true, assunto: { consulta: esc.consulta, args: esc.args }, conferido: true, direto: true, suspeitos: [], restantes: await restam(sb, tenantId, userId) };
     await contar();
     return { texto: r.texto, link: r.link || null, acoes: r.acoes || [], assunto: r.assunto || { consulta: esc.consulta, args: esc.args || {} }, consulta: esc.consulta, local: !!esc.local, conferido: true, direto: true, suspeitos: [], restantes: await restam(sb, tenantId, userId) };
   }
@@ -81,6 +89,8 @@ async function perguntar(sb, { tenantId, userId, perfis = [], nome = '', mensage
       return { texto: r.texto, link: r.link || null, acoes: r.acoes || [], assunto: { consulta: cit.consulta, args: cit.args }, resumo: true, conferido: true, direto: true, suspeitos: [], restantes: await restam(sb, tenantId, userId) }; } } } catch { /* segue */ }
   // 📮 B2.0: ainda não sabe → registra para o admin da plataforma (Console) e NÃO conta no limite
   try { await q(sb.from('beta_pendentes').insert([{ tenant_id: tenantId, usuario_id: String(userId), usuario_nome: nome || null, perfis: perfis.join(','), pergunta: pergunta.texto.slice(0, 800), conversa: hist.slice(-4), status: 'pendente' }])); } catch { /* sem a 110 */ }
+  if (ultimoAssunto && pergunta.texto.split(/\s+/).length <= 14) // B2.4: parece continuação — não corta a conversa
+    return { texto: 'Ainda não sei responder isso dentro deste assunto. 🙏 Já anotei para aprender. Se puder, me pergunte de outro jeito — por exemplo, dizendo o nome, a data ou o número do que você quer.', aprendendo: true, assunto: ultimoAssunto, conferido: true, direto: true, suspeitos: [], restantes: await restam(sb, tenantId, userId) };
   return { texto: 'Desculpe, ainda estou aprendendo a consultar isso. 🙏 Encaminhei a sua pergunta para os nossos especialistas — em breve você poderá perguntar de novo.' + (lista.length ? `\n\nHoje eu já sei, por exemplo: ${lista.slice(0, 5).map((c) => c.exemplo.replace(/\?$/, '')).join(' · ')}.` : ''),
     aprendendo: true, conferido: true, direto: true, suspeitos: [], restantes: await restam(sb, tenantId, userId) };
 }
@@ -91,6 +101,8 @@ const ROTEADOR = `Você classifica perguntas para a Beta, assistente do QuotaFlo
 {"consulta":"<nome>","args":{...}}  ou  {"consulta":null}
 Escolha a consulta da lista que responde à ÚLTIMA mensagem da Pessoa (use a conversa para completar: se a Beta perguntou "qual delas?" e a Pessoa respondeu um nome, repita a consulta anterior com o nome completo).
 Copie nomes, placas e números exatamente como a Pessoa escreveu (sem inventar). Não preencha argumento que a Pessoa não disse.
+Se a Pessoa usar "nessa data", "esse dia", "ele/ela", "esse cliente", "o mesmo", copie o valor correspondente do [assunto] da resposta anterior da Beta.
+Se a pergunta é continuação mas falta um dado essencial que não está na conversa, devolva {"consulta":"__perguntar","args":{"texto":"<pergunta curta pedindo o dado>"}}.
 NÃO explique, NÃO pense em voz alta, NÃO use markdown: a resposta inteira é só o JSON.`;
 
 async function escolher({ emp, registrar, lista, conversa, gestor }) {
@@ -101,6 +113,7 @@ async function escolher({ emp, registrar, lista, conversa, gestor }) {
   try {
     const bruto = String(r.texto || ''); const m = bruto.match(/\{[\s\S]*\}/);
     let j = null; try { j = JSON.parse(m[0]); } catch { const n = bruto.match(/"consulta"\s*:\s*"([a-z_]+)"/); if (n) { j = { consulta: n[1], args: {} }; for (const a of bruto.matchAll(/"([a-z_]+)"\s*:\s*"([^"]*)"/g)) if (a[1] !== 'consulta') j.args[a[1]] = a[2]; } } // B1.10: JSON cortado ainda serve
+    if (j && j.consulta === '__perguntar' && j.args?.texto) return { consulta: '__perguntar', args: { texto: String(j.args.texto).slice(0, 200) } }; // B2.4
     if (j && j.consulta && lista.some((c) => c.nome === j.consulta)) return { consulta: j.consulta, args: j.args && typeof j.args === 'object' ? j.args : {} };
   } catch { /* não entendeu → segue sem consulta */ }
   if (gestor && /"consulta"\s*:\s*"__painel"/.test(String(r?.texto || ''))) return { consulta: '__painel' };

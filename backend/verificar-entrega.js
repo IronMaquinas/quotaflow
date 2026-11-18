@@ -393,10 +393,10 @@ const ESPERADO = {
   'front:PlanoAcaoMeta.jsx': 'f6b1b4af99c561c3b59cb66632ffe725', // etapa SC2.5 (novo)
   'services/ia/conferir.js': '9722ac7f95c6d0f1d88d52edfb19a620', // etapa B1
   'services/salaControle/analista.js': 'a6b6b2ccc047d8b42ee354100430a68e', // etapa SC3 (novo)
-  'services/beta.js': 'a4e71489a50f8ff2838da2161bf495f5', // etapa B2.3
+  'services/beta.js': 'e9107c847155a377d8e54112aae21787', // etapa B2.4
   'routes/beta.js': 'dae7ee687adabe756999ee3085c3c984', // etapa B1.9
   'front:Beta.jsx': '99e3c3f91cad5319c0d98eed6016c3f2', // etapa B2.2
-  'services/betaConsultas.js': 'bf33315cd98fdee11beec26bcd90348a', // etapa B2.3
+  'services/betaConsultas.js': '9e99816afface3cc0b61c17197c043ed', // etapa B2.4
   'services/ferias.js': '76e0c2b2b6a32df76c98479bbf9e1c2a', // etapa B1.15
   'migrations/105_colaborador_ferias.sql': '35db94dbde383bdedd3080434704e697', // etapa B1.7
   'front:TelaFerias.jsx': '5ca20567b45bc7accc6bac86909ed57c', // etapa B1.15
@@ -423,10 +423,10 @@ const ESPERADO = {
   'front:TelaEquipamentos.jsx': '9ae0de5715f8d3099c29b6979863faef', // etapa B2.0
 };
 
-// Antes de copiar a etapa B2.3 — base: B2.2 (8fcdc9a)
+// Antes de copiar a etapa B2.4 — base: B2.3 (0003704)
 const ANTES = {
-  'services/betaConsultas.js': '8a5408a26d04a3815be859c7f38b6361',
-  'services/beta.js': '04ee8fb16f073add295fa22865e16c8e',
+  'services/betaConsultas.js': 'bf33315cd98fdee11beec26bcd90348a',
+  'services/beta.js': 'a4e71489a50f8ff2838da2161bf495f5',
 };
 
 const RAIZ = process.cwd();
@@ -464,7 +464,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a B2.3)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a B2.4)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
