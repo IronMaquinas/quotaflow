@@ -13,6 +13,7 @@ import VerArquivo, { ChipDoc, TXT_DOC } from "./VerArquivo";
 import EditorFluxo, { fluxoPadrao, fluxoServe } from "./EditorFluxo";
 import { SeletorPessoa } from "../shared/CampoPessoa"; // 18g.2c: escolher pessoa digitando
 import AvisoAusencia from "../shared/ausencias"; // B1.15: 🏖 motorista de férias no período
+import { useTiposEquipamento } from "../shared/useTiposEquipamento"; // B2.0
 
 const FISCAIS = [["nfe", "NF-e"], ["cte", "CT-e"], ["mdfe", "MDF-e"]];
 const local = (iso) => (iso ? new Date(new Date(iso).getTime() - 3 * 3600000).toISOString().slice(0, 16) : "");
@@ -23,6 +24,7 @@ export const mimeDe = (arq) => arq.type || (/\.xml$/i.test(arq.name) ? "applicat
 /** pv { id, numero, colunas }, trecho { id, titulo, coleta, entrega, datas }, itemId (programação nova) ou atual (rascunho/AT) */
 export default function EditorAT({ C, s, pv, trecho, itemId, atual: atual0, base, podeLiberar, onFechar, onSalvo, onErro }) {
   const [atual, setAtual] = useState(atual0 || null);
+  const tiposEq = useTiposEquipamento(); // B2.0
   const conj = (papel, n) => (atual0?.conjunto || []).filter((c) => c.papel === papel)[n]?.id ?? "";
   const [f, setF] = useState(() => ({
     coleta: atual0?.origem || trecho?.coleta || "", entrega: atual0?.destino || trecho?.entrega || "",
@@ -123,7 +125,12 @@ export default function EditorAT({ C, s, pv, trecho, itemId, atual: atual0, base
   const removerAnexo = async (a) => { try { const r = await apiService.delete(`/programacao/execucoes/${atual.id}/anexos/${a.id}`); setAtual(r.execucao); } catch (e) { setErro(e.message); } };
 
   const lbl = (r, el, flex = "1 1 200px") => <label style={{ flex, display: "block", minWidth: 0 }}><span style={s.label}>{r}</span>{el}</label>;
-  const optEq = (excluir) => [<option key="" value="">—</option>, ...base.equipamentos.filter((e) => !excluir.includes(String(e.id))).map((e) => <option key={e.id} value={e.id} disabled={e.bloqueado}>{e.bloqueado ? "🔒 " : ""}{e.tag ? `${e.tag} — ` : ""}{e.nome}{e.bloqueado ? " (bloqueado)" : ""}</option>)];
+  // B2.0: opções agrupadas pelo TIPO da empresa (Configurações → Tipos de equipamento)
+  const opEq = (e) => <option key={e.id} value={e.id} disabled={e.bloqueado}>{e.bloqueado ? "🔒 " : ""}{e.tag ? `${e.tag} — ` : ""}{e.nome}{e.placa ? ` · ${e.placa}` : ""}{e.bloqueado ? " (bloqueado)" : ""}</option>;
+  const optEq = (excluir) => { const xs = base.equipamentos.filter((e) => !excluir.includes(String(e.id)));
+    if (!tiposEq.length || !xs.some((e) => e.tipo_id)) return [<option key="" value="">—</option>, ...xs.map(opEq)];
+    const grupos = [...tiposEq.map((t) => [t, xs.filter((e) => String(e.tipo_id) === String(t.id))]), [{ id: "sem", nome: "Sem tipo" }, xs.filter((e) => !e.tipo_id || !tiposEq.some((t) => String(t.id) === String(e.tipo_id)))]].filter(([, l]) => l.length);
+    return [<option key="" value="">—</option>, ...grupos.map(([t, l]) => <optgroup key={t.id} label={`${t.icone ? `${t.icone} ` : ""}${t.nome}`}>{l.map(opEq)}</optgroup>)]; };
   const cfEq = (id) => id && conf.some((c) => c.tipo === "equipamento" && c.texto.startsWith(base.equipamentos.find((e) => String(e.id) === String(id))?.tag || "§"));
   const cfMot = conf.some((c) => c.tipo === "motorista");
   const borda = (ruim) => (ruim ? { border: `1px solid ${C.warn}`, boxShadow: `0 0 0 1px ${C.warn}` } : {});

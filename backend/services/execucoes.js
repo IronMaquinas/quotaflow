@@ -103,7 +103,7 @@ async function base(supabase, tenantId) {
   return {
     motoristas: ativos.map((c) => ({ id: c.id, nome: c.nome, funcao: c.funcao?.nome || c.funcao || null, cnh: c.cnh_categoria || null, vinculo: c.vinculo || 'proprio', motorista: ehMotorista(c) || c.vinculo === 'agregado', selo: selos.get(String(c.id)) || null }))
       .sort((a, b) => (b.motorista - a.motorista) || String(a.nome).localeCompare(String(b.nome), 'pt-BR')),
-    equipamentos: equips.filter((e) => e.ativo !== false).map((e) => ({ id: e.id, tag: e.tag || '', nome: e.nome || '', bloqueado: !!e.bloqueado, bloqueio_motivo: e.bloqueio_motivo || null, inspecao_modelo_id: e.inspecao_modelo_id ?? null }))
+    equipamentos: equips.filter((e) => e.ativo !== false).map((e) => ({ id: e.id, tag: e.tag || '', nome: e.nome || '', bloqueado: !!e.bloqueado, bloqueio_motivo: e.bloqueio_motivo || null, inspecao_modelo_id: e.inspecao_modelo_id ?? null, tipo_id: e.tipo_id ?? null, placa: e.placa || null })) // B2.0: tipo e placa
       .sort((a, b) => String(a.tag || a.nome).localeCompare(String(b.tag || b.nome))),
     tipos: TIPOS, status: STATUS, anexos: ANEXOS, modelos_inspecao: await FV().modelosInspecao(supabase, tenantId), marcos: FV().MARCOS,
   };
@@ -530,6 +530,21 @@ async function doPV(supabase, tenantId, pvId) {
   return { execucoes: ex.sort((a, b) => String(a.inicio_previsto || '').localeCompare(String(b.inicio_previsto || ''))), tipo_execucao: pv.tipo_execucao || 'transporte',
     trechos: trechosComATs(pv, ex) };
 }
+/** B2.0: itens de pedido de venda com data prevista e SEM programação (AT) — alerta (não bloqueia equipamento) */
+async function pendenciasProgramacao(supabase, tenantId, { ateDias = 7 } = {}) {
+  const hoje = hojeBR(); const lim = new Date(Date.parse(hoje) + ateDias * 864e5).toISOString().slice(0, 10);
+  const pvs = (await q(supabase.from('pedidos_venda').select('*').eq('tenant_id', tenantId))).filter((p) => ['aberto', 'em_execucao'].includes(p.status) && (p.tipo_execucao || 'transporte') === 'transporte');
+  if (!pvs.length) return [];
+  const ex = await q(supabase.from('execucoes').select('*').eq('tenant_id', tenantId)); const out = [];
+  for (const pv of pvs) {
+    for (const g of trechosComATs(pv, ex.filter((e) => String(e.pv_id) === String(pv.id)))) {
+      const sem = g.itens.filter((i) => (!i.at || /^RASC-/.test(i.at)) && i.valores?.data_prevista); if (!sem.length) continue;
+      const data = sem.map((i) => String(i.valores.data_prevista).slice(0, 10)).sort()[0]; if (data > lim) continue;
+      out.push({ pv_id: pv.id, pv_numero: pv.numero, cliente: pv.cliente_nome, trecho: g.titulo || `${g.coleta || '?'} → ${g.entrega || '?'}`, data, itens: sem.length, dias: Math.round((Date.parse(data) - Date.parse(hoje)) / 864e5) });
+    }
+  }
+  return out.sort((a, b) => a.data.localeCompare(b.data));
+}
 /** 🗓 agenda da frota: ATs no período, por dia, com conflitos */
 async function agenda(supabase, tenantId, { de, ate } = {}) {
   const d0 = /^\d{4}-\d{2}-\d{2}$/.test(String(de || '')) ? de : hojeBR();
@@ -668,4 +683,4 @@ async function paginaMotorista(supabase, ex) {
     motorista_id: ex.motorista_id ?? null };
 }
 
-module.exports = { retirarAnexo, substituirAnexo, eventoAnexo, relatorioViagem, provavelCondutor, minhasViagens, refDe: (e, pvs) => comRef(e, pvs).ref, sincronizarPV, registrar, porToken, paginaMotorista, linkMotorista, docsDoConjunto, linkDocCadastro, descartar, carregarDocs, avaliarDocs, checar, trechosComATs, TIPOS, STATUS, ANEXOS, base, criar, editar, mudarStatus, anexar, linkAnexo, removerAnexo, listar, detalhe, doPV, agenda, documento, conflitos, _definirSelos };
+module.exports = { pendenciasProgramacao, retirarAnexo, substituirAnexo, eventoAnexo, relatorioViagem, provavelCondutor, minhasViagens, refDe: (e, pvs) => comRef(e, pvs).ref, sincronizarPV, registrar, porToken, paginaMotorista, linkMotorista, docsDoConjunto, linkDocCadastro, descartar, carregarDocs, avaliarDocs, checar, trechosComATs, TIPOS, STATUS, ANEXOS, base, criar, editar, mudarStatus, anexar, linkAnexo, removerAnexo, listar, detalhe, doPV, agenda, documento, conflitos, _definirSelos };

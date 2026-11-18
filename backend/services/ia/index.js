@@ -28,7 +28,7 @@ const PROVEDORES = {
     const content = [...imagens.map((im) => ({ type: 'image', source: { type: 'base64', media_type: im.mime, data: im.base64 } })), { type: 'text', text: prompt }];
     const r = await axios.post('https://api.anthropic.com/v1/messages', { model: c.modelo, max_tokens: max, system: sistema, messages: [{ role: 'user', content }] },
       { headers: { 'x-api-key': c.chave, 'anthropic-version': '2023-06-01', 'content-type': 'application/json' }, timeout: c.timeout });
-    return { texto: (r.data?.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim(), parada: r.data?.stop_reason || null, uso: { entrada: r.data?.usage?.input_tokens || 0, saida: r.data?.usage?.output_tokens || 0 } };
+    return { texto: (r.data?.content || []).filter((b) => b.type === 'text').map((b) => b.text).join('\n').trim(), parada: r.data?.stop_reason || null, blocos: (r.data?.content || []).map((b) => b.type), uso: { entrada: r.data?.usage?.input_tokens || 0, saida: r.data?.usage?.output_tokens || 0 } };
   },
   async openai(c, { sistema, prompt, max, imagens = [] }) {
     const content = imagens.length ? [...imagens.map((im) => ({ type: 'image_url', image_url: { url: `data:${im.mime};base64,${im.base64}` } })), { type: 'text', text: prompt }] : prompt;
@@ -66,6 +66,7 @@ async function gerarTexto({ sistema = '', prompt, max = 900, tenant = null, imag
     let r = _fake ? await _fake({ sistema, prompt, max, c, imagens }) : await PROVEDORES[c.provedor](c, { sistema, prompt, max, imagens });
     if (typeof r === 'string') r = { texto: r, uso: {} };
     const usoId = await anotar(!!r.texto, r.uso);
+    if (!r.texto) console.log(`🧠 [ia] resposta sem texto · parada ${r.parada || '?'} · blocos ${(r.blocos || []).join(',') || '—'}`); // B2.0: diagnóstico
     return r.texto ? { texto: r.texto, parada: r.parada || null, uso: r.uso || {}, uso_id: usoId, provedor: c.provedor, nome: c.nome, modelo: c.modelo } : { texto: null, motivo: 'a IA respondeu vazio', uso_id: usoId, provedor: c.provedor };
   } catch (e) {
     const m = e?.response?.data?.error?.message || e?.message || String(e);

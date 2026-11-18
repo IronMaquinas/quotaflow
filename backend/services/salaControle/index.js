@@ -140,7 +140,15 @@ async function ferias(c) { // B1.6: 🏖 férias vencidas / vencendo (regras do 
   return { alertas, prioridades, kpis: { ferias_vencidas: venc.length, ferias_vencendo: crit.length + vindo.length } };
 }
 
-const SENSORES = { ocorrencias, ferias, metasInformar, minhasTarefas, documentosGestao, planoAcaoNC, frotaBloqueada, viagens, vencimentos };
+async function pedidosSemProgramacao(c) { // B2.0: pedido de venda com data prevista e sem AT — avisa (não bloqueia equipamento)
+  if (!(c.gestor || tem(c.perfis, ['operacao', 'comercial']))) return {};
+  const xs = await require('../execucoes').pendenciasProgramacao(c.sb, c.tenantId, { ateDias: 7 });
+  const alertas = xs.map((x) => ({ nivel: x.dias <= 2 ? 'critico' : 'atencao', icone: '🚛', titulo: `${x.pv_numero} sem programação — ${x.dias < 0 ? `atrasado (era ${dBR(x.data)})` : x.dias === 0 ? 'é HOJE' : x.dias === 1 ? 'é AMANHÃ' : `em ${x.dias} dias (${dBR(x.data)})`}`,
+    detalhe: `${x.cliente || ''} · ${x.trecho} · ${x.itens} item(ns) sem AT — programe ou renegocie`, link: { tela: 'programacao' } })).slice(0, 6);
+  return { alertas, kpis: { pedidos_sem_programacao: xs.length } };
+}
+
+const SENSORES = { ocorrencias, pedidosSemProgramacao, ferias, metasInformar, minhasTarefas, documentosGestao, planoAcaoNC, frotaBloqueada, viagens, vencimentos };
 
 async function montar(sb, { tenantId, userId, perfis = [], nome = '', agora = new Date() }) {
   const hoje = hojeBR(agora);

@@ -1,6 +1,7 @@
 // components/equipamentos/TelaEquipamentos.jsx
 import { useState, useEffect } from 'react';
 import { useEquipamentos } from '../../hooks/useEquipamentos';
+import apiService from '../../services/apiService'; // B2.0: tipos de equipamento da empresa
 
 export default function TelaEquipamentos({ fmtBRL, fmtD, C, s }) {
   const { equipamentos, loading, erro, listar, criar, atualizar, deletar } = useEquipamentos();
@@ -19,19 +20,25 @@ export default function TelaEquipamentos({ fmtBRL, fmtD, C, s }) {
   useEffect(() => {
     listar();
   }, []);
+  // B2.0: 🚛 tipos (Configurações → Tipos de equipamento) + placa
+  const [tipos, setTipos] = useState([]); const [fTipo, setFTipo] = useState('');
+  useEffect(() => { apiService.get('/tipos-equipamento').then((r) => setTipos(r.tipos || [])).catch(() => setTipos([])); }, []);
+  const tipoDe = (eq) => tipos.find((t) => String(t.id) === String(eq.tipo_id));
 
   const equipamentosSeguro = equipamentos || [];
 
   const salvar = async () => {
     if (!form.nome || !form.tag) return;
     try {
+      const corpo = { ...form }; const tinha = corpo._tinha || {}; delete corpo._tinha; // B2.0: só manda tipo/placa se usados (antes da migration 110 não quebra)
+      for (const k of ['tipo_id', 'placa']) { if (corpo[k] === '' || corpo[k] == null) { if (tinha[k]) corpo[k] = null; else delete corpo[k]; } }
       if (modal === 'novo') {
-        await criar(form);
+        await criar(corpo);
       } else {
-        await atualizar(modal, form);
+        await atualizar(modal, corpo);
       }
       setModal(null);
-      setForm({ tag: '', nome: '', local: '', fabricante: '', modelo: '', serie: '' });
+      setForm({ tag: '', nome: '', local: '', fabricante: '', modelo: '', serie: '', tipo_id: '', placa: '' });
       await listar();
     } catch (err) {
       alert('Erro: ' + err.message);
@@ -56,14 +63,15 @@ export default function TelaEquipamentos({ fmtBRL, fmtD, C, s }) {
       fabricante: eq.fabricante || '',
       modelo: eq.modelo || '',
       serie: eq.serie || '',
+      tipo_id: eq.tipo_id ? String(eq.tipo_id) : '', placa: eq.placa || '', _tinha: { tipo_id: !!eq.tipo_id, placa: !!eq.placa }, // B2.0
     });
     setModal(eq.id);
   };
 
   const lista = equipamentosSeguro.filter(
     (e) =>
-      e.ativo !== false &&
-      (e.nome.toLowerCase().includes(search.toLowerCase()) ||
+      e.ativo !== false && (!fTipo || (fTipo === 'sem' ? !e.tipo_id : String(e.tipo_id) === fTipo)) &&
+      (e.nome.toLowerCase().includes(search.toLowerCase()) || String(e.placa || '').toLowerCase().includes(search.toLowerCase()) ||
         e.tag.toLowerCase().includes(search.toLowerCase()) ||
         e.local?.toLowerCase().includes(search.toLowerCase()))
   );
@@ -77,7 +85,7 @@ export default function TelaEquipamentos({ fmtBRL, fmtD, C, s }) {
         </div>
         <button
           onClick={() => {
-            setForm({ tag: '', nome: '', local: '', fabricante: '', modelo: '', serie: '' });
+            setForm({ tag: '', nome: '', local: '', fabricante: '', modelo: '', serie: '', tipo_id: '', placa: '' });
             setModal('novo');
           }}
           style={{ ...s.btn(true), padding: '8px 18px' }}
@@ -86,12 +94,11 @@ export default function TelaEquipamentos({ fmtBRL, fmtD, C, s }) {
         </button>
       </div>
 
-      <input
-        value={search}
-        onChange={(e) => setSearch(e.target.value)}
-        placeholder="Buscar por nome, TAG ou localização..."
-        style={{ ...s.input, marginBottom: 16 }}
-      />
+      <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', marginBottom: 16 }}>
+        <input value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Buscar por nome, TAG, placa ou localização..." style={{ ...s.input, flex: '3 1 260px' }} />
+        <select value={fTipo} onChange={(e) => setFTipo(e.target.value)} style={{ ...s.input, flex: '1 1 200px' }}>
+          <option value="">Todos os tipos</option>{tipos.map((x) => <option key={x.id} value={x.id}>{x.icone ? `${x.icone} ` : ''}{x.nome}</option>)}<option value="sem">⚠ Sem tipo</option></select>
+      </div>
 
       {loading && <div style={{ color: C.muted, padding: 20, textAlign: 'center' }}>Carregando...</div>}
       {erro && <div style={{ color: '#ef4444', padding: 20, background: '#ef444422', borderRadius: 8, marginBottom: 16 }}>{erro}</div>}
@@ -132,7 +139,7 @@ export default function TelaEquipamentos({ fmtBRL, fmtD, C, s }) {
             >
               {eq.tag}
             </span>
-            <span style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>{eq.nome}</span>
+            <span style={{ fontSize: 13, color: C.text, fontWeight: 500 }}>{eq.nome}<span style={{ display: 'block', fontSize: 11, color: tipoDe(eq) ? C.textSub : C.warn, fontWeight: 400 }}>{tipoDe(eq) ? `${tipoDe(eq).icone || ''} ${tipoDe(eq).nome}` : 'sem tipo'}{eq.placa ? ` · ${eq.placa}` : ''}</span></span>
             <span style={{ fontSize: 12, color: C.textSub }}>{eq.local}</span>
             <span style={{ fontSize: 12, color: C.textSub }}>{eq.fabricante}</span>
             <div>
@@ -283,6 +290,14 @@ export default function TelaEquipamentos({ fmtBRL, fmtD, C, s }) {
                     style={s.input}
                   />
                 </div>
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 14 }}>{/* B2.0 */}
+                <div><label style={s.label}>TIPO</label>
+                  <select value={form.tipo_id || ''} onChange={(e) => setForm((f) => ({ ...f, tipo_id: e.target.value }))} style={s.input}>
+                    <option value="">— escolha —</option>{tipos.filter((x) => x.ativo !== false || String(x.id) === String(form.tipo_id)).map((x) => <option key={x.id} value={x.id}>{x.icone ? `${x.icone} ` : ''}{x.nome}</option>)}</select>
+                  <div style={{ fontSize: 10.5, color: C.muted, marginTop: 3 }}>Lista em Configurações → Tipos de equipamento</div></div>
+                <div><label style={s.label}>PLACA</label>
+                  <input type="text" value={form.placa || ''} onChange={(e) => setForm((f) => ({ ...f, placa: e.target.value.toUpperCase() }))} placeholder="Ex.: ABC1D23 (se tiver)" style={s.input} /></div>
               </div>
               <div style={{ marginBottom: 14 }}>
                 <label style={s.label}>NÚMERO DE SÉRIE</label>

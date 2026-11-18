@@ -129,6 +129,8 @@ async function candidatos(supabase, tenantId, agora = new Date()) {
     }
   } catch (e) { if (!/treinamento/.test(String(e.message))) throw e; }
 
+  // B2.0: 🚛 pedido de venda com data prevista e sem programação (AT) — 7 dias e 2 dias
+  try { for (const x of await require('./execucoes').pendenciasProgramacao(supabase, tenantId, { ateDias: 7 })) out.push({ categoria: 'pv_sem_at', chave: `pv_sem_at:${x.pv_id}:${x.trecho}:${x.data}`, marco: x.dias <= 2 ? '30' : '60', dias: x.dias, data: x.data, titulo: `${x.pv_numero} · ${x.trecho} — ${x.itens} item(ns) sem AT`, de: x.cliente || '' }); } catch { /* sem pedidos */ }
   // B1.14: 🏖 férias sem programar perto do limite legal
   for (const x of await feriasAVencer(supabase, tenantId)) out.push({ categoria: 'ferias_venc', chave: `ferias_venc:${x.colaborador_id}:${x.limite}`, marco: x.marco, dias: x.dias, data: x.limite, titulo: `${x.a_programar} dia(s) de férias sem programar${x.sair_ate ? ` — sair até ${String(x.sair_ate).split('-').reverse().join('/')}` : ''}`, de: x.nome, ...x });
   return out;
@@ -163,7 +165,7 @@ async function registrar(supabase, tenantId, itens, destinatarios) {
   if (error) console.error('❌ [avisos-pessoas] registrar:', error.message);
 }
 
-const TITULO = { ferias_venc: '🏖 Férias perto do limite legal (sem programar)', epi_troca: '🦺 Troca de EPI', epi_ca: '🦺 CA de EPI', doc_falta: '📋 Documento exigido não cadastrado', trein_venc: '🎓 Treinamento vencendo', trein_falta: '🎓 Treinamento exigido não realizado', trein_faltou: '🎓 Turma encerrada com faltas — reagendar', multa_indicacao: '🚦 Multa — indicar o condutor', multa_venc: '🚦 Multa vencendo', aut_defesa: '🏛 Autuação da empresa — defesa / recurso', aut_venc: '🏛 Autuação da empresa vencendo', insp_atrasada: '🔍 Inspeção de rotina atrasada' };
+const TITULO = { pv_sem_at: '🚛 Pedidos com data próxima e sem programação', ferias_venc: '🏖 Férias perto do limite legal (sem programar)', epi_troca: '🦺 Troca de EPI', epi_ca: '🦺 CA de EPI', doc_falta: '📋 Documento exigido não cadastrado', trein_venc: '🎓 Treinamento vencendo', trein_falta: '🎓 Treinamento exigido não realizado', trein_faltou: '🎓 Turma encerrada com faltas — reagendar', multa_indicacao: '🚦 Multa — indicar o condutor', multa_venc: '🚦 Multa vencendo', aut_defesa: '🏛 Autuação da empresa — defesa / recurso', aut_venc: '🏛 Autuação da empresa vencendo', insp_atrasada: '🔍 Inspeção de rotina atrasada' };
 const esc = (t) => String(t == null ? '' : t).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 const dataBR = (d) => (d ? String(d).slice(0, 10).split('-').reverse().join('/') : '—');
 function prazo(i) {
@@ -175,7 +177,7 @@ function prazo(i) {
 }
 /** Seções HTML para o e-mail diário */
 function secoesHtml(itens) {
-  const cats = ['ferias_venc', 'insp_atrasada', 'aut_defesa', 'aut_venc', 'multa_indicacao', 'multa_venc', 'epi_troca', 'epi_ca', 'trein_venc', 'trein_faltou', 'doc_falta', 'trein_falta'].filter((c) => itens.some((i) => i.categoria === c));
+  const cats = ['pv_sem_at', 'ferias_venc', 'insp_atrasada', 'aut_defesa', 'aut_venc', 'multa_indicacao', 'multa_venc', 'epi_troca', 'epi_ca', 'trein_venc', 'trein_faltou', 'doc_falta', 'trein_falta'].filter((c) => itens.some((i) => i.categoria === c));
   return cats.map((c) => `
     <h3 style="margin:18px 0 6px;font-size:15px">${TITULO[c]}</h3>
     <table style="border-collapse:collapse;width:100%;font-size:14px">

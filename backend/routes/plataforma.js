@@ -156,4 +156,9 @@ router.post('/biblioteca/inspecoes', responder(async (req) => { const r = await 
 router.put('/biblioteca/inspecoes/:id', responder(async (req) => { const r = await INSP.editarModeloBib(supabase, req.params.id, req.body); if (!r.erro) await C.registrar(req.plataformaAdmin, 'inspecao_modelo_editar', 'inspecao_modelo', req.params.id, { versao_subiu: r.versao_subiu }).catch(() => {}); return r; }));
 router.get('/biblioteca/inspecoes/:id/imagens', responder(async (req) => { const { data } = await supabase.from('inspecao_modelos').select('*').is('tenant_id', null).eq('id', req.params.id); return { imagens: data?.[0] ? await INSP.linksImagens(supabase, data[0]) : {} }; }));
 
+// B2.0: 👋 perguntas que a Beta ainda não sabe (todas as empresas)
+const BP = require('../services/betaPendentes');
+router.get('/beta-pendentes', plataformaMiddleware, async (req, res) => { try { res.json(await BP.listar(supabase, { status: req.query.status || 'pendente' })); } catch (err) { if (/beta_pendentes/.test(String(err.message))) return res.json({ itens: [], totais: {}, aviso: 'Falta rodar a migration 110.' }); res.status(500).json({ erro: err.message }); } });
+router.put('/beta-pendentes/:id', plataformaMiddleware, async (req, res) => { try { const r = await BP.resolver(supabase, req.params.id, req.body || {}); if (r.erro) return res.status(r.status || 400).json(r); res.json(r); } catch (err) { res.status(500).json({ erro: err.message }); } });
+
 module.exports = router;

@@ -47,6 +47,48 @@ const qualPessoa = (xs, termo) => (!xs.length ? { texto: `Não encontrei ningué
   : { texto: `Encontrei ${xs.length} pessoas com "${termo}": ${listaNomes(xs, (c) => c.nome)}. Qual delas?` });
 
 // ═════════════════════════════════════════════════════════════════════════════
+// ── B2.0: datas em português ("01/01/2027", "1/1", "amanhã", "dia 15", "de 05 a 10/01") ──
+function lerData(txt, hoje) {
+  const s = norm(txt); if (!s) return null;
+  if (/\bdepois de amanha\b/.test(s)) return somaD(hoje, 2); if (/\bamanha\b/.test(s)) return somaD(hoje, 1); if (/\bhoje\b|\bagora\b/.test(s)) return hoje;
+  let m = String(txt).match(/(\d{4})-(\d{2})-(\d{2})/); if (m) return `${m[1]}-${m[2]}-${m[3]}`;
+  m = String(txt).match(/\b(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?\b/);
+  if (m) { let a = m[3] ? +m[3] : +hoje.slice(0, 4); if (a < 100) a += 2000; let d = `${a}-${String(m[2]).padStart(2, '0')}-${String(m[1]).padStart(2, '0')}`; if (!m[3] && d < hoje) d = `${a + 1}${d.slice(4)}`; return isNaN(Date.parse(d)) ? null : d; }
+  m = s.match(/\bdia (\d{1,2})\b/); if (m) { let d = `${hoje.slice(0, 8)}${String(m[1]).padStart(2, '0')}`; if (d < hoje) d = new Date(Date.UTC(+hoje.slice(0, 4), +hoje.slice(5, 7), +m[1])).toISOString().slice(0, 10); return d; }
+  return null;
+}
+const somaD = (iso, n) => new Date(Date.parse(iso) + n * 864e5).toISOString().slice(0, 10);
+function lerPeriodo(txt, hoje) {
+  const m = String(txt).match(/(?:de|entre)\s+(.+?)\s+(?:a|ate|até|e)\s+(.+)$/i);
+  if (m) { const b = lerData(m[2], hoje); let a = lerData(m[1], hoje); if (!a && b && /^\s*\d{1,2}\s*$/.test(m[1])) a = `${b.slice(0, 8)}${String(m[1].trim()).padStart(2, '0')}`; if (a && b) return a <= b ? [a, b] : [b, a]; }
+  const d = lerData(txt, hoje); return d ? [d, d] : null;
+}
+
+// ── B2.0: ocupação de um equipamento num intervalo (AT, contrato de locação, OS do calendário, OS aberta, bloqueio) ──
+async function mapaOcupacao(ctx, de, ate) {
+  const [eqs, ats, cts, chs, oss] = await Promise.all([
+    q(ctx.sb.from('equipamentos').select('*').eq('tenant_id', ctx.tenantId)),
+    q(ctx.sb.from('execucoes').select('*').eq('tenant_id', ctx.tenantId)).catch(() => []),
+    q(ctx.sb.from('locacao_contratos').select('*').eq('tenant_id', ctx.tenantId)).catch(() => []),
+    q(ctx.sb.from('chamados').select('*').eq('tenant_id', ctx.tenantId)).catch(() => []),
+    q(ctx.sb.from('ordens_servico').select('*').eq('tenant_id', ctx.tenantId)).catch(() => [])]);
+  const sob = (a1, a2, b1, b2) => !(a2 < b1 || a1 > b2);
+  const oc = new Map(); const add = (id, x) => { const k = String(id); if (!oc.has(k)) oc.set(k, []); oc.get(k).push(x); };
+  for (const e of eqs) if (e.bloqueado) add(e.id, { motivo: `⛔ bloqueado na inspeção${e.bloqueio_motivo ? ` (${e.bloqueio_motivo})` : ''}`, ate: null });
+  for (const a of ats.filter((x) => ['programada', 'em_execucao'].includes(x.status))) {
+    const i = d10(a.inicio_previsto); if (!i) continue; const f = d10(a.fim_previsto) || i; if (!sob(de, ate, i, f)) continue;
+    const ids = [a.cavalo_id, ...((Array.isArray(a.conjunto) ? a.conjunto : []).map((c) => c.id))].filter((x) => x != null);
+    for (const id of new Set(ids.map(String))) add(id, { motivo: `🚛 ${a.numero}${a.cliente_nome ? ` (${a.cliente_nome})` : ''}`, ate: f });
+  }
+  for (const e of eqs.filter((x) => x.locacao_id)) { const c = cts.find((x) => String(x.id) === String(e.locacao_id)); if (!c || c.status !== 'ativo') continue;
+    const i = d10(c.inicio) || '0000-01-01', f = d10(c.fim_previsto) || '9999-12-31'; if (sob(de, ate, i, f)) add(e.id, { motivo: `📄 locado — ${c.numero}${c.cliente ? ` (${c.cliente})` : ''}`, ate: d10(c.fim_previsto) }); }
+  for (const o of chs.filter((x) => x.equipamento_id && !x.concluida_em && !['cancelada', 'cancelado', 'concluida', 'finalizada'].includes(x.status))) {
+    const i = d10(o.data_inicio_prevista); if (!i) continue; const f = d10(o.data_fim_prevista) || i; if (sob(de, ate, i, f)) add(o.equipamento_id, { motivo: `🔧 manutenção ${o.numero || ''}`.trim(), ate: f }); }
+  for (const o of oss.filter((x) => x.equipamento_id && !['concluida', 'finalizada', 'fechada', 'cancelada', 'encerrada'].includes(x.status)))
+    if (de <= somaD(hojeBR(), 3)) add(o.equipamento_id, { motivo: `🔧 OS aberta ${o.numero || ''} (sem previsão)`.trim(), ate: null });
+  return { eqs, oc };
+}
+
 const CONSULTAS = [
   {
     nome: 'vencimento_documento',
@@ -143,6 +185,35 @@ const CONSULTAS = [
       if (agora.length) l.push(`🏖 De férias agora (${agora.length}):\n${agora.map((f) => `• ${f.colaborador_nome} — volta em ${dBR(f.retorno)}`).join('\n')}`);
       if (prox.length) l.push(`📅 Saem nos próximos 30 dias (${prox.length}):\n${prox.map((f) => `• ${f.colaborador_nome} — ${dBR(f.inicio)} a ${dBR(f.fim)}`).join('\n')}`);
       return { texto: l.join('\n\n'), link: { tela: 'pessoas', aba: 'ferias' } };
+    },
+  },
+  {
+    nome: 'frota_disponivel',
+    descricao: 'Quais equipamentos/ativos (de um TIPO — carreta, cavalo, ônibus, contêiner, gerador… — ou todos) estão LIVRES numa data ou período, e quando os ocupados ficam livres.',
+    args: { tipo: 'tipo do equipamento, ex.: carreta, contêiner escritório (opcional)', data: 'data ou período, ex.: 01/01/2027, de 05 a 10/01, amanhã' },
+    perfis: ['comprador', 'operacao', 'comercial'],
+    exemplo: 'Tenho carreta livre em 01/01/2027?',
+    async executar(ctx, { tipo, data }) { // B2.0
+      const per = lerPeriodo(data || '', ctx.hoje); if (!per) return { texto: 'Para qual data (ou período)? Ex.: "01/01/2027", "amanhã", "de 05 a 10/01".' };
+      const [de, ate] = per; if (ate < ctx.hoje) return { texto: `${dBR(de)}${ate !== de ? ` a ${dBR(ate)}` : ''} já passou — me diga uma data a partir de hoje.` };
+      const T = require('./tiposEquipamento'); let tipos = []; try { tipos = await T.listar(ctx.sb, ctx.tenantId); } catch { /* sem 110 */ }
+      const alvo = tipo ? T.tiposNaFrase(tipo, tipos) : [];
+      if (tipo && !alvo.length && tipos.length) return { texto: `Não encontrei o tipo "${tipo}". Tipos cadastrados: ${tipos.filter((x) => x.ativo !== false).map((x) => x.nome).join(' · ')}. (Configurações → Tipos de equipamento)` };
+      const { eqs, oc } = await mapaOcupacao(ctx, de, ate);
+      const ids = new Set(alvo.map((x) => String(x.id)));
+      const lista = eqs.filter((e) => e.situacao !== 'baixado' && e.ativo !== false && (!ids.size || ids.has(String(e.tipo_id))));
+      const semTipo = ids.size ? eqs.filter((e) => !e.tipo_id).length : 0;
+      const quando = de === ate ? `em ${dBR(de)}` : `de ${dBR(de)} a ${dBR(ate)}`;
+      const nomeT = alvo.length ? alvo.map((x) => x.nome.toLowerCase()).join(' / ') : 'equipamento';
+      if (!lista.length) return { texto: `Não há ${nomeT} cadastrado${semTipo ? ` (${semTipo} equipamento(s) estão sem tipo — Configurações → Tipos de equipamento → revisar)` : ''}.`, link: { tela: 'equipamentos' } };
+      const rot = (e) => [e.tag, e.placa && e.placa !== e.tag ? e.placa : null, e.nome && e.nome !== e.tag ? e.nome : null].filter(Boolean).join(' · ');
+      const livres = lista.filter((e) => !oc.has(String(e.id))); const ocup = lista.filter((e) => oc.has(String(e.id)));
+      const grupo = (xs) => { if (ids.size <= 1 && alvo.length) return [[null, xs]]; const m = new Map(); for (const e of xs) { const t = tipos.find((x) => String(x.id) === String(e.tipo_id)); const k = t ? t.nome : 'Sem tipo'; if (!m.has(k)) m.set(k, []); m.get(k).push(e); } return [...m]; };
+      const l = [livres.length ? `✅ Sim — ${livres.length} ${nomeT}${livres.length > 1 ? '(s)' : ''} livre(s) ${quando}:` : `⛔ Nenhum ${nomeT} livre ${quando}.`];
+      for (const [k, xs] of grupo(livres)) l.push(`${k ? `${k}: ` : ''}${listaNomes(xs, rot, 12)}`);
+      if (ocup.length) { l.push(`\nOcupados (${ocup.length}):`); for (const e of ocup.slice(0, 10)) { const os = oc.get(String(e.id)); const lib = os.every((x) => x.ate) ? os.map((x) => x.ate).sort().pop() : null; l.push(`• ${rot(e)} — ${os.map((x) => x.motivo).join(' + ')}${lib ? ` · livre a partir de ${dBR(somaD(lib, 1))}` : ''}`); } if (ocup.length > 10) l.push(`…e mais ${ocup.length - 10}`); }
+      if (semTipo) l.push(`\n(${semTipo} equipamento(s) sem tipo não entraram — Configurações → Tipos de equipamento → revisar.)`);
+      return { texto: l.join('\n'), link: { tela: 'programacao' } };
     },
   },
   {
@@ -333,6 +404,24 @@ const CONSULTAS = [
   },
 ];
 
+/** B2.0: ⚡ roteador local (sem IA) — perguntas comuns por palavras-chave; null = deixa para o modelo */
+async function rotearLocal(sb, ctx, texto, hist = []) {
+  const s = norm(texto); const ok = (n) => permitidas(ctx.perfis).some((c) => c.nome === n);
+  if (/\b(como (esta|anda|vai) (a |minha |nossa )?empresa|visao geral|resumo (do dia|da empresa|geral)|como estamos)\b/.test(s)) return { consulta: '__painel', local: true };
+  let m = String(texto).match(/\bAT[-\s]?(\d{2,})/i); if (m && ok('situacao_at')) return { consulta: 'situacao_at', args: { numero: m[0].replace(/\s/, '-') }, local: true };
+  m = String(texto).match(/\bBID[-\s]?\d{2,}/i); if (m && ok('status_bid')) return { consulta: 'status_bid', args: { bid: m[0] }, local: true };
+  m = s.match(/\b(?:cot|cotacao)(?: n[oº]?)?\s*(\d{1,})/); if (m && ok('status_cotacao')) return { consulta: 'status_cotacao', args: { numero: m[1] }, local: true };
+  if (/\b(livres?|disponive(l|is)|vagos?|desocupad[oa]s?|parad[oa]s? no patio)\b/.test(s)) {
+    const eqs = await q(sb.from('equipamentos').select('id, tag, placa, nome').eq('tenant_id', ctx.tenantId)).catch(() => []);
+    const tok = String(texto).split(/[\s,?!.]+/).filter((w) => w.length >= 3 && /\d/.test(w));
+    const eq = eqs.find((e) => tok.some((w) => [e.tag, e.placa].filter(Boolean).some((x) => compacto(x) === compacto(w))));
+    if (eq && ok('disponibilidade_equipamento')) return { consulta: 'disponibilidade_equipamento', args: { equipamento: eq.tag || eq.placa }, local: true };
+    if (ok('frota_disponivel') && lerPeriodo(texto, hojeBR())) { let tps = []; try { tps = require('./tiposEquipamento').tiposNaFrase(texto, await require('./tiposEquipamento').listar(sb, ctx.tenantId)); } catch { /* ok */ }
+      return { consulta: 'frota_disponivel', args: { tipo: tps.length ? tps.map((x) => x.nome).join(', ') : undefined, data: texto }, local: true }; }
+  }
+  return null;
+}
+
 const permitidas = (perfis) => CONSULTAS.filter((c) => perfis.some((p) => GESTAO.includes(p) || c.perfis.includes(p)));
 
 async function executar(sb, { tenantId, userId, perfis }, nome, args = {}) {
@@ -344,4 +433,4 @@ async function executar(sb, { tenantId, userId, perfis }, nome, args = {}) {
   return c.executar({ sb, tenantId, userId, perfis, hoje: hojeBR() }, limpos);
 }
 
-module.exports = { CONSULTAS, permitidas, executar, achar, norm };
+module.exports = { CONSULTAS, permitidas, executar, achar, norm, rotearLocal, lerData, lerPeriodo, mapaOcupacao };

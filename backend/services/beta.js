@@ -48,23 +48,34 @@ async function perguntar(sb, { tenantId, userId, perfis = [], nome = '', mensage
   const emp = (await q(sb.from('tenants').select('*').eq('id', tenantId)).catch(() => []))[0] || {};
   if (!IA.status(emp).ligada) return { erro: 'A Beta está desligada para a sua empresa.', status: 409 };
   const ctxP = { tenantId, userId, perfis };
-  const registrar = { supabase: sb, tenantId, recurso: 'beta', chave: `${hojeBR()}:${userId}` };
+  const base = `${hojeBR()}:${userId}`;
+  const registrar = { supabase: sb, tenantId, recurso: 'beta', chave: `${base}:rot` }; // B2.0: chamadas internas não contam — conta 1 por pergunta RESPONDIDA
+  const contar = () => sb.from('ia_uso').insert([{ tenant_id: tenantId, recurso: 'beta', chave: base, provedor: 'local', modelo: 'resposta', tokens_entrada: 0, tokens_saida: 0 }]).then(() => null, () => null);
   const conversa = hist.map((m) => `${m.de === 'beta' ? 'Beta' : 'Pessoa'}: ${m.texto}`).join('\n');
   const gestor = perfis.some((p) => ['admin', 'gestor'].includes(p));
-  // ⚡ 1) a IA escolhe a consulta
   const lista = BC.permitidas(perfis);
-  const esc = await escolher({ emp, registrar, lista, conversa, gestor });
-  if (esc.consulta) {
-    const r = await BC.executar(sb, ctxP, esc.consulta, esc.args);
-    return { texto: r.texto, link: r.link || null, acoes: r.acoes || [], consulta: esc.consulta, conferido: true, direto: true, suspeitos: [], restantes: await restam(sb, tenantId, userId) };
+  // ⚡ 0) B2.0: perguntas comuns entendidas SEM IA (palavras-chave) — custo zero
+  let esc = await BC.rotearLocal(sb, ctxP, pergunta.texto, hist).catch(() => null);
+  // ⚡ 1) senão, o modelo econômico escolhe a consulta
+  if (!esc) esc = await escolher({ emp, registrar, lista, conversa, gestor });
+  if (esc.consulta === '__painel' && gestor) {
+    // 🧠 visão geral (só quando pedida): modelo principal
+    const { dados } = await contexto(sb, { tenantId, userId, perfis, nome });
+    const r = await gerarConferido((extra) => IA.gerarTexto({ tenant: emp, registrar: { ...registrar, chave: `${base}:painel` }, sistema: SISTEMA,
+      prompt: `Dados da empresa (JSON):\n${JSON.stringify(dados)}\n\nConversa:\n${conversa}${extra}\n\nResponda à última mensagem da Pessoa.`, max: 450 }), { dados, perguntas: hist.map((m) => m.texto) });
+    if (!r.texto) return { erro: 'A Beta não conseguiu responder agora. Tente de novo em instantes.', status: 503 };
+    await contar();
+    return { texto: r.texto, conferido: r.conferido, suspeitos: r.suspeitos || [], restantes: await restam(sb, tenantId, userId) };
   }
-  if (!gestor) return { texto: `Isso eu ainda não sei responder. Por enquanto eu consulto: ${lista.map((c) => c.exemplo.replace(/\?$/, '')).join(' · ')}.`, conferido: true, direto: true, suspeitos: [], restantes: await restam(sb, tenantId, userId) };
-  // 🧠 2) gestor: visão geral pelo painel (B1)
-  const { dados } = await contexto(sb, { tenantId, userId, perfis, nome });
-  const r = await gerarConferido((extra) => IA.gerarTexto({ tenant: emp, registrar: { ...registrar, chave: `${registrar.chave}:painel` }, sistema: SISTEMA, // não conta de novo no limite: 1 pergunta = 1
-    prompt: `Dados da empresa (JSON):\n${JSON.stringify(dados)}\n\nConversa:\n${conversa}${extra}\n\nResponda à última mensagem da Pessoa.`, max: 450 }), { dados, perguntas: hist.map((m) => m.texto) });
-  if (!r.texto) return { erro: 'A Beta não conseguiu responder agora. Tente de novo em instantes.', status: 503 };
-  return { texto: r.texto, conferido: r.conferido, suspeitos: r.suspeitos || [], restantes: await restam(sb, tenantId, userId) };
+  if (esc.consulta && esc.consulta !== '__painel') {
+    const r = await BC.executar(sb, ctxP, esc.consulta, esc.args);
+    await contar();
+    return { texto: r.texto, link: r.link || null, acoes: r.acoes || [], consulta: esc.consulta, local: !!esc.local, conferido: true, direto: true, suspeitos: [], restantes: await restam(sb, tenantId, userId) };
+  }
+  // 📮 B2.0: ainda não sabe → registra para o admin da plataforma (Console) e NÃO conta no limite
+  try { await q(sb.from('beta_pendentes').insert([{ tenant_id: tenantId, usuario_id: String(userId), usuario_nome: nome || null, perfis: perfis.join(','), pergunta: pergunta.texto.slice(0, 800), conversa: hist.slice(-4), status: 'pendente' }])); } catch { /* sem a 110 */ }
+  return { texto: 'Desculpe, ainda estou aprendendo a consultar isso. 🙏 Encaminhei a sua pergunta para os nossos especialistas — em breve você poderá perguntar de novo.' + (lista.length ? `\n\nHoje eu já sei, por exemplo: ${lista.slice(0, 5).map((c) => c.exemplo.replace(/\?$/, '')).join(' · ')}.` : ''),
+    aprendendo: true, conferido: true, direto: true, suspeitos: [], restantes: await restam(sb, tenantId, userId) };
 }
 
 const restam = async (sb, tenantId, userId) => Math.max(0, LIMITE() - (await usoHoje(sb, tenantId, userId)));
@@ -78,13 +89,15 @@ NÃO explique, NÃO pense em voz alta, NÃO use markdown: a resposta inteira é 
 async function escolher({ emp, registrar, lista, conversa, gestor }) {
   if (!lista.length) return { consulta: null };
   const cat = lista.map((c) => `- ${c.nome}: ${c.descricao} Argumentos: ${Object.entries(c.args).map(([k, v]) => `${k} (${v})`).join(', ')}. Ex.: "${c.exemplo}"`).join('\n');
-  const extra = gestor ? '\nSe a pergunta for sobre a visão geral da empresa (como está hoje, metas, valor gerado, alertas, resumo) e nenhuma consulta for exata, devolva {"consulta":null}.' : '';
+  const extra = gestor ? '\nSe a pessoa pedir a VISÃO GERAL da empresa (como está hoje, resumo, metas, valor gerado, alertas), devolva {"consulta":"__painel"}.' : '';
   const r = await IA.gerarTexto({ tenant: emp, registrar, sistema: ROTEADOR + extra, prompt: `Consultas:\n${cat}\n\nConversa:\n${conversa}`, max: 400, rapido: true }); // B1.8: IA_MODELO_RAPIDO · B1.10: folga (com 120 o modelo econômico às vezes cortava antes do JSON)
   try {
     const bruto = String(r.texto || ''); const m = bruto.match(/\{[\s\S]*\}/);
     let j = null; try { j = JSON.parse(m[0]); } catch { const n = bruto.match(/"consulta"\s*:\s*"([a-z_]+)"/); if (n) { j = { consulta: n[1], args: {} }; for (const a of bruto.matchAll(/"([a-z_]+)"\s*:\s*"([^"]*)"/g)) if (a[1] !== 'consulta') j.args[a[1]] = a[2]; } } // B1.10: JSON cortado ainda serve
     if (j && j.consulta && lista.some((c) => c.nome === j.consulta)) return { consulta: j.consulta, args: j.args && typeof j.args === 'object' ? j.args : {} };
   } catch { /* não entendeu → segue sem consulta */ }
+  if (gestor && /"consulta"\s*:\s*"__painel"/.test(String(r?.texto || ''))) return { consulta: '__painel' };
+  if (r?.texto && !/"consulta"/.test(r.texto)) console.log(`👋 [beta] roteador não devolveu JSON (${r.parada || '?'}): ${String(r.texto).slice(0, 300).replace(/\s+/g, ' ')}`); // B2.0: diagnóstico
   return { consulta: null };
 }
 
