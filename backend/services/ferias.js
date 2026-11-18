@@ -166,8 +166,11 @@ async function analisar(sb, tenantId, dados = {}, id = null) {
     if (p.faltas > 5) A('lembrete', `${c.nome} tem ${p.faltas} falta(s) injustificada(s) no período ${dBR(p.inicio)} a ${dBR(p.fim)} — pela regra (${R.nome}) o direito cai para ${p.direito} dias.`);
     else if (p.faltas > 0) A('info', `${p.faltas} falta(s) injustificada(s) no período aquisitivo — ainda não reduz os dias (reduz a partir de 6).`);
     if (p.saldo < 0) A('erro', `Passa do saldo: o período ${p.rotulo} dá direito a ${p.direito} dias e, com esta, ficam ${p.direito - p.saldo} lançados (${-p.saldo} a mais).`);
-    if (p.em_aquisicao) A('alerta', `Férias antecipadas: o período aquisitivo de ${c.nome} só se completa em ${dBR(somaDias(p.fim, 1))}.`);
-    if (fim > p.limite) A('alerta', `Termina depois do limite do período (${dBR(p.limite)}) — os dias além do limite saem em dobro.`);
+    // B1.11: janela legal do período — de (fim do aquisitivo + 1) até o limite; mensagens com as datas
+    const abre = somaDias(p.fim, 1); const ultimoInicio = somaDias(p.limite, -(qtd - 1));
+    if (inicio > p.limite) A('erro', `Fora do prazo legal: as férias do período ${p.rotulo} precisam ser gozadas entre ${dBR(abre)} e ${dBR(p.limite)}. Para ${qtd} dia(s), comece no máximo em ${dBR(ultimoInicio)}.`);
+    else if (fim > p.limite) A('erro', `Passa do prazo legal: o período ${p.rotulo} vence em ${dBR(p.limite)} (último dia de ausência permitido). Para ${qtd} dia(s), comece no máximo em ${dBR(ultimoInicio)} — ou reduza para ${dias(inicio, p.limite) + 1} dia(s).`);
+    if (inicio <= p.fim) A('alerta', `Férias antecipadas: o período ${p.rotulo} só se completa em ${dBR(abre)} — o normal é marcar entre ${dBR(abre)} e ${dBR(p.limite)}.`);
     const doPeriodo = [...doColab.filter((f) => alocacao.get(String(f.id)) === p), nova].map((f) => dias(d10(f.inicio), d10(f.fim)) + 1);
     const F = R.fracionamento;
     if (doPeriodo.length > F.maxPeriodos) A('erro', `Este seria o ${doPeriodo.length}º período de férias do aquisitivo ${p.rotulo} — o máximo é ${F.maxPeriodos}.`);
@@ -175,7 +178,7 @@ async function analisar(sb, tenantId, dados = {}, id = null) {
     if (doPeriodo.length > 1 && p.saldo <= 0 && !doPeriodo.some((d) => d >= F.minUmPeriodo)) A('erro', `Férias fracionadas: um dos períodos precisa ter pelo menos ${F.minUmPeriodo} dias.`);
     if (doPeriodo.length > 1 && p.saldo > 0 && !doPeriodo.some((d) => d >= F.minUmPeriodo) && p.saldo < F.minUmPeriodo) A('erro', `Férias fracionadas: nenhum período tem ${F.minUmPeriodo} dias e o saldo (${p.saldo}) não dá mais para isso.`);
     if (nova.abono_dias > Math.floor(p.direito * R.abonoMaxFracao)) A('erro', `Abono acima do permitido: pode vender até ${Math.floor(p.direito * R.abonoMaxFracao)} dia(s) deste período.`);
-    if (p.saldo >= 0 && !avisos.some((a) => ['alerta', 'erro'].includes(a.nivel))) A('ok', `Período ${p.rotulo}: direito ${p.direito} dias · com esta, sobra ${p.saldo} · limite para gozar ${dBR(p.limite)}.`);
+    if (p.saldo >= 0 && !avisos.some((a) => ['alerta', 'erro'].includes(a.nivel))) A('ok', `Período ${p.rotulo}: direito ${p.direito} dias · com esta, sobra ${p.saldo} · janela legal ${dBR(somaDias(p.fim, 1))} a ${dBR(p.limite)}.`);
   }
   if (dias(hoje, inicio) < R.avisoPrevioDias && inicio >= hoje) A('alerta', `Começa em ${dias(hoje, inicio)} dia(s) — a comunicação ao funcionário deve ser feita com ${R.avisoPrevioDias} dias de antecedência.`);
   const feriados = new Set([...R.feriadosNacionais(+inicio.slice(0, 4)), ...R.feriadosNacionais(+inicio.slice(0, 4) + 1)]);
@@ -185,7 +188,7 @@ async function analisar(sb, tenantId, dados = {}, id = null) {
     if (feriados.has(d) || R.diasDescanso.includes(dow)) { A('erro', `Começa ${k === 1 ? 'na véspera' : `${k} dias antes`} de ${feriados.has(d) ? `feriado (${dBR(d)})` : 'domingo (repouso)'} — a regra não permite início nos ${R.inicioVedadoAntesDeDescanso} dias antes de feriado ou repouso.`); break; }
   }
   if (fim < hoje) for (const a of avisos) if (a.nivel === 'erro') a.nivel = 'alerta'; // registro de férias passadas: não bloqueia
-  return { bloqueia: avisos.some((a) => a.nivel === 'erro'), periodo: p ? { rotulo: p.rotulo, inicio: p.inicio, fim: p.fim, limite: p.limite, direito: p.direito, faltas: p.faltas, saldo_depois: p.saldo } : null, avisos };
+  return { bloqueia: avisos.some((a) => a.nivel === 'erro'), periodo: p ? { rotulo: p.rotulo, inicio: p.inicio, fim: p.fim, abre: somaDias(p.fim, 1), limite: p.limite, direito: p.direito, faltas: p.faltas, saldo_depois: p.saldo } : null, avisos };
 }
 
 // ⚠ faltas injustificadas
