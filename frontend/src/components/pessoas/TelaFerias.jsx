@@ -131,7 +131,7 @@ export default function TelaFerias({ C, s, modal, campo, colabs = [], editar, ex
                 {cel("ADMISSÃO", dBR(resumo.admissao))}
                 {cel("PERÍODO A GOZAR", p ? `${dBR(p.inicio).slice(0, 5)}/${p.inicio.slice(2, 4)} a ${dBR(p.fim).slice(0, 5)}/${p.fim.slice(2, 4)}` : "—", p?.situacao === "em_aquisicao" ? "em aquisição" : p ? `direito ${p.direito} dias${p.faltas ? ` · ${p.faltas} falta(s)` : ""}` : null)}
                 {cel("SALDO", p ? `${p.situacao === "em_aquisicao" ? p.direito - p.gozado - p.programado : resumo.a_gozar} dias` : "—", p && p.programado ? `${p.programado} já programado(s)` : null, ALR?.[1])}
-                {cel("JANELA PARA GOZAR", p ? `até ${dBR(p.limite)}` : "—", p ? `a partir de ${dBR(new Date(Date.parse(p.fim) + 864e5).toISOString().slice(0, 10))}` : null, ALR?.[1])}{/* B1.11 */}
+                {cel("PRAZO PARA GOZAR", p ? `até ${dBR(p.limite)}` : "—", p ? `a partir de ${dBR(new Date(Date.parse(p.fim) + 864e5).toISOString().slice(0, 10))}${p.sair_ate ? ` · sair até ${dBR(p.sair_ate)} p/ ${p.saldo} dias` : ""}` : null, ALR?.[1])}{/* B1.11 */}
               </div>
               {ALR && <div style={{ fontSize: 12, color: ALR[1], fontWeight: 600, marginTop: 6 }}>{ALR[0]}</div>}
               {resumo.faltas_periodo > 5 && <div style={{ fontSize: 12, color: C.warn, marginTop: 4 }}>💡 {resumo.faltas_periodo} faltas injustificadas no período — o direito caiu.</div>}</>}

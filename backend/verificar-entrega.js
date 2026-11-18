@@ -397,9 +397,9 @@ const ESPERADO = {
   'routes/beta.js': 'dae7ee687adabe756999ee3085c3c984', // etapa B1.9
   'front:Beta.jsx': 'c1700cfd34e366fad148a286e5efa6a7', // etapa B1.10
   'services/betaConsultas.js': '7dcd3d61bcb60964a072cb3c5cf1a9d0', // etapa B1.10
-  'services/ferias.js': '66dadb9ac63b2f59532622848b75cd20', // etapa B1.11
+  'services/ferias.js': 'ee94553a20cdb9aafdb2e7d50f7384e4', // etapa B1.13
   'migrations/105_colaborador_ferias.sql': '35db94dbde383bdedd3080434704e697', // etapa B1.7
-  'front:TelaFerias.jsx': '033dc3b0b65dc891e493c67d698400f1', // etapa B1.12
+  'front:TelaFerias.jsx': '46319868fd929dcf9f42bc305ffd3be0', // etapa B1.13
   'services/feriasRegras/index.js': '8730bb457bcc3905ccf6bd07f52146c7', // etapa B1.7
   'services/feriasRegras/BR.js': 'af3edaa3cb2200f0d9852154a544347c', // etapa B1.7
   'migrations/106_ferias_regras_faltas.sql': '49954de069bdc79e2e8d3a93b96327d1', // etapa B1.7
@@ -409,9 +409,10 @@ const ESPERADO = {
   'front:FichaContato.jsx': '112591cc8197b0378ca81062cbe8e2f9', // etapa B1.10 (novo)
 };
 
-// Antes de copiar a etapa B1.12 — base: B1.11 (847b96b)
+// Antes de copiar a etapa B1.13 — base: B1.12 (26f9ab1)
 const ANTES = {
-  'front:TelaFerias.jsx': '34c42416edc1783fbe20e283eca5d944',
+  'services/ferias.js': '66dadb9ac63b2f59532622848b75cd20',
+  'front:TelaFerias.jsx': '033dc3b0b65dc891e493c67d698400f1',
 };
 
 const RAIZ = process.cwd();
@@ -449,7 +450,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a B1.12)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a B1.13)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
