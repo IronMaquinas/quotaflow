@@ -1095,7 +1095,11 @@ router.post('/colaboradores/:id/faltas', exigirEditar, async (req, res) => { try
 router.delete('/faltas/:id', exigirEditar, async (req, res) => { try { res.json(await FE.excluirFalta(supabase, req.tenantId, req.params.id)); } catch (err) { errFE6(res, err, 'faltas-excluir'); } });
 router.get('/ferias', exigirVer, async (req, res) => { try { res.json({ ferias: await FE.listar(supabase, req.tenantId, { colaboradorId: req.query.colaborador_id || null }), pode_editar: podeEditar(req) }); } catch (err) { errFE(res, err, 'ferias'); } });
 router.post('/ferias', exigirEditar, async (req, res) => { try { const r = await FE.criar(supabase, req.tenantId, req.body || {}, (await quem(req)).usuarioNome); if (r.erro) return res.status(r.status || 400).json(r); res.status(201).json(r); } catch (err) { errFE(res, err, 'ferias-criar'); } });
-router.put('/ferias/:id', exigirEditar, async (req, res) => { try { const r = await FE.atualizar(supabase, req.tenantId, req.params.id, req.body || {}); if (r.erro) return res.status(r.status || 400).json(r); res.json(r); } catch (err) { errFE(res, err, 'ferias-editar'); } });
-router.delete('/ferias/:id', exigirEditar, async (req, res) => { try { res.json(await FE.excluir(supabase, req.tenantId, req.params.id)); } catch (err) { errFE(res, err, 'ferias-excluir'); } });
+router.put('/ferias/:id', exigirEditar, async (req, res) => { try { const r = await FE.atualizar(supabase, req.tenantId, req.params.id, req.body || {}, { motivo: req.body?.motivo, porNome: (await quem(req)).usuarioNome }); if (r.erro) return res.status(r.status || 400).json(r); res.json(r); } catch (err) { errFE(res, err, 'ferias-editar'); } });
+// B1.15: 👁 ficha só leitura · ✕ cancelar com motivo (não apaga) — o DELETE antigo também cancela (exige motivo)
+router.get('/ferias/:id(\\d+)', exigirVer, async (req, res) => { try { const r = await FE.detalhe(supabase, req.tenantId, req.params.id); if (r.erro) return res.status(r.status || 400).json(r); res.json({ ...r, pode_editar: podeEditar(req) }); } catch (err) { errFE(res, err, 'ferias-detalhe'); } });
+const cancelarFE = async (req, res) => { try { const r = await FE.cancelar(supabase, req.tenantId, req.params.id, req.body?.motivo, (await quem(req)).usuarioNome); if (r.erro) return res.status(r.status || 400).json(r); res.json(r); } catch (err) { errFE(res, err, 'ferias-cancelar'); } };
+router.post('/ferias/:id/cancelar', exigirEditar, cancelarFE);
+router.delete('/ferias/:id', exigirEditar, cancelarFE);
 
 module.exports = router;

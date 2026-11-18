@@ -8,6 +8,8 @@
 import { useEffect, useMemo, useState } from "react";
 import apiService from "../../services/apiService";
 import CampoFuncionario from "../shared/CampoFuncionario";
+import FichaFerias, { irPara } from "./FichaFerias"; // B1.15: ficha só leitura + histórico + conflitos
+import { limparCacheAusencias } from "../shared/ausencias";
 
 const dBR = (v) => (v ? String(v).slice(0, 10).split("-").reverse().join("/") : "—");
 const SIT = { em_gozo: { l: "🏖 De férias", c: "#22c55e" }, programada: { l: "📅 Programada", c: "#3b82f6" }, concluida: { l: "Concluída", c: "#94a3b8" } };
@@ -16,8 +18,9 @@ const somaDias = (d, n) => { if (!d) return ""; const x = new Date(`${d}T12:00:0
 export default function TelaFerias({ C, s, modal, campo, colabs = [], editar, excluir, onAviso, onErro, recarregar }) {
   const [resumo, setResumo] = useState(null); // B1.7: resumo do funcionário escolhido
   const [saldos, setSaldos] = useState(null); const [analise, setAnalise] = useState(null); const [filtroSaldo, setFiltroSaldo] = useState("alerta");
+  const [verId, setVerId] = useState(null); // B1.15
   const [lista, setLista] = useState([]); const [form, setForm] = useState(null); const [salvando, setSalvando] = useState(false); const [verHist, setVerHist] = useState(false); const [erroForm, setErroForm] = useState("");
-  const carregar = async () => { try { const r = await apiService.get("/pessoas/ferias"); setLista(r.ferias || []); } catch (e) { onErro?.(e?.response?.data?.erro || e.message); }
+  const carregar = async () => { limparCacheAusencias(); try { const r = await apiService.get("/pessoas/ferias"); setLista(r.ferias || []); } catch (e) { onErro?.(e?.response?.data?.erro || e.message); }
     try { setSaldos(await apiService.get("/pessoas/ferias/saldos")); } catch (e) { setSaldos({ erro: e?.response?.data?.erro || e.message }); } };
   useEffect(() => { if (!form?.colaborador_id) { setResumo(null); return; } setResumo({ carregando: true });
     apiService.get(`/pessoas/ferias/saldos?colaborador_id=${form.colaborador_id}`).then((r) => setResumo(r.colaboradores?.[0] || { vazio: true })).catch(() => setResumo(null)); }, [form?.colaborador_id]); // eslint-disable-line
@@ -31,6 +34,7 @@ export default function TelaFerias({ C, s, modal, campo, colabs = [], editar, ex
   const prox = lista.filter((f) => f.situacao === "programada").sort((a, b) => a.inicio.localeCompare(b.inicio));
   const hist = lista.filter((f) => f.situacao === "concluida");
   const fimAntes = !!(form?.inicio && form?.fim && form.fim < form.inicio); // B1.9
+  const reprogramou = !!(form?.id && (form.inicio !== form._ini0 || form.fim !== form._fim0 || Number(form.abono_dias || 0) !== Number(form._abono0 || 0))); // B1.15
   // B1.14: opções válidas de dias para o saldo do período (fracionamento: até 3; um ≥ 14; demais ≥ 5; nunca sobrar 1–4)
   const opcoesDias = useMemo(() => {
     if (!form) return [];
@@ -56,16 +60,16 @@ export default function TelaFerias({ C, s, modal, campo, colabs = [], editar, ex
     setErroForm(""); if (!form.colaborador_id) return setErroForm("Escolha o funcionário pela busca do cadastro.");
     setSalvando(true);
     try {
-      const corpo = { colaborador_id: form.colaborador_id, inicio: form.inicio, fim: form.fim, abono_dias: form.abono_dias || 0, obs: form.obs };
+      const corpo = { colaborador_id: form.colaborador_id, inicio: form.inicio, fim: form.fim, abono_dias: form.abono_dias || 0, obs: form.obs, motivo: form.motivo || null }; // B1.15
       if (form.id) await apiService.put(`/pessoas/ferias/${form.id}`, corpo); else await apiService.post("/pessoas/ferias", corpo);
-      onAviso?.(form.id ? "Férias atualizadas." : `Férias de ${form.colaborador_nome} lançadas.`); setForm(null); await carregar();
+      onAviso?.(form.id ? "Férias reprogramadas (registrado no histórico)." : `Férias de ${form.colaborador_nome} lançadas.`); setForm(null); await carregar();
     } catch (e) { setErroForm(e?.response?.data?.erro || e.message); } finally { setSalvando(false); }
   };
 
   const linha = (f, ultimo) => {
     const st = SIT[f.situacao] || SIT.concluida;
     return (
-      <div key={f.id} style={{ display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", padding: "12px 16px", borderBottom: ultimo ? "none" : `1px solid ${C.border}`, opacity: f.situacao === "concluida" ? 0.7 : 1 }}>
+      <div key={f.id} onClick={() => setVerId(f.id)} title="Ver as férias" style={{ cursor: "pointer", display: "flex", gap: 12, alignItems: "center", flexWrap: "wrap", padding: "12px 16px", borderBottom: ultimo ? "none" : `1px solid ${C.border}`, opacity: f.situacao === "concluida" ? 0.7 : 1 }}>
         <div style={{ flex: "2 1 220px", minWidth: 0 }}>
           <div style={{ fontWeight: 600, fontSize: 13 }}>{f.colaborador_nome}</div>
           <div style={{ fontSize: 12, color: C.textSub }}>{f.funcao || "—"}{f.periodo_aquisitivo ? ` · período ${f.periodo_aquisitivo}` : ""}{f.abono_dias ? ` · ${f.abono_dias} dia(s) vendido(s)` : ""}{f.obs ? ` · ${f.obs}` : ""}</div>
@@ -75,11 +79,7 @@ export default function TelaFerias({ C, s, modal, campo, colabs = [], editar, ex
           {f.situacao === "em_gozo" ? <>volta em <b style={{ color: C.text }}>{dBR(f.retorno)}</b></> : f.situacao === "programada" ? <>sai em {f.faltam_dias} dia(s) · volta {dBR(f.retorno)}</> : <>voltou {dBR(f.retorno)}</>}
         </div>
         <span style={s.tag(st.c)}>{st.l}</span>
-        {editar && <div style={{ display: "flex", gap: 6 }}>
-          <button onClick={() => { setErroForm(""); setForm({ ...f, dias: f.dias, _dias0: f.dias, _abono0: f.abono_dias || 0, fimManual: false }); }} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.text }}>Editar</button>
-          <button onClick={() => excluir("Excluir férias", `Excluir as férias de ${f.colaborador_nome} (${dBR(f.inicio)} a ${dBR(f.fim)})?`, async () => { await apiService.delete(`/pessoas/ferias/${f.id}`); await carregar(); return "Férias excluídas."; })}
-            style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px", fontSize: 12, color: C.danger }}>Excluir</button>
-        </div>}
+        <span style={{ fontSize: 12, color: C.accent }}>Ver →</span>
       </div>
     );
   };
@@ -137,8 +137,11 @@ export default function TelaFerias({ C, s, modal, campo, colabs = [], editar, ex
       <button onClick={() => setVerHist(!verHist)} style={{ background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 13, padding: 0, marginBottom: 10, fontFamily: "inherit" }}>{verHist ? "▾" : "▸"} Histórico ({hist.length})</button>
       {verHist && bloco("Concluídas", hist, "Sem histórico ainda.")}
 
+      {verId && <FichaFerias C={C} s={s} modal={modal} id={verId} editar={editar} onFechar={() => setVerId(null)}
+        onEditar={(f) => { setVerId(null); setErroForm(""); setForm({ ...f, dias: f.dias, _dias0: f.dias, _abono0: f.abono_dias || 0, _ini0: f.inicio, _fim0: f.fim, motivo: "", fimManual: false }); }}
+        onCancelado={() => { setVerId(null); onAviso?.("Férias canceladas (registrado no histórico)."); carregar(); }} />}
       {form && modal(<>
-        <h3 style={{ margin: "0 0 14px", fontSize: 17 }}>{form.id ? "Editar férias" : "🏖 Lançar férias"}</h3>
+        <h3 style={{ margin: "0 0 14px", fontSize: 17 }}>{form.id ? "✏ Reprogramar férias" : "🏖 Lançar férias"}</h3>
         <div style={{ display: "grid", gap: 12 }}>
           {campo("Funcionário *", form.id ? <div style={{ ...s.input, opacity: 0.8 }}>{form.colaborador_nome}</div>
             : <CampoFuncionario C={C} s={s} lista={pessoas} nome={form.colaborador_nome} id={form.colaborador_id} placeholder="Digite o nome do funcionário…"
@@ -174,16 +177,17 @@ export default function TelaFerias({ C, s, modal, campo, colabs = [], editar, ex
             {campo("Dias vendidos (abono)", <input type="number" min={0} max={10} value={form.abono_dias || 0} onChange={(e) => setForm({ ...form, abono_dias: e.target.value })} style={s.input} />)}
           </div>
           {campo("Observação", <textarea rows={2} value={form.obs || ""} onChange={(e) => setForm({ ...form, obs: e.target.value })} style={{ ...s.input, resize: "vertical" }} />)}
+          {reprogramou && campo("Motivo da reprogramação *", <textarea rows={2} value={form.motivo || ""} onChange={(e) => setForm({ ...form, motivo: e.target.value })} placeholder="Ex.: pedido da funcionária, necessidade da operação…" style={{ ...s.input, resize: "vertical", ...(form.motivo?.trim() ? {} : { borderColor: C.warn }) }} />)}
           {analise?.avisos?.length > 0 && (() => { const cor = analise.bloqueia ? C.danger : analise.avisos.some((a) => a.nivel === "alerta") ? C.warn : C.border; return (
           <div style={{ border: `1px solid ${cor}`, borderRadius: 8, padding: "10px 12px", background: `${analise.bloqueia ? C.danger : analise.avisos.some((a) => a.nivel === "alerta") ? C.warn : C.accent}10` }}>
             <div style={{ fontSize: 12, fontWeight: 700, marginBottom: 4 }}>🧠 Analista</div>
-            {analise.avisos.map((a, i) => <div key={i} style={{ fontSize: 12.5, color: a.nivel === "erro" ? C.danger : a.nivel === "alerta" ? C.warn : a.nivel === "ok" ? "#22c55e" : C.text, marginTop: 3, fontWeight: a.nivel === "erro" ? 600 : 400 }}>{a.nivel === "erro" ? "❌" : a.nivel === "alerta" ? "⚠" : a.nivel === "ok" ? "✓" : "💡"} {a.texto}</div>)}
+            {analise.avisos.map((a, i) => <div key={i} style={{ fontSize: 12.5, color: a.nivel === "erro" ? C.danger : a.nivel === "alerta" ? C.warn : a.nivel === "ok" ? "#22c55e" : C.text, marginTop: 3, fontWeight: a.nivel === "erro" ? 600 : 400 }}>{a.link?.tela ? <button type="button" onClick={() => { setForm(null); irPara(a.link); }} style={{ float: "right", background: "none", border: "none", color: C.accent, cursor: "pointer", fontSize: 11.5, padding: 0, fontFamily: "inherit" }}>abrir →</button> : null}{a.nivel === "erro" ? "❌" : a.nivel === "alerta" ? "⚠" : a.nivel === "ok" ? "✓" : "💡"} {a.texto}</div>)}
             <div style={{ fontSize: 11, color: C.muted, marginTop: 6 }}>{analise.bloqueia ? "❌ Em desacordo com a legislação — ajuste as datas para salvar." : analise.avisos.some((a) => a.nivel === "alerta") ? "⚠ São lembretes — você pode salvar mesmo assim." : ""}</div>
           </div>); })()}
           {erroForm && <div style={{ color: C.danger, fontSize: 13 }}>⚠ {erroForm}</div>}
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>
             <button onClick={() => setForm(null)} disabled={salvando} style={{ ...s.btn(false), cursor: "pointer" }}>Cancelar</button>
-            <button onClick={salvar} disabled={salvando || !form.inicio || !form.fim || fimAntes || !!analise?.bloqueia} title={analise?.bloqueia ? "Em desacordo com a legislação — veja o Analista" : undefined} style={{ ...s.btn(true), cursor: analise?.bloqueia || fimAntes ? "not-allowed" : "pointer", opacity: analise?.bloqueia || fimAntes ? 0.45 : 1 }}>{salvando ? "Salvando…" : "Salvar"}</button>
+            <button onClick={salvar} disabled={salvando || !form.inicio || !form.fim || fimAntes || (reprogramou && !form.motivo?.trim()) || !!analise?.bloqueia} title={analise?.bloqueia ? "Em desacordo com a legislação — veja o Analista" : undefined} style={{ ...s.btn(true), cursor: analise?.bloqueia || fimAntes ? "not-allowed" : "pointer", opacity: analise?.bloqueia || fimAntes ? 0.45 : 1 }}>{salvando ? "Salvando…" : "Salvar"}</button>
           </div>
         </div>
       </>, () => setForm(null), 560)}

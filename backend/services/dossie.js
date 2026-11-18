@@ -122,6 +122,9 @@ async function montar(supabase, tenantId, colab, { de, ate, secoes = SECOES } = 
       periodos: (sal?.periodos || []).map((p) => ({ rotulo: p.rotulo, inicio: p.inicio, fim: p.fim, limite: p.limite, direito: p.direito, faltas: p.faltas, gozado: p.gozado, programado: p.programado, saldo: p.saldo, situacao: p.situacao })),
       faltas: faltas.filter((f) => dentro(f.data)).map((f) => ({ data: f.data, dias: f.dias, obs: f.obs || null, por: f.criado_por_nome || null })),
       dias_ferias_periodo: lanc.filter((f) => dentro(f.inicio) || dentro(f.fim)).reduce((s, f) => s + (f.dias || 0), 0),
+      // B1.15: reprogramações e cancelamentos (com motivo)
+      alteracoes: (await tenta(() => FE.historicoDe(supabase, tenantId, { colaboradorId: colab.id }), [], /colaborador_ferias_historico/)).filter((h) => h.acao !== 'lancada' && dentro(String(h.em).slice(0, 10)))
+        .map((h) => ({ acao: h.acao, em: h.em, antes: h.antes, depois: h.depois, motivo: h.motivo, por: h.por_nome })),
     };
   }
   return out;

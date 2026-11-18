@@ -13,6 +13,7 @@ import ChecklistFiscal from './ChecklistFiscal'; // 18g.1
 import FichaCte from './FichaCte'; // 18g.6: a ficha abre direto do cartão
 const NOME_DOC = { nfe: 'NF-e', cte: 'CT-e', averbacao: 'averbação', mdfe: 'MDF-e' };
 import CampoPessoa from '../shared/CampoPessoa'; // 18g.2a
+import AvisoAusencia from '../shared/ausencias'; // B1.15: 🏖 responsável de férias no prazo
 import FiltroPeriodo, { faixaPeriodo } from '../shared/FiltroPeriodo'; // 18g.2b
 import { resumoTarefas, dataBase, abrirRelatorioTarefas, csvTarefas, TIPOS_REL } from '../../utils/gerarRelatorioTarefas'; // 18g.2b
 
@@ -320,6 +321,7 @@ export default function TelaPlanoAcaoNova({ onVoltar, C, s, ambienteInicial = 't
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
                 <div><label style={s.label}>RESPONSÁVEL</label><CampoPessoa C={C} s={s} pessoas={gente.pessoas} valor={{ nome: form.responsavel, ref: form.responsavel_ref }} onChange={(v) => setForm((f) => ({ ...f, responsavel: v.nome, responsavel_ref: v.ref }))} placeholder="Digite o nome…" /></div>
                 <div><label style={s.label}>PRAZO *</label><input type="date" aria-label="Prazo" value={form.prazo} onChange={(e) => setForm((f) => ({ ...f, prazo: e.target.value }))} style={s.input} /></div>
+                {form.responsavel_ref && form.prazo && <div style={{ gridColumn: '1 / -1' }}><AvisoAusencia C={C} pessoa={{ colaborador_id: String(form.responsavel_ref).startsWith('c:') ? String(form.responsavel_ref).slice(2) : null, usuario_id: String(form.responsavel_ref).startsWith('u:') ? String(form.responsavel_ref).slice(2) : null, nome: form.responsavel }} de={form.prazo} ate={form.prazo} oque="o prazo ou o responsável" /></div>}{/* B1.15 */}
               </div>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 14 }}>
                 <select value={form.prioridade} onChange={(e) => setForm((f) => ({ ...f, prioridade: e.target.value }))} style={{ ...s.input, appearance: 'none' }}>

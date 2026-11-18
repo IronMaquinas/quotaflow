@@ -12,6 +12,7 @@ import { SELO } from "./FichaAT";
 import VerArquivo, { ChipDoc, TXT_DOC } from "./VerArquivo";
 import EditorFluxo, { fluxoPadrao, fluxoServe } from "./EditorFluxo";
 import { SeletorPessoa } from "../shared/CampoPessoa"; // 18g.2c: escolher pessoa digitando
+import AvisoAusencia from "../shared/ausencias"; // B1.15: 🏖 motorista de férias no período
 
 const FISCAIS = [["nfe", "NF-e"], ["cte", "CT-e"], ["mdfe", "MDF-e"]];
 const local = (iso) => (iso ? new Date(new Date(iso).getTime() - 3 * 3600000).toISOString().slice(0, 16) : "");
@@ -149,7 +150,7 @@ export default function EditorAT({ C, s, pv, trecho, itemId, atual: atual0, base
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 8 }}>{lbl("🏁 ENTREGA", <input value={f.entrega} onChange={(e) => set("entrega", e.target.value)} style={s.input} />, "1 1 340px")}{lbl("DATA E HORA DA ENTREGA", <input type="datetime-local" value={f.fim} min={f.inicio || undefined} onChange={(e) => set("fim", e.target.value)} style={s.input} />, "0 1 200px")}</div>
 
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginTop: 12 }}>
-          {lbl("MOTORISTA", <SeletorPessoa C={C} s={s} rotulo="Motorista" vazio="— a definir —" estilo={borda(cfMot)} opcoes={base.motoristas.map((m) => ({ id: m.id, nome: `${(SELO[m.selo?.nivel] || SELO.sem_funcao)[0]} ${m.nome}`, detalhe: [m.vinculo === "agregado" ? "🚚 agregado" : m.vinculo === "terceiro" ? "terceiro" : null, m.funcao, m.cnh ? `CNH ${m.cnh}` : null, m.motorista ? null : "não é da função motorista"].filter(Boolean).join(" · ") || null }))} valor={f.motorista_id} onChange={(id) => set("motorista_id", id)} />, "1 1 100%")}
+          {lbl("MOTORISTA", <><SeletorPessoa C={C} s={s} rotulo="Motorista" vazio="— a definir —" estilo={borda(cfMot)} opcoes={base.motoristas.map((m) => ({ id: m.id, nome: `${(SELO[m.selo?.nivel] || SELO.sem_funcao)[0]} ${m.nome}`, detalhe: [m.vinculo === "agregado" ? "🚚 agregado" : m.vinculo === "terceiro" ? "terceiro" : null, m.funcao, m.cnh ? `CNH ${m.cnh}` : null, m.motorista ? null : "não é da função motorista"].filter(Boolean).join(" · ") || null }))} valor={f.motorista_id} onChange={(id) => set("motorista_id", id)} /><AvisoAusencia C={C} pessoa={f.motorista_id ? { colaborador_id: f.motorista_id, nome: mot?.nome } : null} de={f.inicio ? f.inicio.slice(0, 10) : null} ate={f.fim ? f.fim.slice(0, 10) : null} oque="a AT (troque o motorista ou as datas)" /></>, "1 1 100%")}{/* B1.15 */}
           {lbl("CAVALO (TRATOR) *", <select value={f.cavalo_id} onChange={(e) => set("cavalo_id", e.target.value)} style={{ ...s.input, ...borda(cfEq(f.cavalo_id)) }}>{optEq([String(f.impl1), String(f.impl2)])}</select>)}
           {lbl("IMPLEMENTO 1", <select value={f.impl1} onChange={(e) => set("impl1", e.target.value)} style={{ ...s.input, ...borda(cfEq(f.impl1)) }}>{optEq([String(f.cavalo_id), String(f.impl2)])}</select>)}
           {lbl("IMPLEMENTO 2", <select value={f.impl2} onChange={(e) => set("impl2", e.target.value)} style={{ ...s.input, ...borda(cfEq(f.impl2)) }}>{optEq([String(f.cavalo_id), String(f.impl1)])}</select>)}

@@ -131,6 +131,12 @@ async function ferias(c) { // B1.6: 🏖 férias vencidas / vencendo (regras do 
   const alertas = [...venc.map((x) => ({ nivel: 'critico', icone: '🏖', titulo: `Férias vencidas — ${x.nome}`, detalhe: `${x.a_gozar} dia(s) sem gozar · ${s.regras.includes('CLT') ? 'paga em dobro' : 'fora do prazo'}`, link: { tela: 'pessoas', aba: 'ferias' } })),
     ...[...crit, ...vindo].sort((a, b) => String(a.proximo_limite).localeCompare(String(b.proximo_limite))).map((x) => ({ nivel: 'atencao', icone: '🏖', titulo: `Risco: férias de ${x.nome} vencem em ${dBR(x.proximo_limite)}`, detalhe: `${x.a_gozar} dia(s) sem programar${x.atual?.sair_ate ? ` · sair até ${dBR(x.atual.sair_ate)}` : ''}`, link: { tela: 'pessoas', aba: 'ferias' } }))].slice(0, 8);
   const prioridades = [];
+  // B1.15: férias que batem com AT / OS / tarefa / turma (próximos 90 dias) — ⚠ revise a programação
+  try { const hoje = FE.hojeBR(); const ate = new Date(Date.parse(hoje) + 90 * 864e5).toISOString().slice(0, 10);
+    const colabs = new Map((await c.sb.from('colaboradores').select('*').eq('tenant_id', c.tenantId)).data?.map((x) => [String(x.id), x]) || []);
+    for (const a of await FE.ausencias(c.sb, c.tenantId, hoje, ate)) { const col = colabs.get(String(a.colaborador_id)); if (!col) continue;
+      for (const x of (await FE.conflitos(c.sb, c.tenantId, col, a.inicio, a.fim)).filter((k) => k.tipo !== 'mesma_funcao').slice(0, 2))
+        alertas.push({ nivel: 'atencao', icone: '🏖', titulo: `${col.nome} estará de férias (${dBR(a.inicio)} a ${dBR(a.fim)})`, detalhe: x.texto, link: x.link }); } } catch { /* sem 109/tabelas */ }
   return { alertas, prioridades, kpis: { ferias_vencidas: venc.length, ferias_vencendo: crit.length + vindo.length } };
 }
 

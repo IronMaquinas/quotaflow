@@ -4,11 +4,13 @@
 // Não muda o plano: as próximas OS geradas seguem o responsável do plano.
 import { useState } from "react";
 import apiService from "../../services/apiService";
+import AvisoAusencia, { useAusencias, ausenciasDe } from "../shared/ausencias"; // B1.15: 🏖 responsável de férias na data da OS
 
 export default function ModalTransferirOS({ C, s, os, usuarios = [], onFechar, onTransferido }) {
   const [para, setPara] = useState("");
   const [motivo, setMotivo] = useState("");
   const [salvando, setSalvando] = useState(false);
+  const aus = useAusencias(); const de = os.data_inicio_prevista || os.inicio || null; const ate = os.data_fim_prevista || os.fim || de;
   const [erro, setErro] = useState("");
   const atual = os.responsavel_id ? usuarios.find((u) => String(u.id) === String(os.responsavel_id)) : null;
   const titulo = os.responsavel_id ? "⇄ Transferir responsável" : "👤 Definir responsável";
@@ -34,8 +36,9 @@ export default function ModalTransferirOS({ C, s, os, usuarios = [], onFechar, o
           <span style={s.label}>NOVO RESPONSÁVEL</span>
           <select value={para} onChange={(e) => setPara(e.target.value)} style={s.input}>
             <option value="">Escolha…</option>
-            {usuarios.filter((u) => String(u.id) !== String(os.responsavel_id || "")).map((u) => <option key={u.id} value={u.id}>{u.nome}</option>)}
+            {usuarios.filter((u) => String(u.id) !== String(os.responsavel_id || "")).map((u) => <option key={u.id} value={u.id}>{u.nome}{de && ausenciasDe(aus, { usuario_id: u.id, nome: u.nome }, de, ate).length ? " — 🏖 de férias" : ""}</option>)}
           </select>
+          {para && de && <AvisoAusencia C={C} pessoa={{ usuario_id: para, nome: usuarios.find((u) => String(u.id) === String(para))?.nome }} de={de} ate={ate} oque="a OS (escolha outro responsável ou mude a data)" />}
         </label>
         <label style={{ display: "block", marginTop: 12 }}>
           <span style={s.label}>MOTIVO (OPCIONAL — VAI PARA O HISTÓRICO DA OS)</span>

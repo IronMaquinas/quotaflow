@@ -9,6 +9,11 @@
 //   início antes de feriado/domingo, limite). B1.7: o que a LEI proíbe vira ❌ erro e bloqueia o salvar (passa do saldo, fracionamento,
 //   abono acima de 1/3, início antes de feriado/repouso) — exceto férias já passadas (registro histórico). O resto é lembrete.
 const REGRAS = require('./feriasRegras');
+// B1.15: 👁 ficha (detalhe só leitura), ✏ reprogramar com MOTIVO e ✕ cancelar com motivo (não apaga — colaborador_ferias_historico,
+//   migration 109; cancelada sai do saldo e das listas), ⚠ conflitos com a agenda (ATs como motorista, OS como responsável,
+//   tarefas com prazo no período, turmas de treinamento, outro da MESMA FUNÇÃO de férias no mesmo período) — avisa, não trava.
+//   ausencias(): quem está de férias num intervalo — usado na AT, OS, tarefas, turmas e na busca de pessoas (🏖 férias até…).
+const ativa = (f) => !f.cancelada_em;
 async function q(p) { const { data, error } = await p; if (error) throw new Error(error.message); return data || []; }
 const hojeBR = () => new Date(Date.now() - 3 * 36e5).toISOString().slice(0, 10);
 const d10 = (v) => (v ? String(v).slice(0, 10) : null);
@@ -41,7 +46,7 @@ async function listar(sb, tenantId, { colaboradorId = null } = {}) {
 /** colaboradorId → { fim } de quem está de férias hoje */
 async function deFeriasHoje(sb, tenantId) {
   const hoje = hojeBR(); const m = new Map();
-  for (const f of await q(sb.from('colaborador_ferias').select('*').eq('tenant_id', tenantId))) if (situacao(f, hoje) === 'em_gozo') m.set(String(f.colaborador_id), { fim: d10(f.fim) });
+  for (const f of (await q(sb.from('colaborador_ferias').select('*').eq('tenant_id', tenantId))).filter(ativa)) if (situacao(f, hoje) === 'em_gozo') m.set(String(f.colaborador_id), { fim: d10(f.fim) });
   return m;
 }
 
@@ -54,7 +59,7 @@ async function validar(sb, tenantId, dados, id = null) {
   const ab = Number(dados.abono_dias || 0); if (!(ab >= 0 && ab <= 10)) return 'Abono (dias vendidos) vai de 0 a 10.';
   const colab = (await q(sb.from('colaboradores').select('id, nome').eq('tenant_id', tenantId).eq('id', dados.colaborador_id)))[0];
   if (!colab) return 'Funcionário não encontrado.';
-  const outros = (await q(sb.from('colaborador_ferias').select('*').eq('tenant_id', tenantId).eq('colaborador_id', dados.colaborador_id))).filter((f) => !id || String(f.id) !== String(id));
+  const outros = (await q(sb.from('colaborador_ferias').select('*').eq('tenant_id', tenantId).eq('colaborador_id', dados.colaborador_id))).filter((f) => ativa(f) && (!id || String(f.id) !== String(id)));
   const choca = outros.find((f) => !(fim < d10(f.inicio) || inicio > d10(f.fim)));
   if (choca) return { status: 409, erro: `${colab.nome} já tem férias de ${d10(choca.inicio).split('-').reverse().join('/')} a ${d10(choca.fim).split('-').reverse().join('/')} — os períodos se sobrepõem.` };
   return null;
@@ -66,24 +71,92 @@ async function criar(sb, tenantId, dados, porNome) {
   const v = await validar(sb, tenantId, dados); if (v) return typeof v === 'string' ? { status: 400, erro: v } : v;
   const lei = await bloqueioLegal(sb, tenantId, dados); if (lei) return lei;
   const r = await q(sb.from('colaborador_ferias').insert([{ tenant_id: tenantId, ...campos(dados), criado_por_nome: porNome || null }]).select());
+  await historico(sb, tenantId, r[0], 'lancada', null, foto(r[0]), null, porNome);
   return { ferias: r[0] };
 }
-async function atualizar(sb, tenantId, id, dados) {
+async function atualizar(sb, tenantId, id, dados, { motivo = null, porNome = null } = {}) {
   const atual = (await q(sb.from('colaborador_ferias').select('*').eq('tenant_id', tenantId).eq('id', id)))[0];
   if (!atual) return { status: 404, erro: 'Férias não encontradas.' };
+  if (atual.cancelada_em) return { status: 409, erro: 'Férias canceladas não podem ser editadas.' };
+  const mudou = ['inicio', 'fim'].some((k) => dados[k] && d10(dados[k]) !== d10(atual[k])) || (dados.abono_dias != null && Number(dados.abono_dias) !== Number(atual.abono_dias || 0));
+  if (mudou && !String(motivo || '').trim()) return { status: 400, erro: 'Informe o motivo da reprogramação.' }; // B1.15
   const novo = { ...atual, ...dados };
   const v = await validar(sb, tenantId, novo, id); if (v) return typeof v === 'string' ? { status: 400, erro: v } : v;
   const lei = await bloqueioLegal(sb, tenantId, novo, id); if (lei) return lei;
   const r = await q(sb.from('colaborador_ferias').update({ ...campos(novo), atualizado_em: new Date().toISOString() }).eq('tenant_id', tenantId).eq('id', id).select());
+  if (mudou) await historico(sb, tenantId, atual, 'reprogramada', foto(atual), foto(r[0]), motivo, porNome);
   return { ferias: r[0] };
 }
 async function bloqueioLegal(sb, tenantId, dados, id = null) { // B1.7
   try { const a = await analisar(sb, tenantId, dados, id); const e = a.avisos.filter((x) => x.nivel === 'erro'); return e.length ? { status: 409, erro: e.map((x) => x.texto).join(' '), avisos: a.avisos } : null; }
   catch { return null; } // sem a 106: não bloqueia
 }
-async function excluir(sb, tenantId, id) {
+async function excluir(sb, tenantId, id) { // só para testes/limpeza — a tela usa cancelar()
   await q(sb.from('colaborador_ferias').delete().eq('tenant_id', tenantId).eq('id', id));
   return { ok: true };
+}
+const foto = (f) => ({ inicio: d10(f.inicio), fim: d10(f.fim), dias: dias(d10(f.inicio), d10(f.fim)) + 1, abono_dias: Number(f.abono_dias || 0), obs: f.obs || null });
+async function historico(sb, tenantId, f, acao, antes, depois, motivo, porNome) {
+  try { await q(sb.from('colaborador_ferias_historico').insert([{ tenant_id: tenantId, ferias_id: f.id, colaborador_id: f.colaborador_id, acao, antes, depois, motivo: motivo ? String(motivo).trim() : null, por_nome: porNome || null, em: new Date().toISOString() }])); }
+  catch (e) { if (!/colaborador_ferias_historico/.test(String(e.message))) throw e; } // sem a 109: segue sem histórico
+}
+/** ✕ cancelar com motivo — não apaga; sai do saldo */
+async function cancelar(sb, tenantId, id, motivo, porNome) {
+  const atual = (await q(sb.from('colaborador_ferias').select('*').eq('tenant_id', tenantId).eq('id', id)))[0];
+  if (!atual) return { status: 404, erro: 'Férias não encontradas.' };
+  if (atual.cancelada_em) return { status: 409, erro: 'Estas férias já foram canceladas.' };
+  if (!String(motivo || '').trim()) return { status: 400, erro: 'Informe o motivo do cancelamento.' };
+  let r; try { r = await q(sb.from('colaborador_ferias').update({ cancelada_em: new Date().toISOString(), cancelada_por_nome: porNome || null, cancelamento_motivo: String(motivo).trim() }).eq('tenant_id', tenantId).eq('id', id).select()); }
+  catch (e) { if (/cancela/.test(String(e.message))) return { status: 409, erro: 'Falta rodar a migration 109 (histórico de férias) no banco.' }; throw e; }
+  await historico(sb, tenantId, atual, 'cancelada', foto(atual), null, motivo, porNome);
+  return { ferias: r[0] };
+}
+async function historicoDe(sb, tenantId, { feriasId = null, colaboradorId = null } = {}) {
+  try { let x = sb.from('colaborador_ferias_historico').select('*').eq('tenant_id', tenantId); if (feriasId) x = x.eq('ferias_id', feriasId); if (colaboradorId) x = x.eq('colaborador_id', colaboradorId);
+    return (await q(x)).sort((a, b) => String(a.em).localeCompare(String(b.em))); } catch { return []; }
+}
+
+// ⚠ conflitos com a agenda da pessoa (avisa, não trava)
+const sobrepoe = (a1, a2, b1, b2) => !(a2 < b1 || a1 > b2);
+async function conflitos(sb, tenantId, colab, inicio, fim, { excetoFeriasId = null } = {}) {
+  const out = []; const C = String(colab.id); const U = colab.usuario_id != null ? String(colab.usuario_id) : null; const quem = colab.nome.split(' ')[0];
+  const tenta = async (fn) => { try { await fn(); } catch { /* tabela ausente: ignora */ } };
+  await tenta(async () => { for (const a of await q(sb.from('execucoes').select('*').eq('tenant_id', tenantId))) {
+    if (String(a.motorista_id) !== C || !['programada', 'em_execucao', 'rascunho'].includes(a.status)) continue;
+    const i = d10(a.inicio_previsto), f = d10(a.fim_previsto) || i; if (i && sobrepoe(inicio, fim, i, f)) out.push({ tipo: 'at', texto: `${quem} é motorista da ${a.numero || 'AT'} (${dBR(i)}${f !== i ? ` a ${dBR(f)}` : ''}${a.cliente_nome ? ` · ${a.cliente_nome}` : ''}) — revise a programação.`, link: { tela: 'programacao' } }); } });
+  await tenta(async () => { if (!U) return; for (const o of await q(sb.from('chamados').select('*').eq('tenant_id', tenantId))) {
+    if (String(o.responsavel_id) !== U || o.concluida_em || ['cancelada', 'cancelado', 'concluida', 'finalizada'].includes(o.status)) continue;
+    const i = d10(o.data_inicio_prevista), f = d10(o.data_fim_prevista) || i; if (i && sobrepoe(inicio, fim, i, f)) out.push({ tipo: 'os', texto: `${quem} é responsável pela OS ${o.numero || ''} (${dBR(i)}${f !== i ? ` a ${dBR(f)}` : ''}) — revise a programação.`, link: { tela: 'calendario' } }); } });
+  await tenta(async () => { if (!U) return; for (const t of await q(sb.from('tarefas').select('*').eq('tenant_id', tenantId))) {
+    if (String(t.responsavel_usuario_id) !== U || !['pendente', 'em_andamento'].includes(t.status)) continue;
+    const p = d10(t.prazo); if (p && p >= inicio && p <= fim) out.push({ tipo: 'tarefa', texto: `${quem} tem a tarefa ${t.numero ? `${t.numero} ` : ''}"${t.titulo || 'tarefa'}" com prazo ${dBR(p)} — reatribua ou mude o prazo.`, link: { tela: 'plano' } }); } });
+  await tenta(async () => { const ps = (await q(sb.from('treinamento_participacoes').select('*').eq('tenant_id', tenantId))).filter((p) => String(p.colaborador_id) === C); if (!ps.length) return;
+    const ts = new Map((await q(sb.from('treinamento_turmas').select('*').eq('tenant_id', tenantId))).map((x) => [String(x.id), x]));
+    for (const p of ps) { const t = ts.get(String(p.turma_id)); if (!t || ['concluida', 'cancelada'].includes(t.status)) continue; const i = d10(t.data), f = d10(t.data_fim) || i;
+      if (i && sobrepoe(inicio, fim, i, f)) out.push({ tipo: 'treinamento', texto: `${quem} está inscrito(a) na turma "${t.treinamento_nome || 'treinamento'}" de ${dBR(i)} — reagende ou troque a turma.`, link: { tela: 'pessoas', aba: 'treinamentos' } }); } });
+  await tenta(async () => { // mesma função de férias no mesmo período
+    if (!colab.funcao_id && !colab.funcao) return;
+    const mesma = (await q(sb.from('colaboradores').select('*').eq('tenant_id', tenantId))).filter((c) => String(c.id) !== C && c.situacao !== 'desligado' && (colab.funcao_id ? String(c.funcao_id) === String(colab.funcao_id) : c.funcao === colab.funcao));
+    if (!mesma.length) return; const ids = new Set(mesma.map((c) => String(c.id)));
+    for (const f of (await q(sb.from('colaborador_ferias').select('*').eq('tenant_id', tenantId))).filter((x) => ativa(x) && ids.has(String(x.colaborador_id)) && String(x.id) !== String(excetoFeriasId))) {
+      if (sobrepoe(inicio, fim, d10(f.inicio), d10(f.fim))) { const o = mesma.find((c) => String(c.id) === String(f.colaborador_id)); out.push({ tipo: 'mesma_funcao', texto: `${o.nome} também é ${colab.funcao || 'da mesma função'} e está de férias de ${dBR(f.inicio)} a ${dBR(f.fim)} — ${mesma.length + 1} na função; confira a cobertura.`, link: { tela: 'pessoas', aba: 'ferias' } }); } } });
+  return out;
+}
+
+/** 👁 ficha das férias (só leitura): dados + histórico + conflitos */
+async function detalhe(sb, tenantId, id) {
+  const f = (await q(sb.from('colaborador_ferias').select('*').eq('tenant_id', tenantId).eq('id', id)))[0]; if (!f) return { status: 404, erro: 'Férias não encontradas.' };
+  const colabs = await q(sb.from('colaboradores').select('*').eq('tenant_id', tenantId)); const c = colabs.find((x) => String(x.id) === String(f.colaborador_id)) || { id: f.colaborador_id, nome: '—' };
+  const lista = await listar(sb, tenantId, { colaboradorId: f.colaborador_id }); const e = lista.find((x) => String(x.id) === String(id)) || enriquecer(f, colabs);
+  return { ferias: { ...e, cancelada_em: f.cancelada_em || null, cancelada_por_nome: f.cancelada_por_nome || null, cancelamento_motivo: f.cancelamento_motivo || null, criado_em: f.criado_em || null, criado_por_nome: f.criado_por_nome || null },
+    historico: await historicoDe(sb, tenantId, { feriasId: id }), conflitos: f.cancelada_em ? [] : await conflitos(sb, tenantId, c, d10(f.inicio), d10(f.fim), { excetoFeriasId: id }) };
+}
+
+/** 🏖 quem está de férias num intervalo (para AT, OS, tarefas, turmas e a busca de pessoas) */
+async function ausencias(sb, tenantId, de, ate) {
+  const colabs = new Map((await q(sb.from('colaboradores').select('*').eq('tenant_id', tenantId))).map((c) => [String(c.id), c]));
+  return (await q(sb.from('colaborador_ferias').select('*').eq('tenant_id', tenantId))).filter((f) => ativa(f) && sobrepoe(de, ate, d10(f.inicio), d10(f.fim)))
+    .map((f) => { const c = colabs.get(String(f.colaborador_id)) || {}; return { tipo: 'ferias', colaborador_id: f.colaborador_id, usuario_id: c.usuario_id ?? null, nome: c.nome || '—', inicio: d10(f.inicio), fim: d10(f.fim) }; });
 }
 
 
@@ -125,7 +198,8 @@ function montarPeriodos({ admissao, ferias, faltas, colabId, R, hoje, controleDe
 }
 
 async function contexto(sb, tenantId) {
-  const [R, ferias, faltas, colabs] = await Promise.all([regrasDoTenant(sb, tenantId), q(sb.from('colaborador_ferias').select('*').eq('tenant_id', tenantId)), faltasDe(sb, tenantId), q(sb.from('colaboradores').select('*').eq('tenant_id', tenantId))]);
+  const [R, ferias0, faltas, colabs] = await Promise.all([regrasDoTenant(sb, tenantId), q(sb.from('colaborador_ferias').select('*').eq('tenant_id', tenantId)), faltasDe(sb, tenantId), q(sb.from('colaboradores').select('*').eq('tenant_id', tenantId))]);
+  const ferias = ferias0.filter(ativa); // B1.15
   const hoje = hojeBR();
   const primeiro = ferias.map((f) => d10(f.criado_em) || d10(f.inicio)).filter(Boolean).sort()[0];
   // B1.13: calendário de início proibido (2 dias antes de feriado ou repouso) e "sair até" (último início que ainda cabe no prazo)
@@ -232,6 +306,7 @@ async function analisar(sb, tenantId, dados = {}, id = null) {
   if (dias(hoje, inicio) < R.avisoPrevioDias && inicio >= hoje) A('alerta', `Começa em ${dias(hoje, inicio)} dia(s) — a comunicação ao funcionário deve ser feita por escrito com ${R.avisoPrevioDias} dias de antecedência.`);
   const v = C2.vedado(inicio);
   if (v) A('erro', `Não pode começar em ${dBR(inicio)}: ${v} — a lei proíbe início nos ${R.inicioVedadoAntesDeDescanso} dias antes de feriado ou do repouso semanal (escala: ${ctx.escalaTxt(c)}).${C2.ultimaSaida(inicio, 1, '0000-01-01') ? ` Antecipe para ${dBR(C2.ultimaSaida(inicio, 1, '0000-01-01'))}.` : ''}`);
+  try { for (const x of await conflitos(sb, tenantId, c, inicio, fim, { excetoFeriasId: id })) avisos.push({ nivel: 'alerta', texto: x.texto, link: x.link, conflito: x.tipo }); } catch { /* ok */ } // B1.15
   if (!C2.descanso) A('info', `Escala ${ctx.escalaTxt(c)}: confira se o início não cai nos 2 dias antes da folga do funcionário.`);
   if (fim < hoje) for (const a of avisos) if (a.nivel === 'erro') a.nivel = 'alerta'; // registro de férias passadas: não bloqueia
   return { bloqueia: avisos.some((a) => a.nivel === 'erro'), periodo: p ? { rotulo: p.rotulo, inicio: p.inicio, fim: p.fim, abre: somaDias(p.fim, 1), limite: p.limite, direito: p.direito, faltas: p.faltas, saldo_depois: p.saldo } : null, avisos };
@@ -252,4 +327,4 @@ async function registrarFalta(sb, tenantId, colaboradorId, d = {}, porNome) {
 }
 async function excluirFalta(sb, tenantId, id) { await q(sb.from('colaborador_faltas').delete().eq('tenant_id', tenantId).eq('id', id)); return { ok: true }; }
 
-module.exports = { listar, criar, atualizar, excluir, deFeriasHoje, situacao, enriquecer, hojeBR, saldos, analisar, montarPeriodos, listarFaltas, registrarFalta, excluirFalta, somaMeses };
+module.exports = { cancelar, detalhe, conflitos, ausencias, historicoDe, listar, criar, atualizar, excluir, deFeriasHoje, situacao, enriquecer, hojeBR, saldos, analisar, montarPeriodos, listarFaltas, registrarFalta, excluirFalta, somaMeses };

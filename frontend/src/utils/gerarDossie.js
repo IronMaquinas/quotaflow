@@ -173,6 +173,10 @@ export function gerarHtmlDossie(d) {
       ${fe.lancamentos.length ? `<table><thead><tr><th>Saída</th><th>Último dia</th><th>Retorno</th><th>Dias</th><th>Vendidos</th><th>Período aquisitivo</th><th>Situação</th><th>Lançado por</th></tr></thead><tbody>
         ${fe.lancamentos.map((f) => `<tr><td>${dBR(f.inicio)}</td><td>${dBR(f.fim)}</td><td>${dBR(f.retorno)}</td><td>${f.dias}</td><td>${f.abono_dias || "—"}</td><td>${esc(f.periodo || "—")}</td><td>${esc(SITF[f.situacao] || f.situacao)}</td><td>${esc(f.lancado_por || "—")}${f.obs ? `<br/><span style="color:#666">${esc(f.obs)}</span>` : ""}</td></tr>`).join("")}
         </tbody></table>` : `<div class="vazio">Nenhuma férias no período.</div>`}
+      ${(fe.alteracoes || []).length ? `<h3 style="font-size:12px;margin:10px 0 4px">Reprogramações e cancelamentos</h3>
+      <table><thead><tr><th>Quando</th><th>O quê</th><th>Antes</th><th>Depois</th><th>Motivo</th><th>Por</th></tr></thead><tbody>
+        ${fe.alteracoes.map((h) => `<tr><td>${dBR(String(h.em).slice(0, 10))}</td><td>${h.acao === "cancelada" ? "<b style=\"color:#dc2626\">cancelada</b>" : "reprogramada"}</td><td>${h.antes ? `${dBR(h.antes.inicio)} a ${dBR(h.antes.fim)}` : "—"}</td><td>${h.depois ? `${dBR(h.depois.inicio)} a ${dBR(h.depois.fim)}` : "—"}</td><td>${esc(h.motivo || "")}</td><td>${esc(h.por || "—")}</td></tr>`).join("")}
+        </tbody></table>` : ""}
       <h3 style="font-size:12px;margin:10px 0 4px">Faltas injustificadas</h3>
       ${fe.faltas.length ? `<table><thead><tr><th>Data</th><th>Dias</th><th>Observação</th><th>Registrado por</th></tr></thead><tbody>
         ${fe.faltas.map((f) => `<tr><td>${dBR(f.data)}</td><td>${f.dias}</td><td>${esc(f.obs || "")}</td><td>${esc(f.por || "—")}</td></tr>`).join("")}

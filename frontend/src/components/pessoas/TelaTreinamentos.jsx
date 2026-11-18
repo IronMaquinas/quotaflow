@@ -13,6 +13,7 @@
 import { useState, useEffect, useMemo } from "react";
 import EditorConteudoTreinamento, { limparConteudo } from "../shared/EditorConteudoTreinamento";
 import apiService from "../../services/apiService";
+import { useAusencias, ausenciasDe, dBR as dBRa } from "../shared/ausencias"; // B1.15: 🏖 participante de férias na data da turma
 import AssinaturaTela from "../shared/AssinaturaTela";
 import { abrirListaPresenca, prepararJanela } from "../../utils/gerarListaPresenca";
 import { abrirCertificado, abrirAvaliacao, prepararJanela as janelaCert } from "../../utils/gerarCertificado"; // 12e.2c
@@ -43,6 +44,7 @@ export default function TelaTreinamentos({ C, s, modal, campo, colabs = [], onAv
   const [busca, setBusca] = useState("");
   const [formTr, setFormTr] = useState(null);    // catálogo
   const [formTurma, setFormTurma] = useState(null); // nova turma / registro manual
+  const ausencias = useAusencias(); // B1.15
   const [turma, setTurma] = useState(null);      // detalhe { turma, participantes }
   const [assinando, setAssinando] = useState(null); // participante
   const [assinatura, setAssinatura] = useState(null);
@@ -386,6 +388,7 @@ export default function TelaTreinamentos({ C, s, modal, campo, colabs = [], onAv
                       <input type="checkbox" checked={on} onChange={() => setFormTurma({ ...f, participantes: on ? f.participantes.filter((x) => x !== String(c.id)) : [...f.participantes, String(c.id)] })} />
                       {c.nome}<span style={{ color: C.muted }}>{c.funcao_nome || c.funcao ? ` · ${c.funcao_nome || c.funcao}` : ""}</span>
                       {sugeridos.has(String(c.id)) && <span style={s.tag("#f59e0b")}>precisa</span>}
+                      {!manual && f.data && (() => { const a = ausenciasDe(ausencias, { colaborador_id: c.id }, f.data, f.data_fim || f.data)[0]; return a ? <span style={s.tag("#f59e0b")} title="Revise a data da turma ou o participante">🏖 de férias {dBRa(a.inicio).slice(0, 5)}–{dBRa(a.fim).slice(0, 5)}</span> : null; })()}
                     </label>
                   );
                 })}
