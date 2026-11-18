@@ -396,7 +396,7 @@ const ESPERADO = {
   'services/beta.js': 'ceff018bc1308a9782dcd00c099eb2aa', // etapa B2.0
   'routes/beta.js': 'dae7ee687adabe756999ee3085c3c984', // etapa B1.9
   'front:Beta.jsx': '7a05b8775e8eb9ea334089b38598d383', // etapa B2.0
-  'services/betaConsultas.js': 'e27b4047c7d9d89831a894c9dde83e1e', // etapa B2.0
+  'services/betaConsultas.js': '09994aef4fbb4ba30695f9971ee77e71', // etapa B2.1
   'services/ferias.js': '76e0c2b2b6a32df76c98479bbf9e1c2a', // etapa B1.15
   'migrations/105_colaborador_ferias.sql': '35db94dbde383bdedd3080434704e697', // etapa B1.7
   'front:TelaFerias.jsx': '5ca20567b45bc7accc6bac86909ed57c', // etapa B1.15
@@ -423,21 +423,9 @@ const ESPERADO = {
   'front:TelaEquipamentos.jsx': '9ae0de5715f8d3099c29b6979863faef', // etapa B2.0
 };
 
-// Antes de copiar a etapa B2.0 — base: B1.15 (7cec2be)
+// Antes de copiar a etapa B2.1 — base: B2.0 (cdfe693)
 const ANTES = {
-  'services/beta.js': '1ca4abd5fc2adaa0604a6162702611c9',
-  'services/betaConsultas.js': '7dcd3d61bcb60964a072cb3c5cf1a9d0',
-  'services/ia/index.js': '9192dbed73bc49300036c29c8194cc2c',
-  'services/execucoes.js': '5c7e29441a16b289582580f869904c26',
-  'services/salaControle/index.js': '37741c537221cca5bfcc584470516710',
-  'services/avisosPessoas.js': '613b518646500b4f3a2bd0a2434de2f0',
-  'routes/plataforma.js': '25cf4261bb0d342a67b792f952974457',
-  'server.js': '77bce892e648e38d1da85719bbce8b92',
-  'front:TelaConfiguracoes.jsx': '550408ca2e516f3e7e2c3c8c9a19728f',
-  'front:TelaEquipamentos.jsx': 'e75452e6ebc694cbb2be55fe390511f3',
-  'front:EditorAT.jsx': '99a84251e457c761bd13fac612ec4b40',
-  'front:ConsolePlataforma.jsx': 'd9a85b530bb96bda55da011e59997806',
-  'front:Beta.jsx': 'c1700cfd34e366fad148a286e5efa6a7',
+  'services/betaConsultas.js': 'e27b4047c7d9d89831a894c9dde83e1e',
 };
 
 const RAIZ = process.cwd();
@@ -475,7 +463,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a B2.0)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a B2.1)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

@@ -36,6 +36,9 @@ function achar(lista, termo, campos) {
   if (exatos.length) return exatos;
   return lista.filter((x) => { const n = norm(texto(x)); const nc = compacto(texto(x)); return palavras.every((p) => n.includes(p)) || (tc.length >= 3 && nc.includes(tc)); });
 }
+// B2.1: "hoje às 14h", "ontem às 10h", "anteontem", "em 12/11"
+const quandoRel = (iso) => { if (!iso) return 'há pouco'; const l = new Date(Date.parse(iso) - 3 * 36e5).toISOString(); const d = l.slice(0, 10); const h = l.slice(11, 16).replace(':00', 'h').replace(':', 'h'); const n = diasEntre(d, hojeBR());
+  return n <= 0 ? `hoje às ${h}` : n === 1 ? `ontem às ${h}` : n === 2 ? `anteontem às ${h}` : `em ${dBR(d)} às ${h}`; };
 const listaNomes = (xs, f, max = 5) => xs.slice(0, max).map(f).join(' · ') + (xs.length > max ? ` · e mais ${xs.length - max}` : '');
 const situacaoVenc = (v, hoje) => { if (!v) return 'sem vencimento'; const d = diasEntre(hoje, v); return d < 0 ? `⛔ venceu em ${dBR(v)} (há ${-d} dia(s))` : d === 0 ? `⚠ vence HOJE (${dBR(v)})` : d <= 30 ? `⚠ vence em ${dBR(v)} (em ${d} dia(s))` : `vence em ${dBR(v)} (em ${d} dias)`; };
 
@@ -365,12 +368,85 @@ const CONSULTAS = [
       const FASE = { elaboracao: '✏ em elaboração (ainda não enviado)', aguardando_cliente: '⏳ aguardando o cliente', revisao_solicitada: '↩ o cliente pediu revisão', aguardando_aceite: '⏳ proposta final aguardando aceite', aceito: '✅ ACEITO', perdido: '✕ perdido' };
       const l = [`${b.numero} — ${b.cliente_nome}${b.titulo ? ` · ${b.titulo}` : ''}`, `Situação: ${FASE[b.fase] || b.fase}${b.valor_total != null ? ` · ${brl(b.valor_total)}` : ''}`];
       if (b.enviado_em && b.fase !== 'elaboracao') l.push(`Enviado em ${dhBR(b.enviado_em)}${b.versao_enviada ? ` (versão ${b.versao_enviada})` : ''}.`);
-      if (['aguardando_cliente', 'aguardando_aceite', 'revisao_solicitada'].includes(b.fase)) l.push(b.visto_ultimo_em ? `👀 O cliente abriu ${b.visto_qtd || 1} vez(es) — a última em ${dhBR(b.visto_ultimo_em)}.` : '👀 O cliente ainda não abriu o link.');
-      if (b.respondido_em && b.fase === 'revisao_solicitada') l.push(`Respondeu em ${dhBR(b.respondido_em)}.`);
+      // B2.1: resposta direta, como alguém do comercial falaria
+      if (['aguardando_cliente', 'aguardando_aceite'].includes(b.fase)) l.unshift(b.visto_ultimo_em ? `👀 Leu ${quandoRel(b.visto_ultimo_em)}${(b.visto_qtd || 1) > 1 ? ` (abriu ${b.visto_qtd} vezes)` : ''}, mas ainda não respondeu.` : '📭 Ainda não abriu a proposta.');
+      if (b.fase === 'revisao_solicitada') l.unshift(`↩ Respondeu ${quandoRel(b.respondido_em || b.atualizado_em)} pedindo revisão${b.revisao_motivo || b.comentario_cliente ? `: "${String(b.revisao_motivo || b.comentario_cliente).slice(0, 160)}"` : ''}.`);
+      if (b.fase === 'aceito') l.unshift(`✅ Respondeu ${quandoRel(b.aceite_em || b.ganho_em)} — ACEITOU.`);
+      if (b.fase === 'perdido') l.unshift(`✕ Recusou / perdido${b.motivo_perda ? ` — ${b.motivo_perda}` : ''}.`);
       if (b.fase === 'aceito') l.push(`Aceito ${b.aceite_nome ? `por ${b.aceite_nome}${b.aceite_cargo ? ` (${b.aceite_cargo})` : ''} ` : ''}em ${dhBR(b.aceite_em || b.ganho_em)}.`);
       if (b.fase === 'perdido' && b.motivo_perda) l.push(`Motivo: ${b.motivo_perda}.`);
       if (b.valido_ate && !['aceito', 'perdido'].includes(b.fase)) l.push(`Validade da proposta: ${dBR(b.valido_ate)}${d10(b.valido_ate) < ctx.hoje ? ' (⚠ vencida)' : ''}.`);
       return { texto: l.join('\n'), link: { tela: 'comercial' } };
+    },
+  },
+  {
+    nome: 'documentacao_transporte',
+    descricao: 'Documentação fiscal do transporte (NF-e, CT-e, averbação, MDF-e) de um pedido/cliente/AT: o que já foi emitido e o que falta.',
+    args: { ref: 'nome do cliente, nº do pedido (PV) ou da AT' },
+    perfis: ['fiscal', 'financeiro', 'comercial', 'operacao'],
+    exemplo: 'Como está a documentação do transporte da Iron Maquinas?',
+    async executar(ctx, { ref }) { // B2.1: lê a tarefa fiscal (checklist) de cada trecho
+      const TF = require('./tarefasFiscais');
+      const pvs = (await q(ctx.sb.from('pedidos_venda').select('*').eq('tenant_id', ctx.tenantId))).filter((p) => p.status !== 'cancelado');
+      const ats = await q(ctx.sb.from('execucoes').select('*').eq('tenant_id', ctx.tenantId)).catch(() => []);
+      let alvo = []; const c = compacto(ref);
+      const at = ats.find((a) => compacto(a.numero) === c || (c.length >= 3 && compacto(a.numero).endsWith(c.replace(/^at/, ''))));
+      if (/^(at|pv|\d)/.test(c) && at) alvo = pvs.filter((p) => String(p.id) === String(at.pv_id)).map((p) => ({ pv: p, grupo: at.grupo_id }));
+      if (!alvo.length) { const xs = pvs.filter((p) => compacto(p.numero) === c || (c.length >= 3 && /\d/.test(c) && compacto(p.numero).endsWith(c.replace(/^pv/, '')))); alvo = xs.map((p) => ({ pv: p })); }
+      if (!alvo.length) { const xs = achar(pvs, ref, ['cliente_nome', 'titulo', 'referencia']).filter((p) => p.status !== 'concluido'); alvo = xs.map((p) => ({ pv: p })); }
+      if (!alvo.length) return { texto: `Não encontrei pedido de transporte em aberto de "${ref}".` };
+      const ts = (await q(ctx.sb.from('tarefas').select('*').eq('tenant_id', ctx.tenantId))).filter((x) => x.origem === 'fiscal' && x.status !== 'cancelada');
+      const IT = TF.ITENS; const l = [];
+      for (const { pv, grupo } of alvo.slice(0, 4)) {
+        const grupos = (pv.grupos || []).filter((g) => !grupo || String(g.id) === String(grupo));
+        for (const g of grupos) {
+          const tf = ts.find((x) => String(x.origem_ref) === `${pv.id}:${g.id}`); const titulo = `${pv.numero} · ${pv.cliente_nome || ''} · ${g.titulo || 'trecho'}`;
+          if (!tf) { l.push(`• ${titulo}: sem tarefa fiscal ainda (ela nasce com a programação).`); continue; }
+          const rs = TF.resumo(tf.checklist || {}); if (!rs) { l.push(`• ${titulo}: checklist vazio.`); continue; }
+          if (rs.dispensa) { l.push(`• ${titulo}: documentação dispensada — ${rs.dispensa.motivo || ''}`); continue; }
+          const marca = TF.ORDEM.map((k) => `${IT[k]} ${rs.itens[k] ? '✓' : '✗'}`).join(' · '); const falta = TF.ORDEM.filter((k) => !rs.itens[k]).map((k) => IT[k]);
+          const sit = !falta.length ? (rs.encerramento?.pendentes?.length ? '✅ emitida — falta encerrar o MDF-e' : '✅ completa') : rs.feitos ? `🟡 parcialmente emitida — falta ${falta.join(', ').replace(/, ([^,]*)$/, ' e $1').toLowerCase()}` : `⛔ nada emitido ainda — falta ${falta.join(', ')}`;
+          l.push(`• ${titulo}: ${sit}\n   ${marca}${tf.prazo ? ` · prazo ${dBR(tf.prazo)}` : ''}${rs.alertas?.length ? `\n   ⚠ ${rs.alertas[0]}` : ''}`);
+        }
+      }
+      return { texto: l.join('\n') || 'Sem trechos de transporte nesse pedido.', link: { tela: 'plano' } };
+    },
+  },
+  {
+    nome: 'situacao_os',
+    descricao: 'Situação da manutenção / OS (ordem de serviço) de um equipamento (por TAG, placa ou nome) ou pelo nº da OS: % concluída e o que falta.',
+    args: { ref: 'TAG/placa/nome do equipamento ou nº da OS' },
+    perfis: ['operacao', 'comprador'],
+    exemplo: 'Como está a manutenção da carreta CR-07?',
+    async executar(ctx, { ref }) { // B2.1: % pela mesma regra da tela da OS (material aplicado; serviço concluído ou horas apontadas ÷ previstas)
+      const chs = (await q(ctx.sb.from('chamados').select('*').eq('tenant_id', ctx.tenantId)).catch(() => []));
+      const eqs = await q(ctx.sb.from('equipamentos').select('*').eq('tenant_id', ctx.tenantId)).catch(() => []);
+      const aberta = (o) => !o.concluida_em && !['concluida', 'concluido', 'finalizada', 'finalizado', 'cancelada', 'cancelado', 'fechada'].includes(o.status);
+      const c = compacto(ref); let os = chs.filter((o) => o.numero && (compacto(o.numero) === c || (c.length >= 3 && /\d/.test(c) && compacto(o.numero).endsWith(c.replace(/^os/, '')))));
+      let eq = null;
+      if (!os.length) { let xs = achar(eqs, ref, ['tag', 'placa']); if (!xs.length) xs = achar(eqs, ref, ['nome']);
+        if (!xs.length) return { texto: `Não encontrei a OS nem o equipamento "${ref}".` };
+        if (xs.length > 1) return { texto: `Encontrei ${xs.length} equipamentos: ${listaNomes(xs, (e) => [e.tag, e.nome].filter(Boolean).join(' '))}. Qual deles?` };
+        eq = xs[0]; os = chs.filter((o) => String(o.equipamento_id) === String(eq.id) && aberta(o));
+        if (!os.length) { const ult = chs.filter((o) => String(o.equipamento_id) === String(eq.id)).sort((a, b) => String(b.concluida_em || b.criado_em || '').localeCompare(String(a.concluida_em || a.criado_em || '')))[0];
+          return { texto: `✅ ${[eq.tag, eq.nome].filter(Boolean).join(' — ')} não tem manutenção em aberto.${ult ? ` Última OS: ${ult.numero || ''} (${String(ult.status || '').replace(/_/g, ' ')}${ult.concluida_em ? `, concluída ${dBR(ult.concluida_em)}` : ''}).` : ''}${eq.bloqueado ? `\n⛔ Mas está BLOQUEADO na inspeção${eq.bloqueio_motivo ? ` (${eq.bloqueio_motivo})` : ''}.` : ''}`, link: { tela: 'equipamentos' } }; } }
+      const itensT = await q(ctx.sb.from('chamado_itens').select('*').eq('tenant_id', ctx.tenantId)).catch(() => []);
+      const apont = await q(ctx.sb.from('chamado_apontamentos').select('*').eq('tenant_id', ctx.tenantId)).catch(() => []);
+      const horas = (it) => apont.filter((a) => String(a.chamado_item_id) === String(it.id) && a.status === 'ativo'); const somaH = (xs) => xs.reduce((s, a) => s + ['horas_normais_diurnas', 'horas_normais_noturnas', 'horas_excepcionais', 'horas_extras_diurnas', 'horas_extras_noturnas'].reduce((t, k) => t + (parseFloat(a[k]) || 0), 0), 0);
+      const plan = (it) => { if (!it.data_inicio_prevista || !it.data_fim_prevista) return null; const h = (Date.parse(it.data_fim_prevista) - Date.parse(it.data_inicio_prevista)) / 36e5; return h > 0 ? h * (Number(it.qtd_pessoas_planejada) || 1) : null; };
+      const prog = (it) => { if (it.tipo === 'material') { if (it.status_aplicacao === 'nao_aplicado') return 1; const p = parseFloat(it.quantidade) || 0; return p > 0 ? Math.min(1, (parseFloat(it.quantidade_aplicada) || 0) / p) : 0; }
+        if (it.servico_concluido_manual) return 1; const h = horas(it); const pl = plan(it); if (pl == null) return h.length ? 1 : 0; const tot = somaH(h); return tot >= pl ? 1 : Math.min(0.99, tot / pl); };
+      const l = [];
+      for (const o of os.slice(0, 3)) {
+        const its = itensT.filter((i) => String(i.chamado_id) === String(o.id) && i.status !== 'cancelado'); const ps = its.map(prog);
+        const pct = its.length ? Math.round(ps.reduce((a, b) => a + b, 0) / its.length * 100) : (o.percentual_conclusao ?? null);
+        const e2 = eq || eqs.find((x) => String(x.id) === String(o.equipamento_id));
+        const falta = its.map((it, k) => [it, ps[k]]).filter(([, p]) => p < 1).map(([it, p]) => `${it.descricao || it.item_nome || it.nome || 'item'}${it.tipo === 'material' ? ` (material ${parseFloat(it.quantidade_aplicada) || 0}/${parseFloat(it.quantidade) || 0})` : p > 0 ? ` (${Math.round(p * 100)}% das horas)` : ''}`);
+        l.push(`🔧 ${o.numero || 'OS'}${e2 ? ` · ${[e2.tag, e2.nome].filter(Boolean).join(' — ')}` : ''} — ${String(o.status || 'aberta').replace(/_/g, ' ')}${pct != null ? ` · ${pct}% concluída` : ''}${o.data_fim_prevista ? ` · previsão ${dBR(o.data_fim_prevista)}` : ''}${o.responsavel ? ` · resp. ${o.responsavel}` : ''}`);
+        if (falta.length) l.push(`   Faltam: ${falta.slice(0, 6).join(' · ')}${falta.length > 6 ? ` · e mais ${falta.length - 6}` : ''}`); else if (its.length) l.push('   Todos os itens concluídos — falta encerrar a OS.');
+      }
+      if (os.length > 3) l.push(`…e mais ${os.length - 3} OS em aberto.`);
+      return { texto: l.join('\n'), link: { tela: 'equipamentos' } };
     },
   },
   {
@@ -411,6 +487,10 @@ async function rotearLocal(sb, ctx, texto, hist = []) {
   let m = String(texto).match(/\bAT[-\s]?(\d{2,})/i); if (m && ok('situacao_at')) return { consulta: 'situacao_at', args: { numero: m[0].replace(/\s/, '-') }, local: true };
   m = String(texto).match(/\bBID[-\s]?\d{2,}/i); if (m && ok('status_bid')) return { consulta: 'status_bid', args: { bid: m[0] }, local: true };
   m = s.match(/\b(?:cot|cotacao)(?: n[oº]?)?\s*(\d{1,})/); if (m && ok('status_cotacao')) return { consulta: 'status_cotacao', args: { numero: m[1] }, local: true };
+  m = String(texto).match(/\bOS[-\s]?\d{2,}[-\d]*/i); if (m && ok('situacao_os')) return { consulta: 'situacao_os', args: { ref: m[0] }, local: true }; // B2.1
+  if (/\b(manutencao|conserto|oficina)\b/.test(s) && ok('situacao_os')) { const eqs = await q(sb.from('equipamentos').select('id, tag, placa, nome').eq('tenant_id', ctx.tenantId)).catch(() => []);
+    const tok = String(texto).split(/[\s,?!.]+/).filter((w) => w.length >= 3 && /\d/.test(w)); const eq = eqs.find((e) => tok.some((w) => [e.tag, e.placa].filter(Boolean).some((x) => compacto(x) === compacto(w))));
+    if (eq) return { consulta: 'situacao_os', args: { ref: eq.tag || eq.placa }, local: true }; }
   if (/\b(livres?|disponive(l|is)|vagos?|desocupad[oa]s?|parad[oa]s? no patio)\b/.test(s)) {
     const eqs = await q(sb.from('equipamentos').select('id, tag, placa, nome').eq('tenant_id', ctx.tenantId)).catch(() => []);
     const tok = String(texto).split(/[\s,?!.]+/).filter((w) => w.length >= 3 && /\d/.test(w));
