@@ -137,7 +137,7 @@ export default function TelaFerias({ C, s, modal, campo, colabs = [], editar, ex
               {resumo.faltas_periodo > 5 && <div style={{ fontSize: 12, color: C.warn, marginTop: 4 }}>💡 {resumo.faltas_periodo} faltas injustificadas no período — o direito caiu.</div>}</>}
             </div>); })()}
           <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(150px, 1fr))", gap: 12 }}>
-            {campo("Início *", <input type="date" value={form.inicio} onChange={(e) => { const v = e.target.value; setForm({ ...form, inicio: v, fim: !form.fim || (v && form.fim < v) ? somaDias(v, 29) : form.fim }); }} style={s.input} />)}{/* B1.9: início depois do fim → fim recalculado */}
+            {campo("Início *", <input type="date" value={form.inicio} onChange={(e) => setForm({ ...form, inicio: e.target.value })} style={s.input} />)}{/* B1.12: o fim fica em branco até o gestor preencher — sem soma automática */}
             {campo("Fim (último dia) *", <input type="date" value={form.fim} min={form.inicio || undefined} onChange={(e) => setForm({ ...form, fim: e.target.value })} style={{ ...s.input, ...(fimAntes ? { borderColor: C.danger } : {}) }} />)}
           </div>
           {fimAntes && <div style={{ fontSize: 12.5, color: C.danger, fontWeight: 600 }}>❌ O fim ({dBR(form.fim)}) está antes do início ({dBR(form.inicio)}) — ajuste as datas.</div>}
