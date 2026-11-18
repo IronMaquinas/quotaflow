@@ -1,23 +1,36 @@
 // components/beta/Beta.jsx — etapa B1: 👋 BETA — assistente do QuotaFlow por texto (só consulta)
 //   Botão flutuante no canto; abre a conversa. A conversa vive só nesta aba (não é guardada).
 //   Respostas com o selo "✓ números conferidos" ou o aviso do que não foi confirmado nos dados.
+// B4: 🎤 falar (navegador ou voz neural do servidor) e 🔊 ouvir as respostas — gestor/admin; o fornecedor nunca aparece
 // B1.5: ⚡ consultas rápidas (CNH, férias, carreta livre, AT, tarefas, contrato, cotação, BID, peça) — resposta direto do sistema
 //   (selo "⚡ direto do sistema") + botão "Abrir →" para a tela. Sugestões vêm do servidor conforme o perfil.
 import { useEffect, useRef, useState } from "react";
 import BotoesContato from "../shared/BotoesContato"; // B1.10
 import apiService from "../../services/apiService";
+import * as V from "./vozBeta"; // B4: 🎤🔊 voz
 
 
 export default function Beta({ C, s, podeAbrir = () => true }) {
   const [aberta, setAberta] = useState(false); const [msgs, setMsgs] = useState([]); const [txt, setTxt] = useState(""); const [ocup, setOcup] = useState(false); const [rest, setRest] = useState(null);
   const fim = useRef(null); const [sug, setSug] = useState([]);
+  // B4: voz (gestor/admin). modo = navegador | neural; fala = ler as respostas em voz alta (preferência do aparelho)
+  const [voz, setVoz] = useState(null); const [fala, setFala] = useState(V.lerPref()); const [ouvindo, setOuvindo] = useState(null); const mic = useRef(null); const porVoz = useRef(false);
+  useEffect(() => { if (aberta && !voz) apiService.get("/beta/voz").then((r) => setVoz(r)).catch(() => setVoz({ permitido: false })); if (!aberta) { V.pararFala(); mic.current?.parar(); } }, [aberta]); // eslint-disable-line
+  const modoVoz = voz?.provedor === "neural" && !window.qfBetaVozReserva ? "neural" : "navegador";
+  const temMic = voz?.permitido && (modoVoz === "neural" ? V.podeGravar : V.podeOuvirNavegador);
+  const temFala = voz?.permitido && (voz?.provedor === "neural" || V.podeFalarNavegador);
+  const falarResposta = (texto, proposta) => { if (!temFala || (!fala && !porVoz.current)) return; const extra = proposta ? (proposta.bloqueia ? " Não dá para fazer assim; veja o motivo no cartão." : ` ${proposta.resumo.join(". ")}. Toque em confirmar se estiver certo.`) : ""; V.falar(modoVoz, texto + extra); };
+  const tocarMic = () => {
+    if (ouvindo === "ouvindo") { mic.current?.parar(); return; } if (ouvindo) return;
+    mic.current = V.ouvir(modoVoz, { aoEstado: setOuvindo, aoTexto: (t) => { porVoz.current = true; enviar(t); }, aoErro: (m) => setMsgs((l) => [...l, { de: "beta", texto: m, erro: true }]) });
+  };
   useEffect(() => { if (aberta && !sug.length) apiService.get("/beta/consultas").then((r) => setSug(r.sugestoes || [])).catch(() => {}); }, [aberta]); // eslint-disable-line
   const ir = (l) => { if (!l?.tela) return; if (l.tela === "pessoas") { if (l.aba) window.qfPessoasAba = l.aba; if (l.colaborador) window.qfAbrirColab = l.colaborador; } window.dispatchEvent(new CustomEvent("qf-navegar", { detail: { tela: l.tela } })); };
   useEffect(() => { fim.current?.scrollIntoView({ behavior: "smooth" }); }, [msgs, ocup]);
   const enviar = async (pergunta) => {
     const p = String(pergunta ?? txt).trim(); if (!p || ocup) return;
     const nova = [...msgs, { de: "pessoa", texto: p }]; setMsgs(nova); setTxt(""); setOcup(true);
-    try { const r = await apiService.post("/beta", { mensagens: nova.map(({ de, texto, assunto }) => ({ de, texto, assunto: assunto || undefined })) }); setMsgs([...nova, { de: "beta", texto: r.texto, conferido: r.conferido, suspeitos: r.suspeitos, direto: r.direto, link: r.link, acoes: r.acoes, aprendendo: r.aprendendo, assunto: r.assunto, proposta: r.proposta || null }]); setRest(r.restantes); }
+    try { const r = await apiService.post("/beta", { mensagens: nova.map(({ de, texto, assunto }) => ({ de, texto, assunto: assunto || undefined })) }); falarResposta(r.texto, r.proposta); porVoz.current = false; setMsgs([...nova, { de: "beta", texto: r.texto, conferido: r.conferido, suspeitos: r.suspeitos, direto: r.direto, link: r.link, acoes: r.acoes, aprendendo: r.aprendendo, assunto: r.assunto, proposta: r.proposta || null }]); setRest(r.restantes); }
     catch (e) { const d = e?.response?.data; setMsgs([...nova, { de: "beta", texto: d?.erro || "Não consegui responder agora. Tente de novo em instantes.", erro: true }]); if (d?.restantes != null) setRest(d.restantes); }
     finally { setOcup(false); }
   };
@@ -26,7 +39,7 @@ export default function Beta({ C, s, podeAbrir = () => true }) {
     const m = msgs[i]; if (!m?.proposta || m.decidida) return;
     setMsgs((l) => l.map((x, k) => (k === i ? { ...x, decidida: ok ? "confirmando" : "cancelada" } : x)));
     if (!ok) { setMsgs((l) => [...l, { de: "beta", texto: "Tudo bem, não fiz nada. 👍", direto: true }]); return; }
-    try { const r = await apiService.post("/beta/confirmar", { token: m.proposta.token }); setMsgs((l) => [...l.map((x, k) => (k === i ? { ...x, decidida: "feita" } : x)), { de: "beta", texto: r.texto, link: r.link, direto: true, feito: true }]); }
+    try { const r = await apiService.post("/beta/confirmar", { token: m.proposta.token }); setMsgs((l) => [...l.map((x, k) => (k === i ? { ...x, decidida: "feita" } : x)), { de: "beta", texto: r.texto, link: r.link, direto: true, feito: true }]); if (fala && temFala) V.falar(modoVoz, r.texto); }
     catch (e) { setMsgs((l) => [...l.map((x, k) => (k === i ? { ...x, decidida: null } : x)), { de: "beta", texto: e?.response?.data?.erro || "Não consegui fazer agora. Tente pela tela.", erro: true }]); }
   };
   if (!aberta) return (
@@ -37,6 +50,7 @@ export default function Beta({ C, s, podeAbrir = () => true }) {
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: `linear-gradient(135deg, ${C.accent}33, #8b5cf633)`, borderBottom: `1px solid ${C.border}` }}>
         <span style={{ fontSize: 22 }}>👋</span>
         <div style={{ flex: 1 }}><div style={{ fontWeight: 700 }}>Beta</div><div style={{ fontSize: 11.5, color: C.textSub }}>assistente do QuotaFlow · consulta os dados da sua empresa</div></div>
+        {temFala && <button type="button" onClick={() => { const v = !fala; setFala(v); V.gravarPref(v); if (!v) V.pararFala(); }} title={fala ? "Beta fala as respostas — toque para silenciar" : "Ouvir as respostas da Beta"} aria-label="Voz das respostas" style={{ background: "none", border: "none", fontSize: 17, cursor: "pointer", opacity: fala ? 1 : 0.55 }}>{fala ? "🔊" : "🔇"}</button>}
         <button type="button" onClick={() => setAberta(false)} aria-label="Fechar" style={{ background: "none", border: "none", color: C.textSub, fontSize: 20, cursor: "pointer" }}>×</button>
       </div>
       <div style={{ flex: 1, overflowY: "auto", padding: 14, display: "flex", flexDirection: "column", gap: 10 }}>
@@ -64,9 +78,12 @@ export default function Beta({ C, s, podeAbrir = () => true }) {
         <div ref={fim} />
       </div>
       <form onSubmit={(e) => { e.preventDefault(); enviar(); }} style={{ display: "flex", gap: 8, padding: 10, borderTop: `1px solid ${C.border}` }}>
-        <input value={txt} onChange={(e) => setTxt(e.target.value)} placeholder="Pergunte à Beta…" disabled={ocup} maxLength={800} style={{ ...s.input, flex: 1 }} />
+        {temMic && <button type="button" onClick={tocarMic} disabled={ocup || ouvindo === "entendendo"} title={ouvindo === "ouvindo" ? "Toque para parar" : "Falar com a Beta"} aria-label="Falar"
+          style={{ ...s.btn(ouvindo === "ouvindo"), padding: "0 12px", cursor: "pointer", fontSize: 16, background: ouvindo === "ouvindo" ? "#dc2626" : undefined, color: ouvindo === "ouvindo" ? "#fff" : C.text, animation: ouvindo === "ouvindo" ? "qfPulso 1.2s infinite" : "none" }}>{ouvindo === "entendendo" ? "…" : "🎤"}</button>}
+        <input value={txt} onChange={(e) => setTxt(e.target.value)} placeholder={ouvindo === "ouvindo" ? "Pode falar…" : ouvindo === "entendendo" ? "Entendendo…" : "Pergunte à Beta…"} disabled={ocup} maxLength={800} style={{ ...s.input, flex: 1 }} />
         <button type="submit" disabled={ocup || !txt.trim()} style={{ ...s.btn(true), padding: "0 14px", cursor: "pointer" }}>➤</button>
       </form>
+      <style>{"@keyframes qfPulso{0%,100%{box-shadow:0 0 0 0 #dc262699}50%{box-shadow:0 0 0 6px #dc262600}}"}</style>
       {rest != null && <div style={{ fontSize: 10.5, color: C.muted, textAlign: "center", paddingBottom: 6 }}>{rest} pergunta(s) restante(s) hoje</div>}
     </div>
   );
