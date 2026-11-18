@@ -16,7 +16,7 @@ export default function BetaPendentes({ token, chamar, C, card, btn, tag, onAvis
       <div style={{ fontSize: 13, color: C.sub, marginBottom: 14 }}>O cliente recebeu "ainda estou aprendendo" (sem gastar IA). Use a lista para decidir as próximas consultas — guia no readme (👋 Beta → como incluir uma consulta).</div>
       {d?.aviso && <div style={{ ...card, padding: 12, color: C.warn, marginBottom: 12 }}>{d.aviso}</div>}
       <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 12 }}>
-        {[["pendente", `Pendentes (${t.pendente ?? "…"})`], ["atendida", `Atendidas (${t.atendida ?? "…"})`], ["descartada", `Descartadas (${t.descartada ?? "…"})`], ["todas", "Todas"]].map(([k, l]) => <button key={k} onClick={() => setStatus(k)} style={{ ...btn(status === k), cursor: "pointer" }}>{l}</button>)}
+        {[["pendente", `Pendentes (${t.pendente ?? "…"})`], ["atendida", `Atendidas (${t.atendida ?? "…"})`], ["descartada", `Descartadas (${t.descartada ?? "…"})`], ["todas", "Todas"]].map(([k, l]) => <button key={k} onClick={() => setStatus(k)} style={{ ...btn(C.accent, status === k), cursor: "pointer" }}>{l}</button>)}
         <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="🔍 filtrar por texto, empresa ou pessoa" style={{ flex: "1 1 240px", padding: "8px 12px", borderRadius: 8, border: `1px solid ${C.border}`, background: "transparent", color: C.text }} />
       </div>
       {!d ? <div style={{ color: C.sub }}>Carregando…</div> : !itens.length ? <div style={{ ...card, padding: 16, color: C.sub }}>Nada por aqui. 🎉</div> : (
@@ -30,9 +30,9 @@ export default function BetaPendentes({ token, chamar, C, card, btn, tag, onAvis
               </div>
               <span style={tag(p.status === "pendente" ? C.warn : p.status === "atendida" ? "#22c55e" : C.sub)}>{p.status}</span>
               <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {p.status !== "atendida" && <button onClick={() => marcar(p, "atendida", true)} style={{ ...btn(true), cursor: "pointer", fontSize: 12 }} title="Avisa quem perguntou: 'A Beta aprendeu!'">✓ Atendida + avisar</button>}
-                {p.status === "pendente" && <button onClick={() => marcar(p, "descartada")} style={{ ...btn(false), cursor: "pointer", fontSize: 12 }}>Descartar</button>}
-                {p.status !== "pendente" && <button onClick={() => marcar(p, "pendente")} style={{ ...btn(false), cursor: "pointer", fontSize: 12 }}>Reabrir</button>}
+                {p.status !== "atendida" && <button onClick={() => marcar(p, "atendida", true)} style={{ ...btn(C.success), cursor: "pointer", fontSize: 12 }} title="Avisa quem perguntou: 'A Beta aprendeu!'">✓ Atendida + avisar</button>}
+                {p.status === "pendente" && <button onClick={() => marcar(p, "descartada")} style={{ ...btn(C.muted, false), cursor: "pointer", fontSize: 12 }}>Descartar</button>}
+                {p.status !== "pendente" && <button onClick={() => marcar(p, "pendente")} style={{ ...btn(C.muted, false), cursor: "pointer", fontSize: 12 }}>Reabrir</button>}
               </div>
             </div>))}
         </div>)}

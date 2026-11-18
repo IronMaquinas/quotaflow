@@ -41,7 +41,9 @@ async function usoHoje(sb, tenantId, userId) {
 
 /** mensagens = [{ de: 'pessoa'|'beta', texto }] — a última é a pergunta */
 async function perguntar(sb, { tenantId, userId, perfis = [], nome = '', mensagens = [] }) {
-  const hist = (Array.isArray(mensagens) ? mensagens : []).filter((m) => m && typeof m.texto === 'string' && m.texto.trim()).slice(-8).map((m) => ({ de: m.de === 'beta' ? 'beta' : 'pessoa', texto: m.texto.trim().slice(0, 800) }));
+  // B2.2: só as últimas 4 mensagens (as da Beta resumidas) + o ASSUNTO da última resposta (para "com quem está?", "e o prazo?")
+  const hist = (Array.isArray(mensagens) ? mensagens : []).filter((m) => m && typeof m.texto === 'string' && m.texto.trim()).slice(-4).map((m) => ({ de: m.de === 'beta' ? 'beta' : 'pessoa', texto: m.texto.trim().slice(0, m.de === 'beta' ? 220 : 500), assunto: m.de === 'beta' && m.assunto && typeof m.assunto === 'object' ? { consulta: String(m.assunto.consulta || '').slice(0, 40), args: Object.fromEntries(Object.entries(m.assunto.args || {}).slice(0, 4).map(([k, v]) => [String(k).slice(0, 20), String(v ?? '').slice(0, 120)])) } : null }));
+  const ultimoAssunto = [...hist].reverse().find((m) => m.de === 'beta' && m.assunto?.consulta)?.assunto || null;
   const pergunta = hist.filter((m) => m.de === 'pessoa').pop(); if (!pergunta) return { erro: 'Escreva a sua pergunta.', status: 400 };
   const usados = await usoHoje(sb, tenantId, userId);
   if (usados >= LIMITE()) return { erro: `Você já fez ${LIMITE()} perguntas hoje — a Beta volta amanhã. 😊`, status: 429, restantes: 0 };
@@ -51,11 +53,11 @@ async function perguntar(sb, { tenantId, userId, perfis = [], nome = '', mensage
   const base = `${hojeBR()}:${userId}`;
   const registrar = { supabase: sb, tenantId, recurso: 'beta', chave: `${base}:rot` }; // B2.0: chamadas internas não contam — conta 1 por pergunta RESPONDIDA
   const contar = () => sb.from('ia_uso').insert([{ tenant_id: tenantId, recurso: 'beta', chave: base, provedor: 'local', modelo: 'resposta', tokens_entrada: 0, tokens_saida: 0 }]).then(() => null, () => null);
-  const conversa = hist.map((m) => `${m.de === 'beta' ? 'Beta' : 'Pessoa'}: ${m.texto}`).join('\n');
+  const conversa = hist.map((m) => `${m.de === 'beta' ? 'Beta' : 'Pessoa'}: ${m.texto}${m.assunto ? ` [assunto: ${m.assunto.consulta} ${JSON.stringify(m.assunto.args)}]` : ''}`).join('\n');
   const gestor = perfis.some((p) => ['admin', 'gestor'].includes(p));
   const lista = BC.permitidas(perfis);
   // ⚡ 0) B2.0: perguntas comuns entendidas SEM IA (palavras-chave) — custo zero
-  let esc = await BC.rotearLocal(sb, ctxP, pergunta.texto, hist).catch(() => null);
+  let esc = await BC.rotearLocal(sb, ctxP, pergunta.texto, hist, ultimoAssunto).catch(() => null);
   // ⚡ 1) senão, o modelo econômico escolhe a consulta
   if (!esc) esc = await escolher({ emp, registrar, lista, conversa, gestor });
   if (esc.consulta === '__painel' && gestor) {
@@ -70,7 +72,7 @@ async function perguntar(sb, { tenantId, userId, perfis = [], nome = '', mensage
   if (esc.consulta && esc.consulta !== '__painel') {
     const r = await BC.executar(sb, ctxP, esc.consulta, esc.args);
     await contar();
-    return { texto: r.texto, link: r.link || null, acoes: r.acoes || [], consulta: esc.consulta, local: !!esc.local, conferido: true, direto: true, suspeitos: [], restantes: await restam(sb, tenantId, userId) };
+    return { texto: r.texto, link: r.link || null, acoes: r.acoes || [], assunto: r.assunto || { consulta: esc.consulta, args: esc.args || {} }, consulta: esc.consulta, local: !!esc.local, conferido: true, direto: true, suspeitos: [], restantes: await restam(sb, tenantId, userId) };
   }
   // 📮 B2.0: ainda não sabe → registra para o admin da plataforma (Console) e NÃO conta no limite
   try { await q(sb.from('beta_pendentes').insert([{ tenant_id: tenantId, usuario_id: String(userId), usuario_nome: nome || null, perfis: perfis.join(','), pergunta: pergunta.texto.slice(0, 800), conversa: hist.slice(-4), status: 'pendente' }])); } catch { /* sem a 110 */ }

@@ -17,7 +17,7 @@ export default function Beta({ C, s, podeAbrir = () => true }) {
   const enviar = async (pergunta) => {
     const p = String(pergunta ?? txt).trim(); if (!p || ocup) return;
     const nova = [...msgs, { de: "pessoa", texto: p }]; setMsgs(nova); setTxt(""); setOcup(true);
-    try { const r = await apiService.post("/beta", { mensagens: nova.map(({ de, texto }) => ({ de, texto })) }); setMsgs([...nova, { de: "beta", texto: r.texto, conferido: r.conferido, suspeitos: r.suspeitos, direto: r.direto, link: r.link, acoes: r.acoes, aprendendo: r.aprendendo }]); setRest(r.restantes); }
+    try { const r = await apiService.post("/beta", { mensagens: nova.map(({ de, texto, assunto }) => ({ de, texto, assunto: assunto || undefined })) }); setMsgs([...nova, { de: "beta", texto: r.texto, conferido: r.conferido, suspeitos: r.suspeitos, direto: r.direto, link: r.link, acoes: r.acoes, aprendendo: r.aprendendo, assunto: r.assunto }]); setRest(r.restantes); }
     catch (e) { const d = e?.response?.data; setMsgs([...nova, { de: "beta", texto: d?.erro || "Não consegui responder agora. Tente de novo em instantes.", erro: true }]); if (d?.restantes != null) setRest(d.restantes); }
     finally { setOcup(false); }
   };

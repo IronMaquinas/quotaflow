@@ -53,7 +53,7 @@ const ESPERADO = {
   'routes/recomendacoes.js': '05628793a30bc9cc5905c137c90fdb9c', // etapa 18g.2d
   'services/recomendacoesEmail.js': '7bc5475ccffb4fd2fcec53be78e64123', // etapa 10c
   'services/emailService.js': '2daf0e597ff370e006585f919c63b525', // etapa 9
-  'server.js': '565637514b1b5a369872934bfb5fbf71', // etapa B2.0
+  'server.js': 'ac0035c2c597da6ddbef30950941ba19', // etapa B2.2
   'routes/atuacao.js': 'cc196661189e2714bcfad96e5c1e8ad9',
   'services/atuacao.js': '8509ac0206906a7f93384350e77132bf',
   'front:SeletorAtuacao.jsx': '17afaaf69d6e4cf0c105490267d188a7',
@@ -80,7 +80,7 @@ const ESPERADO = {
   'services/plataformaConsole.js': '2052fe85951bf51702733b9c9607402d', // etapa 18j
   'middleware/plataformaMiddleware.js': 'bf2424eab233bdf7e0cb6fca9cb953b9', // etapa 11b (novo)
   'scripts/criarAdmin.js': 'd4d85894f6381dc7b31f83466f316024', // etapa 11b (novo)
-  'front:ConsolePlataforma.jsx': '3c308875bdf43d208860664649f05542', // etapa B2.0
+  'front:ConsolePlataforma.jsx': '8ec00759049ce7667be5d730756f5fb6', // etapa B2.2
   'routes/manutencao.js': '615fa12637ae7b454c52b99c054e617b', // etapa 14b.2
   'services/calendarioManutencao.js': 'bbcf04d1bb3b18b8776579d3180274e6', // etapa 12b.2
   'front:TelaCalendarioManutencao.jsx': 'e52bdb86b131c11195ba0c86f64fccda', // etapa 18zq
@@ -393,10 +393,10 @@ const ESPERADO = {
   'front:PlanoAcaoMeta.jsx': 'f6b1b4af99c561c3b59cb66632ffe725', // etapa SC2.5 (novo)
   'services/ia/conferir.js': '9722ac7f95c6d0f1d88d52edfb19a620', // etapa B1
   'services/salaControle/analista.js': 'a6b6b2ccc047d8b42ee354100430a68e', // etapa SC3 (novo)
-  'services/beta.js': 'ceff018bc1308a9782dcd00c099eb2aa', // etapa B2.0
+  'services/beta.js': '04ee8fb16f073add295fa22865e16c8e', // etapa B2.2
   'routes/beta.js': 'dae7ee687adabe756999ee3085c3c984', // etapa B1.9
-  'front:Beta.jsx': '7a05b8775e8eb9ea334089b38598d383', // etapa B2.0
-  'services/betaConsultas.js': '09994aef4fbb4ba30695f9971ee77e71', // etapa B2.1
+  'front:Beta.jsx': '99e3c3f91cad5319c0d98eed6016c3f2', // etapa B2.2
+  'services/betaConsultas.js': '8a5408a26d04a3815be859c7f38b6361', // etapa B2.2
   'services/ferias.js': '76e0c2b2b6a32df76c98479bbf9e1c2a', // etapa B1.15
   'migrations/105_colaborador_ferias.sql': '35db94dbde383bdedd3080434704e697', // etapa B1.7
   'front:TelaFerias.jsx': '5ca20567b45bc7accc6bac86909ed57c', // etapa B1.15
@@ -416,16 +416,22 @@ const ESPERADO = {
   'migrations/110_tipos_equipamento_beta_pendentes.sql': '399313a2cbb776323a08b8f23579db2f', // etapa B2.0 (novo)
   'services/tiposEquipamento.js': '9c4b2bbb3f566a0a22ccc0010928a4b3', // etapa B2.0 (novo)
   'routes/tiposEquipamento.js': '24442dddecc8b3cbe70ce54709b57b4a', // etapa B2.0 (novo)
-  'services/betaPendentes.js': 'a4c820d09c555e5727b50c0557f2c09f', // etapa B2.0 (novo)
+  'services/betaPendentes.js': 'cb96411aeb7e9b13ecf3070ed6745a5d', // etapa B2.2
   'front:TiposEquipamento.jsx': '7d9c7a82a2eedfb2b4440bf94cf3a581', // etapa B2.0 (novo)
   'front:useTiposEquipamento.jsx': 'cb90e10e05e052c614c5454b7695264c', // etapa B2.0 (novo)
-  'front:BetaPendentes.jsx': 'd3523cb5117fdaa5b229bd53f3f33f14', // etapa B2.0 (novo)
+  'front:BetaPendentes.jsx': 'a3a9be9eed90e6a92ac4fc8d13396edd', // etapa B2.2
   'front:TelaEquipamentos.jsx': '9ae0de5715f8d3099c29b6979863faef', // etapa B2.0
 };
 
-// Antes de copiar a etapa B2.1 — base: B2.0 (cdfe693)
+// Antes de copiar a etapa B2.2 — base: B2.1 (7314693)
 const ANTES = {
-  'services/betaConsultas.js': 'e27b4047c7d9d89831a894c9dde83e1e',
+  'services/betaConsultas.js': '09994aef4fbb4ba30695f9971ee77e71',
+  'services/beta.js': 'ceff018bc1308a9782dcd00c099eb2aa',
+  'services/betaPendentes.js': 'a4c820d09c555e5727b50c0557f2c09f',
+  'server.js': '565637514b1b5a369872934bfb5fbf71',
+  'front:Beta.jsx': '7a05b8775e8eb9ea334089b38598d383',
+  'front:BetaPendentes.jsx': 'd3523cb5117fdaa5b229bd53f3f33f14',
+  'front:ConsolePlataforma.jsx': '3c308875bdf43d208860664649f05542',
 };
 
 const RAIZ = process.cwd();
@@ -463,7 +469,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a B2.1)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a B2.2)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

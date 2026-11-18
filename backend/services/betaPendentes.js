@@ -19,4 +19,15 @@ async function resolver(sb, id, { status, nota = null, avisar = false } = {}) {
   }
   return { ok: true };
 }
-module.exports = { listar, resolver };
+/** B2.2: ✉ resumo diário ao admin da plataforma (PLATAFORMA_ADMINS) — só quando houve pergunta nova nas últimas 24h */
+async function resumoDiario(sb, { enviarEmail = require('./emailService').enviarEmailCotacao, para = process.env.PLATAFORMA_ADMINS } = {}) {
+  const destinos = String(para || '').split(/[,;\s]+/).map((x) => x.trim()).filter((x) => /@/.test(x)); if (!destinos.length) return { enviados: 0, motivo: 'sem PLATAFORMA_ADMINS' };
+  const desde = new Date(Date.now() - 24 * 36e5).toISOString();
+  let r; try { r = await listar(sb, { status: 'pendente' }); } catch { return { enviados: 0, motivo: 'sem a migration 110' }; }
+  const novas = r.itens.filter((p) => String(p.criado_em) >= desde); if (!novas.length) return { enviados: 0, novas: 0 };
+  const esc = (v) => String(v || '').replace(/[<>&]/g, (c) => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
+  const html = `<p>👋 <b>${novas.length} pergunta(s) nova(s)</b> que a Beta ainda não sabe responder (${r.totais.pendente} pendente(s) no total):</p><ul>${novas.slice(0, 40).map((p) => `<li>"${esc(p.pergunta)}" — <span style="color:#666">${esc(p.empresa)} · ${esc(p.usuario_nome || '—')}${p.perfis ? ` (${esc(p.perfis)})` : ''}</span></li>`).join('')}</ul><p>Console da Plataforma → 👋 Beta — o que perguntam.</p>`;
+  let n = 0; for (const d of destinos) { try { await enviarEmail(d, `👋 Beta: ${novas.length} pergunta(s) nova(s) para aprender`, html); n++; } catch (e) { console.error('❌ [beta-pendentes] e-mail:', e.message); } }
+  return { enviados: n, novas: novas.length };
+}
+module.exports = { listar, resolver, resumoDiario };

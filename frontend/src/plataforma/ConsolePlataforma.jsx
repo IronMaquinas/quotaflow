@@ -22,6 +22,7 @@ const GRUPOS = [ // 14e.1
   ["PLANOS", ["financeiro", "planos"]], // 18j · 18x
   ["COMPLIANCE", ["cnpjs"]],
   ["BIBLIOTECAS", ["funcoes", "epi", "treinamentos", "inspecoes", "contratos"]],
+  ["IA", ["beta"]], // B2.2: faltava no menu agrupado
 ];
 
 

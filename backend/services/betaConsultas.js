@@ -36,6 +36,8 @@ function achar(lista, termo, campos) {
   if (exatos.length) return exatos;
   return lista.filter((x) => { const n = norm(texto(x)); const nc = compacto(texto(x)); return palavras.every((p) => n.includes(p)) || (tc.length >= 3 && nc.includes(tc)); });
 }
+// B2.2: prazo relativo
+const prazoRel = (p, hoje) => { const n = diasEntre(hoje, d10(p)); return n === 0 ? `${dBR(p)} (HOJE)` : n === 1 ? `${dBR(p)} (amanhã)` : n < 0 ? `${dBR(p)} (⏰ atrasado ${-n} dia(s))` : `${dBR(p)} (em ${n} dias)`; };
 // B2.1: "hoje às 14h", "ontem às 10h", "anteontem", "em 12/11"
 const quandoRel = (iso) => { if (!iso) return 'há pouco'; const l = new Date(Date.parse(iso) - 3 * 36e5).toISOString(); const d = l.slice(0, 10); const h = l.slice(11, 16).replace(':00', 'h').replace(':', 'h'); const n = diasEntre(d, hojeBR());
   return n <= 0 ? `hoje às ${h}` : n === 1 ? `ontem às ${h}` : n === 2 ? `anteontem às ${h}` : `em ${dBR(d)} às ${h}`; };
@@ -406,10 +408,45 @@ const CONSULTAS = [
           if (rs.dispensa) { l.push(`• ${titulo}: documentação dispensada — ${rs.dispensa.motivo || ''}`); continue; }
           const marca = TF.ORDEM.map((k) => `${IT[k]} ${rs.itens[k] ? '✓' : '✗'}`).join(' · '); const falta = TF.ORDEM.filter((k) => !rs.itens[k]).map((k) => IT[k]);
           const sit = !falta.length ? (rs.encerramento?.pendentes?.length ? '✅ emitida — falta encerrar o MDF-e' : '✅ completa') : rs.feitos ? `🟡 parcialmente emitida — falta ${falta.join(', ').replace(/, ([^,]*)$/, ' e $1').toLowerCase()}` : `⛔ nada emitido ainda — falta ${falta.join(', ')}`;
-          l.push(`• ${titulo}: ${sit}\n   ${marca}${tf.prazo ? ` · prazo ${dBR(tf.prazo)}` : ''}${rs.alertas?.length ? `\n   ⚠ ${rs.alertas[0]}` : ''}`);
+          l.push(`• ${titulo}: ${sit}\n   ${marca}\n   👤 com: ${tf.responsavel || 'sem responsável'}${tf.prazo ? ` · prazo ${prazoRel(tf.prazo, ctx.hoje)}` : ''}${tf.numero ? ` · ${tf.numero}` : ''}${rs.alertas?.length ? `\n   ⚠ ${rs.alertas[0]}` : ''}`);
         }
       }
       return { texto: l.join('\n') || 'Sem trechos de transporte nesse pedido.', link: { tela: 'plano' } };
+    },
+  },
+  {
+    nome: 'tarefa',
+    descricao: 'Uma TAREFA (TSK-…) ou a tarefa de um assunto (ex.: documentos fiscais do pedido de um cliente): responsável (com quem está), prazo, situação, checklist e vínculos.',
+    args: { ref: 'nº da tarefa (TSK-…) ou o assunto/cliente' },
+    perfis: ['comprador', 'operacao', 'qualidade', 'financeiro', 'comercial', 'fiscal'],
+    exemplo: 'Quem é o responsável pela TSK-TR-2026-0001?',
+    async executar(ctx, { ref }) { // B2.2
+      const todas = (await q(ctx.sb.from('tarefas').select('*').eq('tenant_id', ctx.tenantId))).filter((x) => x.status !== 'cancelada');
+      let fiscal = false; let termo = String(ref || ''); if (/^fiscal:/i.test(termo)) { fiscal = true; termo = termo.replace(/^fiscal:/i, ''); }
+      const c = compacto(termo); let xs = todas.filter((x) => x.numero && (compacto(x.numero) === c || (c.length >= 4 && /\d/.test(c) && compacto(x.numero).endsWith(c.replace(/^tsk/, '')))));
+      if (!xs.length && (fiscal || /documenta|nota|nfe|cte|mdf|averba|fiscal/.test(norm(termo)))) { // tarefa fiscal pelo pedido/cliente/AT
+        const pvs = await q(ctx.sb.from('pedidos_venda').select('*').eq('tenant_id', ctx.tenantId)).catch(() => []); const ats = await q(ctx.sb.from('execucoes').select('*').eq('tenant_id', ctx.tenantId)).catch(() => []);
+        const nt = ` ${norm(termo)} `; const ct = compacto(termo);
+        let alvo = pvs.filter((p) => p.status !== 'cancelado' && ((p.cliente_nome && nt.includes(` ${norm(p.cliente_nome)} `)) || (p.numero && ct.includes(compacto(p.numero)))));
+        const at = ats.find((a) => a.numero && ct.includes(compacto(a.numero))); if (!alvo.length && at) alvo = pvs.filter((p) => String(p.id) === String(at.pv_id));
+        if (!alvo.length) alvo = achar(pvs.filter((p) => p.status !== 'cancelado'), termo, ['cliente_nome']);
+        const ids = new Set(alvo.map((p) => String(p.id))); xs = todas.filter((x) => x.origem === 'fiscal' && ids.has(String(x.origem_ref || '').split(':')[0]) && (!at || String(x.origem_ref).endsWith(`:${at.grupo_id}`) || !alvo.length));
+      }
+      if (!xs.length) xs = achar(todas.filter((x) => ['pendente', 'em_andamento'].includes(x.status)), termo, ['titulo', 'numero']);
+      if (!xs.length) return { texto: `Não encontrei a tarefa "${termo}".` };
+      if (xs.length > 4) return { texto: `Encontrei ${xs.length} tarefas: ${listaNomes(xs, (x) => `${x.numero || ''} ${x.titulo || ''}`.trim())}. Qual delas (pode mandar o número)?` };
+      const ST = { pendente: '⏳ pendente', em_andamento: '◑ em andamento', concluida: '✅ concluída' };
+      const usuarios = await q(ctx.sb.from('usuarios').select('*').eq('tenant_id', ctx.tenantId)).catch(() => []); const colabs = await q(ctx.sb.from('colaboradores').select('*').eq('tenant_id', ctx.tenantId)).catch(() => []);
+      const acoes = []; const TF = require('./tarefasFiscais');
+      const l = xs.map((x) => {
+        const u = usuarios.find((y) => String(y.id) === String(x.responsavel_usuario_id)); const col = colabs.find((y) => String(y.id) === String(x.responsavel_colaborador_id) || (u && String(y.usuario_id) === String(u.id)));
+        const tel = col?.telefone || u?.telefone || null; const mail = col?.email || u?.email || null; if (tel || mail) acoes.push({ rotulo: x.responsavel || u?.nome || 'responsável', telefone: tel, email: mail });
+        const rs = x.origem === 'fiscal' && x.checklist ? TF.resumo(x.checklist) : null;
+        const ck = rs ? `\n   ${TF.ORDEM.map((k) => `${TF.ITENS[k]} ${rs.itens[k] ? '✓' : '✗'}`).join(' · ')}${rs.proximo ? ` · próximo: ${TF.ITENS[rs.proximo] || rs.proximo}` : ''}` : '';
+        const vinc = (Array.isArray(x.vinculos) ? x.vinculos : []).map((v) => v.numero || v.rotulo).filter(Boolean).slice(0, 4);
+        return `📋 ${x.numero ? `${x.numero} — ` : ''}${x.titulo || 'Tarefa'}\n   👤 com: ${x.responsavel || u?.nome || 'sem responsável'} · ${ST[x.status] || x.status}${x.prazo ? ` · prazo ${prazoRel(x.prazo, ctx.hoje)}` : ''}${x.prioridade ? ` · prioridade ${x.prioridade}` : ''}${ck}${vinc.length ? `\n   🔗 ${vinc.join(' · ')}` : ''}`;
+      });
+      return { texto: l.join('\n'), link: { tela: 'plano' }, acoes, assunto: { consulta: 'tarefa', args: { ref: xs.length === 1 && xs[0].numero ? xs[0].numero : ref } } };
     },
   },
   {
@@ -481,8 +518,17 @@ const CONSULTAS = [
 ];
 
 /** B2.0: ⚡ roteador local (sem IA) — perguntas comuns por palavras-chave; null = deixa para o modelo */
-async function rotearLocal(sb, ctx, texto, hist = []) {
+async function rotearLocal(sb, ctx, texto, hist = [], ultimo = null) {
   const s = norm(texto); const ok = (n) => permitidas(ctx.perfis).some((c) => c.nome === n);
+  // B2.2: tarefa pelo número · "quem é o responsável pela documentação da X" · continuação da conversa ("com quem está?", "e o prazo?")
+  let mt = String(texto).match(/\bTSK[-\s]?[A-Z]{0,4}[-\s]?\d{4}[-\s]?\d{1,5}\b|\bTSK[-\s]?\d{2,}\b/i); if (mt && ok('tarefa')) return { consulta: 'tarefa', args: { ref: mt[0] }, local: true };
+  const pedeResp = /\b(quem|com quem|responsavel|responsaveis|quem cuida|quem esta com|prazo|vence quando|ate quando)\b/.test(s);
+  if (pedeResp && /\b(documentac|documento|nota fiscal|nfe|cte|mdfe|averbac|fiscal)/.test(s) && ok('tarefa')) return { consulta: 'tarefa', args: { ref: `fiscal:${texto}` }, local: true };
+  if (pedeResp && ultimo && s.split(' ').length <= 12) {
+    const a = ultimo.args || {};
+    if (ultimo.consulta === 'documentacao_transporte' && ok('tarefa')) return { consulta: 'tarefa', args: { ref: `fiscal:${a.ref || ''}` }, local: true };
+    if (['tarefa', 'situacao_os', 'situacao_at', 'status_bid', 'status_cotacao'].includes(ultimo.consulta) && ok(ultimo.consulta)) return { consulta: ultimo.consulta, args: a, local: true };
+  }
   if (/\b(como (esta|anda|vai) (a |minha |nossa )?empresa|visao geral|resumo (do dia|da empresa|geral)|como estamos)\b/.test(s)) return { consulta: '__painel', local: true };
   let m = String(texto).match(/\bAT[-\s]?(\d{2,})/i); if (m && ok('situacao_at')) return { consulta: 'situacao_at', args: { numero: m[0].replace(/\s/, '-') }, local: true };
   m = String(texto).match(/\bBID[-\s]?\d{2,}/i); if (m && ok('status_bid')) return { consulta: 'status_bid', args: { bid: m[0] }, local: true };
