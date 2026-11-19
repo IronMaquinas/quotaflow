@@ -406,6 +406,42 @@ const CONSULTAS = [
     },
   },
   {
+    nome: 'patio', // B5.1: 📦 o que está no pátio agora — frota própria parada + propriedade de cliente (patio_bens)
+    descricao: 'O que está no PÁTIO agora: equipamentos da empresa parados (livres hoje) e bens/equipamentos de CLIENTES guardados (propriedade do cliente). Também responde se um equipamento (série, placa, identificação) é nosso ou do cliente.',
+    args: { cliente: 'nome do cliente dono dos bens (opcional)', item: 'nº de série, placa ou identificação do equipamento (opcional)' },
+    perfis: ['operacao', 'comercial', 'comprador', 'qualidade'],
+    exemplo: 'Quantos equipamentos tenho no pátio agora?',
+    async executar(ctx, { cliente, item }) {
+      let bens = []; try { bens = await q(ctx.sb.from('patio_bens').select('*').eq('tenant_id', ctx.tenantId)); } catch { /* sem 081 */ }
+      const dPat = (b) => Math.max(0, Math.round((Date.parse(`${ctx.hoje}T12:00:00Z`) - Date.parse(`${d10(b.entrada_em) || ctx.hoje}T12:00:00Z`)) / 864e5));
+      const noPatio = bens.filter((b) => b.status === 'no_patio');
+      if (item) {
+        const k = compacto(item); const b = bens.filter((x) => [x.numero_serie, x.identificacao, x.numero, x.retirado_placa].filter(Boolean).some((v) => compacto(v) === k || compacto(v).includes(k)))
+          .sort((x, y) => (x.status === 'no_patio' ? -1 : 1) - (y.status === 'no_patio' ? -1 : 1))[0];
+        if (b) return { texto: b.status === 'no_patio' ? `${b.descricao}${b.numero_serie ? ` (série ${b.numero_serie})` : ''} é do cliente ${b.cliente_nome} — está no pátio há ${dPat(b)} dia(s)${b.local_patio ? `, em ${b.local_patio}` : ''}. Registro ${b.numero}.` : b.status === 'pre_entrada' ? `${b.descricao} é do cliente ${b.cliente_nome} — ainda não chegou (pré-entrada${b.previsto_em ? ` prevista para ${dBR(b.previsto_em)}` : ''}).` : `${b.descricao} é do cliente ${b.cliente_nome} — saiu do pátio em ${dBR(b.saida_em)}.`, link: { tela: 'patio' }, assunto: { consulta: 'patio', args: { cliente: b.cliente_nome, item } } };
+        const eqs = await q(ctx.sb.from('equipamentos').select('*').eq('tenant_id', ctx.tenantId)).catch(() => []);
+        const e = eqs.find((x) => [x.tag, x.placa, x.numero_serie, x.chassi].filter(Boolean).some((v) => compacto(v) === k));
+        if (e) return { texto: `${e.tag || e.placa}${e.nome && e.nome !== e.tag ? ` (${e.nome})` : ''} é da nossa frota, não de cliente.`, link: { tela: 'equipamentos' }, assunto: { consulta: 'disponibilidade_equipamento', args: { equipamento: e.tag || e.placa } } };
+        return { texto: `Não encontrei "${item}" nem no pátio de clientes nem na frota.` };
+      }
+      if (cliente) {
+        const xs = achar(noPatio, cliente, ['cliente_nome']); const nomes = [...new Set(xs.map((b) => b.cliente_nome))];
+        if (!xs.length) return { texto: `Não há nada do cliente "${cliente}" no pátio agora.`, link: { tela: 'patio' } };
+        if (nomes.length > 1) return { texto: `Encontrei bens de ${nomes.length} clientes: ${nomes.join(', ')}. Qual deles?` };
+        const velho = xs.reduce((m, b) => (dPat(b) > dPat(m) ? b : m), xs[0]);
+        return { texto: `${nomes[0]} tem ${xs.length} equipamento(s) no pátio — o mais antigo há ${dPat(velho)} dia(s).\n${xs.slice(0, 10).map((b) => `• ${b.descricao}${b.numero_serie ? ` · série ${b.numero_serie}` : ''}${b.local_patio ? ` · ${b.local_patio}` : ''} · ${dPat(b)} dia(s)`).join('\n')}${xs.length > 10 ? `\n…e mais ${xs.length - 10}` : ''}`, link: { tela: 'patio' }, assunto: { consulta: 'patio', args: { cliente: nomes[0] } } };
+      }
+      let livres = []; try { const { eqs, oc } = await mapaOcupacao(ctx, ctx.hoje, ctx.hoje); livres = eqs.filter((e) => e.situacao !== 'baixado' && e.ativo !== false && !oc.has(String(e.id))); } catch { /* ok */ }
+      const porC = new Map(); for (const b of noPatio) porC.set(b.cliente_nome, (porC.get(b.cliente_nome) || 0) + 1);
+      const tot = livres.length + noPatio.length; const pre = bens.filter((b) => b.status === 'pre_entrada').length;
+      const l = [`Temos ${tot} equipamento(s) no pátio agora: ${livres.length} da nossa frota parado(s) e ${noPatio.length} de cliente(s).`];
+      if (porC.size) l.push(`De clientes: ${[...porC].sort((a, b) => b[1] - a[1]).slice(0, 6).map(([c, n]) => `${c} (${n})`).join(', ')}${porC.size > 6 ? '…' : ''}.`);
+      if (livres.length) l.push(`Nossos parados: ${listaNomes(livres, (e) => e.tag || e.placa || e.nome, 8)}.`);
+      if (pre) l.push(`Chegando: ${pre} bem(ns) de cliente em pré-entrada.`);
+      return { texto: l.join('\n'), link: { tela: 'patio' }, assunto: { consulta: 'patio', args: {} } };
+    },
+  },
+  {
     nome: 'status_cotacao',
     descricao: 'Situação de uma cotação de compra (COT-…): quantos fornecedores responderam e quais ainda faltam. Sem número = cotações em aberto.',
     args: { numero: 'número da cotação, ex.: COT-2026-0012 (opcional)' },
@@ -640,7 +676,7 @@ async function rotearLocal(sb, ctx, texto, hist = [], ultimo = null) {
     if (ultimo.consulta === 'documentacao_transporte' && ok('tarefa')) return { consulta: 'tarefa', args: { ref: `fiscal:${a.ref || ''}` }, local: true };
     if (['tarefa', 'situacao_os', 'situacao_at', 'status_bid', 'status_cotacao'].includes(ultimo.consulta) && ok(ultimo.consulta)) return { consulta: ultimo.consulta, args: a, local: true };
   }
-  if (/\b(como (esta|anda|vai) (a |minha |nossa )?empresa|visao geral|resumo (do dia|da empresa|geral)|como estamos)\b/.test(s)) return { consulta: '__painel', local: true };
+  if (/\b(como (esta|anda|vai) (a |minha |nossa |o |meu |nosso )?(empresa|negocio)|visao geral|resumo (do dia|da empresa|geral)|como estamos|quais (sao )?(as )?(minhas |nossas )?prioridades|bom dia,? beta)\b/.test(s) && (ctx.perfis || []).some((p) => ['admin', 'gestor'].includes(p))) return { consulta: '__painel', local: true };
   let m = String(texto).match(/\bAT[-\s]?(\d{2,})/i); if (m && ok('situacao_at')) return { consulta: 'situacao_at', args: { numero: m[0].replace(/\s/, '-') }, local: true };
   m = String(texto).match(/\bBID[-\s]?\d{2,}/i); if (m && ok('status_bid')) return { consulta: 'status_bid', args: { bid: m[0] }, local: true };
   m = s.match(/\b(?:cot|cotacao)(?: n[oº]?)?\s*(\d{1,})/); if (m && ok('status_cotacao')) return { consulta: 'status_cotacao', args: { numero: m[1] }, local: true };
@@ -659,6 +695,12 @@ async function rotearLocal(sb, ctx, texto, hist = [], ultimo = null) {
   { const eqs = await q(sb.from('equipamentos').select('id, tag, placa').eq('tenant_id', ctx.tenantId)).catch(() => []); const tok = String(texto).split(/[\s,?!.]+/).filter((w) => w.length >= 3 && /\d/.test(w));
     const eq = eqs.find((e) => tok.some((w) => [e.tag, e.placa].filter(Boolean).some((x) => compacto(x) === compacto(w)))); if (eq && ok('disponibilidade_equipamento')) return { consulta: 'disponibilidade_equipamento', args: { equipamento: eq.tag || eq.placa }, local: true }; } // equipamento citado → agenda DELE
     return { consulta: 'agenda', args: { data: /\b(hoje|amanha|semana|mes|\d{1,2}\/\d{1,2})/.test(s) ? texto : undefined, foco: /manutenc|oficina|\bos\b/.test(s) ? 'manutenção' : /tarefa/.test(s) ? 'tarefas' : /carreg|viage|entreg|colet|transp|at\b/.test(s) ? 'transporte' : undefined }, local: true };
+  }
+  // B5.1: 📦 pátio / propriedade do cliente
+  if (/\bpatio\b|propriedade d[eo] cliente|\b(e|eh) (nosso|nossa|da gente) ou d[eo] cliente|\bd[eo] cliente ou (nosso|nossa)\b/.test(s) && ok('patio')) {
+    const it = String(texto).split(/[\s,?!.]+/).find((w) => w.length >= 4 && /\d/.test(w) && /[a-z]/i.test(w));
+    const cm = String(texto).match(/\bd[oa]s? cliente\s+([A-ZÀ-Ú0-9][\wÀ-ú&.\- ]{1,40})/) || String(texto).match(/\b(?:da|do|de)\s+([A-ZÀ-Ú][\wÀ-ú&.\-]+(?: [A-ZÀ-Ú][\wÀ-ú&.\-]+){0,3})\s+(?:no|tem no|est[aã]o? no) p[aá]tio/);
+    return { consulta: 'patio', args: { item: it || undefined, cliente: !it && cm ? cm[1].trim() : undefined }, local: true };
   }
   if (/\b(o que|quais|tem algo|alguma coisa).{0,30}(pendente|pendencia|atencao|atrasad|urgente|alerta|resolver|critico)|o que (eu )?(preciso|tenho que) (fazer|resolver|ver)/.test(s) && ok('pendencias')) return { consulta: 'pendencias', args: {}, local: true };
   m = String(texto).match(/\bOS[-\s]?\d{2,}[-\d]*/i); if (m && ok('situacao_os')) return { consulta: 'situacao_os', args: { ref: m[0] }, local: true }; // B2.1

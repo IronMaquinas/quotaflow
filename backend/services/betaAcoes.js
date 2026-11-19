@@ -152,4 +152,13 @@ async function confirmar(sb, { tenantId, userId, perfis, quem }, token) {
     console.log(`👋 [beta] ação ${t.acao} confirmada por ${quem?.nome || userId} (tenant ${tenantId})`); return r; }
   catch (e) { console.error('❌ [beta] ação', t.acao, e.message); return { status: 500, erro: 'Não consegui fazer agora. Tente pela tela.' }; }
 }
-module.exports = { ACOES, permitidas, preparar, confirmar, assinar, abrir };
+/** B5.1: 🚗 algo ficou pendente no modo Conversa (dirigindo) → tarefa para a própria pessoa resolver quando parar */
+async function lembrete(sb, ctx, texto, motivo = '') {
+  const t = String(texto || '').trim().slice(0, 300); if (!t) return { status: 400, erro: 'Nada para anotar.' };
+  const T = require('./tarefas'); let ref = null; try { ref = (await T.pessoas(sb, ctx.tenantId)).find((p) => String(p.usuario_id) === String(ctx.userId))?.ref || null; } catch { /* ok */ }
+  const r = await T.criar(sb, ctx.tenantId, ctx.quem, { titulo: `Resolver pedido feito à Beta por voz: "${t.slice(0, 140)}"`, responsavel_ref: ref, prazo: hojeBR(), prioridade: 'alta', detalhe: `Pedido feito no modo Conversa (dirigindo): "${t}".${motivo ? `\nPor que ficou pendente: ${String(motivo).slice(0, 400)}` : ''}\nCriada pela 👋 Beta.` });
+  if (r.erro) return { status: 409, erro: r.erro }; console.log(`👋 [beta] lembrete por voz criado para ${ctx.quem?.nome} (tenant ${ctx.tenantId})`);
+  return { texto: `Deixei a tarefa ${r.numero || ''} para você ver quando parar.`.replace('  ', ' '), numero: r.numero || null };
+}
+
+module.exports = { lembrete, ACOES, permitidas, preparar, confirmar, assinar, abrir };

@@ -67,3 +67,49 @@ function gravarNeural({ aoTexto, aoEstado, aoErro }) {
   }).catch(() => { aoEstado?.(null); aoErro?.("Libere o microfone para o QuotaFlow no navegador."); });
   return { parar() { parado = true; fim(); if (!rec && stream) stream.getTracks().forEach((t) => t.stop()); } };
 }
+
+// B5.1: 🚗 modo Conversa — escuta contínua: grava só quando há fala (detector de voz) e para após ~1,3 s de silêncio.
+//   Neural: envia o trecho ao servidor; navegador: reconhecimento do próprio navegador. aoSilencio() quando ninguém falou por ~45 s.
+export function ouvirConversa(modo, { aoTexto, aoEstado, aoErro, aoSilencio, aoReserva }) {
+  if (modo !== "neural" || !podeGravar) {
+    let vivo = true; let r = null; const t0 = Date.now();
+    const ciclo = () => {
+      if (!vivo) return; if (!SR) { aoErro?.("Este navegador não reconhece fala."); return; }
+      r = new SR(); r.lang = "pt-BR"; r.interimResults = false; r.continuous = false; let ok = false;
+      r.onresult = (e) => { const t = Array.from(e.results).map((x) => x[0].transcript).join(" ").trim(); if (t) { ok = true; vivo = false; aoEstado?.(null); aoTexto?.(t); } };
+      r.onerror = (e) => { if (e.error === "not-allowed") { vivo = false; aoErro?.("Libere o microfone para o QuotaFlow."); } };
+      r.onend = () => { if (!vivo || ok) return; if (Date.now() - t0 > 45000) { vivo = false; aoEstado?.(null); aoSilencio?.(); return; } setTimeout(ciclo, 150); };
+      try { r.start(); aoEstado?.("ouvindo"); } catch { setTimeout(ciclo, 400); }
+    };
+    ciclo(); return { parar() { vivo = false; try { r?.abort(); } catch { /* ok */ } } };
+  }
+  let vivo = true; let stream = null; let ctx = null; let rec = null; let raf = null; const partes = [];
+  const encerrar = () => { vivo = false; cancelAnimationFrame(raf); try { if (rec?.state === "recording") rec.stop(); } catch { /* ok */ } stream?.getTracks().forEach((t) => t.stop()); try { ctx?.close(); } catch { /* ok */ } };
+  navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } }).then((s) => {
+    stream = s; if (!vivo) return encerrar();
+    ctx = new (window.AudioContext || window.webkitAudioContext)(); const an = ctx.createAnalyser(); an.fftSize = 1024; ctx.createMediaStreamSource(s).connect(an); const buf = new Float32Array(an.fftSize);
+    const tipo = ["audio/webm;codecs=opus", "audio/webm", "audio/mp4", "audio/ogg"].find((x) => window.MediaRecorder.isTypeSupported?.(x)) || "";
+    rec = new MediaRecorder(s, tipo ? { mimeType: tipo } : undefined); rec.ondataavailable = (e) => { if (e.data?.size) partes.push(e.data); };
+    let falou = false; let ultimaVoz = 0; const t0 = Date.now(); let base = 0.01; let amostras = 0;
+    rec.onstop = async () => {
+      stream?.getTracks().forEach((t) => t.stop()); try { ctx?.close(); } catch { /* ok */ }
+      if (!falou) return; const blob = new Blob(partes, { type: rec.mimeType || "audio/webm" }); aoEstado?.("entendendo");
+      try { const b64 = await new Promise((ok, err) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(",")[1]); fr.onerror = err; fr.readAsDataURL(blob); });
+        const r = await apiService.post("/beta/voz/ouvir", { audio: b64, tipo: blob.type }); aoEstado?.(null); if (r.texto) aoTexto?.(r.texto); else aoErro?.("Não entendi. Pode repetir?"); }
+      catch (e) { aoEstado?.(null); if (e?.response?.data?.reserva) aoReserva?.(e.response.data.erro); else aoErro?.("Não entendi. Pode repetir?"); }
+    };
+    rec.start(250); aoEstado?.("ouvindo");
+    const loop = () => {
+      if (!vivo) return; an.getFloatTimeDomainData(buf); let sq = 0; for (const v of buf) sq += v * v; const rms = Math.sqrt(sq / buf.length); const agora = Date.now();
+      if (!falou && amostras < 30) { base = (base * amostras + rms) / (amostras + 1); amostras++; } // calibra o ruído (carro, rua)
+      if (rms > Math.max(0.02, base * 2.5)) { if (!falou) falou = true; ultimaVoz = agora; }
+      if (falou && agora - ultimaVoz > 1300) { vivo = false; try { rec.stop(); } catch { /* ok */ } return; }
+      if (falou && agora - t0 > 25000) { vivo = false; try { rec.stop(); } catch { /* ok */ } return; }
+      if (!falou && agora - t0 > 45000) { encerrar(); aoEstado?.(null); aoSilencio?.(); return; }
+      raf = requestAnimationFrame(loop);
+    }; loop();
+  }).catch(() => { aoEstado?.(null); aoErro?.("Libere o microfone para o QuotaFlow."); });
+  return { parar() { const gravando = vivo; vivo = false; cancelAnimationFrame(raf); partes.length = 0; if (gravando) encerrar(); } };
+}
+/** fala e devolve uma Promise que resolve quando termina */
+export const falarE = (modo, texto) => new Promise((ok) => { let feito = false; const fim = () => { if (!feito) { feito = true; ok(); } }; falar(modo, texto, fim); setTimeout(fim, Math.min(60000, 4000 + String(texto || "").length * 90)); });

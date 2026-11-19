@@ -8,6 +8,7 @@ import { useEffect, useRef, useState } from "react";
 import BotoesContato from "../shared/BotoesContato"; // B1.10
 import apiService from "../../services/apiService";
 import * as V from "./vozBeta"; // B4: 🎤🔊 voz
+import ModoConversa from "./ModoConversa"; // B5.1: 🚗
 
 
 export default function Beta({ C, s, podeAbrir = () => true }) {
@@ -17,7 +18,8 @@ export default function Beta({ C, s, podeAbrir = () => true }) {
   const [voz, setVoz] = useState(null); const [fala, setFala] = useState(V.lerPref()); const [ouvindo, setOuvindo] = useState(null); const mic = useRef(null);
   useEffect(() => { if (aberta && !voz) apiService.get("/beta/voz").then((r) => setVoz(r)).catch(() => setVoz({ permitido: false })); if (!aberta) { V.pararFala(); mic.current?.parar(); } }, [aberta]); // eslint-disable-line
   // B5.0: no chat a voz é SEMPRE a do navegador (custo zero); 🎤 e 🔊 obedecem aos interruptores da empresa (Console). A voz paga fica só no modo Conversa.
-  const modoVoz = "navegador";
+  const modoVoz = "navegador"; const [conversa, setConversa] = useState(false);
+  const temConversa = !!(voz?.permitido && voz?.conversa && voz.conversa !== "desligado");
   const temMic = !!(voz?.permitido && voz?.chat_mic !== false && V.podeOuvirNavegador);
   const temFala = !!(voz?.permitido && voz?.chat_fala === true && V.podeFalarNavegador);
   const falarResposta = (texto, proposta) => { if (!temFala || !fala) return; const extra = proposta ? (proposta.bloqueia ? " Não dá para fazer assim; veja o motivo no cartão." : ` ${proposta.resumo.join(". ")}. Toque em confirmar se estiver certo.`) : ""; V.falar(modoVoz, texto + extra); };
@@ -43,6 +45,7 @@ export default function Beta({ C, s, podeAbrir = () => true }) {
     try { const r = await apiService.post("/beta/confirmar", { token: m.proposta.token }); setMsgs((l) => [...l.map((x, k) => (k === i ? { ...x, decidida: "feita" } : x)), { de: "beta", texto: r.texto, link: r.link, direto: true, feito: true }]); if (fala && temFala) V.falar(modoVoz, r.texto); }
     catch (e) { setMsgs((l) => [...l.map((x, k) => (k === i ? { ...x, decidida: null } : x)), { de: "beta", texto: e?.response?.data?.erro || "Não consegui fazer agora. Tente pela tela.", erro: true }]); }
   };
+  if (conversa) return <ModoConversa C={C} voz={voz} onFechar={() => setConversa(false)} />;
   if (!aberta) return (
     <button type="button" onClick={() => setAberta(true)} title="Converse com a Beta, a assistente do QuotaFlow"
       style={{ position: "fixed", right: 22, bottom: 22, zIndex: 150, background: `linear-gradient(135deg, ${C.accent}, #8b5cf6)`, color: "#fff", border: "none", borderRadius: 28, padding: "12px 18px", fontSize: 14, fontWeight: 700, cursor: "pointer", boxShadow: "0 8px 24px rgba(0,0,0,.4)" }}>👋 Beta</button>);
@@ -51,6 +54,7 @@ export default function Beta({ C, s, podeAbrir = () => true }) {
       <div style={{ display: "flex", alignItems: "center", gap: 10, padding: "12px 14px", background: `linear-gradient(135deg, ${C.accent}33, #8b5cf633)`, borderBottom: `1px solid ${C.border}` }}>
         <span style={{ fontSize: 22 }}>👋</span>
         <div style={{ flex: 1 }}><div style={{ fontWeight: 700 }}>Beta</div><div style={{ fontSize: 11.5, color: C.textSub }}>assistente do QuotaFlow · consulta os dados da sua empresa</div></div>
+        {temConversa && <button type="button" onClick={() => { V.pararFala(); mic.current?.parar(); setConversa(true); }} title="Modo Conversa — mãos livres (para quem está dirigindo)" style={{ background: `${C.accent}22`, border: `1px solid ${C.accent}66`, color: C.text, borderRadius: 16, padding: "4px 10px", fontSize: 12.5, fontWeight: 600, cursor: "pointer" }}>🚗 Conversa</button>}
         {temFala && <button type="button" onClick={() => { const v = !fala; setFala(v); V.gravarPref(v); if (!v) V.pararFala(); }} title={fala ? "Beta fala as respostas — toque para silenciar" : "Ouvir as respostas da Beta"} aria-label="Voz das respostas" style={{ background: "none", border: "none", fontSize: 17, cursor: "pointer", opacity: fala ? 1 : 0.55 }}>{fala ? "🔊" : "🔇"}</button>}
         <button type="button" onClick={() => setAberta(false)} aria-label="Fechar" style={{ background: "none", border: "none", color: C.textSub, fontSize: 20, cursor: "pointer" }}>×</button>
       </div>

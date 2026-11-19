@@ -41,7 +41,8 @@ async function usoHoje(sb, tenantId, userId) {
 }
 
 /** mensagens = [{ de: 'pessoa'|'beta', texto }] — a última é a pergunta */
-async function perguntar(sb, { tenantId, userId, perfis = [], nome = '', mensagens = [] }) {
+async function perguntar(sb, { tenantId, userId, perfis = [], nome = '', mensagens = [], modo = '' }) {
+  const falado = modo === 'conversa'; // B5.1: 🚗 modo Conversa — a resposta da visão geral é escrita para ser OUVIDA
   // B2.2: só as últimas 4 mensagens (as da Beta resumidas) + o ASSUNTO da última resposta (para "com quem está?", "e o prazo?")
   const hist = (Array.isArray(mensagens) ? mensagens : []).filter((m) => m && typeof m.texto === 'string' && m.texto.trim()).slice(-4).map((m) => ({ de: m.de === 'beta' ? 'beta' : 'pessoa', texto: m.texto.trim().slice(0, m.de === 'beta' ? 220 : 500), assunto: m.de === 'beta' && m.assunto && typeof m.assunto === 'object' ? { consulta: String(m.assunto.consulta || '').slice(0, 40), args: Object.fromEntries(Object.entries(m.assunto.args || {}).slice(0, 4).map(([k, v]) => [String(k).slice(0, 20), String(v ?? '').slice(0, 120)])) } : null }));
   const ultimoAssunto = [...hist].reverse().find((m) => m.de === 'beta' && m.assunto?.consulta)?.assunto || null;
@@ -68,7 +69,7 @@ async function perguntar(sb, { tenantId, userId, perfis = [], nome = '', mensage
     // 🧠 visão geral (só quando pedida): modelo principal
     const { dados } = await contexto(sb, { tenantId, userId, perfis, nome });
     const r = await gerarConferido((extra) => IA.gerarTexto({ tenant: emp, registrar: { ...registrar, chave: `${base}:painel` }, sistema: SISTEMA,
-      prompt: `Dados da empresa (JSON):\n${JSON.stringify(dados)}\n\nConversa:\n${conversa}${extra}\n\nResponda à última mensagem da Pessoa.`, max: 450 }), { dados, perguntas: hist.map((m) => m.texto) });
+      prompt: `Dados da empresa (JSON):\n${JSON.stringify(dados)}\n\nConversa:\n${conversa}${extra}\n\nResponda à última mensagem da Pessoa.${falado ? FALADO : ''}`, max: 450 }), { dados, perguntas: hist.map((m) => m.texto) });
     if (!r.texto) return { erro: 'A Beta não conseguiu responder agora. Tente de novo em instantes.', status: 503 };
     await contar();
     return { texto: r.texto, conferido: r.conferido, suspeitos: r.suspeitos || [], restantes: await restam(sb, tenantId, userId) };
@@ -105,6 +106,9 @@ async function perguntar(sb, { tenantId, userId, perfis = [], nome = '', mensage
   return { texto: 'Desculpe, ainda estou aprendendo a consultar isso. 🙏 Encaminhei a sua pergunta para os nossos especialistas — em breve você poderá perguntar de novo.' + (lista.length ? `\n\nHoje eu já sei, por exemplo: ${lista.slice(0, 5).map((c) => c.exemplo.replace(/\?$/, '')).join(' · ')}.` : ''),
     aprendendo: true, conferido: true, direto: true, suspeitos: [], restantes: await restam(sb, tenantId, userId) };
 }
+
+// B5.1: 🚗 resposta para ser falada (a pessoa está dirigindo)
+const FALADO = '\n\nIMPORTANTE: a resposta será FALADA para quem está dirigindo. Até 70 palavras, frases curtas, sem listas, sem emojis, sem markdown. Se pedirem como está o negócio ou as prioridades: diga em uma frase como está o dia e as 3 prioridades mais importantes, em ordem. Termine perguntando se quer detalhe de alguma.';
 
 const restam = async (sb, tenantId, userId) => Math.max(0, LIMITE() - (await usoHoje(sb, tenantId, userId)));
 

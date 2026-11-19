@@ -45,8 +45,8 @@ export default function CustoIa({ token, chamar, C, card, btn, tag, input, onAvi
               {ed?.id === i.id && (
                 <div style={{ marginTop: 10, padding: 12, borderRadius: 8, background: `${C.accent}0d`, border: `1px solid ${C.border}`, display: "grid", gap: 10 }}>
                   <div style={{ display: "flex", gap: 18, flexWrap: "wrap" }}>
-                    <Toggle C={C} ligado={ed.chat_mic} rotulo="🎤 Microfone no chat (grátis)" onChange={(v) => setEd({ ...ed, chat_mic: v })} />
-                    <Toggle C={C} ligado={ed.chat_fala} rotulo="🔊 Ler respostas no chat (grátis)" onChange={(v) => setEd({ ...ed, chat_fala: v })} />
+                    <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}><Toggle C={C} ligado={ed.chat_mic} rotulo="🎤 Microfone no chat (grátis)" onChange={(v) => setEd({ ...ed, chat_mic: v })} />🎤 Microfone no chat <span style={{ color: C.sub, fontSize: 11.5 }}>(voz do navegador, grátis)</span></label>
+                    <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}><Toggle C={C} ligado={ed.chat_fala} rotulo="🔊 Ler respostas no chat (grátis)" onChange={(v) => setEd({ ...ed, chat_fala: v })} />🔊 Ler respostas em voz alta no chat <span style={{ color: C.sub, fontSize: 11.5 }}>(grátis · padrão desligado)</span></label>
                   </div>
                   <div style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "end" }}>
                     <label style={{ fontSize: 12, color: C.sub }}>🚗 Modo Conversa (voz paga)<br /><select value={ed.conversa} onChange={(e) => setEd({ ...ed, conversa: e.target.value })} style={{ ...input, width: 200 }}>{MODOS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}</select></label>
