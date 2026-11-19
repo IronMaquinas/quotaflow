@@ -157,6 +157,10 @@ router.put('/biblioteca/inspecoes/:id', responder(async (req) => { const r = awa
 router.get('/biblioteca/inspecoes/:id/imagens', responder(async (req) => { const { data } = await supabase.from('inspecao_modelos').select('*').is('tenant_id', null).eq('id', req.params.id); return { imagens: data?.[0] ? await INSP.linksImagens(supabase, data[0]) : {} }; }));
 
 // B2.0: 👋 perguntas que a Beta ainda não sabe (todas as empresas)
+// B5.0: 💲 custo da IA por empresa + interruptores da voz e teto
+const CIA = require('../services/custoIa');
+router.get('/ia-custos', plataformaMiddleware, async (req, res) => { try { res.json(await CIA.painel(supabase, String(req.query.mes || ''))); } catch (err) { res.status(500).json({ erro: err.message }); } });
+router.put('/transportadoras/:id/ia-config', plataformaMiddleware, async (req, res) => { try { const r = await CIA.salvarConfig(supabase, req.params.id, req.body || {}); await C.registrar(req.plataformaAdmin, 'ia_config', 'tenant', req.params.id, r.config).catch(() => {}); res.json(r); } catch (err) { if (/ia_config/.test(String(err.message))) return res.status(409).json({ erro: 'Falta rodar a migration 111.' }); res.status(500).json({ erro: err.message }); } });
 const BP = require('../services/betaPendentes');
 router.get('/beta-pendentes', plataformaMiddleware, async (req, res) => { try { res.json(await BP.listar(supabase, { status: req.query.status || 'pendente' })); } catch (err) { if (/beta_pendentes/.test(String(err.message))) return res.json({ itens: [], totais: {}, aviso: 'Falta rodar a migration 110.' }); res.status(500).json({ erro: err.message }); } });
 router.put('/beta-pendentes/:id', plataformaMiddleware, async (req, res) => { try { const r = await BP.resolver(supabase, req.params.id, req.body || {}); if (r.erro) return res.status(r.status || 400).json(r); res.json(r); } catch (err) { res.status(500).json({ erro: err.message }); } });

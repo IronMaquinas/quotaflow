@@ -14,6 +14,7 @@ import BibliotecaInspecoes from "./BibliotecaInspecoes"; // etapa 14a
 import BibliotecaContratos from "./BibliotecaContratos"; // etapa 14d
 import CnpjsPlataforma from "./CnpjsPlataforma"; // 14e
 import BetaPendentes from "./BetaPendentes"; // B2.0
+import CustoIa from "./CustoIa"; // B5.0
 import { PlanosPlataforma, ModulosEmpresa, AssinaturaEmpresa, PainelFinanceiro } from "./ModulosPlataforma"; // 18j · 18v · 18x
 
 const GRUPOS = [ // 14e.1
@@ -22,7 +23,7 @@ const GRUPOS = [ // 14e.1
   ["PLANOS", ["financeiro", "planos"]], // 18j · 18x
   ["COMPLIANCE", ["cnpjs"]],
   ["BIBLIOTECAS", ["funcoes", "epi", "treinamentos", "inspecoes", "contratos"]],
-  ["IA", ["beta"]], // B2.2: faltava no menu agrupado
+  ["IA", ["beta", "custo_ia"]], // B2.2: faltava no menu agrupado
 ];
 
 
@@ -425,6 +426,7 @@ export default function ConsolePlataforma() {
     { id: "financeiro", t: "💰 Financeiro" }, // 18x
     { id: "planos", t: "🧩 Planos e módulos" }, // 18j
     { id: "beta", t: "👋 Beta — o que perguntam" }, // B2.0
+    { id: "custo_ia", t: "💲 Custo de IA" }, // B5.0
   ];
 
   return (
@@ -472,6 +474,7 @@ export default function ConsolePlataforma() {
         {aba === "financeiro" && <PainelFinanceiro token={token} chamar={chamar} C={C} card={card} btn={btn} atualizar={assDe} onEmpresa={(id) => { const e = (tenants || []).find((x) => String(x.id) === String(id)); if (e) setAssDe(e); }} />}{/* 18x */}
         {aba === "planos" && <PlanosPlataforma token={token} chamar={chamar} C={C} input={input} label={label} card={card} btn={btn} tag={tag} onAviso={setAviso} />}{/* 18j */}
         {aba === "fornecedores" && <Lista tipo="fornecedor" dados={forns} />}
+        {aba === "custo_ia" && <CustoIa token={token} chamar={chamar} C={C} card={card} btn={btn} tag={tag} input={input} onAviso={setAviso} />}{/* B5.0 */}
         {aba === "beta" && <BetaPendentes token={token} chamar={chamar} C={C} card={card} btn={btn} tag={tag} onAviso={setAviso} />}{/* B2.0 */}
         {aba === "funcoes" && <BibliotecaFuncoes token={token} chamar={chamar} C={C} input={input} label={label} card={card} btn={btn} tag={tag} onAviso={setAviso} />}
         {aba === "epi" && <BibliotecaEpi token={token} chamar={chamar} C={C} input={input} label={label} card={card} btn={btn} tag={tag} onAviso={setAviso} />}

@@ -14,15 +14,16 @@ export default function Beta({ C, s, podeAbrir = () => true }) {
   const [aberta, setAberta] = useState(false); const [msgs, setMsgs] = useState([]); const [txt, setTxt] = useState(""); const [ocup, setOcup] = useState(false); const [rest, setRest] = useState(null);
   const fim = useRef(null); const [sug, setSug] = useState([]);
   // B4: voz (gestor/admin). modo = navegador | neural; fala = ler as respostas em voz alta (preferência do aparelho)
-  const [voz, setVoz] = useState(null); const [fala, setFala] = useState(V.lerPref()); const [ouvindo, setOuvindo] = useState(null); const mic = useRef(null); const porVoz = useRef(false);
+  const [voz, setVoz] = useState(null); const [fala, setFala] = useState(V.lerPref()); const [ouvindo, setOuvindo] = useState(null); const mic = useRef(null);
   useEffect(() => { if (aberta && !voz) apiService.get("/beta/voz").then((r) => setVoz(r)).catch(() => setVoz({ permitido: false })); if (!aberta) { V.pararFala(); mic.current?.parar(); } }, [aberta]); // eslint-disable-line
-  const modoVoz = voz?.provedor === "neural" && !window.qfBetaVozReserva ? "neural" : "navegador";
-  const temMic = voz?.permitido && (modoVoz === "neural" ? V.podeGravar : V.podeOuvirNavegador);
-  const temFala = voz?.permitido && (voz?.provedor === "neural" || V.podeFalarNavegador);
-  const falarResposta = (texto, proposta) => { if (!temFala || (!fala && !porVoz.current)) return; const extra = proposta ? (proposta.bloqueia ? " Não dá para fazer assim; veja o motivo no cartão." : ` ${proposta.resumo.join(". ")}. Toque em confirmar se estiver certo.`) : ""; V.falar(modoVoz, texto + extra); };
+  // B5.0: no chat a voz é SEMPRE a do navegador (custo zero); 🎤 e 🔊 obedecem aos interruptores da empresa (Console). A voz paga fica só no modo Conversa.
+  const modoVoz = "navegador";
+  const temMic = !!(voz?.permitido && voz?.chat_mic !== false && V.podeOuvirNavegador);
+  const temFala = !!(voz?.permitido && voz?.chat_fala === true && V.podeFalarNavegador);
+  const falarResposta = (texto, proposta) => { if (!temFala || !fala) return; const extra = proposta ? (proposta.bloqueia ? " Não dá para fazer assim; veja o motivo no cartão." : ` ${proposta.resumo.join(". ")}. Toque em confirmar se estiver certo.`) : ""; V.falar(modoVoz, texto + extra); };
   const tocarMic = () => {
     if (ouvindo === "ouvindo") { mic.current?.parar(); return; } if (ouvindo) return;
-    mic.current = V.ouvir(modoVoz, { aoEstado: setOuvindo, aoTexto: (t) => { porVoz.current = true; enviar(t); }, aoErro: (m) => setMsgs((l) => [...l, { de: "beta", texto: m, erro: true }]) });
+    mic.current = V.ouvir(modoVoz, { aoEstado: setOuvindo, aoTexto: (t) => enviar(t), aoErro: (m) => setMsgs((l) => [...l, { de: "beta", texto: m, erro: true }]) });
   };
   useEffect(() => { if (aberta && !sug.length) apiService.get("/beta/consultas").then((r) => setSug(r.sugestoes || [])).catch(() => {}); }, [aberta]); // eslint-disable-line
   const ir = (l) => { if (!l?.tela) return; if (l.tela === "pessoas") { if (l.aba) window.qfPessoasAba = l.aba; if (l.colaborador) window.qfAbrirColab = l.colaborador; } window.dispatchEvent(new CustomEvent("qf-navegar", { detail: { tela: l.tela } })); };
@@ -30,7 +31,7 @@ export default function Beta({ C, s, podeAbrir = () => true }) {
   const enviar = async (pergunta) => {
     const p = String(pergunta ?? txt).trim(); if (!p || ocup) return;
     const nova = [...msgs, { de: "pessoa", texto: p }]; setMsgs(nova); setTxt(""); setOcup(true);
-    try { const r = await apiService.post("/beta", { mensagens: nova.map(({ de, texto, assunto }) => ({ de, texto, assunto: assunto || undefined })) }); falarResposta(r.texto, r.proposta); porVoz.current = false; setMsgs([...nova, { de: "beta", texto: r.texto, conferido: r.conferido, suspeitos: r.suspeitos, direto: r.direto, link: r.link, acoes: r.acoes, aprendendo: r.aprendendo, assunto: r.assunto, proposta: r.proposta || null }]); setRest(r.restantes); }
+    try { const r = await apiService.post("/beta", { mensagens: nova.map(({ de, texto, assunto }) => ({ de, texto, assunto: assunto || undefined })) }); falarResposta(r.texto, r.proposta); setMsgs([...nova, { de: "beta", texto: r.texto, conferido: r.conferido, suspeitos: r.suspeitos, direto: r.direto, link: r.link, acoes: r.acoes, aprendendo: r.aprendendo, assunto: r.assunto, proposta: r.proposta || null }]); setRest(r.restantes); }
     catch (e) { const d = e?.response?.data; setMsgs([...nova, { de: "beta", texto: d?.erro || "Não consegui responder agora. Tente de novo em instantes.", erro: true }]); if (d?.restantes != null) setRest(d.restantes); }
     finally { setOcup(false); }
   };

@@ -22,16 +22,17 @@ router.post('/confirmar', async (req, res) => {
 });
 
 // B4: 🎤🔊 voz (gestor/admin) — o front pergunta o modo; neural fala/ouve pelo servidor, senão usa o navegador
+//   B5.0: GET /voz traz os interruptores da empresa (Console); falar/ouvir só no modo Conversa e dentro do teto do mês
 const gestorDe = (req) => perfisDe(req).some((p) => ['admin', 'gestor'].includes(p));
-router.get('/voz', (req, res) => res.json(gestorDe(req) ? { ...require('../services/betaVoz').publico(), permitido: true } : { permitido: false }));
+router.get('/voz', async (req, res) => { if (!gestorDe(req)) return res.json({ permitido: false }); try { res.json({ ...(await require('../services/betaVoz').publico(supabase, req.tenantId)), permitido: true }); } catch { res.json({ provedor: 'navegador', chat_mic: true, chat_fala: false, conversa: 'desligado', permitido: true }); } });
 router.post('/voz/falar', async (req, res) => {
   if (!gestorDe(req)) return res.status(403).json({ erro: 'Voz da Beta é para a gestão.' });
-  try { const r = await require('../services/betaVoz').falar(req.tenantId, req.body?.texto); if (r.erro) return res.status(r.status || 400).json(r); res.json(r); }
+  try { const r = await require('../services/betaVoz').falar(supabase, req.tenantId, req.body?.texto); if (r.erro) return res.status(r.status || 400).json(r); res.json(r); }
   catch (err) { console.error('❌ [voz] falar', err.message); res.status(502).json({ erro: 'Voz indisponível agora.', reserva: true }); }
 });
 router.post('/voz/ouvir', async (req, res) => {
   if (!gestorDe(req)) return res.status(403).json({ erro: 'Voz da Beta é para a gestão.' });
-  try { const r = await require('../services/betaVoz').transcrever(req.tenantId, req.body?.audio, req.body?.tipo); if (r.erro) return res.status(r.status || 400).json(r); res.json(r); }
+  try { const r = await require('../services/betaVoz').transcrever(supabase, req.tenantId, req.body?.audio, req.body?.tipo); if (r.erro) return res.status(r.status || 400).json(r); res.json(r); }
   catch (err) { console.error('❌ [voz] ouvir', err.message); res.status(502).json({ erro: 'Não consegui entender agora.', reserva: true }); }
 });
 
