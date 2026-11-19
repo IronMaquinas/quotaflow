@@ -157,6 +157,7 @@ app.use('/api/pessoas', tenantMiddleware, exigirModulo('colaboradores', { soment
 app.use('/api/meus-treinamentos', tenantMiddleware, exigirModulo('treinamentos'), require('./routes/meusTreinamentos'));
 app.use('/api/meus-procedimentos', tenantMiddleware, require('./routes/meusProcedimentos'));
 app.use('/api/valor-gerado', tenantMiddleware, require('./routes/valorGerado'));
+app.use('/api/suprimentos', tenantMiddleware, require('./routes/suprimentos')); // R1: 📊 Suprimentos com dados reais
 app.use('/api/sala-controle', tenantMiddleware, require('./routes/salaControle'));
 app.use('/api/metas', tenantMiddleware, require('./routes/metas'));
 app.use('/api/beta', tenantMiddleware, require('./routes/beta'));

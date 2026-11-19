@@ -12,6 +12,7 @@ import TelaRelatorioNova from './components/relatorio/TelaRelatorioNova';
 import TelaHistoricoPrecosNova from './components/historico/TelaHistoricoPrecosNova';
 import TelaInteligenciaNova from './components/inteligencia/TelaInteligenciaNova';
 import TelaBenchmarkNova from './components/benchmark/TelaBenchmarkNova';
+import TelaSuprimentos from './components/suprimentos/TelaSuprimentos'; // R1
 import PainelValorGerado, { SeloValorGerado } from './components/valor/PainelValorGerado'; // 5a
 import SalaControle from './components/home/SalaControle'; // SC1
 import TelaMetas from './components/metas/TelaMetas'; // SC2
@@ -486,8 +487,7 @@ const perfil = PERFIS[usuario.perfil] || {
     {sec:"ANÁLISES", id:"metas",         l:"🎯 Metas do negócio",     perfis:["admin","gestor"]}, // SC2
     {sec:"ANÁLISES", id:"valor_gerado",  l:"💰 Valor gerado",         perfis:["admin","gestor"]}, // 5a
     {sec:"ANÁLISES", id:"relatorio",     l:"📄 Relatório",            perfis:["admin","gestor"]},
-    {sec:"ANÁLISES", id:"historico",     l:"📉 Histórico Preços",     perfis:["admin","gestor"]},
-    {sec:"ANÁLISES", id:"inteligencia",  l:"🧠 Inteligência",         perfis:["admin","gestor"]},
+    {sec:"ANÁLISES", id:"suprimentos",   l:"📊 Suprimentos",          perfis:["admin","gestor","comprador"]}, // R1: substitui Histórico Preços e Inteligência (1ª versão)
     {sec:"ANÁLISES", id:"benchmark",     l:"📈 Benchmark",            perfis:["admin","gestor"]},
     // ── MEU ESPAÇO
     {sec:"MEU ESPAÇO", id:"minhas_viagens", l:rotulo("minhas_viagens"),  perfis:["admin","gestor","comprador","operacao","qualidade","financeiro","comercial"]}, // etapa 17a.1 — motorista com outros perfis
@@ -787,6 +787,7 @@ const perfil = PERFIS[usuario.perfil] || {
           </div>
         )}
 
+        {temAcesso(tela) && tela === "suprimentos" && <div style={{flex:1,overflowY:"auto"}}><TelaSuprimentos C={C} s={s} /></div>}{/* R1 */}
         {temAcesso(tela) && tela === "inteligencia" && (
           <div style={{flex:1,overflowY:"auto"}}>
             <TelaInteligenciaNova 
@@ -2488,6 +2489,7 @@ const PERMISSOES = {
   relatorio:          ["admin","gestor"],
   historico:          ["admin","gestor"],
   inteligencia:       ["admin","gestor"],
+  suprimentos:        ["admin","gestor","comprador"], // R1
   benchmark:          ["admin","gestor"],
   valor_gerado:       ["admin","gestor"], // 5a
   metas:              ["admin","gestor","comprador","operacao","qualidade","financeiro","comercial","fiscal"], // SC2 · SC2.4: o dono da meta (qualquer perfil) abre pela Sala/🔔; menu só gestão

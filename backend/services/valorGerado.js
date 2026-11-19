@@ -103,4 +103,4 @@ async function calcular(supabase, tenantId, { ano = null } = {}) {
   };
 }
 
-module.exports = { calcular, _mediana: mediana };
+module.exports = { calcular, compras, _mediana: mediana }; // R1: compras exportado para 📊 Suprimentos
