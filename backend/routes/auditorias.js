@@ -1,5 +1,6 @@
 // routes/auditorias.js — etapa A1: 🔎 auditorias (admin, gestor, qualidade)
 //   GET /programa?ano · POST / · GET /:id · PUT /:id · POST /:id/constatacoes · DELETE /constatacoes/:id
+//   A1.1: PUT /constatacoes/:id (rascunho) · POST /:id/iniciar · /:id/encerrar · /:id/reabrir · /:id/assinar { papel, nome, png } · /:id/cancelar
 const express = require('express');
 const router = express.Router();
 const { supabase } = require('../db');
@@ -14,7 +15,13 @@ const r = (fn) => async (req, res) => {
 router.get('/programa', r((req) => A.programa(supabase, req.tenantId, req.query.ano)));
 router.post('/', r(async (req) => A.criar(supabase, req.tenantId, await quem(req), req.body || {})));
 router.delete('/constatacoes/:id', r((req) => A.excluirConstatacao(supabase, req.tenantId, req.params.id)));
+router.put('/constatacoes/:id', r((req) => A.editarConstatacao(supabase, req.tenantId, req.params.id, req.body || {}))); // A1.1: rascunho
 router.get('/:id', r((req) => A.detalhe(supabase, req.tenantId, req.params.id)));
+router.post('/:id/iniciar', r((req) => A.iniciar(supabase, req.tenantId, req.params.id)));
+router.post('/:id/encerrar', r((req) => A.encerrar(supabase, req.tenantId, req.params.id)));
+router.post('/:id/reabrir', r((req) => A.reabrir(supabase, req.tenantId, req.params.id)));
+router.post('/:id/assinar', r(async (req) => A.assinar(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
+router.post('/:id/cancelar', r((req) => A.cancelar(supabase, req.tenantId, req.params.id)));
 router.put('/:id', r((req) => A.atualizar(supabase, req.tenantId, req.params.id, req.body || {})));
 router.post('/:id/constatacoes', r(async (req) => A.constatar(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
 module.exports = router;

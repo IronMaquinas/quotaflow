@@ -38,6 +38,7 @@ const ORIGENS = [
   { id: 'os_servico', label: '🛠 Serviço na OS' },
   { id: 'recebimento', label: '📥 Recebimento' },
   { id: 'pos_venda', label: '📞 Pós-venda' },
+  { id: 'auditoria', label: '🗂 Auditoria' }, // A1.1
 ];
 
 const UNIDADES = ['UN', 'KG', 'L', 'M', 'CX', 'PC', 'PAR', 'M²', 'M³'];

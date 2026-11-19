@@ -31,6 +31,7 @@ const ORIGEM_CFG = {
   os_servico:   { l: "Serviço na OS",     icon: "🛠" },
   inspecao:     { l: "Inspeção",          icon: "🔎" },
   pos_venda:    { l: "Pós-venda",         icon: "📞" },
+  auditoria:    { l: "Auditoria",         icon: "🗂" }, // A1.1: aberta por constatação de auditoria
 };
 
 const DISPOSICAO_CFG = {

@@ -116,7 +116,7 @@ router.post('/', tenantMiddleware, async (req, res) => {
       return res.status(400).json({ erro: "descricao_problema é obrigatória" });
     }
 
-    const origensValidas = ["recebimento", "os_material", "os_servico", "inspecao", "pos_venda"];
+    const origensValidas = ["recebimento", "os_material", "os_servico", "inspecao", "pos_venda", "auditoria"]; // A1.1: 🔎 auditoria
     const origemFinal = origem && origensValidas.includes(origem) ? origem : "os_material";
 
     const disposicoesValidas = ["pendente", "devolucao", "retrabalho", "descarte", "uso_como_esta"];
