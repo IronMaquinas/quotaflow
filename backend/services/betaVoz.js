@@ -38,13 +38,17 @@ const anotar = (sb, tenantId, recurso, unidades, modelo) => sb?.from('ia_uso').i
 // limpa o texto para falar: tira emojis, setas e marcação
 const paraFala = (t) => String(t || '').replace(/[\u{1F000}-\u{1FFFF}\u{2600}-\u{27BF}\u{2B00}-\u{2BFF}\u{FE0F}]/gu, '').replace(/[→•*_#]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 1200);
 
+const cacheFala = new Map(); // B5.3: frase repetida (saudação, "Confirma?") não é paga de novo
 async function falar(sb, tenantId, texto, fetcher = fetch) {
   const input = paraFala(texto); if (!input) return { status: 400, erro: 'Nada para falar.' };
+  const kc = `${config().voz || ''}|${input}`; if (input.length <= 120 && cacheFala.has(kc)) return { audio: cacheFala.get(kc), tipo: 'audio/mpeg', cache: true };
   const bloq = await liberada(sb, tenantId); if (bloq) return bloq; const c = config();
   const r = await fetcher(`${BASE}/audio/speech`, { method: 'POST', headers: { Authorization: `Bearer ${c.chave}`, 'Content-Type': 'application/json' }, body: JSON.stringify({ model: c.fala, voice: c.voz, input, instructions: INSTRUCOES, response_format: 'mp3' }) });
   if (!r.ok) { console.error('❌ [voz] falar', r.status); return { status: 502, erro: 'Voz indisponível agora.', reserva: true }; }
   await anotar(sb, tenantId, 'voz_falar', input.length, c.fala);
-  return { audio: Buffer.from(await r.arrayBuffer()).toString('base64'), tipo: 'audio/mpeg' };
+  const audio = Buffer.from(await r.arrayBuffer()).toString('base64');
+  if (input.length <= 120) { if (cacheFala.size > 300) cacheFala.clear(); cacheFala.set(kc, audio); }
+  return { audio, tipo: 'audio/mpeg' };
 }
 
 async function transcrever(sb, tenantId, base64, tipo = 'audio/webm', fetcher = fetch) {

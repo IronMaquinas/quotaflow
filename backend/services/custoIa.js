@@ -5,7 +5,7 @@
 async function q(p) { const { data, error } = await p; if (error) throw new Error(error.message); return data || []; }
 const PADRAO_PRECOS = {
   'claude-sonnet-5-5': { in: 3, out: 15 }, 'claude-haiku-5-5': { in: 1, out: 5 }, 'claude-opus-5-5': { in: 15, out: 75 },
-  voz_falar: { char: 16.7 }, voz_ouvir: { seg: 50 }, _texto: { in: 3, out: 15 },
+  voz_falar: { char: 10 }, voz_ouvir: { seg: 30 }, // B5.3: recalibrado pela fatura real (a 1ª tabela superestimava ~70%) _texto: { in: 3, out: 15 },
 };
 function precos() { try { return { ...PADRAO_PRECOS, ...JSON.parse(process.env.IA_PRECOS || '{}') }; } catch { return PADRAO_PRECOS; } }
 const cambio = () => Number(String(process.env.USD_BRL || '5.5').replace(',', '.')) || 5.5;
@@ -66,7 +66,7 @@ async function painel(sb, mes = mesAtual()) {
   const tenants = await q(sb.from('tenants').select('*'));
   const porT = new Map();
   for (const u of usos) { const k = String(u.tenant_id); const x = porT.get(k) || { texto: 0, voz: 0, chamadas: 0, recursos: {} }; const v = custoUsd(u, P) * R; if (ehVoz(u.recurso)) x.voz += v; else x.texto += v; x.chamadas++; x.recursos[u.recurso] = (x.recursos[u.recurso] || 0) + v; porT.set(k, x); }
-  const r2 = (n) => Math.round(n * 100) / 100;
+  const r2 = (n) => Math.round(n * 1000) / 1000;
   const itens = tenants.map((t) => {
     const x = porT.get(String(t.id)) || { texto: 0, voz: 0, chamadas: 0, recursos: {} }; const cfg = normalizar(t.ia_config); const ef = modoEfetivo(cfg);
     const pct = cfg.teto_mes_brl > 0 ? Math.round((x.voz / cfg.teto_mes_brl) * 100) : (x.voz > 0 ? 100 : 0);

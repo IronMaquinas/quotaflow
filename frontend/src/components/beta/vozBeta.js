@@ -41,19 +41,26 @@ function falarNavegador(texto, aoFim) {
   const u = new SpeechSynthesisUtterance(paraFala(texto)); u.lang = "pt-BR"; u.rate = 1.05; u.pitch = 1.1; const v = vozNavegador(); if (v) u.voice = v;
   u.onend = () => aoFim?.(); u.onerror = () => aoFim?.(); window.speechSynthesis.cancel(); window.speechSynthesis.speak(u);
 }
-export async function falar(modo, texto, aoFim) {
-  pararFala(); const t = paraFala(texto); if (!t) return aoFim?.();
+// B5.3: menos espera — (1) frases curtas e repetidas (saudação, "Confirma?", "Tudo bem…") ficam guardadas no aparelho: tocam na hora e não custam;
+//   (2) resposta longa: a 1ª frase é pedida sozinha (fica pronta antes) e o resto em paralelo — começa a falar enquanto o resto chega;
+//   (3) aoInicio() avisa quando o som REALMENTE começou (a tela mostra o texto junto com a voz).
+const memo = new Map(); const CHAVE = "qfVozCache:";
+const lerCache = (t) => { if (memo.has(t)) return memo.get(t); try { const v = localStorage.getItem(CHAVE + t); if (v) { memo.set(t, v); return v; } } catch { /* ok */ } return null; };
+const gravarCache = (t, b64) => { memo.set(t, b64); if (t.length > 90 || b64.length > 150000) return; try { localStorage.setItem(CHAVE + t, b64); } catch { /* cheio: só memória */ } };
+async function sintetizar(t) { const c = lerCache(t); if (c) return c; const r = await apiService.post("/beta/voz/falar", { texto: t }); if (!r?.audio) throw new Error("sem áudio"); if (t.length <= 90) gravarCache(t, r.audio); return r.audio; }
+function partirFala(t) { const ps = t.split(/(?<=[.!?])\s+/).filter(Boolean); if (ps.length < 2 || t.length < 140) return [t]; let a = ps[0]; let i = 1; while (i < ps.length && a.length < 60) { a = `${a} ${ps[i]}`; i++; } const resto = ps.slice(i).join(" "); return resto ? [a, resto] : [a]; }
+function tocar(b64) { return new Promise((ok, erro) => { const a = audioEl || new Audio(); a.setAttribute?.("playsinline", ""); a.src = `data:audio/mpeg;base64,${b64}`; audioAtual = a; a.onended = () => ok(); a.onerror = () => ok(); a.play().catch(erro); }); }
+export async function falar(modo, texto, aoFim, aoInicio) {
+  pararFala(); const t = paraFala(texto); if (!t) { aoInicio?.(); return aoFim?.(); }
   if (modo === "neural") {
-    let r = null;
-    try { r = await apiService.post("/beta/voz/falar", { texto: t }); }
-    catch (e) { diag.voz = "aparelho"; diag.erro = e?.response?.data?.erro || "voz neural indisponível"; }
-    if (r?.audio) {
-      try { const a = audioEl || new Audio(); a.setAttribute?.("playsinline", ""); a.src = `data:${r.tipo || "audio/mpeg"};base64,${r.audio}`; audioAtual = a;
-        a.onended = () => { audioAtual = null; aoFim?.(); }; a.onerror = () => { audioAtual = null; aoFim?.(); }; await a.play(); diag.voz = "neural"; diag.erro = ""; return; }
-      catch (e) { diag.voz = "aparelho"; diag.erro = `o aparelho bloqueou o som (${e?.name || "erro"}) — toque no botão`; }
-    }
+    const partes = partirFala(t); const pedidos = partes.map((x) => sintetizar(x)); pedidos.forEach((p) => p.catch(() => {}));
+    try {
+      const b1 = await pedidos[0]; let iniciou = false;
+      for (let i = 0; i < partes.length; i++) { const b = i ? await pedidos[i] : b1; if (!audioAtual && i) break; const p = tocar(b); if (!iniciou) { iniciou = true; aoInicio?.(); } await p; if (!audioAtual) break; }
+      audioAtual = null; diag.voz = "neural"; diag.erro = ""; return aoFim?.();
+    } catch (e) { diag.voz = "aparelho"; diag.erro = e?.response?.data?.erro || (e?.name === "NotAllowedError" ? "o aparelho bloqueou o som — toque no botão" : "voz neural indisponível"); }
   }
-  falarNavegador(t, aoFim);
+  aoInicio?.(); falarNavegador(t, aoFim);
 }
 
 /** começa a ouvir; devolve { parar() }. aoTexto(texto) quando entender; aoEstado("ouvindo"|"entendendo"|null); aoErro(msg) */
@@ -134,4 +141,4 @@ export function ouvirConversa(modo, { aoTexto, aoEstado, aoErro, aoSilencio, aoR
   return { parar() { const gravando = vivo; vivo = false; cancelAnimationFrame(raf); partes.length = 0; if (gravando) encerrar(); } };
 }
 /** fala e devolve uma Promise que resolve quando termina */
-export const falarE = (modo, texto) => new Promise((ok) => { let feito = false; const fim = () => { if (!feito) { feito = true; ok(); } }; falar(modo, texto, fim); setTimeout(fim, Math.min(60000, 4000 + String(texto || "").length * 90)); });
+export const falarE = (modo, texto, aoInicio) => new Promise((ok) => { let feito = false; const fim = () => { if (!feito) { feito = true; ok(); } }; falar(modo, texto, fim, () => { aoInicio?.(); setTimeout(fim, Math.min(90000, 6000 + String(texto || "").length * 110)); }); setTimeout(fim, 45000); }); // B5.3: o tempo-limite conta a partir do início do som

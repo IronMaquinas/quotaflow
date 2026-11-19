@@ -422,19 +422,21 @@ const ESPERADO = {
   'front:BetaPendentes.jsx': 'a3a9be9eed90e6a92ac4fc8d13396edd', // etapa B2.2
   'front:TelaEquipamentos.jsx': '9ae0de5715f8d3099c29b6979863faef', // etapa B2.0
   'services/betaAcoes.js': '30bea6195d90e4ad6efbe823ba572a7e', // etapa B5.1
-  'services/betaVoz.js': 'bfafe2d5f75adac73b15e3f510768b1f', // etapa B5.0
-  'front:vozBeta.js': 'dca2b53c8c72803d777c8da501e413cc', // etapa B5.2
-  'services/custoIa.js': 'c4f981495866d55052aaf4e22378f0ff', // etapa B5.0 (novo)
+  'services/betaVoz.js': '400436f1c9579c2deafa020cab0044b8', // etapa B5.3
+  'front:vozBeta.js': '4589f325a39cc608216bf9cc1e26bdb2', // etapa B5.3
+  'services/custoIa.js': '142925962841bd0cf3da886d76d86231', // etapa B5.3
   'migrations/111_ia_config_empresa.sql': '664d9e3281f88c676ec8c30f352dfd61', // etapa B5.0 (novo)
-  'front:CustoIa.jsx': 'ffa9e2a91b39c2c20bd0b7aa39ce2145', // etapa B5.1
-  'front:ModoConversa.jsx': '947c381b2a04b4d19d6eeca43495c5d2', // etapa B5.2
+  'front:CustoIa.jsx': '7eb358bf3f6005dffbf9012e668b8a75', // etapa B5.3
+  'front:ModoConversa.jsx': '155fb3020ff448d08044381b583dc28c', // etapa B5.3
 };
 
-// Antes de copiar a etapa B5.2 — base: B5.1 (a6b9d46)
+// Antes de copiar a etapa B5.3 — base: B5.2 (6120af8)
 const ANTES = {
-  'front:Beta.jsx': '18b736ca3e13d1fd69f5449599f3f5f5',
-  'front:vozBeta.js': '0c5ad258cf9c997153cd90ffb3fed8f6',
-  'front:ModoConversa.jsx': 'afb126746cc71f1dd2aedc0a4ce14cb2',
+  'services/betaVoz.js': 'bfafe2d5f75adac73b15e3f510768b1f',
+  'services/custoIa.js': 'c4f981495866d55052aaf4e22378f0ff',
+  'front:vozBeta.js': 'dca2b53c8c72803d777c8da501e413cc',
+  'front:ModoConversa.jsx': '947c381b2a04b4d19d6eeca43495c5d2',
+  'front:CustoIa.jsx': 'ffa9e2a91b39c2c20bd0b7aa39ce2145',
 };
 
 const RAIZ = process.cwd();
@@ -472,7 +474,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a B5.2)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a B5.3)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

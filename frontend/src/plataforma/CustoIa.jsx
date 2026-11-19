@@ -3,7 +3,7 @@
 //   Teto: 80% → alerta aqui; 100% → a voz paga volta para a do navegador até o mês virar (a Beta continua funcionando).
 import { useEffect, useState } from "react";
 import { Toggle } from "./ModulosPlataforma";
-const brl = (n) => (Number(n) || 0).toLocaleString("pt-BR", { style: "currency", currency: "BRL" });
+const brl = (n) => { const v = Number(n) || 0; return v.toLocaleString("pt-BR", { style: "currency", currency: "BRL", minimumFractionDigits: v > 0 && v < 0.1 ? 3 : 2, maximumFractionDigits: v > 0 && v < 0.1 ? 3 : 2 }); }; // B5.3: centavos pequenos não somem
 const MODOS = [["desligado", "Desligado"], ["neural", "Voz neural"], ["ao_vivo", "Ao vivo (tempo real)"]];
 const ROT = { beta: "Beta (texto)", "beta:rot": "Beta — roteador", "beta:painel": "Beta — visão geral", voz_falar: "Voz — fala", voz_ouvir: "Voz — escuta" };
 
