@@ -25,7 +25,8 @@ export default function ModoConversa({ C, voz, onFechar }) {
   const pend = useRef(null); const mais = useRef(""); const wake = useRef(null);
   const primeiro = String(voz?.nome || "").split(" ")[0];
 
-  const dizer = async (t) => { if (!vivo.current) return; setUltimo((u) => ({ ...u, beta: t })); setEstado("falando"); await V.falarE(modo.current, t); };
+  const [diag, setDiag] = useState("");
+  const dizer = async (t) => { if (!vivo.current) return; setUltimo((u) => ({ ...u, beta: t })); setEstado("falando"); await V.falarE(modo.current, t); setDiag(V.diag.voz === "neural" ? "🔈 voz neural" : V.diag.erro ? `🔈 voz do aparelho — ${V.diag.erro}` : ""); };
   const escutar = () => {
     if (!vivo.current) return; setPausado(false);
     mic.current = V.ouvirConversa(modo.current, {
@@ -36,7 +37,7 @@ export default function ModoConversa({ C, voz, onFechar }) {
       aoSilencio: () => { if (vivo.current) { setEstado("pausado"); setPausado(true); } },
     });
   };
-  const fechar = () => { vivo.current = false; mic.current?.parar(); V.pararFala(); try { wake.current?.release(); } catch { /* ok */ } onFechar(); };
+  const fechar = () => { vivo.current = false; mic.current?.parar(); V.pararFala(); V.fecharMicrofone(); try { wake.current?.release(); } catch { /* ok */ } onFechar(); };
 
   async function tratar(texto) {
     const t = String(texto).trim(); const n = norm(t); setUltimo({ eu: t, beta: "" });
@@ -73,12 +74,12 @@ export default function ModoConversa({ C, voz, onFechar }) {
   useEffect(() => {
     (async () => { try { wake.current = await navigator.wakeLock?.request("screen"); } catch { /* ok */ }
       await dizer(`Oi${primeiro ? `, ${primeiro}` : ""}! Em que posso te ajudar?`); escutar(); })();
-    return () => { vivo.current = false; mic.current?.parar(); V.pararFala(); try { wake.current?.release(); } catch { /* ok */ } };
+    return () => { vivo.current = false; mic.current?.parar(); V.pararFala(); V.fecharMicrofone(); try { wake.current?.release(); } catch { /* ok */ } };
   }, []); // eslint-disable-line
 
   const cor = { ouvindo: "#22c55e", entendendo: "#a78bfa", pensando: "#a78bfa", falando: C.accent, saudando: C.accent, pausado: "#64748b" }[estado] || "#64748b";
   const rot = { ouvindo: "Pode falar…", entendendo: "Entendendo…", pensando: "Pensando…", falando: "Beta falando — toque para interromper", saudando: "Beta falando…", pausado: "Pausado — toque para falar" }[estado] || "";
-  const tocar = () => { if (estado === "falando" || estado === "saudando") { V.pararFala(); return; } if (pausado || estado === "pausado") escutar(); };
+  const tocar = () => { V.desbloquearAudio(); if (estado === "falando" || estado === "saudando") { V.pararFala(); return; } if (pausado || estado === "pausado") escutar(); };
   return (
     <div style={{ position: "fixed", inset: 0, zIndex: 300, background: "#05070b", color: "#e2e8f0", display: "flex", flexDirection: "column", alignItems: "center", justifyContent: "space-between", padding: "max(24px, env(safe-area-inset-top)) 20px max(24px, env(safe-area-inset-bottom))" }}>
       <div style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", maxWidth: 560 }}>
@@ -93,6 +94,7 @@ export default function ModoConversa({ C, voz, onFechar }) {
         <div style={{ fontSize: 18, fontWeight: 600, color: cor, marginBottom: 12 }}>{rot}</div>
         {ultimo.eu && <div style={{ fontSize: 15, color: "#94a3b8", marginBottom: 8 }}>"{ultimo.eu}"</div>}
         {ultimo.beta && <div style={{ fontSize: 17, lineHeight: 1.45 }}>{ultimo.beta}</div>}
+        {diag && <div style={{ fontSize: 11.5, color: "#64748b", marginTop: 10 }}>{diag}</div>}
         <div style={{ fontSize: 12, color: "#64748b", marginTop: 14 }}>Diga "obrigada, Beta" para encerrar · ações só com o seu "sim"</div>
       </div>
       <style>{"@keyframes qfRespira{0%,100%{transform:scale(1)}50%{transform:scale(1.05)}}"}</style>
