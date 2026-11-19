@@ -159,6 +159,7 @@ app.use('/api/meus-procedimentos', tenantMiddleware, require('./routes/meusProce
 app.use('/api/valor-gerado', tenantMiddleware, require('./routes/valorGerado'));
 app.use('/api/suprimentos', tenantMiddleware, require('./routes/suprimentos')); // R1: 📊 Suprimentos com dados reais
 app.use('/api/nps', tenantMiddleware, require('./routes/nps')); // N1: ⭐ NPS
+app.use('/api/auditorias', tenantMiddleware, require('./routes/auditorias')); // A1: 🔎 auditorias do sistema de gestão
 app.use('/api/sala-controle', tenantMiddleware, require('./routes/salaControle'));
 app.use('/api/metas', tenantMiddleware, require('./routes/metas'));
 app.use('/api/beta', tenantMiddleware, require('./routes/beta'));
