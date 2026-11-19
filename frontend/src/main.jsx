@@ -14,6 +14,7 @@ import TelaAceitarConvite from "./TelaAceitarConvite";
 import TelaProvaPublica from "./TelaProvaPublica"; // etapa 12e.2b
 import TelaInspecaoPublica from "./TelaInspecaoPublica"; // etapa 14b.1
 import TelaBidPublica from "./TelaBidPublica"; // etapa 15b
+import TelaNpsPublica from "./TelaNpsPublica"; // N1
 import TelaATPublica from "./TelaATPublica"; // etapa 16c — 📲 link do motorista
 
 console.log('🚀 main.jsx executando');
@@ -75,6 +76,11 @@ function Router() {
   // Etapa 16c: link do motorista para a AT (#at?t=...) — público, token, sem valores.
   if (currentPage.startsWith("at?") || currentPage.startsWith("/at?")) {
     return <TelaATPublica />;
+  }
+
+  // N1: ⭐ link do cliente para a pesquisa de satisfação (#nps?t=...) — público, token.
+  if (currentPage.startsWith("nps?") || currentPage.startsWith("/nps?")) {
+    return <TelaNpsPublica />;
   }
 
   // Etapa 15b: link do cliente para o BID (#bid?t=...) — público, token (como a cotação do fornecedor).

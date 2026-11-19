@@ -211,7 +211,9 @@ async function sincronizarPV(supabase, tenantId, ex, status) {
   const ids = new Set((ex.itens || []).map((i) => String(i.id)));
   const novo = STATUS_ITEM_PV[status];
   const grupos = (pv.grupos || []).map((g) => ({ ...g, itens: (g.itens || []).map((i) => (ids.has(String(i.id)) && i.status !== 'cancelado' ? { ...i, status: novo } : i)) }));
-  await supabase.from('pedidos_venda').update({ grupos, status: PV.statusPV(grupos, pv.status), atualizado_em: new Date().toISOString() }).eq('id', pv.id).eq('tenant_id', tenantId);
+  const st = PV.statusPV(grupos, pv.status);
+  await supabase.from('pedidos_venda').update({ grupos, status: st, atualizado_em: new Date().toISOString() }).eq('id', pv.id).eq('tenant_id', tenantId);
+  if (st === 'concluido' && pv.status !== 'concluido') await require('./nps').aoConcluirPV(supabase, tenantId, { ...pv, grupos, status: st }); // N1: ⭐ pesquisa de satisfação
 }
 async function registrar(supabase, tenantId, quem, ex, txt) {
   const pv = (await q(supabase.from('pedidos_venda').select('*').eq('tenant_id', tenantId).eq('id', ex.pv_id)))[0];

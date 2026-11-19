@@ -158,6 +158,7 @@ app.use('/api/meus-treinamentos', tenantMiddleware, exigirModulo('treinamentos')
 app.use('/api/meus-procedimentos', tenantMiddleware, require('./routes/meusProcedimentos'));
 app.use('/api/valor-gerado', tenantMiddleware, require('./routes/valorGerado'));
 app.use('/api/suprimentos', tenantMiddleware, require('./routes/suprimentos')); // R1: 📊 Suprimentos com dados reais
+app.use('/api/nps', tenantMiddleware, require('./routes/nps')); // N1: ⭐ NPS
 app.use('/api/sala-controle', tenantMiddleware, require('./routes/salaControle'));
 app.use('/api/metas', tenantMiddleware, require('./routes/metas'));
 app.use('/api/beta', tenantMiddleware, require('./routes/beta'));
@@ -172,6 +173,7 @@ app.use('/api/contratos', tenantMiddleware, exigirModulo('contratos_locacao'), r
 app.use('/api/monitor-cnpj', tenantMiddleware, exigirModulo('fornecedores'), require('./routes/monitorCnpj')); // etapa 14e — 🛡 Monitor de CNPJs
 app.use('/api/comercial', tenantMiddleware, exigirModulo('crm_bid'), require('./routes/comercial')); // etapa 15a — 📈 Comercial (mini-CRM + BID)
 app.use('/api/programacao', tenantMiddleware, exigirModulo('transporte'), require('./routes/programacao')); // etapa 16a — 🚛 Programação (execuções / AT)
+app.use('/api/nps-link', require('./routes/npsLink')); // N1: ⭐ link público da pesquisa de satisfação
 app.use('/api/bid-link', require('./routes/bidLink')); // etapa 15b — link do cliente para o BID (público, token)
 app.use('/api/at-link', require('./routes/atLink')); // etapa 16c — link do motorista para a AT (público, token)
 app.use('/api/notificacoes', tenantMiddleware, require('./routes/notificacoes').usuario); // etapa 18n: 🔔 Central de Notificações

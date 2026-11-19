@@ -146,6 +146,7 @@ async function mudarStatusItem(supabase, tenantId, quem, id, itemId, { status } 
   const novo = statusPV(grupos, pv.status);
   const { data, error } = await supabase.from('pedidos_venda').update({ grupos, status: novo, atualizado_em: new Date().toISOString() }).eq('id', pv.id).eq('tenant_id', tenantId).select();
   if (error) throw new Error(error.message);
+  if (novo === 'concluido' && pv.status !== 'concluido') await require('./nps').aoConcluirPV(supabase, tenantId, data[0] || { ...pv, status: novo }); // N1: ⭐ pesquisa de satisfação
   await atividade(supabase, tenantId, quem, { bid_id: pv.bid_id, cliente_id: pv.cliente_id, tipo: 'evento', texto: `🧾 ${pv.numero} · ${achou.grupo ? `${achou.grupo} — ` : ''}${achou.valores?.modelo || achou.valores?.veiculo || 'item'}: ${STATUS_ITEM[achou.status || 'a_programar']} → ${STATUS_ITEM[status]}${novo !== pv.status ? ` · pedido ${STATUS_PV[novo].toLowerCase()}` : ''}` });
   return { pv: data[0] };
 }
