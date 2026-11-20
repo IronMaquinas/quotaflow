@@ -440,19 +440,19 @@ const ESPERADO = {
   'migrations/113_nps_modelos.sql': '4d758575db058c4785eee9e580ca9001', // etapa N1.1 (novo)
   'front:ModelosNps.jsx': '14740a23d700474ab912e32128a2fa17', // etapa N1.1 (novo)
   'migrations/114_auditorias.sql': 'e7f61b12848e2efb884b4f65c0ad13ad', // etapa A1 (novo)
-  'services/auditorias.js': '61d81a39fe1e59569f8dd70a54102f45', // etapa A1.1.3
+  'services/auditorias.js': '30b6d3ccac755fe7772dc05fb849ad32', // etapa A1.1.4
   'routes/auditorias.js': 'ecf61b8f0a11861604d8bce1bda0e20e', // etapa A1.1.3
-  'front:TelaAuditorias.jsx': '93f362bcb4f61593c973bf55ed79b231', // etapa A1.1.1
+  'front:TelaAuditorias.jsx': '1f04b061423e204479317e0a14433e7e', // etapa A1.1.4
   'migrations/115_auditoria_execucao.sql': '39cf773aa0db53f78b6ddd350fe3a95a', // etapa A1.1 (novo)
-  'front:FichaAuditoria.jsx': 'b007134a2942bb34442aaddcc61b051d', // etapa A1.1.3
+  'front:FichaAuditoria.jsx': '3a49f2b6a6fb86467c36017dfceac8f0', // etapa A1.1.4
   'migrations/116_auditoria_cancelamento.sql': 'b7bdac14498e43c226ac9a20b1196ad1', // etapa A1.1.3 (novo)
 };
 
-// Antes de copiar a etapa A1.1.3 — base: A1.1.2 (32189c7)
+// Antes de copiar a etapa A1.1.4 — base: A1.1.3 (c2b2b28)
 const ANTES = {
-  'services/auditorias.js': '5d2456bf1488dee618bfbfdfbf53e7ab',
-  'routes/auditorias.js': 'd5df673148eca27e804e0b43e6165e85',
-  'front:FichaAuditoria.jsx': '1f3d69598473def1bc7328afcfbf1a47',
+  'services/auditorias.js': '61d81a39fe1e59569f8dd70a54102f45',
+  'front:FichaAuditoria.jsx': 'b007134a2942bb34442aaddcc61b051d',
+  'front:TelaAuditorias.jsx': '93f362bcb4f61593c973bf55ed79b231',
 };
 
 const RAIZ = process.cwd();
@@ -490,7 +490,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a A1.1.3)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a A1.1.4)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

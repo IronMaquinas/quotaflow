@@ -174,12 +174,22 @@ async function programa(sb, tenantId, ano) {
   const ts = await tarefasPorId(sb, tenantId, cs.map((c) => c.tarefa_id).filter(Boolean));
   const hoje = hojeBR(); const aberta = (c) => { const t = ts.get(String(c.tarefa_id)); return t && !['concluida', 'cancelada'].includes(t.status); };
   const atrasada = (a) => a.status === 'planejada' && a.data_prevista && a.data_prevista < hoje;
-  const cobertos = new Set(); for (const a of doAno.filter((x) => ['concluida', 'em_andamento'].includes(x.status))) for (const r of a.requisitos || []) { cobertos.add(r); cobertos.add(String(r).split('.')[0]); }
+  // A1.1.4: cobertura por SUBITEM em 3 estados — 🟢 auditado (em andamento/concluída) · 🔵 planejado (planejada) · ⚪ não planejado.
+  //   Marcar a cláusula principal ("5") vale para todos os seus subitens; cláusula sem subitem conta como um item.
+  const subsDe = (c) => ISO9001.filter((r) => !r.principal && r.codigo.split('.')[0] === c).map((r) => r.codigo);
+  const unidades = ISO9001.filter((r) => (r.principal ? !subsDe(r.codigo).length : true)).map((r) => r.codigo);
+  const expandir = (lst) => { const s = new Set(); for (const r of lst || []) { const x = String(r); if (!x.includes('.')) { const ss = subsDe(x); (ss.length ? ss : [x]).forEach((y) => s.add(y)); } else s.add(x); } return s; };
+  const auditado = new Set(); const planejado = new Set();
+  for (const a of doAno) { const alvo = ['concluida', 'em_andamento'].includes(a.status) ? auditado : a.status === 'planejada' ? planejado : null; if (alvo) expandir(a.requisitos).forEach((x) => alvo.add(x)); }
+  const estado = (c) => (auditado.has(c) ? 'auditado' : planejado.has(c) ? 'planejado' : 'nao');
+  const cobertos = auditado; // compatível com o resto do cálculo
   const porA = (a) => { const xs = cs.filter((c) => String(c.auditoria_id) === String(a.id)); const n = (t) => xs.filter((c) => c.tipo === t).length; return { nc_maior: n('nc_maior'), nc_menor: n('nc_menor'), observacao: n('observacao'), oportunidade: n('oportunidade'), conforme: n('conforme'), acoes_abertas: xs.filter(aberta).length }; };
   const t = (k) => cs.filter((c) => c.tipo === k).length;
-  return { ano, TIPOS, STATUS, CONST: Object.fromEntries(Object.entries(CONST).map(([k, v]) => [k, v.nome])), REGRAS: CONST, requisitos: ISO9001.map((r) => ({ ...r, coberto: cobertos.has(r.codigo) })),
+  return { ano, TIPOS, STATUS, CONST: Object.fromEntries(Object.entries(CONST).map(([k, v]) => [k, v.nome])), REGRAS: CONST, requisitos: ISO9001.map((r) => { const ss = r.principal ? subsDe(r.codigo) : []; const us = ss.length ? ss : [r.codigo];
+      return { ...r, subitens: ss, estado: ss.length ? (us.every((c) => auditado.has(c)) ? 'auditado' : us.every((c) => auditado.has(c) || planejado.has(c)) ? 'planejado' : 'nao') : estado(r.codigo), total: us.length, n_auditado: us.filter((c) => auditado.has(c)).length, n_planejado: us.filter((c) => !auditado.has(c) && planejado.has(c)).length, coberto: us.some((c) => auditado.has(c)) }; }),
     resumo: { total: doAno.length, concluidas: doAno.filter((a) => a.status === 'concluida').length, atrasadas: doAno.filter(atrasada).length, nc_maior: t('nc_maior'), nc_menor: t('nc_menor'), observacoes: t('observacao'), oportunidades: t('oportunidade'), acoes_abertas: cs.filter(aberta).length,
-      cobertura_pct: Math.round((ISO9001.filter((r) => r.principal && cobertos.has(r.codigo)).length / ISO9001.filter((r) => r.principal).length) * 100) },
+      cobertura_pct: Math.round((unidades.filter((c) => auditado.has(c)).length / unidades.length) * 100), auditado_pct: Math.round((unidades.filter((c) => auditado.has(c)).length / unidades.length) * 100),
+      planejado_pct: Math.round((unidades.filter((c) => auditado.has(c) || planejado.has(c)).length / unidades.length) * 100), itens_total: unidades.length },
     auditorias: doAno.map((a) => ({ ...a, atrasada: atrasada(a), contagem: porA(a) })) };
 }
 
