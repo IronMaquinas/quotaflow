@@ -18,6 +18,7 @@ export default function TelaAuditorias({ C, s }) {
   useEffect(() => { apiService.get("/pessoas/gestao-pessoas").then((r) => setPessoas(r.funcionarios || [])).catch(() => setPessoas([])); }, []);
   const abrir = (id) => setEd({ id });
   const card = { ...s.card, padding: "16px 18px" }; const tit = { fontSize: 12, color: C.textSub, fontWeight: 700, letterSpacing: ".04em", marginBottom: 10 }; const lab = { fontSize: 11.5, color: C.textSub, display: "block", marginBottom: 3 };
+  const reqs = p?.requisitos || []; // A1.1.1: sumiu na A1.1 (a cobertura usa)
   const porMes = useMemo(() => MES.map((_, i) => (p?.auditorias || []).filter((a) => Number(String(a.data_prevista || a.data_realizada).slice(5, 7)) === i + 1)), [p]);
 
   if (ed) return <FichaAuditoria C={C} s={s} id={ed.id || null} ano={ano} meta={p} pessoas={pessoas} onVoltar={() => { setEd(null); carregar(); }} />; // A1.1
