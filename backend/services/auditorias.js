@@ -98,10 +98,14 @@ async function assinar(sb, tenantId, quem, id, d = {}) {
   const up = { assinaturas: ass, atualizado_em: agora, ...(ok ? { status: 'concluida', aprovada_em: agora } : {}) };
   return { auditoria: (await q(sb.from('auditorias').update(up).eq('tenant_id', tenantId).eq('id', id).select()))[0], aprovada: ok };
 }
-async function cancelar(sb, tenantId, id) {
+/** A1.1.3: cancelar exige motivo (≥ 10 caracteres); guarda quem e quando. Constatações, NCs e tarefas já abertas continuam. */
+async function cancelar(sb, tenantId, id, d = {}, quem = null) {
   const a = await uma(sb, tenantId, id); if (!a) return { status: 404, erro: 'Auditoria não encontrada.' };
   if (a.status === 'concluida') return { status: 409, erro: 'Auditoria concluída e aprovada não é cancelada.' };
-  return { auditoria: (await q(sb.from('auditorias').update({ status: 'cancelada', atualizado_em: new Date().toISOString() }).eq('tenant_id', tenantId).eq('id', id).select()))[0] };
+  if (a.status === 'cancelada') return { status: 409, erro: 'A auditoria já está cancelada.' };
+  const motivo = txt(d.motivo, 1000); if (!motivo || motivo.length < 10) return { status: 400, erro: 'Explique o motivo do cancelamento (pelo menos 10 caracteres).' };
+  const agora = new Date().toISOString();
+  return { auditoria: (await q(sb.from('auditorias').update({ status: 'cancelada', motivo_cancelamento: motivo, cancelada_em: agora, cancelada_por: quem?.nome || null, atualizado_em: agora }).eq('tenant_id', tenantId).eq('id', id).select()))[0] };
 }
 async function tarefasPorId(sb, tenantId, ids) { if (!ids.length) return new Map(); const l = await q(sb.from('tarefas').select('*').eq('tenant_id', tenantId)).catch(() => []); const s = new Set(ids.map(String)); return new Map(l.filter((t) => s.has(String(t.id))).map((t) => [String(t.id), t])); }
 async function detalhe(sb, tenantId, id) {
