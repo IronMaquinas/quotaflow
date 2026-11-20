@@ -444,12 +444,12 @@ const ESPERADO = {
   'routes/auditorias.js': 'd5df673148eca27e804e0b43e6165e85', // etapa A1.1
   'front:TelaAuditorias.jsx': '93f362bcb4f61593c973bf55ed79b231', // etapa A1.1.1
   'migrations/115_auditoria_execucao.sql': '39cf773aa0db53f78b6ddd350fe3a95a', // etapa A1.1 (novo)
-  'front:FichaAuditoria.jsx': 'ffbef018a540ff74d4ea63b90a4d4b5e', // etapa A1.1 (novo)
+  'front:FichaAuditoria.jsx': '1f3d69598473def1bc7328afcfbf1a47', // etapa A1.1.2
 };
 
-// Antes de copiar a etapa A1.1.1 — base: A1.1 (ae5c054)
+// Antes de copiar a etapa A1.1.2 — base: A1.1.1 (fc27dd8)
 const ANTES = {
-  'front:TelaAuditorias.jsx': '8ba05a5b34c0df5526b4e6df4880790e',
+  'front:FichaAuditoria.jsx': 'ffbef018a540ff74d4ea63b90a4d4b5e',
 };
 
 const RAIZ = process.cwd();
@@ -487,7 +487,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a A1.1.1)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a A1.1.2)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

@@ -38,7 +38,7 @@ export default function FichaAuditoria({ C, s, id: id0, ano, meta, pessoas, onVo
     const loc = lerLS(`qfAudConc:${i}`); setConc(loc && loc.em > Date.parse(a.atualizado_em || 0) ? loc.texto : a.conclusao || ""); const f = lerLS(`qfAudForm:${i}`); if (f && !r.travada) setNc(f); return r; };
   useEffect(() => { if (id) carregar().then((r) => setAba(r.auditoria.status === "planejada" ? "plano" : r.travada ? "conc" : "exec")).catch(erroDe); }, []); // eslint-disable-line
   useEffect(() => { if (id && nc) gravarLS(LSF, nc); }, [nc]); // eslint-disable-line
-  const a = det?.auditoria; const st = a?.status; const trav = !!det?.travada; const planejada = !id || st === "planejada";
+  const a = det?.auditoria; const st = a?.status; const trav = !!det?.travada; const planejada = !a || st === "planejada"; // A1.1.2: logo depois de planejar, o id chega antes dos dados
   const card = { ...s.card, padding: "16px 18px" }; const lab = { fontSize: 11.5, color: C.textSub, display: "block", marginBottom: 3 }; const tit = { fontSize: 12, color: C.textSub, fontWeight: 700, letterSpacing: ".04em", marginBottom: 10 };
   const acao = async (fn, ok, depois) => { setMsg(""); try { const r = await fn(); if (ok) setMsg(typeof ok === "function" ? ok(r) : ok); const d = await carregar(r?.auditoria?.id || id); depois?.(d, r); return r; } catch (e) { erroDe(e); return null; } };
 
@@ -52,7 +52,7 @@ export default function FichaAuditoria({ C, s, id: id0, ano, meta, pessoas, onVo
   const editarC = async (c, campos) => { try { await apiService.put(`/auditorias/constatacoes/${c.id}`, campos); setSalvo(new Date()); } catch (e) { erroDe(e); } };
   const relatorio = () => { const w = window.open("", "_blank"); if (!w) return setMsg("⚠ Libere pop-ups para imprimir o relatório."); w.document.write(htmlRelatorio(det, meta).replace("</body>", "<script>setTimeout(()=>print(),400)</script></body>")); w.document.close(); };
   const reqs = meta.requisitos || [];
-  const Resumo = () => <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", gap: "4px 12px", fontSize: 13 }}><span style={{ color: C.textSub }}>Tipo / norma</span><span>{meta.TIPOS[a.tipo]} · {a.norma}</span><span style={{ color: C.textSub }}>Previsto</span><span>{dBR(a.data_prevista)}</span><span style={{ color: C.textSub }}>Auditor</span><span>{a.auditor_nome || a.auditor_externo || "—"}</span><span style={{ color: C.textSub }}>Processos</span><span>{(a.processos || []).join(", ") || "—"}</span><span style={{ color: C.textSub }}>Requisitos</span><span>{(a.requisitos || []).join(", ") || "—"}</span><span style={{ color: C.textSub }}>Escopo</span><span style={{ whiteSpace: "pre-wrap" }}>{a.escopo || "—"}</span></div>;
+  const Resumo = () => !a ? null : <div style={{ display: "grid", gridTemplateColumns: "140px 1fr", gap: "4px 12px", fontSize: 13 }}><span style={{ color: C.textSub }}>Tipo / norma</span><span>{meta.TIPOS[a.tipo]} · {a.norma}</span><span style={{ color: C.textSub }}>Previsto</span><span>{dBR(a.data_prevista)}</span><span style={{ color: C.textSub }}>Auditor</span><span>{a.auditor_nome || a.auditor_externo || "—"}</span><span style={{ color: C.textSub }}>Processos</span><span>{(a.processos || []).join(", ") || "—"}</span><span style={{ color: C.textSub }}>Requisitos</span><span>{(a.requisitos || []).join(", ") || "—"}</span><span style={{ color: C.textSub }}>Escopo</span><span style={{ whiteSpace: "pre-wrap" }}>{a.escopo || "—"}</span></div>;
 
   return (
     <div style={{ padding: "20px clamp(12px, 3vw, 28px)", display: "grid", gap: 14 }}>
@@ -64,8 +64,9 @@ export default function FichaAuditoria({ C, s, id: id0, ano, meta, pessoas, onVo
       </div>
       {id && <div style={{ display: "flex", gap: 6, borderBottom: `1px solid ${C.border}` }}>{[["plano", "📅 Planejamento"], ["exec", "🔎 Execução"], ["conc", "✅ Conclusão"]].map(([k, r]) => <button key={k} type="button" onClick={() => setAba(k)} style={{ background: "none", border: "none", borderBottom: `2px solid ${aba === k ? C.accent : "transparent"}`, color: aba === k ? C.text : C.textSub, padding: "8px 12px", fontWeight: aba === k ? 700 : 500, cursor: "pointer", fontSize: 13.5 }}>{r}</button>)}</div>}
       {msg && <div style={{ fontSize: 13, color: /^⚠/.test(msg) ? C.warn : "#22c55e" }}>{msg}</div>}
+      {id && !a && <div style={{ color: C.muted }}>Carregando…</div>}
 
-      {(aba === "plano" || !id) && (planejada ? <div style={{ ...card, display: "grid", gap: 10 }}>
+      {(!id || (a && aba === "plano")) && (planejada ? <div style={{ ...card, display: "grid", gap: 10 }}>
         <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
           <div style={{ flex: "3 1 280px" }}><span style={lab}>TÍTULO *</span><input value={plano.titulo} onChange={(e) => setPlano({ ...plano, titulo: e.target.value })} placeholder="Auditoria interna — Operação e Manutenção" style={{ ...s.input, width: "100%" }} /></div>
           <div style={{ flex: "1 1 160px" }}><span style={lab}>TIPO</span><select value={plano.tipo} onChange={(e) => setPlano({ ...plano, tipo: e.target.value })} style={{ ...s.input, width: "100%" }}>{Object.entries(meta.TIPOS).map(([k, r]) => <option key={k} value={k}>{r}</option>)}</select></div>
