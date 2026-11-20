@@ -13,6 +13,9 @@ const r = (fn) => async (req, res) => {
   catch (err) { if (/auditoria|does not exist|schema cache/.test(String(err.message))) return res.status(409).json({ erro: 'Falta rodar a migration 114 (auditorias).' }); console.error('❌ [auditorias]', err.message); res.status(500).json({ erro: 'Não consegui agora.' }); }
 };
 router.get('/programa', r((req) => A.programa(supabase, req.tenantId, req.query.ano)));
+// A1.2: 🔎 busca de registros do sistema (rastreabilidade) e de documentos de gestão
+router.get('/busca/registros', r((req) => require('../services/auditoriaRegistros').buscar(supabase, req.tenantId, req.query.q, req.query.tipos ? String(req.query.tipos).split(',') : null)));
+router.get('/busca/documentos', r((req) => require('../services/auditoriaRegistros').documentos(supabase, req.tenantId, req.query.q)));
 router.post('/', r(async (req) => A.criar(supabase, req.tenantId, await quem(req), req.body || {})));
 router.delete('/constatacoes/:id', r((req) => A.excluirConstatacao(supabase, req.tenantId, req.params.id)));
 router.put('/constatacoes/:id', r((req) => A.editarConstatacao(supabase, req.tenantId, req.params.id, req.body || {}))); // A1.1: rascunho

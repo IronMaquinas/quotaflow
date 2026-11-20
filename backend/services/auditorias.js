@@ -11,6 +11,9 @@
 //     RESPONSÁVEL da área → ✅ Concluída e aprovada. "Reabrir" volta a execução enquanto faltar assinatura (apaga as assinaturas).
 //     NC maior/menor: sugere ☑ abrir NC no módulo de Não Conformidades (origem 'auditoria', fotos viram anexos) e ☑ tarefa AU.
 //     Observação: tarefa (desmarcável). Oportunidade: tarefa opcional (desmarcada). Conforme: só registro.
+//   A1.2 — PERÍODO previsto (data_prevista → data_prevista_fim) e DIAS de auditoria na execução [{data, inicio, fim}] (cada constatação
+//     guarda o dia); DOCUMENTOS de referência dos Documentos de Gestão (📘 auditados / 📎 suporte, com a revisão vigente; origem plano|auditor);
+//     REGISTROS verificados buscados no sistema (services/auditoriaRegistros.js) com rastreabilidade e ligação à constatação.
 async function q(p) { const { data, error } = await p; if (error) throw new Error(error.message); return data || []; }
 const TIPOS = { interna: 'Interna', externa: 'Externa', certificacao: 'Certificação / manutenção', fornecedor: 'Em fornecedor', cliente: 'Do cliente' };
 const STATUS = { planejada: 'Planejada', em_andamento: 'Em andamento', concluida: 'Concluída', cancelada: 'Cancelada' };
@@ -24,6 +27,14 @@ const ISO9001 = [
   ['9', 'Avaliação de desempenho'], ['9.1', 'Monitoramento e medição'], ['9.2', 'Auditoria interna'], ['9.3', 'Análise crítica pela direção'],
   ['10', 'Melhoria'], ['10.1', 'Generalidades'], ['10.2', 'NC e ação corretiva'], ['10.3', 'Melhoria contínua'],
 ].map(([c, n]) => ({ codigo: c, nome: n, principal: !c.includes('.') }));
+const PAPEL_DOC = { auditado: '📘 Documento auditado', suporte: '📎 Documento de suporte' };
+function limparDocs(v, origemPadrao) { const out = []; const vistos = new Set(); for (const x of Array.isArray(v) ? v : []) { const id = x?.id != null ? String(x.id) : null; const titulo = String(x?.titulo || '').trim().slice(0, 200); if (!titulo) continue; const papel = PAPEL_DOC[x.papel] ? x.papel : 'auditado'; const k = `${id || titulo}|${papel}`; if (vistos.has(k)) continue; vistos.add(k);
+  out.push({ id, codigo: x.codigo ? String(x.codigo).slice(0, 40) : null, titulo, revisao: x.revisao != null ? String(x.revisao).slice(0, 20) : null, papel, origem: x.origem === 'auditor' ? 'auditor' : x.origem === 'plano' ? 'plano' : origemPadrao }); if (out.length >= 40) break; } return out; }
+function limparRegs(v) { const out = []; const vistos = new Set(); for (const x of Array.isArray(v) ? v : []) { const numero = String(x?.numero || '').trim().slice(0, 60); if (!numero || !x?.tipo) continue; const k = `${x.tipo}|${x.id || numero}`; if (vistos.has(k)) continue; vistos.add(k);
+  out.push({ tipo: String(x.tipo).slice(0, 20), rotulo: x.rotulo ? String(x.rotulo).slice(0, 60) : null, id: x.id != null ? String(x.id) : null, numero, descricao: x.descricao ? String(x.descricao).slice(0, 160) : null, emissor: x.emissor ? String(x.emissor).slice(0, 120) : null, data: /^\d{4}-\d{2}-\d{2}/.test(String(x.data || '')) ? String(x.data).slice(0, 10) : null, situacao: x.situacao ? String(x.situacao).slice(0, 40) : null, tela: x.tela ? String(x.tela).slice(0, 30) : null, constatacao_id: x.constatacao_id != null ? String(x.constatacao_id) : null }); if (out.length >= 80) break; } return out; }
+const HORA = /^([01]\d|2[0-3]):[0-5]\d$/;
+function limparDias(v) { const out = []; for (const x of Array.isArray(v) ? v : []) { const dt = /^\d{4}-\d{2}-\d{2}$/.test(String(x?.data || '')) ? x.data : null; if (!dt) continue; out.push({ data: dt, inicio: HORA.test(String(x.inicio || '')) ? x.inicio : null, fim: HORA.test(String(x.fim || '')) ? x.fim : null, obs: x.obs ? String(x.obs).slice(0, 300) : null }); if (out.length >= 30) break; } return out.sort((a, b) => a.data.localeCompare(b.data) || String(a.inicio || '').localeCompare(String(b.inicio || ''))); }
+const horasDias = (dias) => Math.round((dias || []).reduce((s, d) => { if (!d.inicio || !d.fim) return s; const [a, b] = [d.inicio, d.fim].map((h) => Number(h.slice(0, 2)) * 60 + Number(h.slice(3))); return s + Math.max(0, b - a); }, 0) / 6) / 10;
 const txt = (v, n) => (v == null ? null : String(v).trim().slice(0, n) || null);
 const lista = (v, n = 30, m = 80) => [...new Set((Array.isArray(v) ? v : String(v || '').split(/[,;\n]/)).map((x) => String(x?.nome ?? x).trim().slice(0, m)).filter(Boolean))].slice(0, n);
 const data = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? v : null);
@@ -36,8 +47,10 @@ function limpar(d = {}) {
   const o = { titulo, tipo: TIPOS[d.tipo] ? d.tipo : 'interna', norma: txt(d.norma, 60) || 'ISO 9001:2015', escopo: txt(d.escopo, 2000), processos: lista(d.processos), requisitos: lista(d.requisitos, 40, 10),
     auditor_nome: txt(d.auditor_nome, 120), auditor_colaborador_id: d.auditor_colaborador_id != null && d.auditor_colaborador_id !== '' ? String(d.auditor_colaborador_id) : null, auditor_usuario_id: d.auditor_usuario_id != null && d.auditor_usuario_id !== '' ? String(d.auditor_usuario_id) : null,
     auditor_externo: txt(d.auditor_externo, 160), auditados: (Array.isArray(d.auditados) ? d.auditados : []).map((p) => ({ nome: txt(p?.nome, 120), colaborador_id: p?.colaborador_id ?? p?.id ?? null, usuario_id: p?.usuario_id ?? null })).filter((p) => p.nome).slice(0, 20),
-    data_prevista: data(d.data_prevista) };
+    data_prevista: data(d.data_prevista), data_prevista_fim: data(d.data_prevista_fim), documentos: limparDocs(d.documentos, 'plano') };
   if (!o.data_prevista) return { erro: 'Informe a data prevista.' };
+  if (!o.data_prevista_fim || o.data_prevista_fim < o.data_prevista) o.data_prevista_fim = o.data_prevista;
+  if (Date.parse(o.data_prevista_fim) - Date.parse(o.data_prevista) > 60 * 864e5) return { erro: 'O período previsto passa de 60 dias — divida em mais de uma auditoria.' };
   delete o.auditados; // auditados entram na execução
   return { o };
 }
@@ -47,7 +60,7 @@ async function criar(sb, tenantId, quem, d) {
   return { auditoria: a };
 }
 async function uma(sb, tenantId, id) { return (await q(sb.from('auditorias').select('*').eq('tenant_id', tenantId).eq('id', id)))[0] || null; }
-const PLANO = ['titulo', 'tipo', 'norma', 'escopo', 'processos', 'requisitos', 'auditor_nome', 'auditor_colaborador_id', 'auditor_usuario_id', 'auditor_externo', 'data_prevista'];
+const PLANO = ['titulo', 'tipo', 'norma', 'escopo', 'processos', 'requisitos', 'auditor_nome', 'auditor_colaborador_id', 'auditor_usuario_id', 'auditor_externo', 'data_prevista', 'data_prevista_fim', 'documentos'];
 const travada = (a) => a.status === 'concluida' || a.status === 'cancelada' || !!a.encerrada_em;
 const MSG_TRAVADA = 'Execução encerrada — o relatório está travado. Use "Reabrir" (apaga as assinaturas) para alterar.';
 /** planejada: dados do plano · em andamento: auditados, data realizada e conclusão (salvamento automático) */
@@ -59,6 +72,9 @@ async function atualizar(sb, tenantId, id, d = {}) {
   else {
     up = {}; if (d.conclusao !== undefined) up.conclusao = txt(d.conclusao, 6000);
     if (d.data_realizada !== undefined) { up.data_realizada = data(d.data_realizada); if (!up.data_realizada) return { status: 400, erro: 'Data realizada inválida.' }; }
+    if (d.dias !== undefined) { up.dias = limparDias(d.dias); if (!up.dias.length) return { status: 400, erro: 'Mantenha ao menos um dia de auditoria.' }; up.data_realizada = up.dias[0].data; }
+    if (d.documentos !== undefined) { const plano = (a.documentos || []).filter((x) => x.origem === 'plano'); const novos = limparDocs(d.documentos, 'auditor'); up.documentos = [...plano, ...novos.filter((x) => x.origem === 'auditor' && !plano.some((p) => (p.id || p.titulo) === (x.id || x.titulo) && p.papel === x.papel))]; }
+    if (d.registros !== undefined) up.registros = limparRegs(d.registros);
     if (d.auditados !== undefined) up.auditados = (Array.isArray(d.auditados) ? d.auditados : []).map((p) => ({ nome: txt(p?.nome, 120), colaborador_id: p?.colaborador_id ?? p?.id ?? null, usuario_id: p?.usuario_id ?? null })).filter((p) => p.nome).slice(0, 20);
   }
   return { auditoria: (await q(sb.from('auditorias').update({ ...up, atualizado_em: new Date().toISOString() }).eq('tenant_id', tenantId).eq('id', id).select()))[0] };
@@ -66,8 +82,8 @@ async function atualizar(sb, tenantId, id, d = {}) {
 async function iniciar(sb, tenantId, id) {
   const a = await uma(sb, tenantId, id); if (!a) return { status: 404, erro: 'Auditoria não encontrada.' };
   if (a.status !== 'planejada') return { status: 409, erro: 'A auditoria já foi iniciada.' };
-  const agora = new Date().toISOString();
-  return { auditoria: (await q(sb.from('auditorias').update({ status: 'em_andamento', iniciada_em: agora, data_realizada: a.data_realizada || hojeBR(), atualizado_em: agora }).eq('tenant_id', tenantId).eq('id', id).select()))[0] };
+  const agora = new Date().toISOString(); const h = new Date(Date.now() - 3 * 3600e3).toISOString().slice(11, 16);
+  return { auditoria: (await q(sb.from('auditorias').update({ status: 'em_andamento', iniciada_em: agora, data_realizada: a.data_realizada || hojeBR(), dias: (a.dias || []).length ? a.dias : [{ data: hojeBR(), inicio: h, fim: null, obs: null }], atualizado_em: agora }).eq('tenant_id', tenantId).eq('id', id).select()))[0] };
 }
 async function encerrar(sb, tenantId, id) {
   const a = await uma(sb, tenantId, id); if (!a) return { status: 404, erro: 'Auditoria não encontrada.' };
@@ -113,7 +129,7 @@ async function detalhe(sb, tenantId, id) {
   const cs = (await q(sb.from('auditoria_constatacoes').select('*').eq('tenant_id', tenantId).eq('auditoria_id', id))).sort((x, y) => String(x.criado_em).localeCompare(String(y.criado_em)));
   const ts = await tarefasPorId(sb, tenantId, cs.map((c) => c.tarefa_id).filter(Boolean));
   let ncs = new Map(); if (cs.some((c) => c.nc_id)) { const l = await q(sb.from('nao_conformidades').select('*').eq('tenant_id', tenantId)).catch(() => []); ncs = new Map(l.map((n) => [String(n.id), n])); }
-  return { auditoria: a, travada: travada(a), PAPEIS, constatacoes: cs.map((c) => { const t = ts.get(String(c.tarefa_id)); const n = ncs.get(String(c.nc_id)); return { ...c, tipo_nome: CONST[c.tipo]?.nome, tarefa: t ? { id: t.id, numero: t.numero, status: t.status, prazo: t.prazo, responsavel: t.responsavel } : null, nc: n ? { id: n.id, numero: n.numero_nc, status: n.status } : null }; }) };
+  return { auditoria: { ...a, horas: horasDias(a.dias) }, travada: travada(a), PAPEIS, PAPEL_DOC, TIPOS_REG: require('./auditoriaRegistros').TIPOS, constatacoes: cs.map((c) => { const t = ts.get(String(c.tarefa_id)); const n = ncs.get(String(c.nc_id)); return { ...c, tipo_nome: CONST[c.tipo]?.nome, tarefa: t ? { id: t.id, numero: t.numero, status: t.status, prazo: t.prazo, responsavel: t.responsavel } : null, nc: n ? { id: n.id, numero: n.numero_nc, status: n.status } : null }; }) };
 }
 function limparFotos(v) { return (Array.isArray(v) ? v : []).map(String).filter((f) => /^data:image\/(jpeg|png|webp);base64,[A-Za-z0-9+/=]+$/.test(f) && f.length <= 1600000).slice(0, 4); }
 async function numeroNC(sb, tenantId) {
@@ -136,7 +152,8 @@ async function constatar(sb, tenantId, quem, auditoriaId, d = {}) {
   const tipo = CONST[d.tipo] ? d.tipo : null; if (!tipo) return { status: 400, erro: 'Escolha o tipo da constatação.' };
   const descricao = txt(d.descricao, 2000); if (!descricao) return { status: 400, erro: 'Descreva a constatação.' };
   const agora = new Date().toISOString();
-  const c = (await q(sb.from('auditoria_constatacoes').insert([{ tenant_id: tenantId, auditoria_id: a.id, tipo, requisito: txt(d.requisito, 10), processo: txt(d.processo, 80), descricao, evidencia: txt(d.evidencia, 2000), fotos: limparFotos(d.fotos), criado_por: quem?.nome || null, criado_em: agora, atualizado_em: agora }]).select()))[0];
+  const c = (await q(sb.from('auditoria_constatacoes').insert([{ tenant_id: tenantId, auditoria_id: a.id, tipo, requisito: txt(d.requisito, 10), processo: txt(d.processo, 80), descricao, evidencia: txt(d.evidencia, 2000), fotos: limparFotos(d.fotos), dia: data(d.dia) || ((a.dias || []).slice(-1)[0]?.data) || hojeBR(), registros: limparRegs(d.registros).map(({ constatacao_id, ...x }) => x), criado_por: quem?.nome || null, criado_em: agora, atualizado_em: agora }]).select()))[0];
+  if ((c.registros || []).length) { const regs = (a.registros || []).map((x) => ({ ...x })); for (const x of c.registros) { const ja = regs.find((y) => y.tipo === x.tipo && String(y.id || y.numero) === String(x.id || x.numero)); if (ja) { if (!ja.constatacao_id) ja.constatacao_id = String(c.id); } else regs.push({ ...x, constatacao_id: String(c.id) }); } await sb.from('auditorias').update({ registros: regs }).eq('id', a.id).eq('tenant_id', tenantId); } // A1.2: entram na lista de registros verificados
   let tarefa = null; let nc = null; const avisos = []; const resp = txt(d.responsavel, 120);
   if (CONST[tipo].nc && d.abrir_nc !== false) { try { nc = await abrirNC(sb, tenantId, quem, a, c, resp); await sb.from('auditoria_constatacoes').update({ nc_id: String(nc.id) }).eq('id', c.id).eq('tenant_id', tenantId); c.nc_id = String(nc.id); } catch (e) { avisos.push(`a NC não foi aberta (${e.message})`); } }
   const querTarefa = CONST[tipo].acao ? d.criar_tarefa !== false : CONST[tipo].opcional ? d.criar_tarefa === true : false;
@@ -169,7 +186,7 @@ async function excluirConstatacao(sb, tenantId, id) {
 async function programa(sb, tenantId, ano) {
   ano = /^\d{4}$/.test(String(ano || '')) ? String(ano) : hojeBR().slice(0, 4);
   const todas = await q(sb.from('auditorias').select('*').eq('tenant_id', tenantId));
-  const doAno = todas.filter((a) => String(a.data_prevista || a.data_realizada || '').startsWith(ano)).sort((x, y) => String(x.data_prevista || x.data_realizada).localeCompare(String(y.data_prevista || y.data_realizada)));
+  const doAno = todas.filter((a) => [a.data_prevista, a.data_prevista_fim, a.data_realizada].some((x) => String(x || '').startsWith(ano))).sort((x, y) => String(x.data_prevista || x.data_realizada).localeCompare(String(y.data_prevista || y.data_realizada)));
   const cs = (await q(sb.from('auditoria_constatacoes').select('*').eq('tenant_id', tenantId))).filter((c) => doAno.some((a) => String(a.id) === String(c.auditoria_id)));
   const ts = await tarefasPorId(sb, tenantId, cs.map((c) => c.tarefa_id).filter(Boolean));
   const hoje = hojeBR(); const aberta = (c) => { const t = ts.get(String(c.tarefa_id)); return t && !['concluida', 'cancelada'].includes(t.status); };
@@ -190,7 +207,7 @@ async function programa(sb, tenantId, ano) {
     resumo: { total: doAno.length, concluidas: doAno.filter((a) => a.status === 'concluida').length, atrasadas: doAno.filter(atrasada).length, nc_maior: t('nc_maior'), nc_menor: t('nc_menor'), observacoes: t('observacao'), oportunidades: t('oportunidade'), acoes_abertas: cs.filter(aberta).length,
       cobertura_pct: Math.round((unidades.filter((c) => auditado.has(c)).length / unidades.length) * 100), auditado_pct: Math.round((unidades.filter((c) => auditado.has(c)).length / unidades.length) * 100),
       planejado_pct: Math.round((unidades.filter((c) => auditado.has(c) || planejado.has(c)).length / unidades.length) * 100), itens_total: unidades.length },
-    auditorias: doAno.map((a) => ({ ...a, atrasada: atrasada(a), contagem: porA(a) })) };
+    auditorias: doAno.map((a) => ({ ...a, atrasada: atrasada(a), contagem: porA(a), horas: horasDias(a.dias) })) };
 }
 
-module.exports = { TIPOS, STATUS, CONST, ISO9001, PAPEIS, criar, atualizar, iniciar, encerrar, reabrir, assinar, cancelar, detalhe, constatar, editarConstatacao, excluirConstatacao, programa };
+module.exports = { PAPEL_DOC, horasDias, limparDias, TIPOS, STATUS, CONST, ISO9001, PAPEIS, criar, atualizar, iniciar, encerrar, reabrir, assinar, cancelar, detalhe, constatar, editarConstatacao, excluirConstatacao, programa };
