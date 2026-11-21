@@ -1,0 +1,51 @@
+// components/auditorias/PendenciasAuditoria.jsx — etapa A1.3: 🔎 pendências de auditoria (ações abertas do ciclo e de ciclos anteriores)
+//   % de conclusão das ações de NC (maior/menor) do ciclo; lista com tarefa, responsável, prazo, atraso; 🔔 avisar responsáveis;
+//   🖨 relatório de pendências; gestor decide 🛡 encerrar com contenção ou ➡ levar ao próximo ciclo (com justificativa).
+import { useEffect, useState } from "react";
+import apiService from "../../services/apiService";
+
+const dBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
+const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+const COR_C = { nc_maior: "#ef4444", nc_menor: "#f97316", observacao: "#f59e0b", oportunidade: "#60a5fa" };
+
+export default function PendenciasAuditoria({ C, s, ano, onVoltar }) {
+  const [d, setD] = useState(null); const [msg, setMsg] = useState(""); const [f, setF] = useState("abertas"); const [mod, setMod] = useState(null);
+  const carregar = () => apiService.get(`/auditorias/pendencias?ano=${ano}`).then(setD).catch((e) => setMsg(`⚠ ${e?.response?.data?.erro || e.message}`));
+  useEffect(() => { carregar(); }, [ano]); // eslint-disable-line
+  const lista = (d?.itens || []).filter((x) => (f === "abertas" ? x.aberta : f === "atrasadas" ? x.atrasada : f === "anteriores" ? x.anterior && x.aberta : f === "tratadas" ? !!x.tratamento : true));
+  const avisar = async () => { setMsg(""); try { const r = await apiService.post("/auditorias/pendencias/avisar", { ano }); setMsg(`🔔 ${r.avisados} responsável(is) avisado(s)${r.sem_login ? ` · ${r.sem_login} ação(ões) com responsável sem login — avise por fora` : ""}.`); } catch (e) { setMsg(`⚠ ${e?.response?.data?.erro || e.message}`); } };
+  const tratar = async () => { setMsg(""); try { await apiService.post(`/auditorias/constatacoes/${mod.id}/tratar`, { acao: mod.acao, texto: mod.texto }); setMsg(mod.acao === "contencao" ? "Ação encerrada com contenção." : `Ação levada ao ciclo ${Number(ano) + 1}.`); setMod(null); carregar(); } catch (e) { setMsg(`⚠ ${e?.response?.data?.erro || e.message}`); } };
+  const relatorio = () => { const w = window.open("", "_blank"); if (!w) return setMsg("⚠ Libere pop-ups para imprimir.");
+    const linhas = lista.map((x) => `<tr><td>${esc(x.tarefa?.numero || "—")}</td><td>${esc(x.auditoria.numero)}</td><td>${esc(x.tipo_nome)}${x.requisito ? ` (${esc(x.requisito)})` : ""}</td><td>${esc(x.descricao)}</td><td>${esc(x.tarefa?.responsavel || "—")}</td><td>${dBR(x.tarefa?.prazo)}${x.atrasada ? " <b style='color:#dc2626'>ATRASADA</b>" : ""}</td><td>${x.tratamento === "contencao" ? "Contenção" : x.tratamento === "transferida" ? `Próximo ciclo` : esc(x.tarefa?.status || "—")}</td></tr>`).join("");
+    w.document.write(`<html><head><meta charset="utf-8"><title>Pendências de auditoria ${ano}</title><style>body{font-family:Arial,sans-serif;font-size:12px;margin:28px;color:#111}table{border-collapse:collapse;width:100%}td,th{border:1px solid #bbb;padding:5px;text-align:left;vertical-align:top}th{background:#f1f5f9}</style></head><body><h2 style="margin:0">Pendências de auditoria — ciclo ${ano}</h2><div style="color:#555;margin:4px 0 12px">Ações de NC concluídas: ${d.resumo.acoes_nc_pct ?? "—"}% (${d.resumo.acoes_nc_concluidas}/${d.resumo.acoes_nc_total}) · abertas ${d.resumo.abertas} · atrasadas ${d.resumo.atrasadas} · de ciclos anteriores ${d.resumo.anteriores} · emitido em ${new Date().toLocaleString("pt-BR")}</div><table><tr><th>Tarefa</th><th>Auditoria</th><th>Constatação</th><th>Descrição</th><th>Responsável</th><th>Prazo</th><th>Situação</th></tr>${linhas || '<tr><td colspan="7">Nenhuma pendência.</td></tr>'}</table><script>setTimeout(()=>print(),300)</script></body></html>`); w.document.close(); };
+  const card = { ...s.card, padding: "16px 18px" };
+  return (
+    <div style={{ padding: "20px clamp(12px, 3vw, 28px)", display: "grid", gap: 14 }}>
+      <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}><button type="button" onClick={onVoltar} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>← Programa</button>
+        <div style={{ fontSize: 20, fontWeight: 800, flex: 1 }}>🔎 Pendências de auditoria — ciclo {ano}</div>
+        <button type="button" onClick={avisar} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>🔔 Avisar responsáveis</button>
+        {d && <button type="button" onClick={relatorio} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>🖨 Relatório</button>}</div>
+      {msg && <div style={{ fontSize: 13, color: /^⚠/.test(msg) ? C.warn : "#22c55e" }}>{msg}</div>}
+      {!d ? <div style={{ color: C.muted }}>Carregando…</div> : <>
+        <div style={{ display: "flex", gap: 12, flexWrap: "wrap" }}>{[["Ações de NC concluídas", d.resumo.acoes_nc_pct == null ? "—" : `${d.resumo.acoes_nc_pct}%`, `${d.resumo.acoes_nc_concluidas} de ${d.resumo.acoes_nc_total} (NC maior e menor do ciclo)`, d.resumo.acoes_nc_pct != null && d.resumo.acoes_nc_pct < 100 ? C.warn : "#22c55e"], ["Abertas", d.resumo.abertas, "todas as ações em aberto", null], ["Atrasadas", d.resumo.atrasadas, "prazo vencido", d.resumo.atrasadas ? C.danger : null], ["De ciclos anteriores", d.resumo.anteriores, "pendências que vieram de trás", d.resumo.anteriores ? C.warn : null]].map(([r, v, sub, cor]) => <div key={r} style={{ ...card, flex: "1 1 180px" }}><div style={{ fontSize: 11.5, color: C.textSub }}>{r}</div><div style={{ fontSize: 24, fontWeight: 800, color: cor || C.text, marginTop: 4 }}>{v}</div><div style={{ fontSize: 11.5, color: C.muted }}>{sub}</div></div>)}</div>
+        <div style={card}>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 10 }}>{[["abertas", "Abertas"], ["atrasadas", "Atrasadas"], ["anteriores", "Ciclos anteriores"], ["tratadas", "Contenção / próximo ciclo"], ["todas", "Todas"]].map(([k, r]) => <button key={k} type="button" onClick={() => setF(k)} style={{ background: f === k ? C.accent : "transparent", color: f === k ? "#fff" : C.text, border: `1px solid ${f === k ? C.accent : C.border}`, borderRadius: 14, padding: "4px 10px", fontSize: 12, cursor: "pointer" }}>{r}</button>)}</div>
+          {lista.length ? lista.map((x, i) => <div key={x.constatacao_id} style={{ display: "flex", gap: 10, flexWrap: "wrap", alignItems: "flex-start", padding: "10px 0", borderTop: i ? `1px solid ${C.border}55` : "none" }}>
+            <span style={{ fontSize: 11, fontWeight: 700, color: COR_C[x.tipo] || C.textSub, border: `1px solid ${COR_C[x.tipo] || C.border}`, borderRadius: 10, padding: "1px 8px", whiteSpace: "nowrap" }}>{x.tipo_nome}</span>
+            <div style={{ flex: "1 1 320px", minWidth: 0 }}><div style={{ fontSize: 13.5 }}>{x.requisito && <b>{x.requisito} · </b>}{x.descricao}</div>
+              <div style={{ fontSize: 12, color: C.textSub, marginTop: 2 }}>{x.auditoria.numero}{x.anterior ? ` · ciclo ${x.ciclo}` : ""} · 🔎 {x.tarefa?.numero || "tarefa"} · {x.tarefa?.responsavel || "sem responsável"} · prazo {dBR(x.tarefa?.prazo)}{x.atrasada && <b style={{ color: C.danger }}> · atrasada</b>} · {x.tarefa?.status}</div>
+              {x.prazo_justificativa && <div style={{ fontSize: 11.5, color: C.muted }}>Prazo fora do ciclo: {x.prazo_justificativa}</div>}
+              {x.tratamento && <div style={{ fontSize: 12, marginTop: 3, color: x.tratamento === "contencao" ? "#22c55e" : C.warn }}>{x.tratamento === "contencao" ? "🛡 Encerrada com contenção" : "➡ Levada ao próximo ciclo"} — {x.tratamento_texto} <span style={{ color: C.muted }}>({x.tratamento_por}, {dBR(x.tratamento_em)})</span></div>}</div>
+            {x.aberta && x.tratamento !== "transferida" && <div style={{ display: "flex", gap: 6 }}><button type="button" onClick={() => setMod({ id: x.constatacao_id, acao: "contencao", texto: "", item: x })} style={{ ...s.btn(false), cursor: "pointer", fontSize: 12, color: C.text }}>🛡 Encerrar com contenção</button><button type="button" onClick={() => setMod({ id: x.constatacao_id, acao: "transferida", texto: "", item: x })} style={{ ...s.btn(false), cursor: "pointer", fontSize: 12, color: C.text }}>➡ Próximo ciclo</button></div>}
+            {x.aberta && x.tratamento === "transferida" && <button type="button" onClick={() => setMod({ id: x.constatacao_id, acao: "contencao", texto: "", item: x })} style={{ ...s.btn(false), cursor: "pointer", fontSize: 12, color: C.text }}>🛡 Encerrar com contenção</button>}
+          </div>) : <div style={{ color: C.muted, fontSize: 13 }}>Nenhuma pendência neste filtro. 👍</div>}
+        </div></>}
+      {mod && <div onClick={() => setMod(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}><div onClick={(e) => e.stopPropagation()} style={{ ...card, width: "min(520px, 100%)", display: "grid", gap: 10 }}>
+        <div style={{ fontWeight: 700, fontSize: 16 }}>{mod.acao === "contencao" ? "🛡 Encerrar com ação de contenção" : `➡ Levar ao ciclo ${Number(ano) + 1}`}</div>
+        <div style={{ fontSize: 12.5, color: C.textSub }}>{mod.item.tarefa?.numero} · {mod.item.descricao}</div>
+        <div style={{ fontSize: 12.5, color: C.textSub }}>{mod.acao === "contencao" ? "A tarefa será concluída e a contenção fica registrada na constatação, na tarefa e no relatório." : "A tarefa continua aberta e aparece como pendência do ciclo anterior no programa do próximo ano."}</div>
+        <textarea autoFocus value={mod.texto} onChange={(e) => setMod({ ...mod, texto: e.target.value })} rows={3} placeholder={mod.acao === "contencao" ? "Contenção aplicada * — ex.: inspeção 100% dos pneus até a troca do fornecedor" : "Motivo * — ex.: depende da troca do sistema de rastreamento prevista para março"} style={{ ...s.input, fontFamily: "inherit" }} />
+        <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button type="button" onClick={() => setMod(null)} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>Voltar</button><button type="button" disabled={mod.texto.trim().length < 10} onClick={tratar} style={{ ...s.btn(true), cursor: "pointer", opacity: mod.texto.trim().length < 10 ? 0.5 : 1 }}>Confirmar</button></div>
+      </div></div>}
+    </div>);
+}

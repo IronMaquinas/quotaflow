@@ -15,6 +15,10 @@ const r = (fn) => async (req, res) => {
 router.get('/programa', r((req) => A.programa(supabase, req.tenantId, req.query.ano)));
 // A1.2: 🔎 busca de registros do sistema (rastreabilidade) e de documentos de gestão
 router.get('/busca/registros', r((req) => require('../services/auditoriaRegistros').buscar(supabase, req.tenantId, req.query.q, req.query.tipos ? String(req.query.tipos).split(',') : null)));
+// A1.3: pendências de auditoria (ações abertas), tratamento pelo gestor e aviso aos responsáveis
+router.get('/pendencias', r((req) => A.pendencias(supabase, req.tenantId, req.query.ano)));
+router.post('/pendencias/avisar', r((req) => A.avisarResponsaveis(supabase, req.tenantId, req.body?.ano)));
+router.post('/constatacoes/:id/tratar', r(async (req) => { if (!perfisDe(req).some((p) => ['admin', 'gestor'].includes(p))) return { status: 403, erro: 'Só o gestor decide contenção ou transferência de ciclo.' }; return A.tratar(supabase, req.tenantId, await quem(req), req.params.id, req.body || {}); }));
 router.get('/busca/documentos', r((req) => require('../services/auditoriaRegistros').documentos(supabase, req.tenantId, req.query.q)));
 router.post('/', r(async (req) => A.criar(supabase, req.tenantId, await quem(req), req.body || {})));
 router.delete('/constatacoes/:id', r((req) => A.excluirConstatacao(supabase, req.tenantId, req.params.id)));

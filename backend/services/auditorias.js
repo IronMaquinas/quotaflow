@@ -14,6 +14,10 @@
 //   A1.2 — PERÍODO previsto (data_prevista → data_prevista_fim) e DIAS de auditoria na execução [{data, inicio, fim}] (cada constatação
 //     guarda o dia); DOCUMENTOS de referência dos Documentos de Gestão (📘 auditados / 📎 suporte, com a revisão vigente; origem plano|auditor);
 //     REGISTROS verificados buscados no sistema (services/auditoriaRegistros.js) com rastreabilidade e ligação à constatação.
+//   A1.3 — cobertura honesta: 🟢 só com auditoria CONCLUÍDA (aprovada), 🟡 em andamento, 🔵 planejado, ⚪ não planejado.
+//     Ações de auditoria = tarefas das NC maior/menor; prazo dentro do ANO DO CICLO (passou → ajusta para 31/12 ou exige justificativa).
+//     Pendências: lista das ações abertas (do ciclo e de ciclos anteriores), 🔔 avisar responsáveis, e o gestor decide
+//     ENCERRAR COM CONTENÇÃO (fecha a tarefa, registra a contenção) ou LEVAR AO PRÓXIMO CICLO (fica aberta e aparece no ano seguinte).
 async function q(p) { const { data, error } = await p; if (error) throw new Error(error.message); return data || []; }
 const TIPOS = { interna: 'Interna', externa: 'Externa', certificacao: 'Certificação / manutenção', fornecedor: 'Em fornecedor', cliente: 'Do cliente' };
 const STATUS = { planejada: 'Planejada', em_andamento: 'Em andamento', concluida: 'Concluída', cancelada: 'Cancelada' };
@@ -151,14 +155,19 @@ async function constatar(sb, tenantId, quem, auditoriaId, d = {}) {
   if (a.status === 'planejada') a = (await iniciar(sb, tenantId, a.id)).auditoria || a; // constatar já inicia
   const tipo = CONST[d.tipo] ? d.tipo : null; if (!tipo) return { status: 400, erro: 'Escolha o tipo da constatação.' };
   const descricao = txt(d.descricao, 2000); if (!descricao) return { status: 400, erro: 'Descreva a constatação.' };
+  { const fimC = `${String(a.data_prevista || a.data_realizada || hojeBR()).slice(0, 4)}-12-31`; // A1.3: ação de NC dentro do ciclo
+    if (CONST[tipo].nc && d.criar_tarefa !== false && data(d.prazo) && d.prazo > fimC && fimC >= hojeBR() && !txt(d.prazo_justificativa, 500)) return { status: 400, erro: `O prazo passa do fim do ciclo (${fimC.split('-').reverse().join('/')}). Justifique ou use uma data até lá.`, fim_ciclo: fimC }; }
   const agora = new Date().toISOString();
-  const c = (await q(sb.from('auditoria_constatacoes').insert([{ tenant_id: tenantId, auditoria_id: a.id, tipo, requisito: txt(d.requisito, 10), processo: txt(d.processo, 80), descricao, evidencia: txt(d.evidencia, 2000), fotos: limparFotos(d.fotos), dia: data(d.dia) || ((a.dias || []).slice(-1)[0]?.data) || hojeBR(), registros: limparRegs(d.registros).map(({ constatacao_id, ...x }) => x), criado_por: quem?.nome || null, criado_em: agora, atualizado_em: agora }]).select()))[0];
+  const c = (await q(sb.from('auditoria_constatacoes').insert([{ tenant_id: tenantId, auditoria_id: a.id, tipo, requisito: txt(d.requisito, 10), processo: txt(d.processo, 80), descricao, evidencia: txt(d.evidencia, 2000), fotos: limparFotos(d.fotos), prazo_justificativa: txt(d.prazo_justificativa, 500), dia: data(d.dia) || ((a.dias || []).slice(-1)[0]?.data) || hojeBR(), registros: limparRegs(d.registros).map(({ constatacao_id, ...x }) => x), criado_por: quem?.nome || null, criado_em: agora, atualizado_em: agora }]).select()))[0];
   if ((c.registros || []).length) { const regs = (a.registros || []).map((x) => ({ ...x })); for (const x of c.registros) { const ja = regs.find((y) => y.tipo === x.tipo && String(y.id || y.numero) === String(x.id || x.numero)); if (ja) { if (!ja.constatacao_id) ja.constatacao_id = String(c.id); } else regs.push({ ...x, constatacao_id: String(c.id) }); } await sb.from('auditorias').update({ registros: regs }).eq('id', a.id).eq('tenant_id', tenantId); } // A1.2: entram na lista de registros verificados
   let tarefa = null; let nc = null; const avisos = []; const resp = txt(d.responsavel, 120);
   if (CONST[tipo].nc && d.abrir_nc !== false) { try { nc = await abrirNC(sb, tenantId, quem, a, c, resp); await sb.from('auditoria_constatacoes').update({ nc_id: String(nc.id) }).eq('id', c.id).eq('tenant_id', tenantId); c.nc_id = String(nc.id); } catch (e) { avisos.push(`a NC não foi aberta (${e.message})`); } }
   const querTarefa = CONST[tipo].acao ? d.criar_tarefa !== false : CONST[tipo].opcional ? d.criar_tarefa === true : false;
   if (querTarefa) {
-    const T = require('./tarefas'); const prazo = data(d.prazo) || somaDias(hojeBR(), CONST[tipo].prazo);
+    const T = require('./tarefas'); const fimCiclo = `${String(a.data_prevista || a.data_realizada || hojeBR()).slice(0, 4)}-12-31`;
+    let prazo = data(d.prazo) || somaDias(hojeBR(), CONST[tipo].prazo); let ajustado = false;
+    if (CONST[tipo].nc && prazo > fimCiclo && fimCiclo >= hojeBR() && !(data(d.prazo) && txt(d.prazo_justificativa, 500))) { prazo = fimCiclo; ajustado = true; } // prazo informado fora do ciclo sem justificativa já foi barrado no início
+    if (ajustado) avisos.push(`o prazo foi ajustado para o fim do ciclo (${fimCiclo.split('-').reverse().join('/')})`);
     const t = await T.criar(sb, tenantId, quem, { tipo: 'AU', titulo: `${CONST[tipo].nome}${c.requisito ? ` (${c.requisito})` : ''} — ${a.numero}: ${descricao.slice(0, 120)}`, prioridade: tipo === 'nc_maior' ? 'alta' : tipo === 'oportunidade' ? 'baixa' : 'media', prazo,
       responsavel_ref: d.responsavel_ref || null, responsavel: d.responsavel_ref ? null : (resp || 'Gestão'),
       detalhe: `${a.numero} · ${a.titulo}${nc ? ` · ${nc.numero_nc}` : ''}\n${CONST[tipo].nome}${c.requisito ? ` · requisito ${c.requisito}` : ''}${c.processo ? ` · processo ${c.processo}` : ''}\n\n${descricao}${c.evidencia ? `\n\nEvidência: ${c.evidencia}` : ''}\n\n${tipo === 'oportunidade' ? 'Avaliar a melhoria e implantar se fizer sentido.' : 'Tratar: correção imediata, causa raiz e ação corretiva; anexar a evidência da eficácia.'}` });
@@ -196,18 +205,64 @@ async function programa(sb, tenantId, ano) {
   const subsDe = (c) => ISO9001.filter((r) => !r.principal && r.codigo.split('.')[0] === c).map((r) => r.codigo);
   const unidades = ISO9001.filter((r) => (r.principal ? !subsDe(r.codigo).length : true)).map((r) => r.codigo);
   const expandir = (lst) => { const s = new Set(); for (const r of lst || []) { const x = String(r); if (!x.includes('.')) { const ss = subsDe(x); (ss.length ? ss : [x]).forEach((y) => s.add(y)); } else s.add(x); } return s; };
-  const auditado = new Set(); const planejado = new Set();
-  for (const a of doAno) { const alvo = ['concluida', 'em_andamento'].includes(a.status) ? auditado : a.status === 'planejada' ? planejado : null; if (alvo) expandir(a.requisitos).forEach((x) => alvo.add(x)); }
-  const estado = (c) => (auditado.has(c) ? 'auditado' : planejado.has(c) ? 'planejado' : 'nao');
-  const cobertos = auditado; // compatível com o resto do cálculo
+  const auditado = new Set(); const andamento = new Set(); const planejado = new Set();
+  for (const a of doAno) { const alvo = a.status === 'concluida' ? auditado : a.status === 'em_andamento' ? andamento : a.status === 'planejada' ? planejado : null; if (alvo) expandir(a.requisitos).forEach((x) => alvo.add(x)); }
+  const est = (c) => (auditado.has(c) ? 'auditado' : andamento.has(c) ? 'andamento' : planejado.has(c) ? 'planejado' : 'nao');
+  const ORD = { auditado: 3, andamento: 2, planejado: 1, nao: 0 }; const estado = est;
+  const pctU = (f) => Math.round((unidades.filter(f).length / unidades.length) * 100);
+  // A1.3: ações de auditoria = tarefas das NC (maior/menor) das auditorias do ano; contenção conta como encerrada
+  const acoesNc = cs.filter((c) => CONST[c.tipo]?.nc && c.tarefa_id); const fechada = (c) => c.tratamento === 'contencao' || ['concluida', 'cancelada'].includes(ts.get(String(c.tarefa_id))?.status);
+  const acoesResumo = { anteriores_abertas: (await pendencias(sb, tenantId, ano)).resumo.anteriores, acoes_nc_total: acoesNc.length, acoes_nc_concluidas: acoesNc.filter(fechada).length, acoes_nc_pct: acoesNc.length ? Math.round((acoesNc.filter(fechada).length / acoesNc.length) * 100) : null, acoes_transferidas: acoesNc.filter((c) => c.tratamento === 'transferida').length };
   const porA = (a) => { const xs = cs.filter((c) => String(c.auditoria_id) === String(a.id)); const n = (t) => xs.filter((c) => c.tipo === t).length; return { nc_maior: n('nc_maior'), nc_menor: n('nc_menor'), observacao: n('observacao'), oportunidade: n('oportunidade'), conforme: n('conforme'), acoes_abertas: xs.filter(aberta).length }; };
   const t = (k) => cs.filter((c) => c.tipo === k).length;
   return { ano, TIPOS, STATUS, CONST: Object.fromEntries(Object.entries(CONST).map(([k, v]) => [k, v.nome])), REGRAS: CONST, requisitos: ISO9001.map((r) => { const ss = r.principal ? subsDe(r.codigo) : []; const us = ss.length ? ss : [r.codigo];
-      return { ...r, subitens: ss, estado: ss.length ? (us.every((c) => auditado.has(c)) ? 'auditado' : us.every((c) => auditado.has(c) || planejado.has(c)) ? 'planejado' : 'nao') : estado(r.codigo), total: us.length, n_auditado: us.filter((c) => auditado.has(c)).length, n_planejado: us.filter((c) => !auditado.has(c) && planejado.has(c)).length, coberto: us.some((c) => auditado.has(c)) }; }),
+      const minimo = Math.min(...us.map((c) => ORD[est(c)])); const nomeE = Object.keys(ORD).find((k) => ORD[k] === minimo);
+      return { ...r, subitens: ss, estado: nomeE, total: us.length, n_auditado: us.filter((c) => est(c) === 'auditado').length, n_andamento: us.filter((c) => est(c) === 'andamento').length, n_planejado: us.filter((c) => est(c) === 'planejado').length, coberto: us.some((c) => auditado.has(c)) }; }),
     resumo: { total: doAno.length, concluidas: doAno.filter((a) => a.status === 'concluida').length, atrasadas: doAno.filter(atrasada).length, nc_maior: t('nc_maior'), nc_menor: t('nc_menor'), observacoes: t('observacao'), oportunidades: t('oportunidade'), acoes_abertas: cs.filter(aberta).length,
-      cobertura_pct: Math.round((unidades.filter((c) => auditado.has(c)).length / unidades.length) * 100), auditado_pct: Math.round((unidades.filter((c) => auditado.has(c)).length / unidades.length) * 100),
-      planejado_pct: Math.round((unidades.filter((c) => auditado.has(c) || planejado.has(c)).length / unidades.length) * 100), itens_total: unidades.length },
+      cobertura_pct: pctU((c) => auditado.has(c)), auditado_pct: pctU((c) => auditado.has(c)), andamento_pct: pctU((c) => andamento.has(c) && !auditado.has(c)), planejado_pct: pctU((c) => auditado.has(c) || andamento.has(c) || planejado.has(c)), itens_total: unidades.length, ...acoesResumo },
     auditorias: doAno.map((a) => ({ ...a, atrasada: atrasada(a), contagem: porA(a), horas: horasDias(a.dias) })) };
 }
 
-module.exports = { PAPEL_DOC, horasDias, limparDias, TIPOS, STATUS, CONST, ISO9001, PAPEIS, criar, atualizar, iniciar, encerrar, reabrir, assinar, cancelar, detalhe, constatar, editarConstatacao, excluirConstatacao, programa };
+// ─── A1.3: pendências de auditoria ───────────────────────────────────────────
+/** ações abertas: do ciclo (ano) e de ciclos anteriores (inclui as "levadas ao próximo ciclo") */
+async function pendencias(sb, tenantId, ano) {
+  ano = /^\d{4}$/.test(String(ano || '')) ? String(ano) : hojeBR().slice(0, 4);
+  const auds = await q(sb.from('auditorias').select('*').eq('tenant_id', tenantId)); const porId = new Map(auds.map((a) => [String(a.id), a]));
+  const cicloDe = (a) => String(a?.data_prevista || a?.data_realizada || '').slice(0, 4);
+  const cs = (await q(sb.from('auditoria_constatacoes').select('*').eq('tenant_id', tenantId))).filter((c) => c.tarefa_id && porId.has(String(c.auditoria_id)) && cicloDe(porId.get(String(c.auditoria_id))) <= ano);
+  const ts = await tarefasPorId(sb, tenantId, cs.map((c) => c.tarefa_id)); const hoje = hojeBR();
+  const itens = cs.map((c) => { const a = porId.get(String(c.auditoria_id)); const tk = ts.get(String(c.tarefa_id)); const ciclo = cicloDe(a);
+    return { constatacao_id: c.id, tipo: c.tipo, tipo_nome: CONST[c.tipo]?.nome, nc: !!CONST[c.tipo]?.nc, requisito: c.requisito, descricao: c.descricao, auditoria: { id: a.id, numero: a.numero, titulo: a.titulo }, ciclo, anterior: ciclo < ano,
+      tarefa: tk ? { id: tk.id, numero: tk.numero, status: tk.status, prazo: tk.prazo, responsavel: tk.responsavel, responsavel_usuario_id: tk.responsavel_usuario_id || null } : null,
+      tratamento: c.tratamento || null, tratamento_texto: c.tratamento_texto || null, tratamento_por: c.tratamento_por || null, tratamento_em: c.tratamento_em || null, prazo_justificativa: c.prazo_justificativa || null,
+      aberta: !!tk && !['concluida', 'cancelada'].includes(tk.status) && c.tratamento !== 'contencao', atrasada: !!tk && !['concluida', 'cancelada'].includes(tk.status) && c.tratamento !== 'contencao' && tk.prazo && tk.prazo < hoje }; })
+    .filter((x) => x.ciclo === ano || x.aberta)
+    .sort((x, y) => Number(y.aberta) - Number(x.aberta) || Number(y.atrasada) - Number(x.atrasada) || String(x.tarefa?.prazo || '9').localeCompare(String(y.tarefa?.prazo || '9')));
+  const nc = itens.filter((x) => x.nc && x.ciclo === ano); const fech = nc.filter((x) => !x.aberta);
+  return { ano, itens, resumo: { abertas: itens.filter((x) => x.aberta).length, atrasadas: itens.filter((x) => x.atrasada).length, anteriores: itens.filter((x) => x.anterior && x.aberta).length,
+    acoes_nc_total: nc.length, acoes_nc_concluidas: fech.length, acoes_nc_pct: nc.length ? Math.round((fech.length / nc.length) * 100) : null } };
+}
+/** gestor: encerrar com contenção (fecha a tarefa) ou levar ao próximo ciclo (fica aberta) */
+async function tratar(sb, tenantId, quem, constatacaoId, d = {}) {
+  const c = (await q(sb.from('auditoria_constatacoes').select('*').eq('tenant_id', tenantId).eq('id', constatacaoId)))[0]; if (!c) return { status: 404, erro: 'Constatação não encontrada.' };
+  if (!c.tarefa_id) return { status: 409, erro: 'Esta constatação não tem tarefa de ação.' };
+  const acao = ['contencao', 'transferida'].includes(d.acao) ? d.acao : null; if (!acao) return { status: 400, erro: 'Escolha: encerrar com contenção ou levar ao próximo ciclo.' };
+  const texto = txt(d.texto, 1500); if (!texto || texto.length < 10) return { status: 400, erro: acao === 'contencao' ? 'Descreva a ação de contenção aplicada (mín. 10 caracteres).' : 'Explique por que a ação vai para o próximo ciclo (mín. 10 caracteres).' };
+  const T = require('./tarefas'); const tk = (await tarefasPorId(sb, tenantId, [c.tarefa_id])).get(String(c.tarefa_id));
+  if (!tk) return { status: 404, erro: 'Tarefa da ação não encontrada.' }; if (['concluida', 'cancelada'].includes(tk.status)) return { status: 409, erro: 'A tarefa já está encerrada.' };
+  const a = await uma(sb, tenantId, c.auditoria_id); const ciclo = Number(String(a?.data_prevista || a?.data_realizada || hojeBR()).slice(0, 4));
+  if (acao === 'contencao') { const r = await T.atualizar(sb, tenantId, quem, tk.id, { status: 'concluida', detalhe: `${tk.detalhe || ''}\n\n🛡 Encerrada com AÇÃO DE CONTENÇÃO por ${quem?.nome || 'gestor'} em ${hojeBR().split('-').reverse().join('/')}: ${texto}`.slice(0, 4000) }); if (r?.erro) return { status: r.status || 409, erro: r.erro }; }
+  else { const r = await T.atualizar(sb, tenantId, quem, tk.id, { detalhe: `${tk.detalhe || ''}\n\n➡ Levada ao ciclo ${ciclo + 1} por ${quem?.nome || 'gestor'} em ${hojeBR().split('-').reverse().join('/')}: ${texto}`.slice(0, 4000) }); if (r?.erro) return { status: r.status || 409, erro: r.erro }; }
+  const up = { tratamento: acao, tratamento_texto: texto, tratamento_por: quem?.nome || null, tratamento_em: new Date().toISOString(), ciclo_destino: acao === 'transferida' ? ciclo + 1 : null };
+  return { constatacao: (await q(sb.from('auditoria_constatacoes').update(up).eq('tenant_id', tenantId).eq('id', c.id).select()))[0] };
+}
+/** 🔔 cada responsável (com login) recebe a lista das ações dele */
+async function avisarResponsaveis(sb, tenantId, ano) {
+  const p = await pendencias(sb, tenantId, ano); const porU = new Map(); let semLogin = 0;
+  for (const x of p.itens.filter((i) => i.aberta)) { const u = x.tarefa?.responsavel_usuario_id; if (!u) { semLogin++; continue; } porU.set(String(u), [...(porU.get(String(u)) || []), x]); }
+  const N = require('./notificacoes'); let n = 0;
+  for (const [u, xs] of porU) { await N.avisarUsuarios(sb, tenantId, [u], { tipo: 'auditoria', titulo: `🔎 Você tem ${xs.length} ação(ões) de auditoria em aberto${xs.some((x) => x.atrasada) ? ' — há atrasadas' : ''}`, texto: xs.slice(0, 5).map((x) => `${x.tarefa.numero || 'tarefa'} · ${x.auditoria.numero} · prazo ${String(x.tarefa.prazo || '').split('-').reverse().join('/') || '—'}`).join('\n'), link: { tela: 'plano' }, chave: `aud-pend:${ano}:${u}:${hojeBR()}` }); n++; }
+  return { avisados: n, sem_login: semLogin };
+}
+
+module.exports = { pendencias, tratar, avisarResponsaveis, PAPEL_DOC, horasDias, limparDias, TIPOS, STATUS, CONST, ISO9001, PAPEIS, criar, atualizar, iniciar, encerrar, reabrir, assinar, cancelar, detalhe, constatar, editarConstatacao, excluirConstatacao, programa };
