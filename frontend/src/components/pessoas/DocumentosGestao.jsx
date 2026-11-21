@@ -7,6 +7,8 @@ import CampoFuncionario from "../shared/CampoFuncionario"; // 18zz.6
 import apiService from "../../services/apiService";
 import VerArquivo from "../programacao/VerArquivo";
 import { Toggle } from "../../plataforma/ModulosPlataforma"; // 18zz.2
+import { ChipsIso } from "../auditorias/isoRequisitos"; // A1.4: requisitos da norma que o documento atende
+import MatrizIso from "../auditorias/MatrizIso"; // A1.4: 🧭 matriz ISO × documentos
 import ConfirmarExclusao from "../shared/ConfirmarExclusao";
 import { dadosEmpresa } from "../../utils/logoEmpresa";
 import { corpoDocGestao, imprimirDocGestao, CSS_DOC_GESTAO } from "../../utils/gerarDocumentoGestao"; // 18zu: logo + rodapé
@@ -27,7 +29,7 @@ const lerArq = (f) => new Promise((ok, erro) => { const r = new FileReader(); r.
 export default function DocumentosGestao({ C, s, onErro, onAviso }) {
   const [d, setD] = useState(null); const [busca, setBusca] = useState(""); const [verObsoletos, setVerObsoletos] = useState(false);
   const [form, setForm] = useState(null); const [ver, setVer] = useState(null);
-  const [aging, setAging] = useState(false); const [regLeit, setRegLeit] = useState(false); // 18zz.14
+  const [aging, setAging] = useState(false); const [matriz, setMatriz] = useState(false); const [regLeit, setRegLeit] = useState(false); // 18zz.14
   const [revi, setRevi] = useState(null); const [hist, setHist] = useState(null); const [leit, setLeit] = useState(null); const [verVersao, setVerVersao] = useState(null); const [descartar, setDescartar] = useState(false); /* 18zs */ const [bib, setBib] = useState(null); const [buscaBib, setBuscaBib] = useState(""); const [verMod, setVerMod] = useState(null); const [publicar, setPublicar] = useState(false); /* 18zt */ const [env, setEnv] = useState(null); const [pessoas, setPessoas] = useState(null); const [acao, setAcao] = useState(null); const [verRasc, setVerRasc] = useState(false); /* 18zv */ const [funcoes, setFuncoes] = useState(null); /* 18zz.2 */ const [modalDist, setModalDist] = useState(null); const [alcance, setAlcance] = useState(null); const [paraMim, setParaMim] = useState([]); /* 18zz.4 */ const [arq, setArq] = useState(null); const [apagar, setApagar] = useState(null); const [ocup, setOcup] = useState(false);
   const carregar = () => apiService.get("/pessoas/gestao").then(setD).catch((e) => onErro?.(e.message));
   useEffect(() => { carregar(); apiService.get("/pessoas/gestao-pessoas").then(setPessoas).catch(() => {}); apiService.get("/pessoas/gestao-para-mim").then((r) => setParaMim(r.documentos || [])).catch(() => {}); const ir = window.qfAbrirGestaoDoc; window.qfAbrirGestaoDoc = null; if (ir) abrir({ id: ir }); /* 18zz.5: veio da ficha/treinamento */ }, []); // eslint-disable-line
@@ -101,12 +103,14 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
 
   if (!d) return <div style={{ color: C.muted }}>Carregando…</div>;
   return <div>
+    {matriz && <MatrizIso C={C} s={s} onFechar={() => setMatriz(false)} onAbrirDoc={(x) => { const doc = (d.documentos || d.itens || []).find((y) => String(y.id) === String(x.id)); setMatriz(false); if (doc) abrir(doc); }} />}
     {d.sem_tabela && <div style={{ ...s.card, padding: 12, marginBottom: 12, borderColor: C.warn, color: C.warn }}>Rode a migration 092 para usar os documentos de gestão.</div>}
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center", marginBottom: 12 }}>
       <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar por código, título ou área…" style={{ ...s.input, maxWidth: 280, padding: "7px 10px", fontSize: 12 }} />
       <label style={{ fontSize: 12, color: C.textSub, display: "flex", gap: 6, alignItems: "center", cursor: "pointer" }}><input type="checkbox" checked={verObsoletos} onChange={(e) => setVerObsoletos(e.target.checked)} /> Mostrar obsoletos</label>
       <div style={{ flex: 1 }} />
       <button type="button" onClick={() => setAging(true)} style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>📊 Aging</button>
+      <button type="button" onClick={() => setMatriz(true)} title="Quais documentos atendem cada item da ISO 9001 — e onde há lacuna" style={{ ...s.btn(false), cursor: "pointer", color: C.text }}>🧭 Matriz ISO</button>
       <button type="button" onClick={async () => { try { setBuscaBib(""); setBib(await apiService.get("/pessoas/gestao/modelos")); } catch (e) { onErro?.(e?.response?.data?.erro || e.message); } }} style={{ ...s.btn(false), cursor: "pointer", color: C.accent }}>📚 Modelos ISO 9001</button>
       {editar && <button type="button" onClick={() => setForm({ codigo: "", titulo: "", tipo: "procedimento", area: "", revisao: 0, status: "rascunho", elaborado_por: "", elaborado_por_id: null, aprovado_por: "", aprovado_por_id: null, aprovado_em: "", proxima_revisao: "", norma: "", conteudo: "" })} style={{ ...s.btn(true), cursor: "pointer" }}>＋ Novo documento de gestão</button>}
     </div>
@@ -344,6 +348,7 @@ export default function DocumentosGestao({ C, s, onErro, onAviso }) {
             </div>}
           </div>
           {campo("NORMA / REFERÊNCIA (OPCIONAL)", inp("norma", { placeholder: "ISO 9001:2015 — 10.2" }), "1 1 100%")}
+          <div style={{ flex: "1 1 100%", minWidth: 0 }}><span style={s.label}>REQUISITOS DA ISO 9001 QUE ESTE DOCUMENTO ATENDE <span style={{ textTransform: "none", fontWeight: 400 }}>· alimenta a 🧭 Matriz ISO e as sugestões na auditoria; a cláusula marca todos os subitens</span></span><ChipsIso C={C} valor={form.requisitos || []} onChange={(v) => setForm({ ...form, requisitos: v })} /></div>
           {campo("TEXTO DO DOCUMENTO", <textarea disabled={travado} value={form.conteudo ?? ""} onChange={(e) => setForm({ ...form, conteudo: e.target.value })} rows={14} style={{ ...s.input, fontFamily: "inherit", lineHeight: 1.5, resize: "vertical" }} placeholder={"1. OBJETIVO\n…\n2. ABRANGÊNCIA\n…\n3. RESPONSABILIDADES\n…"} />, "1 1 100%")}
           {travado && <div style={{ fontSize: 12.5, color: C.warn }}>🔒 Documento vigente: texto, título, revisão e arquivo só mudam por <b>↻ Nova revisão</b> (👁 Ver → Nova revisão). Aqui você altera área, datas, norma e a situação (ex.: Obsoleto).</div>}
           {!travado && <div style={{ fontSize: 12.5, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>

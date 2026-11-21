@@ -19,7 +19,8 @@ router.get('/busca/registros', r((req) => require('../services/auditoriaRegistro
 router.get('/pendencias', r((req) => A.pendencias(supabase, req.tenantId, req.query.ano)));
 router.post('/pendencias/avisar', r((req) => A.avisarResponsaveis(supabase, req.tenantId, req.body?.ano)));
 router.post('/constatacoes/:id/tratar', r(async (req) => { if (!perfisDe(req).some((p) => ['admin', 'gestor'].includes(p))) return { status: 403, erro: 'Só o gestor decide contenção ou transferência de ciclo.' }; return A.tratar(supabase, req.tenantId, await quem(req), req.params.id, req.body || {}); }));
-router.get('/busca/documentos', r((req) => require('../services/auditoriaRegistros').documentos(supabase, req.tenantId, req.query.q)));
+router.get('/busca/documentos', r((req) => require('../services/auditoriaRegistros').documentos(supabase, req.tenantId, req.query.q, req.query.requisitos ? String(req.query.requisitos).split(',') : null)));
+router.get('/matriz-documentos', r((req) => require('../services/auditoriaRegistros').matriz(supabase, req.tenantId))); // A1.4: 🧭 matriz ISO
 router.post('/', r(async (req) => A.criar(supabase, req.tenantId, await quem(req), req.body || {})));
 router.delete('/constatacoes/:id', r((req) => A.excluirConstatacao(supabase, req.tenantId, req.params.id)));
 router.put('/constatacoes/:id', r((req) => A.editarConstatacao(supabase, req.tenantId, req.params.id, req.body || {}))); // A1.1: rascunho

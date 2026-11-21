@@ -19,6 +19,7 @@ function validar(body, parcial = false) {
   for (const k of ['aprovado_em', 'proxima_revisao']) if (tem(k)) { if (body[k] && !DATA.test(String(body[k]))) erros.push('Data inválida'); else out[k] = body[k] || null; }
   for (const [k, n] of [['area', 80], ['elaborado_por', 120], ['aprovado_por', 120], ['norma', 120]]) if (tem(k)) out[k] = txt(body[k], n);
   for (const k of ['elaborado_por_id', 'aprovado_por_id', 'elaborado_por_usuario_id', 'aprovado_por_usuario_id']) if (tem(k)) { const v = body[k]; if (v == null || v === '') out[k] = null; else if (!/^[\w-]{1,40}$/.test(String(v))) erros.push('Pessoa inválida'); else out[k] = String(v); } // 18zz.6
+  if (tem('requisitos')) out.requisitos = require('./auditoriaRegistros').normalizarReqs(body.requisitos); // A1.4: itens da ISO que o documento atende
   if (tem('conteudo')) out.conteudo = body.conteudo ? String(body.conteudo).slice(0, 200000) : null;
   if (tem('distribuicao')) { // 18zz.2 · 18zz.4 (Marcony): Todos · PERFIS de acesso · FUNÇÕES (o "setor" da 18zz.3 saiu)
     const x = body.distribuicao; const PERF = ['admin', 'gestor', 'comprador', 'operacao', 'qualidade', 'financeiro', 'comercial', 'fiscal', 'colaborador'];
@@ -211,7 +212,7 @@ async function importarModelo(supabase, tenantId, modeloId, { codigo } = {}) {
   const meus = await q(supabase.from('documentos_gestao').select('*').eq('tenant_id', tenantId));
   if (meus.some((d) => d.modelo_origem === m.id)) throw erro(`${m.codigo} já foi importado — veja em 📘 Gestão.`, 409);
   const emp = (await q(supabase.from('tenants').select('*').eq('id', tenantId)).catch(() => []))[0] || {};
-  return criar(supabase, tenantId, { codigo: codigo || m.codigo, titulo: m.titulo, tipo: m.tipo, area: m.area, norma: m.norma, revisao: 0, status: 'rascunho', modelo_origem: m.id,
+  return criar(supabase, tenantId, { codigo: codigo || m.codigo, titulo: m.titulo, tipo: m.tipo, area: m.area, norma: m.norma, requisitos: require('./auditoriaRegistros').reqsDaNorma(m.norma), revisao: 0, status: 'rascunho', modelo_origem: m.id,
     conteudo: `${preencher(m.conteudo, emp)}\n\n— ${BIB().AVISO}` });
 }
 /** rascunho (novo ou importado) → vigente Rev. atual, com aprovado por/em */

@@ -46,3 +46,20 @@ export function TabelaRegistros({ C, regs, onRemover, onAbrir, constatacoes = []
       <td style={{ padding: "6px 8px", borderBottom: `1px solid ${C.border}44`, color: C.textSub }}>{c ? `${c.tipo_nome}${c.requisito ? ` (${c.requisito})` : ""}` : "—"}</td>
       <td style={{ padding: "6px 8px", borderBottom: `1px solid ${C.border}44` }}>{onRemover && !x.constatacao_id && <button type="button" onClick={() => onRemover(i)} aria-label={`Tirar ${x.numero}`} style={{ background: "none", border: "none", color: C.textSub, cursor: "pointer" }}>×</button>}</td></tr>; })}</tbody></table></div>;
 }
+
+/** A1.4: documentos que ATENDEM os requisitos marcados (pela matriz ISO) — um clique inclui como 📘 auditado ou 📎 suporte */
+export function SugestoesDocs({ C, s, requisitos = [], jaIncluidos = [], onEscolher }) {
+  const [l, setL] = useState(null); const chave = [...requisitos].sort().join(",");
+  useEffect(() => { if (!chave) { setL([]); return; } apiService.get(`/auditorias/busca/documentos?q=&requisitos=${encodeURIComponent(chave)}`).then((r) => setL(r.itens || [])).catch(() => setL([])); }, [chave]);
+  if (!chave || !l) return null;
+  const tem = (d, p) => jaIncluidos.some((x) => (String(x.id || "") === String(d.id) || x.titulo === d.titulo) && x.papel === p);
+  const resto = l.filter((d) => !tem(d, "auditado") && !tem(d, "suporte"));
+  return <div style={{ marginTop: 8, border: `1px dashed ${C.border}`, borderRadius: 8, padding: "8px 10px" }}>
+    <div style={{ fontSize: 11.5, color: C.textSub, marginBottom: 6 }}>🧭 <b>Documentos que atendem os requisitos marcados</b> (pela matriz ISO){l.length && !resto.length ? " — todos já incluídos ✓" : ""}</div>
+    {!l.length ? <div style={{ fontSize: 12, color: C.warn }}>Nenhum documento marcado para esses requisitos — marque os requisitos nos Documentos de Gestão (🧭 Matriz ISO mostra as lacunas).</div>
+      : resto.map((d) => <div key={d.id} style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", padding: "3px 0" }}>
+        <div style={{ flex: "1 1 240px", fontSize: 12.5 }}><b>{d.codigo ? `${d.codigo} · ` : ""}</b>{d.titulo}{d.revisao != null ? ` (rev. ${d.revisao})` : ""} <span style={{ color: C.textSub }}>· atende {(d.cobre || []).join(", ")}{d.requisitos_sugeridos ? " ✱" : ""}</span></div>
+        <button type="button" onClick={() => onEscolher({ ...d, papel: "auditado" })} style={{ ...s.btn(false), cursor: "pointer", fontSize: 11.5, padding: "3px 8px", color: C.text }}>📘 Auditado</button>
+        <button type="button" onClick={() => onEscolher({ ...d, papel: "suporte" })} style={{ ...s.btn(false), cursor: "pointer", fontSize: 11.5, padding: "3px 8px", color: C.text }}>📎 Suporte</button></div>)}
+  </div>;
+}

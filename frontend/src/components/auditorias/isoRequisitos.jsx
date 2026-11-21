@@ -1,0 +1,15 @@
+// components/auditorias/isoRequisitos.js — etapa A1.4: itens da ISO 9001:2015 (4–10) para chips de requisitos (documentos e auditorias)
+//   Mesma lista do backend (services/auditorias.js → ISO9001). Guarda-se só subitens; a cláusula marca/desmarca os seus.
+const BRUTO = [["4","Contexto da organização"],["4.1","Contexto"],["4.2","Partes interessadas"],["4.3","Escopo do SGQ"],["4.4","SGQ e processos"],["5","Liderança"],["5.1","Liderança e comprometimento"],["5.2","Política da qualidade"],["5.3","Papéis e responsabilidades"],["6","Planejamento"],["6.1","Riscos e oportunidades"],["6.2","Objetivos da qualidade"],["6.3","Planejamento de mudanças"],["7","Apoio"],["7.1","Recursos"],["7.2","Competência"],["7.3","Conscientização"],["7.4","Comunicação"],["7.5","Informação documentada"],["8","Operação"],["8.1","Planejamento operacional"],["8.2","Requisitos de produtos e serviços"],["8.3","Projeto e desenvolvimento"],["8.4","Provedores externos"],["8.5","Produção e prestação do serviço"],["8.6","Liberação"],["8.7","Saídas não conformes"],["9","Avaliação de desempenho"],["9.1","Monitoramento e medição"],["9.2","Auditoria interna"],["9.3","Análise crítica pela direção"],["10","Melhoria"],["10.1","Generalidades"],["10.2","NC e ação corretiva"],["10.3","Melhoria contínua"]];
+export const ISO9001 = BRUTO.map(([codigo, nome]) => ({ codigo, nome, principal: !codigo.includes(".") }));
+export const subsDe = (c) => ISO9001.filter((r) => !r.principal && r.codigo.split(".")[0] === String(c)).map((r) => r.codigo);
+export const normReqs = (l) => { const out = new Set(); for (const c of l || []) { const x = String(c); const ss = x.includes(".") ? [] : subsDe(x); (ss.length ? ss : [x]).forEach((y) => out.add(y)); } return [...out]; };
+
+/** chips: clicar na cláusula marca/desmarca os subitens; ◐ = parcial */
+export function ChipsIso({ C, valor = [], onChange, desabilitado = false }) {
+  const sel = normReqs(valor);
+  const estado = (r) => { if (!r.principal) return sel.includes(r.codigo) ? "on" : "off"; const ss = subsDe(r.codigo); const n = ss.filter((x) => sel.includes(x)).length; return n === ss.length ? "on" : n ? "meio" : "off"; };
+  const tocar = (r) => { if (desabilitado) return; const ss = r.principal ? subsDe(r.codigo) : []; onChange(ss.length ? (estado(r) === "on" ? sel.filter((x) => !ss.includes(x)) : [...new Set([...sel, ...ss])]) : sel.includes(r.codigo) ? sel.filter((x) => x !== r.codigo) : [...sel, r.codigo]); };
+  return <div style={{ display: "flex", flexWrap: "wrap", gap: 4 }}>{ISO9001.map((r) => { const e = estado(r); return <button key={r.codigo} type="button" disabled={desabilitado} title={r.nome} onClick={() => tocar(r)}
+    style={{ padding: r.principal ? "4px 10px" : "3px 8px", borderRadius: 12, fontSize: r.principal ? 12.5 : 11.5, fontWeight: r.principal ? 700 : 400, border: `${e === "meio" ? 2 : 1}px solid ${e !== "off" ? C.accent : C.border}`, background: e === "on" ? C.accent : "transparent", color: e === "on" ? "#fff" : C.text, cursor: desabilitado ? "default" : "pointer", opacity: desabilitado ? 0.7 : 1 }}>{r.codigo}{r.principal ? ` ${r.nome}` : ""}{e === "meio" ? " ◐" : ""}</button>; })}</div>;
+}
