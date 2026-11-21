@@ -10,6 +10,7 @@ const AREAS = [
   { id: 'comercial', nome: '📈 Comercial', modulos: [
     { id: 'crm_bid', nome: 'CRM, BID e pedidos', desc: 'Funil, prospecção, proposta (BID) com aceite do cliente e pedido de venda.', telas: ['comercial'] },
     { id: 'contratos_locacao', nome: 'Contratos de locação', desc: 'Contrato com aceite, equipamentos locados e acesso do cliente.', telas: ['contratos'], depende: ['frota_equipamentos'] },
+    { id: 'nps', nome: 'NPS — satisfação dos clientes', desc: 'Pesquisa automática ao concluir o pedido, modelos personalizados, painel de NPS; nota baixa vira tarefa.', telas: ['nps'], depende: ['crm_bid'] }, // A1.5
     { id: 'medicao', nome: 'Medição mensal', desc: 'Ciclo de medição, aprovação ou contestação pelo cliente.', telas: [], depende: ['contratos_locacao'] },
   ] },
   { id: 'suprimentos', nome: '🛒 Suprimentos', modulos: [
@@ -29,6 +30,7 @@ const AREAS = [
   { id: 'qualidade', nome: '✅ Qualidade', modulos: [
     { id: 'inspecoes', nome: 'Inspeções e relatórios', desc: 'Checklists com foto e tarja, rotinas, relatório de inspeção, link para terceiros.', telas: ['inspecoes'], depende: ['frota_equipamentos'] },
     { id: 'nao_conformidades', nome: 'Não conformidades e autuações', desc: 'NC com evidências e causa raiz; autuações da empresa.', telas: ['nao_conformidades'] },
+    { id: 'sgq', nome: 'Sistema de gestão ISO 9001 — documentos e auditorias', desc: 'Procedimentos com fluxo de aprovação e 🧭 matriz ISO; auditorias internas: programa anual, execução no sistema com fotos e registros, relatório assinado, pendências do ciclo.', telas: ['auditorias'] }, // A1.5
   ] },
   { id: 'pessoas', nome: '👷 Pessoas', modulos: [
     { id: 'colaboradores', nome: 'Colaboradores e documentos', desc: 'Cadastro, funções, documentos com vencimento e avisos.', telas: ['pessoas'] },

@@ -67,6 +67,16 @@ async function montar(supabase, tenantId) {
   // ── gestão (SC2.3): metas do negócio alimentam a 📊 Saúde do negócio no Início
   P(null, 'metas', 'Defina as metas do negócio', 'Os indicadores que dizem se a empresa vai bem (frota disponível, viagens no prazo, documentos em dia…). Viram a 📊 Saúde do negócio no Início, com 🟢🟡🔴.', (await da('metas_negocio').catch(() => [])).length > 0, { tela: 'metas', obrigatorio: false });
   // ── qualidade
+  // ── A1.5: sistema de gestão ISO 9001 (pacote sgq): procedimentos, matriz e programa de auditorias
+  if (liga('sgq')) {
+    const docsG = (await da('documentos_gestao')).filter((d) => d.status !== 'obsoleto'); const vig = docsG.filter((d) => d.status === 'vigente');
+    let mz = null; try { mz = await require('./auditoriaRegistros').matriz(supabase, tenantId); } catch { /* sem 119 */ }
+    const auds = (await da('auditorias')).filter((a) => String(a.data_prevista || '').startsWith(new Date().toISOString().slice(0, 4)) && a.status !== 'cancelada');
+    P('sgq', 'sgq_procedimentos', 'Procedimentos do sistema de gestão', 'Política, Manual e procedimentos (informação documentada, NC e ação corretiva, fornecedores, competência…). Importe os modelos ISO 9001 da 📚 biblioteca ou cadastre os seus, revise e aprove.', vig.length >= 3, { tela: 'documentos', aba: 'gestao', falta: vig.length ? `${vig.length} vigente(s) — recomendado ao menos Política, Manual e os procedimentos obrigatórios` : 'nenhum documento vigente' });
+    P('sgq', 'sgq_matriz', 'Matriz ISO: requisitos de cada documento', 'Marque em cada documento os itens da norma que ele atende. A 🧭 Matriz ISO mostra as lacunas e a auditoria sugere os documentos certos.', mz ? mz.resumo.lacunas === 0 : false, { tela: 'documentos', aba: 'gestao', obrigatorio: false, falta: mz ? `${mz.resumo.lacunas} item(ns) da norma sem documento` : null });
+    P('sgq', 'sgq_programa', 'Programa de auditorias do ano', 'Planeje as auditorias internas do ano cobrindo a norma (ISO 9001, 9.2). O programa mostra o que está planejado e o que já foi auditado.', auds.length > 0, { tela: 'auditorias', obrigatorio: false });
+  }
+  if (liga('nps')) P('nps', 'nps_pesquisa', 'Pesquisa de satisfação (NPS)', 'Ela sai sozinha quando o pedido fica Concluído. Revise o modelo (⚙ Modelos) e confira se os pedidos têm o e-mail do contato do cliente.', (await da('nps_modelos')).length > 0 || (await da('nps_pesquisas')).length > 0, { tela: 'nps', obrigatorio: false });
   P('inspecoes', 'modelo_inspecao', 'Modelo de inspeção', 'O checklist das inspeções (pode importar da biblioteca).', (await da('inspecao_modelos')).length > 0, { tela: 'inspecoes' });
   // ── suprimentos
   P('fornecedores', 'fornecedores', 'Fornecedores', 'Seus fornecedores locais (os da plataforma já aparecem). Cotação vai para eles.', (await da('fornecedores')).length > 0, { tela: 'fornecedores', obrigatorio: false });

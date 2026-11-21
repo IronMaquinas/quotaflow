@@ -201,7 +201,9 @@ export default function App() {
   const [avisoRoteiro, setAvisoRoteiro] = useState(null);
   useEffect(() => { const f = (ev) => { const p = ev.detail || {}; if (!p.tela) return;
       if (!temAcessoRef.current(p.tela)) { setAvisoRoteiro(`"${p.titulo || p.tela}" fica numa tela que só o Administrador abre — peça a ele.`); setTimeout(() => setAvisoRoteiro(null), 6000); return; }
-      if (p.tela === "configuracoes") setConfigAba(p.aba || null); setTela(p.tela); };
+      if (p.tela === "configuracoes") setConfigAba(p.aba || null);
+      if (p.tela === "documentos" && p.aba) window.qfDocsAba = p.aba; // A1.5: roteiro → 📁 Documentos já na aba 📘 Gestão
+      setTela(p.tela); };
     window.addEventListener("qf-navegar", f); return () => window.removeEventListener("qf-navegar", f); }, []);
   const [abrirOcorrencia, setAbrirOcorrencia] = useState(null); // 18h.3.2: tarefa TSK-MT → ⚠️ ocorrência (SIN)
   useEffect(() => { const f = (ev) => { if (ev.detail == null) return; setAbrirOcorrencia({ id: ev.detail, em: Date.now() }); setTela("contratos"); }; window.addEventListener("qf-abrir-ocorrencia", f); return () => window.removeEventListener("qf-abrir-ocorrencia", f); }, []);

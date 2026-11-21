@@ -69,7 +69,7 @@ const ESPERADO = {
   'services/acessoSpot.js': '6ecce4d16d6b123c6ce93c1223b32f01', // etapa 10c (novo)
   'services/receitaCnpj.js': 'b0e2a678127403d5608723c21ec61b78', // etapa 14d.5
   'services/cadastroPublico.js': '750c29b11811b3ae3cdddad46da4fb8a', // etapa 18v
-  'front:App.jsx': '62a08458b39e2b173c9fa72901b29577', // etapa A1
+  'front:App.jsx': '942ba315da4b6dccbca9a435fc46a976', // etapa A1.5
   'front:TelaLogin.jsx': '742946c163f48c3a80f798f6077678c2', // etapa 18g.6
   'front:TelaSignup.jsx': '345dceefb937b38e74cfef44cfc33ef3', // etapa 11a.3
   'front:AvisoPlanoTenant.jsx': '2a75bbac9eaae456cc5d1b81d1dfbff8', // etapa 18v
@@ -289,10 +289,10 @@ const ESPERADO = {
   'front:ConfigOcorrencias.jsx': 'e799bac0e58a978808d6041d9e3ed50a', // etapa 18h.4c
   'front:IndicadoresOcorrencias.jsx': '2cf48ec396f6722644bbfa4dfb9ef720', // etapa 18h.4 (novo)
   'front:gerarRelatorioOcorrencias.js': '6bf80339de4eb3c15849b55972de04fa', // etapa 18h.4 (novo)
-  'services/roteiroInicial.js': 'a3f4c9da083b36bc16d2b9530e5fd2df', // etapa SC2.3
+  'services/roteiroInicial.js': 'ff332f0436de676e94f9648ff4e6ec57', // etapa A1.5
   'migrations/070_roteiro_inicial.sql': 'ee88701340141118fc400549de31fc3a', // etapa 18i (novo)
   'front:BemVindo.jsx': 'ffca185c2e33160374fff885c6144d91', // etapa SC3
-  'services/modulos.js': '6d6de13729399a2960f8b51d26a76f96', // etapa R1
+  'services/modulos.js': '50d02fa67121dcde6e431d7a786fe729', // etapa A1.5
   'migrations/071_modulos_planos.sql': '37caa5e9e569dde2fb7ea21d442968c2', // etapa 18j
   'front:MeuPlano.jsx': '47b91b4e2b17316e86765a689a5d21a5', // etapa 18x
   'front:ModulosPlataforma.jsx': '6fb0d8533efc732bd8c142822f31c124', // etapa B1.7
@@ -456,14 +456,11 @@ const ESPERADO = {
   'front:MatrizIso.jsx': '13da66a930021067deab91f11824388d', // etapa A1.4 (novo)
 };
 
-// Antes de copiar a etapa A1.4 — base: A1.3 (d2f95af)
+// Antes de copiar a etapa A1.5 — base: A1.4 (3b1c1dd)
 const ANTES = {
-  'services/auditoriaRegistros.js': '9e636be514106d65f24ab67482377cfd',
-  'services/documentosGestao.js': '1e1045fe5e9bfd08500b611b397af662',
-  'routes/auditorias.js': 'c1bcc2760718a631a7803081b51c6ac5',
-  'front:BuscaAuditoria.jsx': '0eae5f63e4cc3585ddb57d9e1d979511',
-  'front:FichaAuditoria.jsx': 'b9f65a1a8aa8c3484447804f2602116f',
-  'front:DocumentosGestao.jsx': '2dac190e3cac7ae1771cd0e2fdcd1997',
+  'services/modulos.js': '6d6de13729399a2960f8b51d26a76f96',
+  'services/roteiroInicial.js': 'a3f4c9da083b36bc16d2b9530e5fd2df',
+  'front:App.jsx': '62a08458b39e2b173c9fa72901b29577',
 };
 
 const RAIZ = process.cwd();
@@ -501,7 +498,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a A1.4)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a A1.5)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
