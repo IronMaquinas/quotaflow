@@ -30,7 +30,7 @@ const AREAS = [
   { id: 'qualidade', nome: '✅ Qualidade', modulos: [
     { id: 'inspecoes', nome: 'Inspeções e relatórios', desc: 'Checklists com foto e tarja, rotinas, relatório de inspeção, link para terceiros.', telas: ['inspecoes'], depende: ['frota_equipamentos'] },
     { id: 'nao_conformidades', nome: 'Não conformidades e autuações', desc: 'NC com evidências e causa raiz; autuações da empresa.', telas: ['nao_conformidades'] },
-    { id: 'sgq', nome: 'Sistema de gestão ISO 9001 — documentos e auditorias', desc: 'Procedimentos com fluxo de aprovação e 🧭 matriz ISO; auditorias internas: programa anual, execução no sistema com fotos e registros, relatório assinado, pendências do ciclo.', telas: ['auditorias'] }, // A1.5
+    { id: 'sgq', nome: 'Sistema de gestão ISO 9001 — documentos e auditorias', desc: 'Procedimentos com fluxo de aprovação e 🧭 matriz ISO; auditorias internas: programa anual, execução no sistema com fotos e registros, relatório assinado, pendências do ciclo.', telas: ['auditorias', 'analise_critica'] }, // A1.5
   ] },
   { id: 'pessoas', nome: '👷 Pessoas', modulos: [
     { id: 'colaboradores', nome: 'Colaboradores e documentos', desc: 'Cadastro, funções, documentos com vencimento e avisos.', telas: ['pessoas'] },

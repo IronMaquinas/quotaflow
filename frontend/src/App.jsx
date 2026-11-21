@@ -15,6 +15,7 @@ import TelaBenchmarkNova from './components/benchmark/TelaBenchmarkNova';
 import TelaSuprimentos from './components/suprimentos/TelaSuprimentos'; // R1
 import TelaNps from './components/nps/TelaNps'; // N1
 import TelaAuditorias from './components/auditorias/TelaAuditorias'; // A1
+import TelaAnaliseCritica from './components/auditorias/TelaAnaliseCritica'; // R2
 import PainelValorGerado, { SeloValorGerado } from './components/valor/PainelValorGerado'; // 5a
 import SalaControle from './components/home/SalaControle'; // SC1
 import TelaMetas from './components/metas/TelaMetas'; // SC2
@@ -483,6 +484,7 @@ const perfil = PERFIS[usuario.perfil] || {
     // ── QUALIDADE E PESSOAS
     {sec:"QUALIDADE E PESSOAS", id:"nao_conformidades", l:"⚠️ Não Conformidades", perfis:["admin","gestor","operacao","qualidade"]},
     {sec:"QUALIDADE E PESSOAS", id:"auditorias",    l:"🔎 Auditorias",            perfis:["admin","gestor","qualidade"]}, // A1
+    {sec:"QUALIDADE E PESSOAS", id:"analise_critica", l:"🧭 Análise Crítica",     perfis:["admin","gestor"]}, // R2: ISO 9001 9.3
     {sec:"QUALIDADE E PESSOAS", id:"documentos",    l:"📁 Documentos",            perfis:["admin","gestor","qualidade","operacao"]}, // 18zq: repositório por dono (pessoas · equipamentos · empresa)
     {sec:"QUALIDADE E PESSOAS", id:"pessoas",       l:"👷 Pessoas",               perfis:["admin","gestor","qualidade","operacao"]},
     // ── COMERCIAL E FINANCEIRO
@@ -491,7 +493,6 @@ const perfil = PERFIS[usuario.perfil] || {
     // ── ANÁLISES
     {sec:"ANÁLISES", id:"metas",         l:"🎯 Metas do negócio",     perfis:["admin","gestor"]}, // SC2
     {sec:"ANÁLISES", id:"valor_gerado",  l:"💰 Valor gerado",         perfis:["admin","gestor"]}, // 5a
-    {sec:"ANÁLISES", id:"relatorio",     l:"📄 Relatório",            perfis:["admin","gestor"]},
     {sec:"ANÁLISES", id:"nps",           l:"⭐ NPS",                   perfis:["admin","gestor","comercial"]}, // N1
     {sec:"ANÁLISES", id:"suprimentos",   l:"📊 Suprimentos",          perfis:["admin","gestor","comprador"]}, // R1: substitui Histórico Preços e Inteligência (1ª versão)
     {sec:"ANÁLISES", id:"benchmark",     l:"📈 Benchmark",            perfis:["admin","gestor"]},
@@ -796,6 +797,7 @@ const perfil = PERFIS[usuario.perfil] || {
         {temAcesso(tela) && tela === "suprimentos" && <div style={{flex:1,overflowY:"auto"}}><TelaSuprimentos C={C} s={s} /></div>}{/* R1 */}
         {temAcesso(tela) && tela === "nps" && <div style={{flex:1,overflowY:"auto"}}><TelaNps C={C} s={s} /></div>}{/* N1 */}
         {temAcesso(tela) && tela === "auditorias" && <div style={{flex:1,overflowY:"auto"}}><TelaAuditorias C={C} s={s} /></div>}{/* A1 */}
+        {temAcesso(tela) && tela === "analise_critica" && <div style={{flex:1,overflowY:"auto"}}><TelaAnaliseCritica C={C} s={s} /></div>}{/* R2 */}
         {temAcesso(tela) && tela === "inteligencia" && (
           <div style={{flex:1,overflowY:"auto"}}>
             <TelaInteligenciaNova 
@@ -2500,6 +2502,7 @@ const PERMISSOES = {
   suprimentos:        ["admin","gestor","comprador"], // R1
   nps:                ["admin","gestor","comercial"], // N1
   auditorias:         ["admin","gestor","qualidade"], // A1
+  analise_critica:    ["admin","gestor"], // R2
   benchmark:          ["admin","gestor"],
   valor_gerado:       ["admin","gestor"], // 5a
   metas:              ["admin","gestor","comprador","operacao","qualidade","financeiro","comercial","fiscal"], // SC2 · SC2.4: o dono da meta (qualquer perfil) abre pela Sala/🔔; menu só gestão

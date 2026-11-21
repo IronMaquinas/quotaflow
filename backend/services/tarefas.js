@@ -8,6 +8,7 @@ const TIPOS = {
   TR: { nome: 'Transporte', icone: '🚚' }, NC: { nome: 'Não conformidade', icone: '⚠️' }, AU: { nome: 'Auditoria', icone: '🔎' },
   MT: { nome: 'Manutenção', icone: '🔧' }, CM: { nome: 'Comercial', icone: '📈' }, HR: { nome: 'Pessoas', icone: '👥' }, GN: { nome: 'Geral', icone: '📌' },
   KPI: { nome: 'Meta (KPI)', icone: '🎯' }, // SC2.5: plano de ação de meta fora do alvo
+  AC: { nome: 'Análise crítica', icone: '🧭' }, // R2: decisões da análise crítica pela direção (ISO 9.3)
 };
 const TIPO_DA_ORIGEM = { prospeccao: 'CM', multa: 'HR', autuacao: 'NC', fiscal: 'TR', nc: 'NC', ocorrencia: 'MT' }; // igual à qf_tarefa_tipo_da_origem (065)
 const ORIGEM_NOME = { prospeccao: '📈 Comercial → 📣 Prospecção (encerra quando o BID for criado ou o comercial cancelar)',
@@ -15,7 +16,7 @@ const ORIGEM_NOME = { prospeccao: '📈 Comercial → 📣 Prospecção (encerra
 const TF = () => require('./tarefasFiscais'); // 18g.1
 const STATUS = { pendente: 'Pendente', em_andamento: 'Em andamento', concluida: 'Concluída', cancelada: 'Cancelada' };
 const PRIORIDADE = { alta: 'Alta', media: 'Média', baixa: 'Baixa' };
-const VINCULOS = { bid: 'BID', pv: 'Pedido', trecho: 'Trecho', at: 'AT', nc: 'NC', prospeccao: 'Prospecção', contrato: 'Contrato', inspecao: 'Inspeção', multa: 'Multa', autuacao: 'Autuação', tarefa: 'Tarefa', ocorrencia: 'Ocorrência (SIN)', meta: 'Meta (KPI)' };
+const VINCULOS = { bid: 'BID', pv: 'Pedido', trecho: 'Trecho', at: 'AT', nc: 'NC', prospeccao: 'Prospecção', contrato: 'Contrato', inspecao: 'Inspeção', multa: 'Multa', autuacao: 'Autuação', tarefa: 'Tarefa', ocorrencia: 'Ocorrência (SIN)', meta: 'Meta (KPI)', analise_critica: 'Análise crítica' };
 const CAMPOS = ['titulo', 'detalhe', 'responsavel', 'prazo', 'prioridade', 'status', 'tipo'];
 const ROTULO = { titulo: 'título', detalhe: 'descrição', responsavel: 'responsável', prazo: 'prazo', prioridade: 'prioridade', status: 'situação', tipo: 'tipo' };
 const BUCKET = 'documentos';

@@ -160,6 +160,7 @@ app.use('/api/valor-gerado', tenantMiddleware, require('./routes/valorGerado'));
 app.use('/api/suprimentos', tenantMiddleware, require('./routes/suprimentos')); // R1: 📊 Suprimentos com dados reais
 app.use('/api/nps', tenantMiddleware, require('./routes/nps')); // N1: ⭐ NPS
 app.use('/api/auditorias', tenantMiddleware, require('./routes/auditorias')); // A1: 🔎 auditorias do sistema de gestão
+app.use('/api/analise-critica', tenantMiddleware, require('./routes/analiseCritica')); // R2: 🧭 análise crítica pela direção (ISO 9.3)
 app.use('/api/sala-controle', tenantMiddleware, require('./routes/salaControle'));
 app.use('/api/metas', tenantMiddleware, require('./routes/metas'));
 app.use('/api/beta', tenantMiddleware, require('./routes/beta'));
