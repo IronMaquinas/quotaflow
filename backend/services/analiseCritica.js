@@ -15,7 +15,7 @@ const pct = (a, b) => (b ? Math.round((a / b) * 100) : null);
 const r1 = (v) => Math.round(v * 10) / 10;
 
 const STATUS = { rascunho: 'Em preparação', encerrada: 'Aguardando assinaturas', concluida: 'Concluída', cancelada: 'Cancelada' };
-const TIPOS_SAIDA = { melhoria: 'Oportunidade de melhoria', mudanca: 'Mudança no sistema de gestão', recursos: 'Necessidade de recursos' };
+const TIPOS_SAIDA = { melhoria: 'Oportunidade de melhoria', mudanca: 'Mudança no sistema de gestão', recursos: 'Necessidade de recursos', risco: 'Tratamento de risco' }; // R2.2: risco (ISO 6.1) 
 const PAPEIS = { direcao: 'Direção', qualidade: 'Responsável pela qualidade' };
 const ENTRADAS = [
   { chave: 'acoes_anteriores', letra: 'a', clausula: '9.3.2 a', titulo: 'Situação das ações das análises anteriores' },
@@ -189,18 +189,18 @@ async function atualizar(sb, tenantId, id, d = {}) {
 async function novaSaida(sb, tenantId, quem, id, d = {}) {
   const a = await uma(sb, tenantId, id); if (!a) return { status: 404, erro: 'Análise não encontrada.' };
   if (a.status !== 'rascunho') return { status: 409, erro: MSG_TRAV };
-  const tipo = TIPOS_SAIDA[d.tipo] ? d.tipo : null; if (!tipo) return { status: 400, erro: 'Escolha o tipo da decisão: melhoria, mudança no sistema ou recursos.' };
+  const tipo = TIPOS_SAIDA[d.tipo] ? d.tipo : null; if (!tipo) return { status: 400, erro: 'Escolha o tipo da decisão: melhoria, mudança no sistema, recursos ou risco.' };
   const texto = txt(d.texto, 1000); if (!texto || texto.length < 5) return { status: 400, erro: 'Descreva a decisão.' };
   const entrada = ENTRADAS.some((e) => e.chave === d.entrada) ? d.entrada : null;
-  const s = { id: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, tipo, texto, entrada, responsavel: txt(d.responsavel, 120), prazo: data(d.prazo), recurso: txt(d.recurso, 300), tarefa_id: null, criado_por: quem?.nome || null, criado_em: new Date().toISOString() };
+  const s = { id: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, tipo, texto, entrada, responsavel: txt(d.responsavel, 120), prazo: data(d.prazo), recurso: txt(d.recurso, 300), risco: tipo === 'risco' ? txt(d.risco, 300) : null, tarefa_id: null, criado_por: quem?.nome || null, criado_em: new Date().toISOString() };
   let aviso = null; let tarefa = null;
   if (d.gerar_tarefa !== false) {
     if (!s.prazo) return { status: 400, erro: 'Informe o prazo da ação (ou desmarque "gerar tarefa").' };
     if (s.prazo < hojeBR()) return { status: 400, erro: 'O prazo não pode estar no passado.' };
     const ent = ENTRADAS.find((e) => e.chave === entrada);
-    const t = await require('./tarefas').criar(sb, tenantId, quem, { tipo: 'AC', titulo: `${TIPOS_SAIDA[tipo]} — ${a.numero}: ${texto.slice(0, 140)}`, prioridade: tipo === 'recursos' ? 'media' : 'media', prazo: s.prazo,
+    const t = await require('./tarefas').criar(sb, tenantId, quem, { tipo: 'AC', titulo: `${TIPOS_SAIDA[tipo]} — ${a.numero}: ${texto.slice(0, 140)}`, prioridade: tipo === 'risco' ? 'alta' : 'media', prazo: s.prazo,
       responsavel_ref: d.responsavel_ref || null, responsavel: d.responsavel_ref ? null : (s.responsavel || 'Direção'),
-      detalhe: `${a.numero} · ${a.titulo}\nDecisão da análise crítica pela direção (ISO 9001 9.3.3) — ${TIPOS_SAIDA[tipo]}${ent ? `\nEntrada: ${ent.letra}) ${ent.titulo}` : ''}\n\n${texto}${s.recurso ? `\n\nRecurso: ${s.recurso}` : ''}\n\nA situação desta tarefa entra na próxima análise crítica.`,
+      detalhe: `${a.numero} · ${a.titulo}\nDecisão da análise crítica pela direção (ISO 9001 9.3.3) — ${TIPOS_SAIDA[tipo]}${ent ? `\nEntrada: ${ent.letra}) ${ent.titulo}` : ''}\n\n${texto}${s.recurso ? `\n\nRecurso: ${s.recurso}` : ''}${s.risco ? `\n\nRisco: ${s.risco}` : ''}\n\nA situação desta tarefa entra na próxima análise crítica.`,
       vinculos: [{ tipo: 'analise_critica', id: String(a.id), numero: a.numero }] });
     if (t?.erro) aviso = `a tarefa não foi criada (${t.erro})`; else if (t?.id) { s.tarefa_id = String(t.id); tarefa = { id: t.id, numero: t.numero }; }
   }
