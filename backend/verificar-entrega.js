@@ -606,6 +606,13 @@ if (!modoAntes) {
     }
   }
 
+  // E2.1.1: pacote da TELA que está no package.json mas não foi instalado na sua máquina (npm install) → o Vite local quebra
+  try {
+    const pkgF = JSON.parse(fs.readFileSync(path.join(RAIZ, '..', 'frontend', 'package.json'), 'utf8'));
+    const faltamF = Object.keys(pkgF.dependencies || {}).filter((n) => !fs.existsSync(path.join(RAIZ, '..', 'frontend', 'node_modules', n, 'package.json')));
+    if (faltamF.length) { falhas++; console.log(`\n✗ A tela usa pacotes que ainda não estão instalados na sua máquina: ${faltamF.join(', ')}\n  Corrija com: cd ../frontend && npm install   (depois reinicie o npm run dev)`); }
+  } catch { /* sem frontend ao lado: ignora */ }
+
   // Etapa 11b.1: todo pacote usado no backend precisa estar no package.json
   // (no Mac funciona com o que está instalado; no Render só entra o que está lá)
   try {
