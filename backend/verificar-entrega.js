@@ -455,16 +455,16 @@ const ESPERADO = {
   'front:isoRequisitos.jsx': 'ddede2ca992741ee16b8bdaca89aee81', // etapa A1.4 (novo)
   'front:MatrizIso.jsx': '13da66a930021067deab91f11824388d', // etapa A1.4 (novo)
   'migrations/120_analise_critica.sql': '4a43685a51379c3815bd8cb6ddbc2abe', // etapa R2 (novo)
-  'services/analiseCritica.js': 'cc9a92975dfb21ebda63031fb5eb9fb1', // etapa R2.2
+  'services/analiseCritica.js': '2e2085fe7c13d1180c57aac73243af3e', // etapa R2.3
   'routes/analiseCritica.js': 'dab3da4da8379c0ebd3df86b12640bc0', // etapa R2 (novo)
   'front:TelaAnaliseCritica.jsx': '0b4c8d0b24ab6706bd3cdced4fc31dc7', // etapa R2 (novo)
-  'front:FichaAnaliseCritica.jsx': '2ee182e4f1c9bc62ea3811e32aa22709', // etapa R2.2
+  'front:FichaAnaliseCritica.jsx': '53554ec1c33397c33cfecc9a245fa9d9', // etapa R2.3
 };
 
-// Antes de copiar a etapa R2.2 — base: R2.1 (1308597)
+// Antes de copiar a etapa R2.3 — base: R2.2 (f3c6c17)
 const ANTES = {
-  'services/analiseCritica.js': 'a86594cf3e15c8074692c22a30e6080f',
-  'front:FichaAnaliseCritica.jsx': '6776487e8776dc8a2eb61566255c6509',
+  'services/analiseCritica.js': 'cc9a92975dfb21ebda63031fb5eb9fb1',
+  'front:FichaAnaliseCritica.jsx': '2ee182e4f1c9bc62ea3811e32aa22709',
 };
 
 const RAIZ = process.cwd();
@@ -502,7 +502,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a R2.2)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a R2.3)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

@@ -195,7 +195,7 @@ async function novaSaida(sb, tenantId, quem, id, d = {}) {
   const s = { id: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, tipo, texto, entrada, responsavel: txt(d.responsavel, 120), prazo: data(d.prazo), recurso: txt(d.recurso, 300), risco: tipo === 'risco' ? txt(d.risco, 300) : null, tarefa_id: null, criado_por: quem?.nome || null, criado_em: new Date().toISOString() };
   let aviso = null; let tarefa = null;
   if (d.gerar_tarefa !== false) {
-    if (!s.prazo) return { status: 400, erro: 'Informe o prazo da ação (ou desmarque "gerar tarefa").' };
+    if (!s.prazo) return { status: 400, erro: 'Informe o prazo da ação (ou desligue "Criar tarefa no Plano").' };
     if (s.prazo < hojeBR()) return { status: 400, erro: 'O prazo não pode estar no passado.' };
     const ent = ENTRADAS.find((e) => e.chave === entrada);
     const t = await require('./tarefas').criar(sb, tenantId, quem, { tipo: 'AC', titulo: `${TIPOS_SAIDA[tipo]} — ${a.numero}: ${texto.slice(0, 140)}`, prioridade: tipo === 'risco' ? 'alta' : 'media', prazo: s.prazo,
