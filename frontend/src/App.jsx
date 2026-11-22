@@ -47,6 +47,7 @@ import { definirModulosSessao, definirSegmentosSessao, rotulo } from './utils/mo
 import TelaMonitorCnpj from './components/compliance/TelaMonitorCnpj'; // 14e
 import TelaNaoConformidades from "./components/naoConformidades/TelaNaoConformidades";
 import TelaInspecoes from "./components/inspecoes/TelaInspecoes"; // etapa 14a
+import TelaFotoCartao from "./components/fotoCartao/TelaFotoCartao"; // E1
 import TelaContratos from "./components/contratos/TelaContratos"; // etapa 14b.3
 import TelaComercial from "./components/comercial/TelaComercial"; // etapa 15a — 📈 Comercial (mini-CRM + BID)
 import TelaProgramacao from "./components/programacao/TelaProgramacao";
@@ -446,11 +447,11 @@ const perfil = PERFIS[usuario.perfil] || {
       </div>
       {/* 14b.1: abas do colaborador — 🎓 treinamentos | 🔍 inspeções */}
       <div style={{ display: "flex", gap: 4, padding: "6px 12px", borderBottom: `1px solid ${C.border}` }}>
-        {[["viagens", "🚛 Viagens"], ["treinos", "🎓 Treinamentos"], ["inspecoes", "🔍 Inspeções"], ["procedimentos", "📘 Procedimentos"]].map(([k, l]) => (
+        {[["viagens", "🚛 Viagens"], ["treinos", "🎓 Treinamentos"], ["inspecoes", "🔍 Inspeções"], ["fotos", "📸 Fotos"], ["procedimentos", "📘 Procedimentos"]].map(([k, l]) => (
           <button key={k} onClick={() => setAbaColaborador(k)} style={{ background: "transparent", border: "none", borderBottom: `2px solid ${abaColaborador === k ? C.accent : "transparent"}`, padding: "8px 12px", color: abaColaborador === k ? C.text : C.muted, fontSize: 14, fontWeight: 600, cursor: "pointer", fontFamily: "inherit" }}>{l}</button>
         ))}
       </div>
-      <div style={{ flex: 1, overflow: abaColaborador === "treinos" ? "hidden" : "auto" }}>{abaColaborador === "procedimentos" ? <MeusProcedimentos C={C} s={s} /> : abaColaborador === "viagens" ? <TelaMinhasViagens C={C} s={s} /> : abaColaborador === "inspecoes" ? <TelaInspecoes C={C} s={s} embutida /> : <TelaMeusTreinamentos />}</div>
+      <div style={{ flex: 1, overflow: abaColaborador === "treinos" ? "hidden" : "auto" }}>{abaColaborador === "procedimentos" ? <MeusProcedimentos C={C} s={s} /> : abaColaborador === "viagens" ? <TelaMinhasViagens C={C} s={s} /> : abaColaborador === "inspecoes" ? <TelaInspecoes C={C} s={s} embutida /> : abaColaborador === "fotos" ? <TelaFotoCartao C={C} s={s} embutida /> : <TelaMeusTreinamentos />}</div>
     </div>
   );
 
@@ -467,6 +468,7 @@ const perfil = PERFIS[usuario.perfil] || {
     {sec:"OPERAÇÃO", id:"ordem_servico", l:"🛠️ Ordem de Serviço",    perfis:["admin","gestor","operacao","qualidade"]},
     {sec:"OPERAÇÃO", id:"equipamentos",  l:rotulo("frota"),          perfis:["admin","gestor","comprador","operacao"]},
     {sec:"OPERAÇÃO", id:"inspecoes",     l:"🔍 Inspeções",             perfis:["admin","gestor","comprador","operacao","qualidade"]}, // etapa 14a
+    {sec:"OPERAÇÃO", id:"foto_cartao",   l:"📸 Foto com cartão",       perfis:["admin","gestor","operacao","qualidade"]}, // E1
     {sec:"OPERAÇÃO", id:"contratos",     l:"📑 Contratos",             perfis:["admin","gestor","comprador","operacao","qualidade"]}, // etapa 14b.3
     {sec:"OPERAÇÃO", id:"patio",         l:"📦 Propriedade do cliente", perfis:["admin","gestor","comprador","operacao"]}, // 18z
     // ── COMPRAS E ESTOQUE
@@ -882,6 +884,7 @@ const perfil = PERFIS[usuario.perfil] || {
             <TelaContratos C={C} s={s} abrirContrato={abrirContrato} abrirOcorrencia={abrirOcorrencia} onAbrirInspecoes={temAcesso("inspecoes") ? () => setTela("inspecoes") : null} />
           </div>)}
 
+        {temAcesso(tela) && tela === "foto_cartao" && <div style={{flex:1,overflowY:"auto"}}><TelaFotoCartao C={C} s={s} /></div>}{/* E1 */}
         {temAcesso(tela) && tela === "inspecoes" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
             <TelaInspecoes C={C} s={s}
@@ -2508,6 +2511,7 @@ const PERMISSOES = {
   metas:              ["admin","gestor","comprador","operacao","qualidade","financeiro","comercial","fiscal"], // SC2 · SC2.4: o dono da meta (qualquer perfil) abre pela Sala/🔔; menu só gestão
   equipamentos:       ["admin","gestor","comprador","operacao"],
   inspecoes:          ["admin","gestor","comprador","operacao","qualidade"], // etapa 14a
+  foto_cartao:        ["admin","gestor","operacao","qualidade"], // E1
   contratos:          ["admin","gestor","comprador","operacao","qualidade"], // etapa 14b.3
   pessoas:            ["admin","gestor","qualidade","operacao"], // etapa 12c
   documentos:         ["admin","gestor","qualidade","operacao"], // 18zq

@@ -28,7 +28,7 @@ const AREAS = [
     { id: 'ocorrencias', nome: 'Ocorrências (INC)', desc: 'Avaria, pane, acidente — pela AT ou pelo contrato, com dossiê e indicadores.', telas: [], dependeUm: ['transporte', 'contratos_locacao'] },
   ] },
   { id: 'qualidade', nome: '✅ Qualidade', modulos: [
-    { id: 'inspecoes', nome: 'Inspeções e relatórios', desc: 'Checklists com foto e tarja, rotinas, relatório de inspeção, link para terceiros.', telas: ['inspecoes'], depende: ['frota_equipamentos'] },
+    { id: 'inspecoes', nome: 'Inspeções e relatórios', desc: 'Checklists com foto e tarja, rotinas, relatório de inspeção, link para terceiros.', telas: ['inspecoes', 'foto_cartao'], depende: ['frota_equipamentos'] },
     { id: 'nao_conformidades', nome: 'Não conformidades e autuações', desc: 'NC com evidências e causa raiz; autuações da empresa.', telas: ['nao_conformidades'] },
     { id: 'sgq', nome: 'Sistema de gestão ISO 9001 — documentos e auditorias', desc: 'Procedimentos com fluxo de aprovação e 🧭 matriz ISO; auditorias internas: programa anual, execução no sistema com fotos e registros, relatório assinado, pendências do ciclo.', telas: ['auditorias', 'analise_critica'] }, // A1.5
   ] },
