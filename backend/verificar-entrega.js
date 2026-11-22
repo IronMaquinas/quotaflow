@@ -69,7 +69,7 @@ const ESPERADO = {
   'services/acessoSpot.js': '6ecce4d16d6b123c6ce93c1223b32f01', // etapa 10c (novo)
   'services/receitaCnpj.js': 'b0e2a678127403d5608723c21ec61b78', // etapa 14d.5
   'services/cadastroPublico.js': '750c29b11811b3ae3cdddad46da4fb8a', // etapa 18v
-  'front:App.jsx': '6d116a277b74b8df64bc527d1fa19374', // etapa R2
+  'front:App.jsx': '035f6eb7fa450aebf51fd6c959bf0dec', // etapa R2.5
   'front:TelaLogin.jsx': '742946c163f48c3a80f798f6077678c2', // etapa 18g.6
   'front:TelaSignup.jsx': '345dceefb937b38e74cfef44cfc33ef3', // etapa 11a.3
   'front:AvisoPlanoTenant.jsx': '2a75bbac9eaae456cc5d1b81d1dfbff8', // etapa 18v
@@ -457,15 +457,15 @@ const ESPERADO = {
   'migrations/120_analise_critica.sql': '4a43685a51379c3815bd8cb6ddbc2abe', // etapa R2 (novo)
   'services/analiseCritica.js': '95ba5dff1353652a37622920f0b523b3', // etapa R2.4
   'routes/analiseCritica.js': '0da14732ff8edf517686387f6c17866e', // etapa R2.4
-  'front:TelaAnaliseCritica.jsx': '0b4c8d0b24ab6706bd3cdced4fc31dc7', // etapa R2 (novo)
-  'front:FichaAnaliseCritica.jsx': '178db188b4e90f7a6e4ecbf989454757', // etapa R2.4
+  'front:TelaAnaliseCritica.jsx': 'ffa43a0be4e5de12dc372e78db8aa071', // etapa R2.5
+  'front:FichaAnaliseCritica.jsx': 'e958ea6f3b5d29ca01d330efc571d1ad', // etapa R2.5
 };
 
-// Antes de copiar a etapa R2.4 — base: R2.3 (8203948)
+// Antes de copiar a etapa R2.5 — base: R2.4 (b1172c3)
 const ANTES = {
-  'services/analiseCritica.js': '2e2085fe7c13d1180c57aac73243af3e',
-  'routes/analiseCritica.js': 'dab3da4da8379c0ebd3df86b12640bc0',
-  'front:FichaAnaliseCritica.jsx': '53554ec1c33397c33cfecc9a245fa9d9',
+  'front:FichaAnaliseCritica.jsx': '178db188b4e90f7a6e4ecbf989454757',
+  'front:TelaAnaliseCritica.jsx': '0b4c8d0b24ab6706bd3cdced4fc31dc7',
+  'front:App.jsx': '6d116a277b74b8df64bc527d1fa19374',
 };
 
 const RAIZ = process.cwd();
@@ -503,7 +503,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a R2.4)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a R2.5)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

@@ -936,7 +936,7 @@ const perfil = PERFIS[usuario.perfil] || {
         )}
         {temAcesso(tela) && tela === "plano" && (
           <div style={{flex:1,overflowY:"auto"}}>
-            <TelaPlanoAcaoNova useTarefas={useTarefas} onVoltar={()=>navegar("relatorio")} C={C} s={s} abrirTarefa={abrirTarefa} ambienteInicial={perfisLogado.includes("fiscal") && !perfisLogado.some(p => ["admin","gestor"].includes(p)) ? "TR" : "todos"} />
+            <TelaPlanoAcaoNova useTarefas={useTarefas} onVoltar={()=>{ const v = window.qfVoltarPlano; window.qfVoltarPlano = null; if (v?.tela) { window.qfVoltarAcd = v.acd || null; navegar(v.tela); } else navegar("relatorio"); }} C={C} s={s} abrirTarefa={abrirTarefa} ambienteInicial={perfisLogado.includes("fiscal") && !perfisLogado.some(p => ["admin","gestor"].includes(p)) ? "TR" : "todos"} />
           </div>
         )}        
       </div>

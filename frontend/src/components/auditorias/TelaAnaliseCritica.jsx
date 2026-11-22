@@ -8,7 +8,8 @@ const dBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : 
 export const COR_ST_AC = { rascunho: "#60a5fa", encerrada: "#f59e0b", concluida: "#22c55e", cancelada: "#64748b" };
 
 export default function TelaAnaliseCritica({ C, s }) {
-  const [L, setL] = useState(null); const [erro, setErro] = useState(""); const [msg, setMsg] = useState(""); const [ed, setEd] = useState(null); const [nova, setNova] = useState(null); const [pessoas, setPessoas] = useState(null);
+  // R2.5: ed começa na análise que estava aberta quando o usuário foi ao Plano pela 📋 TSK-AC
+  const [L, setL] = useState(null); const [erro, setErro] = useState(""); const [msg, setMsg] = useState(""); const [ed, setEd] = useState(() => { const v = window.qfVoltarAcd || null; window.qfVoltarAcd = null; return v; }); const [nova, setNova] = useState(null); const [pessoas, setPessoas] = useState(null);
   const carregar = () => apiService.get("/analise-critica").then((r) => { setL(r); setErro(""); }).catch((e) => setErro(e?.response?.data?.erro || e.message));
   useEffect(() => { carregar(); apiService.get("/pessoas/gestao-pessoas").then((r) => setPessoas(r.funcionarios || [])).catch(() => setPessoas([])); }, []);
   const card = { ...s.card, padding: "16px 18px" }; const lab = { fontSize: 11.5, color: C.textSub, display: "block", marginBottom: 3 };
