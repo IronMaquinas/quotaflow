@@ -10,7 +10,14 @@ function abrir() {
   return dbP;
 }
 const tx = async (modo, fn) => { const db = await abrir(); if (!db) return fn(null); return new Promise((ok) => { try { const t = db.transaction(LOJA, modo); const st = t.objectStore(LOJA); const r = fn(st); t.oncomplete = () => ok(r?.result ?? r); t.onerror = () => ok(null); } catch { ok(fn(null)); } }); };
-export async function salvar(item) { await tx("readwrite", (st) => (st ? st.put(item) : memoria.set(item.uid, item))); }
+/** grava e CONFERE (lê de volta). Devolve false se o aparelho não guardou (memória cheia, modo privado…) */
+export async function salvar(item) {
+  try { await tx("readwrite", (st) => (st ? st.put(item) : memoria.set(item.uid, item))); } catch { return false; }
+  const db = await abrir(); if (!db) return memoria.has(item.uid);
+  return new Promise((ok) => { try { const r = db.transaction(LOJA, "readonly").objectStore(LOJA).get(item.uid); r.onsuccess = () => ok(!!r.result); r.onerror = () => ok(false); } catch { ok(false); } });
+}
+/** E1.1: pede ao navegador para não apagar estes dados sozinho (Chrome concede; no iPhone, só com o app na Tela de Início) */
+export async function pedirPersistencia() { try { if (!navigator.storage?.persist) return null; if (await navigator.storage.persisted()) return true; return await navigator.storage.persist(); } catch { return null; } }
 export async function remover(uid) { await tx("readwrite", (st) => (st ? st.delete(uid) : memoria.delete(uid))); }
 export async function listar(tenant) {
   const db = await abrir(); let l;

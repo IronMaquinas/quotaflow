@@ -28,17 +28,17 @@ export default function TelaFotoCartao({ C, s, embutida = false }) {
   const [aba, setAba] = useState("tirar"); const [M, setM] = useState(null); const [erro, setErro] = useState(""); const [msg, setMsg] = useState("");
   const ult = (() => { try { return JSON.parse(localStorage.getItem(ULT) || "{}"); } catch { return {}; } })();
   const [modeloId, setModeloId] = useState(ult.modelo_id || ""); const [ref, setRef] = useState(ult.referencia || ""); const [cam, setCam] = useState(false); const [cartao, setCartao] = useState(ult.cartao || null);
-  const [fila, setFila] = useState({ pendentes: 0, erros: 0 }); const [refs, setRefs] = useState([]);
+  const [fila, setFila] = useState({ pendentes: 0, erros: 0 }); const [refs, setRefs] = useState([]); const [persist, setPersist] = useState(null);
   const tenant = chaveTenant();
   const carregar = () => apiService.get(`/foto-cartao/modelos${podeEditar ? "?todos=1" : ""}`).then((r) => { setM(r); setErro(""); }).catch((e) => setErro(e?.response?.data?.erro || e.message));
   const sincronizar = async () => { const r = await Fila.sincronizar(tenant, (corpo) => apiService.post("/foto-cartao/fotos", corpo)); const l = await Fila.listar(tenant); setFila({ pendentes: l.filter((x) => x.status !== "erro").length, erros: l.filter((x) => x.status === "erro").length, lista: l }); return r; };
-  useEffect(() => { carregar(); sincronizar(); apiService.get("/foto-cartao/fotos?limite=1").then((r) => setRefs(r.referencias || [])).catch(() => {}); const f = () => sincronizar(); window.addEventListener("online", f); const t = setInterval(f, 30000); return () => { window.removeEventListener("online", f); clearInterval(t); }; }, []); // eslint-disable-line
+  useEffect(() => { Fila.pedirPersistencia().then(setPersist); carregar(); sincronizar(); apiService.get("/foto-cartao/fotos?limite=1").then((r) => setRefs(r.referencias || [])).catch(() => {}); const f = () => sincronizar(); window.addEventListener("online", f); const t = setInterval(f, 30000); return () => { window.removeEventListener("online", f); clearInterval(t); }; }, []); // eslint-disable-line
   const ativos = (M?.modelos || []).filter((m) => m.ativo !== false); const modelo = ativos.find((m) => String(m.id) === String(modeloId)) || null;
   const card = { ...s.card, padding: "16px 18px" }; const lab = { fontSize: 11.5, color: C.textSub, display: "block", marginBottom: 3 };
   const abas = [["tirar", "📸 Tirar foto"], ["fotos", "🖼 Fotos"], ...(podeEditar ? [["modelos", "⚙ Modelos de cartão"]] : [])];
 
   if (cam && modelo) return <CameraCartao modelo={modelo} referencia={ref} tenant={tenant} tecnico={u.nome || ""} valoresIniciais={cartao && String(cartao.modelo_id) === String(modelo.id) ? cartao : null}
-    onFoto={(c) => { const x = { ...c, modelo_id: modelo.id }; setCartao(x); try { localStorage.setItem(ULT, JSON.stringify({ modelo_id: modelo.id, referencia: ref, cartao: x })); } catch { /* ok */ } sincronizar(); }}
+    onFoto={(c) => { const x = { ...c, modelo_id: modelo.id }; setCartao(x); try { localStorage.setItem(ULT, JSON.stringify({ modelo_id: modelo.id, referencia: ref, cartao: x })); } catch { /* ok */ } return sincronizar(); }}
     onFechar={() => { setCam(false); sincronizar(); }} />;
   return (
     <div style={{ padding: embutida ? "14px" : "20px clamp(12px, 3vw, 28px)", display: "grid", gap: 14 }}>
@@ -49,7 +49,9 @@ export default function TelaFotoCartao({ C, s, embutida = false }) {
       {(fila.pendentes > 0 || fila.erros > 0) && <div style={{ ...card, borderLeft: `4px solid ${C.warn}`, display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", fontSize: 13 }}>
         <span>📶 {fila.pendentes} foto(s) no aparelho aguardando sinal{fila.erros ? ` · ${fila.erros} com erro` : ""}</span>
         <button type="button" onClick={async () => { const r = await sincronizar(); setMsg(r ? (r.enviadas ? `${r.enviadas} foto(s) enviada(s).` : "⚠ Ainda sem conexão com o servidor.") : ""); }} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 12px" }}>Enviar agora</button>
+        <button type="button" onClick={() => copiasNoAparelho(fila.lista || [], setMsg)} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 12px" }}>⬇ Salvar cópias na galeria</button>
         {fila.erros > 0 && <span style={{ color: C.danger, fontSize: 12 }}>{fila.lista?.find((x) => x.status === "erro")?.erro}</span>}</div>}
+      {persist === false && /iPhone|iPad/.test(navigator.userAgent) && <div style={{ ...card, fontSize: 12.5, color: C.textSub }}>💡 No iPhone, para o aparelho nunca apagar fotos ainda não enviadas, adicione o QuotaFlow à <b>Tela de Início</b> (Safari → Compartilhar → Adicionar à Tela de Início) e abra por lá.</div>}
 
       {aba === "tirar" && <div style={{ ...card, display: "grid", gap: 12 }}>
         {!M && !erro && <div style={{ color: C.muted }}>Carregando…</div>}
@@ -65,6 +67,15 @@ export default function TelaFotoCartao({ C, s, embutida = false }) {
       {aba === "modelos" && podeEditar && M && <Modelos C={C} s={s} M={M} onMudou={carregar} setMsg={setMsg} />}
     </div>
   );
+}
+
+// E1.1: cópia de segurança das fotos que ainda não subiram — compartilhar para Fotos/Arquivos (ou baixar)
+async function copiasNoAparelho(lista, setMsg) {
+  const fotos = lista.filter((x) => x.corpo?.imagem); if (!fotos.length) return;
+  const arqs = await Promise.all(fotos.map(async (x) => new File([await (await fetch(x.corpo.imagem)).blob()], `quotaflow-${x.corpo.referencia || "foto"}-${x.uid.slice(0, 8)}.jpg`.replace(/[^\w.-]+/g, "_"), { type: "image/jpeg" })));
+  try { if (navigator.canShare?.({ files: arqs })) { await navigator.share({ files: arqs }); return; } } catch (e) { if (e?.name === "AbortError") return; }
+  for (const f of arqs) { const a = document.createElement("a"); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
+  setMsg(`${arqs.length} cópia(s) baixada(s).`);
 }
 
 function Galeria({ C, s, modelos }) {

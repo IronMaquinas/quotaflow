@@ -462,17 +462,17 @@ const ESPERADO = {
   'migrations/121_fotos_cartao.sql': '0180c64787440359d49b1d65c77b80d5', // etapa E1 (novo)
   'services/fotoCartao.js': '1b6d3aa6ae44c095e25b0ca2d009d217', // etapa E1 (novo)
   'routes/fotoCartao.js': '5420c4cbbf571e4c9d09c40af9e4e509', // etapa E1 (novo)
-  'front:TelaFotoCartao.jsx': '254d83e520c1f3ab4f5c940aed581315', // etapa E1 (novo)
-  'front:CameraCartao.jsx': '586bf761e006c554e769281f15bc63ea', // etapa E1 (novo)
+  'front:TelaFotoCartao.jsx': 'd9050df80c6ff5041cc4efc83f3ea5cc', // etapa E1.1
+  'front:CameraCartao.jsx': 'cb57320851aef7557a49a1e894200023', // etapa E1.1
   'front:cartaoFoto.js': 'c257a8fff011fc1ddecb365c1f1daea4', // etapa E1 (novo)
-  'front:filaFotosCartao.js': '2eb45c10c51d52977cd4a575c31c86fc', // etapa E1 (novo)
+  'front:filaFotosCartao.js': '9f778fd0205ed8baf8bc25e42d3de814', // etapa E1.1
 };
 
-// Antes de copiar a etapa E1 — base: R2.5 (0768ee1)
+// Antes de copiar a etapa E1.1 — base: E1 (35b3396)
 const ANTES = {
-  'server.js': 'c837b8717f3fb89446509630d520f066',
-  'services/modulos.js': '3812e4e3a1c7babfc583c0ae0e849374',
-  'front:App.jsx': '035f6eb7fa450aebf51fd6c959bf0dec',
+  'front:CameraCartao.jsx': '586bf761e006c554e769281f15bc63ea',
+  'front:TelaFotoCartao.jsx': '254d83e520c1f3ab4f5c940aed581315',
+  'front:filaFotosCartao.js': '2eb45c10c51d52977cd4a575c31c86fc',
 };
 
 const RAIZ = process.cwd();
@@ -510,7 +510,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a E1)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a E1.1)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);
