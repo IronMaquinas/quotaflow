@@ -26,7 +26,7 @@ export function htmlAta(det) {
     <div class="com"><b>Análise da direção:</b> ${com[e.chave] ? esc(com[e.chave]).replace(/\n/g, "<br>") : "<i>sem comentário</i>"}</div></div>`).join("");
   const sai = (a.saidas || []).map((x) => `<tr><td>${esc(det.TIPOS_SAIDA[x.tipo])}</td><td>${esc(x.texto)}${x.recurso ? `<br><span class="r">Recurso: ${esc(x.recurso)}</span>` : ""}</td><td>${esc(x.responsavel || "—")}</td><td>${dBR(x.prazo)}</td><td>${esc(x.tarefa?.numero || (x.tarefa_id ? "tarefa" : "—"))}</td></tr>`).join("");
   const ass = (p) => { const x = (a.assinaturas || []).find((y) => y.papel === p); return `<div style="width:260px;text-align:center">${x ? `<img src="${x.png}" style="height:70px"><div style="border-top:1px solid #111;padding-top:4px">${esc(x.nome)}<br><span style="font-size:10px;color:#555">${esc(det.PAPEIS[p])} · assinado em ${hora(x.em)}</span></div>` : `<div style="height:70px"></div><div style="border-top:1px solid #111;padding-top:4px">${esc(det.PAPEIS[p])}</div>`}</div>`; };
-  return `<html><head><meta charset="utf-8"><title>${esc(a.numero)}</title><style>body{font-family:Arial,sans-serif;font-size:12px;color:#111;margin:28px}h1{font-size:18px;margin:0 0 4px}h2{font-size:14px;margin:18px 0 6px;border-bottom:1px solid #999}h3{font-size:12.5px;margin:12px 0 4px}.cl{font-weight:400;color:#666;font-size:10.5px}.r{color:#555;font-size:11px}table{border-collapse:collapse;width:100%;margin-top:4px;font-size:11.5px}td,th{border:1px solid #bbb;padding:5px;vertical-align:top;text-align:left}th{background:#f1f5f9;font-weight:600}.com{margin-top:4px;padding:6px 8px;background:#f8fafc;border-left:3px solid #64748b}.ent{page-break-inside:avoid}ul{margin:4px 0;padding-left:18px}</style></head><body>
+  return `<html><head><meta charset="utf-8"><title>${esc(a.numero)}</title><style>@page{size:A4;margin:14mm}html{background:#d1d5db}body{font-family:Arial,sans-serif;font-size:12px;color:#111;width:210mm;min-height:297mm;margin:16px auto;padding:14mm;box-sizing:border-box;background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.25)}@media print{html{background:none}body{width:auto;min-height:0;margin:0;padding:0;box-shadow:none}}h1{font-size:18px;margin:0 0 4px}h2{font-size:14px;margin:18px 0 6px;border-bottom:1px solid #999}h3{font-size:12.5px;margin:12px 0 4px}.cl{font-weight:400;color:#666;font-size:10.5px}.r{color:#555;font-size:11px}table{border-collapse:collapse;width:100%;margin-top:4px;font-size:11.5px}td,th{border:1px solid #bbb;padding:5px;vertical-align:top;text-align:left}th{background:#f1f5f9;font-weight:600}.com{margin-top:4px;padding:6px 8px;background:#f8fafc;border-left:3px solid #64748b}.ent{page-break-inside:avoid}ul{margin:4px 0;padding-left:18px}</style></head><body>
     ${logoHtml()}<h1>Ata da análise crítica pela direção — ${esc(a.numero)}</h1>
     <div class="r">${esc(a.titulo)} · ISO 9001:2015, 9.3${a.status === "concluida" ? ` · <b style="color:#16a34a">APROVADA em ${hora(a.aprovada_em)}</b>` : a.status === "cancelada" ? ` · <b style="color:#dc2626">CANCELADA</b> — ${esc(a.cancelamento_motivo || "")}` : a.status === "rascunho" ? " · <b>RASCUNHO (números ao vivo)</b>" : ""}</div>
     <h2>Dados da reunião</h2><table><tr><th style="width:170px">Período analisado</th><td>${dBR(a.periodo_de)} a ${dBR(a.periodo_ate)}</td></tr><tr><th>Data da reunião</th><td>${dBR(a.data_reuniao)}</td></tr><tr><th>Participantes</th><td>${(a.participantes || []).map((p) => `${esc(p.nome)}${p.funcao ? ` (${esc(p.funcao)})` : ""}`).join(", ") || "—"}</td></tr>${det.entradas?.montadas_em ? `<tr><th>Dados apurados em</th><td>${hora(det.entradas.montadas_em)}</td></tr>` : ""}</table>
@@ -60,6 +60,18 @@ export default function FichaAnaliseCritica({ C, s, id, pessoas, onVoltar }) {
 
   if (!det) return <div style={{ padding: 24, color: C.muted }}>{msg || "Carregando…"}</div>;
   const E = det.entradas?.lista || [];
+  const formSaida = sd && !trav ? (<div style={{ border: `2px solid ${C.border}`, borderRadius: 8, padding: 12, display: "grid", gap: 8 }}>
+          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{Object.entries(det.TIPOS_SAIDA).map(([k, n]) => <button key={k} type="button" onClick={() => setSd({ ...sd, tipo: k })} style={{ padding: "6px 12px", borderRadius: 16, fontSize: 12.5, cursor: "pointer", border: `1px solid ${C.border}`, background: sd.tipo === k ? (C.primary || "#3b82f6") : "transparent", color: sd.tipo === k ? "#fff" : C.text }}>{n}</button>)}</div>
+          {sd.entrada && <div style={{ fontSize: 12, color: C.textSub }}>Ligada à entrada {E.find((x) => x.chave === sd.entrada)?.letra}) {E.find((x) => x.chave === sd.entrada)?.titulo}</div>}
+          <textarea value={sd.texto} onChange={(e) => setSd({ ...sd, texto: e.target.value })} rows={2} placeholder="Decisão da direção (o que será feito)…" style={{ ...s.input, width: "100%" }} />
+          {sd.tipo === "recursos" && <input value={sd.recurso} onChange={(e) => setSd({ ...sd, recurso: e.target.value })} placeholder="Recurso necessário (pessoa, equipamento, verba, sistema…)" style={{ ...s.input, width: "100%" }} />}
+          <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}><Toggle C={C} ligado={sd.gerar_tarefa} rotulo="Gerar tarefa" onChange={(v) => setSd({ ...sd, gerar_tarefa: v })} /> Gerar tarefa no Plano (🧭 AC) — entra na próxima análise</label>
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+            <div style={{ flex: "2 1 240px" }}><span style={lab}>RESPONSÁVEL</span><CampoFuncionario C={C} s={s} lista={pessoas} nome={sd.resp_nome} id={sd.resp_id} usuarioId={sd.resp_uid} placeholder="Digite o nome do funcionário…" onChange={(v) => setSd({ ...sd, resp_nome: v.nome, resp_id: v.id, resp_uid: v.usuario_id })} /></div>
+            <div style={{ flex: "1 1 150px" }}><span style={lab}>PRAZO{sd.gerar_tarefa ? " *" : ""}</span><input type="date" min={amanha()} value={sd.prazo} onChange={(e) => setSd({ ...sd, prazo: e.target.value })} style={{ ...s.input, width: "100%" }} /></div>
+          </div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button type="button" onClick={() => setSd(null)} style={{ ...s.btn(false), cursor: "pointer" }}>Voltar</button><button type="button" disabled={sd.texto.trim().length < 5 || (sd.gerar_tarefa && !sd.prazo)} onClick={registrarSaida} style={{ ...s.btn(true), cursor: "pointer", opacity: sd.texto.trim().length < 5 || (sd.gerar_tarefa && !sd.prazo) ? 0.5 : 1 }}>Registrar decisão</button></div>
+  </div>) : null;
   return (
     <div style={{ padding: "20px clamp(12px, 3vw, 28px)", display: "grid", gap: 14 }}>
       <div style={{ display: "flex", justifyContent: "space-between", gap: 12, flexWrap: "wrap", alignItems: "flex-start" }}>
@@ -104,12 +116,12 @@ export default function FichaAnaliseCritica({ C, s, id, pessoas, onVoltar }) {
       </div>
 
       <div style={tit}>ENTRADAS DA ANÁLISE (9.3.2)</div>
-      {E.map((e) => { const aberto = abertas[e.chave] ?? true; const sn = SINAL[e.sinal];
+      {E.map((e) => { const aberto = (abertas[e.chave] ?? true) || sd?.entrada === e.chave; const sn = SINAL[e.sinal];
         return <div key={e.chave} style={{ ...card, borderLeft: `4px solid ${sn ? sn.cor : C.border}`, display: "grid", gap: 8 }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
             <button type="button" onClick={() => setAbertas({ ...abertas, [e.chave]: !aberto })} style={{ background: "none", border: "none", color: C.text, cursor: "pointer", padding: 0, textAlign: "left", fontWeight: 700, fontSize: 14.5 }}>{aberto ? "▾" : "▸"} {sn?.ic || "⚪"} {e.letra}) {e.titulo} <span style={{ fontWeight: 400, fontSize: 11.5, color: C.muted }}>{e.clausula}</span></button>
             <div style={{ display: "flex", gap: 6 }}>{e.tela && <button type="button" onClick={() => ir(e.tela)} style={{ ...s.btn(false), cursor: "pointer", padding: "4px 10px", fontSize: 12 }}>Abrir tela</button>}
-              {!trav && <button type="button" onClick={() => novaSaida(e.chave)} style={{ ...s.btn(false), cursor: "pointer", padding: "4px 10px", fontSize: 12 }}>＋ decisão</button>}</div>
+              {!trav && sd?.entrada !== e.chave && <button type="button" onClick={() => novaSaida(e.chave)} style={{ ...s.btn(false), cursor: "pointer", padding: "4px 10px", fontSize: 12 }}>＋ decisão</button>}</div>
           </div>
           {aberto && <>
             {e.falha && <div style={{ fontSize: 12.5, color: C.warn }}>⚠ Não consegui apurar estes números agora — comente com o que a equipe trouxe.</div>}
@@ -117,23 +129,13 @@ export default function FichaAnaliseCritica({ C, s, id, pessoas, onVoltar }) {
             {(e.itens || []).length > 0 && <div style={{ display: "grid", gap: 3 }}>{e.itens.map((i, k) => <div key={k} style={{ fontSize: 12.5 }}>{i.sinal ? SINAL[i.sinal].ic : i.sugestao ? "💡" : "•"} {i.texto}{i.detalhe ? <span style={{ color: C.textSub }}> — {i.detalhe}</span> : null}</div>)}</div>}
             {e.livre && e.dica && <div style={{ fontSize: 12, color: C.muted }}>{e.dica}</div>}
             <div><span style={lab}>ANÁLISE DA DIREÇÃO</span><textarea disabled={trav} value={com[e.chave] || ""} onChange={(ev) => digitarCom(e.chave, ev.target.value)} rows={e.livre ? 3 : 2} placeholder={trav ? "—" : "O que a direção conclui sobre esta entrada…"} style={{ ...s.input, width: "100%", resize: "vertical" }} /></div>
+            {sd?.entrada === e.chave && formSaida}
           </>}
         </div>; })}
 
       <div style={{ ...card, display: "grid", gap: 10 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}><div style={{ ...tit, marginBottom: 0 }}>SAÍDAS — DECISÕES E AÇÕES (9.3.3) · {(a.saidas || []).length}</div>{!trav && !sd && <button type="button" onClick={() => novaSaida()} style={{ ...s.btn(true), cursor: "pointer" }}>＋ Nova decisão</button>}</div>
-        {sd && !trav && <div style={{ border: `2px solid ${C.border}`, borderRadius: 8, padding: 12, display: "grid", gap: 8 }}>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{Object.entries(det.TIPOS_SAIDA).map(([k, n]) => <button key={k} type="button" onClick={() => setSd({ ...sd, tipo: k })} style={{ padding: "6px 12px", borderRadius: 16, fontSize: 12.5, cursor: "pointer", border: `1px solid ${C.border}`, background: sd.tipo === k ? (C.primary || "#3b82f6") : "transparent", color: sd.tipo === k ? "#fff" : C.text }}>{n}</button>)}</div>
-          {sd.entrada && <div style={{ fontSize: 12, color: C.textSub }}>Ligada à entrada {E.find((x) => x.chave === sd.entrada)?.letra}) {E.find((x) => x.chave === sd.entrada)?.titulo}</div>}
-          <textarea value={sd.texto} onChange={(e) => setSd({ ...sd, texto: e.target.value })} rows={2} placeholder="Decisão da direção (o que será feito)…" style={{ ...s.input, width: "100%" }} />
-          {sd.tipo === "recursos" && <input value={sd.recurso} onChange={(e) => setSd({ ...sd, recurso: e.target.value })} placeholder="Recurso necessário (pessoa, equipamento, verba, sistema…)" style={{ ...s.input, width: "100%" }} />}
-          <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}><Toggle C={C} ligado={sd.gerar_tarefa} rotulo="Gerar tarefa" onChange={(v) => setSd({ ...sd, gerar_tarefa: v })} /> Gerar tarefa no Plano (🧭 AC) — entra na próxima análise</label>
-          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-            <div style={{ flex: "2 1 240px" }}><span style={lab}>RESPONSÁVEL</span><CampoFuncionario C={C} s={s} lista={pessoas} nome={sd.resp_nome} id={sd.resp_id} usuarioId={sd.resp_uid} placeholder="Digite o nome do funcionário…" onChange={(v) => setSd({ ...sd, resp_nome: v.nome, resp_id: v.id, resp_uid: v.usuario_id })} /></div>
-            <div style={{ flex: "1 1 150px" }}><span style={lab}>PRAZO{sd.gerar_tarefa ? " *" : ""}</span><input type="date" min={amanha()} value={sd.prazo} onChange={(e) => setSd({ ...sd, prazo: e.target.value })} style={{ ...s.input, width: "100%" }} /></div>
-          </div>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button type="button" onClick={() => setSd(null)} style={{ ...s.btn(false), cursor: "pointer" }}>Voltar</button><button type="button" disabled={sd.texto.trim().length < 5 || (sd.gerar_tarefa && !sd.prazo)} onClick={registrarSaida} style={{ ...s.btn(true), cursor: "pointer", opacity: sd.texto.trim().length < 5 || (sd.gerar_tarefa && !sd.prazo) ? 0.5 : 1 }}>Registrar decisão</button></div>
-        </div>}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}><div style={{ ...tit, marginBottom: 0 }}>SAÍDAS — DECISÕES E AÇÕES (9.3.3) · {(a.saidas || []).length}</div>{!trav && !(sd && !sd.entrada) && <button type="button" onClick={() => novaSaida()} style={{ ...s.btn(true), cursor: "pointer" }}>＋ Nova decisão</button>}</div>
+        {sd && !sd.entrada && formSaida}
         {!(a.saidas || []).length && !sd && <div style={{ fontSize: 12.5, color: C.muted }}>Nenhuma decisão ainda. Use "＋ decisão" numa entrada ou "＋ Nova decisão".</div>}
         {(a.saidas || []).map((x) => <div key={x.id} style={{ display: "flex", gap: 10, alignItems: "flex-start", borderTop: `1px solid ${C.border}`, paddingTop: 8, flexWrap: "wrap" }}>
           <div style={{ flex: "1 1 280px" }}><div style={{ fontSize: 11.5, color: C.textSub, fontWeight: 700 }}>{det.TIPOS_SAIDA[x.tipo]}{x.entrada ? ` · entrada ${E.find((k) => k.chave === x.entrada)?.letra || ""})` : ""}</div><div style={{ fontSize: 13.5 }}>{x.texto}</div>{x.recurso && <div style={{ fontSize: 12, color: C.textSub }}>Recurso: {x.recurso}</div>}

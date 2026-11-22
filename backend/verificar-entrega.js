@@ -455,21 +455,16 @@ const ESPERADO = {
   'front:isoRequisitos.jsx': 'ddede2ca992741ee16b8bdaca89aee81', // etapa A1.4 (novo)
   'front:MatrizIso.jsx': '13da66a930021067deab91f11824388d', // etapa A1.4 (novo)
   'migrations/120_analise_critica.sql': '4a43685a51379c3815bd8cb6ddbc2abe', // etapa R2 (novo)
-  'services/analiseCritica.js': '84c4ec47d1a766e6c5f76d0996e789e8', // etapa R2 (novo)
+  'services/analiseCritica.js': 'a86594cf3e15c8074692c22a30e6080f', // etapa R2.1
   'routes/analiseCritica.js': 'dab3da4da8379c0ebd3df86b12640bc0', // etapa R2 (novo)
   'front:TelaAnaliseCritica.jsx': '0b4c8d0b24ab6706bd3cdced4fc31dc7', // etapa R2 (novo)
-  'front:FichaAnaliseCritica.jsx': '2cd8c6cf33a9bcacb5324352dbee51b3', // etapa R2 (novo)
+  'front:FichaAnaliseCritica.jsx': '6776487e8776dc8a2eb61566255c6509', // etapa R2.1
 };
 
-// Antes de copiar a etapa R2 — base: A1.5 (61a2077)
+// Antes de copiar a etapa R2.1 — base: R2 (5a13ad1)
 const ANTES = {
-  'server.js': 'f72dcd8784eba9a58f96d206f384da7b',
-  'services/modulos.js': '50d02fa67121dcde6e431d7a786fe729',
-  'services/roteiroInicial.js': 'ff332f0436de676e94f9648ff4e6ec57',
-  'services/tarefas.js': '78d5cedaf364cd76e53e20e2aba89893',
-  'front:App.jsx': '942ba315da4b6dccbca9a435fc46a976',
-  'front:TelaPlanoAcaoNova.jsx': '99b2e54e47d00a3cddf6f87fbe92668c',
-  'front:gerarRelatorioTarefas.js': '81dcb4123cf41ff1101cc04d25a8e754',
+  'services/analiseCritica.js': '84c4ec47d1a766e6c5f76d0996e789e8',
+  'front:FichaAnaliseCritica.jsx': '2cd8c6cf33a9bcacb5324352dbee51b3',
 };
 
 const RAIZ = process.cwd();
@@ -507,7 +502,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a R2)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a R2.1)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

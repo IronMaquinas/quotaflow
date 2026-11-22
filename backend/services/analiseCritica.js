@@ -79,10 +79,10 @@ const FONTES = {
     const acoes = await seguro(sb.from('nao_conformidade_plano_acao').select('*').eq('tenant_id', tenantId)); const hoje = hojeBR();
     const atr = acoes.filter((a) => a.status === 'pendente' && a.prazo && String(a.prazo).slice(0, 10) < hoje && emAberto.some((n) => String(n.id) === String(a.nc_id))).length;
     const ORIG = {}; for (const n of abertas) { const k = n.origem || 'manual'; ORIG[k] = (ORIG[k] || 0) + 1; }
-    const NOME = { manual: 'Interna (registrada pela equipe)', auditoria: 'Auditoria', fornecedor: 'Fornecedor', cliente: 'Cliente', recebimento: 'Recebimento', inspecao: 'Inspeção' };
+    const NOME = { manual: 'Interna (registrada pela equipe)', auditoria: 'Auditoria', fornecedor: 'Fornecedor', cliente: 'Cliente', recebimento: 'Recebimento', inspecao: 'Inspeção', os_material: 'OS (material)', estoque: 'Estoque', ocorrencia: 'Ocorrência' };
     return { sinal: pior(atr ? 'vermelho' : 'verde', tm == null ? null : tm <= 30 ? 'verde' : tm <= 60 ? 'amarelo' : 'vermelho', emAberto.length > 10 ? 'amarelo' : null),
       numeros: [nNum('Abertas no período', abertas.length), nNum('Resolvidas no período', fechadas.length), nNum('Em aberto hoje', emAberto.length), nNum('Tempo médio para resolver', tm == null ? null : `${String(tm).replace('.', ',')} dias`), nNum('Ações atrasadas', atr)],
-      itens: Object.entries(ORIG).sort((a, b) => b[1] - a[1]).map(([k, n]) => ({ texto: `Origem — ${NOME[k] || k}`, detalhe: String(n) })) };
+      itens: Object.entries(ORIG).sort((a, b) => b[1] - a[1]).map(([k, n]) => ({ texto: `Origem — ${NOME[k] || String(k).replace(/_/g, ' ')}`, detalhe: String(n) })) };
   },
   async monitoramento({ sb, tenantId, de, ate }) {
     const M = require('./metas'); const anos = [...new Set([de.slice(0, 4), ate.slice(0, 4)])]; const linhas = [];
