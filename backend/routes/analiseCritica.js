@@ -1,6 +1,6 @@
 // routes/analiseCritica.js — etapa R2: 🧭 análise crítica pela direção (ISO 9001 9.3) — admin e gestor
 //   GET / · POST / · GET /:id · PUT /:id (título, período, reunião, participantes, comentários, conclusão)
-//   POST /:id/saidas · DELETE /:id/saidas/:sid · POST /:id/encerrar · /:id/reabrir · /:id/assinar { papel, nome, png } · /:id/cancelar { motivo }
+//   POST /:id/saidas · PUT /:id/saidas/:sid · DELETE /:id/saidas/:sid · POST /:id/encerrar · /:id/reabrir · /:id/assinar { papel, nome, png } · /:id/cancelar { motivo }
 const express = require('express');
 const router = express.Router();
 const { supabase } = require('../db');
@@ -17,6 +17,7 @@ router.post('/', r(async (req) => A.criar(supabase, req.tenantId, await quem(req
 router.get('/:id', r((req) => A.detalhe(supabase, req.tenantId, req.params.id)));
 router.put('/:id', r((req) => A.atualizar(supabase, req.tenantId, req.params.id, req.body || {})));
 router.post('/:id/saidas', r(async (req) => A.novaSaida(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
+router.put('/:id/saidas/:sid', r(async (req) => A.editarSaida(supabase, req.tenantId, await quem(req), req.params.id, req.params.sid, req.body || {}))); // R2.4
 router.delete('/:id/saidas/:sid', r((req) => A.excluirSaida(supabase, req.tenantId, req.params.id, req.params.sid)));
 router.post('/:id/encerrar', r((req) => A.encerrar(supabase, req.tenantId, req.params.id)));
 router.post('/:id/reabrir', r((req) => A.reabrir(supabase, req.tenantId, req.params.id)));

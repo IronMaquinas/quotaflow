@@ -54,24 +54,31 @@ export default function FichaAnaliseCritica({ C, s, id, pessoas, onVoltar }) {
   const setA = (campos) => { setDet({ ...det, analise: { ...a, ...campos } }); salvar(campos); };
   const ata = () => { const w = window.open("", "_blank"); if (!w) return setMsg("⚠ Libere pop-ups para imprimir a ata."); w.document.write(htmlAta({ ...det, analise: { ...a, comentarios: com, conclusao: conc } }).replace("</body>", "<script>setTimeout(()=>print(),400)</script></body>")); w.document.close(); };
   const ir = (tela) => window.dispatchEvent(new CustomEvent("qf-navegar", { detail: { tela } }));
-  const novaSaida = (entrada = null) => setSd({ tipo: "melhoria", texto: "", entrada, resp_nome: "", resp_id: null, resp_uid: null, prazo: "", recurso: "", gerar_tarefa: true });
-  const registrarSaida = () => acao(() => apiService.post(`/analise-critica/${id}/saidas`, { ...sd, responsavel: sd.resp_nome || null, responsavel_ref: sd.resp_id ? `c:${sd.resp_id}` : sd.resp_uid ? `u:${sd.resp_uid}` : null }),
-    (r) => { setSd(null); return r.aviso ? `⚠ ${r.aviso}` : `Decisão registrada${r.tarefa ? ` · tarefa ${r.tarefa.numero || ""} criada` : ""}.`; });
+  const novaSaida = (entrada = null) => setSd({ tipo: "melhoria", texto: "", entrada, resp_nome: "", resp_id: null, resp_uid: null, prazo: "", recurso: "", risco: "", gerar_tarefa: true });
+  const editarSaida = (x) => { const [k, v] = String(x.responsavel_ref || "").split(":"); setSd({ edit: x.id, tem_tarefa: !!x.tarefa_id, tipo: x.tipo, texto: x.texto, entrada: x.entrada || null, resp_nome: x.responsavel || "", resp_id: k === "c" ? Number(v) : null, resp_uid: k === "u" ? Number(v) : null, prazo: x.prazo ? String(x.prazo).slice(0, 10) : "", recurso: x.recurso || "", risco: x.risco || "", gerar_tarefa: !!x.tarefa_id }); };
+  const registrarSaida = () => acao(() => (sd.edit ? apiService.put : apiService.post)(`/analise-critica/${id}/saidas${sd.edit ? `/${sd.edit}` : ""}`, { ...sd, responsavel: sd.resp_nome || null, responsavel_ref: sd.resp_id ? `c:${sd.resp_id}` : sd.resp_uid ? `u:${sd.resp_uid}` : null }),
+    (r) => { setSd(null); return r.aviso ? `⚠ ${r.aviso}` : sd.edit ? `Decisão alterada${r.tarefa ? ` · tarefa ${r.tarefa.numero || ""} atualizada` : ""}.` : `Decisão registrada${r.tarefa ? ` · tarefa ${r.tarefa.numero || ""} criada` : ""}.`; });
 
   if (!det) return <div style={{ padding: 24, color: C.muted }}>{msg || "Carregando…"}</div>;
   const E = det.entradas?.lista || [];
+  const ST_T = { pendente: "pendente", em_andamento: "em andamento", concluida: "concluída", cancelada: "cancelada" };
+  const cartaoSaida = (x, comEntrada) => <div key={x.id} style={{ display: "flex", gap: 10, alignItems: "flex-start", borderTop: `1px solid ${C.border}`, paddingTop: 8, flexWrap: "wrap" }}>
+    <div style={{ flex: "1 1 280px" }}><div style={{ fontSize: 11.5, color: C.textSub, fontWeight: 700 }}>{det.TIPOS_SAIDA[x.tipo]}{comEntrada && x.entrada ? ` · entrada ${E.find((k) => k.chave === x.entrada)?.letra || ""})` : ""}</div><div style={{ fontSize: 13.5 }}>{x.texto}</div>{x.recurso && <div style={{ fontSize: 12, color: C.textSub }}>Recurso: {x.recurso}</div>}{x.risco && <div style={{ fontSize: 12, color: C.textSub }}>Risco: {x.risco}</div>}
+      <div style={{ fontSize: 12, color: C.textSub }}>{x.responsavel || "—"} · prazo {dBR(x.prazo)}{x.tarefa ? <> · <b style={{ color: x.tarefa.status === "concluida" ? "#22c55e" : C.text }}>📋 {x.tarefa.numero || "tarefa"}</b> ({ST_T[x.tarefa.status] || x.tarefa.status})</> : x.tarefa_id ? " · tarefa" : " · sem tarefa"}</div></div>
+    {!trav && <div style={{ display: "flex", gap: 2 }}><button type="button" title="Editar decisão" onClick={() => editarSaida(x)} style={{ background: "none", border: "none", color: C.textSub, cursor: "pointer" }}>✎</button><button type="button" title="Tirar da ata" onClick={() => setTirar(x)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer" }}>✕</button></div>}
+  </div>;
   const formSaida = sd && !trav ? (<div style={{ border: `2px solid ${C.border}`, borderRadius: 8, padding: 12, display: "grid", gap: 8 }}>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{Object.entries(det.TIPOS_SAIDA).map(([k, n]) => <button key={k} type="button" onClick={() => setSd({ ...sd, tipo: k })} style={{ padding: "6px 12px", borderRadius: 16, fontSize: 12.5, cursor: "pointer", border: `1px solid ${C.border}`, background: sd.tipo === k ? (C.primary || "#3b82f6") : "transparent", color: sd.tipo === k ? "#fff" : C.text }}>{n}</button>)}</div>
           {sd.entrada && <div style={{ fontSize: 12, color: C.textSub }}>Ligada à entrada {E.find((x) => x.chave === sd.entrada)?.letra}) {E.find((x) => x.chave === sd.entrada)?.titulo}</div>}
           <textarea value={sd.texto} onChange={(e) => setSd({ ...sd, texto: e.target.value })} rows={2} placeholder="Decisão da direção (o que será feito)…" style={{ ...s.input, width: "100%" }} />
           {sd.tipo === "risco" && <input value={sd.risco || ""} onChange={(e) => setSd({ ...sd, risco: e.target.value })} placeholder="Risco identificado (o que pode dar errado e o impacto)" style={{ ...s.input, width: "100%" }} />}
           {sd.tipo === "recursos" && <input value={sd.recurso} onChange={(e) => setSd({ ...sd, recurso: e.target.value })} placeholder="Recurso necessário (pessoa, equipamento, verba, sistema…)" style={{ ...s.input, width: "100%" }} />}
-          <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}><Toggle C={C} ligado={sd.gerar_tarefa} rotulo="Gerar tarefa" onChange={(v) => setSd({ ...sd, gerar_tarefa: v })} /> Criar tarefa no Plano (🧭 TSK-AC-) — entra automaticamente na próxima análise crítica</label>
+          <label style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 13 }}><Toggle C={C} ligado={sd.gerar_tarefa} rotulo="Gerar tarefa" onChange={(v) => !sd.tem_tarefa && setSd({ ...sd, gerar_tarefa: v })} /> {sd.tem_tarefa ? "A tarefa no Plano será atualizada junto (título, prazo, responsável)" : "Criar tarefa no Plano (🧭 TSK-AC-) — entra automaticamente na próxima análise crítica"}</label>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
             <div style={{ flex: "2 1 240px" }}><span style={lab}>RESPONSÁVEL</span><CampoFuncionario C={C} s={s} lista={pessoas} nome={sd.resp_nome} id={sd.resp_id} usuarioId={sd.resp_uid} placeholder="Digite o nome do funcionário…" onChange={(v) => setSd({ ...sd, resp_nome: v.nome, resp_id: v.id, resp_uid: v.usuario_id })} /></div>
-            <div style={{ flex: "1 1 150px" }}><span style={lab}>PRAZO{sd.gerar_tarefa ? " *" : ""}</span><input type="date" min={amanha()} value={sd.prazo} onChange={(e) => setSd({ ...sd, prazo: e.target.value })} style={{ ...s.input, width: "100%" }} /></div>
+            <div style={{ flex: "1 1 150px" }}><span style={lab}>PRAZO{sd.gerar_tarefa ? " *" : ""}</span><input type="date" min={sd.edit ? undefined : amanha()} value={sd.prazo} onChange={(e) => setSd({ ...sd, prazo: e.target.value })} style={{ ...s.input, width: "100%" }} /></div>
           </div>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button type="button" onClick={() => setSd(null)} style={{ ...s.btn(false), cursor: "pointer" }}>Voltar</button><button type="button" disabled={sd.texto.trim().length < 5 || (sd.gerar_tarefa && !sd.prazo)} onClick={registrarSaida} style={{ ...s.btn(true), cursor: "pointer", opacity: sd.texto.trim().length < 5 || (sd.gerar_tarefa && !sd.prazo) ? 0.5 : 1 }}>Registrar decisão</button></div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button type="button" onClick={() => setSd(null)} style={{ ...s.btn(false), cursor: "pointer" }}>Voltar</button><button type="button" disabled={sd.texto.trim().length < 5 || (sd.gerar_tarefa && !sd.prazo)} onClick={registrarSaida} style={{ ...s.btn(true), cursor: "pointer", opacity: sd.texto.trim().length < 5 || (sd.gerar_tarefa && !sd.prazo) ? 0.5 : 1 }}>{sd.edit ? "Salvar alteração" : "Registrar decisão"}</button></div>
   </div>) : null;
   return (
     <div style={{ padding: "20px clamp(12px, 3vw, 28px)", display: "grid", gap: 14 }}>
@@ -117,32 +124,29 @@ export default function FichaAnaliseCritica({ C, s, id, pessoas, onVoltar }) {
       </div>
 
       <div style={tit}>ENTRADAS DA ANÁLISE (9.3.2)</div>
-      {E.map((e) => { const aberto = (abertas[e.chave] ?? true) || sd?.entrada === e.chave; const sn = SINAL[e.sinal];
+      {E.map((e) => { const doItem = (a.saidas || []).filter((x) => x.entrada === e.chave); const aberto = (abertas[e.chave] ?? true) || sd?.entrada === e.chave; const sn = SINAL[e.sinal];
         return <div key={e.chave} style={{ ...card, borderLeft: `4px solid ${sn ? sn.cor : C.border}`, display: "grid", gap: 8 }}>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            <button type="button" onClick={() => setAbertas({ ...abertas, [e.chave]: !aberto })} style={{ background: "none", border: "none", color: C.text, cursor: "pointer", padding: 0, textAlign: "left", fontWeight: 700, fontSize: 14.5 }}>{aberto ? "▾" : "▸"} {sn?.ic || "⚪"} {e.letra}) {e.titulo} <span style={{ fontWeight: 400, fontSize: 11.5, color: C.muted }}>{e.clausula}</span></button>
+            <button type="button" onClick={() => setAbertas({ ...abertas, [e.chave]: !aberto })} style={{ background: "none", border: "none", color: C.text, cursor: "pointer", padding: 0, textAlign: "left", fontWeight: 700, fontSize: 14.5 }}>{aberto ? "▾" : "▸"} {sn?.ic || "⚪"} {e.letra}) {e.titulo} <span style={{ fontWeight: 400, fontSize: 11.5, color: C.muted }}>{e.clausula}</span>{doItem.length ? <span style={{ fontWeight: 600, fontSize: 11.5, color: C.textSub }}> · {doItem.length} decisão(ões)</span> : null}</button>
             <div style={{ display: "flex", gap: 6 }}>{e.tela && <button type="button" onClick={() => ir(e.tela)} style={{ ...s.btn(false), cursor: "pointer", padding: "4px 10px", fontSize: 12 }}>Abrir tela</button>}
-              {!trav && sd?.entrada !== e.chave && <button type="button" onClick={() => novaSaida(e.chave)} style={{ ...s.btn(false), cursor: "pointer", padding: "4px 10px", fontSize: 12 }}>＋ decisão</button>}</div>
+              {!trav && !(sd && !sd.edit && sd.entrada === e.chave) && <button type="button" onClick={() => novaSaida(e.chave)} style={{ ...s.btn(false), cursor: "pointer", padding: "4px 10px", fontSize: 12 }}>＋ decisão</button>}</div>
           </div>
           {aberto && <>
             {e.falha && <div style={{ fontSize: 12.5, color: C.warn }}>⚠ Não consegui apurar estes números agora — comente com o que a equipe trouxe.</div>}
             {(e.numeros || []).length > 0 && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(150px, 1fr))", gap: 8 }}>{e.numeros.map((n) => <div key={n.rotulo} style={{ background: C.bg || "transparent", border: `1px solid ${C.border}`, borderRadius: 8, padding: "8px 10px" }}><div style={{ fontSize: 11, color: C.textSub }}>{n.rotulo}</div><div style={{ fontSize: String(n.valor).length > 14 ? 13 : 17, fontWeight: 800 }}>{n.valor}</div>{n.detalhe && <div style={{ fontSize: 11, color: C.muted }}>{n.detalhe}</div>}</div>)}</div>}
             {(e.itens || []).length > 0 && <div style={{ display: "grid", gap: 3 }}>{e.itens.map((i, k) => <div key={k} style={{ fontSize: 12.5 }}>{i.sinal ? SINAL[i.sinal].ic : i.sugestao ? "💡" : "•"} {i.texto}{i.detalhe ? <span style={{ color: C.textSub }}> — {i.detalhe}</span> : null}</div>)}</div>}
             {e.livre && e.dica && <div style={{ fontSize: 12, color: C.muted }}>{e.dica}</div>}
-            <div><span style={lab}>ANÁLISE DA DIREÇÃO</span><textarea disabled={trav} value={com[e.chave] || ""} onChange={(ev) => digitarCom(e.chave, ev.target.value)} rows={e.livre ? 3 : 2} placeholder={trav ? "—" : "O que a direção conclui sobre esta entrada…"} style={{ ...s.input, width: "100%", resize: "vertical" }} /></div>
-            {sd?.entrada === e.chave && formSaida}
+            <div><span style={lab}>ANÁLISE DA DIREÇÃO — conclusão sobre esta entrada (vai para a ata; não é a decisão)</span><textarea disabled={trav} value={com[e.chave] || ""} onChange={(ev) => digitarCom(e.chave, ev.target.value)} rows={e.livre ? 3 : 2} placeholder={trav ? "—" : "O que a direção conclui sobre esta entrada…"} style={{ ...s.input, width: "100%", resize: "vertical" }} /></div>
+            {doItem.length > 0 && <div style={{ display: "grid", gap: 4 }}><span style={{ ...lab, marginBottom: 0 }}>DECISÕES DESTA ENTRADA · {doItem.length}</span>{doItem.map((x) => (sd?.edit === x.id ? <div key={x.id}>{formSaida}</div> : cartaoSaida(x, false)))}</div>}
+            {sd && !sd.edit && sd.entrada === e.chave && formSaida}
           </>}
         </div>; })}
 
       <div style={{ ...card, display: "grid", gap: 10 }}>
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}><div style={{ ...tit, marginBottom: 0 }}>SAÍDAS — DECISÕES E AÇÕES (9.3.3) · {(a.saidas || []).length}</div>{!trav && !(sd && !sd.entrada) && <button type="button" onClick={() => novaSaida()} style={{ ...s.btn(true), cursor: "pointer" }}>＋ Nova decisão</button>}</div>
-        {sd && !sd.entrada && formSaida}
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", gap: 8, flexWrap: "wrap" }}><div style={{ ...tit, marginBottom: 0 }}>SAÍDAS — DECISÕES E AÇÕES (9.3.3) · {(a.saidas || []).length}</div>{!trav && !(sd && !sd.edit && !sd.entrada) && <button type="button" onClick={() => novaSaida()} style={{ ...s.btn(true), cursor: "pointer" }}>＋ Nova decisão</button>}</div>
+        {sd && !sd.edit && !sd.entrada && formSaida}
         {!(a.saidas || []).length && !sd && <div style={{ fontSize: 12.5, color: C.muted }}>Nenhuma decisão ainda. Use "＋ decisão" numa entrada ou "＋ Nova decisão".</div>}
-        {(a.saidas || []).map((x) => <div key={x.id} style={{ display: "flex", gap: 10, alignItems: "flex-start", borderTop: `1px solid ${C.border}`, paddingTop: 8, flexWrap: "wrap" }}>
-          <div style={{ flex: "1 1 280px" }}><div style={{ fontSize: 11.5, color: C.textSub, fontWeight: 700 }}>{det.TIPOS_SAIDA[x.tipo]}{x.entrada ? ` · entrada ${E.find((k) => k.chave === x.entrada)?.letra || ""})` : ""}</div><div style={{ fontSize: 13.5 }}>{x.texto}</div>{x.recurso && <div style={{ fontSize: 12, color: C.textSub }}>Recurso: {x.recurso}</div>}{x.risco && <div style={{ fontSize: 12, color: C.textSub }}>Risco: {x.risco}</div>}
-            <div style={{ fontSize: 12, color: C.textSub }}>{x.responsavel || "—"} · prazo {dBR(x.prazo)}{x.tarefa ? ` · ${x.tarefa.numero || "tarefa"} (${{ pendente: "pendente", em_andamento: "em andamento", concluida: "concluída", cancelada: "cancelada" }[x.tarefa.status] || x.tarefa.status})` : x.tarefa_id ? " · tarefa" : " · sem tarefa"}</div></div>
-          {!trav && <button type="button" onClick={() => setTirar(x)} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer" }}>✕</button>}
-        </div>)}
+        {(a.saidas || []).map((x) => (sd?.edit === x.id && !x.entrada ? <div key={x.id}>{formSaida}</div> : cartaoSaida(x, true)))}
       </div>
 
       <div style={{ ...card, display: "grid", gap: 8 }}>

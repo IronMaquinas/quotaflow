@@ -186,27 +186,33 @@ async function atualizar(sb, tenantId, id, d = {}) {
   if (d.comentarios && typeof d.comentarios === 'object') { const c = { ...(a.comentarios || {}) }; for (const [k, v] of Object.entries(d.comentarios)) if (ENTRADAS.some((e) => e.chave === k)) { const t = txt(v, 4000); if (t) c[k] = t; else delete c[k]; } up.comentarios = c; }
   return { analise: (await q(sb.from('analises_criticas').update(up).eq('tenant_id', tenantId).eq('id', id).select()))[0] };
 }
-async function novaSaida(sb, tenantId, quem, id, d = {}) {
+// R2.4: cria (sid vazio) ou edita uma decisão; se ela tem tarefa, a tarefa acompanha (título, detalhe, prazo, prioridade, responsável)
+async function novaSaida(sb, tenantId, quem, id, d = {}, sid = null) {
   const a = await uma(sb, tenantId, id); if (!a) return { status: 404, erro: 'Análise não encontrada.' };
   if (a.status !== 'rascunho') return { status: 409, erro: MSG_TRAV };
+  const velha = sid ? (a.saidas || []).find((x) => x.id === sid) : null; if (sid && !velha) return { status: 404, erro: 'Decisão não encontrada.' };
   const tipo = TIPOS_SAIDA[d.tipo] ? d.tipo : null; if (!tipo) return { status: 400, erro: 'Escolha o tipo da decisão: melhoria, mudança no sistema, recursos ou risco.' };
   const texto = txt(d.texto, 1000); if (!texto || texto.length < 5) return { status: 400, erro: 'Descreva a decisão.' };
-  const entrada = ENTRADAS.some((e) => e.chave === d.entrada) ? d.entrada : null;
-  const s = { id: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, tipo, texto, entrada, responsavel: txt(d.responsavel, 120), prazo: data(d.prazo), recurso: txt(d.recurso, 300), risco: tipo === 'risco' ? txt(d.risco, 300) : null, tarefa_id: null, criado_por: quem?.nome || null, criado_em: new Date().toISOString() };
-  let aviso = null; let tarefa = null;
-  if (d.gerar_tarefa !== false) {
+  const entrada = velha ? velha.entrada : ENTRADAS.some((e) => e.chave === d.entrada) ? d.entrada : null;
+  const ref = /^[cu]:\d+$/.test(String(d.responsavel_ref || '')) ? String(d.responsavel_ref) : null;
+  const s = { ...(velha || { id: `s${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`, tarefa_id: null, criado_por: quem?.nome || null, criado_em: new Date().toISOString() }),
+    tipo, texto, entrada, responsavel: txt(d.responsavel, 120), responsavel_ref: ref, prazo: data(d.prazo), recurso: tipo === 'recursos' ? txt(d.recurso, 300) : null, risco: tipo === 'risco' ? txt(d.risco, 300) : null, ...(velha ? { editado_em: new Date().toISOString(), editado_por: quem?.nome || null } : {}) };
+  const querTarefa = !!s.tarefa_id || d.gerar_tarefa !== false;
+  if (querTarefa) {
     if (!s.prazo) return { status: 400, erro: 'Informe o prazo da ação (ou desligue "Criar tarefa no Plano").' };
-    if (s.prazo < hojeBR()) return { status: 400, erro: 'O prazo não pode estar no passado.' };
-    const ent = ENTRADAS.find((e) => e.chave === entrada);
-    const t = await require('./tarefas').criar(sb, tenantId, quem, { tipo: 'AC', titulo: `${TIPOS_SAIDA[tipo]} — ${a.numero}: ${texto.slice(0, 140)}`, prioridade: tipo === 'risco' ? 'alta' : 'media', prazo: s.prazo,
-      responsavel_ref: d.responsavel_ref || null, responsavel: d.responsavel_ref ? null : (s.responsavel || 'Direção'),
-      detalhe: `${a.numero} · ${a.titulo}\nDecisão da análise crítica pela direção (ISO 9001 9.3.3) — ${TIPOS_SAIDA[tipo]}${ent ? `\nEntrada: ${ent.letra}) ${ent.titulo}` : ''}\n\n${texto}${s.recurso ? `\n\nRecurso: ${s.recurso}` : ''}${s.risco ? `\n\nRisco: ${s.risco}` : ''}\n\nA situação desta tarefa entra na próxima análise crítica.`,
-      vinculos: [{ tipo: 'analise_critica', id: String(a.id), numero: a.numero }] });
-    if (t?.erro) aviso = `a tarefa não foi criada (${t.erro})`; else if (t?.id) { s.tarefa_id = String(t.id); tarefa = { id: t.id, numero: t.numero }; }
+    if (s.prazo < hojeBR() && (!velha || s.prazo !== velha.prazo)) return { status: 400, erro: 'O prazo não pode estar no passado.' };
   }
-  const saidas = [...(a.saidas || []), s];
+  const ent = ENTRADAS.find((e) => e.chave === entrada);
+  const campos = { titulo: `${TIPOS_SAIDA[tipo]} — ${a.numero}: ${texto.slice(0, 140)}`, prioridade: tipo === 'risco' ? 'alta' : 'media', prazo: s.prazo,
+    responsavel_ref: ref, responsavel: ref ? null : (s.responsavel || 'Direção'),
+    detalhe: `${a.numero} · ${a.titulo}\nDecisão da análise crítica pela direção (ISO 9001 9.3.3) — ${TIPOS_SAIDA[tipo]}${ent ? `\nEntrada: ${ent.letra}) ${ent.titulo}` : ''}\n\n${texto}${s.recurso ? `\n\nRecurso: ${s.recurso}` : ''}${s.risco ? `\n\nRisco: ${s.risco}` : ''}\n\nA situação desta tarefa entra na próxima análise crítica.` };
+  let aviso = null; let tarefa = null; const T = require('./tarefas');
+  if (s.tarefa_id) { const t = await T.atualizar(sb, tenantId, quem, s.tarefa_id, campos); if (t?.erro) aviso = `a tarefa não foi atualizada (${t.erro})`; else tarefa = { id: t.id, numero: t.numero }; }
+  else if (querTarefa) { const t = await T.criar(sb, tenantId, quem, { tipo: 'AC', ...campos, vinculos: [{ tipo: 'analise_critica', id: String(a.id), numero: a.numero }] });
+    if (t?.erro) aviso = `a tarefa não foi criada (${t.erro})`; else if (t?.id) { s.tarefa_id = String(t.id); tarefa = { id: t.id, numero: t.numero }; } }
+  const saidas = velha ? a.saidas.map((x) => (x.id === sid ? s : x)) : [...(a.saidas || []), s];
   await q(sb.from('analises_criticas').update({ saidas, atualizado_em: new Date().toISOString() }).eq('tenant_id', tenantId).eq('id', id).select());
-  return { saida: s, tarefa, aviso: aviso ? `Decisão registrada, mas ${aviso}.` : null };
+  return { saida: s, tarefa, aviso: aviso ? `Decisão ${velha ? 'alterada' : 'registrada'}, mas ${aviso}.` : null };
 }
 async function excluirSaida(sb, tenantId, id, sid) {
   const a = await uma(sb, tenantId, id); if (!a) return { status: 404, erro: 'Análise não encontrada.' };
@@ -247,4 +253,5 @@ async function cancelar(sb, tenantId, id, d = {}, quem = null) {
   return { analise: (await q(sb.from('analises_criticas').update({ status: 'cancelada', cancelamento_motivo: motivo, cancelada_em: agora, cancelada_por: quem?.nome || null, atualizado_em: agora }).eq('tenant_id', tenantId).eq('id', id).select()))[0] };
 }
 
-module.exports = { ENTRADAS, STATUS, TIPOS_SAIDA, PAPEIS, montarEntradas, listar, criar, detalhe, atualizar, novaSaida, excluirSaida, encerrar, reabrir, assinar, cancelar };
+const editarSaida = (sb, tenantId, quem, id, sid, d) => novaSaida(sb, tenantId, quem, id, d, sid);
+module.exports = { editarSaida, ENTRADAS, STATUS, TIPOS_SAIDA, PAPEIS, montarEntradas, listar, criar, detalhe, atualizar, novaSaida, excluirSaida, encerrar, reabrir, assinar, cancelar };
