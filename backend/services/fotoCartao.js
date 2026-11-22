@@ -89,6 +89,8 @@ async function enviarFoto(sb, tenantId, quem, b = {}) {
 async function listarFotos(sb, tenantId, f = {}) {
   let l = await q(sb.from('fotos_cartao').select('*').eq('tenant_id', tenantId));
   if (f.modelo_id) l = l.filter((x) => String(x.modelo_id) === String(f.modelo_id));
+  if (f.referencia != null && f.referencia !== '') { const rf = normRef(f.referencia); l = l.filter((x) => normRef(x.referencia) === rf); }
+  if (f.tecnico) l = l.filter((x) => x.tecnico === f.tecnico);
   if (f.projeto_id) l = l.filter((x) => (f.projeto_id === 'sem' ? !x.projeto_id : String(x.projeto_id) === String(f.projeto_id)));
   if (f.de) l = l.filter((x) => String(x.tirada_em).slice(0, 10) >= f.de);
   if (f.ate) l = l.filter((x) => String(x.tirada_em).slice(0, 10) <= f.ate);
@@ -103,6 +105,9 @@ async function listarFotos(sb, tenantId, f = {}) {
 
 // ─── E2: projetos ────────────────────────────────────────────────────────────
 const data = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? v : null);
+// E2.1: coordenadas do projeto (pino) — vazias limpam; fora do globo → recusa
+const coord = (b) => { if (!('lat' in b) && !('lng' in b)) return {}; const la = b.lat === '' || b.lat == null ? null : Number(b.lat); const ln = b.lng === '' || b.lng == null ? null : Number(b.lng);
+  if (la == null || ln == null) return { lat: null, lng: null }; if (!Number.isFinite(la) || !Number.isFinite(ln) || Math.abs(la) > 90 || Math.abs(ln) > 180) return { lat: null, lng: null, invalido: true }; return { lat: la, lng: ln }; };
 async function listarProjetos(sb, tenantId, { todos = false } = {}) {
   const [ps, fs] = await Promise.all([q(sb.from('projetos_foto').select('*').eq('tenant_id', tenantId)), q(sb.from('fotos_cartao').select('*').eq('tenant_id', tenantId))]);
   const hoje = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
@@ -113,7 +118,8 @@ async function listarProjetos(sb, tenantId, { todos = false } = {}) {
 }
 async function salvarProjeto(sb, tenantId, quem, id, b = {}) {
   const nome = txt(b.nome, 120); if (!nome) return { status: 400, erro: 'Dê um nome ao projeto.' };
-  const d = { nome, cliente_id: b.cliente_id != null && b.cliente_id !== '' ? String(b.cliente_id) : null, cliente_nome: txt(b.cliente_nome, 120), local: txt(b.local, 160), descricao: txt(b.descricao, 1000), inicio: data(b.inicio), fim: data(b.fim) };
+  const d = { nome, cliente_id: b.cliente_id != null && b.cliente_id !== '' ? String(b.cliente_id) : null, cliente_nome: txt(b.cliente_nome, 120), local: txt(b.local, 160), descricao: txt(b.descricao, 1000), inicio: data(b.inicio), fim: data(b.fim), ...coord(b) };
+  if (d.invalido) return { status: 400, erro: 'Coordenadas inválidas (latitude −90 a 90, longitude −180 a 180).' }; delete d.invalido;
   if (d.inicio && d.fim && d.inicio > d.fim) return { status: 400, erro: 'O início precisa ser antes do fim.' };
   const agora = new Date().toISOString();
   if (id) {
@@ -126,4 +132,44 @@ async function salvarProjeto(sb, tenantId, quem, id, b = {}) {
   return { projeto: (await q(sb.from('projetos_foto').insert([{ ...d, tenant_id: tenantId, status: 'ativo', criado_por: quem?.nome || null, criado_em: agora, atualizado_em: agora }]).select()))[0] };
 }
 
-module.exports = { listarProjetos, salvarProjeto, EXEMPLOS, TIPOS, validarModelo, listarModelos, salvarModelo, ativarModelo, enviarFoto, listarFotos };
+// ─── E2.1: mapa — projetos (pino do local) e aerogeradores (média do GPS das fotos da mesma referência) ───
+const normRef = (v) => String(v || '').trim().toUpperCase().replace(/\s+/g, ' ');
+async function mapa(sb, tenantId, f = {}) {
+  const [ps, fs0] = await Promise.all([q(sb.from('projetos_foto').select('*').eq('tenant_id', tenantId)), q(sb.from('fotos_cartao').select('*').eq('tenant_id', tenantId))]);
+  let fs = fs0;
+  if (f.projeto_id) fs = fs.filter((x) => String(x.projeto_id) === String(f.projeto_id));
+  if (f.de) fs = fs.filter((x) => String(x.tirada_em).slice(0, 10) >= f.de);
+  if (f.ate) fs = fs.filter((x) => String(x.tirada_em).slice(0, 10) <= f.ate);
+  if (f.tecnico) fs = fs.filter((x) => x.tecnico === f.tecnico);
+  const pMap = new Map(ps.map((p) => [String(p.id), p]));
+  if (f.cliente) { const c = String(f.cliente).toLowerCase(); fs = fs.filter((x) => String(pMap.get(String(x.projeto_id))?.cliente_nome || '').toLowerCase() === c); }
+  // pinos: projeto + referência (sem referência → agrupa por ~100 m)
+  const grupos = new Map();
+  for (const x of fs) { if (!x.gps || !Number.isFinite(Number(x.gps.lat))) continue; const rf = normRef(x.referencia);
+    const k = `${x.projeto_id || 'sem'}|${rf || `@${Number(x.gps.lat).toFixed(3)},${Number(x.gps.lng).toFixed(3)}`}`;
+    const g = grupos.get(k) || { chave: k, projeto_id: x.projeto_id || null, referencia: rf || null, n: 0, sLat: 0, sLng: 0, primeira: null, ultima: null, tecnicos: new Set(), modelos: new Set() };
+    g.n++; g.sLat += Number(x.gps.lat); g.sLng += Number(x.gps.lng); const t = String(x.tirada_em); if (!g.primeira || t < g.primeira) g.primeira = t; if (!g.ultima || t > g.ultima) g.ultima = t; if (x.tecnico) g.tecnicos.add(x.tecnico); if (x.modelo_nome) g.modelos.add(x.modelo_nome); grupos.set(k, g); }
+  const pinos = [...grupos.values()].map((g) => { const p = pMap.get(String(g.projeto_id)); return { chave: g.chave, projeto_id: g.projeto_id, projeto: p?.nome || null, cliente: p?.cliente_nome || null, referencia: g.referencia, lat: g.sLat / g.n, lng: g.sLng / g.n, fotos: g.n, primeira: g.primeira, ultima: g.ultima, tecnicos: [...g.tecnicos], modelos: [...g.modelos] }; });
+  const idsComFoto = new Set(fs.map((x) => String(x.projeto_id)));
+  const projetos = ps.filter((p) => (!f.projeto_id || String(p.id) === String(f.projeto_id)) && (!f.cliente || String(p.cliente_nome || '').toLowerCase() === String(f.cliente).toLowerCase()) && ((!f.de && !f.ate && !f.tecnico) || idsComFoto.has(String(p.id))))
+    .map((p) => { const fp = fs.filter((x) => String(x.projeto_id) === String(p.id)); const pin = pinos.filter((x) => String(x.projeto_id) === String(p.id));
+      let { lat, lng } = p; if ((lat == null || lng == null) && pin.length) { lat = pin.reduce((s2, x) => s2 + x.lat, 0) / pin.length; lng = pin.reduce((s2, x) => s2 + x.lng, 0) / pin.length; }
+      return { id: p.id, nome: p.nome, cliente: p.cliente_nome, local: p.local, status: p.status, lat, lng, local_aprox: p.lat == null && lat != null, fotos: fp.length, aerogeradores: pin.filter((x) => x.referencia).length }; });
+  const todas = fs0;
+  return { projetos, pinos, totais: { projetos: projetos.filter((p) => p.fotos > 0).length, aerogeradores: pinos.filter((x) => x.referencia).length, fotos: fs.length, clientes: new Set(projetos.filter((p) => p.fotos > 0).map((p) => p.cliente).filter(Boolean)).size, sem_gps: fs.filter((x) => !x.gps).length },
+    filtros: { clientes: [...new Set(ps.map((p) => p.cliente_nome).filter(Boolean))].sort(), tecnicos: [...new Set(todas.map((x) => x.tecnico).filter(Boolean))].sort(), projetos: ps.map((p) => ({ id: p.id, nome: p.nome })) } };
+}
+// geocodificação (OpenStreetMap / Nominatim) pelo servidor — identifica o app e guarda em memória por 1 dia
+const cacheGeo = new Map();
+async function geocodificar(texto) {
+  const t = txt(texto, 160); if (!t || t.length < 3) return { status: 400, erro: 'Digite ao menos 3 letras do local.' };
+  const k = t.toLowerCase(); const c = cacheGeo.get(k); if (c && Date.now() - c.em < 864e5) return { resultados: c.r };
+  const url = `https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&accept-language=pt-BR&q=${encodeURIComponent(t)}`;
+  const ctl = new AbortController(); const to = setTimeout(() => ctl.abort(), 8000);
+  try { const r = await fetch(url, { headers: { 'User-Agent': 'QuotaFlow/1.0 (localizacao de projetos)' }, signal: ctl.signal }); if (!r.ok) return { status: 502, erro: 'O serviço de mapas não respondeu agora. Cole as coordenadas ou toque no mapa.' };
+    const j = await r.json(); const res = (Array.isArray(j) ? j : []).map((x) => ({ nome: x.display_name, lat: Number(x.lat), lng: Number(x.lon) })).filter((x) => Number.isFinite(x.lat));
+    cacheGeo.set(k, { em: Date.now(), r: res }); if (cacheGeo.size > 500) cacheGeo.delete(cacheGeo.keys().next().value); return { resultados: res }; }
+  catch { return { status: 502, erro: 'O serviço de mapas não respondeu agora. Cole as coordenadas ou toque no mapa.' }; } finally { clearTimeout(to); }
+}
+
+module.exports = { mapa, geocodificar, normRef, listarProjetos, salvarProjeto, EXEMPLOS, TIPOS, validarModelo, listarModelos, salvarModelo, ativarModelo, enviarFoto, listarFotos };

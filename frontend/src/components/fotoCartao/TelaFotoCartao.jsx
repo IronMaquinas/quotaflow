@@ -4,6 +4,7 @@
 import { useEffect, useRef, useState } from "react";
 import apiService from "../../services/apiService";
 import CameraCartao from "./CameraCartao";
+import MapaFotos, { SeletorLocal } from "./MapaFotos";
 import * as Fila from "../../utils/filaFotosCartao";
 import { desenharCartao, alturaCartao, carregarImagem, quandoBR, gpsTxt } from "../../utils/cartaoFoto";
 import { logoEmpresa, dadosEmpresa } from "../../utils/logoEmpresa";
@@ -11,6 +12,7 @@ import { logoEmpresa, dadosEmpresa } from "../../utils/logoEmpresa";
 const usuarioLocal = () => { try { return JSON.parse(localStorage.getItem("usuario") || "{}"); } catch { return {}; } };
 const chaveTenant = () => { const u = usuarioLocal(); return String(u.tenant_id ?? u.tenantId ?? u.email ?? "t"); };
 const ULT = "qfCartaoUltimo";
+const PJ_RECENTES = "qfProjetosRecentes";
 const PJ_CACHE = "qfProjetosFoto"; // E2: lista de projetos guardada no aparelho → escolher projeto sem sinal
 const dBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "");
 
@@ -39,9 +41,12 @@ export default function TelaFotoCartao({ C, s, embutida = false }) {
   const sincronizar = async () => { const r = await Fila.sincronizar(tenant, (corpo) => apiService.post("/foto-cartao/fotos", corpo)); const l = await Fila.listar(tenant); setFila({ pendentes: l.filter((x) => x.status !== "erro").length, erros: l.filter((x) => x.status === "erro").length, lista: l }); return r; };
   useEffect(() => { Fila.pedirPersistencia().then(setPersist); carregar(); carregarPj(); sincronizar(); apiService.get("/foto-cartao/fotos?limite=1").then((r) => setRefs(r.referencias || [])).catch(() => {}); const f = () => sincronizar(); window.addEventListener("online", f); const t = setInterval(f, 30000); return () => { window.removeEventListener("online", f); clearInterval(t); }; }, []); // eslint-disable-line
   const ativos = (M?.modelos || []).filter((m) => m.ativo !== false); const modelo = ativos.find((m) => String(m.id) === String(modeloId)) || null;
+  const [fPj, setFPj] = useState({ busca: "", status: "ativo", ordem: "recente" }); const [bTirar, setBTirar] = useState("");
+  const recentes = (() => { try { return JSON.parse(localStorage.getItem(PJ_RECENTES) || "[]"); } catch { return []; } })();
+  const casa = (p, t) => { const q = String(t || "").trim().toLowerCase(); return !q || [p.nome, p.cliente_nome, p.local, p.descricao].some((v) => String(v || "").toLowerCase().includes(q)); };
   const pjAtivos = (P?.projetos || []).filter((p) => p.status === "ativo"); const projeto = pjAtivos.find((p) => String(p.id) === String(projetoId)) || null;
   const card = { ...s.card, padding: "16px 18px" }; const lab = { fontSize: 11.5, color: C.textSub, display: "block", marginBottom: 3 };
-  const abas = [["tirar", "📸 Tirar foto"], ["projetos", "📁 Projetos"], ["fotos", "🖼 Fotos"], ...(podeEditar ? [["modelos", "⚙ Modelos de cartão"]] : [])];
+  const abas = [["tirar", "📸 Tirar foto"], ["projetos", "📁 Projetos"], ["mapa", "🗺 Mapa"], ["fotos", "🖼 Fotos"], ...(podeEditar ? [["modelos", "⚙ Modelos de cartão"]] : [])];
 
   if (cam && modelo && projeto) return <CameraCartao modelo={modelo} projeto={projeto} referencia={ref} tenant={tenant} tecnico={u.nome || ""} valoresIniciais={cartao && String(cartao.modelo_id) === String(modelo.id) ? cartao : null}
     onFoto={(c) => { const x = { ...c, modelo_id: modelo.id }; setCartao(x); try { localStorage.setItem(ULT, JSON.stringify({ modelo_id: modelo.id, projeto_id: projeto.id, referencia: ref, cartao: x })); } catch { /* ok */ } return sincronizar(); }}
@@ -65,7 +70,8 @@ export default function TelaFotoCartao({ C, s, embutida = false }) {
         {ativos.length > 0 && <>
           <div><span style={lab}>CARTÃO</span><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{ativos.map((m) => <button key={m.id} type="button" onClick={() => setModeloId(m.id)} style={{ padding: "10px 14px", borderRadius: 10, cursor: "pointer", border: `2px solid ${String(modeloId) === String(m.id) ? C.accent : C.border}`, background: "transparent", color: C.text, fontWeight: 600 }}>{m.nome}</button>)}</div></div>
           <div><span style={lab}>PROJETO *</span><div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-            {pjAtivos.map((p) => <button key={p.id} type="button" onClick={() => setProjetoId(p.id)} style={{ padding: "10px 14px", borderRadius: 10, cursor: "pointer", border: `2px solid ${String(projetoId) === String(p.id) ? C.accent : C.border}`, background: "transparent", color: C.text, fontWeight: 600, textAlign: "left" }}>📁 {p.nome}{p.cliente_nome ? <span style={{ display: "block", fontSize: 11, color: C.textSub, fontWeight: 400 }}>{p.cliente_nome}{p.local ? ` · ${p.local}` : ""}</span> : null}</button>)}
+            {pjAtivos.length > 6 && <input value={bTirar} onChange={(e) => setBTirar(e.target.value)} placeholder="🔎 Buscar projeto: nome, cliente ou local…" style={{ ...s.input, flex: "1 1 100%" }} />}
+            {[...pjAtivos].sort((a, b) => { const ia = recentes.indexOf(String(a.id)); const ib = recentes.indexOf(String(b.id)); return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib); }).filter((p) => casa(p, bTirar) || String(p.id) === String(projetoId)).slice(0, bTirar ? 50 : 8).map((p) => <button key={p.id} type="button" onClick={() => { setProjetoId(p.id); try { localStorage.setItem(PJ_RECENTES, JSON.stringify([String(p.id), ...recentes.filter((x) => x !== String(p.id))].slice(0, 3))); } catch { /* ok */ } }} style={{ padding: "10px 14px", borderRadius: 10, cursor: "pointer", border: `2px solid ${String(projetoId) === String(p.id) ? C.accent : C.border}`, background: "transparent", color: C.text, fontWeight: 600, textAlign: "left" }}>📁 {p.nome}{p.cliente_nome ? <span style={{ display: "block", fontSize: 11, color: C.textSub, fontWeight: 400 }}>{p.cliente_nome}{p.local ? ` · ${p.local}` : ""}</span> : null}</button>)}
             {podeEditar && <button type="button" onClick={() => setNovoPj({ nome: "", cliente_nome: "", local: "", descricao: "", inicio: "", fim: "" })} style={{ ...s.btn(false), cursor: "pointer" }}>＋ Novo projeto</button>}
             {!pjAtivos.length && !podeEditar && <span style={{ fontSize: 12.5, color: C.textSub }}>Nenhum projeto ativo — peça ao gestor para abrir o projeto.</span>}
           </div></div>
@@ -75,11 +81,18 @@ export default function TelaFotoCartao({ C, s, embutida = false }) {
           {modelo && !projeto && <div style={{ fontSize: 12, color: C.warn }}>Escolha o projeto — toda foto nasce dentro de um projeto.</div>}
         </>}
       </div>}
+      {aba === "mapa" && <MapaFotos C={C} s={s} />}
       {aba === "fotos" && <Galeria C={C} s={s} modelos={M?.modelos || []} projetos={P?.projetos || []} />}
       {aba === "projetos" && !abrirPj && <div style={{ display: "grid", gap: 10 }}>
         {podeEditar && <button type="button" onClick={() => setNovoPj({ nome: "", cliente_nome: "", local: "", descricao: "", inicio: "", fim: "" })} style={{ ...s.btn(true), cursor: "pointer", justifySelf: "start" }}>＋ Novo projeto</button>}
         {!(P?.projetos || []).length && <div style={{ ...card, color: C.muted, fontSize: 13 }}>Nenhum projeto ainda.</div>}
-        {(P?.projetos || []).map((p) => <button key={p.id} type="button" onClick={() => setAbrirPj(p)} style={{ ...card, textAlign: "left", cursor: "pointer", color: C.text, opacity: p.status === "encerrado" ? 0.6 : 1, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+        {(P?.projetos || []).length > 0 && !(P.projetos.some((p) => (!fPj.status || p.status === fPj.status) && casa(p, fPj.busca))) && <div style={{ fontSize: 12.5, color: C.muted }}>Nenhum projeto com esse filtro.</div>}
+        <div style={{ ...card, display: "flex", gap: 8, flexWrap: "wrap" }}>
+          <input value={fPj.busca} onChange={(e) => setFPj({ ...fPj, busca: e.target.value })} placeholder="🔎 Nome, cliente ou local…" style={{ ...s.input, flex: "2 1 220px" }} />
+          <select value={fPj.status} onChange={(e) => setFPj({ ...fPj, status: e.target.value })} style={{ ...s.input, flex: "1 1 130px" }}><option value="ativo">Ativos</option><option value="encerrado">Encerrados</option><option value="">Todos</option></select>
+          <select value={fPj.ordem} onChange={(e) => setFPj({ ...fPj, ordem: e.target.value })} style={{ ...s.input, flex: "1 1 150px" }}><option value="recente">Mais recentes</option><option value="nome">Nome (A–Z)</option><option value="fotos">Mais fotos</option></select>
+        </div>
+        {(P?.projetos || []).filter((p) => (!fPj.status || p.status === fPj.status) && casa(p, fPj.busca)).sort((a, b) => (fPj.ordem === "nome" ? String(a.nome).localeCompare(String(b.nome), "pt-BR") : fPj.ordem === "fotos" ? b.fotos - a.fotos : 0)).map((p) => <button key={p.id} type="button" onClick={() => setAbrirPj(p)} style={{ ...card, textAlign: "left", cursor: "pointer", color: C.text, opacity: p.status === "encerrado" ? 0.6 : 1, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
           <div style={{ flex: "1 1 240px" }}><div style={{ fontWeight: 700 }}>📁 {p.nome}{p.status === "encerrado" ? " (encerrado)" : ""}</div><div style={{ fontSize: 12, color: C.textSub }}>{[p.cliente_nome, p.local, p.inicio && `${dBR(p.inicio)}${p.fim ? ` a ${dBR(p.fim)}` : ""}`].filter(Boolean).join(" · ") || "—"}</div>{p.tecnicos?.length > 0 && <div style={{ fontSize: 11.5, color: C.muted }}>👷 {p.tecnicos.join(", ")}</div>}</div>
           <div style={{ textAlign: "right" }}><div style={{ fontSize: 20, fontWeight: 800 }}>{p.fotos}</div><div style={{ fontSize: 11, color: C.textSub }}>fotos{p.fotos_hoje ? ` · ${p.fotos_hoje} hoje` : ""}</div></div></button>)}
         {P?.sem_projeto > 0 && <div style={{ fontSize: 12, color: C.muted }}>{P.sem_projeto} foto(s) antigas sem projeto — veja em 🖼 Fotos.</div>}
@@ -93,9 +106,10 @@ export default function TelaFotoCartao({ C, s, embutida = false }) {
         <Galeria C={C} s={s} modelos={M?.modelos || []} projetos={P?.projetos || []} projetoFixo={abrirPj.id} />
       </div>}
       {novoPj && <div onClick={() => setNovoPj(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-        <div onClick={(e) => e.stopPropagation()} style={{ ...card, width: "min(520px, 100%)", display: "grid", gap: 10 }}>
+        <div onClick={(e) => e.stopPropagation()} style={{ ...card, width: "min(560px, 100%)", maxHeight: "92vh", overflowY: "auto", display: "grid", gap: 10 }}>
           <div style={{ fontWeight: 800, fontSize: 16 }}>{novoPj.id ? "✎ Editar projeto" : "＋ Novo projeto"}</div>
-          {[["nome", "NOME DO PROJETO *", "Ex.: Parque Serra Azul — campanha nov/2026"], ["cliente_nome", "CLIENTE", "Ex.: Eólica XYZ"], ["local", "LOCAL", "Ex.: Parque Serra Azul — Areia Branca/RN"]].map(([k, l, ph]) => <div key={k}><span style={lab}>{l}</span><input value={novoPj[k] || ""} onChange={(e) => setNovoPj({ ...novoPj, [k]: e.target.value })} placeholder={ph} style={{ ...s.input, width: "100%" }} /></div>)}
+          {[["nome", "NOME DO PROJETO *", "Ex.: Parque Serra Azul — campanha nov/2026"], ["cliente_nome", "CLIENTE", "Ex.: Eólica XYZ"], ["local", "LOCAL (nome)", "Ex.: Parque Serra Azul — Areia Branca/RN"]].map(([k, l, ph]) => <div key={k}><span style={lab}>{l}</span><input value={novoPj[k] || ""} onChange={(e) => setNovoPj({ ...novoPj, [k]: e.target.value })} placeholder={ph} style={{ ...s.input, width: "100%" }} /></div>)}
+          <div><span style={lab}>LOCALIZAÇÃO NO MAPA</span><SeletorLocal C={C} s={s} valor={novoPj} onChange={(v) => setNovoPj((x) => ({ ...x, ...v }))} /></div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><div style={{ flex: "1 1 140px" }}><span style={lab}>INÍCIO</span><input type="date" value={novoPj.inicio || ""} onChange={(e) => setNovoPj({ ...novoPj, inicio: e.target.value })} style={{ ...s.input, width: "100%" }} /></div><div style={{ flex: "1 1 140px" }}><span style={lab}>FIM</span><input type="date" value={novoPj.fim || ""} onChange={(e) => setNovoPj({ ...novoPj, fim: e.target.value })} style={{ ...s.input, width: "100%" }} /></div></div>
           <div><span style={lab}>DESCRIÇÃO</span><textarea value={novoPj.descricao || ""} onChange={(e) => setNovoPj({ ...novoPj, descricao: e.target.value })} rows={2} style={{ ...s.input, width: "100%" }} /></div>
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button type="button" onClick={() => setNovoPj(null)} style={{ ...s.btn(false), cursor: "pointer" }}>Voltar</button>

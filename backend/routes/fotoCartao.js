@@ -1,4 +1,5 @@
 // routes/fotoCartao.js — etapa E1: 📸 foto com cartão
+//   E2.1: GET /mapa?projeto_id&cliente&de&ate&tecnico · GET /geocode?q= (gestão)
 //   E2: GET /projetos · POST /projetos · PUT /projetos/:id (status ativo/encerrado)
 //   GET /modelos · POST /modelos { …campos | exemplo } · PUT /modelos/:id · POST /modelos/:id/ativo { ativo }  (admin, gestor, qualidade)
 //   POST /fotos { cliente_uid, imagem (data:image/jpeg), modelo_id, valores, obs, referencia, gps, tirada_em } · GET /fotos?modelo_id&de&ate&busca
@@ -23,6 +24,8 @@ router.post('/modelos/:id/ativo', r(GESTAO, (req) => F.ativarModelo(supabase, re
 router.get('/projetos', r(CAMPO, (req) => F.listarProjetos(supabase, req.tenantId, { todos: req.query.todos === '1' }))); // E2
 router.post('/projetos', r(GESTAO, async (req) => F.salvarProjeto(supabase, req.tenantId, await quem(req), null, req.body || {})));
 router.put('/projetos/:id', r(GESTAO, async (req) => F.salvarProjeto(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
+router.get('/mapa', r(CAMPO, (req) => F.mapa(supabase, req.tenantId, req.query || {}))); // E2.1
+router.get('/geocode', r(GESTAO, (req) => F.geocodificar(req.query.q)));
 router.post('/fotos', r(CAMPO, async (req) => F.enviarFoto(supabase, req.tenantId, await quem(req), req.body || {})));
 router.get('/fotos', r(CAMPO, (req) => F.listarFotos(supabase, req.tenantId, req.query || {})));
 module.exports = router;
