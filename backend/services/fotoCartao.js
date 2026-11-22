@@ -77,7 +77,9 @@ async function enviarFoto(sb, tenantId, quem, b = {}) {
   const path = `tenant-${tenantId}/fotos-cartao/${tirada.slice(0, 7)}/${uid}.jpg`;
   const { error } = await sb.storage.from(D.BUCKET).upload(path, buf, { contentType: 'image/jpeg', upsert: true });
   if (error) throw new Error(`Falha ao subir a foto: ${error.message}`);
-  const linha = { tenant_id: tenantId, cliente_uid: uid, modelo_id: modelo?.id || null, modelo_nome: modelo?.nome || txt(b.modelo?.nome, 80), modelo: { titulo: modelo?.titulo || b.modelo?.titulo || null, campos: campos.map((c) => ({ id: c.id, rotulo: c.rotulo, unidade: c.unidade || null })) },
+  let projetoId = null;
+  if (b.projeto_id) { const pj = (await q(sb.from('projetos_foto').select('*').eq('tenant_id', tenantId).eq('id', b.projeto_id)))[0]; projetoId = pj ? pj.id : null; } // E2: projeto apagado → foto fica sem projeto, nunca é recusada
+  const linha = { tenant_id: tenantId, cliente_uid: uid, projeto_id: projetoId, modelo_id: modelo?.id || null, modelo_nome: modelo?.nome || txt(b.modelo?.nome, 80), modelo: { titulo: modelo?.titulo || b.modelo?.titulo || null, campos: campos.map((c) => ({ id: c.id, rotulo: c.rotulo, unidade: c.unidade || null })) },
     valores, obs: txt(b.obs, 600), referencia: txt(b.referencia, 120), tecnico: quem?.nome || null, usuario_id: quem?.id != null ? String(quem.id) : null, gps, tirada_em: tirada, arquivo: path, tamanho: buf.length,
     hash: crypto.createHash('sha256').update(buf).digest('hex'), criado_em: new Date().toISOString() };
   try { return { foto: { id: (await q(sb.from('fotos_cartao').insert([linha]).select()))[0].id } }; }
@@ -87,6 +89,7 @@ async function enviarFoto(sb, tenantId, quem, b = {}) {
 async function listarFotos(sb, tenantId, f = {}) {
   let l = await q(sb.from('fotos_cartao').select('*').eq('tenant_id', tenantId));
   if (f.modelo_id) l = l.filter((x) => String(x.modelo_id) === String(f.modelo_id));
+  if (f.projeto_id) l = l.filter((x) => (f.projeto_id === 'sem' ? !x.projeto_id : String(x.projeto_id) === String(f.projeto_id)));
   if (f.de) l = l.filter((x) => String(x.tirada_em).slice(0, 10) >= f.de);
   if (f.ate) l = l.filter((x) => String(x.tirada_em).slice(0, 10) <= f.ate);
   if (f.busca) { const t = String(f.busca).toLowerCase(); l = l.filter((x) => [x.referencia, x.tecnico, x.obs, x.modelo_nome, ...Object.values(x.valores || {})].some((v) => String(v || '').toLowerCase().includes(t))); }
@@ -98,4 +101,29 @@ async function listarFotos(sb, tenantId, f = {}) {
   return { fotos: out, total, referencias: refs };
 }
 
-module.exports = { EXEMPLOS, TIPOS, validarModelo, listarModelos, salvarModelo, ativarModelo, enviarFoto, listarFotos };
+// ─── E2: projetos ────────────────────────────────────────────────────────────
+const data = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? v : null);
+async function listarProjetos(sb, tenantId, { todos = false } = {}) {
+  const [ps, fs] = await Promise.all([q(sb.from('projetos_foto').select('*').eq('tenant_id', tenantId)), q(sb.from('fotos_cartao').select('*').eq('tenant_id', tenantId))]);
+  const hoje = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
+  const lista = ps.filter((p) => todos || p.status === 'ativo').map((p) => { const fp = fs.filter((f) => String(f.projeto_id) === String(p.id));
+    return { ...p, fotos: fp.length, fotos_hoje: fp.filter((f) => String(f.tirada_em).slice(0, 10) === hoje || String(f.criado_em).slice(0, 10) === hoje).length, tecnicos: [...new Set(fp.map((f) => f.tecnico).filter(Boolean))], ultima_em: fp.reduce((m, f) => (String(f.criado_em) > m ? String(f.criado_em) : m), '') || null }; })
+    .sort((a, b) => (a.status === b.status ? String(b.ultima_em || b.criado_em).localeCompare(String(a.ultima_em || a.criado_em)) : a.status === 'ativo' ? -1 : 1));
+  return { projetos: lista, sem_projeto: fs.filter((f) => !f.projeto_id).length };
+}
+async function salvarProjeto(sb, tenantId, quem, id, b = {}) {
+  const nome = txt(b.nome, 120); if (!nome) return { status: 400, erro: 'Dê um nome ao projeto.' };
+  const d = { nome, cliente_id: b.cliente_id != null && b.cliente_id !== '' ? String(b.cliente_id) : null, cliente_nome: txt(b.cliente_nome, 120), local: txt(b.local, 160), descricao: txt(b.descricao, 1000), inicio: data(b.inicio), fim: data(b.fim) };
+  if (d.inicio && d.fim && d.inicio > d.fim) return { status: 400, erro: 'O início precisa ser antes do fim.' };
+  const agora = new Date().toISOString();
+  if (id) {
+    const p = (await q(sb.from('projetos_foto').select('*').eq('tenant_id', tenantId).eq('id', id)))[0]; if (!p) return { status: 404, erro: 'Projeto não encontrado.' };
+    if ('status' in b) d.status = b.status === 'encerrado' ? 'encerrado' : 'ativo';
+    return { projeto: (await q(sb.from('projetos_foto').update({ ...d, atualizado_em: agora }).eq('tenant_id', tenantId).eq('id', id).select()))[0] };
+  }
+  const dup = (await q(sb.from('projetos_foto').select('*').eq('tenant_id', tenantId))).find((p) => p.status === 'ativo' && p.nome.toLowerCase() === nome.toLowerCase());
+  if (dup) return { status: 409, erro: `Já existe um projeto ativo com o nome "${nome}".` };
+  return { projeto: (await q(sb.from('projetos_foto').insert([{ ...d, tenant_id: tenantId, status: 'ativo', criado_por: quem?.nome || null, criado_em: agora, atualizado_em: agora }]).select()))[0] };
+}
+
+module.exports = { listarProjetos, salvarProjeto, EXEMPLOS, TIPOS, validarModelo, listarModelos, salvarModelo, ativarModelo, enviarFoto, listarFotos };

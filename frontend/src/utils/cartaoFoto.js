@@ -28,7 +28,7 @@ export function alturaCartao(modelo, w) {
 
 /** desenha e devolve a altura. dados = { modelo, valores, obs, empresa, logo (HTMLImageElement|null), tecnico, quando, gps, id } */
 export function desenharCartao(ctx, x, y, w, dados = {}) {
-  const { modelo = {}, valores = {}, obs = "", empresa = "", logo = null, tecnico = "", quando = Date.now(), gps = null, id = "" } = dados;
+  const { modelo = {}, valores = {}, obs = "", empresa = "", logo = null, tecnico = "", quando = Date.now(), gps = null, id = "", projeto = "" } = dados;
   const u = w / 400; const h = alturaCartao(modelo, w); const { lDest, grade } = linhas(modelo); const P = 8 * u; const iw = w - 2 * P;
   const fonte = (px, peso = 400) => `${peso} ${px * u}px Arial, Helvetica, sans-serif`;
   ctx.save();
@@ -66,7 +66,7 @@ export function desenharCartao(ctx, x, y, w, dados = {}) {
     ctx.fillStyle = AZUL; ctx.font = fonte(10, 700); quebra(ctx, obs, iw - 50 * u, 3).forEach((l, i) => ctx.fillText(l, x + P + 34 * u, cy + 8 * u + i * 12 * u)); cy += 42 * u; }
   // rodapé automático
   ctx.fillStyle = "#111"; ctx.font = fonte(7.5, 700); ctx.textAlign = "left";
-  ctx.fillText(corta(ctx, `👷 ${tecnico || "—"}   🕒 ${quandoBR(quando)}`, iw), x + P, cy + 9 * u);
+  ctx.fillText(corta(ctx, `👷 ${tecnico || "—"}   🕒 ${quandoBR(quando)}${projeto ? `   📁 ${projeto}` : ""}`, iw), x + P, cy + 9 * u);
   ctx.font = fonte(7.5); ctx.fillText(corta(ctx, `📍 ${gpsTxt(gps)}${id ? `   ID ${id}` : ""}   · QuotaFlow`, iw), x + P, cy + 21 * u);
   ctx.restore();
   return h;

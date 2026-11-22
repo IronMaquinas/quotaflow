@@ -11,6 +11,8 @@ import { logoEmpresa, dadosEmpresa } from "../../utils/logoEmpresa";
 const usuarioLocal = () => { try { return JSON.parse(localStorage.getItem("usuario") || "{}"); } catch { return {}; } };
 const chaveTenant = () => { const u = usuarioLocal(); return String(u.tenant_id ?? u.tenantId ?? u.email ?? "t"); };
 const ULT = "qfCartaoUltimo";
+const PJ_CACHE = "qfProjetosFoto"; // E2: lista de projetos guardada no aparelho → escolher projeto sem sinal
+const dBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "");
 
 function Previa({ modelo, largura = 360 }) {
   const ref = useRef(null);
@@ -29,16 +31,20 @@ export default function TelaFotoCartao({ C, s, embutida = false }) {
   const ult = (() => { try { return JSON.parse(localStorage.getItem(ULT) || "{}"); } catch { return {}; } })();
   const [modeloId, setModeloId] = useState(ult.modelo_id || ""); const [ref, setRef] = useState(ult.referencia || ""); const [cam, setCam] = useState(false); const [cartao, setCartao] = useState(ult.cartao || null);
   const [fila, setFila] = useState({ pendentes: 0, erros: 0 }); const [refs, setRefs] = useState([]); const [persist, setPersist] = useState(null);
+  const lerPj = () => { try { return JSON.parse(localStorage.getItem(PJ_CACHE) || "null"); } catch { return null; } };
+  const [P, setP] = useState(lerPj); const [projetoId, setProjetoId] = useState(ult.projeto_id || ""); const [novoPj, setNovoPj] = useState(null); const [abrirPj, setAbrirPj] = useState(null);
+  const carregarPj = () => apiService.get(`/foto-cartao/projetos${podeEditar ? "?todos=1" : ""}`).then((r) => { setP(r); try { localStorage.setItem(PJ_CACHE, JSON.stringify(r)); } catch { /* ok */ } }).catch(() => {});
   const tenant = chaveTenant();
   const carregar = () => apiService.get(`/foto-cartao/modelos${podeEditar ? "?todos=1" : ""}`).then((r) => { setM(r); setErro(""); }).catch((e) => setErro(e?.response?.data?.erro || e.message));
   const sincronizar = async () => { const r = await Fila.sincronizar(tenant, (corpo) => apiService.post("/foto-cartao/fotos", corpo)); const l = await Fila.listar(tenant); setFila({ pendentes: l.filter((x) => x.status !== "erro").length, erros: l.filter((x) => x.status === "erro").length, lista: l }); return r; };
-  useEffect(() => { Fila.pedirPersistencia().then(setPersist); carregar(); sincronizar(); apiService.get("/foto-cartao/fotos?limite=1").then((r) => setRefs(r.referencias || [])).catch(() => {}); const f = () => sincronizar(); window.addEventListener("online", f); const t = setInterval(f, 30000); return () => { window.removeEventListener("online", f); clearInterval(t); }; }, []); // eslint-disable-line
+  useEffect(() => { Fila.pedirPersistencia().then(setPersist); carregar(); carregarPj(); sincronizar(); apiService.get("/foto-cartao/fotos?limite=1").then((r) => setRefs(r.referencias || [])).catch(() => {}); const f = () => sincronizar(); window.addEventListener("online", f); const t = setInterval(f, 30000); return () => { window.removeEventListener("online", f); clearInterval(t); }; }, []); // eslint-disable-line
   const ativos = (M?.modelos || []).filter((m) => m.ativo !== false); const modelo = ativos.find((m) => String(m.id) === String(modeloId)) || null;
+  const pjAtivos = (P?.projetos || []).filter((p) => p.status === "ativo"); const projeto = pjAtivos.find((p) => String(p.id) === String(projetoId)) || null;
   const card = { ...s.card, padding: "16px 18px" }; const lab = { fontSize: 11.5, color: C.textSub, display: "block", marginBottom: 3 };
-  const abas = [["tirar", "📸 Tirar foto"], ["fotos", "🖼 Fotos"], ...(podeEditar ? [["modelos", "⚙ Modelos de cartão"]] : [])];
+  const abas = [["tirar", "📸 Tirar foto"], ["projetos", "📁 Projetos"], ["fotos", "🖼 Fotos"], ...(podeEditar ? [["modelos", "⚙ Modelos de cartão"]] : [])];
 
-  if (cam && modelo) return <CameraCartao modelo={modelo} referencia={ref} tenant={tenant} tecnico={u.nome || ""} valoresIniciais={cartao && String(cartao.modelo_id) === String(modelo.id) ? cartao : null}
-    onFoto={(c) => { const x = { ...c, modelo_id: modelo.id }; setCartao(x); try { localStorage.setItem(ULT, JSON.stringify({ modelo_id: modelo.id, referencia: ref, cartao: x })); } catch { /* ok */ } return sincronizar(); }}
+  if (cam && modelo && projeto) return <CameraCartao modelo={modelo} projeto={projeto} referencia={ref} tenant={tenant} tecnico={u.nome || ""} valoresIniciais={cartao && String(cartao.modelo_id) === String(modelo.id) ? cartao : null}
+    onFoto={(c) => { const x = { ...c, modelo_id: modelo.id }; setCartao(x); try { localStorage.setItem(ULT, JSON.stringify({ modelo_id: modelo.id, projeto_id: projeto.id, referencia: ref, cartao: x })); } catch { /* ok */ } return sincronizar(); }}
     onFechar={() => { setCam(false); sincronizar(); }} />;
   return (
     <div style={{ padding: embutida ? "14px" : "20px clamp(12px, 3vw, 28px)", display: "grid", gap: 14 }}>
@@ -58,12 +64,43 @@ export default function TelaFotoCartao({ C, s, embutida = false }) {
         {M && !ativos.length && <div style={{ fontSize: 13, color: C.textSub }}>Nenhum modelo de cartão ainda.{podeEditar ? " Crie em ⚙ Modelos de cartão (há exemplos prontos de pá eólica)." : " Peça ao gestor para criar o modelo."}</div>}
         {ativos.length > 0 && <>
           <div><span style={lab}>CARTÃO</span><div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{ativos.map((m) => <button key={m.id} type="button" onClick={() => setModeloId(m.id)} style={{ padding: "10px 14px", borderRadius: 10, cursor: "pointer", border: `2px solid ${String(modeloId) === String(m.id) ? C.accent : C.border}`, background: "transparent", color: C.text, fontWeight: 600 }}>{m.nome}</button>)}</div></div>
-          <div><span style={lab}>REFERÊNCIA (parque, aerogerador, equipamento…)</span><input value={ref} list="qf-refs-cartao" onChange={(e) => setRef(e.target.value)} placeholder="Ex.: Parque Serra Azul · WTG-07" style={{ ...s.input, width: "100%", maxWidth: 420 }} /><datalist id="qf-refs-cartao">{refs.map((r) => <option key={r} value={r} />)}</datalist></div>
+          <div><span style={lab}>PROJETO *</span><div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+            {pjAtivos.map((p) => <button key={p.id} type="button" onClick={() => setProjetoId(p.id)} style={{ padding: "10px 14px", borderRadius: 10, cursor: "pointer", border: `2px solid ${String(projetoId) === String(p.id) ? C.accent : C.border}`, background: "transparent", color: C.text, fontWeight: 600, textAlign: "left" }}>📁 {p.nome}{p.cliente_nome ? <span style={{ display: "block", fontSize: 11, color: C.textSub, fontWeight: 400 }}>{p.cliente_nome}{p.local ? ` · ${p.local}` : ""}</span> : null}</button>)}
+            {podeEditar && <button type="button" onClick={() => setNovoPj({ nome: "", cliente_nome: "", local: "", descricao: "", inicio: "", fim: "" })} style={{ ...s.btn(false), cursor: "pointer" }}>＋ Novo projeto</button>}
+            {!pjAtivos.length && !podeEditar && <span style={{ fontSize: 12.5, color: C.textSub }}>Nenhum projeto ativo — peça ao gestor para abrir o projeto.</span>}
+          </div></div>
+          <div><span style={lab}>AEROGERADOR / DETALHE (opcional)</span><input value={ref} list="qf-refs-cartao" onChange={(e) => setRef(e.target.value)} placeholder="Ex.: WTG-07" style={{ ...s.input, width: "100%", maxWidth: 420 }} /><datalist id="qf-refs-cartao">{refs.map((r) => <option key={r} value={r} />)}</datalist></div>
           {modelo && <Previa modelo={modelo} />}
-          <button type="button" disabled={!modelo} onClick={() => { if (!navigator.mediaDevices?.getUserMedia) return setMsg("⚠ Este navegador não libera a câmera. Use o Safari (iPhone) ou o Chrome (Android)."); setMsg(""); setCam(true); }} style={{ ...s.btn(true), cursor: "pointer", padding: "14px 20px", fontSize: 16, opacity: modelo ? 1 : 0.5, justifySelf: "start" }}>📸 Abrir câmera</button>
+          <button type="button" disabled={!modelo || !projeto} onClick={() => { if (!navigator.mediaDevices?.getUserMedia) return setMsg("⚠ Este navegador não libera a câmera. Use o Safari (iPhone) ou o Chrome (Android)."); setMsg(""); setCam(true); }} style={{ ...s.btn(true), cursor: "pointer", padding: "14px 20px", fontSize: 16, opacity: modelo && projeto ? 1 : 0.5, justifySelf: "start" }}>📸 Abrir câmera</button>
+          {modelo && !projeto && <div style={{ fontSize: 12, color: C.warn }}>Escolha o projeto — toda foto nasce dentro de um projeto.</div>}
         </>}
       </div>}
-      {aba === "fotos" && <Galeria C={C} s={s} modelos={M?.modelos || []} />}
+      {aba === "fotos" && <Galeria C={C} s={s} modelos={M?.modelos || []} projetos={P?.projetos || []} />}
+      {aba === "projetos" && !abrirPj && <div style={{ display: "grid", gap: 10 }}>
+        {podeEditar && <button type="button" onClick={() => setNovoPj({ nome: "", cliente_nome: "", local: "", descricao: "", inicio: "", fim: "" })} style={{ ...s.btn(true), cursor: "pointer", justifySelf: "start" }}>＋ Novo projeto</button>}
+        {!(P?.projetos || []).length && <div style={{ ...card, color: C.muted, fontSize: 13 }}>Nenhum projeto ainda.</div>}
+        {(P?.projetos || []).map((p) => <button key={p.id} type="button" onClick={() => setAbrirPj(p)} style={{ ...card, textAlign: "left", cursor: "pointer", color: C.text, opacity: p.status === "encerrado" ? 0.6 : 1, display: "flex", gap: 12, flexWrap: "wrap", alignItems: "center" }}>
+          <div style={{ flex: "1 1 240px" }}><div style={{ fontWeight: 700 }}>📁 {p.nome}{p.status === "encerrado" ? " (encerrado)" : ""}</div><div style={{ fontSize: 12, color: C.textSub }}>{[p.cliente_nome, p.local, p.inicio && `${dBR(p.inicio)}${p.fim ? ` a ${dBR(p.fim)}` : ""}`].filter(Boolean).join(" · ") || "—"}</div>{p.tecnicos?.length > 0 && <div style={{ fontSize: 11.5, color: C.muted }}>👷 {p.tecnicos.join(", ")}</div>}</div>
+          <div style={{ textAlign: "right" }}><div style={{ fontSize: 20, fontWeight: 800 }}>{p.fotos}</div><div style={{ fontSize: 11, color: C.textSub }}>fotos{p.fotos_hoje ? ` · ${p.fotos_hoje} hoje` : ""}</div></div></button>)}
+        {P?.sem_projeto > 0 && <div style={{ fontSize: 12, color: C.muted }}>{P.sem_projeto} foto(s) antigas sem projeto — veja em 🖼 Fotos.</div>}
+      </div>}
+      {aba === "projetos" && abrirPj && <div style={{ display: "grid", gap: 10 }}>
+        <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}><button type="button" onClick={() => { setAbrirPj(null); carregarPj(); }} style={{ background: "none", border: "none", color: C.textSub, cursor: "pointer", padding: 0 }}>← Projetos</button>
+          <div style={{ fontSize: 18, fontWeight: 800, flex: 1 }}>📁 {abrirPj.nome}</div>
+          {podeEditar && <button type="button" onClick={() => setNovoPj({ ...abrirPj, inicio: abrirPj.inicio || "", fim: abrirPj.fim || "" })} style={{ ...s.btn(false), cursor: "pointer" }}>✎ Editar</button>}
+          {podeEditar && <button type="button" onClick={async () => { try { const r = await apiService.put(`/foto-cartao/projetos/${abrirPj.id}`, { ...abrirPj, status: abrirPj.status === "ativo" ? "encerrado" : "ativo" }); setAbrirPj({ ...abrirPj, ...r.projeto }); carregarPj(); } catch (e) { setMsg(`⚠ ${e?.response?.data?.erro || e.message}`); } }} style={{ ...s.btn(false), cursor: "pointer" }}>{abrirPj.status === "ativo" ? "Encerrar projeto" : "Reabrir projeto"}</button>}</div>
+        <div style={{ fontSize: 12.5, color: C.textSub }}>{[abrirPj.cliente_nome, abrirPj.local, abrirPj.descricao].filter(Boolean).join(" · ")} · atualiza sozinho a cada 20 s</div>
+        <Galeria C={C} s={s} modelos={M?.modelos || []} projetos={P?.projetos || []} projetoFixo={abrirPj.id} />
+      </div>}
+      {novoPj && <div onClick={() => setNovoPj(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.55)", zIndex: 400, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
+        <div onClick={(e) => e.stopPropagation()} style={{ ...card, width: "min(520px, 100%)", display: "grid", gap: 10 }}>
+          <div style={{ fontWeight: 800, fontSize: 16 }}>{novoPj.id ? "✎ Editar projeto" : "＋ Novo projeto"}</div>
+          {[["nome", "NOME DO PROJETO *", "Ex.: Parque Serra Azul — campanha nov/2026"], ["cliente_nome", "CLIENTE", "Ex.: Eólica XYZ"], ["local", "LOCAL", "Ex.: Parque Serra Azul — Areia Branca/RN"]].map(([k, l, ph]) => <div key={k}><span style={lab}>{l}</span><input value={novoPj[k] || ""} onChange={(e) => setNovoPj({ ...novoPj, [k]: e.target.value })} placeholder={ph} style={{ ...s.input, width: "100%" }} /></div>)}
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><div style={{ flex: "1 1 140px" }}><span style={lab}>INÍCIO</span><input type="date" value={novoPj.inicio || ""} onChange={(e) => setNovoPj({ ...novoPj, inicio: e.target.value })} style={{ ...s.input, width: "100%" }} /></div><div style={{ flex: "1 1 140px" }}><span style={lab}>FIM</span><input type="date" value={novoPj.fim || ""} onChange={(e) => setNovoPj({ ...novoPj, fim: e.target.value })} style={{ ...s.input, width: "100%" }} /></div></div>
+          <div><span style={lab}>DESCRIÇÃO</span><textarea value={novoPj.descricao || ""} onChange={(e) => setNovoPj({ ...novoPj, descricao: e.target.value })} rows={2} style={{ ...s.input, width: "100%" }} /></div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button type="button" onClick={() => setNovoPj(null)} style={{ ...s.btn(false), cursor: "pointer" }}>Voltar</button>
+            <button type="button" onClick={async () => { try { const r = novoPj.id ? await apiService.put(`/foto-cartao/projetos/${novoPj.id}`, novoPj) : await apiService.post("/foto-cartao/projetos", novoPj); setNovoPj(null); setMsg(`Projeto "${r.projeto.nome}" salvo.`); if (!novoPj.id) setProjetoId(r.projeto.id); if (abrirPj) setAbrirPj({ ...abrirPj, ...r.projeto }); carregarPj(); } catch (e) { setMsg(`⚠ ${e?.response?.data?.erro || e.message}`); } }} style={{ ...s.btn(true), cursor: "pointer" }}>Salvar projeto</button></div>
+        </div></div>}
       {aba === "modelos" && podeEditar && M && <Modelos C={C} s={s} M={M} onMudou={carregar} setMsg={setMsg} />}
     </div>
   );
@@ -78,14 +115,15 @@ async function copiasNoAparelho(lista, setMsg) {
   setMsg(`${arqs.length} cópia(s) baixada(s).`);
 }
 
-function Galeria({ C, s, modelos }) {
-  const [f, setF] = useState({ busca: "", modelo_id: "", de: "", ate: "" }); const [L, setL] = useState(null); const [ver, setVer] = useState(null);
+function Galeria({ C, s, modelos, projetos = [], projetoFixo = null }) {
+  const [f, setF] = useState({ busca: "", modelo_id: "", de: "", ate: "", projeto_id: projetoFixo ? String(projetoFixo) : "" }); const [L, setL] = useState(null); const [ver, setVer] = useState(null);
   const buscar = () => { const p = new URLSearchParams(Object.entries(f).filter(([, v]) => v)); apiService.get(`/foto-cartao/fotos?${p}`).then(setL).catch(() => setL({ fotos: [], total: 0 })); };
-  useEffect(() => { const t = setTimeout(buscar, 300); return () => clearTimeout(t); }, [JSON.stringify(f)]); // eslint-disable-line
+  useEffect(() => { const t = setTimeout(buscar, 300); const vivo = projetoFixo ? setInterval(buscar, 20000) : null; return () => { clearTimeout(t); if (vivo) clearInterval(vivo); }; }, [JSON.stringify(f)]); // eslint-disable-line
   const card = { ...s.card, padding: "14px 16px" };
   return <div style={{ display: "grid", gap: 12 }}>
     <div style={{ ...card, display: "flex", gap: 8, flexWrap: "wrap" }}>
       <input value={f.busca} onChange={(e) => setF({ ...f, busca: e.target.value })} placeholder="Buscar: pá, defeito, referência, técnico…" style={{ ...s.input, flex: "2 1 220px" }} />
+      {!projetoFixo && <select value={f.projeto_id} onChange={(e) => setF({ ...f, projeto_id: e.target.value })} style={{ ...s.input, flex: "1 1 160px" }}><option value="">Todos os projetos</option>{projetos.map((p) => <option key={p.id} value={p.id}>📁 {p.nome}</option>)}<option value="sem">Sem projeto</option></select>}
       <select value={f.modelo_id} onChange={(e) => setF({ ...f, modelo_id: e.target.value })} style={{ ...s.input, flex: "1 1 160px" }}><option value="">Todos os cartões</option>{modelos.map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}</select>
       <input type="date" value={f.de} onChange={(e) => setF({ ...f, de: e.target.value })} style={{ ...s.input, flex: "1 1 130px" }} /><input type="date" value={f.ate} onChange={(e) => setF({ ...f, ate: e.target.value })} style={{ ...s.input, flex: "1 1 130px" }} />
     </div>
