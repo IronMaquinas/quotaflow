@@ -463,22 +463,20 @@ const ESPERADO = {
   'services/fotoCartao.js': '55cbe0204bb27c863d396a12acef7021', // etapa E2.2
   'routes/fotoCartao.js': '6abb52929fafa7df1043f4cd5e478088', // etapa E2.2
   'front:TelaFotoCartao.jsx': '87ee843bec06c0f96a49a5b7afefb876', // etapa E2.2
-  'front:CameraCartao.jsx': '1eedbf8dde278387afd3c8d3c643f926', // etapa E2
+  'front:CameraCartao.jsx': '235c89a1a50716544d1912758319db38', // etapa E2.3
   'front:cartaoFoto.js': '82e8cd922db73e1d60c5fa8c1e7f07fd', // etapa E2
   'front:filaFotosCartao.js': '9f778fd0205ed8baf8bc25e42d3de814', // etapa E1.1
   'migrations/122_projetos_foto.sql': '478036859ffef209f3122d716fbe8cb4', // etapa E2 (novo)
   'migrations/123_projetos_foto_local.sql': 'f3d5b1528213730496c8e57466045266', // etapa E2.1 (novo)
   'front:MapaFotos.jsx': '6dec7b41b8f84b3bed95a133e1df6f34', // etapa E2.2
   'migrations/124_fotos_cartao_lixeira.sql': '6136b82e2c3b4656a9036865e6df2a43', // etapa E2.2 (novo)
-  'front:VisualizadorFoto.jsx': '87b7eeec390cc2181ae173b79d9debaf', // etapa E2.2 (novo)
+  'front:VisualizadorFoto.jsx': '9f7ff68d11fc6ec33e9a904c50ffba3c', // etapa E2.3
 };
 
-// Antes de copiar a etapa E2.2 — base: E2.1.1 (5e129f3)
+// Antes de copiar a etapa E2.3 — base: E2.2 (fc32628)
 const ANTES = {
-  'services/fotoCartao.js': 'd2886d8689f4548b237c0784195b7b5f',
-  'routes/fotoCartao.js': '32f3a479e011ff7c689824614afc8425',
-  'front:TelaFotoCartao.jsx': 'aecb5be2d90df8c8910ca0b74fd8e675',
-  'front:MapaFotos.jsx': 'e189d99c9260412dc0d9357a1829f1b1',
+  'front:VisualizadorFoto.jsx': '87b7eeec390cc2181ae173b79d9debaf',
+  'front:CameraCartao.jsx': '1eedbf8dde278387afd3c8d3c643f926',
 };
 
 const RAIZ = process.cwd();
@@ -516,7 +514,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a E2.2)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a E2.3)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

@@ -102,7 +102,7 @@ export default function CameraCartao({ modelo, projeto = null, referencia, tenan
   const fechar = () => (pend > 0 ? setSair(true) : onFechar());
 
   const btnR = { background: "rgba(0,0,0,.55)", color: "#fff", border: "1px solid rgba(255,255,255,.35)", borderRadius: 22, padding: "9px 14px", fontSize: 14, fontWeight: 600, cursor: "pointer" };
-  const inp = { width: "100%", padding: "11px 10px", borderRadius: 8, border: "1px solid #94a3b8", fontSize: 16, boxSizing: "border-box", background: "#fff", color: "#111" };
+  const inp = { width: "100%", padding: "11px 10px", borderRadius: 8, border: "1px solid #334155", fontSize: 16, boxSizing: "border-box", background: "#0b1220", color: "#e5e7eb" };
   return (
     <div style={{ position: "fixed", inset: 0, background: "#000", zIndex: Z_TOPO, display: "flex", flexDirection: lado ? "row" : "column", touchAction: "none" }}>
       <div ref={caixa} style={{ position: "relative", flex: 1, overflow: "hidden" }}>
@@ -131,21 +131,21 @@ export default function CameraCartao({ modelo, projeto = null, referencia, tenan
         <button type="button" onClick={() => setForm(true)} style={{ ...btnR, width: 64, height: 64, borderRadius: 12, padding: 0, fontSize: 12 }}>✎<br />Cartão</button>
       </div>
       {sair && <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: Z_TOPO + 2, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-        <div style={{ background: "#fff", color: "#111", borderRadius: 12, padding: 18, maxWidth: 420, display: "grid", gap: 10 }}>
+        <div style={{ background: "#111827", color: "#e5e7eb", border: "1px solid #334155", borderRadius: 12, padding: 18, maxWidth: 420, display: "grid", gap: 10 }}>
           <b>📶 {pend} foto(s) guardada(s) no aparelho, ainda sem enviar</b>
           <div style={{ fontSize: 14 }}>Elas não se perdem ao fechar: sobem sozinhas quando o QuotaFlow for aberto com internet. Só <b>não apague os dados do navegador</b> nem desinstale até aparecer "enviada".</div>
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button type="button" onClick={() => setSair(false)} style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #94a3b8", background: "#fff" }}>Voltar à câmera</button><button type="button" onClick={onFechar} style={{ padding: "10px 14px", borderRadius: 8, border: "none", background: "#1d4ed8", color: "#fff", fontWeight: 700 }}>Fechar</button></div>
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button type="button" onClick={() => setSair(false)} style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #334155", background: "transparent", color: "#e5e7eb" }}>Voltar à câmera</button><button type="button" onClick={onFechar} style={{ padding: "10px 14px", borderRadius: 8, border: "none", background: "#1d4ed8", color: "#fff", fontWeight: 700 }}>Fechar</button></div>
         </div></div>}
       {form && <div onClick={() => setForm(false)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.4)", zIndex: Z_TOPO + 1, display: "flex", alignItems: "flex-end" }}>
-        <div onClick={(e) => e.stopPropagation()} style={{ background: "#f8fafc", color: "#111", width: "100%", maxHeight: "78vh", overflowY: "auto", borderRadius: "14px 14px 0 0", padding: "14px 14px calc(14px + env(safe-area-inset-bottom))", display: "grid", gap: 10 }}>
+        <div onClick={(e) => e.stopPropagation()} style={{ background: "#111827", color: "#e5e7eb", borderTop: "1px solid #334155", width: "100%", maxHeight: "78vh", overflowY: "auto", borderRadius: "14px 14px 0 0", padding: "14px 14px calc(14px + env(safe-area-inset-bottom))", display: "grid", gap: 10 }}>
           <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}><b>{modelo.titulo}</b><button type="button" onClick={() => setForm(false)} style={{ background: "#1d4ed8", color: "#fff", border: "none", borderRadius: 8, padding: "10px 18px", fontSize: 15, fontWeight: 700 }}>Pronto</button></div>
           <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
-            {(modelo.campos || []).map((c) => <label key={c.id} style={{ gridColumn: c.largura === 2 ? "1 / -1" : "auto", fontSize: 12, color: "#475569", display: "grid", gap: 3 }}>{c.rotulo}{c.unidade ? ` (${c.unidade})` : ""}
+            {(modelo.campos || []).map((c) => <label key={c.id} style={{ gridColumn: c.largura === 2 ? "1 / -1" : "auto", fontSize: 12, color: "#94a3b8", display: "grid", gap: 3 }}>{c.rotulo}{c.unidade ? ` (${c.unidade})` : ""}
               {c.tipo === "opcoes" ? <select value={val[c.id] || ""} onChange={(e) => setVal({ ...val, [c.id]: e.target.value })} style={inp}><option value="">—</option>{c.opcoes.map((o) => <option key={o} value={o}>{o}</option>)}</select>
                 : <input value={val[c.id] || ""} inputMode={c.tipo === "numero" ? "decimal" : "text"} onChange={(e) => setVal({ ...val, [c.id]: e.target.value })} style={inp} />}</label>)}
           </div>
-          {modelo.obs !== false && <label style={{ fontSize: 12, color: "#475569", display: "grid", gap: 3 }}>Observações<textarea value={obs} onChange={(e) => setObs(e.target.value)} rows={2} style={inp} /></label>}
-          <button type="button" onClick={() => { setVal({}); setObs(""); }} style={{ background: "transparent", border: "1px solid #94a3b8", borderRadius: 8, padding: 10, color: "#334155" }}>Limpar o cartão (próximo defeito)</button>
+          {modelo.obs !== false && <label style={{ fontSize: 12, color: "#94a3b8", display: "grid", gap: 3 }}>Observações<textarea value={obs} onChange={(e) => setObs(e.target.value)} rows={2} style={inp} /></label>}
+          <button type="button" onClick={() => { setVal({}); setObs(""); }} style={{ background: "transparent", border: "1px solid #334155", borderRadius: 8, padding: 10, color: "#e5e7eb" }}>Limpar o cartão (próximo defeito)</button>
         </div></div>}
     </div>
   );

@@ -57,12 +57,12 @@ export default function VisualizadorFoto({ lista, inicio = 0, onFechar, onMudou 
         <div>👷 {x.tecnico} · 📍 {x.gps ? <a href={`https://maps.google.com/?q=${x.gps.lat},${x.gps.lng}`} target="_blank" rel="noreferrer" style={{ color: "#93c5fd" }}>{gpsTxt(x.gps)}</a> : "sem GPS"}</div>
         <div style={{ color: "#94a3b8", wordBreak: "break-all", fontSize: 11 }}>SHA-256 {x.hash}</div></div>}
       {conf && <div style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: Z + 1, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
-        <div style={{ background: "#fff", color: "#111", borderRadius: 12, padding: 18, width: "min(440px, 100%)", display: "grid", gap: 10 }}>
-          <b>🗑 Mandar esta foto para a lixeira?</b>
+        <div style={{ background: "#111827", color: "#e5e7eb", border: "1px solid #334155", borderRadius: 12, padding: 18, width: "min(440px, 100%)", display: "grid", gap: 10 }}>
+          <b>🗑 Enviar esta foto para a lixeira?</b>
           <div style={{ fontSize: 13.5 }}>Ela some das galerias, do mapa e dos relatórios, mas fica <b>30 dias na lixeira</b> para restaurar. Depois disso é apagada de vez.</div>
-          <textarea value={conf.motivo} onChange={(e) => setConf({ motivo: e.target.value })} rows={2} placeholder="Motivo (ex.: foto tremida, duplicada, defeito errado)…" style={{ padding: 10, borderRadius: 8, border: "1px solid #94a3b8", fontSize: 15 }} />
-          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button type="button" onClick={() => setConf(null)} style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #94a3b8", background: "#fff" }}>Voltar</button>
-            <button type="button" disabled={ocup || conf.motivo.trim().length < 5} onClick={() => acao(() => apiService.post(`/foto-cartao/fotos/${x.id}/excluir`, conf), "Foto enviada para a lixeira (30 dias para restaurar).")} style={{ padding: "10px 14px", borderRadius: 8, border: "none", background: "#dc2626", color: "#fff", fontWeight: 700, opacity: conf.motivo.trim().length < 5 ? 0.5 : 1 }}>Mandar para a lixeira</button></div>
+          <textarea value={conf.motivo} onChange={(e) => setConf({ motivo: e.target.value })} rows={2} placeholder="Motivo (ex.: foto tremida, duplicada, defeito errado)…" style={{ padding: 10, borderRadius: 8, border: "1px solid #334155", background: "#0b1220", color: "#e5e7eb", fontSize: 15 }} />
+          <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button type="button" onClick={() => setConf(null)} style={{ padding: "10px 14px", borderRadius: 8, border: "1px solid #334155", background: "transparent", color: "#e5e7eb", cursor: "pointer" }}>Voltar</button>
+            <button type="button" disabled={ocup || conf.motivo.trim().length < 5} onClick={() => acao(() => apiService.post(`/foto-cartao/fotos/${x.id}/excluir`, conf), "Foto enviada para a lixeira (30 dias para restaurar).")} style={{ padding: "10px 14px", borderRadius: 8, border: "none", background: "#dc2626", color: "#fff", fontWeight: 700, opacity: conf.motivo.trim().length < 5 ? 0.5 : 1, cursor: "pointer" }}>Enviar para a lixeira</button></div>
         </div></div>}
     </div>
   );
