@@ -6,6 +6,7 @@ import apiService from "../../services/apiService";
 import CameraCartao from "./CameraCartao";
 import MapaFotos, { SeletorLocal } from "./MapaFotos";
 import VisualizadorFoto from "./VisualizadorFoto";
+import Defeitos from "./Defeitos";
 import * as Fila from "../../utils/filaFotosCartao";
 import { desenharCartao, alturaCartao, carregarImagem, quandoBR, gpsTxt } from "../../utils/cartaoFoto";
 import { logoEmpresa, dadosEmpresa } from "../../utils/logoEmpresa";
@@ -47,7 +48,7 @@ export default function TelaFotoCartao({ C, s, embutida = false }) {
   const casa = (p, t) => { const q = String(t || "").trim().toLowerCase(); return !q || [p.nome, p.cliente_nome, p.local, p.descricao].some((v) => String(v || "").toLowerCase().includes(q)); };
   const pjAtivos = (P?.projetos || []).filter((p) => p.status === "ativo"); const projeto = pjAtivos.find((p) => String(p.id) === String(projetoId)) || null;
   const card = { ...s.card, padding: "16px 18px" }; const lab = { fontSize: 11.5, color: C.textSub, display: "block", marginBottom: 3 };
-  const abas = [["tirar", "📸 Tirar foto"], ["projetos", "📁 Projetos"], ["mapa", "🗺 Mapa"], ["fotos", "🖼 Fotos"], ...(podeEditar ? [["modelos", "⚙ Modelos de cartão"]] : [])];
+  const abas = [["tirar", "📸 Tirar foto"], ["projetos", "📁 Projetos"], ["defeitos", "🔧 Defeitos"], ["mapa", "🗺 Mapa"], ["fotos", "🖼 Fotos"], ...(podeEditar ? [["modelos", "⚙ Modelos de cartão"]] : [])];
 
   if (cam && modelo && projeto) return <CameraCartao modelo={modelo} projeto={projeto} referencia={ref} tenant={tenant} tecnico={u.nome || ""} valoresIniciais={cartao && String(cartao.modelo_id) === String(modelo.id) ? cartao : null}
     onFoto={(c) => { const x = { ...c, modelo_id: modelo.id }; setCartao(x); try { localStorage.setItem(ULT, JSON.stringify({ modelo_id: modelo.id, projeto_id: projeto.id, referencia: ref, cartao: x })); } catch { /* ok */ } return sincronizar(); }}
@@ -84,6 +85,7 @@ export default function TelaFotoCartao({ C, s, embutida = false }) {
           {modelo && !projeto && <div style={{ fontSize: 12, color: C.warn }}>Escolha o projeto — toda foto nasce dentro de um projeto.</div>}
         </>}
       </div>}
+      {aba === "defeitos" && <Defeitos C={C} s={s} projetos={P?.projetos || []} podeEditar={podeEditar} />}
       {aba === "mapa" && <MapaFotos C={C} s={s} />}
       {aba === "fotos" && <Galeria C={C} s={s} modelos={M?.modelos || []} projetos={P?.projetos || []} />}
       {aba === "projetos" && !abrirPj && <div style={{ display: "grid", gap: 10 }}>
@@ -173,11 +175,13 @@ function Modelos({ C, s, M, onMudou, setMsg }) {
     <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
       <div style={{ flex: "3 1 420px", display: "grid", gap: 6 }}>
         <span style={lab}>CAMPOS (o cabeçalho com logo e o rodapé técnico · data/hora · GPS entram sozinhos)</span>
+        <span style={{ fontSize: 11.5, color: C.muted }}>🔧 Marque qual campo é a <b>Pá</b> e qual é o <b>Nº do defeito</b> (e, se houver, o Aerogerador): as fotos com os mesmos valores viram um só defeito para a triagem.</span>
         {ed.campos.map((c, i) => <div key={i} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", borderTop: `1px solid ${C.border}`, paddingTop: 6 }}>
           <input value={c.rotulo} onChange={(e) => campo(i, "rotulo", e.target.value)} placeholder="Rótulo" style={{ ...s.input, flex: "2 1 140px" }} />
           <select value={c.tipo} onChange={(e) => campo(i, "tipo", e.target.value)} style={{ ...s.input, flex: "1 1 110px" }}>{Object.entries(M.TIPOS || {}).map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select>
           {c.tipo === "opcoes" && <input value={(c.opcoes || []).join("; ")} onChange={(e) => campo(i, "opcoes", e.target.value.split(";").map((x) => x.trimStart()))} placeholder="Opções separadas por ;" style={{ ...s.input, flex: "2 1 160px" }} />}
           <input value={c.unidade || ""} onChange={(e) => campo(i, "unidade", e.target.value)} placeholder="un." style={{ ...s.input, width: 56 }} />
+          <select value={c.papel || ""} title="Este campo identifica o defeito?" onChange={(e) => campo(i, "papel", e.target.value || null)} style={{ ...s.input, flex: "1 1 130px" }}><option value="">Não identifica</option>{Object.entries(M.PAPEIS || {}).map(([k, n]) => <option key={k} value={k}>Identifica: {n}</option>)}</select>
           <select value={c.destaque ? "d" : String(c.largura || 1)} onChange={(e) => setEd({ ...ed, campos: ed.campos.map((x, j) => (j === i ? { ...x, destaque: e.target.value === "d", largura: e.target.value === "2" ? 2 : 1 } : x)) })} style={{ ...s.input, flex: "1 1 120px" }}><option value="1">Meia linha</option><option value="2">Linha inteira</option><option value="d">Caixa grande</option></select>
           <button type="button" onClick={() => mover(i, -1)} style={{ ...s.btn(false), cursor: "pointer", padding: "4px 8px" }}>↑</button><button type="button" onClick={() => mover(i, 1)} style={{ ...s.btn(false), cursor: "pointer", padding: "4px 8px" }}>↓</button>
           <button type="button" onClick={() => setEd({ ...ed, campos: ed.campos.filter((_, j) => j !== i) })} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer" }}>✕</button>

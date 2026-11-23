@@ -5,7 +5,7 @@
 //   Data de conclusão = a última mudança para "Concluída" no histórico (tarefas antigas, sem histórico: sem data).
 import { logoHtml } from "./logoEmpresa";
 
-export const TIPOS_REL = { TR: "Transporte", NC: "Não conformidade", AU: "Auditoria", MT: "Manutenção", CM: "Comercial", HR: "Pessoas", GN: "Geral", KPI: "Meta (KPI)", AC: "Análise crítica" };
+export const TIPOS_REL = { TR: "Transporte", NC: "Não conformidade", AU: "Auditoria", MT: "Manutenção", CM: "Comercial", HR: "Pessoas", GN: "Geral", KPI: "Meta (KPI)", AC: "Análise crítica", DF: "Defeito (investigação)" };
 const STATUS = { pendente: "Pendente", em_andamento: "Em andamento", concluida: "Concluída", cancelada: "Cancelada" };
 const ACAO = { criada: "criada", status: "situação", editada: "editada", reclassificada: "reclassificada", anexo: "evidência", anexo_removido: "evidência removida" };
 const esc = (t) => String(t == null ? "" : t).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");

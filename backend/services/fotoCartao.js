@@ -9,17 +9,19 @@ const D = require('./documentos');
 async function q(p) { const { data, error } = await p; if (error) throw new Error(error.message); return data || []; }
 const txt = (v, n) => (v == null ? null : String(v).trim().slice(0, n) || null);
 const TIPOS = { texto: 'Texto', numero: 'Número', opcoes: 'Lista de opções' };
+// E3: campo que IDENTIFICA o defeito (projeto + aerogerador + pá + nº do defeito = um defeito; várias fotos juntas)
+const PAPEIS = { pa: 'Pá', defeito: 'Nº do defeito', aerogerador: 'Aerogerador' };
 
 const EXEMPLOS = [
   { chave: 'ultrassom', nome: 'Etiqueta de ultrassom (pá eólica)', titulo: 'ETIQUETA DE ULTRASSOM', codigo: '', revisao: '', obs: true, campos: [
-    { rotulo: 'Pá', destaque: true }, { rotulo: 'Defeito nº', destaque: true },
+    { rotulo: 'Pá', destaque: true, papel: 'pa' }, { rotulo: 'Defeito nº', destaque: true, papel: 'defeito' },
     { rotulo: 'Posição (tip / root)', largura: 2 },
     { rotulo: 'Casca pressão' }, { rotulo: 'Casca sucção' }, { rotulo: 'Alma LPR' }, { rotulo: 'Alma LSR' }, { rotulo: 'PRA' }, { rotulo: 'RFD' },
     { rotulo: 'Z inicial', tipo: 'numero', unidade: 'mm' }, { rotulo: 'Z final', tipo: 'numero', unidade: 'mm' }, { rotulo: 'A' }, { rotulo: 'AM' }, { rotulo: 'DEF.' }, { rotulo: 'P' },
     { rotulo: 'G1 / G2', largura: 2 }] },
   { chave: 'reparo', nome: 'Registro de reparo (pá eólica)', titulo: 'REGISTRO DE REPARO', codigo: '', revisao: '', obs: true, campos: [
-    { rotulo: 'Aerogerador (WTG)', destaque: true }, { rotulo: 'Pá', tipo: 'opcoes', opcoes: ['A', 'B', 'C'], destaque: true },
-    { rotulo: 'Defeito nº' }, { rotulo: 'Etapa', tipo: 'opcoes', opcoes: ['Antes', 'Durante', 'Depois'] },
+    { rotulo: 'Aerogerador (WTG)', destaque: true, papel: 'aerogerador' }, { rotulo: 'Pá', tipo: 'opcoes', opcoes: ['A', 'B', 'C'], destaque: true, papel: 'pa' },
+    { rotulo: 'Defeito nº', papel: 'defeito' }, { rotulo: 'Etapa', tipo: 'opcoes', opcoes: ['Antes', 'Durante', 'Depois'] },
     { rotulo: 'Bordo / face', tipo: 'opcoes', opcoes: ['Bordo de ataque', 'Bordo de fuga', 'Pressão', 'Sucção'] }, { rotulo: 'Distância da raiz', tipo: 'numero', unidade: 'm' },
     { rotulo: 'Tipo de defeito', tipo: 'opcoes', opcoes: ['Erosão', 'Trinca', 'Delaminação', 'Impacto de raio', 'Lascamento', 'Outro'], largura: 2 },
     { rotulo: 'Comprimento', tipo: 'numero', unidade: 'cm' }, { rotulo: 'Largura', tipo: 'numero', unidade: 'cm' },
@@ -36,7 +38,7 @@ function validarModelo(b = {}) {
     let id = String(c.id || '').replace(/[^a-z0-9_]/gi, '').slice(0, 20) || `c${campos.length + 1}`; while (ids.has(id)) id = `${id}x`; ids.add(id);
     const opcoes = tipo === 'opcoes' ? [...new Set((Array.isArray(c.opcoes) ? c.opcoes : String(c.opcoes || '').split(/[;\n]/)).map((o) => txt(o, 40)).filter(Boolean))].slice(0, 20) : [];
     if (tipo === 'opcoes' && opcoes.length < 2) return { erro: `"${rotulo}": informe ao menos 2 opções.` };
-    campos.push({ id, rotulo, tipo, opcoes, unidade: txt(c.unidade, 10), largura: c.largura === 2 && !c.destaque ? 2 : 1, destaque: !!c.destaque, obrigatorio: !!c.obrigatorio });
+    campos.push({ id, rotulo, tipo, opcoes, unidade: txt(c.unidade, 10), largura: c.largura === 2 && !c.destaque ? 2 : 1, destaque: !!c.destaque, obrigatorio: !!c.obrigatorio, papel: PAPEIS[c.papel] ? c.papel : null });
   }
   if (!campos.length) return { erro: 'Inclua ao menos um campo no cartão.' };
   return { dados: { nome, titulo, codigo: txt(b.codigo, 40), revisao: txt(b.revisao, 10), obs: b.obs !== false, campos } };
@@ -44,7 +46,7 @@ function validarModelo(b = {}) {
 
 async function listarModelos(sb, tenantId, { todos = false } = {}) {
   const l = (await q(sb.from('cartao_foto_modelos').select('*').eq('tenant_id', tenantId))).filter((m) => todos || m.ativo !== false).sort((a, b) => String(a.nome).localeCompare(String(b.nome), 'pt-BR'));
-  return { modelos: l, exemplos: EXEMPLOS.map(({ chave, nome }) => ({ chave, nome })), TIPOS };
+  return { modelos: l, exemplos: EXEMPLOS.map(({ chave, nome }) => ({ chave, nome })), TIPOS, PAPEIS };
 }
 async function salvarModelo(sb, tenantId, quem, id, b = {}) {
   let base = b;
@@ -79,10 +81,12 @@ async function enviarFoto(sb, tenantId, quem, b = {}) {
   if (error) throw new Error(`Falha ao subir a foto: ${error.message}`);
   let projetoId = null;
   if (b.projeto_id) { const pj = (await q(sb.from('projetos_foto').select('*').eq('tenant_id', tenantId).eq('id', b.projeto_id)))[0]; projetoId = pj ? pj.id : null; } // E2: projeto apagado → foto fica sem projeto, nunca é recusada
-  const linha = { tenant_id: tenantId, cliente_uid: uid, projeto_id: projetoId, modelo_id: modelo?.id || null, modelo_nome: modelo?.nome || txt(b.modelo?.nome, 80), modelo: { titulo: modelo?.titulo || b.modelo?.titulo || null, campos: campos.map((c) => ({ id: c.id, rotulo: c.rotulo, unidade: c.unidade || null })) },
+  const linha = { tenant_id: tenantId, cliente_uid: uid, projeto_id: projetoId, modelo_id: modelo?.id || null, modelo_nome: modelo?.nome || txt(b.modelo?.nome, 80), modelo: { titulo: modelo?.titulo || b.modelo?.titulo || null, campos: campos.map((c) => ({ id: c.id, rotulo: c.rotulo, unidade: c.unidade || null, papel: c.papel || null })) },
     valores, obs: txt(b.obs, 600), referencia: txt(b.referencia, 120), tecnico: quem?.nome || null, usuario_id: quem?.id != null ? String(quem.id) : null, gps, tirada_em: tirada, arquivo: path, tamanho: buf.length,
     hash: crypto.createHash('sha256').update(buf).digest('hex'), criado_em: new Date().toISOString() };
-  try { return { foto: { id: (await q(sb.from('fotos_cartao').insert([linha]).select()))[0].id } }; }
+  try { const nova = (await q(sb.from('fotos_cartao').insert([linha]).select()))[0];
+    let defeito = null; try { defeito = await require('./defeitosFoto').vincular(sb, tenantId, nova, campos); } catch (e) { console.warn('⚠️ [defeitos] vincular:', e.message); } // E3
+    return { foto: { id: nova.id, defeito_id: defeito?.id || null } }; }
   catch (e) { if (/duplicate|unique/i.test(e.message)) return { foto: null, repetida: true }; throw e; }
 }
 
@@ -92,6 +96,7 @@ async function listarFotos(sb, tenantId, f = {}) {
   if (f.modelo_id) l = l.filter((x) => String(x.modelo_id) === String(f.modelo_id));
   if (f.referencia != null && f.referencia !== '') { const rf = normRef(f.referencia); l = l.filter((x) => normRef(x.referencia) === rf); }
   if (f.tecnico) l = l.filter((x) => x.tecnico === f.tecnico);
+  if (f.defeito_id) l = l.filter((x) => String(x.defeito_id) === String(f.defeito_id)); // E3
   if (f.projeto_id) l = l.filter((x) => (f.projeto_id === 'sem' ? !x.projeto_id : String(x.projeto_id) === String(f.projeto_id)));
   if (f.de) l = l.filter((x) => diaBR(x.tirada_em) >= f.de);
   if (f.ate) l = l.filter((x) => diaBR(x.tirada_em) <= f.ate);
@@ -152,11 +157,13 @@ async function mapa(sb, tenantId, f = {}) {
     const g = grupos.get(k) || { chave: k, projeto_id: x.projeto_id || null, referencia: rf || null, n: 0, sLat: 0, sLng: 0, primeira: null, ultima: null, tecnicos: new Set(), modelos: new Set() };
     g.n++; g.sLat += Number(x.gps.lat); g.sLng += Number(x.gps.lng); const t = String(x.tirada_em); if (!g.primeira || t < g.primeira) g.primeira = t; if (!g.ultima || t > g.ultima) g.ultima = t; if (x.tecnico) g.tecnicos.add(x.tecnico); if (x.modelo_nome) g.modelos.add(x.modelo_nome); grupos.set(k, g); }
   const pinos = [...grupos.values()].map((g) => { const p = pMap.get(String(g.projeto_id)); return { chave: g.chave, projeto_id: g.projeto_id, projeto: p?.nome || null, cliente: p?.cliente_nome || null, referencia: g.referencia, lat: g.sLat / g.n, lng: g.sLng / g.n, fotos: g.n, primeira: g.primeira, ultima: g.ultima, tecnicos: [...g.tecnicos], modelos: [...g.modelos] }; });
+  try { const dp = await require('./defeitosFoto').porPino(sb, tenantId); for (const pn of pinos) pn.defeitos = dp.get(`${pn.projeto_id || 'sem'}|${pn.referencia || ''}`) || null; } catch { /* sem tabela de defeitos ainda */ } // E3
   const idsComFoto = new Set(fs.map((x) => String(x.projeto_id)));
   const projetos = ps.filter((p) => (!f.projeto_id || String(p.id) === String(f.projeto_id)) && (!f.cliente || String(p.cliente_nome || '').toLowerCase() === String(f.cliente).toLowerCase()) && ((!f.de && !f.ate && !f.tecnico) || idsComFoto.has(String(p.id))))
     .map((p) => { const fp = fs.filter((x) => String(x.projeto_id) === String(p.id)); const pin = pinos.filter((x) => String(x.projeto_id) === String(p.id));
       let { lat, lng } = p; if ((lat == null || lng == null) && pin.length) { lat = pin.reduce((s2, x) => s2 + x.lat, 0) / pin.length; lng = pin.reduce((s2, x) => s2 + x.lng, 0) / pin.length; }
-      return { id: p.id, nome: p.nome, cliente: p.cliente_nome, local: p.local, status: p.status, lat, lng, local_aprox: p.lat == null && lat != null, fotos: fp.length, aerogeradores: pin.filter((x) => x.referencia).length }; });
+      const dfs = pin.reduce((a, x) => { if (x.defeitos) for (const k of Object.keys(x.defeitos)) a[k] = (a[k] || 0) + x.defeitos[k]; return a; }, {});
+      return { id: p.id, nome: p.nome, cliente: p.cliente_nome, local: p.local, status: p.status, lat, lng, local_aprox: p.lat == null && lat != null, fotos: fp.length, aerogeradores: pin.filter((x) => x.referencia).length, defeitos: dfs.total ? dfs : null }; });
   const todas = fs0;
   return { projetos, pinos, totais: { projetos: projetos.filter((p) => p.fotos > 0).length, aerogeradores: pinos.filter((x) => x.referencia).length, fotos: fs.length, clientes: new Set(projetos.filter((p) => p.fotos > 0).map((p) => p.cliente).filter(Boolean)).size, sem_gps: fs.filter((x) => !x.gps).length },
     filtros: { clientes: [...new Set(ps.map((p) => p.cliente_nome).filter(Boolean))].sort(), tecnicos: [...new Set(todas.map((x) => x.tecnico).filter(Boolean))].sort(), projetos: ps.map((p) => ({ id: p.id, nome: p.nome })) } };
@@ -200,4 +207,4 @@ async function purgarLixeira(sb, tenantId) {
     return velhas.length; } catch { return 0; }
 }
 
-module.exports = { excluirFoto, restaurarFoto, purgarLixeira, DIAS_LIXEIRA, mapa, geocodificar, normRef, listarProjetos, salvarProjeto, EXEMPLOS, TIPOS, validarModelo, listarModelos, salvarModelo, ativarModelo, enviarFoto, listarFotos };
+module.exports = { PAPEIS, excluirFoto, restaurarFoto, purgarLixeira, DIAS_LIXEIRA, mapa, geocodificar, normRef, listarProjetos, salvarProjeto, EXEMPLOS, TIPOS, validarModelo, listarModelos, salvarModelo, ativarModelo, enviarFoto, listarFotos };
