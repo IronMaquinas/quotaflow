@@ -5,6 +5,7 @@ import { useEffect, useRef, useState } from "react";
 import apiService from "../../services/apiService";
 import CameraCartao from "./CameraCartao";
 import MapaFotos, { SeletorLocal } from "./MapaFotos";
+import VisualizadorFoto from "./VisualizadorFoto";
 import * as Fila from "../../utils/filaFotosCartao";
 import { desenharCartao, alturaCartao, carregarImagem, quandoBR, gpsTxt } from "../../utils/cartaoFoto";
 import { logoEmpresa, dadosEmpresa } from "../../utils/logoEmpresa";
@@ -130,7 +131,7 @@ async function copiasNoAparelho(lista, setMsg) {
 }
 
 function Galeria({ C, s, modelos, projetos = [], projetoFixo = null }) {
-  const [f, setF] = useState({ busca: "", modelo_id: "", de: "", ate: "", projeto_id: projetoFixo ? String(projetoFixo) : "" }); const [L, setL] = useState(null); const [ver, setVer] = useState(null);
+  const [f, setF] = useState({ busca: "", modelo_id: "", de: "", ate: "", projeto_id: projetoFixo ? String(projetoFixo) : "", lixeira: "" }); const [aviso, setAviso] = useState(""); const [L, setL] = useState(null); const [ver, setVer] = useState(null);
   const buscar = () => { const p = new URLSearchParams(Object.entries(f).filter(([, v]) => v)); apiService.get(`/foto-cartao/fotos?${p}`).then(setL).catch(() => setL({ fotos: [], total: 0 })); };
   useEffect(() => { const t = setTimeout(buscar, 300); const vivo = projetoFixo ? setInterval(buscar, 20000) : null; return () => { clearTimeout(t); if (vivo) clearInterval(vivo); }; }, [JSON.stringify(f)]); // eslint-disable-line
   const card = { ...s.card, padding: "14px 16px" };
@@ -142,22 +143,14 @@ function Galeria({ C, s, modelos, projetos = [], projetoFixo = null }) {
       <input type="date" value={f.de} onChange={(e) => setF({ ...f, de: e.target.value })} style={{ ...s.input, flex: "1 1 130px" }} /><input type="date" value={f.ate} onChange={(e) => setF({ ...f, ate: e.target.value })} style={{ ...s.input, flex: "1 1 130px" }} />
     </div>
     {!L && <div style={{ color: C.muted }}>Carregando…</div>}
-    {L && <div style={{ fontSize: 12.5, color: C.textSub }}>{L.total} foto(s){L.total > L.fotos.length ? ` — mostrando as ${L.fotos.length} mais recentes` : ""}</div>}
+    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}><button type="button" onClick={() => setF({ ...f, lixeira: f.lixeira ? "" : "1" })} style={{ ...s.btn(!!f.lixeira), cursor: "pointer", padding: "5px 12px" }}>{f.lixeira ? "← Voltar às fotos" : "🗑 Lixeira (30 dias)"}</button>{aviso && <span style={{ fontSize: 12.5, color: /^⚠/.test(aviso) ? C.warn : "#22c55e" }}>{aviso}</span>}</div>
+    {L && <div style={{ fontSize: 12.5, color: C.textSub }}>{f.lixeira ? "🗑 " : ""}{L.total} foto(s){L.total > L.fotos.length ? ` — mostrando as ${L.fotos.length} mais recentes` : ""}</div>}
     {L && <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(170px, 1fr))", gap: 10 }}>
-      {L.fotos.map((x) => <button key={x.id} type="button" onClick={() => setVer(x)} style={{ ...card, padding: 0, overflow: "hidden", cursor: "pointer", textAlign: "left", color: C.text }}>
+      {L.fotos.map((x) => <button key={x.id} type="button" onClick={() => setVer(L.fotos.indexOf(x))} style={{ ...card, padding: 0, overflow: "hidden", cursor: "pointer", textAlign: "left", color: C.text }}>
         {x.url ? <img src={x.url} alt="" loading="lazy" style={{ width: "100%", height: 120, objectFit: "cover", display: "block" }} /> : <div style={{ height: 120, display: "grid", placeItems: "center", color: C.muted }}>sem link</div>}
         <div style={{ padding: "6px 8px", fontSize: 11.5 }}><div style={{ fontWeight: 700 }}>{x.referencia || x.modelo_nome}</div><div style={{ color: C.textSub }}>{quandoBR(x.tirada_em)} · {x.tecnico}</div></div></button>)}
     </div>}
-    {ver && <div onClick={() => setVer(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.85)", zIndex: 500, overflowY: "auto", padding: 16 }}>
-      <div onClick={(e) => e.stopPropagation()} style={{ maxWidth: 1100, margin: "0 auto", display: "grid", gap: 10, color: "#fff" }}>
-        <div style={{ display: "flex", justifyContent: "space-between", gap: 8, flexWrap: "wrap" }}><b>{ver.referencia || ver.modelo_nome} · {quandoBR(ver.tirada_em)}</b><div style={{ display: "flex", gap: 8 }}>{ver.url && <a href={ver.url} target="_blank" rel="noreferrer" download style={{ color: "#93c5fd" }}>⬇ Baixar</a>}<button type="button" onClick={() => setVer(null)} style={{ background: "none", border: "1px solid #fff", color: "#fff", borderRadius: 6, padding: "4px 10px", cursor: "pointer" }}>Fechar</button></div></div>
-        {ver.url && <img src={ver.url} alt="" style={{ width: "100%", borderRadius: 6 }} />}
-        <div style={{ fontSize: 12.5, display: "grid", gap: 3 }}>
-          <div>{(ver.modelo?.campos || []).filter((c) => ver.valores?.[c.id]).map((c) => `${c.rotulo}: ${ver.valores[c.id]}${c.unidade ? ` ${c.unidade}` : ""}`).join(" · ") || "—"}</div>
-          {ver.obs && <div>Obs.: {ver.obs}</div>}
-          <div>👷 {ver.tecnico} · 📍 {ver.gps ? <a href={`https://maps.google.com/?q=${ver.gps.lat},${ver.gps.lng}`} target="_blank" rel="noreferrer" style={{ color: "#93c5fd" }}>{gpsTxt(ver.gps)}</a> : "sem GPS"}</div>
-          <div style={{ color: "#94a3b8", wordBreak: "break-all" }}>SHA-256 {ver.hash}</div>
-        </div></div></div>}
+    {ver != null && L && <VisualizadorFoto lista={L.fotos} inicio={ver} onFechar={() => setVer(null)} onMudou={(t) => { setAviso(t); buscar(); }} />}
   </div>;
 }
 

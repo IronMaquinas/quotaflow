@@ -1,4 +1,5 @@
 // routes/fotoCartao.js — etapa E1: 📸 foto com cartão
+//   E2.2: POST /fotos/:id/excluir { motivo } (lixeira 30 dias) · POST /fotos/:id/restaurar · GET /fotos?lixeira=1
 //   E2.1: GET /mapa?projeto_id&cliente&de&ate&tecnico · GET /geocode?q= (gestão)
 //   E2: GET /projetos · POST /projetos · PUT /projetos/:id (status ativo/encerrado)
 //   GET /modelos · POST /modelos { …campos | exemplo } · PUT /modelos/:id · POST /modelos/:id/ativo { ativo }  (admin, gestor, qualidade)
@@ -27,5 +28,7 @@ router.put('/projetos/:id', r(GESTAO, async (req) => F.salvarProjeto(supabase, r
 router.get('/mapa', r(CAMPO, (req) => F.mapa(supabase, req.tenantId, req.query || {}))); // E2.1
 router.get('/geocode', r(GESTAO, (req) => F.geocodificar(req.query.q)));
 router.post('/fotos', r(CAMPO, async (req) => F.enviarFoto(supabase, req.tenantId, await quem(req), req.body || {})));
+router.post('/fotos/:id/excluir', r(CAMPO, async (req) => F.excluirFoto(supabase, req.tenantId, await quem(req), perfisDe(req), req.params.id, req.body || {}))); // E2.2: lixeira
+router.post('/fotos/:id/restaurar', r(CAMPO, async (req) => F.restaurarFoto(supabase, req.tenantId, await quem(req), perfisDe(req), req.params.id)));
 router.get('/fotos', r(CAMPO, (req) => F.listarFotos(supabase, req.tenantId, req.query || {})));
 module.exports = router;

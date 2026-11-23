@@ -87,13 +87,14 @@ async function enviarFoto(sb, tenantId, quem, b = {}) {
 }
 
 async function listarFotos(sb, tenantId, f = {}) {
-  let l = await q(sb.from('fotos_cartao').select('*').eq('tenant_id', tenantId));
+  await purgarLixeira(sb, tenantId);
+  let l = (await q(sb.from('fotos_cartao').select('*').eq('tenant_id', tenantId))).filter((x) => (f.lixeira === '1' ? !!x.excluida_em : !x.excluida_em));
   if (f.modelo_id) l = l.filter((x) => String(x.modelo_id) === String(f.modelo_id));
   if (f.referencia != null && f.referencia !== '') { const rf = normRef(f.referencia); l = l.filter((x) => normRef(x.referencia) === rf); }
   if (f.tecnico) l = l.filter((x) => x.tecnico === f.tecnico);
   if (f.projeto_id) l = l.filter((x) => (f.projeto_id === 'sem' ? !x.projeto_id : String(x.projeto_id) === String(f.projeto_id)));
-  if (f.de) l = l.filter((x) => String(x.tirada_em).slice(0, 10) >= f.de);
-  if (f.ate) l = l.filter((x) => String(x.tirada_em).slice(0, 10) <= f.ate);
+  if (f.de) l = l.filter((x) => diaBR(x.tirada_em) >= f.de);
+  if (f.ate) l = l.filter((x) => diaBR(x.tirada_em) <= f.ate);
   if (f.busca) { const t = String(f.busca).toLowerCase(); l = l.filter((x) => [x.referencia, x.tecnico, x.obs, x.modelo_nome, ...Object.values(x.valores || {})].some((v) => String(v || '').toLowerCase().includes(t))); }
   l.sort((a, b) => String(b.tirada_em).localeCompare(String(a.tirada_em)));
   const total = l.length; const pag = l.slice(0, Math.min(Number(f.limite) || 60, 200));
@@ -108,11 +109,12 @@ const data = (v) => (/^\d{4}-\d{2}-\d{2}$/.test(String(v || '')) ? v : null);
 // E2.1: coordenadas do projeto (pino) — vazias limpam; fora do globo → recusa
 const coord = (b) => { if (!('lat' in b) && !('lng' in b)) return {}; const la = b.lat === '' || b.lat == null ? null : Number(b.lat); const ln = b.lng === '' || b.lng == null ? null : Number(b.lng);
   if (la == null || ln == null) return { lat: null, lng: null }; if (!Number.isFinite(la) || !Number.isFinite(ln) || Math.abs(la) > 90 || Math.abs(ln) > 180) return { lat: null, lng: null, invalido: true }; return { lat: la, lng: ln }; };
+const diaBR = (t) => (t ? new Date(new Date(t).getTime() - 3 * 3600e3).toISOString().slice(0, 10) : ''); // E2.2: "hoje" no horário de Brasília
 async function listarProjetos(sb, tenantId, { todos = false } = {}) {
-  const [ps, fs] = await Promise.all([q(sb.from('projetos_foto').select('*').eq('tenant_id', tenantId)), q(sb.from('fotos_cartao').select('*').eq('tenant_id', tenantId))]);
+  const [ps, fs] = await Promise.all([q(sb.from('projetos_foto').select('*').eq('tenant_id', tenantId)), q(sb.from('fotos_cartao').select('*').eq('tenant_id', tenantId)).then((l) => l.filter((x) => !x.excluida_em))]);
   const hoje = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
   const lista = ps.filter((p) => todos || p.status === 'ativo').map((p) => { const fp = fs.filter((f) => String(f.projeto_id) === String(p.id));
-    return { ...p, fotos: fp.length, fotos_hoje: fp.filter((f) => String(f.tirada_em).slice(0, 10) === hoje || String(f.criado_em).slice(0, 10) === hoje).length, tecnicos: [...new Set(fp.map((f) => f.tecnico).filter(Boolean))], ultima_em: fp.reduce((m, f) => (String(f.criado_em) > m ? String(f.criado_em) : m), '') || null }; })
+    return { ...p, fotos: fp.length, fotos_hoje: fp.filter((f) => diaBR(f.tirada_em) === hoje || diaBR(f.criado_em) === hoje).length, tecnicos: [...new Set(fp.map((f) => f.tecnico).filter(Boolean))], ultima_em: fp.reduce((m, f) => (String(f.criado_em) > m ? String(f.criado_em) : m), '') || null }; })
     .sort((a, b) => (a.status === b.status ? String(b.ultima_em || b.criado_em).localeCompare(String(a.ultima_em || a.criado_em)) : a.status === 'ativo' ? -1 : 1));
   return { projetos: lista, sem_projeto: fs.filter((f) => !f.projeto_id).length };
 }
@@ -136,10 +138,10 @@ async function salvarProjeto(sb, tenantId, quem, id, b = {}) {
 const normRef = (v) => String(v || '').trim().toUpperCase().replace(/\s+/g, ' ');
 async function mapa(sb, tenantId, f = {}) {
   const [ps, fs0] = await Promise.all([q(sb.from('projetos_foto').select('*').eq('tenant_id', tenantId)), q(sb.from('fotos_cartao').select('*').eq('tenant_id', tenantId))]);
-  let fs = fs0;
+  let fs = fs0.filter((x) => !x.excluida_em);
   if (f.projeto_id) fs = fs.filter((x) => String(x.projeto_id) === String(f.projeto_id));
-  if (f.de) fs = fs.filter((x) => String(x.tirada_em).slice(0, 10) >= f.de);
-  if (f.ate) fs = fs.filter((x) => String(x.tirada_em).slice(0, 10) <= f.ate);
+  if (f.de) fs = fs.filter((x) => diaBR(x.tirada_em) >= f.de);
+  if (f.ate) fs = fs.filter((x) => diaBR(x.tirada_em) <= f.ate);
   if (f.tecnico) fs = fs.filter((x) => x.tecnico === f.tecnico);
   const pMap = new Map(ps.map((p) => [String(p.id), p]));
   if (f.cliente) { const c = String(f.cliente).toLowerCase(); fs = fs.filter((x) => String(pMap.get(String(x.projeto_id))?.cliente_nome || '').toLowerCase() === c); }
@@ -172,4 +174,30 @@ async function geocodificar(texto) {
   catch { return { status: 502, erro: 'O serviço de mapas não respondeu agora. Cole as coordenadas ou toque no mapa.' }; } finally { clearTimeout(to); }
 }
 
-module.exports = { mapa, geocodificar, normRef, listarProjetos, salvarProjeto, EXEMPLOS, TIPOS, validarModelo, listarModelos, salvarModelo, ativarModelo, enviarFoto, listarFotos };
+// ─── E2.2: lixeira — quem tirou a foto ou a gestão exclui (com motivo); 30 dias para restaurar; depois apaga o arquivo e o registro ───
+const DIAS_LIXEIRA = 30;
+async function excluirFoto(sb, tenantId, quem, perfis, id, b = {}) {
+  const x = (await q(sb.from('fotos_cartao').select('*').eq('tenant_id', tenantId).eq('id', id)))[0]; if (!x) return { status: 404, erro: 'Foto não encontrada.' };
+  if (x.excluida_em) return { status: 409, erro: 'Esta foto já está na lixeira.' };
+  const gestao = (perfis || []).some((p) => ['admin', 'gestor', 'qualidade'].includes(p));
+  if (!gestao && String(x.usuario_id) !== String(quem?.id)) return { status: 403, erro: 'Só quem tirou a foto (ou a gestão) pode excluí-la.' };
+  const motivo = txt(b.motivo, 300); if (!motivo || motivo.length < 5) return { status: 400, erro: 'Diga por que a foto vai para a lixeira (mínimo 5 letras).' };
+  await q(sb.from('fotos_cartao').update({ excluida_em: new Date().toISOString(), excluida_por: quem?.nome || null, exclusao_motivo: motivo }).eq('tenant_id', tenantId).eq('id', id).select());
+  return { ok: true, dias: DIAS_LIXEIRA };
+}
+async function restaurarFoto(sb, tenantId, quem, perfis, id) {
+  const x = (await q(sb.from('fotos_cartao').select('*').eq('tenant_id', tenantId).eq('id', id)))[0]; if (!x) return { status: 404, erro: 'Foto não encontrada (pode já ter passado dos 30 dias).' };
+  if (!x.excluida_em) return { status: 409, erro: 'Esta foto não está na lixeira.' };
+  const gestao = (perfis || []).some((p) => ['admin', 'gestor', 'qualidade'].includes(p));
+  if (!gestao && String(x.usuario_id) !== String(quem?.id)) return { status: 403, erro: 'Só quem tirou a foto (ou a gestão) pode restaurá-la.' };
+  await q(sb.from('fotos_cartao').update({ excluida_em: null, excluida_por: null, exclusao_motivo: null }).eq('tenant_id', tenantId).eq('id', id).select());
+  return { ok: true };
+}
+async function purgarLixeira(sb, tenantId) {
+  try { const limite = new Date(Date.now() - DIAS_LIXEIRA * 864e5).toISOString();
+    const velhas = (await q(sb.from('fotos_cartao').select('*').eq('tenant_id', tenantId))).filter((x) => x.excluida_em && String(x.excluida_em) < limite);
+    for (const x of velhas.slice(0, 50)) { try { await sb.storage.from(D.BUCKET).remove([x.arquivo]); } catch { /* segue */ } await q(sb.from('fotos_cartao').delete().eq('tenant_id', tenantId).eq('id', x.id)); }
+    return velhas.length; } catch { return 0; }
+}
+
+module.exports = { excluirFoto, restaurarFoto, purgarLixeira, DIAS_LIXEIRA, mapa, geocodificar, normRef, listarProjetos, salvarProjeto, EXEMPLOS, TIPOS, validarModelo, listarModelos, salvarModelo, ativarModelo, enviarFoto, listarFotos };

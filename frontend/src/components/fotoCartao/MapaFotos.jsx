@@ -10,6 +10,7 @@ import "leaflet.markercluster/dist/MarkerCluster.css";
 import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import apiService from "../../services/apiService";
 import { quandoBR } from "../../utils/cartaoFoto";
+import VisualizadorFoto from "./VisualizadorFoto";
 
 const dBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
 function base(el, opts = {}) {
@@ -24,7 +25,7 @@ const icone = (txt, cor, grande) => L.divIcon({ className: "", iconSize: grande 
 
 export default function MapaFotos({ C, s }) {
   const el = useRef(null); const mapa = useRef(null); const camadaPj = useRef(null); const camadaPin = useRef(null);
-  const [f, setF] = useState({ cliente: "", projeto_id: "", de: "", ate: "", tecnico: "" }); const [D, setD] = useState(null); const [sel, setSel] = useState(null); const [fotos, setFotos] = useState(null); const [erro, setErro] = useState("");
+  const [f, setF] = useState({ cliente: "", projeto_id: "", de: "", ate: "", tecnico: "" }); const [D, setD] = useState(null); const [sel, setSel] = useState(null); const [fotos, setFotos] = useState(null); const [erro, setErro] = useState(""); const [ver, setVer] = useState(null);
   useEffect(() => { const m = base(el.current, { center: [-14.2, -51.9], zoom: 4 }); mapa.current = m;
     camadaPj.current = L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 50 }); camadaPin.current = L.markerClusterGroup({ showCoverageOnHover: false, maxClusterRadius: 35 });
     const ajustar = () => { const z = m.getZoom(); if (z >= 11) { if (m.hasLayer(camadaPj.current)) m.removeLayer(camadaPj.current); if (!m.hasLayer(camadaPin.current)) m.addLayer(camadaPin.current); } else { if (m.hasLayer(camadaPin.current)) m.removeLayer(camadaPin.current); if (!m.hasLayer(camadaPj.current)) m.addLayer(camadaPj.current); } };
@@ -41,6 +42,7 @@ export default function MapaFotos({ C, s }) {
     apiService.get(`/foto-cartao/fotos?${p}`).then((r) => setFotos(r)).catch(() => setFotos({ fotos: [], total: 0 })); }, [sel]);
   const card = { ...s.card, padding: "12px 14px" }; const T = D?.totais;
   return <div style={{ display: "grid", gap: 10 }}>
+    {ver != null && fotos && <VisualizadorFoto lista={fotos.fotos} inicio={ver} onFechar={() => setVer(null)} onMudou={() => { setF({ ...f }); setSel({ ...sel }); }} />}
     <div style={{ ...card, display: "flex", gap: 8, flexWrap: "wrap" }}>
       <select value={f.cliente} onChange={(e) => setF({ ...f, cliente: e.target.value })} style={{ ...s.input, flex: "1 1 150px" }}><option value="">Todos os clientes</option>{(D?.filtros.clientes || []).map((c) => <option key={c}>{c}</option>)}</select>
       <select value={f.projeto_id} onChange={(e) => setF({ ...f, projeto_id: e.target.value })} style={{ ...s.input, flex: "1 1 170px" }}><option value="">Todos os projetos</option>{(D?.filtros.projetos || []).map((p) => <option key={p.id} value={p.id}>{p.nome}</option>)}</select>
@@ -58,7 +60,7 @@ export default function MapaFotos({ C, s }) {
           {sel.tecnicos?.length > 0 && <div style={{ fontSize: 12, color: C.textSub }}>👷 {sel.tecnicos.join(", ")}</div>}
           {sel.modelos?.length > 0 && <div style={{ fontSize: 12, color: C.textSub }}>🪪 {sel.modelos.join(", ")}</div>}
           <div style={{ fontSize: 11.5, color: C.muted }}>Defeitos e relatórios deste ponto aparecem aqui a partir das próximas etapas.</div>
-          {!fotos ? <div style={{ fontSize: 12, color: C.muted }}>Carregando fotos…</div> : <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>{fotos.fotos.map((x) => <a key={x.id} href={x.url || undefined} target="_blank" rel="noreferrer" title={`${quandoBR(x.tirada_em)} · ${x.tecnico}`}>{x.url ? <img src={x.url} alt="" loading="lazy" style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 4, display: "block" }} /> : <div style={{ aspectRatio: "1", background: C.border, borderRadius: 4 }} />}</a>)}</div>}
+          {!fotos ? <div style={{ fontSize: 12, color: C.muted }}>Carregando fotos…</div> : <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>{fotos.fotos.map((x, k) => <a key={x.id} href="#" onClick={(e) => { e.preventDefault(); setVer(k); }} title={`${quandoBR(x.tirada_em)} · ${x.tecnico}`}>{x.url ? <img src={x.url} alt="" loading="lazy" style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 4, display: "block" }} /> : <div style={{ aspectRatio: "1", background: C.border, borderRadius: 4 }} />}</a>)}</div>}
           {fotos && fotos.total > fotos.fotos.length && <div style={{ fontSize: 11.5, color: C.textSub }}>+{fotos.total - fotos.fotos.length} — veja todas em 📁 Projetos</div>}
         </div> : <div style={{ fontSize: 12, color: C.muted }}>Toque num pino. Aproxime o mapa para ver os aerogeradores (⚡).</div>}
         {(D?.projetos || []).filter((p) => p.fotos > 0 || p.lat != null).map((p) => <button key={p.id} type="button" onClick={() => { setSel({ tipo: "projeto", ...p }); if (p.lat != null) mapa.current.setView([p.lat, p.lng], 12); }} style={{ ...card, textAlign: "left", cursor: "pointer", color: C.text, padding: "8px 10px" }}>
