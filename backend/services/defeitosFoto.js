@@ -51,6 +51,7 @@ async function listar(sb, tenantId, f = {}) {
   if (f.busca) { const t = String(f.busca).toLowerCase(); l = l.filter((d) => [d.referencia, d.pa, d.numero, d.projeto, d.justificativa, ...Object.values(d.resumo || {})].some((v) => String(v || '').toLowerCase().includes(t))); }
   const ordem = (v) => String(v || '').padStart(8, '0');
   l.sort((a, b) => String(a.projeto).localeCompare(String(b.projeto), 'pt-BR') || String(a.referencia || '').localeCompare(String(b.referencia || ''), 'pt-BR', { numeric: true }) || String(a.pa || '').localeCompare(String(b.pa || '')) || ordem(a.numero).localeCompare(ordem(b.numero)));
+  try { const rp = await require('./reparos').porDefeito(sb, tenantId); for (const d of l) d.reparo = rp.get(String(d.id)) || null; } catch { /* sem tabela de reparos ainda */ } // E4
   const D = require('./documentos'); for (const d of l.slice(0, 300)) { try { d.capa_url = d.capa_arquivo ? await D.linkArquivo(sb, d.capa_arquivo) : null; } catch { d.capa_url = null; } delete d.capa_arquivo; }
   return { defeitos: l, contagem, CLASSES };
 }

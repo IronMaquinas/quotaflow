@@ -81,7 +81,9 @@ async function enviarFoto(sb, tenantId, quem, b = {}) {
   if (error) throw new Error(`Falha ao subir a foto: ${error.message}`);
   let projetoId = null;
   if (b.projeto_id) { const pj = (await q(sb.from('projetos_foto').select('*').eq('tenant_id', tenantId).eq('id', b.projeto_id)))[0]; projetoId = pj ? pj.id : null; } // E2: projeto apagado → foto fica sem projeto, nunca é recusada
-  const linha = { tenant_id: tenantId, cliente_uid: uid, projeto_id: projetoId, modelo_id: modelo?.id || null, modelo_nome: modelo?.nome || txt(b.modelo?.nome, 80), modelo: { titulo: modelo?.titulo || b.modelo?.titulo || null, campos: campos.map((c) => ({ id: c.id, rotulo: c.rotulo, unidade: c.unidade || null, papel: c.papel || null })) },
+  let reparoId = null; let etapaId = null; // E4: foto de etapa do reparo
+  if (b.reparo_id) { const rp = (await q(sb.from('reparos').select('*').eq('tenant_id', tenantId).eq('id', b.reparo_id)))[0]; if (rp && (rp.etapas || []).some((e) => e.id === b.etapa_id)) { reparoId = rp.id; etapaId = b.etapa_id; if (!projetoId) projetoId = rp.projeto_id; } }
+  const linha = { tenant_id: tenantId, cliente_uid: uid, projeto_id: projetoId, reparo_id: reparoId, etapa_id: etapaId, modelo_id: modelo?.id || null, modelo_nome: modelo?.nome || txt(b.modelo?.nome, 80), modelo: { titulo: modelo?.titulo || b.modelo?.titulo || null, campos: campos.map((c) => ({ id: c.id, rotulo: c.rotulo, unidade: c.unidade || null, papel: c.papel || null })) },
     valores, obs: txt(b.obs, 600), referencia: txt(b.referencia, 120), tecnico: quem?.nome || null, usuario_id: quem?.id != null ? String(quem.id) : null, gps, tirada_em: tirada, arquivo: path, tamanho: buf.length,
     hash: crypto.createHash('sha256').update(buf).digest('hex'), criado_em: new Date().toISOString() };
   try { const nova = (await q(sb.from('fotos_cartao').insert([linha]).select()))[0];
@@ -97,6 +99,7 @@ async function listarFotos(sb, tenantId, f = {}) {
   if (f.referencia != null && f.referencia !== '') { const rf = normRef(f.referencia); l = l.filter((x) => normRef(x.referencia) === rf); }
   if (f.tecnico) l = l.filter((x) => x.tecnico === f.tecnico);
   if (f.defeito_id) l = l.filter((x) => String(x.defeito_id) === String(f.defeito_id)); // E3
+  if (f.reparo_id) l = l.filter((x) => String(x.reparo_id) === String(f.reparo_id) && (!f.etapa_id || x.etapa_id === f.etapa_id)); // E4
   if (f.projeto_id) l = l.filter((x) => (f.projeto_id === 'sem' ? !x.projeto_id : String(x.projeto_id) === String(f.projeto_id)));
   if (f.de) l = l.filter((x) => diaBR(x.tirada_em) >= f.de);
   if (f.ate) l = l.filter((x) => diaBR(x.tirada_em) <= f.ate);

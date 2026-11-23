@@ -7,6 +7,7 @@ import CameraCartao from "./CameraCartao";
 import MapaFotos, { SeletorLocal } from "./MapaFotos";
 import VisualizadorFoto from "./VisualizadorFoto";
 import Defeitos from "./Defeitos";
+import Reparos, { ProcedimentosReparo, valoresDaEtapa } from "./Reparos";
 import * as Fila from "../../utils/filaFotosCartao";
 import { desenharCartao, alturaCartao, carregarImagem, quandoBR, gpsTxt } from "../../utils/cartaoFoto";
 import { logoEmpresa, dadosEmpresa } from "../../utils/logoEmpresa";
@@ -36,7 +37,7 @@ export default function TelaFotoCartao({ C, s, embutida = false }) {
   const [modeloId, setModeloId] = useState(ult.modelo_id || ""); const [ref, setRef] = useState(ult.referencia || ""); const [cam, setCam] = useState(false); const [cartao, setCartao] = useState(ult.cartao || null);
   const [fila, setFila] = useState({ pendentes: 0, erros: 0 }); const [refs, setRefs] = useState([]); const [persist, setPersist] = useState(null);
   const lerPj = () => { try { return JSON.parse(localStorage.getItem(PJ_CACHE) || "null"); } catch { return null; } };
-  const [P, setP] = useState(lerPj); const [projetoId, setProjetoId] = useState(ult.projeto_id || ""); const [novoPj, setNovoPj] = useState(null); const [abrirPj, setAbrirPj] = useState(null);
+  const [P, setP] = useState(lerPj); const [camRep, setCamRep] = useState(null); const [repAbrir, setRepAbrir] = useState(null); const [subModelos, setSubModelos] = useState("cartoes"); const [projetoId, setProjetoId] = useState(ult.projeto_id || ""); const [novoPj, setNovoPj] = useState(null); const [abrirPj, setAbrirPj] = useState(null);
   const carregarPj = () => apiService.get(`/foto-cartao/projetos${podeEditar ? "?todos=1" : ""}`).then((r) => { setP(r); try { localStorage.setItem(PJ_CACHE, JSON.stringify(r)); } catch { /* ok */ } }).catch(() => {});
   const tenant = chaveTenant();
   const carregar = () => apiService.get(`/foto-cartao/modelos${podeEditar ? "?todos=1" : ""}`).then((r) => { setM(r); setErro(""); }).catch((e) => setErro(e?.response?.data?.erro || e.message));
@@ -48,8 +49,11 @@ export default function TelaFotoCartao({ C, s, embutida = false }) {
   const casa = (p, t) => { const q = String(t || "").trim().toLowerCase(); return !q || [p.nome, p.cliente_nome, p.local, p.descricao].some((v) => String(v || "").toLowerCase().includes(q)); };
   const pjAtivos = (P?.projetos || []).filter((p) => p.status === "ativo"); const projeto = pjAtivos.find((p) => String(p.id) === String(projetoId)) || null;
   const card = { ...s.card, padding: "16px 18px" }; const lab = { fontSize: 11.5, color: C.textSub, display: "block", marginBottom: 3 };
-  const abas = [["tirar", "📸 Tirar foto"], ["projetos", "📁 Projetos"], ["defeitos", "🔧 Defeitos"], ["mapa", "🗺 Mapa"], ["fotos", "🖼 Fotos"], ...(podeEditar ? [["modelos", "⚙ Modelos de cartão"]] : [])];
+  const abas = [["tirar", "📸 Tirar foto"], ["projetos", "📁 Projetos"], ["defeitos", "🔧 Defeitos"], ["reparos", "🛠 Reparos"], ["mapa", "🗺 Mapa"], ["fotos", "🖼 Fotos"], ...(podeEditar ? [["modelos", "⚙ Modelos de cartão"]] : [])];
 
+  if (camRep) return <CameraCartao modelo={camRep.cartao} projeto={camRep.projeto} referencia={camRep.defeito?.referencia || ""} tenant={tenant} tecnico={u.nome || ""} rotulo={`${camRep.reparo.numero} · ${camRep.etapa.titulo}`}
+    valoresIniciais={{ valores: valoresDaEtapa(camRep.cartao, camRep.defeito, camRep.etapa), obs: "" }} extra={{ reparo_id: camRep.reparo.id, etapa_id: camRep.etapa.id }}
+    onFoto={() => sincronizar()} onFechar={() => { const rid = camRep.reparo.id; setCamRep(null); setRepAbrir(rid); sincronizar(); }} />;
   if (cam && modelo && projeto) return <CameraCartao modelo={modelo} projeto={projeto} referencia={ref} tenant={tenant} tecnico={u.nome || ""} valoresIniciais={cartao && String(cartao.modelo_id) === String(modelo.id) ? cartao : null}
     onFoto={(c) => { const x = { ...c, modelo_id: modelo.id }; setCartao(x); try { localStorage.setItem(ULT, JSON.stringify({ modelo_id: modelo.id, projeto_id: projeto.id, referencia: ref, cartao: x })); } catch { /* ok */ } return sincronizar(); }}
     onFechar={() => { setCam(false); sincronizar(); }} />;
@@ -85,7 +89,8 @@ export default function TelaFotoCartao({ C, s, embutida = false }) {
           {modelo && !projeto && <div style={{ fontSize: 12, color: C.warn }}>Escolha o projeto — toda foto nasce dentro de um projeto.</div>}
         </>}
       </div>}
-      {aba === "defeitos" && <Defeitos C={C} s={s} projetos={P?.projetos || []} podeEditar={podeEditar} />}
+      {aba === "defeitos" && <Defeitos C={C} s={s} projetos={P?.projetos || []} podeEditar={podeEditar} cartoes={M?.modelos || []} onAbrirReparo={(id) => { setRepAbrir(id); setAba("reparos"); }} />}
+      {aba === "reparos" && <Reparos C={C} s={s} projetos={P?.projetos || []} podeEditar={podeEditar} tenant={tenant} abrirCamera={(cfg) => { if (!cfg.cartao) return setMsg("⚠ O cartão deste reparo foi apagado — reabra o reparo com outro cartão."); setCamRep(cfg); }} abrirId={repAbrir} onAbriu={() => setRepAbrir(null)} />}
       {aba === "mapa" && <MapaFotos C={C} s={s} />}
       {aba === "fotos" && <Galeria C={C} s={s} modelos={M?.modelos || []} projetos={P?.projetos || []} />}
       {aba === "projetos" && !abrirPj && <div style={{ display: "grid", gap: 10 }}>
@@ -120,7 +125,9 @@ export default function TelaFotoCartao({ C, s, embutida = false }) {
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button type="button" onClick={() => setNovoPj(null)} style={{ ...s.btn(false), cursor: "pointer" }}>Voltar</button>
             <button type="button" onClick={async () => { try { const r = novoPj.id ? await apiService.put(`/foto-cartao/projetos/${novoPj.id}`, novoPj) : await apiService.post("/foto-cartao/projetos", novoPj); setNovoPj(null); setMsg(`Projeto "${r.projeto.nome}" salvo.`); if (!novoPj.id) setProjetoId(r.projeto.id); if (abrirPj) setAbrirPj({ ...abrirPj, ...r.projeto }); carregarPj(); } catch (e) { setMsg(`⚠ ${e?.response?.data?.erro || e.message}`); } }} style={{ ...s.btn(true), cursor: "pointer" }}>Salvar projeto</button></div>
         </div></div>}
-      {aba === "modelos" && podeEditar && M && <Modelos C={C} s={s} M={M} onMudou={carregar} setMsg={setMsg} />}
+      {aba === "modelos" && podeEditar && <div style={{ display: "flex", gap: 6 }}>{[["cartoes", "🪪 Cartões"], ["procedimentos", "🛠 Procedimentos de reparo"]].map(([k, l]) => <button key={k} type="button" onClick={() => setSubModelos(k)} style={{ ...s.btn(subModelos === k), cursor: "pointer", padding: "6px 12px" }}>{l}</button>)}</div>}
+      {aba === "modelos" && podeEditar && subModelos === "cartoes" && M && <Modelos C={C} s={s} M={M} onMudou={carregar} setMsg={setMsg} />}
+      {aba === "modelos" && podeEditar && subModelos === "procedimentos" && <ProcedimentosReparo C={C} s={s} setMsg={setMsg} />}
     </div>
   );
 }

@@ -17,7 +17,7 @@ const lerPos = () => { try { const p = JSON.parse(localStorage.getItem(POS_KEY) 
 const idCurto = (uid) => String(uid || "").replace(/[^a-z0-9]/gi, "").toUpperCase().slice(0, 8);
 const deitado = () => (window.matchMedia ? window.matchMedia("(orientation: landscape)").matches : window.innerWidth > window.innerHeight);
 
-export default function CameraCartao({ modelo, projeto = null, referencia, tenant, tecnico, valoresIniciais, onFechar, onFoto }) {
+export default function CameraCartao({ modelo, projeto = null, referencia, tenant, tecnico, valoresIniciais, onFechar, onFoto, extra = null, rotulo = "" }) {
   const vid = useRef(null); const tela = useRef(null); const caixa = useRef(null); const stream = useRef(null);
   const [pos, setPos] = useState(lerPos); const [val, setVal] = useState(valoresIniciais?.valores || {}); const [obs, setObs] = useState(valoresIniciais?.obs || "");
   const [gps, setGps] = useState(null); const [erro, setErro] = useState(""); const [form, setForm] = useState(false); const [flash, setFlash] = useState(false); const [ultima, setUltima] = useState(null);
@@ -60,7 +60,7 @@ export default function CameraCartao({ modelo, projeto = null, referencia, tenan
   const alternarLuz = () => { const tr = stream.current?.getVideoTracks()[0]; const novo = !luz; tr?.applyConstraints({ advanced: [{ torch: novo }] }).then(() => setLuz(novo)).catch(() => setAviso("⚠ Este aparelho não deixou ligar a lanterna pelo navegador.")); };
 
   const quadro = () => { const v = vid.current; const c = caixa.current; if (!v || !c || !v.videoWidth) return null; const cw = c.clientWidth; const ch = c.clientHeight; const k = Math.min(cw / v.videoWidth, ch / v.videoHeight); const dw = v.videoWidth * k; const dh = v.videoHeight * k; return { cw, ch, dw, dh, ox: (cw - dw) / 2, oy: (ch - dh) / 2 }; };
-  const dadosCartao = (quando, id = "") => ({ modelo, valores: val, obs, empresa, logo, tecnico, quando, gps, id, projeto: [projeto?.nome, referencia].filter(Boolean).join(" · ") });
+  const dadosCartao = (quando, id = "") => ({ modelo, valores: val, obs, empresa, logo, tecnico, quando, gps, id, projeto: [projeto?.nome, referencia].filter(Boolean).join(" · "), etapa: rotulo || "" });
   // E2: o cartão sempre cabe inteiro no quadro (girar o celular ou trocar de modelo não corta o cartão na foto)
   const caber = (p, fw, fh) => { const k = alturaCartao(modelo, 1); let nw = Math.min(Math.max(p.nw, 0.15), 0.98); if (k * nw * fw > fh * 0.98) nw = (fh * 0.98) / (k * fw);
     const h = (k * nw * fw) / fh; return { nw, nx: Math.min(Math.max(p.nx, 0), 1 - nw), ny: Math.min(Math.max(p.ny, 0), Math.max(0, 1 - h - 0.01)) }; };
@@ -92,7 +92,7 @@ export default function CameraCartao({ modelo, projeto = null, referencia, tenan
     const uid = Fila.novoUid(); const quando = Date.now(); const pz = caber(pos, sw, sh); desenharCartao(ctx, pz.nx * sw, pz.ny * sh, pz.nw * sw, dadosCartao(quando, idCurto(uid)));
     let img = c.toDataURL("image/jpeg", 0.86); if (img.length > 10.5e6) img = c.toDataURL("image/jpeg", 0.7);
     setFlash(true); setTimeout(() => setFlash(false), 140); try { navigator.vibrate?.(40); } catch { /* ok */ }
-    const corpo = { cliente_uid: uid, imagem: img, modelo_id: modelo.id, modelo: { nome: modelo.nome, titulo: modelo.titulo, campos: modelo.campos }, valores: val, obs, referencia, projeto_id: projeto?.id || null, gps, tirada_em: new Date(quando).toISOString(), zoom: z };
+    const corpo = { cliente_uid: uid, imagem: img, modelo_id: modelo.id, modelo: { nome: modelo.nome, titulo: modelo.titulo, campos: modelo.campos }, valores: val, obs, referencia, projeto_id: projeto?.id || null, ...(extra || {}), gps, tirada_em: new Date(quando).toISOString(), zoom: z };
     const ok = await Fila.salvar({ uid, tenant, criado: quando, status: "pendente", corpo });
     if (ok === false) { setAviso("⚠ Não consegui guardar a foto no aparelho (memória cheia?). Libere espaço — esta foto NÃO foi salva."); return; }
     setUltima(img); setN((k) => k + 1); setPend((p) => p + 1); setAviso("✓ Foto guardada no aparelho");
@@ -113,7 +113,7 @@ export default function CameraCartao({ modelo, projeto = null, referencia, tenan
         {flash && <div style={{ position: "absolute", inset: 0, background: "#fff", opacity: 0.7 }} />}
         <div style={{ position: "absolute", top: 10, left: 10, right: 10, display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", pointerEvents: "none" }}>
           <button type="button" onClick={fechar} style={{ ...btnR, pointerEvents: "auto" }}>✕ Fechar</button>
-          <div style={{ ...btnR, cursor: "default", fontWeight: 500, fontSize: 12.5 }}>{projeto ? `📁 ${projeto.nome}` : modelo.nome}{referencia ? ` · ${referencia}` : ""} · {gps ? `📍 ±${Math.round(gps.precisao || 0)} m` : "📍 buscando GPS…"}</div>
+          <div style={{ ...btnR, cursor: "default", fontWeight: 500, fontSize: 12.5 }}>{rotulo ? `🛠 ${rotulo}` : projeto ? `📁 ${projeto.nome}` : modelo.nome}{referencia ? ` · ${referencia}` : ""} · {gps ? `📍 ±${Math.round(gps.precisao || 0)} m` : "📍 buscando GPS…"}</div>
         </div>
         {aviso && <div style={{ position: "absolute", top: 58, left: 10, ...btnR, cursor: "default", fontSize: 12.5, background: /^⚠/.test(aviso) ? "#b91c1c" : "rgba(0,0,0,.6)" }}>{aviso}</div>}
         {erro && <div style={{ position: "absolute", top: "40%", left: 16, right: 16, background: "#fff", color: "#111", borderRadius: 10, padding: 16, textAlign: "center" }}>{erro}</div>}

@@ -7,13 +7,14 @@ import apiService from "../../services/apiService";
 import CampoFuncionario from "../shared/CampoFuncionario";
 import VisualizadorFoto from "./VisualizadorFoto";
 import { quandoBR } from "../../utils/cartaoFoto";
+import { AbrirReparo } from "./Reparos";
 
 export const COR_CLASSE = { pendente: "#f59e0b", sem_reparo: "#64748b", reparar: "#ef4444", investigar: "#a855f7" };
 const ROT = { pendente: "A classificar", sem_reparo: "a) Sem reparo", reparar: "b) Reparar", investigar: "c) Investigar" };
 
-export default function Defeitos({ C, s, projetos = [], podeEditar }) {
+export default function Defeitos({ C, s, projetos = [], podeEditar, cartoes = [], onAbrirReparo }) {
   const [f, setF] = useState({ projeto_id: "", classe: "pendente", busca: "" }); const [L, setL] = useState(null); const [erro, setErro] = useState(""); const [msg, setMsg] = useState("");
-  const [cls, setCls] = useState(null); const [ver, setVer] = useState(null); const [pessoas, setPessoas] = useState(null);
+  const [cls, setCls] = useState(null); const [abrirRep, setAbrirRep] = useState(null); const [ver, setVer] = useState(null); const [pessoas, setPessoas] = useState(null);
   const carregar = () => { const p = new URLSearchParams(Object.entries(f).filter(([, v]) => v)); return apiService.get(`/foto-cartao/defeitos?${p}`).then((r) => { setL(r); setErro(""); }).catch((e) => setErro(e?.response?.data?.erro || e.message)); };
   useEffect(() => { const t = setTimeout(carregar, 250); return () => clearTimeout(t); }, [JSON.stringify(f)]); // eslint-disable-line
   useEffect(() => { if (podeEditar) apiService.get("/pessoas/gestao-pessoas").then((r) => setPessoas(r.funcionarios || [])).catch(() => setPessoas([])); }, [podeEditar]);
@@ -24,6 +25,7 @@ export default function Defeitos({ C, s, projetos = [], podeEditar }) {
   const grupos = []; for (const d of L?.defeitos || []) { const k = `${d.projeto}|${d.referencia || ""}`; let g = grupos.find((x) => x.k === k); if (!g) { g = { k, projeto: d.projeto, referencia: d.referencia, itens: [] }; grupos.push(g); } g.itens.push(d); }
   const exige = cls && (cls.classe === "sem_reparo" || cls.classe === "investigar" || cls.classe === null);
   return <div style={{ display: "grid", gap: 10 }}>
+    {abrirRep && <AbrirReparo C={C} s={s} defeito={abrirRep} cartoes={cartoes} onFechar={() => setAbrirRep(null)} onAberto={(rp) => { setAbrirRep(null); onAbrirReparo?.(rp.id); }} />}
     {ver && <VisualizadorFoto lista={ver.lista} inicio={ver.i} onFechar={() => setVer(null)} onMudou={(t) => { setMsg(t); carregar(); }} />}
     <div style={{ ...card, display: "flex", gap: 8, flexWrap: "wrap" }}>
       <select value={f.projeto_id} onChange={(e) => setF({ ...f, projeto_id: e.target.value })} style={{ ...s.input, flex: "1 1 180px" }}><option value="">Todos os projetos</option>{projetos.map((p) => <option key={p.id} value={p.id}>📁 {p.nome}</option>)}</select>
@@ -46,6 +48,8 @@ export default function Defeitos({ C, s, projetos = [], podeEditar }) {
           <div style={{ fontSize: 11.5, color: C.muted }}>👷 {d.tecnicos.join(", ") || "—"} · {quandoBR(d.primeira_em)}{d.ultima_em !== d.primeira_em ? ` → ${quandoBR(d.ultima_em)}` : ""}</div>
           {d.classificacao && <div style={{ fontSize: 12.5 }}>{d.justificativa ? `“${d.justificativa}” — ` : ""}<span style={{ color: C.textSub }}>{d.classificado_por}, {quandoBR(d.classificado_em)}</span>{d.tarefa_id ? " · 🔧 tarefa aberta" : ""}</div>}
         </div>
+        {d.classificacao === "reparar" && (d.reparo ? <button type="button" onClick={() => onAbrirReparo?.(d.reparo.id)} style={{ ...s.btn(false), cursor: "pointer", flex: "0 0 auto" }}>🛠 {d.reparo.numero}{d.reparo.status === "concluido" ? " ✅" : ""}</button>
+          : podeEditar && <button type="button" onClick={() => setAbrirRep(d)} style={{ ...s.btn(true), cursor: "pointer", flex: "0 0 auto" }}>🛠 Abrir reparo</button>)}
         {podeEditar && <div style={{ display: "flex", gap: 6, flexWrap: "wrap", flex: "0 1 auto" }}>{["sem_reparo", "reparar", "investigar"].map((c) => <button key={c} type="button" onClick={() => setCls({ d, classe: c, just: d.classificacao === c ? d.justificativa || "" : "", tarefa: !d.tarefa_id, prazo: "", resp_nome: "", resp_id: null, resp_uid: null })} style={{ padding: "8px 10px", borderRadius: 8, cursor: "pointer", fontSize: 12.5, fontWeight: 600, border: `1px solid ${COR_CLASSE[c]}`, background: d.classificacao === c ? COR_CLASSE[c] : "transparent", color: d.classificacao === c ? "#fff" : C.text }}>{ROT[c]}</button>)}</div>}
       </div>; })}
     </div>)}
