@@ -1,3 +1,4 @@
+
 // components/programacao/EditorAT.jsx — etapa 16c: o modal de uma programação (um item = um conjunto = uma AT)
 //   · rota e data vêm do trecho (BID/pedido) — editáveis
 //   · motorista, cavalo, implemento 1, implemento 2 — cada campo com nome; 🔒 bloqueado não aparece como opção

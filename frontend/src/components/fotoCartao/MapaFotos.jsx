@@ -11,6 +11,7 @@ import "leaflet.markercluster/dist/MarkerCluster.Default.css";
 import apiService from "../../services/apiService";
 import { quandoBR } from "../../utils/cartaoFoto";
 import VisualizadorFoto from "./VisualizadorFoto";
+import BotaoRelatorio from "./BotaoRelatorio";
 
 const dBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
 function base(el, opts = {}) {
@@ -60,7 +61,7 @@ export default function MapaFotos({ C, s }) {
           {sel.tecnicos?.length > 0 && <div style={{ fontSize: 12, color: C.textSub }}>👷 {sel.tecnicos.join(", ")}</div>}
           {sel.defeitos && <div style={{ display: "flex", gap: 4, flexWrap: "wrap", fontSize: 11.5 }}>🔧 {sel.defeitos.total} defeito(s): {[["pendente", "a classificar", "#f59e0b"], ["reparar", "reparar", "#ef4444"], ["investigar", "investigar", "#a855f7"], ["sem_reparo", "sem reparo", "#64748b"]].filter(([k]) => sel.defeitos[k]).map(([k, n, c]) => <span key={k} style={{ border: `1px solid ${c}`, color: c, borderRadius: 8, padding: "0 6px" }}>{sel.defeitos[k]} {n}</span>)}</div>}
           {sel.modelos?.length > 0 && <div style={{ fontSize: 12, color: C.textSub }}>🪪 {sel.modelos.join(", ")}</div>}
-          <div style={{ fontSize: 11.5, color: C.muted }}>Relatórios deste ponto aparecem aqui a partir do E5.</div>
+          {(sel.tipo === "projeto" ? sel.id : sel.projeto_id) && <BotaoRelatorio C={C} s={s} projetoId={sel.tipo === "projeto" ? sel.id : sel.projeto_id} referencia={sel.tipo === "pino" ? sel.referencia || "" : ""} rotulo={sel.tipo === "pino" && sel.referencia ? "📄 Relatório deste aerogerador" : "📄 Relatório do projeto"} estilo={{ justifySelf: "start", padding: "6px 10px", fontSize: 12.5 }} />}
           {!fotos ? <div style={{ fontSize: 12, color: C.muted }}>Carregando fotos…</div> : <div style={{ display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 4 }}>{fotos.fotos.map((x, k) => <a key={x.id} href="#" onClick={(e) => { e.preventDefault(); setVer(k); }} title={`${quandoBR(x.tirada_em)} · ${x.tecnico}`}>{x.url ? <img src={x.url} alt="" loading="lazy" style={{ width: "100%", aspectRatio: "1", objectFit: "cover", borderRadius: 4, display: "block" }} /> : <div style={{ aspectRatio: "1", background: C.border, borderRadius: 4 }} />}</a>)}</div>}
           {fotos && fotos.total > fotos.fotos.length && <div style={{ fontSize: 11.5, color: C.textSub }}>+{fotos.total - fotos.fotos.length} — veja todas em 📁 Projetos</div>}
         </div> : <div style={{ fontSize: 12, color: C.muted }}>Toque num pino. Aproxime o mapa para ver os aerogeradores (⚡).</div>}

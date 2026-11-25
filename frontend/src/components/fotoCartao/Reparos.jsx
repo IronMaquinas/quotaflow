@@ -9,6 +9,7 @@ import CampoFuncionario from "../shared/CampoFuncionario";
 import VisualizadorFoto from "./VisualizadorFoto";
 import * as Fila from "../../utils/filaFotosCartao";
 import { quandoBR } from "../../utils/cartaoFoto";
+import BotaoRelatorio from "./BotaoRelatorio";
 
 const dBR = (d) => (d ? String(d).slice(0, 10).split("-").reverse().join("/") : "—");
 const COR_ST = { aberto: "#60a5fa", em_execucao: "#f59e0b", concluido: "#22c55e", cancelado: "#64748b" };
@@ -73,6 +74,7 @@ function Reparo({ C, s, id, podeEditar, tenant, abrirCamera, onVoltar }) {
     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}><button type="button" onClick={onVoltar} style={{ background: "none", border: "none", color: C.textSub, cursor: "pointer", padding: 0 }}>← Reparos</button>
       <div style={{ fontSize: 18, fontWeight: 800, flex: 1 }}>🛠 {r.numero} · {d ? `${d.referencia ? `${d.referencia} · ` : ""}${d.pa ? `Pá ${d.pa} · ` : ""}Defeito ${d.numero}` : ""}</div>
       <span style={{ fontSize: 12, fontWeight: 700, color: COR_ST[r.status], border: `1px solid ${COR_ST[r.status]}`, borderRadius: 10, padding: "2px 10px" }}>{D.STATUS[r.status]}</span>
+      <BotaoRelatorio C={C} s={s} reparoId={r.id} rotulo="📄 Relatório do reparo" />
       {podeEditar && !fechado && <button type="button" onClick={() => setModal({ tipo: "cancelar", motivo: "" })} style={{ ...s.btn(false), cursor: "pointer", color: C.danger }}>Cancelar reparo</button>}</div>
     <div style={{ fontSize: 12.5, color: C.textSub }}>📁 {D.projeto?.nome} · {r.modelo_nome} · cartão: {D.cartao?.nome || "—"} · 👷 {r.responsavel || "—"}{r.prazo ? ` · prazo ${dBR(r.prazo)}` : ""} · {D.progresso.concluidas}/{D.progresso.total} etapas</div>
     {r.status === "cancelado" && <div style={{ ...card, borderLeft: `4px solid ${C.danger}`, fontSize: 13 }}>Cancelado em {quandoBR(r.cancelado_em)}: {r.cancelamento_motivo}</div>}

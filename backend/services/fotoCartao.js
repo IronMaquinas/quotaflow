@@ -122,7 +122,7 @@ async function listarProjetos(sb, tenantId, { todos = false } = {}) {
   const [ps, fs] = await Promise.all([q(sb.from('projetos_foto').select('*').eq('tenant_id', tenantId)), q(sb.from('fotos_cartao').select('*').eq('tenant_id', tenantId)).then((l) => l.filter((x) => !x.excluida_em))]);
   const hoje = new Date(Date.now() - 3 * 3600e3).toISOString().slice(0, 10);
   const lista = ps.filter((p) => todos || p.status === 'ativo').map((p) => { const fp = fs.filter((f) => String(f.projeto_id) === String(p.id));
-    return { ...p, fotos: fp.length, fotos_hoje: fp.filter((f) => diaBR(f.tirada_em) === hoje || diaBR(f.criado_em) === hoje).length, tecnicos: [...new Set(fp.map((f) => f.tecnico).filter(Boolean))], ultima_em: fp.reduce((m, f) => (String(f.criado_em) > m ? String(f.criado_em) : m), '') || null }; })
+    return { ...p, fotos: fp.length, fotos_hoje: fp.filter((f) => diaBR(f.tirada_em) === hoje || diaBR(f.criado_em) === hoje).length, tecnicos: [...new Set(fp.map((f) => f.tecnico).filter(Boolean))], aerogeradores: [...new Set(fp.map((f) => normRef(f.referencia)).filter(Boolean))].sort((x, y) => x.localeCompare(y, 'pt-BR', { numeric: true })), ultima_em: fp.reduce((m, f) => (String(f.criado_em) > m ? String(f.criado_em) : m), '') || null }; })
     .sort((a, b) => (a.status === b.status ? String(b.ultima_em || b.criado_em).localeCompare(String(a.ultima_em || a.criado_em)) : a.status === 'ativo' ? -1 : 1));
   return { projetos: lista, sem_projeto: fs.filter((f) => !f.projeto_id).length };
 }

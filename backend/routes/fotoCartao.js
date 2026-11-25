@@ -1,4 +1,5 @@
 // routes/fotoCartao.js — etapa E1: 📸 foto com cartão
+//   E5: GET /relatorio?projeto_id&referencia&reparo_id&fotos_por_defeito&sem_reparo=0
 //   E4: /reparo-modelos (GET, POST, PUT) · /reparos (GET, POST abrir, GET/PUT :id) · PUT /reparos/:id/etapas/:eid (rascunho) · POST …/concluir · …/liberar · …/reabrir · POST /reparos/:id/cancelar
 //   E3: GET /defeitos?projeto_id&classe&referencia&busca · POST /defeitos/:id/classificar { classificacao, justificativa, criar_tarefa, prazo, responsavel_ref }
 //   E2.2: POST /fotos/:id/excluir { motivo } (lixeira 30 dias) · POST /fotos/:id/restaurar · GET /fotos?lixeira=1
@@ -41,6 +42,7 @@ router.post('/reparos/:id/etapas/:eid/concluir', r(CAMPO, async (req) => RP.salv
 router.post('/reparos/:id/etapas/:eid/liberar', r(GESTAO, async (req) => RP.liberarEtapa(supabase, req.tenantId, await quem(req), req.params.id, req.params.eid, req.body || {})));
 router.post('/reparos/:id/etapas/:eid/reabrir', r(GESTAO, async (req) => RP.reabrirEtapa(supabase, req.tenantId, await quem(req), req.params.id, req.params.eid, req.body || {})));
 router.post('/reparos/:id/cancelar', r(GESTAO, async (req) => RP.cancelar(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
+router.get('/relatorio', r(CAMPO, (req) => require('../services/relatorioInspecao').montar(supabase, req.tenantId, req.query || {}))); // E5: dados do relatório (PDF montado na tela)
 router.get('/defeitos', r(CAMPO, (req) => require('../services/defeitosFoto').listar(supabase, req.tenantId, req.query || {}))); // E3: defeitos e triagem
 router.post('/defeitos/:id/classificar', r(GESTAO, async (req) => require('../services/defeitosFoto').classificar(supabase, req.tenantId, await quem(req), req.params.id, req.body || {})));
 router.get('/mapa', r(CAMPO, (req) => F.mapa(supabase, req.tenantId, req.query || {}))); // E2.1

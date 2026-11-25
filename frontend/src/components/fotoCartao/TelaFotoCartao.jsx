@@ -7,6 +7,7 @@ import CameraCartao from "./CameraCartao";
 import MapaFotos, { SeletorLocal } from "./MapaFotos";
 import VisualizadorFoto from "./VisualizadorFoto";
 import Defeitos from "./Defeitos";
+import BotaoRelatorio from "./BotaoRelatorio";
 import Reparos, { ProcedimentosReparo, valoresDaEtapa } from "./Reparos";
 import * as Fila from "../../utils/filaFotosCartao";
 import { desenharCartao, alturaCartao, carregarImagem, quandoBR, gpsTxt } from "../../utils/cartaoFoto";
@@ -110,6 +111,7 @@ export default function TelaFotoCartao({ C, s, embutida = false }) {
       {aba === "projetos" && abrirPj && <div style={{ display: "grid", gap: 10 }}>
         <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}><button type="button" onClick={() => { setAbrirPj(null); carregarPj(); }} style={{ background: "none", border: "none", color: C.textSub, cursor: "pointer", padding: 0 }}>← Projetos</button>
           <div style={{ fontSize: 18, fontWeight: 800, flex: 1 }}>📁 {abrirPj.nome}</div>
+          <BotaoRelatorio C={C} s={s} projetoId={abrirPj.id} aerogeradores={abrirPj.aerogeradores || []} />
           {podeEditar && <button type="button" onClick={() => setNovoPj({ ...abrirPj, inicio: abrirPj.inicio || "", fim: abrirPj.fim || "" })} style={{ ...s.btn(false), cursor: "pointer" }}>✎ Editar</button>}
           {podeEditar && <button type="button" onClick={async () => { try { const r = await apiService.put(`/foto-cartao/projetos/${abrirPj.id}`, { ...abrirPj, status: abrirPj.status === "ativo" ? "encerrado" : "ativo" }); setAbrirPj({ ...abrirPj, ...r.projeto }); carregarPj(); } catch (e) { setMsg(`⚠ ${e?.response?.data?.erro || e.message}`); } }} style={{ ...s.btn(false), cursor: "pointer" }}>{abrirPj.status === "ativo" ? "Encerrar projeto" : "Reabrir projeto"}</button>}</div>
         <div style={{ fontSize: 12.5, color: C.textSub }}>{[abrirPj.cliente_nome, abrirPj.local, abrirPj.descricao].filter(Boolean).join(" · ")} · atualiza sozinho a cada 20 s</div>
