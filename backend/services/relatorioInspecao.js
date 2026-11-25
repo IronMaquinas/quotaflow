@@ -10,7 +10,8 @@ async function montar(sb, tenantId, f = {}) {
   let projetoId = f.projeto_id; let soReparo = null;
   if (f.reparo_id) { const r = (await q(sb.from('reparos').select('*').eq('tenant_id', tenantId).eq('id', f.reparo_id)))[0]; if (!r) return { status: 404, erro: 'Reparo não encontrado.' }; soReparo = r; projetoId = r.projeto_id; }
   const projeto = (await q(sb.from('projetos_foto').select('*').eq('tenant_id', tenantId).eq('id', projetoId)))[0]; if (!projeto) return { status: 404, erro: 'Projeto não encontrado.' };
-  const lim = Math.min(Math.max(parseInt(f.fotos_por_defeito, 10) || 4, 0), 12);
+  // E5.1: por padrão TODAS as fotos que o inspetor coletou (cada defeito tem a sua história); "resumido" = 1 foto por defeito
+  const lim = f.fotos === 'resumo' ? 1 : f.fotos === 'nenhuma' ? 0 : Infinity;
   let defeitos = (await DF.listar(sb, tenantId, { projeto_id: projeto.id })).defeitos;
   if (f.referencia) defeitos = defeitos.filter((d) => norm(d.referencia) === norm(f.referencia));
   if (soReparo) defeitos = defeitos.filter((d) => String(d.id) === String(soReparo.defeito_id));

@@ -461,7 +461,7 @@ const ESPERADO = {
   'front:FichaAnaliseCritica.jsx': 'e958ea6f3b5d29ca01d330efc571d1ad', // etapa R2.5
   'migrations/121_fotos_cartao.sql': '0180c64787440359d49b1d65c77b80d5', // etapa E1 (novo)
   'services/fotoCartao.js': 'aae573a48e7746b26e7b1b62d5cf8429', // etapa E5
-  'routes/fotoCartao.js': 'c7933b48cec7adbbe678f4dd7ee6cd20', // etapa E5
+  'routes/fotoCartao.js': 'c51c67dc5e1f7f0e2a2594f22198c5b2', // etapa E5.1
   'front:TelaFotoCartao.jsx': 'c88b6fddf37042224ed39d91bd987b7f', // etapa E5
   'front:CameraCartao.jsx': '2817ea0fcc46fc27896352c3486e5012', // etapa E4
   'front:cartaoFoto.js': '972266f2ba42ec4877d571b4b074f2eb', // etapa E4
@@ -477,18 +477,16 @@ const ESPERADO = {
   'migrations/126_reparos.sql': 'e43704459afdef47ef901105e33c2cd4', // etapa E4 (novo)
   'services/reparos.js': '85d0599874575bae31d0632e4ae06b27', // etapa E4 (novo)
   'front:Reparos.jsx': 'a0b6f91513d72f71ddce77236fe26c70', // etapa E5
-  'services/relatorioInspecao.js': 'fa993205231b47ee8ac192658d078e17', // etapa E5 (novo)
-  'front:BotaoRelatorio.jsx': '28fdb506b5200a0c50d11bc228a2ff81', // etapa E5 (novo)
+  'services/relatorioInspecao.js': '01ba5142d3850772e7f194791ac0cd34', // etapa E5.1
+  'front:BotaoRelatorio.jsx': '5ca25cc823670afaeef8810e26c78c2e', // etapa E5.1
   'front:relatorioFotoCartao.js': '9a69f67e53239d524953e06ff0e725bc', // etapa E5 (novo)
 };
 
-// Antes de copiar a etapa E5 — base: E4 (de40aa3)
+// Antes de copiar a etapa E5.1 — base: E5 (a755109)
 const ANTES = {
-  'services/fotoCartao.js': '852b9d1f7b542fb6651b163f4d63ef99',
-  'routes/fotoCartao.js': 'c7ceaf0fb8c8c9a302e07cde6c89cc49',
-  'front:TelaFotoCartao.jsx': '3a89f39c2b86bfda4fcb21e851e93d14',
-  'front:Reparos.jsx': 'e867c991e4cf436ecaad2d8d09614785',
-  'front:MapaFotos.jsx': 'c8f341dfebb31fc99b5ecd7abb6bd9b9',
+  'services/relatorioInspecao.js': 'fa993205231b47ee8ac192658d078e17',
+  'routes/fotoCartao.js': 'c7933b48cec7adbbe678f4dd7ee6cd20',
+  'front:BotaoRelatorio.jsx': '28fdb506b5200a0c50d11bc228a2ff81',
 };
 
 const RAIZ = process.cwd();
@@ -526,7 +524,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a E5)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a E5.1)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

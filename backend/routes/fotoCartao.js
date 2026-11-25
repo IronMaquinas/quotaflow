@@ -1,5 +1,5 @@
 // routes/fotoCartao.js — etapa E1: 📸 foto com cartão
-//   E5: GET /relatorio?projeto_id&referencia&reparo_id&fotos_por_defeito&sem_reparo=0
+//   E5: GET /relatorio?projeto_id&referencia&reparo_id&fotos=todas|resumo|nenhuma&sem_reparo=0
 //   E4: /reparo-modelos (GET, POST, PUT) · /reparos (GET, POST abrir, GET/PUT :id) · PUT /reparos/:id/etapas/:eid (rascunho) · POST …/concluir · …/liberar · …/reabrir · POST /reparos/:id/cancelar
 //   E3: GET /defeitos?projeto_id&classe&referencia&busca · POST /defeitos/:id/classificar { classificacao, justificativa, criar_tarefa, prazo, responsavel_ref }
 //   E2.2: POST /fotos/:id/excluir { motivo } (lixeira 30 dias) · POST /fotos/:id/restaurar · GET /fotos?lixeira=1
