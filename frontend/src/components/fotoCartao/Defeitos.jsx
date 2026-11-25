@@ -2,6 +2,7 @@
 //   Lista por projeto → aerogerador → pá → nº do defeito (o sistema junta as fotos do mesmo defeito pelo cartão).
 //   Classificar: a) sem reparo · b) reparar · c) investigar mais (justificativa em a e c; c pode criar tarefa 🔧 DF).
 //   Reclassificar guarda histórico. Técnico vê a lista; quem classifica é admin, gestor ou qualidade.
+import { voc, minus } from "../../utils/vocabInspecao";
 import { useEffect, useState } from "react";
 import apiService from "../../services/apiService";
 import CampoFuncionario from "../shared/CampoFuncionario";
@@ -29,21 +30,21 @@ export default function Defeitos({ C, s, projetos = [], podeEditar, cartoes = []
     {ver && <VisualizadorFoto lista={ver.lista} inicio={ver.i} onFechar={() => setVer(null)} onMudou={(t) => { setMsg(t); carregar(); }} />}
     <div style={{ ...card, display: "flex", gap: 8, flexWrap: "wrap" }}>
       <select value={f.projeto_id} onChange={(e) => setF({ ...f, projeto_id: e.target.value })} style={{ ...s.input, flex: "1 1 180px" }}><option value="">Todos os projetos</option>{projetos.map((p) => <option key={p.id} value={p.id}>📁 {p.nome}</option>)}</select>
-      <input value={f.busca} onChange={(e) => setF({ ...f, busca: e.target.value })} placeholder="🔎 Aerogerador, pá, nº, valor do cartão…" style={{ ...s.input, flex: "2 1 220px" }} />
+      <input value={f.busca} onChange={(e) => setF({ ...f, busca: e.target.value })} placeholder={`🔎 ${voc().ativo}, ${minus(voc().componente)}, nº, valor do cartão…`} style={{ ...s.input, flex: "2 1 220px" }} />
     </div>
     <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{[["pendente"], ["reparar"], ["investigar"], ["sem_reparo"], [""]].map(([k]) => <button key={k || "todos"} type="button" onClick={() => setF({ ...f, classe: k })} style={{ padding: "7px 12px", borderRadius: 16, cursor: "pointer", fontSize: 12.5, fontWeight: 600, border: `1px solid ${k ? COR_CLASSE[k] : C.border}`, background: f.classe === k ? (k ? COR_CLASSE[k] : C.accent) : "transparent", color: f.classe === k ? "#fff" : C.text }}>
       {k ? ROT[k] : "Todos"} {L ? `· ${k ? L.contagem[k] : Object.values(L.contagem).reduce((a, b) => a + b, 0)}` : ""}</button>)}</div>
     {msg && <div style={{ fontSize: 13, color: /^⚠/.test(msg) ? C.warn : "#22c55e" }}>{msg}</div>}
     {erro && <div style={{ ...card, color: C.danger }}>{erro}</div>}
     {!L && !erro && <div style={{ color: C.muted }}>Carregando…</div>}
-    {L && !L.defeitos.length && <div style={{ ...card, color: C.muted, fontSize: 13 }}>{f.classe === "pendente" ? "Nenhum defeito esperando classificação." : "Nenhum defeito com esse filtro."} Os defeitos aparecem sozinhos quando a foto tem projeto e o cartão traz o <b>nº do defeito</b> (e a pá).</div>}
+    {L && !L.defeitos.length && <div style={{ ...card, color: C.muted, fontSize: 13 }}>{f.classe === "pendente" ? "Nenhum defeito esperando classificação." : "Nenhum defeito com esse filtro."} Os defeitos aparecem sozinhos quando a foto tem projeto e o cartão traz o <b>nº do defeito</b> (e o componente).</div>}
     {grupos.map((g) => <div key={g.k} style={{ display: "grid", gap: 6 }}>
-      <div style={{ fontSize: 12.5, fontWeight: 700, color: C.textSub, marginTop: 4 }}>📁 {g.projeto}{g.referencia ? ` · ⚡ ${g.referencia}` : ""} · {g.itens.length}</div>
+      <div style={{ fontSize: 12.5, fontWeight: 700, color: C.textSub, marginTop: 4 }}>📁 {g.projeto}{g.referencia ? ` · ${voc().icone} ${g.referencia}` : ""} · {g.itens.length}</div>
       {g.itens.map((d) => { const k = d.classificacao || "pendente"; return <div key={d.id} style={{ ...card, display: "flex", gap: 12, alignItems: "flex-start", flexWrap: "wrap", borderLeft: `4px solid ${COR_CLASSE[k]}` }}>
         <button type="button" onClick={() => abrirFotos(d)} style={{ width: 92, height: 92, padding: 0, border: `1px solid ${C.border}`, borderRadius: 8, overflow: "hidden", cursor: "pointer", background: C.border, position: "relative", flex: "0 0 auto" }}>
           {d.capa_url && <img src={d.capa_url} alt="" loading="lazy" style={{ width: "100%", height: "100%", objectFit: "cover" }} />}<span style={{ position: "absolute", right: 3, bottom: 3, background: "rgba(0,0,0,.7)", color: "#fff", fontSize: 11, borderRadius: 6, padding: "0 5px" }}>📸 {d.fotos}</span></button>
         <div style={{ flex: "1 1 240px", display: "grid", gap: 3 }}>
-          <div style={{ fontWeight: 800, fontSize: 15 }}>{d.pa ? `Pá ${d.pa} · ` : ""}Defeito {d.numero} <span style={{ fontSize: 11.5, fontWeight: 700, color: COR_CLASSE[k], border: `1px solid ${COR_CLASSE[k]}`, borderRadius: 10, padding: "1px 8px", marginLeft: 4 }}>{ROT[k]}</span></div>
+          <div style={{ fontWeight: 800, fontSize: 15 }}>{d.pa ? `${voc().componente} ${d.pa} · ` : ""}Defeito {d.numero} <span style={{ fontSize: 11.5, fontWeight: 700, color: COR_CLASSE[k], border: `1px solid ${COR_CLASSE[k]}`, borderRadius: 10, padding: "1px 8px", marginLeft: 4 }}>{ROT[k]}</span></div>
           <div style={{ fontSize: 12, color: C.textSub }}>{Object.entries(d.resumo || {}).filter(([r]) => !/^p[áa]$|defeito/i.test(r)).map(([r, v]) => `${r}: ${v}`).join(" · ") || "—"}</div>
           <div style={{ fontSize: 11.5, color: C.muted }}>👷 {d.tecnicos.join(", ") || "—"} · {quandoBR(d.primeira_em)}{d.ultima_em !== d.primeira_em ? ` → ${quandoBR(d.ultima_em)}` : ""}</div>
           {d.classificacao && <div style={{ fontSize: 12.5 }}>{d.justificativa ? `“${d.justificativa}” — ` : ""}<span style={{ color: C.textSub }}>{d.classificado_por}, {quandoBR(d.classificado_em)}</span>{d.tarefa_id ? " · 🔧 tarefa aberta" : ""}</div>}
@@ -55,7 +56,7 @@ export default function Defeitos({ C, s, projetos = [], podeEditar, cartoes = []
     </div>)}
     {cls && <div onClick={() => setCls(null)} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
       <div onClick={(e) => e.stopPropagation()} style={{ ...card, width: "min(500px, 100%)", maxHeight: "92vh", overflowY: "auto", display: "grid", gap: 10 }}>
-        <div style={{ fontWeight: 800, fontSize: 16 }}>{cls.d.pa ? `Pá ${cls.d.pa} · ` : ""}Defeito {cls.d.numero} <span style={{ fontSize: 12.5, color: C.textSub, fontWeight: 400 }}>{cls.d.projeto}{cls.d.referencia ? ` · ${cls.d.referencia}` : ""}</span></div>
+        <div style={{ fontWeight: 800, fontSize: 16 }}>{cls.d.pa ? `${voc().componente} ${cls.d.pa} · ` : ""}Defeito {cls.d.numero} <span style={{ fontSize: 12.5, color: C.textSub, fontWeight: 400 }}>{cls.d.projeto}{cls.d.referencia ? ` · ${cls.d.referencia}` : ""}</span></div>
         <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{["sem_reparo", "reparar", "investigar"].map((c) => <button key={c} type="button" onClick={() => setCls({ ...cls, classe: c })} style={{ padding: "9px 12px", borderRadius: 8, cursor: "pointer", fontWeight: 700, border: `1px solid ${COR_CLASSE[c]}`, background: cls.classe === c ? COR_CLASSE[c] : "transparent", color: cls.classe === c ? "#fff" : C.text }}>{ROT[c]}</button>)}
           {cls.d.classificacao && <button type="button" onClick={() => setCls({ ...cls, classe: null })} style={{ padding: "9px 12px", borderRadius: 8, cursor: "pointer", border: `1px solid ${C.border}`, background: cls.classe === null ? C.border : "transparent", color: C.text }}>↺ Voltar a classificar</button>}</div>
         <div><span style={lab}>JUSTIFICATIVA {exige ? "*" : "(opcional)"}</span><textarea value={cls.just} onChange={(e) => setCls({ ...cls, just: e.target.value })} rows={3} placeholder={cls.classe === "sem_reparo" ? "Ex.: dentro da tolerância do manual do fabricante" : cls.classe === "investigar" ? "Ex.: ultrassom inconclusivo — repetir com sonda de 2 MHz" : "Ex.: delaminação acima do limite — reparo estrutural"} style={{ ...s.input, width: "100%" }} /></div>

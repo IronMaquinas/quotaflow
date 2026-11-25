@@ -19,7 +19,16 @@ const EXEMPLOS = [{ chave: 'laminado', nome: 'Reparo de laminado — pá eólica
   { titulo: 'Fibras reposicionadas', instrucao: 'Corte e posicionamento do biax conforme o escalonamento.', fotos_min: 1, materiais: true },
   { titulo: 'Hand lay-up', instrucao: 'Laminação manual: registre resina, endurecedor e proporção da mistura, temperatura e umidade.', fotos_min: 2, materiais: true, ambiente: true },
   { titulo: 'Gel coat aplicado', instrucao: 'Acabamento: pore filling e gel coat; registre materiais, proporção e condições.', fotos_min: 2, materiais: true, ambiente: true },
-] }];
+] },
+  // E6: reparo de solda (tubulação / caldeiraria)
+  { chave: 'solda', nome: 'Reparo de solda', descricao: 'Remoção da descontinuidade, END de liberação, ressoldagem conforme EPS e END final.', etapas: [
+    { titulo: 'Indicação antes do reparo', instrucao: 'Fotografe a indicação com o cartão e a marcação da região.', fotos_min: 1 },
+    { titulo: 'Remoção (goivagem / esmerilhamento)', instrucao: 'Remova a descontinuidade; registre a profundidade da cavidade.', fotos_min: 1, campos: [{ rotulo: 'Profundidade', tipo: 'numero', unidade: 'mm' }, { rotulo: 'Comprimento', tipo: 'numero', unidade: 'mm' }] },
+    { titulo: 'END após remoção (PT/MT)', instrucao: 'Confirme a remoção total antes de soldar.', fotos_min: 1, campos: [{ rotulo: 'Técnica' }, { rotulo: 'Resultado' }], liberacao: true },
+    { titulo: 'Pré-aquecimento', instrucao: 'Registre a temperatura de pré-aquecimento e as condições.', fotos_min: 1, campos: [{ rotulo: 'Temperatura da peça', tipo: 'numero', unidade: '°C' }], ambiente: true },
+    { titulo: 'Soldagem', instrucao: 'Conforme EPS; registre soldador, consumível (lote) e parâmetros.', fotos_min: 2, campos: [{ rotulo: 'Soldador (sinete)' }, { rotulo: 'EPS' }], materiais: true },
+    { titulo: 'END final', instrucao: 'Ensaio final conforme o critério de aceitação.', fotos_min: 1, campos: [{ rotulo: 'Técnica' }, { rotulo: 'Resultado' }, { rotulo: 'Relatório de END nº' }], liberacao: true },
+  ] }];
 
 function validarEtapas(lista) {
   const out = []; const ids = new Set();

@@ -7,6 +7,7 @@ import CameraCartao from "./CameraCartao";
 import MapaFotos, { SeletorLocal } from "./MapaFotos";
 import VisualizadorFoto from "./VisualizadorFoto";
 import Defeitos from "./Defeitos";
+import { voc, definirVoc } from "../../utils/vocabInspecao";
 import BotaoRelatorio from "./BotaoRelatorio";
 import Reparos, { ProcedimentosReparo, valoresDaEtapa } from "./Reparos";
 import * as Fila from "../../utils/filaFotosCartao";
@@ -38,12 +39,12 @@ export default function TelaFotoCartao({ C, s, embutida = false }) {
   const [modeloId, setModeloId] = useState(ult.modelo_id || ""); const [ref, setRef] = useState(ult.referencia || ""); const [cam, setCam] = useState(false); const [cartao, setCartao] = useState(ult.cartao || null);
   const [fila, setFila] = useState({ pendentes: 0, erros: 0 }); const [refs, setRefs] = useState([]); const [persist, setPersist] = useState(null);
   const lerPj = () => { try { return JSON.parse(localStorage.getItem(PJ_CACHE) || "null"); } catch { return null; } };
-  const [P, setP] = useState(lerPj); const [camRep, setCamRep] = useState(null); const [repAbrir, setRepAbrir] = useState(null); const [subModelos, setSubModelos] = useState("cartoes"); const [projetoId, setProjetoId] = useState(ult.projeto_id || ""); const [novoPj, setNovoPj] = useState(null); const [abrirPj, setAbrirPj] = useState(null);
+  const [P, setP] = useState(lerPj); const [camRep, setCamRep] = useState(null); const [repAbrir, setRepAbrir] = useState(null); const [subModelos, setSubModelos] = useState("cartoes"); const [, setVocTick] = useState(0); const [vocDef, setVocDef] = useState(null); const [projetoId, setProjetoId] = useState(ult.projeto_id || ""); const [novoPj, setNovoPj] = useState(null); const [abrirPj, setAbrirPj] = useState(null);
   const carregarPj = () => apiService.get(`/foto-cartao/projetos${podeEditar ? "?todos=1" : ""}`).then((r) => { setP(r); try { localStorage.setItem(PJ_CACHE, JSON.stringify(r)); } catch { /* ok */ } }).catch(() => {});
   const tenant = chaveTenant();
   const carregar = () => apiService.get(`/foto-cartao/modelos${podeEditar ? "?todos=1" : ""}`).then((r) => { setM(r); setErro(""); }).catch((e) => setErro(e?.response?.data?.erro || e.message));
   const sincronizar = async () => { const r = await Fila.sincronizar(tenant, (corpo) => apiService.post("/foto-cartao/fotos", corpo)); const l = await Fila.listar(tenant); setFila({ pendentes: l.filter((x) => x.status !== "erro").length, erros: l.filter((x) => x.status === "erro").length, lista: l }); return r; };
-  useEffect(() => { Fila.pedirPersistencia().then(setPersist); carregar(); carregarPj(); sincronizar(); apiService.get("/foto-cartao/fotos?limite=1").then((r) => setRefs(r.referencias || [])).catch(() => {}); const f = () => sincronizar(); window.addEventListener("online", f); const t = setInterval(f, 30000); return () => { window.removeEventListener("online", f); clearInterval(t); }; }, []); // eslint-disable-line
+  useEffect(() => { apiService.get("/foto-cartao/config").then((r) => { definirVoc(r.vocabulario); setVocDef(r); setVocTick((t) => t + 1); }).catch(() => {}); Fila.pedirPersistencia().then(setPersist); carregar(); carregarPj(); sincronizar(); apiService.get("/foto-cartao/fotos?limite=1").then((r) => setRefs(r.referencias || [])).catch(() => {}); const f = () => sincronizar(); window.addEventListener("online", f); const t = setInterval(f, 30000); return () => { window.removeEventListener("online", f); clearInterval(t); }; }, []); // eslint-disable-line
   const ativos = (M?.modelos || []).filter((m) => m.ativo !== false); const modelo = ativos.find((m) => String(m.id) === String(modeloId)) || null;
   const [fPj, setFPj] = useState({ busca: "", status: "ativo", ordem: "recente" }); const [bTirar, setBTirar] = useState("");
   const recentes = (() => { try { return JSON.parse(localStorage.getItem(PJ_RECENTES) || "[]"); } catch { return []; } })();
@@ -60,7 +61,7 @@ export default function TelaFotoCartao({ C, s, embutida = false }) {
     onFechar={() => { setCam(false); sincronizar(); }} />;
   return (
     <div style={{ padding: embutida ? "14px" : "20px clamp(12px, 3vw, 28px)", display: "grid", gap: 14 }}>
-      {!embutida && <div><div style={{ fontSize: 22, fontWeight: 800 }}>📸 Foto com cartão</div><div style={{ fontSize: 13, color: C.textSub, marginTop: 2 }}>O cartão de registro vai gravado na própria foto — sem cartão plastificado, caneta e pano. Funciona sem sinal: as fotos ficam no aparelho e sobem depois.</div></div>}
+      {!embutida && <div><div style={{ fontSize: 22, fontWeight: 800 }}>📸 Inspeção de campo</div><div style={{ fontSize: 13, color: C.textSub, marginTop: 2 }}>O cartão de registro vai gravado na própria foto — sem cartão plastificado, caneta e pano. Funciona sem sinal: as fotos ficam no aparelho e sobem depois.</div></div>}
       <div style={{ display: "flex", gap: 4, borderBottom: `1px solid ${C.border}`, flexWrap: "wrap" }}>{abas.map(([k, l]) => <button key={k} type="button" onClick={() => setAba(k)} style={{ background: "transparent", border: "none", borderBottom: `2px solid ${aba === k ? C.accent : "transparent"}`, padding: "8px 12px", color: aba === k ? C.text : C.muted, fontWeight: 600, cursor: "pointer" }}>{l}</button>)}</div>
       {erro && <div style={{ ...card, color: C.danger }}>{erro}</div>}
       {msg && <div style={{ fontSize: 13, color: /^⚠/.test(msg) ? C.warn : "#22c55e" }}>{msg}</div>}
@@ -84,7 +85,7 @@ export default function TelaFotoCartao({ C, s, embutida = false }) {
             {bTirar && !pjAtivos.some((p) => casa(p, bTirar)) && <span style={{ fontSize: 12.5, color: C.muted, flex: "1 1 100%" }}>Nenhum projeto com "{bTirar}".</span>}
             {!pjAtivos.length && !podeEditar && <span style={{ fontSize: 12.5, color: C.textSub }}>Nenhum projeto ativo — peça ao gestor para abrir o projeto.</span>}
           </div></div>
-          <div><span style={lab}>AEROGERADOR / DETALHE (opcional)</span><input value={ref} list="qf-refs-cartao" onChange={(e) => setRef(e.target.value)} placeholder="Ex.: WTG-07" style={{ ...s.input, width: "100%", maxWidth: 420 }} /><datalist id="qf-refs-cartao">{refs.map((r) => <option key={r} value={r} />)}</datalist></div>
+          <div><span style={lab}>{voc().ativo.toUpperCase()} / DETALHE (opcional)</span><input value={ref} list="qf-refs-cartao" onChange={(e) => setRef(e.target.value)} placeholder={`Ex.: ${voc().exemplo}`} style={{ ...s.input, width: "100%", maxWidth: 420 }} /><datalist id="qf-refs-cartao">{refs.map((r) => <option key={r} value={r} />)}</datalist></div>
           {modelo && <Previa modelo={modelo} />}
           <button type="button" disabled={!modelo || !projeto} onClick={() => { if (!navigator.mediaDevices?.getUserMedia) return setMsg("⚠ Este navegador não libera a câmera. Use o Safari (iPhone) ou o Chrome (Android)."); setMsg(""); setCam(true); }} style={{ ...s.btn(true), cursor: "pointer", padding: "14px 20px", fontSize: 16, opacity: modelo && projeto ? 1 : 0.5, justifySelf: "start" }}>📸 Abrir câmera</button>
           {modelo && !projeto && <div style={{ fontSize: 12, color: C.warn }}>Escolha o projeto — toda foto nasce dentro de um projeto.</div>}
@@ -127,9 +128,10 @@ export default function TelaFotoCartao({ C, s, embutida = false }) {
           <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button type="button" onClick={() => setNovoPj(null)} style={{ ...s.btn(false), cursor: "pointer" }}>Voltar</button>
             <button type="button" onClick={async () => { try { const r = novoPj.id ? await apiService.put(`/foto-cartao/projetos/${novoPj.id}`, novoPj) : await apiService.post("/foto-cartao/projetos", novoPj); setNovoPj(null); setMsg(`Projeto "${r.projeto.nome}" salvo.`); if (!novoPj.id) setProjetoId(r.projeto.id); if (abrirPj) setAbrirPj({ ...abrirPj, ...r.projeto }); carregarPj(); } catch (e) { setMsg(`⚠ ${e?.response?.data?.erro || e.message}`); } }} style={{ ...s.btn(true), cursor: "pointer" }}>Salvar projeto</button></div>
         </div></div>}
-      {aba === "modelos" && podeEditar && <div style={{ display: "flex", gap: 6 }}>{[["cartoes", "🪪 Cartões"], ["procedimentos", "🛠 Procedimentos de reparo"]].map(([k, l]) => <button key={k} type="button" onClick={() => setSubModelos(k)} style={{ ...s.btn(subModelos === k), cursor: "pointer", padding: "6px 12px" }}>{l}</button>)}</div>}
+      {aba === "modelos" && podeEditar && <div style={{ display: "flex", gap: 6 }}>{[["cartoes", "🪪 Cartões"], ["procedimentos", "🛠 Procedimentos de reparo"], ["vocabulario", "🔤 Tipo de inspeção"]].map(([k, l]) => <button key={k} type="button" onClick={() => setSubModelos(k)} style={{ ...s.btn(subModelos === k), cursor: "pointer", padding: "6px 12px" }}>{l}</button>)}</div>}
       {aba === "modelos" && podeEditar && subModelos === "cartoes" && M && <Modelos C={C} s={s} M={M} onMudou={carregar} setMsg={setMsg} />}
       {aba === "modelos" && podeEditar && subModelos === "procedimentos" && <ProcedimentosReparo C={C} s={s} setMsg={setMsg} />}
+      {aba === "modelos" && podeEditar && subModelos === "vocabulario" && vocDef && <Vocabulario C={C} s={s} def={vocDef} onSalvo={(r) => { definirVoc(r.vocabulario); setVocDef(r); setVocTick((t) => t + 1); setMsg(`Tipo de inspeção salvo: ${r.vocabulario.ativo} / ${r.vocabulario.componente}.`); }} setMsg={setMsg} />}
     </div>
   );
 }
@@ -141,6 +143,20 @@ async function copiasNoAparelho(lista, setMsg) {
   try { if (navigator.canShare?.({ files: arqs })) { await navigator.share({ files: arqs }); return; } } catch (e) { if (e?.name === "AbortError") return; }
   for (const f of arqs) { const a = document.createElement("a"); a.href = URL.createObjectURL(f); a.download = f.name; a.click(); setTimeout(() => URL.revokeObjectURL(a.href), 4000); }
   setMsg(`${arqs.length} cópia(s) baixada(s).`);
+}
+
+// E6: tipo de inspeção / vocabulário (eólica, tubulação, soldagem, estruturas, genérico — ou nomes próprios)
+function Vocabulario({ C, s, def, onSalvo, setMsg }) {
+  const [v, setV] = useState({ preset: def.vocabulario.preset, ativo: def.vocabulario.ativo, ativos: def.vocabulario.ativos, componente: def.vocabulario.componente, exemplo: def.vocabulario.exemplo });
+  const card = { ...s.card, padding: "14px 16px" }; const lab = { fontSize: 11.5, color: C.textSub, display: "block", marginBottom: 3 };
+  const escolher = (k) => { const p = def.PRESETS[k]; setV({ preset: k, ativo: p.ativo, ativos: p.ativos, componente: p.componente, exemplo: p.exemplo }); };
+  return <div style={{ ...card, display: "grid", gap: 12 }}>
+    <div style={{ fontSize: 13, color: C.textSub }}>Como a sua inspeção chama <b>onde</b> está o defeito (ativo) e <b>o quê</b> (componente). Aparece na câmera, nos defeitos, nos reparos, no mapa e no relatório.</div>
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{Object.entries(def.PRESETS).map(([k, p]) => <button key={k} type="button" onClick={() => escolher(k)} style={{ ...s.btn(v.preset === k), cursor: "pointer" }}>{p.icone} {p.nome}</button>)}</div>
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{[["ativo", "ATIVO (singular)"], ["ativos", "ATIVO (plural)"], ["componente", "COMPONENTE"], ["exemplo", "EXEMPLO DE REFERÊNCIA"]].map(([k, l]) => <div key={k} style={{ flex: "1 1 150px" }}><span style={lab}>{l}</span><input value={v[k]} onChange={(e) => setV({ ...v, [k]: e.target.value })} style={{ ...s.input, width: "100%" }} /></div>)}</div>
+    <div style={{ fontSize: 12.5, color: C.muted }}>Exemplo: "{v.ativo} {v.exemplo} · {v.componente} B · Defeito 3" · mapa: "{(v.ativos || "").toLowerCase()} inspecionados".</div>
+    <button type="button" onClick={async () => { try { onSalvo(await apiService.put("/foto-cartao/config", v)); } catch (e) { setMsg(`⚠ ${e?.response?.data?.erro || e.message}`); } }} style={{ ...s.btn(true), cursor: "pointer", justifySelf: "end" }}>Salvar</button>
+  </div>;
 }
 
 function Galeria({ C, s, modelos, projetos = [], projetoFixo = null }) {
@@ -184,13 +200,13 @@ function Modelos({ C, s, M, onMudou, setMsg }) {
     <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-start" }}>
       <div style={{ flex: "3 1 420px", display: "grid", gap: 6 }}>
         <span style={lab}>CAMPOS (o cabeçalho com logo e o rodapé técnico · data/hora · GPS entram sozinhos)</span>
-        <span style={{ fontSize: 11.5, color: C.muted }}>🔧 Marque qual campo é a <b>Pá</b> e qual é o <b>Nº do defeito</b> (e, se houver, o Aerogerador): as fotos com os mesmos valores viram um só defeito para a triagem.</span>
+        <span style={{ fontSize: 11.5, color: C.muted }}>🔧 Marque qual campo é a <b>Pá</b> e qual é o <b>Nº do defeito</b> (e, se houver, o ativo): as fotos com os mesmos valores viram um só defeito para a triagem.</span>
         {ed.campos.map((c, i) => <div key={i} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", borderTop: `1px solid ${C.border}`, paddingTop: 6 }}>
           <input value={c.rotulo} onChange={(e) => campo(i, "rotulo", e.target.value)} placeholder="Rótulo" style={{ ...s.input, flex: "2 1 140px" }} />
           <select value={c.tipo} onChange={(e) => campo(i, "tipo", e.target.value)} style={{ ...s.input, flex: "1 1 110px" }}>{Object.entries(M.TIPOS || {}).map(([k, n]) => <option key={k} value={k}>{n}</option>)}</select>
           {c.tipo === "opcoes" && <input value={(c.opcoes || []).join("; ")} onChange={(e) => campo(i, "opcoes", e.target.value.split(";").map((x) => x.trimStart()))} placeholder="Opções separadas por ;" style={{ ...s.input, flex: "2 1 160px" }} />}
           <input value={c.unidade || ""} onChange={(e) => campo(i, "unidade", e.target.value)} placeholder="un." style={{ ...s.input, width: 56 }} />
-          <select value={c.papel || ""} title="Este campo identifica o defeito?" onChange={(e) => campo(i, "papel", e.target.value || null)} style={{ ...s.input, flex: "1 1 130px" }}><option value="">Não identifica</option>{Object.entries(M.PAPEIS || {}).map(([k, n]) => <option key={k} value={k}>Identifica: {n}</option>)}</select>
+          <select value={c.papel || ""} title="Este campo identifica o defeito?" onChange={(e) => campo(i, "papel", e.target.value || null)} style={{ ...s.input, flex: "1 1 130px" }}><option value="">Não identifica</option>{Object.entries(M.PAPEIS || {}).map(([k, n]) => <option key={k} value={k}>Identifica: {k === "pa" ? voc().componente : k === "aerogerador" ? voc().ativo : n}</option>)}</select>
           <select value={c.destaque ? "d" : String(c.largura || 1)} onChange={(e) => setEd({ ...ed, campos: ed.campos.map((x, j) => (j === i ? { ...x, destaque: e.target.value === "d", largura: e.target.value === "2" ? 2 : 1 } : x)) })} style={{ ...s.input, flex: "1 1 120px" }}><option value="1">Meia linha</option><option value="2">Linha inteira</option><option value="d">Caixa grande</option></select>
           <button type="button" onClick={() => mover(i, -1)} style={{ ...s.btn(false), cursor: "pointer", padding: "4px 8px" }}>↑</button><button type="button" onClick={() => mover(i, 1)} style={{ ...s.btn(false), cursor: "pointer", padding: "4px 8px" }}>↓</button>
           <button type="button" onClick={() => setEd({ ...ed, campos: ed.campos.filter((_, j) => j !== i) })} style={{ background: "none", border: "none", color: C.muted, cursor: "pointer" }}>✕</button>

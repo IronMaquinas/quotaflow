@@ -1,4 +1,5 @@
 // components/fotoCartao/BotaoRelatorio.jsx — etapa E5: 📄 botão + opções do RELATÓRIO AUTOMÁTICO (projeto, aerogerador ou reparo)
+import { voc, minus } from "../../utils/vocabInspecao";
 import { useState } from "react";
 import apiService from "../../services/apiService";
 import { abrirRelatorioInspecao } from "../../utils/relatorioFotoCartao";
@@ -16,7 +17,7 @@ export default function BotaoRelatorio({ C, s, projetoId = null, reparoId = null
       <div onClick={(e) => e.stopPropagation()} style={{ ...card, width: "min(440px, 100%)", display: "grid", gap: 10, color: C.text }}>
         <b>📄 {reparoId ? "Relatório do reparo" : "Relatório de inspeção e reparos"}</b>
         <div style={{ fontSize: 12.5, color: C.textSub }}>Sai em A4 com o logo da empresa: resumo, tabela de defeitos e triagem, evidências com fotos e cada reparo etapa a etapa (materiais, lotes, proporção, condições, liberações) e campos de assinatura. Salve como PDF na janela de impressão.</div>
-        {!reparoId && aerogeradores.length > 1 && <div><span style={lab}>AEROGERADOR</span><select value={op.referencia} onChange={(e) => setOp({ ...op, referencia: e.target.value })} style={{ ...s.input, width: "100%" }}><option value="">Todos do projeto</option>{aerogeradores.map((a) => <option key={a} value={a}>{a}</option>)}</select></div>}
+        {!reparoId && aerogeradores.length > 1 && <div><span style={lab}>{voc().ativo.toUpperCase()}</span><select value={op.referencia} onChange={(e) => setOp({ ...op, referencia: e.target.value })} style={{ ...s.input, width: "100%" }}><option value="">Todos do projeto</option>{aerogeradores.map((a) => <option key={a} value={a}>{a}</option>)}</select></div>}
         <div><span style={lab}>FOTOS DOS DEFEITOS (inspeção)</span><div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{[["todas", "Todas as coletadas"], ["resumo", "Resumido (1 por defeito)"], ["nenhuma", "Sem fotos"]].map(([k, l]) => <button key={k} type="button" onClick={() => setOp({ ...op, fotos: k })} style={{ ...s.btn(op.fotos === k), cursor: "pointer", padding: "6px 12px" }}>{l}</button>)}</div>
           <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4 }}>As fotos das etapas de reparo entram sempre todas. Foto errada ou repetida: mande para a 🗑 lixeira e ela sai do relatório.</div></div>
         {!reparoId && <label style={{ fontSize: 13, display: "flex", gap: 6, alignItems: "center" }}><input type="checkbox" checked={op.semReparo} onChange={(e) => setOp({ ...op, semReparo: e.target.checked })} /> Incluir defeitos classificados como "sem reparo"</label>}

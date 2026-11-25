@@ -468,7 +468,7 @@ const perfil = PERFIS[usuario.perfil] || {
     {sec:"OPERAÇÃO", id:"ordem_servico", l:"🛠️ Ordem de Serviço",    perfis:["admin","gestor","operacao","qualidade"]},
     {sec:"OPERAÇÃO", id:"equipamentos",  l:rotulo("frota"),          perfis:["admin","gestor","comprador","operacao"]},
     {sec:"OPERAÇÃO", id:"inspecoes",     l:"🔍 Inspeções",             perfis:["admin","gestor","comprador","operacao","qualidade"]}, // etapa 14a
-    {sec:"OPERAÇÃO", id:"foto_cartao",   l:"📸 Foto com cartão",       perfis:["admin","gestor","operacao","qualidade"]}, // E1
+    {sec:"OPERAÇÃO", id:"foto_cartao",   l:"📸 Inspeção de campo",    perfis:["admin","gestor","operacao","qualidade"]}, // E1
     {sec:"OPERAÇÃO", id:"contratos",     l:"📑 Contratos",             perfis:["admin","gestor","comprador","operacao","qualidade"]}, // etapa 14b.3
     {sec:"OPERAÇÃO", id:"patio",         l:"📦 Propriedade do cliente", perfis:["admin","gestor","comprador","operacao"]}, // 18z
     // ── COMPRAS E ESTOQUE

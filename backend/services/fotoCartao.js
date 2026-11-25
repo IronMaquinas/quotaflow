@@ -26,6 +26,17 @@ const EXEMPLOS = [
     { rotulo: 'Tipo de defeito', tipo: 'opcoes', opcoes: ['Erosão', 'Trinca', 'Delaminação', 'Impacto de raio', 'Lascamento', 'Outro'], largura: 2 },
     { rotulo: 'Comprimento', tipo: 'numero', unidade: 'cm' }, { rotulo: 'Largura', tipo: 'numero', unidade: 'cm' },
     { rotulo: 'Severidade (1 a 5)', tipo: 'opcoes', opcoes: ['1', '2', '3', '4', '5'] }, { rotulo: 'Material' }] },
+  // E6: outros tipos de inspeção
+  { chave: 'end_tubulacao', nome: 'Ensaio não destrutivo (tubulação / solda)', titulo: 'REGISTRO DE END', codigo: '', revisao: '', obs: true, campos: [
+    { rotulo: 'Linha', destaque: true, papel: 'aerogerador' }, { rotulo: 'Junta', destaque: true, papel: 'pa' },
+    { rotulo: 'Indicação nº', papel: 'defeito' }, { rotulo: 'Técnica', tipo: 'opcoes', opcoes: ['VT', 'PT', 'MT', 'UT', 'RT', 'PAUT', 'TOFD'] },
+    { rotulo: 'Posição (h)', tipo: 'texto' }, { rotulo: 'Comprimento', tipo: 'numero', unidade: 'mm' },
+    { rotulo: 'Tipo de descontinuidade', tipo: 'opcoes', opcoes: ['Trinca', 'Porosidade', 'Inclusão de escória', 'Falta de fusão', 'Falta de penetração', 'Mordedura', 'Corrosão', 'Outra'], largura: 2 },
+    { rotulo: 'Resultado', tipo: 'opcoes', opcoes: ['Aprovado', 'Reprovado'] }, { rotulo: 'Norma / critério' }] },
+  { chave: 'visual_generico', nome: 'Inspeção visual (genérico)', titulo: 'REGISTRO DE INSPEÇÃO', codigo: '', revisao: '', obs: true, campos: [
+    { rotulo: 'Ativo', destaque: true, papel: 'aerogerador' }, { rotulo: 'Componente', destaque: true, papel: 'pa' },
+    { rotulo: 'Item nº', papel: 'defeito' }, { rotulo: 'Situação', tipo: 'opcoes', opcoes: ['Conforme', 'Não conforme', 'Observação'] },
+    { rotulo: 'Descrição', largura: 2 }, { rotulo: 'Dimensão', tipo: 'numero', unidade: 'mm' }, { rotulo: 'Severidade (1 a 5)', tipo: 'opcoes', opcoes: ['1', '2', '3', '4', '5'] }] },
 ];
 
 function validarModelo(b = {}) {

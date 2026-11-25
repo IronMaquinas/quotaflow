@@ -68,6 +68,14 @@ async function montar(supabase, tenantId) {
   P(null, 'metas', 'Defina as metas do negócio', 'Os indicadores que dizem se a empresa vai bem (frota disponível, viagens no prazo, documentos em dia…). Viram a 📊 Saúde do negócio no Início, com 🟢🟡🔴.', (await da('metas_negocio').catch(() => [])).length > 0, { tela: 'metas', obrigatorio: false });
   // ── qualidade
   // ── A1.5: sistema de gestão ISO 9001 (pacote sgq): procedimentos, matriz e programa de auditorias
+  if (liga('inspecao_campo')) { // E6: inspeção de campo
+    let voc = null; try { voc = await require('./inspecaoConfig').ler(supabase, tenantId); } catch { /* sem 127 */ }
+    const cartoes = (await da('cartao_foto_modelos')).filter((m) => m.ativo !== false); const projs = await da('projetos_foto'); const procs = (await da('reparo_modelos')).filter((m) => m.ativo !== false);
+    P('inspecao_campo', 'ic_vocabulario', 'Tipo de inspeção e vocabulário', 'Diga como as coisas se chamam na sua inspeção (eólica: aerogerador e pá; tubulação: linha e junta; soldagem: peça e cordão…). Aparece nas telas, no mapa e no relatório.', !!voc?.definido, { tela: 'foto_cartao', obrigatorio: false });
+    P('inspecao_campo', 'ic_cartao', 'Modelo do cartão de registro', 'O cartão que vai gravado na foto (o mesmo do cartão plastificado de hoje). Comece de um exemplo e marque os campos que identificam o defeito.', cartoes.length > 0, { tela: 'foto_cartao', obrigatorio: true });
+    P('inspecao_campo', 'ic_projeto', 'Primeiro projeto', 'Projeto = cliente + local + período. Toda foto nasce dentro de um projeto e aparece no mapa.', projs.length > 0, { tela: 'foto_cartao', obrigatorio: true });
+    P('inspecao_campo', 'ic_procedimento', 'Procedimento de reparo', 'Sequência de etapas com fotos, materiais (lote, validade, proporção) e liberações da engenharia — para os defeitos que vão a reparo.', procs.length > 0, { tela: 'foto_cartao', obrigatorio: false });
+  }
   if (liga('sgq')) {
     const docsG = (await da('documentos_gestao')).filter((d) => d.status !== 'obsoleto'); const vig = docsG.filter((d) => d.status === 'vigente');
     let mz = null; try { mz = await require('./auditoriaRegistros').matriz(supabase, tenantId); } catch { /* sem 119 */ }

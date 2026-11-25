@@ -33,6 +33,6 @@ async function montar(sb, tenantId, f = {}) {
   const tecnicos = [...new Set([...fotos.map((x) => x.tecnico), ...reparos.flatMap((r) => Object.values(r.execucao).map((e) => e.concluida_por))].filter(Boolean))];
   const datas = fotos.map((x) => String(x.tirada_em)).sort();
   return { projeto, filtro: { referencia: f.referencia || null, reparo: soReparo?.numero || null }, resumo: { ...cont, aerogeradores: aeros, fotos: fotos.length, tecnicos, de: datas[0] || null, ate: datas[datas.length - 1] || null, reparos: reparos.length, reparos_concluidos: reparos.filter((r) => r.status === 'concluido').length },
-    defeitos, reparos, CLASSES: DF.CLASSES, gerado_em: new Date().toISOString() };
+    defeitos, reparos, CLASSES: DF.CLASSES, gerado_em: new Date().toISOString(), vocabulario: (await require('./inspecaoConfig').ler(sb, tenantId)).vocabulario };
 }
 module.exports = { montar };

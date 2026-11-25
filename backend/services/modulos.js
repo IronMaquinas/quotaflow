@@ -28,7 +28,8 @@ const AREAS = [
     { id: 'ocorrencias', nome: 'Ocorrências (INC)', desc: 'Avaria, pane, acidente — pela AT ou pelo contrato, com dossiê e indicadores.', telas: [], dependeUm: ['transporte', 'contratos_locacao'] },
   ] },
   { id: 'qualidade', nome: '✅ Qualidade', modulos: [
-    { id: 'inspecoes', nome: 'Inspeções e relatórios', desc: 'Checklists com foto e tarja, rotinas, relatório de inspeção, link para terceiros.', telas: ['inspecoes', 'foto_cartao'], depende: ['frota_equipamentos'] },
+    { id: 'inspecoes', nome: 'Inspeções e relatórios', desc: 'Checklists com foto e tarja, rotinas, relatório de inspeção, link para terceiros.', telas: ['inspecoes'], depende: ['frota_equipamentos'] },
+    { id: 'inspecao_campo', nome: 'Inspeção de campo — foto com cartão, defeitos, reparos e relatórios', desc: 'Foto com o cartão de registro gravado na imagem (funciona sem sinal), projetos e mapa, defeitos com triagem da engenharia, procedimentos de reparo etapa a etapa (materiais, lotes, liberações) e relatório automático. Serve para eólica, tubulação, soldagem, estruturas…', telas: ['foto_cartao'] }, // E6
     { id: 'nao_conformidades', nome: 'Não conformidades e autuações', desc: 'NC com evidências e causa raiz; autuações da empresa.', telas: ['nao_conformidades'] },
     { id: 'sgq', nome: 'Sistema de gestão ISO 9001 — documentos e auditorias', desc: 'Procedimentos com fluxo de aprovação e 🧭 matriz ISO; auditorias internas: programa anual, execução no sistema com fotos e registros, relatório assinado, pendências do ciclo.', telas: ['auditorias', 'analise_critica'] }, // A1.5
   ] },
@@ -52,6 +53,7 @@ const SEGMENTOS = [
   { id: 'transporte', nome: '🚛 Transporte', sugere: ['crm_bid', 'frota_equipamentos', 'transporte', 'fiscal', 'ocorrencias', 'manutencao'] },
   { id: 'locacao', nome: '🏗 Locação de equipamentos', sugere: ['crm_bid', 'frota_equipamentos', 'contratos_locacao', 'medicao', 'ocorrencias', 'inspecoes', 'manutencao'] },
   { id: 'servicos', nome: '🔧 Manutenção / serviços', sugere: ['frota_equipamentos', 'manutencao', 'inspecoes', 'compras', 'estoque'] },
+  { id: 'inspecao', nome: '🔎 Inspeção / ensaios', sugere: ['inspecao_campo', 'nao_conformidades', 'sgq', 'colaboradores', 'treinamentos'] }, // E6
   { id: 'outro', nome: '🏢 Outro', sugere: ['compras', 'fornecedores', 'estoque'] },
 ];
 const segmentosDe = (t) => { const s = (Array.isArray(t?.segmentos) ? t.segmentos : []).filter((x) => SEGMENTOS.some((g) => g.id === x)); return s.length ? s : ['transporte']; };

@@ -3,6 +3,7 @@
 //   câmera com o cartão já preenchido: pá, defeito, aerogerador, etapa), campos, materiais (produto, lote, validade, quantidade, proporção),
 //   temperatura/umidade e comentário; 💾 rascunho (também guardado no aparelho) e ✓ concluir. Engenharia: 🔓 liberar, ↺ reabrir, cancelar.
 //   AbrirReparo (modal usado na aba Defeitos) e ProcedimentosReparo (editor dos modelos de etapas).
+import { voc, minus } from "../../utils/vocabInspecao";
 import { useEffect, useState } from "react";
 import apiService from "../../services/apiService";
 import CampoFuncionario from "../shared/CampoFuncionario";
@@ -46,7 +47,7 @@ export default function Reparos({ C, s, projetos = [], podeEditar, tenant, abrir
     {!L && !erro && <div style={{ color: C.muted }}>Carregando…</div>}
     {L && !L.reparos.length && <div style={{ ...card, color: C.muted, fontSize: 13 }}>Nenhum reparo aqui. O reparo é aberto pela engenharia na aba 🔧 Defeitos, nos defeitos classificados como "b) Reparar".</div>}
     {(L?.reparos || []).map((r) => <button key={r.id} type="button" onClick={() => setAberto(r.id)} style={{ ...card, textAlign: "left", cursor: "pointer", color: C.text, display: "grid", gap: 6, borderLeft: `4px solid ${COR_ST[r.status]}` }}>
-      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}><b>🛠 {r.numero}</b><span style={{ fontSize: 13 }}>{r.defeito ? `${r.defeito.referencia ? `${r.defeito.referencia} · ` : ""}${r.defeito.pa ? `Pá ${r.defeito.pa} · ` : ""}Defeito ${r.defeito.numero}` : ""}</span>
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}><b>🛠 {r.numero}</b><span style={{ fontSize: 13 }}>{r.defeito ? `${r.defeito.referencia ? `${r.defeito.referencia} · ` : ""}${r.defeito.pa ? `${voc().componente} ${r.defeito.pa} · ` : ""}Defeito ${r.defeito.numero}` : ""}</span>
         <span style={{ fontSize: 11.5, fontWeight: 700, color: COR_ST[r.status], border: `1px solid ${COR_ST[r.status]}`, borderRadius: 10, padding: "1px 8px", marginLeft: "auto" }}>{L.STATUS[r.status]}</span></div>
       <div style={{ fontSize: 12, color: C.textSub }}>📁 {r.projeto} · {r.modelo_nome} · 👷 {r.responsavel || "—"}{r.prazo ? ` · prazo ${dBR(r.prazo)}` : ""}</div>
       <div style={{ height: 6, background: C.border, borderRadius: 4, overflow: "hidden" }}><div style={{ width: `${r.progresso.pct}%`, height: "100%", background: COR_ST[r.status] }} /></div>
@@ -72,7 +73,7 @@ function Reparo({ C, s, id, podeEditar, tenant, abrirCamera, onVoltar }) {
   return <div style={{ display: "grid", gap: 10 }}>
     {ver && <VisualizadorFoto lista={ver.lista} inicio={ver.i} onFechar={() => setVer(null)} onMudou={(t) => { setMsg(t); carregar(); }} />}
     <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap" }}><button type="button" onClick={onVoltar} style={{ background: "none", border: "none", color: C.textSub, cursor: "pointer", padding: 0 }}>← Reparos</button>
-      <div style={{ fontSize: 18, fontWeight: 800, flex: 1 }}>🛠 {r.numero} · {d ? `${d.referencia ? `${d.referencia} · ` : ""}${d.pa ? `Pá ${d.pa} · ` : ""}Defeito ${d.numero}` : ""}</div>
+      <div style={{ fontSize: 18, fontWeight: 800, flex: 1 }}>🛠 {r.numero} · {d ? `${d.referencia ? `${d.referencia} · ` : ""}${d.pa ? `${voc().componente} ${d.pa} · ` : ""}Defeito ${d.numero}` : ""}</div>
       <span style={{ fontSize: 12, fontWeight: 700, color: COR_ST[r.status], border: `1px solid ${COR_ST[r.status]}`, borderRadius: 10, padding: "2px 10px" }}>{D.STATUS[r.status]}</span>
       <BotaoRelatorio C={C} s={s} reparoId={r.id} rotulo="📄 Relatório do reparo" />
       {podeEditar && !fechado && <button type="button" onClick={() => setModal({ tipo: "cancelar", motivo: "" })} style={{ ...s.btn(false), cursor: "pointer", color: C.danger }}>Cancelar reparo</button>}</div>
@@ -139,7 +140,7 @@ export function AbrirReparo({ C, s, defeito, cartoes = [], onFechar, onAberto })
   const abrir = async () => { setMsg(""); try { const r = await apiService.post("/foto-cartao/reparos", { defeito_id: defeito.id, modelo_id: f.modelo_id, cartao_modelo_id: f.cartao_modelo_id, prazo: f.prazo, responsavel: f.resp_nome, responsavel_ref: f.resp_id ? `c:${f.resp_id}` : f.resp_uid ? `u:${f.resp_uid}` : null }); onAberto(r.reparo); } catch (e) { setMsg(erroDe(e)); } };
   return <div onClick={onFechar} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 500, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
     <div onClick={(e) => e.stopPropagation()} style={{ ...card, width: "min(520px, 100%)", maxHeight: "92vh", overflowY: "auto", display: "grid", gap: 10 }}>
-      <div style={{ fontWeight: 800, fontSize: 16 }}>🛠 Abrir reparo — {defeito.pa ? `Pá ${defeito.pa} · ` : ""}Defeito {defeito.numero} <span style={{ fontSize: 12.5, fontWeight: 400, color: C.textSub }}>{defeito.projeto}{defeito.referencia ? ` · ${defeito.referencia}` : ""}</span></div>
+      <div style={{ fontWeight: 800, fontSize: 16 }}>🛠 Abrir reparo — {defeito.pa ? `${voc().componente} ${defeito.pa} · ` : ""}Defeito {defeito.numero} <span style={{ fontSize: 12.5, fontWeight: 400, color: C.textSub }}>{defeito.projeto}{defeito.referencia ? ` · ${defeito.referencia}` : ""}</span></div>
       {M && !M.modelos.length && <div style={{ fontSize: 13, color: C.warn }}>Nenhum procedimento cadastrado — crie em ⚙ Modelos › Procedimentos de reparo (há o exemplo "Reparo de laminado — pá eólica").</div>}
       <div><span style={lab}>PROCEDIMENTO *</span><select value={f.modelo_id} onChange={(e) => setF({ ...f, modelo_id: e.target.value })} style={{ ...s.input, width: "100%" }}><option value="">Escolha…</option>{(M?.modelos || []).map((m) => <option key={m.id} value={m.id}>{m.nome} ({m.etapas.length} etapas)</option>)}</select></div>
       {modelo && <ol style={{ margin: 0, paddingLeft: 20, fontSize: 12.5, color: C.textSub }}>{modelo.etapas.map((e) => <li key={e.id}>{e.titulo}{e.fotos_min ? ` · 📸 ${e.fotos_min}` : ""}{e.materiais ? " · materiais" : ""}{e.ambiente ? " · °C/%" : ""}{e.liberacao ? " · 🔒" : ""}</li>)}</ol>}

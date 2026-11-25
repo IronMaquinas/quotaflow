@@ -13,13 +13,14 @@ const STR = { aberto: "Aberto", em_execucao: "Em execução", concluido: "Conclu
 
 const fotoHtml = (x) => `<figure><img src="${esc(x.url || "")}" alt=""><figcaption>${quandoBR(x.tirada_em)} · ${esc(x.tecnico || "—")} · ${esc(gpsTxt(x.gps))}<br><span class="h">SHA-256 ${esc(String(x.hash || "").slice(0, 16))}…</span></figcaption></figure>`;
 const grade = (l) => (l.length ? `<div class="fotos">${l.map(fotoHtml).join("")}</div>` : "");
-const tituloDef = (d) => `${d.referencia ? `${esc(d.referencia)} · ` : ""}${d.pa ? `Pá ${esc(d.pa)} · ` : ""}Defeito ${esc(d.numero)}`;
+let VOC = { ativo: "Aerogerador", ativos: "Aerogeradores", componente: "Pá" };
+const tituloDef = (d) => `${d.referencia ? `${esc(d.referencia)} · ` : ""}${d.pa ? `${esc(VOC.componente)} ${esc(d.pa)} · ` : ""}Defeito ${esc(d.numero)}`;
 
 export function htmlRelatorioInspecao(R) {
-  const p = R.projeto; const s = R.resumo; const emp = dadosEmpresa() || {};
+  const p = R.projeto; const s = R.resumo; const emp = dadosEmpresa() || {}; if (R.vocabulario) VOC = R.vocabulario;
   const titulo = R.filtro.reparo ? `Relatório de reparo ${esc(R.filtro.reparo)}` : `Relatório de inspeção e reparos${R.filtro.referencia ? ` — ${esc(R.filtro.referencia)}` : ""}`;
   const repDe = (d) => R.reparos.find((r) => String(r.defeito_id) === String(d.id));
-  const tabela = `<table><tr><th>Aerogerador</th><th>Pá</th><th>Nº</th><th>Dados do cartão</th><th>Classificação</th><th>Justificativa</th><th>Reparo</th></tr>${R.defeitos.map((d) => { const k = d.classificacao || "pendente"; const r = repDe(d);
+  const tabela = `<table><tr><th>${esc(VOC.ativo)}</th><th>${esc(VOC.componente)}</th><th>Nº</th><th>Dados do cartão</th><th>Classificação</th><th>Justificativa</th><th>Reparo</th></tr>${R.defeitos.map((d) => { const k = d.classificacao || "pendente"; const r = repDe(d);
     return `<tr><td>${esc(d.referencia || "—")}</td><td>${esc(d.pa || "—")}</td><td>${esc(d.numero)}</td><td class="p">${Object.entries(d.resumo || {}).filter(([r2]) => !/^p[áa]$|defeito|aerogerador/i.test(r2)).map(([r2, v]) => `${esc(r2)}: ${esc(v)}`).join(" · ") || "—"}</td><td style="color:${COR[k]};font-weight:700">${ROT[k]}</td><td class="p">${esc(d.justificativa || "")}</td><td>${r ? `${esc(r.numero)}<br><span class="p">${STR[r.status]}</span>` : "—"}</td></tr>`; }).join("") || '<tr><td colspan="7">Nenhum defeito registrado.</td></tr>'}</table>`;
   const evid = R.defeitos.map((d) => { const k = d.classificacao || "pendente";
     return `<div class="bloco"><h3>${tituloDef(d)} <span style="color:${COR[k]}">· ${ROT[k]}</span></h3>
@@ -50,7 +51,7 @@ export function htmlRelatorioInspecao(R) {
     ${logoHtml()}<div class="p">${esc(emp.nome || "")}</div>
     <h1>${titulo}</h1>
     <table class="kv"><tr><th>Projeto</th><td>${esc(p.nome)}</td><th>Cliente</th><td>${esc(p.cliente_nome || "—")}</td></tr><tr><th>Local</th><td>${esc(p.local || "—")}${p.lat != null ? ` <span class="h">(${Number(p.lat).toFixed(5)}, ${Number(p.lng).toFixed(5)})</span>` : ""}</td><th>Período das fotos</th><td>${dBR(s.de)} a ${dBR(s.ate)}</td></tr>
-      <tr><th>Aerogeradores</th><td>${esc(s.aerogeradores.join(", ") || "—")}</td><th>Técnicos</th><td>${esc(s.tecnicos.join(", ") || "—")}</td></tr></table>
+      <tr><th>${esc(VOC.ativos)}</th><td>${esc(s.aerogeradores.join(", ") || "—")}</td><th>Técnicos</th><td>${esc(s.tecnicos.join(", ") || "—")}</td></tr></table>
     <div class="cards"><div class="card"><b>${s.total}</b>defeitos</div><div class="card" style="color:${COR.reparar}"><b>${s.reparar}</b>reparar</div><div class="card" style="color:${COR.investigar}"><b>${s.investigar}</b>investigar</div><div class="card" style="color:${COR.sem_reparo}"><b>${s.sem_reparo}</b>sem reparo</div>${s.pendente ? `<div class="card" style="color:${COR.pendente}"><b>${s.pendente}</b>a classificar</div>` : ""}<div class="card"><b>${s.reparos_concluidos}/${s.reparos}</b>reparos concluídos</div><div class="card"><b>${s.fotos}</b>fotos</div></div>
     <h2>Defeitos e triagem</h2>${tabela}
     ${R.defeitos.length ? `<h2 class="quebra">Evidências dos defeitos</h2>${evid}` : ""}
