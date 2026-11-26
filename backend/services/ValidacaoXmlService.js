@@ -231,7 +231,7 @@ async function validarXmlContraOc(xmlDataRaw, ordemVendaId, tenantId) {
           ? `Nenhum item da NFe tem o código "${pnFornecedor || pnRc}". Associe manualmente ou confirme com o fornecedor.`
           : 'Item não encontrado. Associe manualmente ou peça pro fornecedor informar o código do produto na cotação.',
       });
-    } else if (parseInt(itemOV.quantidade || 0) !== parseInt(itemXML.quantidade || 0)) {
+    } else if ((parseFloat(itemXML.quantidade) || 0) > Math.max(0, (parseFloat(itemOV.quantidade) || 0) - (parseFloat(itemOV.quantidade_recebida) || 0)) + 1e-9) { // Q2: NF parcial é ok; só diverge se vier MAIS do que falta
       validacoes.push({
         item: nomeOV,
         item_nfe: itemXML.descricao || '',
@@ -239,9 +239,9 @@ async function validarXmlContraOc(xmlDataRaw, ordemVendaId, tenantId) {
         tipo_match: tipoMatch,
         pn_rc: pnRc,
         pn_fornecedor: pnFornecedor,
-        mensagem: `Qtd: OC ${itemOV.quantidade} vs NFe ${itemXML.quantidade}`,
+        mensagem: `Qtd: NFe ${itemXML.quantidade} > falta receber ${Math.max(0, (parseFloat(itemOV.quantidade) || 0) - (parseFloat(itemOV.quantidade_recebida) || 0))} (OC ${itemOV.quantidade})`,
       });
-    } else if (parseFloat(itemOV.valor_unitario || 0) !== parseFloat(itemXML.valorUnitario || 0)) {
+    } else if (Math.abs((parseFloat(itemOV.valor_unitario) || 0) - (parseFloat(itemXML.valorUnitario) || 0)) > 0.005) { // Q2: tolerância de arredondamento
       validacoes.push({
         item: nomeOV,
         item_nfe: itemXML.descricao || '',
@@ -266,7 +266,7 @@ async function validarXmlContraOc(xmlDataRaw, ordemVendaId, tenantId) {
         tipo_match: tipoMatch,
         pn_rc: pnRc,
         pn_fornecedor: pnFornecedor,
-        mensagem: mensagens[tipoMatch] || 'Item validado.',
+        mensagem: (mensagens[tipoMatch] || 'Item validado.') + ((parseFloat(itemXML.quantidade) || 0) + 1e-9 < Math.max(0, (parseFloat(itemOV.quantidade) || 0) - (parseFloat(itemOV.quantidade_recebida) || 0)) ? ` Entrega parcial: ${itemXML.quantidade} de ${Math.max(0, (parseFloat(itemOV.quantidade) || 0) - (parseFloat(itemOV.quantidade_recebida) || 0))} que faltam — o resto fica aberto para a próxima NF.` : ''),
       });
     }
   }

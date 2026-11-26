@@ -347,8 +347,9 @@ export default function TelaRecebimento({ C, s, fmtD, onIrParaNC }) {
       parseInt(itemConferenciaFiscal.validacao_xml.totalDivergencias || 0) > 0
     ) : (
       // Fallback para caso o usuário preencha manualmente sem XML
-      (itemConferenciaFiscal.valor_nf && parseFloat(itemConferenciaFiscal.valor_nf) !== parseFloat(itemConferenciaFiscal.valor_total_ov || 0)) ||
-      (itemConferenciaFiscal.quantidade_nf && parseInt(itemConferenciaFiscal.quantidade_nf) !== parseInt(itemConferenciaFiscal.quantidade))
+      // Q2: entrega parcial — a NF pode trazer menos do que falta; diverge se trouxer MAIS, ou se o valor ≠ unitário × qtd da NF
+      (() => { const f = itemConferenciaFiscal; const falta = Math.max(0, (parseFloat(f.quantidade) || 0) - (parseFloat(f.quantidade_recebida) || 0)); const qNF = parseFloat(f.quantidade_nf) || falta;
+        return (qNF > falta + 1e-9) || (f.valor_nf && Math.abs(parseFloat(f.valor_nf) - (parseFloat(f.valor_unitario) || 0) * qNF) > 0.01); })()
     )
   ) : false;
 
@@ -696,7 +697,7 @@ const handleValidarXML = async () => {
         // e caía no modo SEM OV, que rejeitava.
         item_id: item.id,
         ordem_venda_id: ordemVendaSel.id,
-        quantidade: item.quantidade_pendente,
+        quantidade: item.quantidade_recebida_fisica || item.quantidade_pendente, // Q2: o backend dá entrada no que foi contado
         numero_nota_fiscal: item.numero_nota_fiscal,
         observacao: `Recebimento da OV ${ordemVendaSel.numero}`
       });
@@ -1219,13 +1220,15 @@ return (
             // via SQL no teste, ou comportamento legado), o card pintava
             // verde — mas o 3-way match bloqueava na entrada. Agora o card
             // espelha a regra do backend e mostra "Divergência NF" em laranja.
+            // Q2: mesma regra do backend — por NF (rodada), com tolerância de centavo
+            const faltaItem = Math.max(0, Number(item.quantidade || 0) - Number(item.quantidade_recebida || 0));
+            const qtdNF = Number(item.quantidade_nf || 0) || faltaItem;
             const valorNF = Number(item.valor_nf || 0);
-            const valorOV = Number(item.valor_unitario || 0) * Number(item.quantidade || 0);
-            const qtdNF = Number(item.quantidade_nf || 0);
+            const valorOV = Number(item.valor_unitario || 0) * qtdNF;
             const qtdFisica = Number(item.quantidade_recebida_fisica || 0);
             const fiscalDivergente = feitaFiscal && (
-              valorNF !== valorOV ||
-              (qtdNF > 0 && qtdFisica > 0 && qtdNF !== qtdFisica)
+              Math.abs(valorNF - valorOV) > 0.01 ||
+              (qtdFisica > 0 && Math.abs(qtdNF - qtdFisica) > 1e-9)
             );
             const feitaContagem = !!item.migo_por;
             const feitaEntrada = (item.quantidade_recebida || 0) >= (item.quantidade || 0);
@@ -2143,14 +2146,14 @@ return (
                   </div>
                   <div>
                     <div style={{ color: '#6b7280' }}>NF</div>
-                    <div style={{ fontWeight: 600, color: itemConferenciaFiscal.valor_nf && parseFloat(itemConferenciaFiscal.valor_nf) !== parseFloat(itemConferenciaFiscal.valor_total_ov || 0) ? '#f59e0b' : '#22c55e' }}>
+                    <div style={{ fontWeight: 600, color: itemConferenciaFiscal.valor_nf && Math.abs(parseFloat(itemConferenciaFiscal.valor_nf) - (parseFloat(itemConferenciaFiscal.valor_unitario) || 0) * (parseFloat(itemConferenciaFiscal.quantidade_nf) || Math.max(0, (parseFloat(itemConferenciaFiscal.quantidade) || 0) - (parseFloat(itemConferenciaFiscal.quantidade_recebida) || 0)))) > 0.01 ? '#f59e0b' : '#22c55e' }}>
                       {itemConferenciaFiscal.valor_nf ? fmtBRL(parseFloat(itemConferenciaFiscal.valor_nf)) : '—'}
                     </div>
                   </div>
                   <div>
                     <div style={{ color: '#6b7280' }}>QUANTIDADE</div>
-                    <div style={{ fontWeight: 600, color: itemConferenciaFiscal.quantidade_nf && parseInt(itemConferenciaFiscal.quantidade_nf) !== parseInt(itemConferenciaFiscal.quantidade) ? '#f59e0b' : '#22c55e' }}>
-                      {itemConferenciaFiscal.quantidade_nf || '—'} / {itemConferenciaFiscal.quantidade}
+                    <div style={{ fontWeight: 600, color: itemConferenciaFiscal.quantidade_nf && parseFloat(itemConferenciaFiscal.quantidade_nf) > Math.max(0, (parseFloat(itemConferenciaFiscal.quantidade) || 0) - (parseFloat(itemConferenciaFiscal.quantidade_recebida) || 0)) ? '#f59e0b' : '#22c55e' }}>
+                      {itemConferenciaFiscal.quantidade_nf || '—'} / {Math.max(0, (parseFloat(itemConferenciaFiscal.quantidade) || 0) - (parseFloat(itemConferenciaFiscal.quantidade_recebida) || 0))}{parseFloat(itemConferenciaFiscal.quantidade_recebida) > 0 ? ` (faltam de ${itemConferenciaFiscal.quantidade})` : ''}
                     </div>
                   </div>
                 </div>
@@ -2953,8 +2956,9 @@ return (
                 <div>
                   <span style={{ color: C.muted }}>Entrando:</span>{' '}
                   <span style={{ color: C.success || '#10b981', fontWeight: 700 }}>
-                    {confirmandoEntrada.quantidade_pendente} {confirmandoEntrada.unidade_medida || 'UN'}
+                    {confirmandoEntrada.quantidade_recebida_fisica || confirmandoEntrada.quantidade_pendente} {confirmandoEntrada.unidade_medida || 'UN'}
                   </span>
+                  {Number(confirmandoEntrada.quantidade_recebida_fisica || 0) + Number(confirmandoEntrada.quantidade_recebida || 0) < Number(confirmandoEntrada.quantidade || 0) && <div style={{ fontSize: 11.5, color: C.muted, marginTop: 4 }}>Entrega parcial: o restante fica aberto para a próxima nota fiscal.</div>}
                 </div>
               </div>
             </div>

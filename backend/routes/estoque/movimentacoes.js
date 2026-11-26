@@ -126,6 +126,11 @@ async function gerarNumeroTransferencia(tenantId) {
 // M4.4-etapa-3: atualiza saldo em itens_consumo_enderecos atomicamente.
 // mode: 'add' (soma ou cria) ou 'sub' (subtrai, erro se insuficiente).
 // Invariante do modelo: itens_consumo.saldo_atual === SUM(enderecos.saldo).
+// ─── Q2: ENTREGA PARCIAL — regras em services/recebimentoOV.js ───────────────
+const RecOV = require('../../services/recebimentoOV');
+const { pendenteDe, esperadoRodada } = RecOV;
+const fecharRodada = (tenantId, item, entrou, extra) => RecOV.fecharRodada(DB, tenantId, item, entrou, extra);
+
 async function atualizarEndereco(tenantId, itemConsumoId, endereco, quantidade, mode = 'add') {
   const linhas = await DB.select('itens_consumo_enderecos',
     { item_consumo_id: itemConsumoId, tenant_id: tenantId }, tenantId);
@@ -401,6 +406,8 @@ router.post('/', tenantMiddleware, async (req, res) => {
       saldo_atual: novoSaldo,
       atualizado_em: new Date()
     }, tenantId);
+    if (tipo === 'saida') await require('../../services/estoqueEnderecos').baixarEnderecos(DB, tenantId, item_consumo_id, qtd, req.body.endereco || null); // Q2
+    else if (tipo === 'entrada') await require('../../services/estoqueEnderecos').somarEndereco(DB, tenantId, item_consumo_id, qtd, req.body.endereco || 'RECEBIMENTO'); // Q2
 
     res.status(201).json({
       movimentacao,
@@ -778,6 +785,10 @@ router.put('/item/:itemId/fiscal', tenantMiddleware, async (req, res) => {
       return res.status(404).json({ erro: 'OV não encontrada' });
     }
 
+    // Q2: entrega parcial — a NF pode trazer menos que o pedido; não pode trazer mais do que ainda falta
+    if (pendenteDe(item) <= 1e-9) return res.status(409).json({ erro: 'Este item já foi recebido por completo.' });
+    if (parseFloat(quantidade_nf) > pendenteDe(item) + 1e-9) return res.status(409).json({ erro: `A NF traz ${quantidade_nf} e só faltam ${pendenteDe(item)} deste item na OC.` });
+
     // 14e: nota (pagamento) de fornecedor com CNPJ irregular → só com justificativa registrada, uma vez por OC
     const travaCnpj = await require('../../services/monitorCnpj').exigirLiberacao(require('../../db').supabase, tenantId, { id: req.userId, nome: (await DB.selectOne('usuarios', { id: req.userId }, tenantId).catch(() => null))?.nome || null }, {
       contexto: 'nota', referencia: `oc:${ov.id}`, fornecedorIds: [ov.fornecedor_id].filter(Boolean), liberacoes: ov.fornecedor_id ? { [ov.fornecedor_id]: req.body.justificativa_cnpj } : {} });
@@ -1036,6 +1047,9 @@ router.post('/entrada', tenantMiddleware, async (req, res) => {
           erro: 'Item já foi recebido integralmente. Nenhuma ação necessária.'
         });
       }
+      // Q2: só entra depois da conferência fiscal e da contagem aprovadas (antes, fiscal reprovado com valores iguais passava)
+      if (!item.miro_por || !item.migo_por) return res.status(409).json({ erro: 'Faça a conferência fiscal e a contagem antes de dar entrada.' });
+      if (item.status_quarentena !== 'aprovado') return res.status(409).json({ erro: `O item está "${item.status_quarentena || 'pendente'}" — resolva a conferência antes de dar entrada.` });
 
       const ov = await DB.selectOne('ordens_venda', { id: item.ordem_venda_id, tenant_id: tenantId }, tenantId);
       if (!ov) {
@@ -1071,9 +1085,10 @@ router.post('/entrada', tenantMiddleware, async (req, res) => {
       }
 
       // 3-WAY MATCH VALIDAÇÃO
+      // Q2: compara com a NF desta rodada (entrega parcial), não com o pedido inteiro
+      const quantidadeNF = item.numero_nota_fiscal ? esperadoRodada(item) : 0;
       const valorNF = parseFloat(item.valor_nf || 0);
-      const valorOV = (parseFloat(item.valor_unitario) || 0) * (parseFloat(item.quantidade) || 0);
-      const quantidadeNF = item.numero_nota_fiscal ? (parseFloat(item.quantidade) || 0) : 0;
+      const valorOV = (parseFloat(item.valor_unitario) || 0) * quantidadeNF;
       const quantidadeFisica = parseFloat(item.quantidade_recebida_fisica || 0);
 
       // Q1: comparação com tolerância — 3 × 0,10 dava 0,30000000000000004 ≠ 0,30 e travava a entrada; parseInt cortava decimais (2,5 L)
@@ -1088,7 +1103,8 @@ router.post('/entrada', tenantMiddleware, async (req, res) => {
         });
       }
 
-      const novoSaldo = (parseFloat(itemConsumo.saldo_atual) || 0) + parseFloat(quantidade);
+      const qtdEntrada = quantidadeFisica; // Q2: entra o que foi contado/conferido (o front mandava o pendente inteiro)
+      const novoSaldo = (parseFloat(itemConsumo.saldo_atual) || 0) + qtdEntrada;
       await DB.update('itens_consumo', itemConsumo.id, {
         saldo_atual: novoSaldo,
         atualizado_em: new Date()
@@ -1099,7 +1115,7 @@ router.post('/entrada', tenantMiddleware, async (req, res) => {
       // endereço, soma; senão, cria. Invariante: itens_consumo.saldo_atual
       // === SUM(itens_consumo_enderecos.saldo).
       await atualizarEndereco(
-        tenantId, itemConsumo.id, 'RECEBIMENTO', parseFloat(quantidade), 'add'
+        tenantId, itemConsumo.id, 'RECEBIMENTO', qtdEntrada, 'add'
       );
 
       // M4.3-ar: número de movimento individual (MOV-YYYY-NNNN)
@@ -1111,11 +1127,11 @@ router.post('/entrada', tenantMiddleware, async (req, res) => {
         ordem_venda_item_id: item.id,
         item_consumo_id: itemConsumo.id,
         tipo: 'entrada',
-        quantidade: quantidade,
+        quantidade: qtdEntrada,
         responsavel_id: req.userId,
         observacao: observacao || `Recebimento da OV ${ov.numero}`,
         fornecedor_id: fornecedor_id || ov.fornecedor_id || null,
-        numero_nota_fiscal: numero_nota_fiscal || null,
+        numero_nota_fiscal: numero_nota_fiscal || item.numero_nota_fiscal || null,
         ordem_venda_id: ov.id,
         ordem_venda_numero: ov.numero,
         criado_em: new Date()
@@ -1124,12 +1140,9 @@ router.post('/entrada', tenantMiddleware, async (req, res) => {
       // M4.3-v: `ordem_venda_itens` NÃO tem coluna `atualizado_em` (só
       // `ordens_venda` e `itens_consumo` têm). O UPDATE falhava e
       // bloqueava a entrada no estoque.
-      await DB.update('ordem_venda_itens', item.id, {
-        quantidade_recebida: parseInt(item.quantidade_recebida || 0) + parseInt(quantidade),
-        // M4.3-w: rastreio por etapa (espelha miro_por/miro_em e migo_por/migo_em)
-        entrada_por: req.userId,
-        entrada_em: new Date().toISOString(),
-      }, tenantId);
+      // M4.3-w: rastreio por etapa (espelha miro_por/miro_em e migo_por/migo_em)
+      // Q2: soma o que entrou; se ainda falta, abre a próxima rodada (próxima NF)
+      await fecharRodada(tenantId, item, qtdEntrada, { entrada_por: req.userId, entrada_em: new Date().toISOString() });
 
       // M4.3-y: atualizar `status` E `status_recebimento` juntos — o card
       // lê `status_recebimento`, e antes só `status` era atualizado
@@ -1269,10 +1282,11 @@ router.post('/contagem-cega', tenantMiddleware, async (req, res) => {
     }
 
     // 2. Contar quantas contagens já existem para este item
-    const contagensExistentes = await DB.select('historico_contagens_cegas', {
+    const rodada = parseInt(item.rodada_recebimento, 10) || 1; // Q2: tentativas contam por NF (rodada)
+    const contagensExistentes = (await DB.select('historico_contagens_cegas', {
       ordem_venda_item_id: itemIdNum,
       tenant_id: tenantId
-    }, tenantId);
+    }, tenantId)).filter((c) => (parseInt(c.rodada, 10) || 1) === rodada);
 
     const tentativaReal = contagensExistentes.length + 1;
 
@@ -1281,7 +1295,7 @@ router.post('/contagem-cega', tenantMiddleware, async (req, res) => {
     }
 
     // 3. VALIDAÇÃO DA CONTAGEM (backend)
-    const qtdEsperada = parseFloat(item.quantidade || 0);
+    const qtdEsperada = esperadoRodada(item); // Q2: a quantidade da NF (ou o que falta), não o pedido inteiro
     const qtdContada = parseFloat(quantidade || 0);
     const unidadeEsperada = item.unidade_medida || 'UN';
     const unidadeContada = unidade_medida || 'UN';
@@ -1319,6 +1333,7 @@ router.post('/contagem-cega', tenantMiddleware, async (req, res) => {
       numero_serie: numero_serie || null,
       unidade_medida: unidadeContada,
       resultado_contagem: resultadoContagem,
+      rodada,
       observacao: observacao || null,
       contado_por: req.userId,
       contado_em: new Date().toISOString(),
@@ -1344,7 +1359,7 @@ router.post('/contagem-cega', tenantMiddleware, async (req, res) => {
       lote: lote || null,
       validade: validade || null,
       numero_serie: numero_serie || null,
-      unidade_medida: unidadeContada,
+      // Q2: a unidade CONTADA fica só no histórico — gravá-la no item fazia a 2ª contagem "bater" com a unidade errada
       // Salva como 'rejeitado' apenas na 3ª tentativa errada
       status_quarentena: statusItem, 
       migo_por: req.userId,
@@ -1911,6 +1926,10 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
     if (!item) {
       return res.status(404).json({ erro: 'Item não encontrado' });
     }
+    // Q2: evita tratar duas vezes (duplo clique somava o saldo de novo)
+    if (['aprovado', 'nao_conforme'].includes(item.status_quarentena) || (destino_tratativa !== 'nao_conformidade' && !(parseFloat(item.quantidade_recebida_fisica) > 0))) {
+      return res.status(409).json({ erro: 'Este item já foi tratado (ou não há contagem para aprovar). Atualize a tela.' });
+    }
 
     // FIX M4.3: prioridade dos valores do item recusado.
     //   body (digitado no modal) > quantidade_recebida_fisica (da contagem)
@@ -2002,6 +2021,8 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
         tenant_id: tenantId,
         numero_nc: numeroNC,
         ordem_venda_id: item.ordem_venda_id,
+        ordem_venda_item_id: item.id, // Q2: a NC sabe qual item da OC — o encerramento movimenta o estoque
+        status: 'aberta', origem: 'recebimento', // Q2: antes ia sem status/origem (dependia do default do banco; filtro por origem não achava)
         numero_pedido: ovParaNC?.numero || null,
         fornecedor_id: ovParaNC?.fornecedor_id || null,
         fornecedor_nome: fornecedorParaNC?.nome || null,
@@ -2201,13 +2222,14 @@ router.put('/item/:itemId/aprovar-saldo', tenantMiddleware, async (req, res) => 
     // CAMINHO 1: APROVADO (Padrão SAP - Entrada em Doca de Recebimento)
     // ─────────────────────────────────────────────────────────────────
     // ✅ ATUALIZAÇÃO CORRIGIDA: Gravando nas colunas certas do seu Supabase!
-    await DB.update('ordem_venda_itens', itemId, {
+    // Q2: o contado entra como recebido; se ainda falta do pedido, abre a próxima rodada (próxima NF)
+    await fecharRodada(tenantId, item, parseFloat(item.quantidade_recebida_fisica || 0), {
       status_quarentena: 'aprovado',
       status_contagem: 'concluido',
-      aprovado_por: req.userId, // Salva o UUID de quem aprovou
-      aprovado_em: new Date(),   // Salva a data exata da aprovação
+      aprovado_por: req.userId,
+      aprovado_em: new Date(),
       observacao: `Saldo aprovado em tratativa: ${justificativa}`
-    }, tenantId);
+    });
 
     // Lançar o saldo físico no catálogo apontando para a doca de RECEBIMENTO
     // M4.3-ah: só busca se tem catálogo vinculado.

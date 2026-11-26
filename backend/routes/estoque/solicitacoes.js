@@ -2,6 +2,7 @@
 const express = require('express');
 const router = express.Router();
 const { DB } = require('../../db');
+const { baixarEnderecos, textoEnderecos } = require('../../services/estoqueEnderecos'); // Q2
 const tenantMiddleware = require('../../middleware/tenantMiddleware');
 
 // GET /api/estoque/solicitacoes - Listar solicitações (com itens filhos)
@@ -117,6 +118,7 @@ router.put('/:id/aprovar', tenantMiddleware, async (req, res) => {
           saldo_atual: novoSaldo,
           atualizado_em: new Date()
         }, tenantId);
+        item._enderecos = await baixarEnderecos(DB, tenantId, itemConsumo.id, item.quantidade, req.body?.endereco || null); // Q2: baixa também no endereço
       }
 
       // Registrar movimentação de saída (para cada item)
@@ -126,7 +128,7 @@ router.put('/:id/aprovar', tenantMiddleware, async (req, res) => {
         tipo: 'saida',
         quantidade: item.quantidade,
         responsavel_id: solicitacao.solicitante_id,
-        observacao: solicitacao.motivo || 'Retirada aprovada',
+        observacao: (solicitacao.motivo || 'Retirada aprovada') + textoEnderecos(item._enderecos || []),
         aprovado_por: req.userId,
         aprovado_em: new Date(),
         status: 'aprovado',

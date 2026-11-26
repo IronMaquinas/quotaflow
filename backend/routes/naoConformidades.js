@@ -161,6 +161,7 @@ router.post('/', tenantMiddleware, async (req, res) => {
       equipamento_id: equipamento_id || null,
       item_catalogo_id: item_catalogo_id || null,
       item_consumo_id: item_consumo_id || null,
+      material_no_estoque: !!(req.body.material_no_estoque && item_consumo_id), // Q2: descarte/devolução no encerramento dá baixa
       // M4.5: item avulso — operador não achou no catálogo, digitou texto
       // livre. `item_fora_catalogo` fica true pra Qualidade ver a pendência.
       item_nome_avulso: item_nome_avulso?.trim() || null,
@@ -1253,6 +1254,10 @@ router.put('/:id/encerrar', tenantMiddleware, async (req, res) => {
     if (nc.status !== "aguardando_validacao") {
       return res.status(400).json({ erro: `NC está "${nc.status}" — só é possível encerrar em "aguardando_validacao"` });
     }
+    // Q2: a decisão sobre o material mexe no estoque — confere ANTES de encerrar (ex.: saldo para dar baixa)
+    const RecOV = require("../services/recebimentoOV");
+    const planoEstoque = await RecOV.planoEstoqueNC(DB, tenantId, nc);
+    if (planoEstoque?.erro) return res.status(409).json({ erro: planoEstoque.erro });
 
     const u = await usuarioAtual(req, tenantId);
 
@@ -1270,6 +1275,8 @@ router.put('/:id/encerrar', tenantMiddleware, async (req, res) => {
     if (Array.isArray(cinco_porques)) upd.cinco_porques = cinco_porques;
 
     await DB.update("nao_conformidades", id, upd, tenantId);
+    const movEstoque = await RecOV.executarEstoqueNC(DB, tenantId, nc, planoEstoque, u); // Q2
+    if (movEstoque) await registrarEventoNC(tenantId, id, "estoque", `📦 ${movEstoque.texto}`, movEstoque, u);
 
     await registrarEventoNC(
       tenantId, id, "encerramento",
@@ -1279,7 +1286,7 @@ router.put('/:id/encerrar', tenantMiddleware, async (req, res) => {
     );
 
     const atualizada = await DB.selectOne("nao_conformidades", { id }, tenantId);
-    res.json({ ok: true, nc: atualizada, mensagem: "NC encerrada" });
+    res.json({ ok: true, nc: atualizada, estoque: movEstoque, mensagem: movEstoque ? `NC encerrada. ${movEstoque.texto}.` : "NC encerrada" });
   } catch (err) {
     console.error("❌ Erro ao encerrar NC:", err.message);
     res.status(500).json({ erro: err.message });

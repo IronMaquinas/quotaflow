@@ -77,7 +77,8 @@ async function carregarParaResposta(fornData) {
       chamado_itens (
         item_nome,
         codigo,
-        descricao
+        descricao,
+        status
       )
     `)
     .eq('cotacao_id', cotacaoId)
@@ -86,7 +87,7 @@ async function carregarParaResposta(fornData) {
   if (error) throw new Error(`Erro ao buscar itens: ${error.message}`);
 
   // 4. Filtro defensivo: só itens em que este fornecedor foi incluído
-  const itensDoFornecedor = (itens || []).filter(item => {
+  const itensDoFornecedor = (itens || []).filter(item => item.chamado_itens?.status !== 'cancelado').filter(item => { // Q2: item removido da cotação some do portal
     const ids = Array.isArray(item.fornecedores_ids) ? item.fornecedores_ids : [];
     return ids.length === 0 || ids.includes(fornecedorId);
   });
@@ -195,8 +196,12 @@ async function responderPortal(fornData, respostas, validadeDias) {
 
   if (erroItens) throw new Error(`Erro ao validar itens: ${erroItens.message}`);
 
+  const canceladosRc = new Set(((await supabase.from('chamado_itens').select('id, status').eq('tenant_id', tenantId)
+    .in('id', (itensCotacao || []).map(i => i.chamado_item_id).filter(Boolean))).data || [])
+    .filter(c => c.status === 'cancelado').map(c => String(c.id))); // Q2
   const itensPermitidosIds = new Set(
     (itensCotacao || [])
+      .filter(item => !canceladosRc.has(String(item.chamado_item_id)))
       .filter(item => {
         const ids = Array.isArray(item.fornecedores_ids) ? item.fornecedores_ids : [];
         return ids.length === 0 || ids.includes(fornecedorId);
@@ -346,7 +351,7 @@ async function responderPortal(fornData, respostas, validadeDias) {
     ? modalidadesUsadas[0]
     : (modalidadesUsadas.length > 1 ? 'MISTO' : null);
 
-  const itensEsperadosDoFornecedor = (itensCotacao || []).filter(item => {
+  const itensEsperadosDoFornecedor = (itensCotacao || []).filter(item => !canceladosRc.has(String(item.chamado_item_id))).filter(item => { // Q2: item removido não deixa o fornecedor eternamente "pendente"
     const ids = Array.isArray(item.fornecedores_ids) ? item.fornecedores_ids : [];
     return ids.includes(fornecedorId) || respostaPorItemId[String(item.id)];
   });

@@ -25,6 +25,7 @@
 import { useState, useRef, useEffect } from 'react';
 import ImagemZoom from "../shared/ImagemZoom"; // 18ze: zoom no ver foto
 import apiService from '../../services/apiService';
+import { Toggle } from "../../plataforma/ModulosPlataforma"; // Q2
 import ConfirmarExclusao from "../shared/ConfirmarExclusao"; // 18ze: ✕ pergunta antes de excluir
 import { linhasMarca, desenharMarca, alturaMarca, pegarGps } from "../../utils/marcaFoto"; // 18c
 const marcaNC = async (ref = null) => ({ oque: "Não conformidade", ref: ref || null, quem: // 18c.1: ref = NC, item, lote, NF… (rastreabilidade)
@@ -171,6 +172,7 @@ export default function ModalNovaNC({ C, s, onFechar, onAtualizar }) {
 
   // ── Rastreabilidade ──
   const [quantidade, setQuantidade] = useState('');
+  const [noEstoque, setNoEstoque] = useState(false); // Q2: material está separado no estoque → descarte/devolução dá baixa no encerramento
   const [unidade, setUnidade] = useState('UN');
   const [lote, setLote] = useState('');
   const [numeroSerie, setNumeroSerie] = useState('');
@@ -332,6 +334,7 @@ export default function ModalNovaNC({ C, s, onFechar, onAtualizar }) {
       quantidade_afetada: quantidade !== '' ? parseFloat(quantidade) : null,
       item_catalogo_id: itemCatalogoId || null,
       item_consumo_id: itemConsumoId || null,
+      material_no_estoque: !!(itemConsumoId && noEstoque),
       item_nome_avulso: !itemCatalogoId && !itemConsumoId ? itemTexto.trim() : null,
       numero_nota_fiscal: numeroNotaFiscal.trim() || null,
       unidade_medida: unidade || null,
@@ -515,6 +518,12 @@ export default function ModalNovaNC({ C, s, onFechar, onAtualizar }) {
                 placeholder="Ex: SKF-6205" style={s.input} />
             </div>
           </div>
+
+          {/* Q2: material do almoxarifado — descarte/devolução no encerramento dá baixa no estoque */}
+          {itemConsumoId && <div style={{ display: 'flex', gap: 10, alignItems: 'flex-start', marginBottom: 12 }}>
+            <Toggle C={C} ligado={noEstoque} rotulo="Material está no estoque" onChange={setNoEstoque} />
+            <div style={{ fontSize: 12.5 }}><b>📦 O material está no estoque (separado)</b><div style={{ color: C.muted, fontSize: 11.5 }}>Ligado: se a NC for encerrada com descarte ou devolução, a quantidade sai do estoque automaticamente. Desligado: o material já não está no estoque (ex.: já aplicado).</div></div>
+          </div>}
 
           {/* Linha 3: qtd + unidade + NF */}
           <div style={{ display: 'grid', gridTemplateColumns: '90px 90px 1fr', gap: 10, marginBottom: 14 }}>

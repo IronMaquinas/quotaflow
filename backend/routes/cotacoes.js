@@ -5152,7 +5152,9 @@ router.post('/:cotacaoId/emitir-ocs', tenantMiddleware, async (req, res) => {
     res.json({ ok: true, ...resultado });
   } catch (err) {
     console.error('❌ Erro ao emitir OCs:', err);
-    res.status(500).json({ erro: err.message });
+    // Q2: bloqueio de regra (já emitida, sem resposta, item faltando…) é 409, não erro do servidor
+    const regra = /já foi emitida|ainda não respondeu|Faltam \d+ item|não pertence|não informou preço|mais de uma vez|não está nesta cotação|não tem itens|não encontrada/.test(err.message);
+    res.status(regra ? 409 : 500).json({ erro: err.message });
   }
 });
 
@@ -5225,6 +5227,7 @@ router.post('/:cotacaoId/adicionar-fornecedores', tenantMiddleware, async (req, 
         fornecedor_nome: fornecedor.nome,
         fornecedor_email: emailComercial,
         token,
+        token_acesso: token, // Q2: o portal procura por token_acesso — fornecedor incluído depois recebia link que dava "Token inválido"
         status: 'pendente',
       }, tenantId);
 
@@ -5282,7 +5285,7 @@ router.post('/:cotacaoId/adicionar-fornecedores', tenantMiddleware, async (req, 
         const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, '');
         for (const forn of adicionados) {
           try {
-            const linkPortal = `${frontendUrl}/#/portal/cotacao/${cotacao.id}/${forn.token}`;
+            const linkPortal = `${frontendUrl}/#/portal/cotacao/${cotacao.id}/${forn.token_acesso || forn.token}`;
             const corpo = `
               <h2>Requisição de Cotação</h2>
               <p>Prezado(a) <strong>${forn.fornecedor_nome}</strong>,</p>
@@ -5347,7 +5350,7 @@ router.post('/:cotacaoId/fornecedores/:fornecedorId/reenviar-email', tenantMiddl
     // 14e: CNPJ irregular não recebe a cotação
     const fcR = await require('../services/monitorCnpj').filtrarEnvioCotacao(require('../db').supabase, tenantId, cotacaoId, [fornecedorId]);
     if (fcR.bloqueados.length) return res.status(409).json({ codigo: 'cnpj_irregular', bloqueados_cnpj: fcR.bloqueados, erro: `E-mail não reenviado: CNPJ ${fcR.bloqueados[0].situacao} na Receita.` });
-    if (!fornecedorCot.token) {
+    if (!fornecedorCot.token_acesso && !fornecedorCot.token) { // Q2: reenviar lia só `token` (vazio nos fornecedores da cotação original)
       return res.status(400).json({ erro: 'Fornecedor sem token de acesso — recrie a cotação' });
     }
 
@@ -5356,7 +5359,7 @@ router.post('/:cotacaoId/fornecedores/:fornecedorId/reenviar-email', tenantMiddl
 
     {
       const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:5173').replace(/\/+$/, '');
-      const linkPortal = `${frontendUrl}/#/portal/cotacao/${cotacao.id}/${fornecedorCot.token}`;
+      const linkPortal = `${frontendUrl}/#/portal/cotacao/${cotacao.id}/${fornecedorCot.token_acesso || fornecedorCot.token}`;
       const corpo = `
         <h2>Requisição de Cotação (reenvio)</h2>
         <p>Prezado(a) <strong>${fornecedorCot.fornecedor_nome}</strong>,</p>

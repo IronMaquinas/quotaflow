@@ -1964,8 +1964,11 @@ async emitirOCs(tenantId, cotacaoId, selecoes, usuarioId = null, usuarioNome = n
   // 1. Carregar itens da cotação
   const cotacaoItens = await this.db.select('cotacao_itens',
     { cotacao_id: cotacaoId, tenant_id: tenantId }, tenantId);
+  // Q2: item removido da cotação (chamado_item cancelado) não entra na OC nem é exigido na seleção
+  const itensRcCanc = new Set((await this.db.select('chamado_itens', { chamado_id: cotacao.chamado_id, tenant_id: tenantId }, tenantId))
+    .filter(it => it.status === 'cancelado').map(it => String(it.id)));
   const cotacaoItensPorId = {};
-  cotacaoItens.forEach(ci => { cotacaoItensPorId[ci.id] = ci; });
+  cotacaoItens.filter(ci => !itensRcCanc.has(String(ci.chamado_item_id))).forEach(ci => { cotacaoItensPorId[ci.id] = ci; });
 
   if (Object.keys(cotacaoItensPorId).length === 0) {
     throw new Error('Cotação não tem itens');
@@ -1976,7 +1979,7 @@ async emitirOCs(tenantId, cotacaoId, selecoes, usuarioId = null, usuarioNome = n
   const itensVistos = new Set();
   for (const s of selecoes) {
     const ci = cotacaoItensPorId[s.cotacao_item_id];
-    if (!ci) throw new Error(`Item ${s.cotacao_item_id} não pertence a esta cotação`);
+    if (!ci) throw new Error(`Item ${s.cotacao_item_id} não pertence a esta cotação (ou foi removido dela)`);
     if (itensVistos.has(s.cotacao_item_id)) {
       throw new Error(`Item ${s.cotacao_item_id} selecionado mais de uma vez`);
     }
@@ -2053,20 +2056,23 @@ async emitirOCs(tenantId, cotacaoId, selecoes, usuarioId = null, usuarioNome = n
     // Calcular totais (usa renegociado quando existir)
     let valorTotal = 0;
     let freteTotal = 0;
+    // Q2: o preço de cada item vem da resposta DO ITEM (cotacao_fornecedor_itens: valor_renegociado ?? valor, e o frete
+    //   do item). Antes usava o cabeçalho (`valor` = soma dos preços de TODOS os itens do fornecedor) como preço de CADA
+    //   item — cotação com 2+ itens saía com preço errado na OC — e somava o frete do cabeçalho uma vez por item.
+    //   Sem linha por item (fornecedor antigo, 1 item) cai no cabeçalho, como antes.
+    const respPorItem = {}; respostasFornItens.forEach(ri => { respPorItem[String(ri.cotacao_item_id)] = ri; });
+    const num = (x) => (x === null || x === undefined || x === '' ? null : parseFloat(x));
     const itensParaOC = grupo.itens.map(s => {
       const ci = s.cotacao_item;
       const chamadoItem = chamadoItensMap[ci.chamado_item_id];
-      const valorItem = resposta.valor_renegociado != null
-        ? resposta.valor_renegociado
-        : resposta.valor;
-      const freteItem = resposta.frete_renegociado != null
-        ? resposta.frete_renegociado
-        : resposta.valor_frete;
-      const v = parseFloat(valorItem) || 0;
-      const f = parseFloat(freteItem) || 0;
-      const qtd = parseInt(ci.quantidade) || 1;
+      const ri = respPorItem[String(ci.id)];
+      const cab = grupo.itens.length === 1 ? (num(resposta.valor_renegociado) ?? num(resposta.valor)) : null;
+      const v = ri ? (num(ri.valor_renegociado) ?? num(ri.valor)) : cab;
+      if (v == null || !Number.isFinite(v)) throw new Error(`${resposta.fornecedor_nome} não informou preço para um dos itens selecionados`);
+      const f = ri ? (num(ri.frete_renegociado) ?? num(ri.frete) ?? 0) : (num(resposta.frete_renegociado) ?? num(resposta.valor_frete) ?? 0);
+      freteTotal += f || 0;
+      const qtd = parseFloat(ci.quantidade) || 1;
       valorTotal += v * qtd;
-      freteTotal += f;
       return {
         cotacao_item_id: ci.id,
         chamado_item_id: ci.chamado_item_id,
