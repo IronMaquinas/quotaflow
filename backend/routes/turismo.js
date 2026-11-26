@@ -14,6 +14,8 @@ const r = (fn) => async (req, res) => {
   catch (err) { if (/viagens|viagem_|mapas_poltronas|does not exist|schema cache/.test(String(err.message))) return res.status(409).json({ erro: 'Falta rodar a migration 128 (viagens).' }); if (/duplicate|unique/i.test(err.message)) return res.status(409).json({ erro: 'Poltrona já ocupada — atualize a tela.' }); console.error('❌ [turismo]', err.message); res.status(500).json({ erro: 'Não consegui agora.' }); }
 };
 const b = (req) => req.body || {};
+router.get('/sugestao-veiculos', r((req) => T.sugestaoVeiculos(supabase, req.tenantId, req.query.pessoas))); // T1.1
+router.get('/geocode', r((req) => require('../services/fotoCartao').geocodificar(req.query.q))); // T1.1: origem/destino/paradas no mapa
 router.get('/mapas', r((req) => T.listarMapas(supabase, req.tenantId)));
 router.post('/mapas', r((req) => T.salvarMapa(supabase, req.tenantId, null, b(req))));
 router.put('/mapas/:id', r((req) => T.salvarMapa(supabase, req.tenantId, req.params.id, b(req))));

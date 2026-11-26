@@ -1,4 +1,4 @@
-// services/turismo.js — etapa T1: 🚌 VIAGENS E EMBARQUE — mapas de poltronas, viagens (eventos), ônibus, reservas e passageiros
+// services/turismo.js — etapa T1 (+T1.1: planejamento de uma vez, veículos "a definir", sugestão de frota, itinerário, vários motoristas, pagamentos e embarques opcionais): 🚌 VIAGENS E EMBARQUE — mapas de poltronas, viagens (eventos), ônibus, reservas e passageiros
 //   Layout = { pisos: [{ nome, linhas: [[célula…]] }] } · célula = { t: 'p' (poltrona, n = número) | 'c' corredor | 'x' vazio | 'porta' |
 //   'escada' | 'wc' | 'gel' (geladeira) | 'mot' (motorista) | 'mesa' }. Modelos prontos (convencional 2+2 44/46, executivo 2+1, double deck 60,
 //   micro 28, van 15) + mapas da empresa. Passageiro = poltrona (única no ônibus). Reserva individual ou grupo/família (responsável).
@@ -44,6 +44,22 @@ function validarLayout(layout) {
   return { layout: { pisos }, lugares: nums.length };
 }
 
+// T1.1: melhor conjunto de veículos para N pessoas — menos veículos primeiro, depois menos lugares sobrando (até 6 veículos)
+function sugerirVeiculos(pessoas, tipos) {
+  const n = parseInt(pessoas, 10); if (!(n > 0)) return [];
+  const ts = []; for (const t of tipos) if (t.lugares > 0 && !ts.some((x) => x.lugares === t.lugares)) ts.push(t); ts.sort((a, b) => b.lugares - a.lugares);
+  const res = []; const rec = (i, combo, soma) => { if (soma >= n) { res.push({ itens: combo.slice(), lugares: soma }); return; } if (combo.length >= 6) return;
+    for (let j = i; j < ts.length; j++) { combo.push(ts[j]); rec(j, combo, soma + ts[j].lugares); combo.pop(); } };
+  rec(0, [], 0);
+  res.sort((a, b) => a.itens.length - b.itens.length || a.lugares - b.lugares);
+  const vistos = new Set(); const out = [];
+  for (const r of res) { const k = r.itens.map((t) => t.id).join('|'); if (vistos.has(k)) continue; vistos.add(k);
+    const grupos = []; for (const t of r.itens) { const g = grupos.find((x) => x.id === t.id); if (g) g.qtd++; else grupos.push({ id: t.id, nome: t.nome, lugares: t.lugares, qtd: 1 }); }
+    out.push({ veiculos: grupos, total_veiculos: r.itens.length, lugares: r.lugares, sobra: r.lugares - n }); if (out.length >= 3) break; }
+  return out;
+}
+async function sugestaoVeiculos(sb, tenantId, pessoas) { const { mapas } = await listarMapas(sb, tenantId); return { opcoes: sugerirVeiculos(pessoas, [...mapas.map((m) => ({ id: m.id, nome: m.nome, lugares: m.lugares })), ...MODELOS]) }; }
+
 // ─── mapas da empresa ────────────────────────────────────────────────────────
 async function listarMapas(sb, tenantId) { const l = (await q(sb.from('mapas_poltronas').select('*').eq('tenant_id', tenantId))).filter((m) => m.ativo !== false).sort((a, b) => String(a.nome).localeCompare(String(b.nome), 'pt-BR')); return { mapas: l, modelos: MODELOS }; }
 async function salvarMapa(sb, tenantId, id, b = {}) {
@@ -62,21 +78,44 @@ async function layoutDe(sb, tenantId, mapaId) {
 async function listarViagens(sb, tenantId, f = {}) {
   const [vs, os, ps] = await Promise.all([q(sb.from('viagens').select('*').eq('tenant_id', tenantId)), q(sb.from('viagem_onibus').select('*').eq('tenant_id', tenantId)), q(sb.from('viagem_passageiros').select('*').eq('tenant_id', tenantId))]);
   let l = vs.map((v) => { const o = os.filter((x) => String(x.viagem_id) === String(v.id)); const lug = o.reduce((s, x) => s + poltronas(x.layout).length - (x.bloqueadas || []).length, 0);
-    return { ...v, onibus: o.length, lugares: lug, passageiros: ps.filter((x) => String(x.viagem_id) === String(v.id)).length }; });
+    const pend = o.filter((x) => !x.placa && !x.equipamento_id).length + o.filter((x) => !(x.motoristas || []).length && !x.motorista_nome).length;
+    return { ...v, onibus: o.length, lugares: lug, pendencias: pend, passageiros: ps.filter((x) => String(x.viagem_id) === String(v.id)).length }; });
   if (f.status) l = l.filter((v) => (f.status === 'ativas' ? ['planejada', 'em_andamento'].includes(v.status) : v.status === f.status));
   if (f.busca) { const t = String(f.busca).toLowerCase(); l = l.filter((v) => [v.nome, v.destino, v.numero].some((x) => String(x || '').toLowerCase().includes(t))); }
   l.sort((a, b) => String(a.saida_em || '9').localeCompare(String(b.saida_em || '9')));
   return { viagens: l };
 }
+const num = (v) => (v === '' || v == null || Number.isNaN(Number(v)) ? null : Number(v));
+const coord = (v, lim) => { const x = num(v); return x != null && Math.abs(x) <= lim ? x : null; };
+function limparParadas(l) {
+  return (Array.isArray(l) ? l : []).slice(0, 30).map((p, i) => ({ id: txt(p?.id, 20) || `p${Date.now().toString(36)}${i}`, nome: txt(p?.nome, 160), lat: coord(p?.lat, 90), lng: coord(p?.lng, 180),
+    chegada: quando(p?.chegada), minutos: num(p?.minutos) != null ? Math.max(0, Math.min(1440, Math.round(num(p.minutos)))) : null, conferir: !!p?.conferir, embarque: !!p?.embarque })).filter((p) => p.nome);
+}
 async function salvarViagem(sb, tenantId, quem, id, b = {}) {
   const nome = txt(b.nome, 120); if (!nome) return { status: 400, erro: 'Dê um nome à viagem.' };
-  const d = { nome, destino: txt(b.destino, 160), saida_em: quando(b.saida_em), retorno_em: quando(b.retorno_em), local_saida: txt(b.local_saida, 200), obs: txt(b.obs, 2000),
-    paradas: (Array.isArray(b.paradas) ? b.paradas : []).slice(0, 20).map((p) => ({ nome: txt(p?.nome, 120), hora: txt(p?.hora, 20) })).filter((p) => p.nome), atualizado_em: new Date().toISOString() };
-  if (d.saida_em && d.retorno_em && d.retorno_em < d.saida_em) return { status: 400, erro: 'O retorno precisa ser depois da saída.' };
-  if (id) { if (b.status && ['planejada', 'em_andamento', 'concluida', 'cancelada'].includes(b.status)) d.status = b.status; const r = (await q(sb.from('viagens').update(d).eq('tenant_id', tenantId).eq('id', id).select()))[0]; return r ? { viagem: r } : { status: 404, erro: 'Viagem não encontrada.' }; }
+  const d = { nome, origem: txt(b.origem, 200), origem_lat: coord(b.origem_lat, 90), origem_lng: coord(b.origem_lng, 180), destino: txt(b.destino, 200), destino_lat: coord(b.destino_lat, 90), destino_lng: coord(b.destino_lng, 180),
+    saida_em: quando(b.saida_em), retorno_em: quando(b.retorno_em), local_saida: txt(b.local_saida, 200), obs: txt(b.obs, 2000),
+    pessoas_previstas: num(b.pessoas_previstas) > 0 ? Math.min(5000, Math.round(num(b.pessoas_previstas))) : null,
+    acompanhar_pagamentos: !!b.acompanhar_pagamentos, valor_pessoa: b.acompanhar_pagamentos && num(b.valor_pessoa) >= 0 ? num(b.valor_pessoa) : null, embarques_diferentes: !!b.embarques_diferentes,
+    paradas: limparParadas(b.paradas), atualizado_em: new Date().toISOString() };
+  if (!d.origem) return { status: 400, erro: 'Informe a origem.' }; if (!d.destino) return { status: 400, erro: 'Informe o destino.' };
+  if (!d.saida_em) return { status: 400, erro: 'Informe a data e hora de saída.' };
+  if (d.retorno_em && d.retorno_em < d.saida_em) return { status: 400, erro: 'O retorno precisa ser depois da saída.' };
+  const foraDoPeriodo = d.paradas.find((p) => p.chegada && (p.chegada < d.saida_em || (d.retorno_em && p.chegada > d.retorno_em))); if (foraDoPeriodo) return { status: 400, erro: `A parada "${foraDoPeriodo.nome}" está fora do período da viagem.` };
+  if (id) {
+    if (b.status && ['planejada', 'em_andamento', 'concluida', 'cancelada'].includes(b.status)) d.status = b.status;
+    const ant = (await q(sb.from('viagens').select('*').eq('tenant_id', tenantId).eq('id', id)))[0]; if (!ant) return { status: 404, erro: 'Viagem não encontrada.' };
+    const embarques = new Set(d.embarques_diferentes ? d.paradas.filter((p) => p.embarque).map((p) => p.id) : []);
+    const usando = (await q(sb.from('viagem_passageiros').select('*').eq('tenant_id', tenantId).eq('viagem_id', id))).filter((p) => p.embarque_parada_id && !embarques.has(p.embarque_parada_id));
+    if (usando.length && d.embarques_diferentes) return { status: 409, erro: `${usando.length} passageiro(s) embarcam numa parada que você tirou ou desmarcou como embarque (${usando.slice(0, 3).map((p) => p.nome).join(', ')}…). Mude o embarque deles antes.` };
+    const r = (await q(sb.from('viagens').update(d).eq('tenant_id', tenantId).eq('id', id).select()))[0]; return { viagem: r };
+  }
   const ano = (d.saida_em || new Date().toISOString()).slice(0, 4); const todas = await q(sb.from('viagens').select('*').eq('tenant_id', tenantId));
   const numero = `VIA-${ano}-${String(todas.filter((v) => String(v.numero || '').startsWith(`VIA-${ano}-`)).length + 1).padStart(3, '0')}`;
-  return { viagem: (await q(sb.from('viagens').insert([{ ...d, tenant_id: tenantId, numero, status: 'planejada', criado_por: quem?.nome || null, criado_em: d.atualizado_em }]).select()))[0] };
+  const v = (await q(sb.from('viagens').insert([{ ...d, tenant_id: tenantId, numero, status: 'planejada', criado_por: quem?.nome || null, criado_em: d.atualizado_em }]).select()))[0];
+  const veic = (Array.isArray(b.veiculos) ? b.veiculos : []).slice(0, 20); const erros = [];
+  for (const x of veic) { const r = await salvarOnibus(sb, tenantId, v.id, null, { mapa_id: x.mapa_id }); if (r.erro) erros.push(r.erro); }
+  return { viagem: v, ...(erros.length ? { aviso: `Viagem salva, mas ${erros.length} veículo(s) não entraram: ${erros[0]}` } : {}) };
 }
 async function detalhe(sb, tenantId, id) {
   const v = (await q(sb.from('viagens').select('*').eq('tenant_id', tenantId).eq('id', id)))[0]; if (!v) return { status: 404, erro: 'Viagem não encontrada.' };
@@ -86,29 +125,35 @@ async function detalhe(sb, tenantId, id) {
   const pass = ps.map((p) => { const id2 = idade(p.nascimento); const r = rs.find((x) => String(x.id) === String(p.reserva_id));
     return { ...p, idade: id2, menor: id2 != null && id2 < 18, reserva_codigo: r?.codigo || null, reserva_tipo: r?.tipo || null, responsavel: r?.responsavel || null, incompleto: !p.documento || !p.nascimento || !p.telefone && !r?.telefone }; });
   const onibus = os.sort((a, b) => a.ordem - b.ordem).map((o) => { const pl = poltronas(o.layout); const ocup = pass.filter((p) => String(p.onibus_id) === String(o.id));
-    return { ...o, lugares: pl.length, livres: pl.length - ocup.length - (o.bloqueadas || []).filter((n) => !ocup.some((p) => p.poltrona === n)).length, ocupados: ocup.length }; });
-  return { viagem: v, onibus, reservas: rs.sort((a, b) => String(a.codigo).localeCompare(String(b.codigo))), passageiros: pass, sem_poltrona: pass.filter((p) => !p.onibus_id || !p.poltrona).length, incompletos: pass.filter((p) => p.incompleto).length, MODELOS: MODELOS.map(({ id: i, nome, lugares }) => ({ id: i, nome, lugares })) };
+    const motoristas = (o.motoristas || []).length ? o.motoristas : o.motorista_nome ? [{ nome: o.motorista_nome, colaborador_id: o.motorista_colaborador_id, telefone: o.motorista_telefone }] : [];
+    return { ...o, motoristas, falta_veiculo: !o.placa && !o.equipamento_id, falta_motorista: !motoristas.length, lugares: pl.length, livres: pl.length - ocup.length - (o.bloqueadas || []).filter((n) => !ocup.some((p) => p.poltrona === n)).length, ocupados: ocup.length }; });
+  const lugares = onibus.reduce((t, o) => t + o.lugares - (o.bloqueadas || []).length, 0);
+  const pag = v.acompanhar_pagamentos ? rs.reduce((t, r) => { const val = Number(r.valor || 0); const pg = r.situacao_pagamento === 'pago' ? val : r.situacao_pagamento === 'parcial' ? Number(r.valor_pago || 0) : 0; return { total: t.total + val, recebido: t.recebido + pg }; }, { total: 0, recebido: 0 }) : null;
+  return { viagem: v, lugares, faltam_lugares: v.pessoas_previstas ? Math.max(0, v.pessoas_previstas - lugares) : 0, pagamentos: pag ? { ...pag, a_receber: pag.total - pag.recebido } : null,
+    pendencias: { veiculo: onibus.filter((o) => o.falta_veiculo).length, motorista: onibus.filter((o) => o.falta_motorista).length }, onibus, reservas: rs.sort((a, b) => String(a.codigo).localeCompare(String(b.codigo))), passageiros: pass, sem_poltrona: pass.filter((p) => !p.onibus_id || !p.poltrona).length, incompletos: pass.filter((p) => p.incompleto).length, MODELOS: MODELOS.map(({ id: i, nome, lugares }) => ({ id: i, nome, lugares })) };
 }
 
 // ─── ônibus da viagem ───────────────────────────────────────────────────────
 async function salvarOnibus(sb, tenantId, viagemId, id, b = {}) {
   const v = (await q(sb.from('viagens').select('*').eq('tenant_id', tenantId).eq('id', viagemId)))[0]; if (!v) return { status: 404, erro: 'Viagem não encontrada.' };
-  const d = { empresa: txt(b.empresa, 120), motorista_nome: txt(b.motorista_nome, 120), motorista_colaborador_id: b.motorista_colaborador_id != null && b.motorista_colaborador_id !== '' ? String(b.motorista_colaborador_id) : null, motorista_telefone: txt(b.motorista_telefone, 30), atualizado_em: new Date().toISOString() };
+  const mots = (Array.isArray(b.motoristas) ? b.motoristas : b.motorista_nome ? [{ nome: b.motorista_nome, colaborador_id: b.motorista_colaborador_id, telefone: b.motorista_telefone }] : [])
+    .slice(0, 4).map((m) => ({ nome: txt(m?.nome, 120), colaborador_id: m?.colaborador_id != null && m.colaborador_id !== '' ? String(m.colaborador_id) : null, telefone: txt(m?.telefone, 30) })).filter((m) => m.nome);
+  const d = { empresa: txt(b.empresa, 120), motoristas: mots, motorista_nome: mots[0]?.nome || null, motorista_colaborador_id: mots[0]?.colaborador_id || null, motorista_telefone: mots[0]?.telefone || null, atualizado_em: new Date().toISOString() };
   if (b.equipamento_id) { const e = (await q(sb.from('equipamentos').select('*').eq('tenant_id', tenantId).eq('id', b.equipamento_id)))[0]; if (e) { d.equipamento_id = String(e.id); d.placa = e.placa || null; d.nome = txt(b.nome, 80) || e.tag || e.nome; } }
   if (!d.equipamento_id) { d.equipamento_id = null; d.placa = txt(b.placa, 10); }
   d.nome = d.nome || txt(b.nome, 80);
   if (id) {
     const o = (await q(sb.from('viagem_onibus').select('*').eq('tenant_id', tenantId).eq('id', id)))[0]; if (!o) return { status: 404, erro: 'Ônibus não encontrado.' };
     if (!d.nome) d.nome = o.nome;
-    if (b.mapa_id && String(b.mapa_id) !== String(o.mapa_id || '')) { const ly = await layoutDe(sb, tenantId, b.mapa_id); if (!ly) return { status: 400, erro: 'Mapa não encontrado.' };
+    const tplAtual = MODELOS.find((m) => m.nome === o.tipo_nome)?.id; if (b.mapa_id && String(b.mapa_id) !== String(o.mapa_id || tplAtual || '')) { const ly = await layoutDe(sb, tenantId, b.mapa_id); if (!ly) return { status: 400, erro: 'Mapa não encontrado.' };
       const novas = new Set(poltronas(ly.layout).map((x) => x.n)); const ps = (await q(sb.from('viagem_passageiros').select('*').eq('tenant_id', tenantId).eq('onibus_id', id))).filter((p) => p.poltrona && !novas.has(p.poltrona));
       if (ps.length) return { status: 409, erro: `O mapa novo não tem as poltronas ${ps.map((p) => p.poltrona).join(', ')} — mude esses passageiros antes.` };
-      Object.assign(d, { mapa_id: ly.mapa_id, layout: ly.layout }); }
+      Object.assign(d, { mapa_id: ly.mapa_id, layout: ly.layout, tipo_nome: ly.nome, bloqueadas: (o.bloqueadas || []).filter((n) => novas.has(n)) }); }
     return { onibus: (await q(sb.from('viagem_onibus').update(d).eq('tenant_id', tenantId).eq('id', id).select()))[0] };
   }
   const ly = await layoutDe(sb, tenantId, b.mapa_id); if (!ly) return { status: 400, erro: 'Escolha o mapa de poltronas do ônibus.' };
   const existentes = await q(sb.from('viagem_onibus').select('*').eq('tenant_id', tenantId).eq('viagem_id', viagemId));
-  return { onibus: (await q(sb.from('viagem_onibus').insert([{ ...d, nome: d.nome || `Ônibus ${existentes.length + 1}`, tenant_id: tenantId, viagem_id: v.id, ordem: existentes.length + 1, mapa_id: ly.mapa_id, layout: ly.layout, bloqueadas: [], criado_em: d.atualizado_em }]).select()))[0] };
+  return { onibus: (await q(sb.from('viagem_onibus').insert([{ ...d, nome: d.nome || `Ônibus ${existentes.length + 1}`, tenant_id: tenantId, viagem_id: v.id, ordem: existentes.length + 1, mapa_id: ly.mapa_id, tipo_nome: ly.nome, layout: ly.layout, bloqueadas: [], criado_em: d.atualizado_em }]).select()))[0] };
 }
 async function excluirOnibus(sb, tenantId, id) {
   const ps = await q(sb.from('viagem_passageiros').select('*').eq('tenant_id', tenantId).eq('onibus_id', id)); if (ps.length) return { status: 409, erro: `Há ${ps.length} passageiro(s) neste ônibus — mude ou tire antes.` };
@@ -123,7 +168,17 @@ async function bloquear(sb, tenantId, id, poltrona, bloquear) {
 }
 
 // ─── reservas e passageiros ─────────────────────────────────────────────────
-const limparPass = (p) => ({ nome: txt(p?.nome, 120), documento: txt(p?.documento, 40), nascimento: dataISO(p?.nascimento), telefone: txt(p?.telefone, 30), emergencia_nome: txt(p?.emergencia_nome, 120), emergencia_telefone: txt(p?.emergencia_telefone, 30), obs: txt(p?.obs, 500), assistencia: !!p?.assistencia });
+const limparPass = (p) => ({ nome: txt(p?.nome, 120), documento: txt(p?.documento, 40), nascimento: dataISO(p?.nascimento), telefone: txt(p?.telefone, 30), emergencia_nome: txt(p?.emergencia_nome, 120), emergencia_telefone: txt(p?.emergencia_telefone, 30), obs: txt(p?.obs, 500), assistencia: !!p?.assistencia,
+  plano_saude: !!p?.plano_saude, plano_saude_nome: p?.plano_saude ? txt(p.plano_saude_nome, 80) : null, plano_saude_numero: p?.plano_saude ? txt(p.plano_saude_numero, 40) : null,
+  seguro_viagem: !!p?.seguro_viagem, seguro_nome: p?.seguro_viagem ? txt(p.seguro_nome, 80) : null, seguro_apolice: p?.seguro_viagem ? txt(p.seguro_apolice, 40) : null,
+  tipo_sanguineo: TIPOS_SANGUE.includes(p?.tipo_sanguineo) ? p.tipo_sanguineo : null });
+const TIPOS_SANGUE = ['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'];
+const SITUACOES = ['pago', 'parcial', 'embarque', 'pendente'];
+// embarque: só vale com o toggle ligado e numa parada marcada como ponto de embarque; senão é a origem (null)
+const embarqueDe = (v, id) => (v?.embarques_diferentes && id && (v.paradas || []).some((p) => p.embarque && String(p.id) === String(id)) ? String(id) : null);
+function pagamento(v, b, n) { if (!v?.acompanhar_pagamentos) return {}; const sit = SITUACOES.includes(b.situacao_pagamento) ? b.situacao_pagamento : 'pendente';
+  const valor = num(b.valor) != null ? num(b.valor) : v.valor_pessoa != null ? Number(v.valor_pessoa) * n : null;
+  return { valor, situacao_pagamento: sit, valor_pago: sit === 'parcial' ? num(b.valor_pago) : null, pago: sit === 'pago' }; }
 async function conferirPoltronas(sb, tenantId, viagemId, itens, ignorar = []) {
   const os = await q(sb.from('viagem_onibus').select('*').eq('tenant_id', tenantId).eq('viagem_id', viagemId)); const ps = (await q(sb.from('viagem_passageiros').select('*').eq('tenant_id', tenantId).eq('viagem_id', viagemId))).filter((p) => !ignorar.includes(String(p.id)));
   const usadas = new Set();
@@ -135,31 +190,38 @@ async function conferirPoltronas(sb, tenantId, viagemId, itens, ignorar = []) {
 }
 async function criarReserva(sb, tenantId, quem, viagemId, b = {}) {
   const v = (await q(sb.from('viagens').select('*').eq('tenant_id', tenantId).eq('id', viagemId)))[0]; if (!v) return { status: 404, erro: 'Viagem não encontrada.' };
-  const passageiros = (Array.isArray(b.passageiros) ? b.passageiros : []).slice(0, 80).map((p) => ({ ...limparPass(p), onibus_id: p.onibus_id || null, poltrona: txt(p.poltrona, 6), menor_de: Number.isInteger(p.menor_de) ? p.menor_de : null })).filter((p) => p.nome);
+  const passageiros = (Array.isArray(b.passageiros) ? b.passageiros : []).slice(0, 80).map((p) => ({ ...limparPass(p), embarque_parada_id: embarqueDe(v, p.embarque_parada_id ?? b.embarque_parada_id), onibus_id: p.onibus_id || null, poltrona: txt(p.poltrona, 6), menor_de: Number.isInteger(p.menor_de) ? p.menor_de : null })).filter((p) => p.nome);
   if (!passageiros.length) return { status: 400, erro: 'Inclua ao menos um passageiro.' };
   const responsavel = txt(b.responsavel, 120) || passageiros[0].nome;
   const err = await conferirPoltronas(sb, tenantId, v.id, passageiros); if (err) return { status: 409, erro: err };
   const todas = await q(sb.from('viagem_reservas').select('*').eq('tenant_id', tenantId).eq('viagem_id', v.id)); const agora = new Date().toISOString();
-  const r = (await q(sb.from('viagem_reservas').insert([{ tenant_id: tenantId, viagem_id: v.id, codigo: `R${String(todas.length + 1).padStart(3, '0')}`, tipo: passageiros.length > 1 || b.tipo === 'grupo' ? 'grupo' : 'individual', responsavel, telefone: txt(b.telefone, 30) || passageiros[0].telefone, email: txt(b.email, 120), origem_venda: txt(b.origem_venda, 60), pago: !!b.pago, obs: txt(b.obs, 1000), criado_por: quem?.nome || null, criado_em: agora, atualizado_em: agora }]).select()))[0];
+  const r = (await q(sb.from('viagem_reservas').insert([{ tenant_id: tenantId, viagem_id: v.id, codigo: `R${String(todas.length + 1).padStart(3, '0')}`, tipo: passageiros.length > 1 || b.tipo === 'grupo' ? 'grupo' : 'individual', responsavel, telefone: txt(b.telefone, 30) || passageiros[0].telefone, email: txt(b.email, 120), origem_venda: txt(b.origem_venda, 60), pago: !!b.pago, ...pagamento(v, b, passageiros.length), obs: txt(b.obs, 1000), criado_por: quem?.nome || null, criado_em: agora, atualizado_em: agora }]).select()))[0];
   const criados = [];
   for (const p of passageiros) { const { menor_de, ...resto } = p; criados.push((await q(sb.from('viagem_passageiros').insert([{ ...resto, tenant_id: tenantId, viagem_id: v.id, reserva_id: r.id, criado_em: agora, atualizado_em: agora }]).select()))[0]); }
   for (let i = 0; i < passageiros.length; i++) if (passageiros[i].menor_de != null && criados[passageiros[i].menor_de]) await q(sb.from('viagem_passageiros').update({ responsavel_passageiro_id: criados[passageiros[i].menor_de].id }).eq('tenant_id', tenantId).eq('id', criados[i].id).select());
   return { reserva: r, passageiros: criados };
 }
 async function editarReserva(sb, tenantId, id, b = {}) {
-  const up = { atualizado_em: new Date().toISOString() }; for (const k of ['responsavel', 'telefone', 'email', 'origem_venda', 'obs']) if (k in b) up[k] = txt(b[k], k === 'obs' ? 1000 : 120); if ('pago' in b) up.pago = !!b.pago;
+  const r0 = (await q(sb.from('viagem_reservas').select('*').eq('tenant_id', tenantId).eq('id', id)))[0]; if (!r0) return { status: 404, erro: 'Reserva não encontrada.' };
+  const up = { atualizado_em: new Date().toISOString() }; for (const k of ['responsavel', 'telefone', 'email', 'origem_venda', 'obs']) if (k in b) up[k] = txt(b[k], k === 'obs' ? 1000 : 120); if ('pago' in b) { up.pago = !!b.pago; up.situacao_pagamento = b.pago ? 'pago' : 'pendente'; }
   if ('responsavel' in up && !up.responsavel) return { status: 400, erro: 'Informe o responsável.' };
-  const r = (await q(sb.from('viagem_reservas').update(up).eq('tenant_id', tenantId).eq('id', id).select()))[0]; return r ? { reserva: r } : { status: 404, erro: 'Reserva não encontrada.' };
+  if ('situacao_pagamento' in b || 'valor' in b) { const v = (await q(sb.from('viagens').select('*').eq('tenant_id', tenantId).eq('id', r0.viagem_id)))[0]; const n = (await q(sb.from('viagem_passageiros').select('*').eq('tenant_id', tenantId).eq('reserva_id', id))).length;
+    Object.assign(up, pagamento(v, { situacao_pagamento: r0.situacao_pagamento, valor: r0.valor, valor_pago: r0.valor_pago, ...b }, n));
+    if (up.situacao_pagamento === 'parcial' && !(up.valor_pago > 0)) return { status: 400, erro: 'Informe quanto já foi pago.' }; }
+  if ('embarque_parada_id' in b) { const v = (await q(sb.from('viagens').select('*').eq('tenant_id', tenantId).eq('id', r0.viagem_id)))[0]; await q(sb.from('viagem_passageiros').update({ embarque_parada_id: embarqueDe(v, b.embarque_parada_id) }).eq('tenant_id', tenantId).eq('reserva_id', id).select()); }
+  const r = (await q(sb.from('viagem_reservas').update(up).eq('tenant_id', tenantId).eq('id', id).select()))[0]; return { reserva: r };
 }
 async function excluirReserva(sb, tenantId, id) { await q(sb.from('viagem_passageiros').delete().eq('tenant_id', tenantId).eq('reserva_id', id)); await q(sb.from('viagem_reservas').delete().eq('tenant_id', tenantId).eq('id', id)); return { ok: true }; }
 async function salvarPassageiro(sb, tenantId, id, b = {}) {
   const p = (await q(sb.from('viagem_passageiros').select('*').eq('tenant_id', tenantId).eq('id', id)))[0]; if (!p) return { status: 404, erro: 'Passageiro não encontrado.' };
   const d = limparPass({ ...p, ...b }); if (!d.nome) return { status: 400, erro: 'Informe o nome.' };
+  if ('embarque_parada_id' in b) { const v = (await q(sb.from('viagens').select('*').eq('tenant_id', tenantId).eq('id', p.viagem_id)))[0]; d.embarque_parada_id = embarqueDe(v, b.embarque_parada_id); }
   return { passageiro: (await q(sb.from('viagem_passageiros').update({ ...d, atualizado_em: new Date().toISOString() }).eq('tenant_id', tenantId).eq('id', id).select()))[0] };
 }
 async function adicionarPassageiro(sb, tenantId, reservaId, b = {}) {
   const r = (await q(sb.from('viagem_reservas').select('*').eq('tenant_id', tenantId).eq('id', reservaId)))[0]; if (!r) return { status: 404, erro: 'Reserva não encontrada.' };
-  const d = { ...limparPass(b), onibus_id: b.onibus_id || null, poltrona: txt(b.poltrona, 6) }; if (!d.nome) return { status: 400, erro: 'Informe o nome.' };
+  const vg = (await q(sb.from('viagens').select('*').eq('tenant_id', tenantId).eq('id', r.viagem_id)))[0];
+  const d = { ...limparPass(b), embarque_parada_id: embarqueDe(vg, b.embarque_parada_id), onibus_id: b.onibus_id || null, poltrona: txt(b.poltrona, 6) }; if (!d.nome) return { status: 400, erro: 'Informe o nome.' };
   const err = await conferirPoltronas(sb, tenantId, r.viagem_id, [d]); if (err) return { status: 409, erro: err };
   const agora = new Date().toISOString(); const novo = (await q(sb.from('viagem_passageiros').insert([{ ...d, tenant_id: tenantId, viagem_id: r.viagem_id, reserva_id: r.id, criado_em: agora, atualizado_em: agora }]).select()))[0];
   if (r.tipo === 'individual') await q(sb.from('viagem_reservas').update({ tipo: 'grupo' }).eq('tenant_id', tenantId).eq('id', r.id).select());
@@ -203,11 +265,13 @@ async function importar(sb, tenantId, quem, viagemId, b = {}) {
   const achaOnibus = (t) => { if (!t) return os.length === 1 ? os[0] : null; const s = String(t).trim().toLowerCase(); return os.find((o) => String(o.ordem) === s || String(o.nome).toLowerCase() === s || String(o.placa || '').toLowerCase() === s) || null; };
   const grupos = new Map(); const erros = [];
   linhas.forEach((l, i) => { const nome = txt(l.nome, 120); if (!nome) return; const o = l.poltrona ? achaOnibus(l.onibus) : null; if (l.poltrona && !o) erros.push(`Linha ${i + 1} (${nome}): diga em qual ônibus (há ${os.length}).`);
-    const chave = txt(l.grupo, 120) || `__${i}`; const g = grupos.get(chave) || { responsavel: txt(l.grupo, 120) || nome, passageiros: [] }; g.passageiros.push({ ...l, nome, onibus_id: o?.id || null, poltrona: o ? txt(l.poltrona, 6) : null }); grupos.set(chave, g); });
+    const chave = txt(l.grupo, 120) || `__${i}`; const g = grupos.get(chave) || { responsavel: txt(l.grupo, 120) || nome, passageiros: [] }; const emb = l.embarque ? (v.paradas || []).find((p) => p.embarque && String(p.nome).toLowerCase().includes(String(l.embarque).trim().toLowerCase())) : null;
+    if (l.embarque && v.embarques_diferentes && !emb) erros.push(`Linha ${i + 1} (${nome}): não achei o ponto de embarque "${l.embarque}".`);
+    g.passageiros.push({ ...l, embarque_parada_id: emb?.id || null, nome, onibus_id: o?.id || null, poltrona: o ? txt(l.poltrona, 6) : null }); grupos.set(chave, g); });
   if (erros.length) return { status: 400, erro: erros.slice(0, 5).join(' · ') };
   const todos = [...grupos.values()].flatMap((g) => g.passageiros); const err = await conferirPoltronas(sb, tenantId, v.id, todos); if (err) return { status: 409, erro: `Nada importado — ${err}` };
   let n = 0; for (const g of grupos.values()) { const r = await criarReserva(sb, tenantId, quem, v.id, { responsavel: g.responsavel, passageiros: g.passageiros, origem_venda: txt(b.origem_venda, 60) }); if (r.erro) return { status: r.status, erro: `Parou em ${g.responsavel}: ${r.erro} (${n} importado(s) antes)` }; n += r.passageiros.length; }
   return { importados: n, reservas: grupos.size };
 }
 
-module.exports = { MODELOS, poltronas, validarLayout, sugerir, listarMapas, salvarMapa, listarViagens, salvarViagem, detalhe, salvarOnibus, excluirOnibus, bloquear, criarReserva, editarReserva, excluirReserva, salvarPassageiro, adicionarPassageiro, excluirPassageiro, mover, sugestao, importar };
+module.exports = { sugerirVeiculos, sugestaoVeiculos, TIPOS_SANGUE, MODELOS, poltronas, validarLayout, sugerir, listarMapas, salvarMapa, listarViagens, salvarViagem, detalhe, salvarOnibus, excluirOnibus, bloquear, criarReserva, editarReserva, excluirReserva, salvarPassageiro, adicionarPassageiro, excluirPassageiro, mover, sugestao, importar };

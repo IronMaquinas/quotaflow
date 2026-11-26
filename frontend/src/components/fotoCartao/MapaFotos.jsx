@@ -75,7 +75,7 @@ export default function MapaFotos({ C, s }) {
 }
 
 /** Local do projeto: busca de endereço, coordenadas coladas ou toque no mapa. valor = { local, lat, lng } */
-export function SeletorLocal({ C, s, valor, onChange }) {
+export function SeletorLocal({ C, s, valor, onChange, rota = "/foto-cartao/geocode", textoVazio = "Toque no mapa para marcar o local do projeto.", altura = 220 }) { // T1.1: rota/texto/altura p/ viagens
   const el = useRef(null); const mapa = useRef(null); const pino = useRef(null); const [busca, setBusca] = useState(""); const [res, setRes] = useState(null); const [msg, setMsg] = useState("");
   const temPonto = valor.lat != null && valor.lat !== "" && valor.lng != null && valor.lng !== "";
   const marcar = (la, ln, zoom) => { const m = mapa.current; if (!m) return; if (!pino.current) { pino.current = L.marker([la, ln], { draggable: true, icon: icone("📍", "#dc2626", true) }).addTo(m); pino.current.on("dragend", () => { const p = pino.current.getLatLng(); onChange({ lat: +p.lat.toFixed(6), lng: +p.lng.toFixed(6) }); }); } else pino.current.setLatLng([la, ln]); if (zoom) m.setView([la, ln], zoom); };
@@ -84,12 +84,12 @@ export function SeletorLocal({ C, s, valor, onChange }) {
     if (temPonto) marcar(Number(valor.lat), Number(valor.lng)); setTimeout(() => m.invalidateSize(), 250); return () => { m.remove(); pino.current = null; }; }, []); // eslint-disable-line
   const buscar = async () => { setMsg(""); const c = busca.match(/^\s*(-?\d{1,2}(?:[.,]\d+)?)\s*[,;\s]\s*(-?\d{1,3}(?:[.,]\d+)?)\s*$/);
     if (c) { const la = Number(c[1].replace(",", ".")); const ln = Number(c[2].replace(",", ".")); if (Math.abs(la) <= 90 && Math.abs(ln) <= 180) { marcar(la, ln, 13); onChange({ lat: la, lng: ln }); setRes(null); return; } }
-    try { const r = await apiService.get(`/foto-cartao/geocode?q=${encodeURIComponent(busca)}`); setRes(r.resultados); if (!r.resultados.length) setMsg("Nada encontrado — tente cidade e estado, ou toque no mapa."); } catch (e) { setMsg(e?.response?.data?.erro || e.message); } };
+    try { const r = await apiService.get(`${rota}?q=${encodeURIComponent(busca)}`); setRes(r.resultados); if (!r.resultados.length) setMsg("Nada encontrado — tente cidade e estado, ou toque no mapa."); } catch (e) { setMsg(e?.response?.data?.erro || e.message); } };
   return <div style={{ display: "grid", gap: 6 }}>
     <div style={{ display: "flex", gap: 6 }}><input value={busca} onChange={(e) => setBusca(e.target.value)} onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), buscar())} placeholder="Buscar cidade/endereço ou colar coordenadas (-5.01, -36.23)" style={{ ...s.input, flex: 1 }} /><button type="button" onClick={buscar} style={{ ...s.btn(false), cursor: "pointer" }}>Buscar</button></div>
     {res && res.length > 0 && <div style={{ display: "grid", gap: 2, maxHeight: 140, overflowY: "auto" }}>{res.map((x, i) => <button key={i} type="button" onClick={() => { marcar(x.lat, x.lng, 13); onChange({ lat: +x.lat.toFixed(6), lng: +x.lng.toFixed(6), local: valor.local || x.nome.split(",").slice(0, 3).join(",").trim() }); setRes(null); }} style={{ textAlign: "left", background: "transparent", border: `1px solid ${C.border}`, borderRadius: 6, padding: "6px 8px", color: C.text, cursor: "pointer", fontSize: 12 }}>📍 {x.nome}</button>)}</div>}
     {msg && <div style={{ fontSize: 12, color: C.warn }}>{msg}</div>}
-    <div ref={el} style={{ height: 220, borderRadius: 8, overflow: "hidden", border: `1px solid ${C.border}` }} />
-    <div style={{ fontSize: 11.5, color: C.textSub }}>{temPonto ? `📍 ${Number(valor.lat).toFixed(6)}, ${Number(valor.lng).toFixed(6)} — arraste o pino ou toque no mapa para ajustar` : "Toque no mapa para marcar o local do projeto."}{temPonto && <button type="button" onClick={() => { if (pino.current) { pino.current.remove(); pino.current = null; } onChange({ lat: "", lng: "" }); }} style={{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 11.5 }}>limpar</button>}</div>
+    <div ref={el} style={{ height: altura, borderRadius: 8, overflow: "hidden", border: `1px solid ${C.border}` }} />
+    <div style={{ fontSize: 11.5, color: C.textSub }}>{temPonto ? `📍 ${Number(valor.lat).toFixed(6)}, ${Number(valor.lng).toFixed(6)} — arraste o pino ou toque no mapa para ajustar` : textoVazio}{temPonto && <button type="button" onClick={() => { if (pino.current) { pino.current.remove(); pino.current = null; } onChange({ lat: "", lng: "" }); }} style={{ background: "none", border: "none", color: C.danger, cursor: "pointer", fontSize: 11.5 }}>limpar</button>}</div>
   </div>;
 }

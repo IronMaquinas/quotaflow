@@ -6,12 +6,19 @@ import CampoFuncionario from "../shared/CampoFuncionario";
 import MapaPoltronas, { Legenda } from "./MapaPoltronas";
 import { abrirListaPassageiros, lerPlanilha } from "../../utils/listaPassageiros";
 import { carregarLogoEmpresa } from "../../utils/logoEmpresa";
+import { Toggle } from "../../plataforma/ModulosPlataforma";
+import { SeletorLocal } from "../fotoCartao/MapaFotos";
 
 const erroDe = (e) => e?.response?.data?.erro || e.message;
 const STATUS = { planejada: "📋 Planejada", em_andamento: "🚌 Em andamento", concluida: "✅ Concluída", cancelada: "✖ Cancelada" };
 const loc = (v) => (v ? new Date(v).toLocaleString("pt-BR", { dateStyle: "short", timeStyle: "short" }) : "—");
 const inputDT = (v) => { if (!v) return ""; const d = new Date(v); return new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16); };
-const PASS_VAZIO = { nome: "", documento: "", nascimento: "", telefone: "", emergencia_nome: "", emergencia_telefone: "", obs: "", assistencia: false };
+const PASS_VAZIO = { nome: "", documento: "", nascimento: "", telefone: "", emergencia_nome: "", emergencia_telefone: "", obs: "", assistencia: false, plano_saude: false, plano_saude_nome: "", plano_saude_numero: "", seguro_viagem: false, seguro_nome: "", seguro_apolice: "", tipo_sanguineo: "", embarque_parada_id: null };
+const SANGUE = ["A+", "A-", "B+", "B-", "AB+", "AB-", "O+", "O-"];
+const PAG = { pago: "✅ Pago", parcial: "◐ Parcial", embarque: "🚌 Paga no embarque", pendente: "⏳ Pendente" };
+const reais = (v) => (v == null || v === "" ? "—" : Number(v).toLocaleString("pt-BR", { style: "currency", currency: "BRL" }));
+const pontosEmbarque = (v) => (v?.embarques_diferentes ? (v.paradas || []).filter((p) => p.embarque) : []);
+const nomeEmbarque = (v, id) => (id ? (v?.paradas || []).find((p) => String(p.id) === String(id))?.nome || "parada" : v?.origem || "saída");
 
 function Modal({ C, s, titulo, onFechar, children, largura = 520 }) {
   return <div onClick={onFechar} style={{ position: "fixed", inset: 0, background: "rgba(0,0,0,.6)", zIndex: 600, display: "flex", alignItems: "center", justifyContent: "center", padding: 16 }}>
@@ -28,7 +35,7 @@ export default function TelaTurismo({ C, s }) {
   const [aba, setAba] = useState("viagens"); const [aberta, setAberta] = useState(null);
   useEffect(() => { carregarLogoEmpresa().catch(() => {}); }, []);
   return <div style={{ padding: "18px clamp(12px, 2.5vw, 28px)", display: "grid", gap: 14, color: C.text }}>
-    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap" }}>
+    <div style={{ display: "flex", gap: 10, alignItems: "center", flexWrap: "wrap", paddingRight: 48 }}>{/* T1.1: espaço do sino de notificações */}
       <h2 style={{ margin: 0, fontSize: 20 }}>🚌 Viagens e embarque</h2>
       <div style={{ display: "flex", gap: 6, marginLeft: "auto" }}>{[["viagens", "Viagens"], ["mapas", "Mapas de poltronas"]].map(([k, l]) => <button key={k} type="button" onClick={() => { setAba(k); setAberta(null); }} style={{ ...s.btn(aba === k), cursor: "pointer" }}>{l}</button>)}</div>
     </div>
@@ -43,9 +50,9 @@ function ListaViagens({ C, s, onAbrir }) {
   useEffect(() => { carregar(); }, [f.status, f.busca]); // eslint-disable-line react-hooks/exhaustive-deps
   return <>
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
-      <button type="button" onClick={() => setNova({ nome: "", destino: "", saida_em: "", retorno_em: "", local_saida: "", obs: "" })} style={{ ...s.btn(true), cursor: "pointer" }}>＋ Nova viagem</button>
+      <button type="button" onClick={() => setNova({ nome: "", origem: "", destino: "", saida_em: "", retorno_em: "", obs: "", paradas: [], veiculos: [] })} style={{ ...s.btn(true), cursor: "pointer" }}>＋ Nova viagem</button>
       <select value={f.status} onChange={(e) => setF({ ...f, status: e.target.value })} style={s.input}><option value="ativas">Planejadas e em andamento</option><option value="concluida">Concluídas</option><option value="cancelada">Canceladas</option><option value="">Todas</option></select>
-      <input value={f.busca} onChange={(e) => setF({ ...f, busca: e.target.value })} placeholder="🔎 Buscar viagem, destino…" style={{ ...s.input, flex: "1 1 200px" }} />
+      <input value={f.busca} onChange={(e) => setF({ ...f, busca: e.target.value })} placeholder="🔎 Buscar viagem, origem, destino…" style={{ ...s.input, flex: "1 1 200px" }} />
     </div>
     {msg && <div style={{ color: C.warn, fontSize: 13 }}>{msg}</div>}
     {!l ? <div style={{ color: C.textSub }}>Carregando…</div> : !l.length ? <div style={{ ...s.card, padding: 18, color: C.textSub }}>Nenhuma viagem aqui. Crie a primeira: viagem = evento (show, excursão, romaria…) com um ou vários ônibus.</div> :
@@ -53,8 +60,9 @@ function ListaViagens({ C, s, onAbrir }) {
         {l.map((v) => { const pct = v.lugares ? Math.round((v.passageiros / v.lugares) * 100) : 0;
           return <div key={v.id} onClick={() => onAbrir(v.id)} style={{ ...s.card, padding: "12px 14px", cursor: "pointer", display: "grid", gap: 5 }}>
             <div style={{ display: "flex", justifyContent: "space-between", gap: 8 }}><b>{v.nome}</b><span style={{ fontSize: 11.5, color: C.textSub }}>{v.numero}</span></div>
-            <div style={{ fontSize: 12.5, color: C.textSub }}>{v.destino || "—"} · saída {loc(v.saida_em)}</div>
-            <div style={{ fontSize: 12.5 }}>{STATUS[v.status]} · {v.onibus} ônibus · <b>{v.passageiros}</b>/{v.lugares} lugares</div>
+            <div style={{ fontSize: 12.5, color: C.textSub }}>{v.origem || "—"} → {v.destino || "—"} · saída {loc(v.saida_em)}</div>
+            <div style={{ fontSize: 12.5 }}>{STATUS[v.status]} · {v.onibus} veículo(s) · <b>{v.passageiros}</b>/{v.lugares} lugares{v.pessoas_previstas ? ` · ${v.pessoas_previstas} esperadas` : ""}</div>
+            {v.pendencias > 0 && <div style={{ fontSize: 12, color: C.warn }}>🟡 {v.pendencias} pendência(s) de veículo/motorista</div>}
             <div style={{ height: 6, borderRadius: 3, background: "rgba(255,255,255,.08)" }}><div style={{ width: `${Math.min(pct, 100)}%`, height: 6, borderRadius: 3, background: pct >= 100 ? "#a3402e" : "#1f6f43" }} /></div>
           </div>; })}
       </div>}
@@ -62,20 +70,96 @@ function ListaViagens({ C, s, onAbrir }) {
   </>;
 }
 
+// T1.1: origem/destino/paradas — nome + busca no mapa (lugar real) com pino ajustável
+function CampoLocal({ C, s, rotulo, valor, onChange, placeholder }) {
+  const [mapa, setMapa] = useState(false); const lab = { fontSize: 11.5, color: C.textSub, display: "block", marginBottom: 3 };
+  const temPonto = valor.lat != null && valor.lat !== "";
+  return <div style={{ display: "grid", gap: 5 }}>
+    {rotulo && <span style={lab}>{rotulo}</span>}
+    <div style={{ display: "flex", gap: 6 }}>
+      <input value={valor.nome || ""} onChange={(e) => onChange({ ...valor, nome: e.target.value })} placeholder={placeholder} style={{ ...s.input, flex: 1, minWidth: 0 }} />
+      <button type="button" onClick={() => setMapa(!mapa)} title="Achar o lugar no mapa" style={{ ...s.btn(mapa), cursor: "pointer", padding: "6px 10px", whiteSpace: "nowrap" }}>{temPonto ? "📍 no mapa ✔" : "📍 Mapa"}</button>
+    </div>
+    {mapa && <SeletorLocal C={C} s={s} rota="/turismo/geocode" altura={200} textoVazio="Busque a cidade/endereço ou toque no mapa." valor={{ local: valor.nome, lat: valor.lat ?? "", lng: valor.lng ?? "" }}
+      onChange={(x) => onChange({ ...valor, lat: x.lat, lng: x.lng, ...(x.local && !valor.nome ? { nome: x.local } : {}) })} />}
+  </div>;
+}
+
+function Opcao({ C, ligado, onChange, titulo, texto }) {
+  return <div style={{ display: "flex", gap: 10, alignItems: "flex-start" }}><Toggle C={C} ligado={ligado} rotulo={titulo} onChange={onChange} />
+    <div><div style={{ fontSize: 13.5, fontWeight: 600 }}>{titulo}</div><div style={{ fontSize: 11.5, color: C.textSub }}>{texto}</div></div></div>;
+}
+
 function FormViagem({ C, s, v, onFechar, onSalvo }) {
-  const [d, setD] = useState({ ...v, saida_em: inputDT(v.saida_em), retorno_em: inputDT(v.retorno_em) }); const [msg, setMsg] = useState("");
-  const lab = { fontSize: 11.5, color: C.textSub, display: "block", marginBottom: 3 };
-  const salvar = async () => { setMsg(""); try { const b = { ...d, saida_em: d.saida_em ? new Date(d.saida_em).toISOString() : null, retorno_em: d.retorno_em ? new Date(d.retorno_em).toISOString() : null };
-    const r = v.id ? await apiService.put(`/turismo/viagens/${v.id}`, b) : await apiService.post("/turismo/viagens", b); onSalvo(r.viagem); } catch (e) { setMsg(`⚠ ${erroDe(e)}`); } };
-  const campo = (k, l, t = "text") => <div style={{ flex: "1 1 200px" }}><span style={lab}>{l}</span><input type={t} value={d[k] || ""} onChange={(e) => setD({ ...d, [k]: e.target.value })} style={{ ...s.input, width: "100%" }} /></div>;
-  return <Modal C={C} s={s} titulo={v.id ? "Editar viagem" : "Nova viagem"} onFechar={onFechar}>
-    {campo("nome", "NOME DO EVENTO / VIAGEM")}{campo("destino", "DESTINO")}
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{campo("saida_em", "SAÍDA", "datetime-local")}{campo("retorno_em", "RETORNO", "datetime-local")}</div>
-    {campo("local_saida", "LOCAL DE SAÍDA / EMBARQUE")}
-    {v.id && <div><span style={lab}>SITUAÇÃO</span><select value={d.status} onChange={(e) => setD({ ...d, status: e.target.value })} style={{ ...s.input, width: "100%" }}>{Object.entries(STATUS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>}
+  const novo = !v.id;
+  const [d, setD] = useState({ ...v, saida_em: inputDT(v.saida_em), retorno_em: inputDT(v.retorno_em), pessoas_previstas: v.pessoas_previstas ?? "", valor_pessoa: v.valor_pessoa ?? "",
+    paradas: (v.paradas || []).map((p) => ({ ...p, chegada: inputDT(p.chegada), minutos: p.minutos ?? "" })), veiculos: v.veiculos || [] });
+  const [msg, setMsg] = useState(""); const [salvando, setSalvando] = useState(false); const [tipos, setTipos] = useState([]); const [sug, setSug] = useState(null);
+  useEffect(() => { if (novo) apiService.get("/turismo/mapas").then((r) => setTipos([...(r.mapas || []).map((m) => ({ id: String(m.id), nome: m.nome, lugares: m.lugares })), ...(r.modelos || [])])).catch(() => {}); }, [novo]);
+  const lab = { fontSize: 11.5, color: C.textSub, display: "block", marginBottom: 3 }; const sec = { fontSize: 12, fontWeight: 700, color: C.textSub, letterSpacing: .4, marginTop: 4 };
+  const lugares = d.veiculos.reduce((t, x) => t + (tipos.find((m) => m.id === x.mapa_id)?.lugares || 0), 0); const prev = parseInt(d.pessoas_previstas, 10) || 0;
+  const mudarSaida = (val) => setD((x) => ({ ...x, saida_em: val, retorno_em: x.retorno_em && val && x.retorno_em < val ? "" : x.retorno_em }));
+  const sugerir = async () => { setSug(null); if (!prev) { setMsg("⚠ Informe quantas pessoas são esperadas."); return; } try { const r = await apiService.get(`/turismo/sugestao-veiculos?pessoas=${prev}`); setSug(r.opcoes); } catch (e) { setMsg(`⚠ ${erroDe(e)}`); } };
+  const usarSugestao = (o) => { setD({ ...d, veiculos: o.veiculos.flatMap((x) => Array.from({ length: x.qtd }, () => ({ mapa_id: x.id }))) }); setSug(null); };
+  const setPar = (i, p) => setD({ ...d, paradas: d.paradas.map((x, j) => (j === i ? p : x)) });
+  const moverPar = (i, k) => { const l = [...d.paradas]; const [x] = l.splice(i, 1); l.splice(i + k, 0, x); setD({ ...d, paradas: l }); };
+  const salvar = async () => { setMsg("");
+    if (!d.nome?.trim()) return setMsg("⚠ Dê um nome à viagem."); if (!d.origem?.trim()) return setMsg("⚠ Informe a origem."); if (!d.destino?.trim()) return setMsg("⚠ Informe o destino."); if (!d.saida_em) return setMsg("⚠ Informe a saída.");
+    setSalvando(true);
+    try { const iso = (x) => (x ? new Date(x).toISOString() : null);
+      const b = { ...d, saida_em: iso(d.saida_em), retorno_em: iso(d.retorno_em), paradas: d.paradas.map((p) => ({ ...p, chegada: iso(p.chegada) })) };
+      const r = novo ? await apiService.post("/turismo/viagens", b) : await apiService.put(`/turismo/viagens/${v.id}`, b); onSalvo(r.viagem, r.aviso); } catch (e) { setMsg(`⚠ ${erroDe(e)}`); } finally { setSalvando(false); } };
+  const campo = (k, l, t = "text", extra = {}) => <div style={{ flex: "1 1 200px" }}><span style={lab}>{l}</span><input type={t} value={d[k] ?? ""} onChange={(e) => setD({ ...d, [k]: e.target.value })} style={{ ...s.input, width: "100%" }} {...extra} /></div>;
+  return <Modal C={C} s={s} titulo={novo ? "＋ Nova viagem" : `✎ ${v.nome}`} onFechar={onFechar} largura={820}>
+    {campo("nome", "NOME DA VIAGEM / PASSEIO")}
+    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+      <div style={{ flex: "1 1 300px" }}><CampoLocal C={C} s={s} rotulo="ORIGEM (saída / embarque)" placeholder="Cidade ou local de embarque" valor={{ nome: d.origem, lat: d.origem_lat, lng: d.origem_lng }} onChange={(x) => setD((y) => ({ ...y, origem: x.nome, origem_lat: x.lat, origem_lng: x.lng }))} /></div>
+      <div style={{ flex: "1 1 300px" }}><CampoLocal C={C} s={s} rotulo="DESTINO" placeholder="Cidade ou local de destino" valor={{ nome: d.destino, lat: d.destino_lat, lng: d.destino_lng }} onChange={(x) => setD((y) => ({ ...y, destino: x.nome, destino_lat: x.lat, destino_lng: x.lng }))} /></div>
+    </div>
+    <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+      <div style={{ flex: "1 1 200px" }}><span style={lab}>SAÍDA</span><input type="datetime-local" value={d.saida_em} onChange={(e) => mudarSaida(e.target.value)} style={{ ...s.input, width: "100%" }} /></div>
+      <div style={{ flex: "1 1 200px" }}><span style={lab}>RETORNO</span><input type="datetime-local" value={d.retorno_em} min={d.saida_em || undefined} disabled={!d.saida_em} onChange={(e) => setD({ ...d, retorno_em: d.saida_em && e.target.value && e.target.value < d.saida_em ? d.saida_em : e.target.value })} style={{ ...s.input, width: "100%" }} title={d.saida_em ? "" : "Escolha a saída primeiro"} /></div>
+      <div style={{ flex: "0 1 170px" }}><span style={lab}>PESSOAS ESPERADAS</span><input type="number" min="1" value={d.pessoas_previstas} onChange={(e) => { setD({ ...d, pessoas_previstas: e.target.value }); setSug(null); }} placeholder="se já souber" style={{ ...s.input, width: "100%" }} /></div>
+    </div>
+
+    {novo && <><div style={sec}>VEÍCULOS</div>
+      <div style={{ fontSize: 11.5, color: C.muted }}>Só o tipo agora — placa e motorista podem ser definidos depois (o veículo fica 🟡 "a definir" e o mapa de poltronas já funciona para vender).</div>
+      {d.veiculos.map((x, i) => <div key={i} style={{ display: "flex", gap: 6 }}><select value={x.mapa_id} onChange={(e) => setD({ ...d, veiculos: d.veiculos.map((y, j) => (j === i ? { mapa_id: e.target.value } : y)) })} style={{ ...s.input, flex: 1 }}>{tipos.map((m) => <option key={m.id} value={m.id}>{m.nome}{m.pronto ? "" : ` · ${m.lugares} lugares`}</option>)}</select>
+        <button type="button" onClick={() => setD({ ...d, veiculos: d.veiculos.filter((_, j) => j !== i) })} style={{ ...s.btn(false), cursor: "pointer", padding: "4px 10px" }}>✕</button></div>)}
+      <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+        <button type="button" onClick={() => setD({ ...d, veiculos: [...d.veiculos, { mapa_id: tipos[0]?.id || "tpl:conv46" }] })} style={{ ...s.btn(false), cursor: "pointer" }}>＋ Veículo</button>
+        <button type="button" onClick={sugerir} style={{ ...s.btn(false), cursor: "pointer" }}>✨ Sugerir pela quantidade de pessoas</button>
+        {d.veiculos.length > 0 && <span style={{ fontSize: 12.5, color: prev > lugares ? C.warn : C.textSub }}>{d.veiculos.length} veículo(s) · {lugares} lugares{prev ? (prev > lugares ? ` · ⚠ faltam ${prev - lugares}` : ` · sobram ${lugares - prev}`) : ""}</span>}
+      </div>
+      {sug && (sug.length ? <div style={{ display: "grid", gap: 5 }}>{sug.map((o, i) => <button key={i} type="button" onClick={() => usarSugestao(o)} style={{ textAlign: "left", background: "transparent", border: `1px solid ${i === 0 ? "#3b82f6" : C.border}`, borderRadius: 8, padding: "7px 10px", color: C.text, cursor: "pointer", fontSize: 12.5 }}>
+        {i === 0 ? "⭐ " : ""}{o.veiculos.map((x) => `${x.qtd} × ${x.nome}`).join(" + ")} <span style={{ color: C.textSub }}>· {o.lugares} lugares (sobram {o.sobra})</span></button>)}</div> : <div style={{ fontSize: 12.5, color: C.warn }}>Nenhum conjunto de até 6 veículos atende — cadastre um mapa maior ou divida a viagem.</div>)}
+    </>}
+    {!novo && <div style={{ fontSize: 11.5, color: C.muted }}>Veículos e motoristas: na tela da viagem (botão ✎ em cada veículo).</div>}
+
+    <div style={sec}>ITINERÁRIO — PARADAS NO PERCURSO</div>
+    {d.paradas.map((p, i) => <div key={p.id || i} style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: 8, display: "grid", gap: 6 }}>
+      <div style={{ display: "flex", gap: 6, alignItems: "flex-start", flexWrap: "wrap" }}>
+        <b style={{ fontSize: 12.5, paddingTop: 8 }}>{i + 1}.</b>
+        <div style={{ flex: "2 1 260px" }}><CampoLocal C={C} s={s} placeholder="Parada (posto, restaurante, cidade…)" valor={{ nome: p.nome, lat: p.lat, lng: p.lng }} onChange={(x) => setPar(i, { ...p, nome: x.nome, lat: x.lat, lng: x.lng })} /></div>
+        <div style={{ flex: "1 1 190px" }}><input type="datetime-local" value={p.chegada || ""} min={d.saida_em || undefined} max={d.retorno_em || undefined} onChange={(e) => setPar(i, { ...p, chegada: e.target.value })} title="Chegada prevista" style={{ ...s.input, width: "100%" }} /></div>
+        <div style={{ flex: "0 1 110px" }}><input type="number" min="0" value={p.minutos} onChange={(e) => setPar(i, { ...p, minutos: e.target.value })} placeholder="min parado" title="Tempo parado (minutos)" style={{ ...s.input, width: "100%" }} /></div>
+        <div style={{ display: "flex", gap: 3 }}><button type="button" disabled={i === 0} onClick={() => moverPar(i, -1)} style={{ ...s.btn(false), cursor: "pointer", padding: "4px 8px" }}>↑</button><button type="button" disabled={i === d.paradas.length - 1} onClick={() => moverPar(i, 1)} style={{ ...s.btn(false), cursor: "pointer", padding: "4px 8px" }}>↓</button><button type="button" onClick={() => setD({ ...d, paradas: d.paradas.filter((_, j) => j !== i) })} style={{ ...s.btn(false), cursor: "pointer", padding: "4px 8px" }}>✕</button></div>
+      </div>
+      <div style={{ display: "flex", gap: 16, flexWrap: "wrap", fontSize: 12.5 }}>
+        <span style={{ display: "flex", gap: 6, alignItems: "center" }}><Toggle C={C} ligado={!!p.conferir} rotulo="Conferir passageiros" onChange={(x) => setPar(i, { ...p, conferir: x })} /> Conferir passageiros nesta parada</span>
+        {d.embarques_diferentes && <span style={{ display: "flex", gap: 6, alignItems: "center" }}><Toggle C={C} ligado={!!p.embarque} rotulo="Ponto de embarque" onChange={(x) => setPar(i, { ...p, embarque: x })} /> Ponto de embarque</span>}
+      </div>
+    </div>)}
+    <button type="button" onClick={() => setD({ ...d, paradas: [...d.paradas, { id: `p${Date.now().toString(36)}`, nome: "", chegada: "", minutos: "", conferir: true, embarque: false }] })} style={{ ...s.btn(false), cursor: "pointer", justifySelf: "start" }}>＋ Parada</button>
+
+    <div style={sec}>OPÇÕES DA VIAGEM</div>
+    <Opcao C={C} ligado={!!d.acompanhar_pagamentos} onChange={(x) => setD({ ...d, acompanhar_pagamentos: x })} titulo="💲 Acompanhar pagamentos" texto="Valor por pessoa e situação de cada reserva (pago, parcial, paga no embarque, pendente). Desligado, nada de dinheiro aparece." />
+    {d.acompanhar_pagamentos && <div style={{ maxWidth: 220, marginLeft: 58 }}>{campo("valor_pessoa", "VALOR POR PESSOA (R$)", "number", { min: 0, step: "0.01" })}</div>}
+    <Opcao C={C} ligado={!!d.embarques_diferentes} onChange={(x) => setD({ ...d, embarques_diferentes: x })} titulo="📍 Acompanhar diferentes embarques" texto="Passageiros podem subir em paradas do caminho. Marque as paradas que são ponto de embarque; cada passageiro ganha o toggle “Embarque diferente da saída”." />
+    {!novo && <div><span style={lab}>SITUAÇÃO</span><select value={d.status} onChange={(e) => setD({ ...d, status: e.target.value })} style={{ ...s.input, width: "100%" }}>{Object.entries(STATUS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>}
     <div><span style={lab}>OBSERVAÇÕES</span><textarea value={d.obs || ""} onChange={(e) => setD({ ...d, obs: e.target.value })} rows={2} style={{ ...s.input, width: "100%" }} /></div>
     {msg && <div style={{ color: C.warn, fontSize: 13 }}>{msg}</div>}
-    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button type="button" onClick={onFechar} style={{ ...s.btn(false), cursor: "pointer" }}>Voltar</button><button type="button" onClick={salvar} style={{ ...s.btn(true), cursor: "pointer" }}>Salvar</button></div>
+    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button type="button" onClick={onFechar} style={{ ...s.btn(false), cursor: "pointer" }}>Voltar</button><button type="button" disabled={salvando} onClick={salvar} style={{ ...s.btn(true), cursor: "pointer" }}>{salvando ? "Salvando…" : novo ? "Criar viagem" : "Salvar"}</button></div>
   </Modal>;
 }
 
@@ -97,32 +181,40 @@ function Viagem({ C, s, id, onVoltar }) {
     setSel((l) => (l.includes(c.n) ? l.filter((x) => x !== c.n) : [...l, c.n]));
   };
   const sugerir = async (n) => { try { const r = await apiService.get(`/turismo/onibus/${bus.id}/sugestao?n=${n}`); setSel(r.poltronas); if (r.poltronas.length < n) setMsg(`⚠ Só há ${r.poltronas.length} livre(s) neste ônibus.`); } catch (e) { setMsg(`⚠ ${erroDe(e)}`); } };
-  const abrirReserva = () => setReserva({ responsavel: "", telefone: "", email: "", origem_venda: "", pago: false, obs: "", passageiros: (sel.length ? sel : [null]).map((n) => ({ ...PASS_VAZIO, poltrona: n, onibus_id: n ? bus?.id : null, menor_de: null })) });
+  const abrirReserva = () => setReserva({ responsavel: "", telefone: "", email: "", origem_venda: "", situacao_pagamento: "pendente", valor: "", valor_pago: "", embarque_parada_id: null, obs: "", passageiros: (sel.length ? sel : [null]).map((n) => ({ ...PASS_VAZIO, poltrona: n, onibus_id: n ? bus?.id : null, menor_de: null })) });
   if (!D) return <div style={{ color: msg ? C.warn : C.textSub }}>{msg || "Carregando…"}</div>;
   const v = D.viagem;
   return <div style={{ display: "grid", gap: 12 }}>
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
       <button type="button" onClick={onVoltar} style={{ ...s.btn(false), cursor: "pointer" }}>← Viagens</button>
-      <div style={{ flex: "1 1 240px" }}><b style={{ fontSize: 16 }}>{v.nome}</b> <span style={{ fontSize: 12, color: C.textSub }}>{v.numero} · {STATUS[v.status]}</span>
-        <div style={{ fontSize: 12.5, color: C.textSub }}>{v.destino || "—"} · saída {loc(v.saida_em)}{v.local_saida ? ` · ${v.local_saida}` : ""} · retorno {loc(v.retorno_em)}</div></div>
+      <span style={{ flex: 1 }} />
       <button type="button" onClick={() => setEditar(true)} style={{ ...s.btn(false), cursor: "pointer" }}>✎ Viagem</button>
       <button type="button" onClick={() => setImportar(true)} disabled={!D.onibus.length} style={{ ...s.btn(false), cursor: "pointer" }}>📥 Importar planilha</button>
       <button type="button" onClick={() => { if (!abrirListaPassageiros(D)) setMsg("⚠ Libere pop-ups para abrir a lista."); }} style={{ ...s.btn(false), cursor: "pointer" }}>🖨 Lista de passageiros</button>
     </div>
+    <div style={{ ...s.card, padding: "12px 14px", display: "grid", gap: 6 }}>
+      <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}><b style={{ fontSize: 17 }}>{v.nome}</b><span style={{ fontSize: 12, color: C.textSub }}>{v.numero} · {STATUS[v.status]}</span></div>
+      <div style={{ fontSize: 13 }}>📍 {v.origem || v.local_saida || "—"} → {v.destino || "—"} · 🕒 ida {loc(v.saida_em)} · volta {loc(v.retorno_em)}</div>
+      <div style={{ fontSize: 12.5, color: C.textSub }}>{D.passageiros.length} passageiro(s) · {D.lugares} lugares{v.pessoas_previstas ? ` · ${v.pessoas_previstas} esperadas` : ""}
+        {D.faltam_lugares > 0 && <span style={{ color: C.warn }}> · ⚠ faltam {D.faltam_lugares} lugares para as pessoas esperadas</span>}
+        {D.pagamentos && <> · 💲 recebido {reais(D.pagamentos.recebido)} de {reais(D.pagamentos.total)} · a receber <b style={{ color: D.pagamentos.a_receber > 0 ? C.warn : C.text }}>{reais(D.pagamentos.a_receber)}</b></>}</div>
+      {(v.paradas || []).length > 0 && <div style={{ display: "flex", gap: 5, flexWrap: "wrap", fontSize: 12 }}>{v.paradas.map((p, i) => <span key={p.id} style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: "2px 9px" }}>{i + 1}. {p.nome}{p.chegada ? ` · ${loc(p.chegada)}` : ""}{p.minutos ? ` · ${p.minutos} min` : ""}{p.conferir ? " · ✔ conferir" : ""}{v.embarques_diferentes && p.embarque ? " · 🚏 embarque" : ""}</span>)}</div>}
+      {(D.pendencias.veiculo > 0 || D.pendencias.motorista > 0) && <div style={{ fontSize: 12.5, color: C.warn }}>🟡 {D.pendencias.veiculo > 0 && `${D.pendencias.veiculo} veículo(s) a definir`}{D.pendencias.veiculo > 0 && D.pendencias.motorista > 0 && " · "}{D.pendencias.motorista > 0 && `${D.pendencias.motorista} sem motorista`} — toque no veículo e em ✎ Veículo</div>}
+    </div>
     {msg && <div style={{ fontSize: 13, color: msg.startsWith("⚠") ? C.warn : C.ok || "#4caf50" }}>{msg}</div>}
     <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-      {D.onibus.map((o) => <button key={o.id} type="button" onClick={() => { setBusId(o.id); setSel([]); }} style={{ ...s.btn(String(o.id) === String(busId)), cursor: "pointer" }}>🚌 {o.nome}{o.placa ? ` · ${o.placa}` : ""} <span style={{ opacity: .75 }}>({o.ocupados}/{o.lugares})</span></button>)}
-      <button type="button" onClick={() => setFormBus({ mapa_id: mapas?.mapas?.[0]?.id || "tpl:conv46", nome: "", placa: "", empresa: "", motorista_nome: "", motorista_colaborador_id: null, motorista_telefone: "", equipamento_id: "" })} style={{ ...s.btn(false), cursor: "pointer" }}>＋ Ônibus</button>
+      {D.onibus.map((o) => <button key={o.id} type="button" onClick={() => { setBusId(o.id); setSel([]); }} style={{ ...s.btn(String(o.id) === String(busId)), cursor: "pointer" }}>🚌 {o.nome}{o.placa ? ` · ${o.placa}` : ""} <span style={{ opacity: .75 }}>({o.ocupados}/{o.lugares})</span>{(o.falta_veiculo || o.falta_motorista) && " 🟡"}</button>)}
+      <button type="button" onClick={() => setFormBus({ mapa_id: mapas?.mapas?.[0]?.id || "tpl:conv46", nome: "", placa: "", empresa: "", motoristas: [], equipamento_id: "" })} style={{ ...s.btn(false), cursor: "pointer" }}>＋ Veículo</button>
       {(D.sem_poltrona > 0 || D.incompletos > 0) && <span style={{ fontSize: 12.5, color: C.warn, marginLeft: 6 }}>{D.sem_poltrona > 0 && `${D.sem_poltrona} sem poltrona · `}{D.incompletos > 0 && `${D.incompletos} com dado faltando`}</span>}
     </div>
-    {!bus ? <div style={{ ...s.card, padding: 18, color: C.textSub }}>Inclua o primeiro ônibus: escolha o mapa de poltronas (modelo pronto ou um seu), placa e motorista.</div> :
+    {!bus ? <div style={{ ...s.card, padding: 18, color: C.textSub }}>Inclua o primeiro veículo (＋ Veículo): basta o tipo — placa e motorista podem ficar para depois.</div> :
       <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
         <div style={{ ...s.card, padding: 14, display: "grid", gap: 10, flex: "0 1 auto", overflowX: "auto", maxWidth: "100%" }}>
           <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
             {[["reservar", "🎟 Reservar"], ["bloquear", "🚫 Bloquear"]].map(([k, l]) => <button key={k} type="button" onClick={() => { setModo(k); setSel([]); setMovendo(null); }} style={{ ...s.btn(modo === k), cursor: "pointer", padding: "5px 10px" }}>{l}</button>)}
-            <button type="button" onClick={() => setFormBus({ ...bus, mapa_id: bus.mapa_id || "" })} style={{ ...s.btn(false), cursor: "pointer", padding: "5px 10px" }}>✎ Ônibus</button>
+            <button type="button" onClick={() => setFormBus({ ...bus, mapa_id: bus.mapa_id || "" })} style={{ ...s.btn(bus.falta_veiculo || bus.falta_motorista), cursor: "pointer", padding: "5px 10px" }}>✎ Veículo{bus.falta_veiculo || bus.falta_motorista ? " 🟡" : ""}</button>
           </div>
-          <div style={{ fontSize: 12, color: C.textSub }}>{bus.empresa || "—"} · motorista {bus.motorista_nome || "—"}{bus.motorista_telefone ? ` · ${bus.motorista_telefone}` : ""} · {bus.livres} livre(s)</div>
+          <div style={{ fontSize: 12, color: C.textSub }}>{bus.tipo_nome || "—"} · {bus.falta_veiculo ? <span style={{ color: C.warn }}>veículo a definir</span> : `${bus.placa || "—"}${bus.empresa ? ` · ${bus.empresa}` : ""}`} · {bus.falta_motorista ? <span style={{ color: C.warn }}>sem motorista</span> : `motorista(s): ${bus.motoristas.map((m) => m.nome + (m.telefone ? ` (${m.telefone})` : "")).join(", ")}`} · {bus.livres} livre(s)</div>
           {movendo && <div style={{ fontSize: 12.5, color: "#7fb2ff" }}>🔁 Toque na poltrona de destino de <b>{movendo.nome}</b> (ocupada = troca). Toque nele de novo para cancelar.</div>}
           {modo === "bloquear" && <div style={{ fontSize: 12.5, color: C.textSub }}>Toque para bloquear/liberar (guia, poltrona quebrada, reservada à empresa…).</div>}
           <MapaPoltronas C={C} layout={bus.layout} passageiros={doBus} bloqueadas={bus.bloqueadas || []} selecionadas={movendo ? [movendo.poltrona] : sel} onClique={clique} onSoltar={(pid, n) => mover(pid, n)} />
@@ -139,10 +231,10 @@ function Viagem({ C, s, id, onVoltar }) {
         </div>
       </div>}
     {D.sem_poltrona > 0 && bus && <div style={{ ...s.card, padding: 12 }}><b style={{ fontSize: 13 }}>Sem poltrona</b><div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>{D.passageiros.filter((p) => !p.poltrona).map((p) => <button key={p.id} type="button" onClick={() => setMovendo(p)} draggable onDragStart={(ev) => ev.dataTransfer.setData("text/plain", String(p.id))} style={{ ...s.btn(movendo?.id === p.id), cursor: "pointer", padding: "4px 10px" }}>{p.nome}</button>)}</div><div style={{ fontSize: 11.5, color: C.muted, marginTop: 4 }}>Toque no nome e depois na poltrona (ou arraste).</div></div>}
-    {editar && <FormViagem C={C} s={s} v={v} onFechar={() => setEditar(false)} onSalvo={() => { setEditar(false); carregar(); }} />}
-    {formBus && <FormOnibus C={C} s={s} viagemId={v.id} o={formBus} mapas={mapas} onFechar={() => setFormBus(null)} onSalvo={(o) => { setFormBus(null); if (o) setBusId(o.id); carregar(); }} setConf={setConf} />}
-    {reserva && <FormReserva C={C} s={s} viagemId={v.id} r={reserva} onFechar={() => setReserva(null)} onSalvo={(t) => { setReserva(null); setSel([]); avisar(t); carregar(); }} />}
-    {pass && <FormPassageiro C={C} s={s} p={pass} onFechar={() => setPass(null)} onMover={() => { setMovendo(pass); setPass(null); setModo("reservar"); setSel([]); }} onSalvo={(t) => { setPass(null); avisar(t); carregar(); }} setConf={setConf} />}
+    {editar && <FormViagem C={C} s={s} v={v} onFechar={() => setEditar(false)} onSalvo={() => { setEditar(false); avisar("✔ Viagem atualizada."); carregar(); }} />}
+    {formBus && <FormOnibus C={C} s={s} viagem={v} viagemId={v.id} o={formBus} mapas={mapas} onFechar={() => setFormBus(null)} onSalvo={(o) => { setFormBus(null); if (o) setBusId(o.id); carregar(); }} setConf={setConf} />}
+    {reserva && <FormReserva C={C} s={s} viagem={v} viagemId={v.id} r={reserva} onFechar={() => setReserva(null)} onSalvo={(t) => { setReserva(null); setSel([]); avisar(t); carregar(); }} />}
+    {pass && <FormPassageiro C={C} s={s} viagem={v} p={pass} onFechar={() => setPass(null)} onMover={() => { setMovendo(pass); setPass(null); setModo("reservar"); setSel([]); }} onSalvo={(t) => { setPass(null); avisar(t); carregar(); }} setConf={setConf} />}
     {importar && <Importar C={C} s={s} D={D} onFechar={() => setImportar(false)} onFeito={(t) => { setImportar(false); avisar(t); carregar(); }} />}
     {conf && <Confirmar C={C} s={s} texto={conf.texto} onNao={() => setConf(null)} onSim={async () => { const f = conf.sim; setConf(null); await f(); }} />}
   </div>;
@@ -152,22 +244,25 @@ function Reservas({ C, s, D, onPass, onMudou, setConf, setMsg }) {
   const [busca, setBusca] = useState(""); const [aberta, setAberta] = useState(null);
   const t = busca.trim().toLowerCase(); const busNome = (id) => D.onibus.find((o) => String(o.id) === String(id))?.nome || "";
   const rs = D.reservas.filter((r) => !t || [r.codigo, r.responsavel, r.telefone].some((x) => String(x || "").toLowerCase().includes(t)) || D.passageiros.some((p) => String(p.reserva_id) === String(r.id) && String(p.nome).toLowerCase().includes(t)));
-  const pago = async (r) => { try { await apiService.put(`/turismo/reservas/${r.id}`, { pago: !r.pago }); onMudou(); } catch (e) { setMsg(`⚠ ${erroDe(e)}`); } };
+  const v = D.viagem; const pontos = pontosEmbarque(v);
+  const salvarR = async (r, b) => { try { await apiService.put(`/turismo/reservas/${r.id}`, b); onMudou(); } catch (e) { setMsg(`⚠ ${erroDe(e)}`); } };
   const excluir = (r) => setConf({ texto: `Cancelar a reserva ${r.codigo} (${r.responsavel}) e liberar as poltronas?`, sim: async () => { try { await apiService.delete(`/turismo/reservas/${r.id}`); onMudou(); } catch (e) { setMsg(`⚠ ${erroDe(e)}`); } } });
   return <div style={{ ...s.card, padding: 14, display: "grid", gap: 8 }}>
     <div style={{ display: "flex", gap: 8, alignItems: "center" }}><b>Reservas ({D.reservas.length}) · {D.passageiros.length} passageiro(s)</b></div>
     <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="🔎 Nome, código, telefone…" style={{ ...s.input, width: "100%" }} />
     <div style={{ display: "grid", gap: 6, maxHeight: 460, overflowY: "auto" }}>
-      {rs.map((r) => { const ps = D.passageiros.filter((p) => String(p.reserva_id) === String(r.id)); const ab = aberta === r.id || !!t;
+      {rs.map((r0) => { const ps = D.passageiros.filter((p) => String(p.reserva_id) === String(r0.id)); const ab = aberta === r0.id || !!t; const embs = [...new Set(ps.map((p) => p.embarque_parada_id || ""))]; const r = { ...r0, _emb: embs.length === 1 ? embs[0] : "" };
         return <div key={r.id} style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: "7px 9px" }}>
           <div onClick={() => setAberta(ab && !t ? null : r.id)} style={{ display: "flex", gap: 6, alignItems: "center", cursor: "pointer", fontSize: 13 }}>
             <b>{r.codigo}</b><span style={{ flex: 1 }}>{r.tipo === "grupo" ? "👨‍👩‍👧 " : ""}{r.responsavel}</span><span style={{ fontSize: 11.5, color: C.textSub }}>{ps.length} · {ps.map((p) => p.poltrona || "—").join(",")}</span>
-            {r.pago && <span title="Pago" style={{ fontSize: 11 }}>💲</span>}
+            {v.acompanhar_pagamentos && <span title={PAG[r.situacao_pagamento] || ""} style={{ fontSize: 11 }}>{(PAG[r.situacao_pagamento] || "⏳").split(" ")[0]}</span>}
           </div>
           {ab && <div style={{ display: "grid", gap: 4, marginTop: 6 }}>
-            {ps.map((p) => <div key={p.id} onClick={() => onPass(p)} style={{ fontSize: 12.5, cursor: "pointer", display: "flex", gap: 6 }}><span style={{ width: 70, color: C.textSub }}>{p.poltrona ? `${busNome(p.onibus_id).slice(0, 8)} ${p.poltrona}` : "sem pol."}</span><span style={{ flex: 1 }}>{p.nome}{p.menor ? " · menor" : ""}</span>{p.incompleto && <span style={{ color: C.warn }} title="Falta documento, nascimento ou telefone">⚠</span>}</div>)}
+            {ps.map((p) => <div key={p.id} onClick={() => onPass(p)} style={{ fontSize: 12.5, cursor: "pointer", display: "flex", gap: 6 }}><span style={{ width: 70, color: C.textSub }}>{p.poltrona ? `${busNome(p.onibus_id).slice(0, 8)} ${p.poltrona}` : "sem pol."}</span><span style={{ flex: 1 }}>{p.nome}{p.menor ? " · menor" : ""}</span>{pontos.length > 0 && p.embarque_parada_id && <span style={{ color: C.textSub }}>🚏 {nomeEmbarque(v, p.embarque_parada_id)}</span>}{p.incompleto && <span style={{ color: C.warn }} title="Falta documento, nascimento ou telefone">⚠</span>}</div>)}
             <div style={{ fontSize: 11.5, color: C.textSub }}>{[r.telefone, r.email, r.origem_venda && `venda: ${r.origem_venda}`, r.obs].filter(Boolean).join(" · ")}</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}><button type="button" onClick={() => pago(r)} style={{ ...s.btn(r.pago), cursor: "pointer", padding: "3px 9px", fontSize: 12 }}>{r.pago ? "💲 Pago" : "Marcar pago"}</button><button type="button" onClick={() => excluir(r)} style={{ ...s.btn(false), cursor: "pointer", padding: "3px 9px", fontSize: 12 }}>Cancelar reserva</button></div>
+            {v.acompanhar_pagamentos && <PagamentoReserva C={C} s={s} r={r} onSalvar={(b) => salvarR(r, b)} />}
+            {pontos.length > 0 && <div style={{ display: "flex", gap: 6, alignItems: "center", fontSize: 12 }}>🚏 Grupo embarca em <select value={r._emb ?? ""} onChange={(e) => salvarR(r, { embarque_parada_id: e.target.value || null })} style={{ ...s.input, padding: "3px 6px" }}><option value="">{v.origem || "saída"} (origem)</option>{pontos.map((x) => <option key={x.id} value={x.id}>{x.nome}</option>)}</select><span style={{ color: C.muted }}>(muda todos da reserva)</span></div>}
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}><button type="button" onClick={() => excluir(r)} style={{ ...s.btn(false), cursor: "pointer", padding: "3px 9px", fontSize: 12 }}>Cancelar reserva</button></div>
           </div>}
         </div>; })}
       {!rs.length && <div style={{ fontSize: 12.5, color: C.textSub }}>{t ? "Nada encontrado." : "Nenhuma reserva ainda."}</div>}
@@ -175,49 +270,78 @@ function Reservas({ C, s, D, onPass, onMudou, setConf, setMsg }) {
   </div>;
 }
 
-function CamposPassageiro({ C, s, p, set, enxuto = false }) {
+function PagamentoReserva({ C, s, r, onSalvar }) {
+  const [valor, setValor] = useState(r.valor ?? ""); const [pagoV, setPagoV] = useState(r.valor_pago ?? "");
+  return <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center", fontSize: 12 }}>💲
+    <select value={r.situacao_pagamento || "pendente"} onChange={(e) => onSalvar({ situacao_pagamento: e.target.value, valor: valor === "" ? null : valor, valor_pago: e.target.value === "parcial" ? pagoV || null : null })} style={{ ...s.input, padding: "3px 6px" }}>{Object.entries(PAG).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select>
+    valor <input type="number" min="0" step="0.01" value={valor} onChange={(e) => setValor(e.target.value)} onBlur={() => String(valor) !== String(r.valor ?? "") && onSalvar({ valor: valor === "" ? null : valor })} style={{ ...s.input, padding: "3px 6px", width: 90 }} />
+    {r.situacao_pagamento === "parcial" && <>pago <input type="number" min="0" step="0.01" value={pagoV} onChange={(e) => setPagoV(e.target.value)} onBlur={() => String(pagoV) !== String(r.valor_pago ?? "") && onSalvar({ situacao_pagamento: "parcial", valor_pago: pagoV })} style={{ ...s.input, padding: "3px 6px", width: 90 }} /></>}
+  </div>;
+}
+
+function CampoEmbarque({ C, s, v, valor, onChange }) {
+  const pontos = pontosEmbarque(v); if (!pontos.length) return null; const dif = !!valor;
+  return <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 12.5, flex: "1 1 100%" }}>
+    <Toggle C={C} ligado={dif} rotulo="Embarque diferente da saída" onChange={(x) => onChange(x ? pontos[0].id : null)} /> Embarque diferente da saída
+    {dif && <select value={valor} onChange={(e) => onChange(e.target.value)} style={{ ...s.input, padding: "4px 8px" }}>{pontos.map((x) => <option key={x.id} value={x.id}>🚏 {x.nome}</option>)}</select>}
+  </div>;
+}
+
+function CamposPassageiro({ C, s, p, set, enxuto = false, v = null, embarque = true }) {
   const lab = { fontSize: 11, color: C.textSub, display: "block", marginBottom: 2 };
   const c = (k, l, t = "text", flex = "1 1 140px") => <div style={{ flex }}><span style={lab}>{l}</span><input type={t} value={p[k] || ""} onChange={(e) => set({ ...p, [k]: e.target.value })} style={{ ...s.input, width: "100%" }} /></div>;
   return <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
     {c("nome", "NOME COMPLETO", "text", "2 1 220px")}{c("documento", "RG / CPF")}{c("nascimento", "NASCIMENTO", "date")}{c("telefone", "TELEFONE")}
     {!enxuto && <>{c("emergencia_nome", "CONTATO DE EMERGÊNCIA")}{c("emergencia_telefone", "TEL. EMERGÊNCIA")}{c("obs", "OBSERVAÇÃO (saúde, alimentação…)", "text", "2 1 220px")}</>}
-    <label style={{ fontSize: 12.5, display: "flex", gap: 5, alignItems: "center", flex: "1 1 100%" }}><input type="checkbox" checked={!!p.assistencia} onChange={(e) => set({ ...p, assistencia: e.target.checked })} /> Precisa de assistência (idoso, mobilidade…)</label>
+    <div style={{ flex: "0 1 110px" }}><span style={lab}>TIPO SANGUÍNEO</span><select value={p.tipo_sanguineo || ""} onChange={(e) => set({ ...p, tipo_sanguineo: e.target.value })} style={{ ...s.input, width: "100%" }}><option value="">—</option>{SANGUE.map((x) => <option key={x} value={x}>{x}</option>)}</select></div>
+    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 12.5, flex: "1 1 100%" }}><Toggle C={C} ligado={!!p.plano_saude} rotulo="Plano de saúde" onChange={(x) => set({ ...p, plano_saude: x })} /> Plano de saúde
+      {p.plano_saude && <><input value={p.plano_saude_nome || ""} onChange={(e) => set({ ...p, plano_saude_nome: e.target.value })} placeholder="Qual (operadora)" style={{ ...s.input, flex: "1 1 140px" }} /><input value={p.plano_saude_numero || ""} onChange={(e) => set({ ...p, plano_saude_numero: e.target.value })} placeholder="Nº da carteirinha" style={{ ...s.input, flex: "1 1 140px" }} /></>}</div>
+    <div style={{ display: "flex", gap: 8, alignItems: "center", flexWrap: "wrap", fontSize: 12.5, flex: "1 1 100%" }}><Toggle C={C} ligado={!!p.seguro_viagem} rotulo="Seguro viagem" onChange={(x) => set({ ...p, seguro_viagem: x })} /> Seguro viagem
+      {p.seguro_viagem && <><input value={p.seguro_nome || ""} onChange={(e) => set({ ...p, seguro_nome: e.target.value })} placeholder="Seguradora" style={{ ...s.input, flex: "1 1 140px" }} /><input value={p.seguro_apolice || ""} onChange={(e) => set({ ...p, seguro_apolice: e.target.value })} placeholder="Nº da apólice" style={{ ...s.input, flex: "1 1 140px" }} /></>}</div>
+    <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12.5, flex: "1 1 100%" }}><Toggle C={C} ligado={!!p.assistencia} rotulo="Precisa de assistência" onChange={(x) => set({ ...p, assistencia: x })} /> Precisa de assistência (idoso, mobilidade…)</div>
+    {embarque && v && <CampoEmbarque C={C} s={s} v={v} valor={p.embarque_parada_id || null} onChange={(x) => set({ ...p, embarque_parada_id: x })} />}
   </div>;
 }
 
-function FormReserva({ C, s, viagemId, r, onFechar, onSalvo }) {
+function FormReserva({ C, s, viagem: v, viagemId, r, onFechar, onSalvo }) {
   const [d, setD] = useState(r); const [msg, setMsg] = useState(""); const [salvando, setSalvando] = useState(false);
   const lab = { fontSize: 11.5, color: C.textSub, display: "block", marginBottom: 3 }; const grupo = d.passageiros.length > 1;
   const setP = (i, p) => setD({ ...d, passageiros: d.passageiros.map((x, j) => (j === i ? p : x)) });
-  const salvar = async () => { setMsg(""); setSalvando(true); try { const x = await apiService.post(`/turismo/viagens/${viagemId}/reservas`, d); onSalvo(`✔ Reserva ${x.reserva.codigo} criada (${x.passageiros.length} passageiro(s)).`); } catch (e) { setMsg(`⚠ ${erroDe(e)}`); } finally { setSalvando(false); } };
+  const salvar = async () => { setMsg(""); if (d.situacao_pagamento === "parcial" && !(Number(d.valor_pago) > 0)) { setMsg("⚠ Informe quanto já foi pago."); return; } setSalvando(true); try { const x = await apiService.post(`/turismo/viagens/${viagemId}/reservas`, { ...d, valor: d.valor === "" ? null : d.valor }); onSalvo(`✔ Reserva ${x.reserva.codigo} criada (${x.passageiros.length} passageiro(s)).`); } catch (e) { setMsg(`⚠ ${erroDe(e)}`); } finally { setSalvando(false); } };
   return <Modal C={C} s={s} titulo={grupo ? "🎟 Reserva de grupo / família" : "🎟 Reserva"} onFechar={onFechar} largura={720}>
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
       {grupo && <div style={{ flex: "2 1 220px" }}><span style={lab}>RESPONSÁVEL PELO GRUPO</span><input value={d.responsavel} onChange={(e) => setD({ ...d, responsavel: e.target.value })} placeholder="Em branco = 1º passageiro" style={{ ...s.input, width: "100%" }} /></div>}
       <div style={{ flex: "1 1 150px" }}><span style={lab}>TELEFONE DA RESERVA</span><input value={d.telefone} onChange={(e) => setD({ ...d, telefone: e.target.value })} style={{ ...s.input, width: "100%" }} /></div>
       <div style={{ flex: "1 1 150px" }}><span style={lab}>VENDIDO POR (opcional)</span><input value={d.origem_venda} list="origens-venda" onChange={(e) => setD({ ...d, origem_venda: e.target.value })} placeholder="balcão, site, WhatsApp…" style={{ ...s.input, width: "100%" }} /><datalist id="origens-venda">{["Balcão", "WhatsApp", "Site", "Instagram", "Agente / revendedor"].map((o) => <option key={o} value={o} />)}</datalist></div>
-      <label style={{ fontSize: 13, display: "flex", gap: 5, alignItems: "center" }}><input type="checkbox" checked={d.pago} onChange={(e) => setD({ ...d, pago: e.target.checked })} /> Pago</label>
     </div>
+    {v.acompanhar_pagamentos && <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
+      <div style={{ flex: "1 1 170px" }}><span style={lab}>💲 PAGAMENTO</span><select value={d.situacao_pagamento} onChange={(e) => setD({ ...d, situacao_pagamento: e.target.value })} style={{ ...s.input, width: "100%" }}>{Object.entries(PAG).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>
+      <div style={{ flex: "1 1 140px" }}><span style={lab}>VALOR DA RESERVA (R$)</span><input type="number" min="0" step="0.01" value={d.valor} onChange={(e) => setD({ ...d, valor: e.target.value })} placeholder={v.valor_pessoa != null ? String(Number(v.valor_pessoa) * d.passageiros.length) : ""} style={{ ...s.input, width: "100%" }} /></div>
+      {d.situacao_pagamento === "parcial" && <div style={{ flex: "1 1 140px" }}><span style={lab}>JÁ PAGO (R$)</span><input type="number" min="0" step="0.01" value={d.valor_pago} onChange={(e) => setD({ ...d, valor_pago: e.target.value })} style={{ ...s.input, width: "100%" }} /></div>}
+      {v.valor_pessoa != null && <div style={{ fontSize: 11.5, color: C.muted, flex: "1 1 100%" }}>Em branco = {reais(v.valor_pessoa)} × {d.passageiros.length} passageiro(s). Mude para desconto, criança etc.</div>}
+    </div>}
+    {pontosEmbarque(v).length > 0 && grupo && <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12.5, flexWrap: "wrap" }}>🚏 O grupo embarca em <select value={d.embarque_parada_id || ""} onChange={(e) => { const x = e.target.value || null; setD({ ...d, embarque_parada_id: x, passageiros: d.passageiros.map((p) => ({ ...p, embarque_parada_id: x })) }); }} style={{ ...s.input, padding: "4px 8px" }}><option value="">{v.origem || "saída"} (origem)</option>{pontosEmbarque(v).map((x) => <option key={x.id} value={x.id}>{x.nome}</option>)}</select><span style={{ color: C.muted, fontSize: 11.5 }}>— dá para mudar um passageiro abaixo</span></div>}
     {d.passageiros.map((p, i) => <div key={i} style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: 10, display: "grid", gap: 6 }}>
       <div style={{ display: "flex", gap: 8, alignItems: "center", fontSize: 12.5 }}><b>Passageiro {i + 1}</b><span style={{ color: C.textSub }}>{p.poltrona ? `poltrona ${p.poltrona}` : "sem poltrona"}</span>
         {grupo && i > 0 && <label style={{ marginLeft: "auto", display: "flex", gap: 4, alignItems: "center" }}>menor sob responsabilidade de <select value={p.menor_de ?? ""} onChange={(e) => setP(i, { ...p, menor_de: e.target.value === "" ? null : Number(e.target.value) })} style={{ ...s.input, padding: "3px 6px" }}><option value="">—</option>{d.passageiros.map((q2, j) => j !== i && <option key={j} value={j}>{q2.nome || `Passageiro ${j + 1}`}</option>)}</select></label>}
         {!p.poltrona && d.passageiros.length > 1 && <button type="button" onClick={() => setD({ ...d, passageiros: d.passageiros.filter((_, j) => j !== i) })} style={{ ...s.btn(false), cursor: "pointer", padding: "2px 8px", marginLeft: grupo && i > 0 ? 0 : "auto" }}>✕</button>}
       </div>
-      <CamposPassageiro C={C} s={s} p={p} set={(x) => setP(i, x)} enxuto={grupo && i > 0} />
+      <CamposPassageiro C={C} s={s} v={v} p={p} set={(x) => setP(i, x)} enxuto={grupo && i > 0} />
     </div>)}
-    <button type="button" onClick={() => setD({ ...d, passageiros: [...d.passageiros, { ...PASS_VAZIO, poltrona: null, onibus_id: null, menor_de: null }] })} style={{ ...s.btn(false), cursor: "pointer", justifySelf: "start" }}>＋ Passageiro sem poltrona (escolhe depois)</button>
+    <button type="button" onClick={() => setD({ ...d, passageiros: [...d.passageiros, { ...PASS_VAZIO, embarque_parada_id: d.embarque_parada_id || null, poltrona: null, onibus_id: null, menor_de: null }] })} style={{ ...s.btn(false), cursor: "pointer", justifySelf: "start" }}>＋ Passageiro sem poltrona (escolhe depois)</button>
     <div style={{ fontSize: 11.5, color: C.muted }}>Só o nome é obrigatório agora; o que faltar (documento, nascimento, telefone) fica com ⚠ na lista para completar antes do embarque.</div>
     {msg && <div style={{ color: C.warn, fontSize: 13 }}>{msg}</div>}
     <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button type="button" onClick={onFechar} style={{ ...s.btn(false), cursor: "pointer" }}>Voltar</button><button type="button" disabled={salvando} onClick={salvar} style={{ ...s.btn(true), cursor: "pointer" }}>{salvando ? "Salvando…" : "Confirmar reserva"}</button></div>
   </Modal>;
 }
 
-function FormPassageiro({ C, s, p, onFechar, onMover, onSalvo, setConf }) {
+function FormPassageiro({ C, s, viagem: v, p, onFechar, onMover, onSalvo, setConf }) {
   const [d, setD] = useState({ ...PASS_VAZIO, ...p }); const [msg, setMsg] = useState("");
   const salvar = async () => { try { await apiService.put(`/turismo/passageiros/${p.id}`, d); onSalvo("✔ Passageiro atualizado."); } catch (e) { setMsg(`⚠ ${erroDe(e)}`); } };
   const tirar = () => setConf({ texto: `Tirar ${p.nome} da viagem? A poltrona fica livre.`, sim: async () => { try { await apiService.delete(`/turismo/passageiros/${p.id}`); onSalvo("✔ Passageiro removido."); } catch (e) { setMsg(`⚠ ${erroDe(e)}`); } } });
   return <Modal C={C} s={s} titulo={`${p.poltrona ? `Poltrona ${p.poltrona} · ` : ""}${p.nome}`} onFechar={onFechar} largura={620}>
     <div style={{ fontSize: 12.5, color: C.textSub }}>Reserva {p.reserva_codigo}{p.reserva_tipo === "grupo" ? ` · grupo de ${p.responsavel}` : ""}{p.idade != null ? ` · ${p.idade} anos` : ""}{p.menor ? " · menor de idade" : ""}</div>
-    <CamposPassageiro C={C} s={s} p={d} set={setD} />
+    <CamposPassageiro C={C} s={s} v={v} p={d} set={setD} />
     {msg && <div style={{ color: C.warn, fontSize: 13 }}>{msg}</div>}
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
       <button type="button" onClick={onMover} style={{ ...s.btn(false), cursor: "pointer" }}>🔁 Mudar / trocar poltrona</button>
@@ -227,22 +351,29 @@ function FormPassageiro({ C, s, p, onFechar, onMover, onSalvo, setConf }) {
   </Modal>;
 }
 
-function FormOnibus({ C, s, viagemId, o, mapas, onFechar, onSalvo, setConf }) {
-  const [d, setD] = useState(o); const [msg, setMsg] = useState(""); const [frota, setFrota] = useState([]); const [pessoas, setPessoas] = useState(null);
+function FormOnibus({ C, s, viagem, viagemId, o, mapas, onFechar, onSalvo, setConf }) {
+  const [d, setD] = useState({ ...o, motoristas: (o.motoristas || []).length ? o.motoristas : [{ nome: "", colaborador_id: null, telefone: "" }] });
+  const setM = (i, m) => setD({ ...d, motoristas: d.motoristas.map((x, j) => (j === i ? m : x)) }); const [msg, setMsg] = useState(""); const [frota, setFrota] = useState([]); const [pessoas, setPessoas] = useState(null);
   useEffect(() => { apiService.listarEquipamentos().then((r) => setFrota((Array.isArray(r) ? r : r?.equipamentos || []).filter((e) => e.placa))).catch(() => {}); apiService.get("/pessoas/gestao-pessoas").then((r) => setPessoas(r.funcionarios || [])).catch(() => setPessoas([])); }, []);
   const lab = { fontSize: 11.5, color: C.textSub, display: "block", marginBottom: 3 };
-  const salvar = async () => { setMsg(""); try { const r = o.id ? await apiService.put(`/turismo/onibus/${o.id}`, { ...d, viagem_id: viagemId }) : await apiService.post(`/turismo/viagens/${viagemId}/onibus`, d); onSalvo(r.onibus); } catch (e) { setMsg(`⚠ ${erroDe(e)}`); } };
+  const salvar = async () => { setMsg(""); try { const r = o.id ? await apiService.put(`/turismo/onibus/${o.id}`, { ...d, viagem_id: viagemId, mapa_id: d.mapa_id || undefined }) : await apiService.post(`/turismo/viagens/${viagemId}/onibus`, d); onSalvo(r.onibus); } catch (e) { setMsg(`⚠ ${erroDe(e)}`); } };
   const excluir = () => setConf({ texto: `Tirar ${o.nome} da viagem?`, sim: async () => { try { await apiService.delete(`/turismo/onibus/${o.id}`); onSalvo(null); } catch (e) { setMsg(`⚠ ${erroDe(e)}`); } } });
   const campo = (k, l) => <div style={{ flex: "1 1 150px" }}><span style={lab}>{l}</span><input value={d[k] || ""} onChange={(e) => setD({ ...d, [k]: e.target.value })} style={{ ...s.input, width: "100%" }} /></div>;
-  return <Modal C={C} s={s} titulo={o.id ? `✎ ${o.nome}` : "＋ Ônibus na viagem"} onFechar={onFechar} largura={600}>
-    <div><span style={lab}>MAPA DE POLTRONAS</span><select value={d.mapa_id || ""} onChange={(e) => setD({ ...d, mapa_id: e.target.value })} style={{ ...s.input, width: "100%" }}>
+  return <Modal C={C} s={s} titulo={o.id ? `✎ ${o.nome} — ${viagem.nome}` : `＋ Veículo na viagem ${viagem.nome}`} onFechar={onFechar} largura={600}>
+    <div><span style={lab}>TIPO DO VEÍCULO / MAPA DE POLTRONAS</span><select value={d.mapa_id || ""} onChange={(e) => setD({ ...d, mapa_id: e.target.value })} style={{ ...s.input, width: "100%" }}>
       {o.id && !o.mapa_id && <option value="">(mantém o atual)</option>}
       {(mapas?.mapas || []).length > 0 && <optgroup label="Mapas da empresa">{mapas.mapas.map((m) => <option key={m.id} value={m.id}>{m.nome} · {m.lugares} lugares</option>)}</optgroup>}
       <optgroup label="Modelos prontos">{(mapas?.modelos || []).map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}</optgroup></select>
       <div style={{ fontSize: 11.5, color: C.muted, marginTop: 3 }}>O ônibus da viagem recebe uma cópia do mapa — mudar o modelo depois não mexe nas viagens já montadas.</div></div>
-    {frota.length > 0 && <div><span style={lab}>DA FROTA (opcional)</span><select value={d.equipamento_id || ""} onChange={(e) => setD({ ...d, equipamento_id: e.target.value })} style={{ ...s.input, width: "100%" }}><option value="">— ônibus de terceiro / digitar placa —</option>{frota.map((e) => <option key={e.id} value={e.id}>{e.tag || e.nome} · {e.placa}</option>)}</select></div>}
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{campo("nome", "NOME NA VIAGEM (ex.: Ônibus 1)")}{!d.equipamento_id && campo("placa", "PLACA")}{campo("empresa", "EMPRESA DO ÔNIBUS")}</div>
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}><div style={{ flex: "2 1 220px" }}><span style={lab}>MOTORISTA</span><CampoFuncionario C={C} s={s} lista={pessoas} nome={d.motorista_nome} id={d.motorista_colaborador_id} placeholder="Digite o nome do motorista…" onChange={(v) => setD({ ...d, motorista_nome: v.nome, motorista_colaborador_id: v.id })} /></div>{campo("motorista_telefone", "TELEFONE DO MOTORISTA")}</div>
+    {frota.length > 0 && <div><span style={lab}>DA FROTA (opcional)</span><select value={d.equipamento_id || ""} onChange={(e) => setD({ ...d, equipamento_id: e.target.value })} style={{ ...s.input, width: "100%" }}><option value="">— de terceiro ou ainda a definir —</option>{frota.map((e) => <option key={e.id} value={e.id}>{e.tag || e.nome} · {e.placa}</option>)}</select></div>}
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{campo("nome", "NOME NA VIAGEM (ex.: Ônibus 1)")}{!d.equipamento_id && campo("placa", "PLACA (em branco = a definir)")}{campo("empresa", "EMPRESA DO ÔNIBUS")}</div>
+    <span style={{ ...lab, marginBottom: -4 }}>MOTORISTA(S) — em branco = a definir</span>
+    {d.motoristas.map((m, i) => <div key={i} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+      <div style={{ flex: "2 1 220px" }}><CampoFuncionario C={C} s={s} lista={pessoas} nome={m.nome} id={m.colaborador_id} placeholder={i ? "Motorista de revezamento…" : "Digite o nome do motorista…"} onChange={(v) => setM(i, { ...m, nome: v.nome, colaborador_id: v.id })} /></div>
+      <input value={m.telefone || ""} onChange={(e) => setM(i, { ...m, telefone: e.target.value })} placeholder="Telefone" style={{ ...s.input, flex: "1 1 130px" }} />
+      {d.motoristas.length > 1 && <button type="button" onClick={() => setD({ ...d, motoristas: d.motoristas.filter((_, j) => j !== i) })} style={{ ...s.btn(false), cursor: "pointer", padding: "4px 9px" }}>✕</button>}
+    </div>)}
+    {d.motoristas.length < 4 && <button type="button" onClick={() => setD({ ...d, motoristas: [...d.motoristas, { nome: "", colaborador_id: null, telefone: "" }] })} style={{ ...s.btn(false), cursor: "pointer", justifySelf: "start" }}>＋ Outro motorista (revezamento)</button>}
     {msg && <div style={{ color: C.warn, fontSize: 13 }}>{msg}</div>}
     <div style={{ display: "flex", gap: 8 }}>{o.id && <button type="button" onClick={excluir} style={{ ...s.btn(false), cursor: "pointer" }}>Tirar da viagem</button>}<span style={{ flex: 1 }} /><button type="button" onClick={onFechar} style={{ ...s.btn(false), cursor: "pointer" }}>Voltar</button><button type="button" onClick={salvar} style={{ ...s.btn(true), cursor: "pointer" }}>Salvar</button></div>
   </Modal>;
@@ -254,7 +385,7 @@ function Importar({ C, s, D, onFechar, onFeito }) {
   const arquivo = (e) => { const f = e.target.files?.[0]; if (!f) return; const r = new FileReader(); r.onload = () => setTexto(String(r.result || "")); r.readAsText(f, "utf-8"); };
   const enviar = async () => { setMsg(""); setEnviando(true); try { const r = await apiService.post(`/turismo/viagens/${D.viagem.id}/importar`, { linhas: P.linhas, origem_venda: origem }); onFeito(`✔ ${r.importados} passageiro(s) importados em ${r.reservas} reserva(s).`); } catch (e) { setMsg(`⚠ ${erroDe(e)}`); } finally { setEnviando(false); } };
   return <Modal C={C} s={s} titulo="📥 Importar planilha de passageiros" onFechar={onFechar} largura={760}>
-    <div style={{ fontSize: 12.5, color: C.textSub }}>Copie as linhas do Excel/Google Planilhas e cole aqui (ou escolha um CSV). Colunas reconhecidas pelo cabeçalho: <b>nome</b>, documento, nascimento, telefone, poltrona, <b>grupo/responsável</b> (mesmo valor = mesma reserva), ônibus{D.onibus.length > 1 ? " (nome, nº ou placa — obrigatório com poltrona)" : ""}, emergência, obs. Sem cabeçalho, a ordem é: nome, documento, nascimento, telefone, poltrona, grupo, ônibus.</div>
+    <div style={{ fontSize: 12.5, color: C.textSub }}>Copie as linhas do Excel/Google Planilhas e cole aqui (ou escolha um CSV). Colunas reconhecidas pelo cabeçalho: <b>nome</b>, documento, nascimento, telefone, poltrona, <b>grupo/responsável</b> (mesmo valor = mesma reserva), ônibus{D.onibus.length > 1 ? " (nome, nº ou placa — obrigatório com poltrona)" : ""}, emergência, obs{pontosEmbarque(D.viagem).length ? ", embarque (nome da parada)" : ""}. Sem cabeçalho, a ordem é: nome, documento, nascimento, telefone, poltrona, grupo, ônibus.</div>
     <textarea value={texto} onChange={(e) => setTexto(e.target.value)} rows={7} placeholder={"nome\tdocumento\tnascimento\ttelefone\tpoltrona\tgrupo\nMaria Souza\t12.345.678-9\t10/04/1980\t(11) 9…\t5\tFamília Souza"} style={{ ...s.input, width: "100%", fontFamily: "monospace", fontSize: 12 }} />
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}><input type="file" accept=".csv,.txt,.tsv" onChange={arquivo} style={{ fontSize: 12 }} /><input value={origem} onChange={(e) => setOrigem(e.target.value)} placeholder="Vendido por (opcional, p/ todas)" style={{ ...s.input, flex: "1 1 200px" }} /></div>
     {P.linhas.length > 0 && <div style={{ overflowX: "auto" }}><div style={{ fontSize: 12.5, marginBottom: 4 }}>{P.linhas.length} passageiro(s) · colunas: {P.mapa.join(", ")}{!P.cabecalho && " (sem cabeçalho)"}</div>
