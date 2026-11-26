@@ -29,6 +29,7 @@ router.delete('/onibus/:id', r((req) => T.excluirOnibus(supabase, req.tenantId, 
 router.post('/onibus/:id/bloquear', r((req) => T.bloquear(supabase, req.tenantId, req.params.id, b(req).poltrona, !!b(req).bloquear)));
 router.get('/onibus/:id/sugestao', r((req) => T.sugestao(supabase, req.tenantId, req.params.id, req.query.n)));
 router.post('/viagens/:id/reservas', r(async (req) => T.criarReserva(supabase, req.tenantId, await quem(req), req.params.id, b(req))));
+router.post('/viagens/:id/distribuir', r((req) => T.distribuir(supabase, req.tenantId, req.params.id, b(req)))); // T1.2
 router.post('/viagens/:id/importar', r(async (req) => T.importar(supabase, req.tenantId, await quem(req), req.params.id, b(req))));
 router.put('/reservas/:id', r((req) => T.editarReserva(supabase, req.tenantId, req.params.id, b(req))));
 router.delete('/reservas/:id', r((req) => T.excluirReserva(supabase, req.tenantId, req.params.id)));

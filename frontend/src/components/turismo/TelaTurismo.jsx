@@ -26,6 +26,10 @@ function Modal({ C, s, titulo, onFechar, children, largura = 520 }) {
       <b style={{ fontSize: 15 }}>{titulo}</b>{children}
     </div></div>;
 }
+function Quadro({ C, s, embutido, titulo, onFechar, largura, children }) { // T1.2: mesmo formulário em janela ou dentro da aba
+  if (!embutido) return <Modal C={C} s={s} titulo={titulo} onFechar={onFechar} largura={largura}>{children}</Modal>;
+  return <div style={{ ...s.card, padding: "14px 16px", display: "grid", gap: 10, color: C.text, alignContent: "start" }}>{titulo && <b style={{ fontSize: 15 }}>{titulo}</b>}{children}</div>;
+}
 function Confirmar({ C, s, texto, onSim, onNao }) {
   return <Modal C={C} s={s} titulo="Confirmar" onFechar={onNao} largura={400}><div style={{ fontSize: 13.5 }}>{texto}</div>
     <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button type="button" onClick={onNao} style={{ ...s.btn(false), cursor: "pointer" }}>Voltar</button><button type="button" onClick={onSim} style={{ ...s.btn(true), cursor: "pointer" }}>Confirmar</button></div></Modal>;
@@ -90,7 +94,7 @@ function Opcao({ C, ligado, onChange, titulo, texto }) {
     <div><div style={{ fontSize: 13.5, fontWeight: 600 }}>{titulo}</div><div style={{ fontSize: 11.5, color: C.textSub }}>{texto}</div></div></div>;
 }
 
-function FormViagem({ C, s, v, onFechar, onSalvo }) {
+function FormViagem({ C, s, v, onFechar, onSalvo, embutido = false }) {
   const novo = !v.id;
   const [d, setD] = useState({ ...v, saida_em: inputDT(v.saida_em), retorno_em: inputDT(v.retorno_em), pessoas_previstas: v.pessoas_previstas ?? "", valor_pessoa: v.valor_pessoa ?? "",
     paradas: (v.paradas || []).map((p) => ({ ...p, chegada: inputDT(p.chegada), minutos: p.minutos ?? "" })), veiculos: v.veiculos || [] });
@@ -110,7 +114,7 @@ function FormViagem({ C, s, v, onFechar, onSalvo }) {
       const b = { ...d, saida_em: iso(d.saida_em), retorno_em: iso(d.retorno_em), paradas: d.paradas.map((p) => ({ ...p, chegada: iso(p.chegada) })) };
       const r = novo ? await apiService.post("/turismo/viagens", b) : await apiService.put(`/turismo/viagens/${v.id}`, b); onSalvo(r.viagem, r.aviso); } catch (e) { setMsg(`⚠ ${erroDe(e)}`); } finally { setSalvando(false); } };
   const campo = (k, l, t = "text", extra = {}) => <div style={{ flex: "1 1 200px" }}><span style={lab}>{l}</span><input type={t} value={d[k] ?? ""} onChange={(e) => setD({ ...d, [k]: e.target.value })} style={{ ...s.input, width: "100%" }} {...extra} /></div>;
-  return <Modal C={C} s={s} titulo={novo ? "＋ Nova viagem" : `✎ ${v.nome}`} onFechar={onFechar} largura={820}>
+  return <Quadro C={C} s={s} embutido={embutido} titulo={novo ? "＋ Nova viagem" : embutido ? "" : `✎ ${v.nome}`} onFechar={onFechar} largura={820}>
     {campo("nome", "NOME DA VIAGEM / PASSEIO")}
     <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
       <div style={{ flex: "1 1 300px" }}><CampoLocal C={C} s={s} rotulo="ORIGEM (saída / embarque)" placeholder="Cidade ou local de embarque" valor={{ nome: d.origem, lat: d.origem_lat, lng: d.origem_lng }} onChange={(x) => setD((y) => ({ ...y, origem: x.nome, origem_lat: x.lat, origem_lng: x.lng }))} /></div>
@@ -134,7 +138,7 @@ function FormViagem({ C, s, v, onFechar, onSalvo }) {
       {sug && (sug.length ? <div style={{ display: "grid", gap: 5 }}>{sug.map((o, i) => <button key={i} type="button" onClick={() => usarSugestao(o)} style={{ textAlign: "left", background: "transparent", border: `1px solid ${i === 0 ? "#3b82f6" : C.border}`, borderRadius: 8, padding: "7px 10px", color: C.text, cursor: "pointer", fontSize: 12.5 }}>
         {i === 0 ? "⭐ " : ""}{o.veiculos.map((x) => `${x.qtd} × ${x.nome}`).join(" + ")} <span style={{ color: C.textSub }}>· {o.lugares} lugares (sobram {o.sobra})</span></button>)}</div> : <div style={{ fontSize: 12.5, color: C.warn }}>Nenhum conjunto de até 6 veículos atende — cadastre um mapa maior ou divida a viagem.</div>)}
     </>}
-    {!novo && <div style={{ fontSize: 11.5, color: C.muted }}>Veículos e motoristas: na tela da viagem (botão ✎ em cada veículo).</div>}
+    {!novo && <div style={{ fontSize: 11.5, color: C.muted }}>Veículos e motoristas: aba 🚌 Veículos e motoristas.</div>}
 
     <div style={sec}>ITINERÁRIO — PARADAS NO PERCURSO</div>
     {d.paradas.map((p, i) => <div key={p.id || i} style={{ border: `1px solid ${C.border}`, borderRadius: 8, padding: 8, display: "grid", gap: 6 }}>
@@ -156,18 +160,22 @@ function FormViagem({ C, s, v, onFechar, onSalvo }) {
     <Opcao C={C} ligado={!!d.acompanhar_pagamentos} onChange={(x) => setD({ ...d, acompanhar_pagamentos: x })} titulo="💲 Acompanhar pagamentos" texto="Valor por pessoa e situação de cada reserva (pago, parcial, paga no embarque, pendente). Desligado, nada de dinheiro aparece." />
     {d.acompanhar_pagamentos && <div style={{ maxWidth: 220, marginLeft: 58 }}>{campo("valor_pessoa", "VALOR POR PESSOA (R$)", "number", { min: 0, step: "0.01" })}</div>}
     <Opcao C={C} ligado={!!d.embarques_diferentes} onChange={(x) => setD({ ...d, embarques_diferentes: x })} titulo="📍 Acompanhar diferentes embarques" texto="Passageiros podem subir em paradas do caminho. Marque as paradas que são ponto de embarque; cada passageiro ganha o toggle “Embarque diferente da saída”." />
+    <Opcao C={C} ligado={!!d.foto_obrigatoria} onChange={(x) => setD({ ...d, foto_obrigatoria: x })} titulo="🪪 Foto obrigatória para o crachá" texto="Por segurança: o crachá virtual (com QR para o motorista conferir) só é gerado com a foto do passageiro." />
     {!novo && <div><span style={lab}>SITUAÇÃO</span><select value={d.status} onChange={(e) => setD({ ...d, status: e.target.value })} style={{ ...s.input, width: "100%" }}>{Object.entries(STATUS).map(([k, l]) => <option key={k} value={k}>{l}</option>)}</select></div>}
     <div><span style={lab}>OBSERVAÇÕES</span><textarea value={d.obs || ""} onChange={(e) => setD({ ...d, obs: e.target.value })} rows={2} style={{ ...s.input, width: "100%" }} /></div>
     {msg && <div style={{ color: C.warn, fontSize: 13 }}>{msg}</div>}
-    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}><button type="button" onClick={onFechar} style={{ ...s.btn(false), cursor: "pointer" }}>Voltar</button><button type="button" disabled={salvando} onClick={salvar} style={{ ...s.btn(true), cursor: "pointer" }}>{salvando ? "Salvando…" : novo ? "Criar viagem" : "Salvar"}</button></div>
-  </Modal>;
+    <div style={{ display: "flex", gap: 8, justifyContent: "flex-end" }}>{!embutido && <button type="button" onClick={onFechar} style={{ ...s.btn(false), cursor: "pointer" }}>Voltar</button>}<button type="button" disabled={salvando} onClick={salvar} style={{ ...s.btn(true), cursor: "pointer" }}>{salvando ? "Salvando…" : novo ? "Criar viagem" : "Salvar alterações"}</button></div>
+  </Quadro>;
 }
 
-// ─── viagem aberta ──────────────────────────────────────────────────────────
+// ─── viagem aberta — T1.2: uma tela só, resumo fixo + abas Viagem · Passageiros · Veículos · Poltronas ─────────
+const ABAS = [["viagem", "🧭 Viagem"], ["passageiros", "👥 Passageiros"], ["veiculos", "🚌 Veículos e motoristas"], ["poltronas", "💺 Poltronas"]];
 function Viagem({ C, s, id, onVoltar }) {
   const [D, setD] = useState(null); const [msg, setMsg] = useState(""); const [busId, setBusId] = useState(null); const [modo, setModo] = useState("reservar");
+  const [aba, setAba] = useState(() => { try { return localStorage.getItem("turismo_aba") || "viagem"; } catch { return "viagem"; } });
   const [sel, setSel] = useState([]); const [reserva, setReserva] = useState(null); const [pass, setPass] = useState(null); const [movendo, setMovendo] = useState(null);
-  const [formBus, setFormBus] = useState(null); const [editar, setEditar] = useState(false); const [importar, setImportar] = useState(false); const [conf, setConf] = useState(null); const [mapas, setMapas] = useState(null);
+  const [novoBus, setNovoBus] = useState(null); const [importar, setImportar] = useState(false); const [conf, setConf] = useState(null); const [mapas, setMapas] = useState(null); const [distribuindo, setDistribuindo] = useState(false);
+  const irAba = (k) => { setAba(k); try { localStorage.setItem("turismo_aba", k); } catch { /* sem storage */ } };
   const carregar = () => apiService.get(`/turismo/viagens/${id}`).then((r) => { setD(r); setBusId((b) => (r.onibus.some((o) => String(o.id) === String(b)) ? b : r.onibus[0]?.id || null)); }).catch((e) => setMsg(`⚠ ${erroDe(e)}`));
   useEffect(() => { carregar(); apiService.get("/turismo/mapas").then(setMapas).catch(() => setMapas({ mapas: [], modelos: [] })); }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
   const bus = D?.onibus.find((o) => String(o.id) === String(busId)); const doBus = useMemo(() => (D && bus ? D.passageiros.filter((p) => String(p.onibus_id) === String(bus.id)) : []), [D, bus]);
@@ -181,62 +189,114 @@ function Viagem({ C, s, id, onVoltar }) {
     setSel((l) => (l.includes(c.n) ? l.filter((x) => x !== c.n) : [...l, c.n]));
   };
   const sugerir = async (n) => { try { const r = await apiService.get(`/turismo/onibus/${bus.id}/sugestao?n=${n}`); setSel(r.poltronas); if (r.poltronas.length < n) setMsg(`⚠ Só há ${r.poltronas.length} livre(s) neste ônibus.`); } catch (e) { setMsg(`⚠ ${erroDe(e)}`); } };
-  const abrirReserva = () => setReserva({ responsavel: "", telefone: "", email: "", origem_venda: "", situacao_pagamento: "pendente", valor: "", valor_pago: "", embarque_parada_id: null, obs: "", passageiros: (sel.length ? sel : [null]).map((n) => ({ ...PASS_VAZIO, poltrona: n, onibus_id: n ? bus?.id : null, menor_de: null })) });
+  const abrirReserva = (n = null) => setReserva({ responsavel: "", telefone: "", email: "", origem_venda: "", situacao_pagamento: "pendente", valor: "", valor_pago: "", embarque_parada_id: null, obs: "",
+    passageiros: (n ? Array.from({ length: n }, () => null) : sel.length ? sel : [null]).map((x) => ({ ...PASS_VAZIO, poltrona: x, onibus_id: x ? bus?.id : null, menor_de: null })) });
+  const distribuir = async () => { setDistribuindo(true); try { const r = await apiService.post(`/turismo/viagens/${id}/distribuir`, {}); avisar(r.sem_lugar.length ? `⚠ ${r.distribuidos} acomodado(s); sem lugar: ${r.sem_lugar.join(", ")}` : `⚡ ${r.distribuidos} passageiro(s) acomodado(s).`); carregar(); } catch (e) { setMsg(`⚠ ${erroDe(e)}`); } finally { setDistribuindo(false); } };
   if (!D) return <div style={{ color: msg ? C.warn : C.textSub }}>{msg || "Carregando…"}</div>;
-  const v = D.viagem;
+  const v = D.viagem; const pendBus = D.pendencias.veiculo + D.pendencias.motorista;
+  const selo = { viagem: 0, passageiros: D.incompletos, veiculos: pendBus, poltronas: D.sem_poltrona };
   return <div style={{ display: "grid", gap: 12 }}>
     <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
       <button type="button" onClick={onVoltar} style={{ ...s.btn(false), cursor: "pointer" }}>← Viagens</button>
       <span style={{ flex: 1 }} />
-      <button type="button" onClick={() => setEditar(true)} style={{ ...s.btn(false), cursor: "pointer" }}>✎ Viagem</button>
-      <button type="button" onClick={() => setImportar(true)} disabled={!D.onibus.length} style={{ ...s.btn(false), cursor: "pointer" }}>📥 Importar planilha</button>
       <button type="button" onClick={() => { if (!abrirListaPassageiros(D)) setMsg("⚠ Libere pop-ups para abrir a lista."); }} style={{ ...s.btn(false), cursor: "pointer" }}>🖨 Lista de passageiros</button>
     </div>
-    <div style={{ ...s.card, padding: "12px 14px", display: "grid", gap: 6 }}>
+    <div onClick={() => irAba("viagem")} title="Abrir os dados da viagem" style={{ ...s.card, padding: "12px 14px", display: "grid", gap: 6, cursor: "pointer" }}>
       <div style={{ display: "flex", gap: 8, alignItems: "baseline", flexWrap: "wrap" }}><b style={{ fontSize: 17 }}>{v.nome}</b><span style={{ fontSize: 12, color: C.textSub }}>{v.numero} · {STATUS[v.status]}</span></div>
       <div style={{ fontSize: 13 }}>📍 {v.origem || v.local_saida || "—"} → {v.destino || "—"} · 🕒 ida {loc(v.saida_em)} · volta {loc(v.retorno_em)}</div>
-      <div style={{ fontSize: 12.5, color: C.textSub }}>{D.passageiros.length} passageiro(s) · {D.lugares} lugares{v.pessoas_previstas ? ` · ${v.pessoas_previstas} esperadas` : ""}
+      <div style={{ fontSize: 12.5, color: C.textSub }}>{D.passageiros.length} passageiro(s) · {D.onibus.length} veículo(s) · {D.lugares} lugares{v.pessoas_previstas ? ` · ${v.pessoas_previstas} esperadas` : ""}
         {D.faltam_lugares > 0 && <span style={{ color: C.warn }}> · ⚠ faltam {D.faltam_lugares} lugares para as pessoas esperadas</span>}
         {D.pagamentos && <> · 💲 recebido {reais(D.pagamentos.recebido)} de {reais(D.pagamentos.total)} · a receber <b style={{ color: D.pagamentos.a_receber > 0 ? C.warn : C.text }}>{reais(D.pagamentos.a_receber)}</b></>}</div>
-      {(v.paradas || []).length > 0 && <div style={{ display: "flex", gap: 5, flexWrap: "wrap", fontSize: 12 }}>{v.paradas.map((p, i) => <span key={p.id} style={{ border: `1px solid ${C.border}`, borderRadius: 12, padding: "2px 9px" }}>{i + 1}. {p.nome}{p.chegada ? ` · ${loc(p.chegada)}` : ""}{p.minutos ? ` · ${p.minutos} min` : ""}{p.conferir ? " · ✔ conferir" : ""}{v.embarques_diferentes && p.embarque ? " · 🚏 embarque" : ""}</span>)}</div>}
-      {(D.pendencias.veiculo > 0 || D.pendencias.motorista > 0) && <div style={{ fontSize: 12.5, color: C.warn }}>🟡 {D.pendencias.veiculo > 0 && `${D.pendencias.veiculo} veículo(s) a definir`}{D.pendencias.veiculo > 0 && D.pendencias.motorista > 0 && " · "}{D.pendencias.motorista > 0 && `${D.pendencias.motorista} sem motorista`} — toque no veículo e em ✎ Veículo</div>}
+    </div>
+    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", borderBottom: `1px solid ${C.border}`, paddingBottom: 8 }}>
+      {ABAS.map(([k, l]) => <button key={k} type="button" onClick={() => irAba(k)} style={{ ...s.btn(aba === k), cursor: "pointer" }}>{l}{selo[k] > 0 && <span style={{ marginLeft: 6, background: "#b7791f", color: "#fff", borderRadius: 9, padding: "0 6px", fontSize: 11 }}>{selo[k]}</span>}</button>)}
     </div>
     {msg && <div style={{ fontSize: 13, color: msg.startsWith("⚠") ? C.warn : C.ok || "#4caf50" }}>{msg}</div>}
-    <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-      {D.onibus.map((o) => <button key={o.id} type="button" onClick={() => { setBusId(o.id); setSel([]); }} style={{ ...s.btn(String(o.id) === String(busId)), cursor: "pointer" }}>🚌 {o.nome}{o.placa ? ` · ${o.placa}` : ""} <span style={{ opacity: .75 }}>({o.ocupados}/{o.lugares})</span>{(o.falta_veiculo || o.falta_motorista) && " 🟡"}</button>)}
-      <button type="button" onClick={() => setFormBus({ mapa_id: mapas?.mapas?.[0]?.id || "tpl:conv46", nome: "", placa: "", empresa: "", motoristas: [], equipamento_id: "" })} style={{ ...s.btn(false), cursor: "pointer" }}>＋ Veículo</button>
-      {(D.sem_poltrona > 0 || D.incompletos > 0) && <span style={{ fontSize: 12.5, color: C.warn, marginLeft: 6 }}>{D.sem_poltrona > 0 && `${D.sem_poltrona} sem poltrona · `}{D.incompletos > 0 && `${D.incompletos} com dado faltando`}</span>}
-    </div>
-    {!bus ? <div style={{ ...s.card, padding: 18, color: C.textSub }}>Inclua o primeiro veículo (＋ Veículo): basta o tipo — placa e motorista podem ficar para depois.</div> :
-      <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
-        <div style={{ ...s.card, padding: 14, display: "grid", gap: 10, flex: "0 1 auto", overflowX: "auto", maxWidth: "100%" }}>
-          <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
-            {[["reservar", "🎟 Reservar"], ["bloquear", "🚫 Bloquear"]].map(([k, l]) => <button key={k} type="button" onClick={() => { setModo(k); setSel([]); setMovendo(null); }} style={{ ...s.btn(modo === k), cursor: "pointer", padding: "5px 10px" }}>{l}</button>)}
-            <button type="button" onClick={() => setFormBus({ ...bus, mapa_id: bus.mapa_id || "" })} style={{ ...s.btn(bus.falta_veiculo || bus.falta_motorista), cursor: "pointer", padding: "5px 10px" }}>✎ Veículo{bus.falta_veiculo || bus.falta_motorista ? " 🟡" : ""}</button>
+
+    {aba === "viagem" && <FormViagem key={v.atualizado_em} C={C} s={s} v={v} embutido onSalvo={(_, aviso) => { avisar(aviso || "✔ Viagem salva."); carregar(); }} />}
+
+    {aba === "passageiros" && <AbaPassageiros C={C} s={s} D={D} onPass={setPass} onNova={abrirReserva} onImportar={() => setImportar(true)} onMudou={carregar} setConf={setConf} setMsg={setMsg} />}
+
+    {aba === "veiculos" && <div style={{ display: "grid", gap: 10 }}>
+      <div style={{ fontSize: 12.5, color: C.textSub }}>Cada veículo nasce pelo tipo; placa e motoristas podem ficar 🟡 a definir. Trocar o tipo é bloqueado se o mapa novo não tiver as poltronas já ocupadas.</div>
+      <div style={{ display: "grid", gap: 10, gridTemplateColumns: "repeat(auto-fill, minmax(min(100%, 460px), 1fr))" }}>
+        {D.onibus.map((o) => <FormOnibus key={`${o.id}-${o.atualizado_em}`} embutido C={C} s={s} viagem={v} viagemId={v.id} o={{ ...o, mapa_id: o.mapa_id || "" }} mapas={mapas} onSalvo={() => { avisar("✔ Veículo salvo."); carregar(); }} setConf={setConf} />)}
+        {novoBus && <FormOnibus embutido C={C} s={s} viagem={v} viagemId={v.id} o={novoBus} mapas={mapas} onFechar={() => setNovoBus(null)} onSalvo={(o) => { setNovoBus(null); if (o) setBusId(o.id); avisar("✔ Veículo incluído."); carregar(); }} setConf={setConf} />}
+      </div>
+      {!novoBus && <button type="button" onClick={() => setNovoBus({ mapa_id: mapas?.mapas?.[0]?.id || "tpl:conv46", nome: "", placa: "", empresa: "", motoristas: [], equipamento_id: "" })} style={{ ...s.btn(true), cursor: "pointer", justifySelf: "start" }}>＋ Veículo</button>}
+    </div>}
+
+    {aba === "poltronas" && <>
+      <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+        {D.onibus.map((o) => <button key={o.id} type="button" onClick={() => { setBusId(o.id); setSel([]); }} style={{ ...s.btn(String(o.id) === String(busId)), cursor: "pointer" }}>🚌 {o.nome}{o.placa ? ` · ${o.placa}` : ""} <span style={{ opacity: .75 }}>({o.ocupados}/{o.lugares})</span></button>)}
+        {D.sem_poltrona > 0 && D.onibus.length > 0 && <button type="button" disabled={distribuindo} onClick={() => setConf({ texto: `Acomodar automaticamente os ${D.sem_poltrona} passageiro(s) sem poltrona? Famílias ficam lado a lado, menores com o responsável e quem precisa de assistência na frente. Quem já tem poltrona não muda.`, sim: distribuir })} style={{ ...s.btn(true), cursor: "pointer" }}>{distribuindo ? "Acomodando…" : `⚡ Distribuir ${D.sem_poltrona} sem poltrona`}</button>}
+      </div>
+      {!bus ? <div style={{ ...s.card, padding: 18, color: C.textSub }}>Inclua o primeiro veículo na aba <a onClick={() => irAba("veiculos")} style={{ color: "#7fb2ff", cursor: "pointer" }}>🚌 Veículos e motoristas</a>.</div> :
+        <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
+          <div style={{ ...s.card, padding: 14, display: "grid", gap: 10, flex: "0 1 auto", overflowX: "auto", maxWidth: "100%" }}>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+              {[["reservar", "🎟 Reservar"], ["bloquear", "🚫 Bloquear"]].map(([k, l]) => <button key={k} type="button" onClick={() => { setModo(k); setSel([]); setMovendo(null); }} style={{ ...s.btn(modo === k), cursor: "pointer", padding: "5px 10px" }}>{l}</button>)}
+            </div>
+            <div style={{ fontSize: 12, color: C.textSub }}>{bus.tipo_nome || "—"} · {bus.falta_veiculo ? <span style={{ color: C.warn }}>veículo a definir</span> : `${bus.placa || "—"}${bus.empresa ? ` · ${bus.empresa}` : ""}`} · {bus.falta_motorista ? <span style={{ color: C.warn }}>sem motorista</span> : `motorista(s): ${bus.motoristas.map((m) => m.nome).join(", ")}`} · {bus.livres} livre(s)</div>
+            {movendo && <div style={{ fontSize: 12.5, color: "#7fb2ff" }}>🔁 Toque na poltrona de destino de <b>{movendo.nome}</b> (ocupada = troca). Toque nele de novo para cancelar.</div>}
+            {modo === "bloquear" && <div style={{ fontSize: 12.5, color: C.textSub }}>Toque para bloquear/liberar (guia, poltrona quebrada, reservada à empresa…).</div>}
+            <MapaPoltronas C={C} layout={bus.layout} passageiros={doBus} bloqueadas={bus.bloqueadas || []} selecionadas={movendo ? [movendo.poltrona] : sel} onClique={clique} onSoltar={(pid, n) => mover(pid, n)} />
+            <Legenda C={C} /><div style={{ fontSize: 11.5, color: C.muted }}>Dica: arraste um passageiro para outra poltrona (no computador).</div>
           </div>
-          <div style={{ fontSize: 12, color: C.textSub }}>{bus.tipo_nome || "—"} · {bus.falta_veiculo ? <span style={{ color: C.warn }}>veículo a definir</span> : `${bus.placa || "—"}${bus.empresa ? ` · ${bus.empresa}` : ""}`} · {bus.falta_motorista ? <span style={{ color: C.warn }}>sem motorista</span> : `motorista(s): ${bus.motoristas.map((m) => m.nome + (m.telefone ? ` (${m.telefone})` : "")).join(", ")}`} · {bus.livres} livre(s)</div>
-          {movendo && <div style={{ fontSize: 12.5, color: "#7fb2ff" }}>🔁 Toque na poltrona de destino de <b>{movendo.nome}</b> (ocupada = troca). Toque nele de novo para cancelar.</div>}
-          {modo === "bloquear" && <div style={{ fontSize: 12.5, color: C.textSub }}>Toque para bloquear/liberar (guia, poltrona quebrada, reservada à empresa…).</div>}
-          <MapaPoltronas C={C} layout={bus.layout} passageiros={doBus} bloqueadas={bus.bloqueadas || []} selecionadas={movendo ? [movendo.poltrona] : sel} onClique={clique} onSoltar={(pid, n) => mover(pid, n)} />
-          <Legenda C={C} /><div style={{ fontSize: 11.5, color: C.muted }}>Dica: arraste um passageiro para outra poltrona (no computador).</div>
-        </div>
-        <div style={{ flex: "1 1 280px", display: "grid", gap: 10 }}>
-          {modo === "reservar" && <div style={{ ...s.card, padding: 14, display: "grid", gap: 8 }}>
-            <b>🎟 Nova reserva</b>
-            <div style={{ fontSize: 12.5, color: C.textSub }}>{sel.length ? <>Poltronas: <b style={{ color: C.text }}>{sel.join(", ")}</b></> : "Toque nas poltronas livres — ou peça lugares lado a lado:"}</div>
-            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{[1, 2, 3, 4, 5, 6].map((n) => <button key={n} type="button" onClick={() => sugerir(n)} style={{ ...s.btn(false), cursor: "pointer", padding: "4px 10px" }}>{n}</button>)}<span style={{ fontSize: 11.5, color: C.muted, alignSelf: "center" }}>juntos</span></div>
-            <div style={{ display: "flex", gap: 8 }}><button type="button" onClick={abrirReserva} style={{ ...s.btn(true), cursor: "pointer" }}>{sel.length > 1 ? `Reservar ${sel.length} (grupo/família)` : sel.length ? "Reservar" : "Reservar sem poltrona"}</button>{sel.length > 0 && <button type="button" onClick={() => setSel([])} style={{ ...s.btn(false), cursor: "pointer" }}>Limpar</button>}</div>
-          </div>}
-          <Reservas C={C} s={s} D={D} onPass={setPass} onMudou={carregar} setConf={setConf} setMsg={setMsg} />
-        </div>
-      </div>}
-    {D.sem_poltrona > 0 && bus && <div style={{ ...s.card, padding: 12 }}><b style={{ fontSize: 13 }}>Sem poltrona</b><div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>{D.passageiros.filter((p) => !p.poltrona).map((p) => <button key={p.id} type="button" onClick={() => setMovendo(p)} draggable onDragStart={(ev) => ev.dataTransfer.setData("text/plain", String(p.id))} style={{ ...s.btn(movendo?.id === p.id), cursor: "pointer", padding: "4px 10px" }}>{p.nome}</button>)}</div><div style={{ fontSize: 11.5, color: C.muted, marginTop: 4 }}>Toque no nome e depois na poltrona (ou arraste).</div></div>}
-    {editar && <FormViagem C={C} s={s} v={v} onFechar={() => setEditar(false)} onSalvo={() => { setEditar(false); avisar("✔ Viagem atualizada."); carregar(); }} />}
-    {formBus && <FormOnibus C={C} s={s} viagem={v} viagemId={v.id} o={formBus} mapas={mapas} onFechar={() => setFormBus(null)} onSalvo={(o) => { setFormBus(null); if (o) setBusId(o.id); carregar(); }} setConf={setConf} />}
+          <div style={{ flex: "1 1 280px", display: "grid", gap: 10 }}>
+            {D.sem_poltrona > 0 && <div style={{ ...s.card, padding: 12 }}><b style={{ fontSize: 13 }}>Sem poltrona ({D.sem_poltrona})</b><div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginTop: 6 }}>{D.passageiros.filter((p) => !p.poltrona).map((p) => <button key={p.id} type="button" onClick={() => setMovendo(movendo?.id === p.id ? null : p)} draggable onDragStart={(ev) => ev.dataTransfer.setData("text/plain", String(p.id))} style={{ ...s.btn(movendo?.id === p.id), cursor: "pointer", padding: "4px 10px" }}>{p.assistencia ? "♿ " : ""}{p.nome}</button>)}</div><div style={{ fontSize: 11.5, color: C.muted, marginTop: 4 }}>Toque no nome e depois na poltrona (ou arraste) — ou use ⚡ Distribuir.</div></div>}
+            {modo === "reservar" && <div style={{ ...s.card, padding: 14, display: "grid", gap: 8 }}>
+              <b>🎟 Nova reserva neste ônibus</b>
+              <div style={{ fontSize: 12.5, color: C.textSub }}>{sel.length ? <>Poltronas: <b style={{ color: C.text }}>{sel.join(", ")}</b></> : "Toque nas poltronas livres — ou peça lugares lado a lado:"}</div>
+              <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{[1, 2, 3, 4, 5, 6].map((n) => <button key={n} type="button" onClick={() => sugerir(n)} style={{ ...s.btn(false), cursor: "pointer", padding: "4px 10px" }}>{n}</button>)}<span style={{ fontSize: 11.5, color: C.muted, alignSelf: "center" }}>juntos</span></div>
+              <div style={{ display: "flex", gap: 8 }}><button type="button" disabled={!sel.length} onClick={() => abrirReserva()} style={{ ...s.btn(true), cursor: "pointer" }}>{sel.length > 1 ? `Reservar ${sel.length} (grupo/família)` : "Reservar"}</button>{sel.length > 0 && <button type="button" onClick={() => setSel([])} style={{ ...s.btn(false), cursor: "pointer" }}>Limpar</button>}</div>
+            </div>}
+          </div>
+        </div>}
+    </>}
+
     {reserva && <FormReserva C={C} s={s} viagem={v} viagemId={v.id} r={reserva} onFechar={() => setReserva(null)} onSalvo={(t) => { setReserva(null); setSel([]); avisar(t); carregar(); }} />}
-    {pass && <FormPassageiro C={C} s={s} viagem={v} p={pass} onFechar={() => setPass(null)} onMover={() => { setMovendo(pass); setPass(null); setModo("reservar"); setSel([]); }} onSalvo={(t) => { setPass(null); avisar(t); carregar(); }} setConf={setConf} />}
+    {pass && <FormPassageiro C={C} s={s} viagem={v} p={pass} onFechar={() => setPass(null)} onMover={() => { setMovendo(pass); setPass(null); setModo("reservar"); setSel([]); if (pass.onibus_id) setBusId(pass.onibus_id); irAba("poltronas"); }} onSalvo={(t) => { setPass(null); avisar(t); carregar(); }} setConf={setConf} />}
     {importar && <Importar C={C} s={s} D={D} onFechar={() => setImportar(false)} onFeito={(t) => { setImportar(false); avisar(t); carregar(); }} />}
     {conf && <Confirmar C={C} s={s} texto={conf.texto} onNao={() => setConf(null)} onSim={async () => { const f = conf.sim; setConf(null); await f(); }} />}
+  </div>;
+}
+
+// aba Passageiros: lista de todos (com ou sem poltrona) + filtros, e as reservas ao lado
+function AbaPassageiros({ C, s, D, onPass, onNova, onImportar, onMudou, setConf, setMsg }) {
+  const [f, setF] = useState(""); const [busca, setBusca] = useState(""); const v = D.viagem;
+  const busNome = (id) => D.onibus.find((o) => String(o.id) === String(id))?.nome || "";
+  const FILTROS = [["", "Todos", D.passageiros.length], ["falta", "⚠ Falta dado", D.incompletos], ["sem", "Sem poltrona", D.sem_poltrona], ["menor", "Menores", D.passageiros.filter((p) => p.menor).length], ["assist", "♿ Assistência", D.passageiros.filter((p) => p.assistencia).length]];
+  const t = busca.trim().toLowerCase();
+  const l = D.passageiros.filter((p) => (!f || (f === "falta" && p.incompleto) || (f === "sem" && !p.poltrona) || (f === "menor" && p.menor) || (f === "assist" && p.assistencia)) && (!t || [p.nome, p.documento, p.telefone, p.reserva_codigo].some((x) => String(x || "").toLowerCase().includes(t))))
+    .sort((a, b) => String(a.nome).localeCompare(String(b.nome), "pt-BR"));
+  const td = { padding: "6px 8px", borderBottom: `1px solid ${C.border}`, fontSize: 12.5, verticalAlign: "top", color: C.text };
+  return <div style={{ display: "grid", gap: 10 }}>
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+      <button type="button" onClick={() => onNova(1)} style={{ ...s.btn(true), cursor: "pointer" }}>＋ Passageiro</button>
+      <button type="button" onClick={() => onNova(2)} style={{ ...s.btn(false), cursor: "pointer" }}>＋ Grupo / família</button>
+      <button type="button" onClick={onImportar} style={{ ...s.btn(false), cursor: "pointer" }}>📥 Importar planilha</button>
+      <span style={{ fontSize: 12, color: C.muted }}>A poltrona pode ser escolhida depois (aba 💺 Poltronas ou ⚡ Distribuir).{v.foto_obrigatoria ? " Foto obrigatória para o crachá: ligada (crachá e link de cadastro chegam na próxima etapa)." : ""}</span>
+    </div>
+    <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "flex-start" }}>
+      <div style={{ ...s.card, padding: 12, flex: "2 1 520px", display: "grid", gap: 8, minWidth: 0 }}>
+        <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>{FILTROS.map(([k, n, c]) => <button key={k} type="button" onClick={() => setF(k)} style={{ ...s.btn(f === k), cursor: "pointer", padding: "4px 10px", fontSize: 12 }}>{n} ({c})</button>)}
+          <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="🔎 Nome, documento, telefone, reserva…" style={{ ...s.input, flex: "1 1 180px" }} /></div>
+        <div style={{ overflowX: "auto" }}><table style={{ width: "100%", borderCollapse: "collapse" }}>
+          <thead><tr>{["Nome", "Poltrona", "Documento", "Telefone", v.embarques_diferentes ? "Embarque" : null, "Saúde", "Reserva"].filter(Boolean).map((h) => <th key={h} style={{ ...td, textAlign: "left", color: C.textSub, fontWeight: 600 }}>{h}</th>)}</tr></thead>
+          <tbody>{l.map((p) => <tr key={p.id} onClick={() => onPass(p)} style={{ cursor: "pointer" }}>
+            <td style={td}><b>{p.nome}</b>{p.menor ? <span style={{ color: C.textSub }}> · menor</span> : ""}{p.assistencia ? " ♿" : ""}{p.incompleto && <span style={{ color: C.warn }} title="Falta documento, nascimento ou telefone"> ⚠</span>}</td>
+            <td style={td}>{p.poltrona ? `${busNome(p.onibus_id)} · ${p.poltrona}` : <span style={{ color: C.warn }}>—</span>}</td>
+            <td style={td}>{p.documento || "—"}</td><td style={td}>{p.telefone || "—"}</td>
+            {v.embarques_diferentes && <td style={td}>{nomeEmbarque(v, p.embarque_parada_id)}</td>}
+            <td style={td}>{[p.tipo_sanguineo, p.plano_saude && "plano", p.seguro_viagem && "seguro"].filter(Boolean).join(" · ") || "—"}</td>
+            <td style={td}>{p.reserva_codigo}{p.reserva_tipo === "grupo" ? <div style={{ fontSize: 11, color: C.textSub }}>{p.responsavel}</div> : ""}</td>
+          </tr>)}
+            {!l.length && <tr><td style={{ ...td, color: C.textSub }} colSpan={7}>{D.passageiros.length ? "Ninguém neste filtro." : "Nenhum passageiro ainda — ＋ Passageiro, ＋ Grupo ou 📥 Importar planilha."}</td></tr>}</tbody>
+        </table></div>
+      </div>
+      <div style={{ flex: "1 1 300px", minWidth: 0 }}><Reservas C={C} s={s} D={D} onPass={onPass} onMudou={onMudou} setConf={setConf} setMsg={setMsg} /></div>
+    </div>
   </div>;
 }
 
@@ -351,7 +411,7 @@ function FormPassageiro({ C, s, viagem: v, p, onFechar, onMover, onSalvo, setCon
   </Modal>;
 }
 
-function FormOnibus({ C, s, viagem, viagemId, o, mapas, onFechar, onSalvo, setConf }) {
+function FormOnibus({ C, s, viagem, viagemId, o, mapas, onFechar, onSalvo, setConf, embutido = false }) {
   const [d, setD] = useState({ ...o, motoristas: (o.motoristas || []).length ? o.motoristas : [{ nome: "", colaborador_id: null, telefone: "" }] });
   const setM = (i, m) => setD({ ...d, motoristas: d.motoristas.map((x, j) => (j === i ? m : x)) }); const [msg, setMsg] = useState(""); const [frota, setFrota] = useState([]); const [pessoas, setPessoas] = useState(null);
   useEffect(() => { apiService.listarEquipamentos().then((r) => setFrota((Array.isArray(r) ? r : r?.equipamentos || []).filter((e) => e.placa))).catch(() => {}); apiService.get("/pessoas/gestao-pessoas").then((r) => setPessoas(r.funcionarios || [])).catch(() => setPessoas([])); }, []);
@@ -359,14 +419,15 @@ function FormOnibus({ C, s, viagem, viagemId, o, mapas, onFechar, onSalvo, setCo
   const salvar = async () => { setMsg(""); try { const r = o.id ? await apiService.put(`/turismo/onibus/${o.id}`, { ...d, viagem_id: viagemId, mapa_id: d.mapa_id || undefined }) : await apiService.post(`/turismo/viagens/${viagemId}/onibus`, d); onSalvo(r.onibus); } catch (e) { setMsg(`⚠ ${erroDe(e)}`); } };
   const excluir = () => setConf({ texto: `Tirar ${o.nome} da viagem?`, sim: async () => { try { await apiService.delete(`/turismo/onibus/${o.id}`); onSalvo(null); } catch (e) { setMsg(`⚠ ${erroDe(e)}`); } } });
   const campo = (k, l) => <div style={{ flex: "1 1 150px" }}><span style={lab}>{l}</span><input value={d[k] || ""} onChange={(e) => setD({ ...d, [k]: e.target.value })} style={{ ...s.input, width: "100%" }} /></div>;
-  return <Modal C={C} s={s} titulo={o.id ? `✎ ${o.nome} — ${viagem.nome}` : `＋ Veículo na viagem ${viagem.nome}`} onFechar={onFechar} largura={600}>
+  const pend = o.id && (o.falta_veiculo || o.falta_motorista);
+  return <Quadro C={C} s={s} embutido={embutido} titulo={o.id ? <>🚌 {o.nome} <span style={{ fontWeight: 400, fontSize: 12, color: C.textSub }}>· {o.ocupados ?? 0}/{o.lugares ?? ""} ocupados</span>{pend && <span style={{ fontWeight: 400, fontSize: 12, color: C.warn }}> · 🟡 {[o.falta_veiculo && "veículo a definir", o.falta_motorista && "sem motorista"].filter(Boolean).join(" · ")}</span>}</> : `＋ Novo veículo`} onFechar={onFechar} largura={600}>
     <div><span style={lab}>TIPO DO VEÍCULO / MAPA DE POLTRONAS</span><select value={d.mapa_id || ""} onChange={(e) => setD({ ...d, mapa_id: e.target.value })} style={{ ...s.input, width: "100%" }}>
-      {o.id && !o.mapa_id && <option value="">(mantém o atual)</option>}
+      {o.id && !o.mapa_id && <option value="">Atual: {o.tipo_nome || "mapa da viagem"}</option>}
       {(mapas?.mapas || []).length > 0 && <optgroup label="Mapas da empresa">{mapas.mapas.map((m) => <option key={m.id} value={m.id}>{m.nome} · {m.lugares} lugares</option>)}</optgroup>}
       <optgroup label="Modelos prontos">{(mapas?.modelos || []).map((m) => <option key={m.id} value={m.id}>{m.nome}</option>)}</optgroup></select>
       <div style={{ fontSize: 11.5, color: C.muted, marginTop: 3 }}>O ônibus da viagem recebe uma cópia do mapa — mudar o modelo depois não mexe nas viagens já montadas.</div></div>
     {frota.length > 0 && <div><span style={lab}>DA FROTA (opcional)</span><select value={d.equipamento_id || ""} onChange={(e) => setD({ ...d, equipamento_id: e.target.value })} style={{ ...s.input, width: "100%" }}><option value="">— de terceiro ou ainda a definir —</option>{frota.map((e) => <option key={e.id} value={e.id}>{e.tag || e.nome} · {e.placa}</option>)}</select></div>}
-    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{campo("nome", "NOME NA VIAGEM (ex.: Ônibus 1)")}{!d.equipamento_id && campo("placa", "PLACA (em branco = a definir)")}{campo("empresa", "EMPRESA DO ÔNIBUS")}</div>
+    <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>{campo("nome", o.id ? "APELIDO NA VIAGEM" : "APELIDO (opcional — senão Ônibus N)")}{!d.equipamento_id && campo("placa", "PLACA (em branco = a definir)")}{campo("empresa", "EMPRESA DO ÔNIBUS")}</div>
     <span style={{ ...lab, marginBottom: -4 }}>MOTORISTA(S) — em branco = a definir</span>
     {d.motoristas.map((m, i) => <div key={i} style={{ display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
       <div style={{ flex: "2 1 220px" }}><CampoFuncionario C={C} s={s} lista={pessoas} nome={m.nome} id={m.colaborador_id} placeholder={i ? "Motorista de revezamento…" : "Digite o nome do motorista…"} onChange={(v) => setM(i, { ...m, nome: v.nome, colaborador_id: v.id })} /></div>
@@ -375,8 +436,8 @@ function FormOnibus({ C, s, viagem, viagemId, o, mapas, onFechar, onSalvo, setCo
     </div>)}
     {d.motoristas.length < 4 && <button type="button" onClick={() => setD({ ...d, motoristas: [...d.motoristas, { nome: "", colaborador_id: null, telefone: "" }] })} style={{ ...s.btn(false), cursor: "pointer", justifySelf: "start" }}>＋ Outro motorista (revezamento)</button>}
     {msg && <div style={{ color: C.warn, fontSize: 13 }}>{msg}</div>}
-    <div style={{ display: "flex", gap: 8 }}>{o.id && <button type="button" onClick={excluir} style={{ ...s.btn(false), cursor: "pointer" }}>Tirar da viagem</button>}<span style={{ flex: 1 }} /><button type="button" onClick={onFechar} style={{ ...s.btn(false), cursor: "pointer" }}>Voltar</button><button type="button" onClick={salvar} style={{ ...s.btn(true), cursor: "pointer" }}>Salvar</button></div>
-  </Modal>;
+    <div style={{ display: "flex", gap: 8 }}>{o.id && <button type="button" onClick={excluir} style={{ ...s.btn(false), cursor: "pointer" }}>Tirar da viagem</button>}<span style={{ flex: 1 }} />{onFechar && <button type="button" onClick={onFechar} style={{ ...s.btn(false), cursor: "pointer" }}>{o.id ? "Voltar" : "Cancelar"}</button>}<button type="button" onClick={salvar} style={{ ...s.btn(true), cursor: "pointer" }}>{o.id ? "Salvar veículo" : "Incluir veículo"}</button></div>
+  </Quadro>;
 }
 
 function Importar({ C, s, D, onFechar, onFeito }) {

@@ -96,7 +96,7 @@ async function salvarViagem(sb, tenantId, quem, id, b = {}) {
   const d = { nome, origem: txt(b.origem, 200), origem_lat: coord(b.origem_lat, 90), origem_lng: coord(b.origem_lng, 180), destino: txt(b.destino, 200), destino_lat: coord(b.destino_lat, 90), destino_lng: coord(b.destino_lng, 180),
     saida_em: quando(b.saida_em), retorno_em: quando(b.retorno_em), local_saida: txt(b.local_saida, 200), obs: txt(b.obs, 2000),
     pessoas_previstas: num(b.pessoas_previstas) > 0 ? Math.min(5000, Math.round(num(b.pessoas_previstas))) : null,
-    acompanhar_pagamentos: !!b.acompanhar_pagamentos, valor_pessoa: b.acompanhar_pagamentos && num(b.valor_pessoa) >= 0 ? num(b.valor_pessoa) : null, embarques_diferentes: !!b.embarques_diferentes,
+    acompanhar_pagamentos: !!b.acompanhar_pagamentos, valor_pessoa: b.acompanhar_pagamentos && num(b.valor_pessoa) >= 0 ? num(b.valor_pessoa) : null, embarques_diferentes: !!b.embarques_diferentes, foto_obrigatoria: !!b.foto_obrigatoria,
     paradas: limparParadas(b.paradas), atualizado_em: new Date().toISOString() };
   if (!d.origem) return { status: 400, erro: 'Informe a origem.' }; if (!d.destino) return { status: 400, erro: 'Informe o destino.' };
   if (!d.saida_em) return { status: 400, erro: 'Informe a data e hora de saída.' };
@@ -246,10 +246,11 @@ async function mover(sb, tenantId, id, b = {}) {
   return { ok: true, trocou: dono ? { id: dono.id, nome: dono.nome } : null };
 }
 // poltronas livres lado a lado para um grupo de n (mesma fileira primeiro, depois fileiras seguidas)
-function sugerir(onibus, ocupadas, n) {
+function sugerir(onibus, ocupadas, n, perto = []) { // T1.2: perto = poltronas de quem já está sentado da mesma reserva (fica ao lado)
   const livres = new Set(poltronas(onibus.layout).map((x) => x.n).filter((k) => !ocupadas.has(k) && !(onibus.bloqueadas || []).includes(k))); const fileiras = [];
   for (const p of onibus.layout?.pisos || []) for (const lin of p.linhas || []) { const lados = []; let atual = []; for (const c of lin) { if (c.t === 'p') atual.push(c.n); else { if (atual.length) lados.push(atual); atual = []; } } if (atual.length) lados.push(atual); fileiras.push(lados); }
-  const lista = []; for (const f of fileiras) for (const lado of f) { const l = lado.filter((k) => livres.has(k)); if (l.length) lista.push(l); }
+  let lista = []; fileiras.forEach((f, fi) => f.forEach((lado) => { const l = lado.filter((k) => livres.has(k)); if (l.length) lista.push(Object.assign(l, { fi, junto: lado.some((k) => perto.includes(k)) })); }));
+  if (perto.length) { const fs = lista.length ? fileiras.map((f, fi) => (f.some((lado) => lado.some((k) => perto.includes(k))) ? fi : null)).filter((x) => x != null) : []; const dist = (l) => (l.junto ? -1 : Math.min(...fs.map((x) => Math.abs(x - l.fi)), 999)); lista = lista.sort((a, b) => dist(a) - dist(b)); }
   const mesmo = lista.find((l) => l.length >= n); if (mesmo) return mesmo.slice(0, n);
   const plano = lista.flat(); return plano.length >= n ? plano.slice(0, n) : plano;
 }
@@ -258,6 +259,34 @@ async function sugestao(sb, tenantId, onibusId, n) {
   const oc = new Set((await q(sb.from('viagem_passageiros').select('*').eq('tenant_id', tenantId).eq('onibus_id', o.id))).map((p) => p.poltrona).filter(Boolean));
   return { poltronas: sugerir(o, oc, Math.max(1, Math.min(parseInt(n, 10) || 1, 60))) };
 }
+// T1.2: ⚡ distribuir automaticamente quem está sem poltrona — reserva junta (família lado a lado, menor com o responsável),
+//   quem precisa de assistência primeiro e na frente; prefere o ônibus onde a reserva já tem gente; grupo que não cabe junto vai no ônibus com mais lugar.
+async function distribuir(sb, tenantId, viagemId, b = {}) {
+  const os = (await q(sb.from('viagem_onibus').select('*').eq('tenant_id', tenantId).eq('viagem_id', viagemId))).sort((a, c) => a.ordem - c.ordem); if (!os.length) return { status: 409, erro: 'Inclua um veículo antes.' };
+  const alvo = b.onibus_id ? os.filter((o) => String(o.id) === String(b.onibus_id)) : os;
+  const ps = await q(sb.from('viagem_passageiros').select('*').eq('tenant_id', tenantId).eq('viagem_id', viagemId));
+  const ocup = new Map(os.map((o) => [String(o.id), new Set(ps.filter((p) => String(p.onibus_id) === String(o.id) && p.poltrona).map((p) => p.poltrona))]));
+  const livres = (o) => poltronas(o.layout).length - ocup.get(String(o.id)).size - (o.bloqueadas || []).filter((n) => !ocup.get(String(o.id)).has(n)).length;
+  const sem = ps.filter((p) => !p.onibus_id || !p.poltrona); const grupos = new Map(); for (const p of sem) { const k = String(p.reserva_id); if (!grupos.has(k)) grupos.set(k, []); grupos.get(k).push(p); }
+  const ordenar = (l) => { const out = []; const add = (p) => { if (out.includes(p)) return; out.push(p); l.filter((x) => String(x.responsavel_passageiro_id) === String(p.id)).forEach(add); }; l.filter((p) => !p.responsavel_passageiro_id || !l.some((x) => String(x.id) === String(p.responsavel_passageiro_id))).forEach(add); l.forEach(add); return out; };
+  const lista = [...grupos.entries()].map(([k, l]) => ({ k, l: ordenar(l), assist: l.some((p) => p.assistencia) }))
+    .sort((a, c) => (c.assist - a.assist) || (c.l.length - a.l.length));
+  let n = 0; const naoCouberam = [];
+  for (const g of lista) {
+    const ja = ps.find((p) => String(p.reserva_id) === g.k && p.onibus_id && p.poltrona); const ord = [...alvo].sort((a, c) => (ja && String(c.id) === String(ja.onibus_id) ? 1 : 0) - (ja && String(a.id) === String(ja.onibus_id) ? 1 : 0));
+    let escolhido = null; let lugares = [];
+    const perto = (o) => ps.filter((p) => String(p.reserva_id) === g.k && String(p.onibus_id) === String(o.id) && p.poltrona).map((p) => p.poltrona);
+    for (const o of ord) { const sug = sugerir(o, ocup.get(String(o.id)), g.l.length, perto(o)); if (sug.length === g.l.length && sugerirJuntos(o, ocup.get(String(o.id)), sug)) { escolhido = o; lugares = sug; break; } }
+    if (!escolhido) { const o = [...alvo].sort((a, c) => livres(c) - livres(a))[0]; const sug = sugerir(o, ocup.get(String(o.id)), g.l.length); if (sug.length) { escolhido = o; lugares = sug; } }
+    if (!escolhido) { naoCouberam.push(...g.l.map((p) => p.nome)); continue; }
+    for (let i = 0; i < g.l.length; i++) { if (!lugares[i]) { naoCouberam.push(g.l[i].nome); continue; } await q(sb.from('viagem_passageiros').update({ onibus_id: escolhido.id, poltrona: lugares[i] }).eq('tenant_id', tenantId).eq('id', g.l[i].id).select()); ocup.get(String(escolhido.id)).add(lugares[i]); n++; }
+  }
+  return { distribuidos: n, sem_lugar: naoCouberam };
+}
+// o bloco sugerido está numa mesma fileira/lado (ou em fileiras seguidas)? — evita separar família quando outro ônibus comporta junto
+function sugerirJuntos(o, ocup, sug) { if (sug.length <= 1) return true; const pos = new Map(); (o.layout?.pisos || []).forEach((p, pi) => (p.linhas || []).forEach((l, li) => l.forEach((c) => { if (c.t === 'p') pos.set(c.n, pi * 1000 + li); })));
+  const ls = sug.map((x) => pos.get(x)); return Math.max(...ls) - Math.min(...ls) <= Math.ceil(sug.length / 2) - 1 + (sug.length > 2 ? 1 : 0); }
+
 // importar planilha colada (Excel → linhas): nome, documento, nascimento, telefone, poltrona, responsável/grupo, ônibus (opcional)
 async function importar(sb, tenantId, quem, viagemId, b = {}) {
   const v = (await q(sb.from('viagens').select('*').eq('tenant_id', tenantId).eq('id', viagemId)))[0]; if (!v) return { status: 404, erro: 'Viagem não encontrada.' };
@@ -274,4 +303,4 @@ async function importar(sb, tenantId, quem, viagemId, b = {}) {
   return { importados: n, reservas: grupos.size };
 }
 
-module.exports = { sugerirVeiculos, sugestaoVeiculos, TIPOS_SANGUE, MODELOS, poltronas, validarLayout, sugerir, listarMapas, salvarMapa, listarViagens, salvarViagem, detalhe, salvarOnibus, excluirOnibus, bloquear, criarReserva, editarReserva, excluirReserva, salvarPassageiro, adicionarPassageiro, excluirPassageiro, mover, sugestao, importar };
+module.exports = { distribuir, sugerirVeiculos, sugestaoVeiculos, TIPOS_SANGUE, MODELOS, poltronas, validarLayout, sugerir, listarMapas, salvarMapa, listarViagens, salvarViagem, detalhe, salvarOnibus, excluirOnibus, bloquear, criarReserva, editarReserva, excluirReserva, salvarPassageiro, adicionarPassageiro, excluirPassageiro, mover, sugestao, importar };
