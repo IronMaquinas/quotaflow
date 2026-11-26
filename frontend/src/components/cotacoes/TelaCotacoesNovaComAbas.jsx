@@ -636,7 +636,7 @@ const handleAbrirCotacao = async (cotacao) => {
                         ch.itens?.[0]?.item_nome || ch.peca || "Sem item";
                       return (
                         <option key={ch.id} value={ch.id}>
-                          {ch.numero} - {ch.servico_nome || ch.descricao || ch.itens[0]?.item_nome || 'Sem descrição'} ({ch.itens?.length || 0} itens)
+                          {ch.numero} - {ch.servico_nome || ch.descricao || ch.itens[0]?.item_nome || 'Sem descrição'} ({ch.itens?.length || 0} itens){ch.solicitante_nome ? ` · pedida por ${ch.solicitante_nome}` : ''}
                         </option>
                       );
                     })}
@@ -761,7 +761,7 @@ const handleAbrirCotacao = async (cotacao) => {
                       const equipamento = ch.equipamento || "Equipamento não definido";
                       return (
                         <option key={ch.id} value={ch.id}>
-                          {ch.numero} - {ch.servico_nome || ch.descricao || ch.itens[0]?.item_nome || 'Sem descrição'} ({ch.itens?.length || 0} itens)
+                          {ch.numero} - {ch.servico_nome || ch.descricao || ch.itens[0]?.item_nome || 'Sem descrição'} ({ch.itens?.length || 0} itens){ch.solicitante_nome ? ` · pedida por ${ch.solicitante_nome}` : ''}
                         </option>
                       );
                     })}
@@ -1474,7 +1474,7 @@ const handleAbrirCotacao = async (cotacao) => {
                         )}
                       </div>
                       <div style={{ fontSize: 12, color: C.text, marginTop: 4 }}>
-                        {chamado?.servico_nome || chamado?.descricao || chamado?.itens?.[0]?.item_nome || 'Sem descrição'}
+                        {chamado?.servico_nome || chamado?.descricao || chamado?.itens?.[0]?.item_nome || 'Sem descrição'}{chamado?.solicitante_nome ? ` · pedida por ${chamado.solicitante_nome}` : ''}
                       </div>
                       <div style={{ fontSize: 10, color: C.muted, marginTop: 2 }}>
                         Cotação: {cotacao.numero || `#${cotacao.id}`} • {fmtD(cotacao.enviado_em)}

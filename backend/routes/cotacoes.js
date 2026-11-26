@@ -305,7 +305,24 @@ function calcularQuantidadeReposicao(remanescente, limiteRecompra, loteMinimoCom
 // aqui simplesmente não é chamada de novo pro mesmo item enquanto o
 // vínculo anterior está ativo, já que quem chama (POST /chamados) só roda
 // isso uma vez, na criação.
-async function dividirESalvarMateriais(itensMaterialInseridos, os, tenantId) {
+// Q3: quem pediu a RC (migration 132). Se a migration ainda não rodou, grava sem esses campos em vez de quebrar.
+async function inserirRC(dados, tenantId, quem) {
+  const extra = quem?.id ? { solicitante_usuario_id: String(quem.id), solicitante_nome: quem.nome || null } : {};
+  try { return await DB.insert("chamados", { ...dados, ...extra }, tenantId); }
+  catch (e) { if (Object.keys(extra).length && /solicitante_/.test(String(e.message))) return DB.insert("chamados", dados, tenantId); throw e; }
+}
+// Q3: 🔔 avisa o comprador (gestor, se não houver comprador) que chegou RC nova — nunca o admin, nunca quem pediu
+async function avisarCompradorRC(tenantId, rc, nItens, quem) {
+  try {
+    const { supabase } = require("../db"); const N = require("../services/notificacoes");
+    const compradores = await N.usuariosComPerfis(supabase, tenantId, ["comprador"]);
+    await N.avisarPerfis(supabase, tenantId, compradores.length ? ["comprador"] : ["gestor"], { tipo: "rc_nova", chave: `rc:${rc.id}`, titulo: `🛒 Nova requisição ${rc.numero}`,
+      texto: [`${nItens} item(ns)`, quem?.nome ? `pedida por ${quem.nome}` : null, rc.origem_os_numero ? `da ${rc.origem_os_numero}` : null].filter(Boolean).join(" · "), link: { tela: "compradora" } }, { exceto: quem?.id || null });
+  } catch (e) { console.error("⚠️ [RC] 🔔:", e?.message || e); }
+}
+async function quemPediu(req) { try { const u = await DB.selectOne("usuarios", { id: req.userId }, req.tenantId); return { id: req.userId, nome: u?.nome || null }; } catch { return req.userId ? { id: req.userId, nome: null } : null; } }
+
+async function dividirESalvarMateriais(itensMaterialInseridos, os, tenantId, quem = null) {
   const paraRC = [];
   const paraRM = [];
   // Itens que foram 100% cobertos pela RM (sem déficit nenhum nesta OS),
@@ -370,7 +387,7 @@ async function dividirESalvarMateriais(itensMaterialInseridos, os, tenantId) {
 
   if (paraRC.length > 0 || paraReposicao.length > 0) {
     const numeroRC = await gerarNumeroRC(tenantId);
-      rc = await DB.insert("chamados", {
+      rc = await inserirRC({
       tenant_id: tenantId,
       numero: numeroRC,
       tipo_documento: "requisicao_material",
@@ -383,7 +400,7 @@ async function dividirESalvarMateriais(itensMaterialInseridos, os, tenantId) {
       descricao: `Materiais a comprar da ${os.numero}`,
       servico_nome: os.servico_nome || os.descricao || `Materiais da ${os.numero}`,
       participa_benchmark: 1
-    }, tenantId);
+    }, tenantId, quem);
 
     for (const { item, quantidade, quantidadeSugerida, loteMinimoCompra } of paraRC) {
       await DB.insert("chamado_itens", {
@@ -906,7 +923,9 @@ router.post("/chamados", tenantMiddleware, async (req, res) => {
     const itensMaterialAtivos = itensInseridos.filter(it => it.tipo === "material" && it.status === "ativo");
     let split = { rc: null, ret: null, itensParaRC: 0, itensParaRM: 0 };
     if (itensMaterialAtivos.length > 0) {
-      split = await dividirESalvarMateriais(itensMaterialAtivos, chamado, req.tenantId);
+      const quemOS = await quemPediu(req);
+      split = await dividirESalvarMateriais(itensMaterialAtivos, chamado, req.tenantId, quemOS);
+      if (split?.rc) await avisarCompradorRC(req.tenantId, split.rc, (await DB.select("chamado_itens", { chamado_id: split.rc.id }, req.tenantId)).length, quemOS); // Q3
     }
 
     // Registra evento de criação (assíncrono, não bloqueia a resposta)
@@ -983,7 +1002,8 @@ router.post("/chamados/rc-manual", tenantMiddleware, async (req, res) => {
 
     const numero = await gerarNumeroRC(req.tenantId);
 
-    const rc = await DB.insert("chamados", {
+    const quem = await quemPediu(req); // Q3
+    const rc = await inserirRC({
       tenant_id: req.tenantId,
       numero,
       tipo_documento: "requisicao_material",
@@ -996,7 +1016,7 @@ router.post("/chamados/rc-manual", tenantMiddleware, async (req, res) => {
       descricao: descricao_geral || "",
       servico_nome: servico_nome || descricao_geral || `Requisição de compra manual`,
       participa_benchmark: 1
-    }, req.tenantId);
+    }, req.tenantId, quem);
 
     const itensInseridos = [];
     for (const item of itens) {
@@ -1005,6 +1025,7 @@ router.post("/chamados/rc-manual", tenantMiddleware, async (req, res) => {
       itensInseridos.push(novoItem);
     }
 
+    await avisarCompradorRC(req.tenantId, rc, itensInseridos.length, quem); // Q3
     res.status(201).json({
       id: rc.id,
       numero: rc.numero,
@@ -1098,7 +1119,8 @@ router.post("/chamados/:id/gerar-requisicao-material", tenantMiddleware, async (
 
     // ─── Criar a RM (cabeçalho) ─────────────────────────────────────────
     const numeroRM = await gerarNumeroRM(tenantId);
-    const rm = await DB.insert("chamados", {
+    const quemRM = await quemPediu(req); // Q3
+    const rm = await inserirRC({
       tenant_id: tenantId,
       numero: numeroRM,
       tipo_documento: "requisicao_material",
@@ -1111,7 +1133,7 @@ router.post("/chamados/:id/gerar-requisicao-material", tenantMiddleware, async (
       descricao: `Materiais da ${os.numero}`,
       servico_nome: os.servico_nome || os.descricao || `Materiais da ${os.numero}`,
       participa_benchmark: 1
-    }, tenantId);
+    }, tenantId, quemRM);
 
     // ─── Criar os itens filhos da RM ────────────────────────────────────
     const itensCriados = [];
@@ -1136,6 +1158,7 @@ router.post("/chamados/:id/gerar-requisicao-material", tenantMiddleware, async (
       itensCriados.push(novoItem);
     }
 
+    await avisarCompradorRC(tenantId, rm, itensCriados.length, quemRM); // Q3
     res.status(201).json({
       ok: true,
       requisicao_material: rm,
@@ -2941,7 +2964,10 @@ router.get('/:cotacaoId/monitorar', tenantMiddleware, async (req, res) => {
         const modalidade = itemRespondido?.frete_modalidade || 'CIF';
         const ehCIF = modalidade === 'CIF';
         const freteEfetivo = ehCIF ? 0 : (freteItem || 0);
-        const totalItem = valorItem != null ? valorItem + freteEfetivo : null;
+        // Q3: o ranking (e o "melhor" pré-selecionado no monitor) usa o preço RENEGOCIADO quando houver
+        const valorRenegRank = itemRespondido?.valor_renegociado != null ? parseFloat(itemRespondido.valor_renegociado) : null;
+        const freteRenegRank = itemRespondido?.frete_renegociado != null ? parseFloat(itemRespondido.frete_renegociado) : null;
+        const totalItem = valorItem != null ? (valorRenegRank ?? valorItem) + (ehCIF ? 0 : (freteRenegRank ?? freteEfetivo)) : null;
 
         // FIX (2026-09): renegociação e economia agora são calculadas no
         // NÍVEL DO ITEM (a partir de cotacao_fornecedor_itens). Antes liam
@@ -3519,7 +3545,20 @@ router.post("/chamados/:id/materiais/:itemId/aplicar", tenantMiddleware, async (
           erro: "Não há RM vinculada a este item. Registre como 'emergencial' ou 'estoque_proprio'.",
         });
       }
-      retiradaItemId = validos[0].id;
+      // Q3: só aplica material de RM JÁ APROVADA no almoxarifado — senão o material é usado e, se a RM for
+      //   rejeitada depois, o estoque nunca baixa
+      const rmsAprovadas = [];
+      for (const r of validos) {
+        const rm = r.solicitacao_retirada_id ? await DB.selectOne("solicitacoes_retirada", { id: r.solicitacao_retirada_id }, tenantId) : null;
+        if (rm && String(rm.status) === "aprovado") rmsAprovadas.push({ r, rm });
+      }
+      if (rmsAprovadas.length === 0) {
+        const rm0 = validos[0].solicitacao_retirada_id ? await DB.selectOne("solicitacoes_retirada", { id: validos[0].solicitacao_retirada_id }, tenantId) : null;
+        return res.status(409).json({
+          erro: `A ${rm0?.numero_solicitacao || "RM"} deste material ainda não foi aprovada no almoxarifado${rm0?.status ? ` (situação: ${rm0.status})` : ""}. Peça a liberação da retirada antes de aplicar.`,
+        });
+      }
+      retiradaItemId = rmsAprovadas[0].r.id;
     }
 
     // Busca o nome do usuário para gravar junto ao registro de aplicação.

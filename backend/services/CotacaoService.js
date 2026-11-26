@@ -1977,6 +1977,8 @@ async emitirOCs(tenantId, cotacaoId, selecoes, usuarioId = null, usuarioNome = n
   // 2. Validar seleções
   const selecoesValidadas = [];
   const itensVistos = new Set();
+  // Q3: seleção de item removido da cotação é ignorada (o monitor pré-seleciona todos os itens, inclusive removidos)
+  selecoes = (selecoes || []).filter(s => !cotacaoItens.some(ci => String(ci.id) === String(s.cotacao_item_id) && itensRcCanc.has(String(ci.chamado_item_id))));
   for (const s of selecoes) {
     const ci = cotacaoItensPorId[s.cotacao_item_id];
     if (!ci) throw new Error(`Item ${s.cotacao_item_id} não pertence a esta cotação (ou foi removido dela)`);
@@ -2069,7 +2071,9 @@ async emitirOCs(tenantId, cotacaoId, selecoes, usuarioId = null, usuarioNome = n
       const cab = grupo.itens.length === 1 ? (num(resposta.valor_renegociado) ?? num(resposta.valor)) : null;
       const v = ri ? (num(ri.valor_renegociado) ?? num(ri.valor)) : cab;
       if (v == null || !Number.isFinite(v)) throw new Error(`${resposta.fornecedor_nome} não informou preço para um dos itens selecionados`);
-      const f = ri ? (num(ri.frete_renegociado) ?? num(ri.frete) ?? 0) : (num(resposta.frete_renegociado) ?? num(resposta.valor_frete) ?? 0);
+      // Q3: em CIF o frete já está no preço unitário (como o monitor calcula) — só soma frete em FOB
+      const cif = (ri ? (ri.frete_modalidade || 'CIF') : (resposta.frete || 'CIF')) === 'CIF';
+      const f = cif ? 0 : (ri ? (num(ri.frete_renegociado) ?? num(ri.frete) ?? 0) : (num(resposta.frete_renegociado) ?? num(resposta.valor_frete) ?? 0));
       freteTotal += f || 0;
       const qtd = parseFloat(ci.quantidade) || 1;
       valorTotal += v * qtd;
@@ -2080,7 +2084,7 @@ async emitirOCs(tenantId, cotacaoId, selecoes, usuarioId = null, usuarioNome = n
         nome_item: chamadoItem?.item_nome || 'Item sem nome',
         quantidade: qtd,
         valor_unitario: v,
-        valor_total: v * qtd,
+        valor_total: Math.round(v * qtd * 100) / 100, // Q3: sem 55.00000000000001
         codigo_fornecedor: codigoPorItem[String(ci.id)] || null,
       };
     });
@@ -2093,8 +2097,8 @@ async emitirOCs(tenantId, cotacaoId, selecoes, usuarioId = null, usuarioNome = n
       fornecedor_id: fornId,
       numero: numeroOC,
       status: 'pendente',
-      valor_total: valorTotal + freteTotal,
-      valor_frete: freteTotal,
+      valor_total: Math.round((valorTotal + freteTotal) * 100) / 100,
+      valor_frete: Math.round(freteTotal * 100) / 100,
       prazo_entrega: resposta.prazo,
       criado_em: new Date(),
       criado_por: usuarioId,
