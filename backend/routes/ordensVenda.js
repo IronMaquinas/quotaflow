@@ -185,11 +185,8 @@ router.put('/:id/status', tenantMiddleware, async (req, res) => {
     // Se status for 'aprovada' e fornecedor tem email, enviar notificação
     if (status === 'aprovada' && fornecedor_email) {
       try {
-        const itens = await DB.raw(`
-          SELECT nome_item, quantidade, valor_unitario, valor_total
-          FROM ordem_venda_itens
-          WHERE ordem_venda_id = $1 AND tenant_id = $2
-        `, [ovId, tenantId]);
+        // Q1: era DB.raw — o fallback só filtra por tenant e o e-mail ao fornecedor listava itens (e preços) de TODAS as OVs da empresa
+        const itens = await DB.select('ordem_venda_itens', { ordem_venda_id: ovId, tenant_id: tenantId }, tenantId);
 
         const numeroOV = ov.numero;
         const valorTotal = parseFloat(ov.valor_total).toFixed(2);

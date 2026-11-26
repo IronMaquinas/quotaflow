@@ -339,18 +339,6 @@ export default function TelaRecebimento({ C, s, fmtD, onIrParaNC }) {
     }
   };
 
-  // ─── BUSCAR CONTAGENS PENDENTES ─────────────────────────────
-  const carregarContagensPendentes = async () => {
-    try {
-      setLoadingPendentes(true);
-      const response = await apiService.get('/estoque/movimentacoes/contagens-pendentes');
-      setContagensPendentes(response.itens || []);
-    } catch (err) {
-      console.error('❌ Erro ao buscar contagens pendentes:', err);
-    } finally {
-      setLoadingPendentes(false);
-    }
-  };
 
   // Calcular se há divergência
   const temDivergencia = itemConferenciaFiscal ? (

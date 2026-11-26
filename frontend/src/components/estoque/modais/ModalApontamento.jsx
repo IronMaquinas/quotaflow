@@ -137,27 +137,7 @@ export default function ModalApontamento({
 
   useEffect(() => { carregarSessoes(); }, [carregarSessoes]);
 
-  useEffect(() => {
-    apiService.get("/usuarios")
-      .then(lista => {
-        const todos = Array.isArray(lista) ? lista : [];
-        // Ampliado pra incluir comprador: ele é quem executa devoluções
-        // (área Suprimentos). O filtro real acontece por área no mini-modal
-        // de disposição, não aqui.
-        // M4.5: aceita perfis múltiplos. Mesmos perfis do filtro antigo,
-        // agora checando qualquer perfil do usuário (array).
-        const PERFIS_ELEGIVEIS_OS = ["admin", "gestor", "operacao", "comprador"];
-        setUsuariosElegiveis(
-          todos.filter(u => {
-            const lista = Array.isArray(u.perfis) && u.perfis.length > 0
-              ? u.perfis
-              : [u.perfil].filter(Boolean);
-            return lista.some(p => PERFIS_ELEGIVEIS_OS.includes(p));
-          })
-        );
-      })
-      .catch(() => setUsuariosElegiveis([]));
-  }, []);
+  // Q1: aqui havia uma busca de usuários "elegíveis" que nunca era usada (o estado nem existia — erro silencioso no console)
 
   function atualizarLinha(id, campo, valor) {
     setLinhas(prev => prev.map(l => l._id === id ? { ...l, [campo]: valor } : l));

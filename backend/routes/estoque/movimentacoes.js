@@ -29,35 +29,19 @@ async function usuarioAtual(req, tenantId) {
 
   //--- GERAR NÚMERO DO RECEBIMENTO ---
 async function gerarNumeroRecebimento(tenantId) {
+  // Q1: era DB.raw (o fallback só filtra por empresa: pegava uma linha qualquer) e só olhava as movimentações —
+  //   o número da conferência fiscal (ordem_venda_itens.numero_recebimento_ov) podia repetir no recebimento avulso.
   const ano = new Date().getFullYear();
   const prefix = `REC-${ano}-`;
-  
-  const result = await DB.raw(`
-    SELECT numero_recebimento FROM movimentacoes_estoque
-    WHERE tenant_id = $1 AND numero_recebimento LIKE $2
-    ORDER BY numero_recebimento DESC
-    LIMIT 1
-  `, [tenantId, `${prefix}%`]);
-
-  let seq = 1;
-  if (result.length > 0 && result[0].numero_recebimento) {
-    const match = result[0].numero_recebimento.match(/(\d+)$/);
-    if (match) seq = parseInt(match[1]) + 1;
-  }
-
-  let novoNumero = `${prefix}${String(seq).padStart(4, '0')}`;
-  let existe = await DB.selectOne('movimentacoes_estoque', { numero_recebimento: novoNumero, tenant_id: tenantId }, tenantId);
-  if (existe) {
-    let tentativas = 0;
-    while (existe && tentativas < 100) {
-      seq++;
-      novoNumero = `${prefix}${String(seq).padStart(4, '0')}`;
-      existe = await DB.selectOne('movimentacoes_estoque', { numero_recebimento: novoNumero, tenant_id: tenantId }, tenantId);
-      tentativas++;
-    }
-  }
-
-  return novoNumero;
+  const seqDe = (n) => (typeof n === 'string' && n.startsWith(prefix) ? parseInt(n.slice(prefix.length), 10) || 0 : 0);
+  const [movs, itensOV] = await Promise.all([
+    DB.select('movimentacoes_estoque', { tenant_id: tenantId }, tenantId),
+    DB.select('ordem_venda_itens', { tenant_id: tenantId }, tenantId),
+  ]);
+  let maior = 0;
+  for (const m of movs) maior = Math.max(maior, seqDe(m.numero_recebimento));
+  for (const it of itensOV) maior = Math.max(maior, seqDe(it.numero_recebimento_ov));
+  return `${prefix}${String(maior + 1).padStart(4, '0')}`;
 }
 
 // --- Gerar número de RNC sequencial ---
@@ -407,6 +391,7 @@ router.post('/', tenantMiddleware, async (req, res) => {
     if (tipo === 'entrada') {
       novoSaldo += qtd;
     } else if (tipo === 'saida') {
+      if (qtd > novoSaldo + 1e-9) return res.status(409).json({ erro: `Saldo insuficiente: há ${novoSaldo} ${item.unidade_medida || ''} de ${item.nome || 'item'} e a saída é de ${qtd}.`.replace(/\s+/g, ' ') }); // Q1
       novoSaldo -= qtd;
     } else if (tipo === 'ajuste') {
       novoSaldo = qtd;
@@ -463,7 +448,8 @@ router.post('/recebimento', tenantMiddleware, async (req, res) => {
     const { 
       item_consumo_id, 
       quantidade, 
-      fornecer_id, 
+      fornecedor_id,
+      fornecer_id, // Q1: nome antigo (errado) — o front manda fornecedor_id
       numero_nota_fiscal, 
       lote, 
       validade, 
@@ -603,7 +589,7 @@ router.post('/recebimento', tenantMiddleware, async (req, res) => {
       quantidade: parseFloat(quantidade),
       responsavel_id: req.userId,
       observacao: observacao || null,
-      fornecedor_id: fornecer_id || null,
+      fornecedor_id: fornecedor_id || fornecer_id || null,
       lote: lote || null,
       validade: validade || null,
       numero_recebimento: numero,
@@ -1086,13 +1072,14 @@ router.post('/entrada', tenantMiddleware, async (req, res) => {
 
       // 3-WAY MATCH VALIDAÇÃO
       const valorNF = parseFloat(item.valor_nf || 0);
-      const valorOV = parseFloat(item.valor_unitario * item.quantidade || 0);
-      const quantidadeNF = parseInt(item.numero_nota_fiscal ? item.quantidade : 0);
-      const quantidadeFisica = parseInt(item.quantidade_recebida_fisica || 0);
+      const valorOV = (parseFloat(item.valor_unitario) || 0) * (parseFloat(item.quantidade) || 0);
+      const quantidadeNF = item.numero_nota_fiscal ? (parseFloat(item.quantidade) || 0) : 0;
+      const quantidadeFisica = parseFloat(item.quantidade_recebida_fisica || 0);
 
+      // Q1: comparação com tolerância — 3 × 0,10 dava 0,30000000000000004 ≠ 0,30 e travava a entrada; parseInt cortava decimais (2,5 L)
       const divergencias = [];
-      if (valorNF !== valorOV) divergencias.push('Valor da NF diferente da OV');
-      if (quantidadeNF !== quantidadeFisica) divergencias.push('Quantidade da NF diferente da física');
+      if (Math.abs(valorNF - valorOV) > 0.01) divergencias.push('Valor da NF diferente da OV');
+      if (Math.abs(quantidadeNF - quantidadeFisica) > 0.0001) divergencias.push('Quantidade da NF diferente da física');
 
       if (divergencias.length > 0) {
         return res.status(400).json({

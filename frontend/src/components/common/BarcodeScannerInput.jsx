@@ -7,6 +7,25 @@
 // mantém sua própria validação (chave 44 dígitos, DV módulo 11), este
 // aqui aceita qualquer string curta sem checksum.
 import { useState, useRef, useEffect } from "react";
+import { Html5Qrcode, Html5QrcodeSupportedFormats } from "html5-qrcode";
+
+// Q1: o leitor de câmera que este campo chamava nunca existiu (📷 quebrava a tela da OS). Leitor genérico:
+//   código de barras 1D e QR, câmera traseira, entrega a 1ª leitura e para a câmera.
+const FORMATOS = [Html5QrcodeSupportedFormats.CODE_128, Html5QrcodeSupportedFormats.CODE_39, Html5QrcodeSupportedFormats.CODE_93, Html5QrcodeSupportedFormats.EAN_13, Html5QrcodeSupportedFormats.EAN_8, Html5QrcodeSupportedFormats.UPC_A, Html5QrcodeSupportedFormats.UPC_E, Html5QrcodeSupportedFormats.ITF, Html5QrcodeSupportedFormats.CODABAR, Html5QrcodeSupportedFormats.QR_CODE, Html5QrcodeSupportedFormats.DATA_MATRIX];
+function LeitorCamera({ onDecode }) {
+  const idRef = useRef(`leitor-${Math.random().toString(36).slice(2)}`); const [erro, setErro] = useState("");
+  useEffect(() => {
+    let vivo = true; let lido = false; const leitor = new Html5Qrcode(idRef.current, { formatsToSupport: FORMATOS, verbose: false });
+    leitor.start({ facingMode: "environment" }, { fps: 10, qrbox: { width: 280, height: 140 } },
+      (texto) => { if (lido || !vivo) return; lido = true; leitor.stop().catch(() => {}).finally(() => onDecode(texto)); }, () => {})
+      .catch((e) => { if (vivo) setErro(String(e?.message || e).includes("Permission") ? "Permita o uso da câmera para ler o código." : "Não consegui abrir a câmera. Digite o código no campo."); });
+    return () => { vivo = false; if (leitor.isScanning) leitor.stop().catch(() => {}); };
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  return <div style={{ background: "#111", borderRadius: 8, overflow: "hidden" }}>
+    <div id={idRef.current} style={{ width: "100%" }} />
+    {erro && <div style={{ color: "#fca5a5", padding: 12, fontSize: 13 }}>{erro}</div>}
+  </div>;
+}
 
 export default function BarcodeScannerInput({
   value, onChange, placeholder, autoFocus, disabled,

@@ -32,12 +32,12 @@ const { execFileSync } = require('child_process');
 const ESPERADO = {
   // etapa 1
   'routes/buscaFornecedores.js': '39dea794495d3da0b9dc916a1ea0faf0',
-  'services/CotacaoService.js': '96c32c9c13d4082dd80861780a33f9d3', // etapa 14e
+  'services/CotacaoService.js': '9bbf6f8f1099e57be320dfcde884eeff', // etapa Q1
   'services/fornecedoresVisiveis.js': '8c1fa18647fa44b05b4865491067a0c0',
   'routes/cotacoes.js': '51eb4fc398221c2caf21a2ac1c144ada', // etapa 14e
   'routes/naoConformidades.js': '4a680ca138baaaf951938362185078f3', // etapa A1.1
-  'routes/ordensVenda.js': 'ba32842c49096f072788b51d10248ca4',
-  'routes/estoque/movimentacoes.js': '636ba22ab821d3fc0565cc03ff821a64', // etapa 14e
+  'routes/ordensVenda.js': '03045b56750193950f9465fdbb9fe15c', // etapa Q1
+  'routes/estoque/movimentacoes.js': 'd0b05ccb349e5de26ee7d2e8995c7eb8', // etapa Q1
   'routes/estoque/itensConsumo.js': '47011b41ff3d33ac8ad31954084c2321',
   'services/NCService.js': 'a9432a05c6bfb78719497119235bbe44',
   'services/PortalRespostaService.js': 'aff8546f40f10b238354651e8b17aefb',
@@ -197,7 +197,7 @@ const ESPERADO = {
   'front:cotacoesService.js': 'fd42c81ed12dbb4e7d9fa20b03c22767', // etapa 14e
   'front:TelaMonitorarRespostas.jsx': '2e29288fda23cfcb8acd4584c7dfb8dd', // etapa 14e
   'front:TelaCotacoesNovaComAbas.jsx': 'eaf917e126f9d0742b9780be21b80e9a', // etapa 15a
-  'front:TelaRecebimento.jsx': 'f83efb4e441f5acfa7147ba7cab089bd', // etapa 18c.1
+  'front:TelaRecebimento.jsx': '383866fe58d2e5bcc8c3cba20cc75848', // etapa Q1
   'front:CnpjsPlataforma.jsx': '0663f0bd670edb45ff9ae8d2c2ef6a09', // etapa 14e.1
   'front:ModalJustificativaCnpj.jsx': '13d5e39c961c4e775fde24c77e4fb7ff', // etapa 14e (novo)
   'front:TelaMonitorCnpj.jsx': '7d9525d956277c38774adf199a1cf76e', // etapa 14e.2
@@ -269,7 +269,7 @@ const ESPERADO = {
   'migrations/065_tarefas_rastreabilidade.sql': '3902af0a80d08839d542bd2a65e99d87', // etapa 18g (novo)
   'services/tarefas.js': '2e768f614816790e928f63643251a1a6', // etapa E3
   'migrations/066_fiscal_transporte.sql': 'eeef7d2fb80ae6ad0ec6069a3342e0ff', // etapa 18g.1 (novo)
-  'services/tarefasFiscais.js': '90048e5365d5e1642991100314ab2c69', // etapa 18h.4a
+  'services/tarefasFiscais.js': '9f387c1513816d6164290f2c0e013abd', // etapa Q1
   'front:ChecklistFiscal.jsx': '9e9e9863a2bc74886344400973645c82', // etapa 18g.6
   'front:ConfigFiscal.jsx': '9fd57da5d2627b93c19ca338720462fc', // etapa 18g.4
   'front:lerXmlFiscal.js': '8d657863784b4e6c468b29bd8152e53f', // etapa 18g.1.1 (novo)
@@ -308,7 +308,7 @@ const ESPERADO = {
   'migrations/074_notificacoes.sql': '4faa8c8e3f35621354aaf24218844adc', // etapa 18n
   'front:SinoNotificacoes.jsx': '6a4cb9e19227c570ada76c138d16d74e', // etapa 18n.3
   'migrations/075_spot_anexo_email_atraso.sql': '0336af6de14d6685c42877f241c570f3', // etapa 18q (novo)
-  'routes/estoque/solicitacoes.js': '294095a54e5b95b43d3637605bd99ae4', // etapa 18s
+  'routes/estoque/solicitacoes.js': '61f336c66c13b6dc12eedee2d766162e', // etapa Q1
   'front:TextoComPlano.jsx': '3dd816276451af0a948e63e03a645644', // etapa 18t.1 (novo)
   'migrations/076_tenant_segmentos.sql': '3be00b876ccc87e2b9e7aced3809983f', // etapa 18u (novo)
   'services/assinaturas.js': 'e6d9c6444f36737004b1b984e58f02b1', // etapa 18x
@@ -491,13 +491,20 @@ const ESPERADO = {
   'front:listaPassageiros.js': 'fc0c1b3407eba6cbfc0e5ab285abb794', // etapa T1.1
   'migrations/129_turismo_planejamento.sql': '01793b74b3918cebbb7d422bae1006ba', // etapa T1.1 (novo)
   'migrations/130_turismo_foto_cracha.sql': '32946721b487544f464d2b8aafd8c20f', // etapa T1.2 (novo)
+  'front:BarcodeScannerInput.jsx': '0ea26533430b38b3e7b1d40b4b735031', // etapa Q1
+  'front:ModalApontamento.jsx': '25663934319b363adef8b71ec1604c11', // etapa Q1
 };
 
-// Antes de copiar a etapa T1.2 — base: T1.1 (b522618)
+// Antes de copiar a etapa Q1 — base: T1.2 (e17f55d)
 const ANTES = {
-  'services/turismo.js': '1c327ae53f6972ca169ec22b11f5ef08',
-  'routes/turismo.js': '762e44629fb9847e58fb3e378f4c3565',
-  'front:TelaTurismo.jsx': '767c5831e9f6c6a4f48029d301bee26c',
+  'services/CotacaoService.js': '96c32c9c13d4082dd80861780a33f9d3',
+  'routes/ordensVenda.js': 'ba32842c49096f072788b51d10248ca4',
+  'routes/estoque/movimentacoes.js': '636ba22ab821d3fc0565cc03ff821a64',
+  'routes/estoque/solicitacoes.js': '294095a54e5b95b43d3637605bd99ae4',
+  'services/tarefasFiscais.js': '90048e5365d5e1642991100314ab2c69',
+  'front:BarcodeScannerInput.jsx': '9f31a8455c453ccebc39e899ffc20332',
+  'front:ModalApontamento.jsx': '08342839d38efeb8a55a1a143ff56c48',
+  'front:TelaRecebimento.jsx': 'f83efb4e441f5acfa7147ba7cab089bd',
 };
 
 const RAIZ = process.cwd();
@@ -535,7 +542,7 @@ const LISTA = modoAntes ? ANTES : ESPERADO;
 let falhas = 0;
 console.log(modoAntes
   ? '\nANTES de copiar — os arquivos atuais são a base usada nesta etapa?\n'
-  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a T1.2)\n');
+  : '\nConferindo arquivos entregues (etapas 1, 3, 4, 6 a Q1)\n');
 
 for (const [chave, esperado] of Object.entries(LISTA)) {
   const { abs, rotulo, erro } = localizar(chave);

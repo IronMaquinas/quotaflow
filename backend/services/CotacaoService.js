@@ -1238,12 +1238,13 @@ class CotacaoService {
 
       // Adicionar novos itens
       for (const item of itens) {
+        const chamadoItemEx = await this.db.selectOne('chamado_itens', { id: item.item_id }, tenantId); // Q1: quantidade da RC (antes ia sempre 1)
         await this.db.insert('cotacao_itens', {
           tenant_id: tenantId,
           cotacao_id: cotacaoExistente.id,
           chamado_item_id: item.item_id,
-          item_catalogo_id: null,
-          quantidade: 1,
+          item_catalogo_id: chamadoItemEx?.item_catalogo_id || null,
+          quantidade: Number(chamadoItemEx?.quantidade) > 0 ? Number(chamadoItemEx.quantidade) : 1,
           preco_estimado: null,
           fornecedores_ids: item.fornecedor_ids || []
         });
@@ -1303,7 +1304,7 @@ class CotacaoService {
         cotacao_id: cotacao.id,
         chamado_item_id: item.item_id,
         item_catalogo_id: itemCatalogoId,
-        quantidade: 1,
+        quantidade: Number(chamadoItem?.quantidade) > 0 ? Number(chamadoItem.quantidade) : 1, // Q1: quantidade da RC (antes ia sempre 1)
         preco_estimado: null,
         fornecedores_ids: item.fornecedor_ids || []
       });

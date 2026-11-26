@@ -91,6 +91,14 @@ router.put('/:id/aprovar', tenantMiddleware, async (req, res) => {
       return res.status(404).json({ erro: 'Nenhum item encontrado na solicitação' });
     }
 
+    // Q1: confere o saldo ANTES de aprovar (entre o pedido e a aprovação o estoque pode ter saído por outro caminho)
+    for (const item of itens) {
+      const ic = await DB.selectOne('itens_consumo', { id: item.item_consumo_id }, tenantId);
+      if (ic && parseFloat(item.quantidade) > (parseFloat(ic.saldo_atual) || 0) + 1e-9) {
+        return res.status(409).json({ erro: `Saldo insuficiente para aprovar: há ${parseFloat(ic.saldo_atual) || 0} de ${ic.nome} e a retirada é de ${item.quantidade}. Receba o material ou ajuste a quantidade.` });
+      }
+    }
+
     // 3. Atualizar status da solicitação
     await DB.update('solicitacoes_retirada', id, {
       status: 'aprovado',
@@ -104,7 +112,7 @@ router.put('/:id/aprovar', tenantMiddleware, async (req, res) => {
       // Buscar item de consumo
       const itemConsumo = await DB.selectOne('itens_consumo', { id: item.item_consumo_id }, tenantId);
       if (itemConsumo) {
-        const novoSaldo = (itemConsumo.saldo_atual || 0) - item.quantidade;
+        const novoSaldo = (parseFloat(itemConsumo.saldo_atual) || 0) - (parseFloat(item.quantidade) || 0); // Q1: numeric pode vir como texto
         await DB.update('itens_consumo', itemConsumo.id, {
           saldo_atual: novoSaldo,
           atualizado_em: new Date()
@@ -235,6 +243,10 @@ router.post('/', tenantMiddleware, async (req, res) => {
     const itemConsumo = await DB.selectOne('itens_consumo', { id: item_consumo_id, tenant_id: tenantId }, tenantId);
     if (!itemConsumo) {
       return res.status(404).json({ erro: 'Item de consumo não encontrado' });
+    }
+    // Q1: não deixa pedir mais do que há no estoque (antes a aprovação deixava o saldo negativo)
+    if (parseFloat(quantidade) > (parseFloat(itemConsumo.saldo_atual) || 0) + 1e-9) {
+      return res.status(409).json({ erro: `Saldo insuficiente: há ${parseFloat(itemConsumo.saldo_atual) || 0} ${itemConsumo.unidade_medida || ''} de ${itemConsumo.nome}.`.replace(/\s+\./, '.') });
     }
 
     // Gerar número sequencial (RET-AAAA-NNNN)
