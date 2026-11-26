@@ -48,6 +48,7 @@ import TelaMonitorCnpj from './components/compliance/TelaMonitorCnpj'; // 14e
 import TelaNaoConformidades from "./components/naoConformidades/TelaNaoConformidades";
 import TelaInspecoes from "./components/inspecoes/TelaInspecoes"; // etapa 14a
 import TelaFotoCartao from "./components/fotoCartao/TelaFotoCartao"; // E1
+import TelaTurismo from "./components/turismo/TelaTurismo"; // T1
 import TelaContratos from "./components/contratos/TelaContratos"; // etapa 14b.3
 import TelaComercial from "./components/comercial/TelaComercial"; // etapa 15a — 📈 Comercial (mini-CRM + BID)
 import TelaProgramacao from "./components/programacao/TelaProgramacao";
@@ -469,6 +470,7 @@ const perfil = PERFIS[usuario.perfil] || {
     {sec:"OPERAÇÃO", id:"equipamentos",  l:rotulo("frota"),          perfis:["admin","gestor","comprador","operacao"]},
     {sec:"OPERAÇÃO", id:"inspecoes",     l:"🔍 Inspeções",             perfis:["admin","gestor","comprador","operacao","qualidade"]}, // etapa 14a
     {sec:"OPERAÇÃO", id:"foto_cartao",   l:"📸 Inspeção de campo",    perfis:["admin","gestor","operacao","qualidade"]}, // E1
+    {sec:"OPERAÇÃO", id:"turismo",       l:"🚌 Viagens e embarque",   perfis:["admin","gestor","comercial","operacao"]}, // T1
     {sec:"OPERAÇÃO", id:"contratos",     l:"📑 Contratos",             perfis:["admin","gestor","comprador","operacao","qualidade"]}, // etapa 14b.3
     {sec:"OPERAÇÃO", id:"patio",         l:"📦 Propriedade do cliente", perfis:["admin","gestor","comprador","operacao"]}, // 18z
     // ── COMPRAS E ESTOQUE
@@ -885,6 +887,7 @@ const perfil = PERFIS[usuario.perfil] || {
           </div>)}
 
         {temAcesso(tela) && tela === "foto_cartao" && <div style={{flex:1,overflowY:"auto"}}><TelaFotoCartao C={C} s={s} /></div>}{/* E1 */}
+        {temAcesso(tela) && tela === "turismo" && <div style={{flex:1,overflowY:"auto"}}><TelaTurismo C={C} s={s} /></div>}{/* T1 */}
         {temAcesso(tela) && tela === "inspecoes" && (
           <div style={{ flex: 1, overflowY: "auto" }}>
             <TelaInspecoes C={C} s={s}
@@ -2512,6 +2515,7 @@ const PERMISSOES = {
   equipamentos:       ["admin","gestor","comprador","operacao"],
   inspecoes:          ["admin","gestor","comprador","operacao","qualidade"], // etapa 14a
   foto_cartao:        ["admin","gestor","operacao","qualidade"], // E1
+  turismo:            ["admin","gestor","comercial","operacao"], // T1
   contratos:          ["admin","gestor","comprador","operacao","qualidade"], // etapa 14b.3
   pessoas:            ["admin","gestor","qualidade","operacao"], // etapa 12c
   documentos:         ["admin","gestor","qualidade","operacao"], // 18zq

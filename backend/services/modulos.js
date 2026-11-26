@@ -33,6 +33,9 @@ const AREAS = [
     { id: 'nao_conformidades', nome: 'Não conformidades e autuações', desc: 'NC com evidências e causa raiz; autuações da empresa.', telas: ['nao_conformidades'] },
     { id: 'sgq', nome: 'Sistema de gestão ISO 9001 — documentos e auditorias', desc: 'Procedimentos com fluxo de aprovação e 🧭 matriz ISO; auditorias internas: programa anual, execução no sistema com fotos e registros, relatório assinado, pendências do ciclo.', telas: ['auditorias', 'analise_critica'] }, // A1.5
   ] },
+  { id: 'turismo', nome: '🚌 Turismo e fretamento', modulos: [ // T1
+    { id: 'turismo', nome: 'Viagens e embarque — mapa de poltronas', desc: 'Viagens/eventos com um ou vários ônibus, mapa de poltronas visual (modelos prontos ou próprios), reservas individuais e de grupo/família, importação da planilha e lista de passageiros.', telas: ['turismo'] },
+  ] },
   { id: 'pessoas', nome: '👷 Pessoas', modulos: [
     { id: 'colaboradores', nome: 'Colaboradores e documentos', desc: 'Cadastro, funções, documentos com vencimento e avisos.', telas: ['pessoas'] },
     { id: 'jornada', nome: 'Jornada e feriados', desc: 'Jornada de trabalho, feriados e dias da frota.', telas: [] },
@@ -53,6 +56,7 @@ const SEGMENTOS = [
   { id: 'transporte', nome: '🚛 Transporte', sugere: ['crm_bid', 'frota_equipamentos', 'transporte', 'fiscal', 'ocorrencias', 'manutencao'] },
   { id: 'locacao', nome: '🏗 Locação de equipamentos', sugere: ['crm_bid', 'frota_equipamentos', 'contratos_locacao', 'medicao', 'ocorrencias', 'inspecoes', 'manutencao'] },
   { id: 'servicos', nome: '🔧 Manutenção / serviços', sugere: ['frota_equipamentos', 'manutencao', 'inspecoes', 'compras', 'estoque'] },
+  { id: 'turismo', nome: '🚌 Turismo / fretamento', sugere: ['turismo', 'frota_equipamentos', 'colaboradores'] }, // T1
   { id: 'inspecao', nome: '🔎 Inspeção / ensaios', sugere: ['inspecao_campo', 'nao_conformidades', 'sgq', 'colaboradores', 'treinamentos'] }, // E6
   { id: 'outro', nome: '🏢 Outro', sugere: ['compras', 'fornecedores', 'estoque'] },
 ];

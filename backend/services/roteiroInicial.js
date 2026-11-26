@@ -76,6 +76,11 @@ async function montar(supabase, tenantId) {
     P('inspecao_campo', 'ic_projeto', 'Primeiro projeto', 'Projeto = cliente + local + período. Toda foto nasce dentro de um projeto e aparece no mapa.', projs.length > 0, { tela: 'foto_cartao', obrigatorio: true });
     P('inspecao_campo', 'ic_procedimento', 'Procedimento de reparo', 'Sequência de etapas com fotos, materiais (lote, validade, proporção) e liberações da engenharia — para os defeitos que vão a reparo.', procs.length > 0, { tela: 'foto_cartao', obrigatorio: false });
   }
+  if (liga('turismo')) { // T1: viagens e embarque
+    const mps = (await da('mapas_poltronas').catch(() => [])).filter((m) => m.ativo !== false); const vgs = await da('viagens').catch(() => []);
+    P('turismo', 'tu_mapa', 'Mapas de poltronas dos seus ônibus', 'Cadastre cada modelo de ônibus que a empresa usa (próprios e parceiros). Comece de um modelo pronto — 2+2, executivo, double deck, micro, van — e ajuste.', mps.length > 0, { tela: 'turismo', obrigatorio: false });
+    P('turismo', 'tu_viagem', 'Primeira viagem', 'Viagem = evento com data, destino e um ou mais ônibus. As reservas entram direto no mapa de poltronas.', vgs.length > 0, { tela: 'turismo', obrigatorio: true });
+  }
   if (liga('sgq')) {
     const docsG = (await da('documentos_gestao')).filter((d) => d.status !== 'obsoleto'); const vig = docsG.filter((d) => d.status === 'vigente');
     let mz = null; try { mz = await require('./auditoriaRegistros').matriz(supabase, tenantId); } catch { /* sem 119 */ }
